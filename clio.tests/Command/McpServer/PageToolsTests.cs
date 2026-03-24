@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -29,6 +30,79 @@ public class PageToolsTests {
 	[Description("Verifies that PageUpdateTool has the correct MCP tool name")]
 	public void PageUpdateTool_HasCorrectName() {
 		PageUpdateTool.ToolName.Should().Be("page-update", "because the MCP tool name must match the protocol contract");
+	}
+
+	[Test]
+	[Description("PageGetTool returns the nested MCP response contract with page, bundle, raw, and packageUId")]
+	public void PageGetTool_WhenCalled_ReturnsNestedResponseContract() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrMcp_FormPage",
+				"tool-page-uid",
+				"tool-package-uid",
+				"UsrMcp",
+				"BasePage").ToString());
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetParentSchemas("tool-page-uid", "tool-package-uid")
+			.Returns([
+				new PageDesignerHierarchySchema {
+					UId = "tool-page-uid",
+					Name = "UsrMcp_FormPage",
+					PackageUId = "tool-package-uid",
+					PackageName = "UsrMcp",
+					SchemaVersion = 1,
+					Body = CreatePageBody("""
+						[
+						  {
+						    operation: 'insert',
+						    name: 'MainContainer',
+						    values: {
+						      type: 'crt.FlexContainer'
+						    }
+						  }
+						]
+						""")
+				}
+			]);
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>())
+			.Returns(command);
+		PageGetTool tool = new(command, logger, commandResolver);
+
+		// Act
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the MCP tool should surface the successful page-get command result");
+		response.Page.PackageUId.Should().Be("tool-package-uid",
+			because: "the nested page metadata should include packageUId for MCP callers");
+		response.Bundle.Should().NotBeNull(
+			because: "the MCP tool should return the merged bundle block");
+		response.Raw.Body.Should().NotBeNullOrWhiteSpace(
+			because: "the MCP tool should keep raw.body for page-update round-trips");
+		string serializedResponse = System.Text.Json.JsonSerializer.Serialize(response);
+		JObject serializedObject = JObject.Parse(serializedResponse);
+		serializedResponse.Should().Contain("\"page\"",
+			because: "the serialized MCP response should include the page block");
+		serializedResponse.Should().Contain("\"bundle\"",
+			because: "the serialized MCP response should include the bundle block");
+		serializedResponse.Should().Contain("\"raw\"",
+			because: "the serialized MCP response should include the raw block");
+		serializedObject["schemaName"].Should().BeNull(
+			because: "the old flat response contract should no longer emit schemaName at the root");
 	}
 
 	[Test]
@@ -165,108 +239,512 @@ public class PageToolsTests {
 	}
 
 	[Test]
-	[Description("TryGetPage calls ServiceUrlBuilder without /0/ prefix for DesignerService URL")]
-	public void TryGetPage_UsesCorrectDesignerServiceUrl_WithoutDoubleZeroPrefix() {
-		var applicationClient = Substitute.For<IApplicationClient>();
-		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		var logger = Substitute.For<ILogger>();
+	[Description("TryGetPage uses the GetParentSchemas designer endpoint without duplicating the /0 prefix")]
+	public void TryGetPage_UsesGetParentSchemasDesignerEndpoint() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
 			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
-		serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema")
-			.Returns("http://test/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
-		var metadataResponse = new JObject {
-			["success"] = true,
-			["rows"] = new JArray {
-				new JObject {
-					["Name"] = "TestPage_FormPage",
-					["UId"] = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-					["PackageName"] = "TestPkg",
-					["ParentSchemaName"] = "PageWithTabsFreedomTemplate"
-				}
-			}
-		};
-		var getSchemaResponse = new JObject {
-			["success"] = true,
-			["schema"] = new JObject {
-				["body"] = "define(\"TestPage_FormPage\", [], function() { return {}; });"
-			}
-		};
-		int callIndex = 0;
-		applicationClient.ExecutePostRequest(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(ci => {
-				callIndex++;
-				return callIndex == 1
-					? metadataResponse.ToString()
-					: getSchemaResponse.ToString();
+		serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas")
+			.Returns("http://test/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas");
+		JObject metadataResponse = CreateMetadataResponse(
+			"TestPage_FormPage",
+			"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+			"pkg-uid",
+			"TestPkg",
+			"PageWithTabsFreedomTemplate");
+		JObject hierarchyResponse = CreateHierarchyResponse(
+			new JObject {
+				["uId"] = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+				["name"] = "TestPage_FormPage",
+				["package"] = new JObject {
+					["uId"] = "pkg-uid",
+					["name"] = "TestPkg"
+				},
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'NameField',
+					    parentName: 'MainContainer',
+					    path: ['items'],
+					    values: {
+					      type: 'crt.Input'
+					    }
+					  }
+					]
+					""")
+			},
+			new JObject {
+				["uId"] = "base-uid",
+				["name"] = "PageWithTabsFreedomTemplate",
+				["package"] = new JObject {
+					["uId"] = "base-pkg-uid",
+					["name"] = "CrtBase"
+				},
+				["schemaVersion"] = 1,
+				["body"] = CreatePageBody("""
+					[
+					  {
+					    operation: 'insert',
+					    name: 'MainContainer',
+					    values: {
+					      type: 'crt.FlexContainer'
+					    }
+					  }
+					]
+					""")
 			});
-		var command = new PageGetCommand(applicationClient, serviceUrlBuilder, logger);
-		var options = new PageGetOptions { SchemaName = "TestPage_FormPage" };
-		bool result = command.TryGetPage(options, out PageGetResponse response);
-		result.Should().BeTrue();
-		response.Success.Should().BeTrue();
-		response.Body.Should().Contain("TestPage_FormPage");
-		serviceUrlBuilder.Received(1).Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
-		serviceUrlBuilder.DidNotReceive().Build(Arg.Is<string>(s => s.Contains("/0/ServiceModel")));
-	}
-
-	[Test]
-	[Description("TryGetPage returns body and metadata when schema is found")]
-	public void TryGetPage_WhenSchemaExists_ReturnsBodyAndMetadata() {
-		var applicationClient = Substitute.For<IApplicationClient>();
-		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		var logger = Substitute.For<ILogger>();
-		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => $"http://test{ci.Arg<string>()}");
-		var metadataResponse = new JObject {
-			["success"] = true,
-			["rows"] = new JArray {
-				new JObject {
-					["Name"] = "UsrApp_FormPage",
-					["UId"] = "11111111-2222-3333-4444-555555555555",
-					["PackageName"] = "UsrApp",
-					["ParentSchemaName"] = "PageWithTabsFreedomTemplate"
-				}
-			}
-		};
-		string expectedBody = "define(\"UsrApp_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return {}; });";
-		var getSchemaResponse = new JObject {
-			["success"] = true,
-			["schema"] = new JObject { ["body"] = expectedBody }
-		};
 		int callIndex = 0;
 		applicationClient.ExecutePostRequest(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(ci => (++callIndex) == 1 ? metadataResponse.ToString() : getSchemaResponse.ToString());
-		var command = new PageGetCommand(applicationClient, serviceUrlBuilder, logger);
-		var options = new PageGetOptions { SchemaName = "UsrApp_FormPage" };
+				Arg.Any<string>(),
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(_ => ++callIndex == 1 ? metadataResponse.ToString() : hierarchyResponse.ToString());
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger);
+		PageGetOptions options = new() { SchemaName = "TestPage_FormPage" };
+
+		// Act
 		bool result = command.TryGetPage(options, out PageGetResponse response);
-		result.Should().BeTrue();
-		response.SchemaName.Should().Be("UsrApp_FormPage");
-		response.SchemaUId.Should().Be("11111111-2222-3333-4444-555555555555");
-		response.PackageName.Should().Be("UsrApp");
-		response.ParentSchemaName.Should().Be("PageWithTabsFreedomTemplate");
-		response.Body.Should().Be(expectedBody);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the metadata query and hierarchy read both succeeded");
+		response.Success.Should().BeTrue(
+			because: "the page read should return a success envelope");
+		response.Bundle.Name.Should().Be("TestPage_FormPage",
+			because: "the designer hierarchy should be interpreted in current-page-first order");
+		serviceUrlBuilder.Received(1).Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas");
+		serviceUrlBuilder.DidNotReceive().Build(Arg.Is<string>(path => path.Contains("/0/ServiceModel")));
 	}
 
 	[Test]
-	[Description("TryGetPage returns error when schema not found in SysSchema")]
+	[Description("TryGetPage returns the new nested bundle envelope when a page is found")]
+	public void TryGetPage_WhenSchemaExists_ReturnsBundleEnvelope() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => $"http://test{callInfo.Arg<string>()}");
+		JObject metadataResponse = CreateMetadataResponse(
+			"UsrApp_FormPage",
+			"11111111-2222-3333-4444-555555555555",
+			"99999999-2222-3333-4444-555555555555",
+			"UsrApp",
+			"PageWithTabsFreedomTemplate");
+		string parentBody = CreatePageBody("""
+			[
+			  {
+			    operation: 'insert',
+			    name: 'MainContainer',
+			    values: {
+			      type: 'crt.FlexContainer',
+			      items: []
+			    }
+			  }
+			]
+			""",
+			viewModelConfig: """
+			{
+			  values: {
+			    ParentValue: {
+			      _id: 'ParentValue',
+			      type: 'crt.StringAttribute'
+			    }
+			  }
+			}
+			""",
+			modelConfig: """
+			{
+			  dataSources: {
+			    BaseDS: {
+			      type: 'crt.EntityDataSource'
+			    }
+			  }
+			}
+			""");
+		string expectedBody = CreatePageBody("""
+			[
+			  {
+			    operation: 'insert',
+			    name: 'NameField',
+			    parentName: 'MainContainer',
+			    path: ['items'],
+			    values: {
+			      type: 'crt.Input'
+			    }
+			  }
+			]
+			""",
+			viewModelConfigDiff: """
+			[
+			  {
+			    operation: 'insert',
+			    path: ['values'],
+			    propertyName: 'ChildValue',
+			    values: {
+			      _id: 'ChildValue',
+			      type: 'crt.StringAttribute'
+			    }
+			  }
+			]
+			""",
+			handlers: "[{ request: 'crt.HandleViewModelInitRequest' }]");
+		JObject hierarchyResponse = CreateHierarchyResponse(
+			new JObject {
+				["uId"] = "11111111-2222-3333-4444-555555555555",
+				["name"] = "UsrApp_FormPage",
+				["package"] = new JObject {
+					["uId"] = "99999999-2222-3333-4444-555555555555",
+					["name"] = "UsrApp"
+				},
+				["schemaVersion"] = 1,
+				["body"] = expectedBody,
+				["localizableStrings"] = new JArray {
+					new JObject {
+						["name"] = "Title",
+						["values"] = new JArray {
+							new JObject {
+								["cultureName"] = "en-US",
+								["value"] = "Child title"
+							}
+						}
+					}
+				},
+				["parameters"] = new JArray {
+					new JObject {
+						["uId"] = "param-child-uid",
+						["name"] = "AccountId",
+						["caption"] = new JObject {
+							["en-US"] = "Account"
+						},
+						["type"] = 11,
+						["required"] = false,
+						["parentSchemaUId"] = "11111111-2222-3333-4444-555555555555",
+						["lookup"] = "account-schema-uid",
+						["schema"] = "Account"
+					}
+				},
+				["optionalProperties"] = new JArray {
+					new JObject {
+						["key"] = "layout",
+						["value"] = "child"
+					}
+				}
+			},
+			new JObject {
+				["uId"] = "base-page-uid",
+				["name"] = "PageWithTabsFreedomTemplate",
+				["package"] = new JObject {
+					["uId"] = "base-package-uid",
+					["name"] = "CrtBase"
+				},
+				["schemaVersion"] = 1,
+				["body"] = parentBody,
+				["localizableStrings"] = new JArray {
+					new JObject {
+						["name"] = "Title",
+						["values"] = new JArray {
+							new JObject {
+								["cultureName"] = "en-US",
+								["value"] = "Base title"
+							}
+						}
+					}
+				},
+				["parameters"] = new JArray {
+					new JObject {
+						["uId"] = "param-base-uid",
+						["name"] = "ParentId",
+						["caption"] = new JObject {
+							["en-US"] = "Parent"
+						},
+						["type"] = 10,
+						["required"] = true,
+						["parentSchemaUId"] = "base-page-uid",
+						["lookup"] = "contact-schema-uid",
+						["schema"] = "Contact"
+					}
+				},
+				["optionalProperties"] = new JArray {
+					new JObject {
+						["key"] = "layout",
+						["value"] = "base"
+					}
+				}
+			});
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(_ => ++callIndex == 1 ? metadataResponse.ToString() : hierarchyResponse.ToString());
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger);
+		PageGetOptions options = new() { SchemaName = "UsrApp_FormPage" };
+
+		// Act
+		bool result = command.TryGetPage(options, out PageGetResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the page metadata, hierarchy, and body parsing all succeeded");
+		response.Success.Should().BeTrue(
+			because: "the returned envelope should indicate success");
+		response.Page.SchemaName.Should().Be("UsrApp_FormPage",
+			because: "the nested page metadata should include the schema name");
+		response.Page.SchemaUId.Should().Be("11111111-2222-3333-4444-555555555555",
+			because: "the nested page metadata should include the schema identifier");
+		response.Page.PackageName.Should().Be("UsrApp",
+			because: "the page metadata should include the owning package name");
+		response.Page.PackageUId.Should().Be("99999999-2222-3333-4444-555555555555",
+			because: "the page metadata should include the owning package identifier");
+		response.Page.ParentSchemaName.Should().Be("PageWithTabsFreedomTemplate",
+			because: "the page metadata should preserve the direct parent schema name");
+		response.Bundle.Name.Should().Be("UsrApp_FormPage",
+			because: "the bundle should be keyed to the current schema");
+		response.Bundle.ViewConfig.Should().HaveCount(1,
+			because: "the child view config should be merged into the inherited container hierarchy");
+		response.Bundle.ViewConfig[0]!["items"]!.AsArray().Should().ContainSingle(
+			because: "the inherited container should receive the inserted child component");
+		response.Bundle.ViewModelConfig["values"]!["ParentValue"]!.Should().NotBeNull(
+			because: "the bundle should preserve inherited view-model config entries");
+		response.Bundle.ViewModelConfig["values"]!["ChildValue"]!["_id"]!.ToString().Should().Be("ChildValue",
+			because: "the child diff should be applied to the view-model config");
+		response.Bundle.ModelConfig["dataSources"]!["BaseDS"]!.Should().NotBeNull(
+			because: "the bundle should preserve merged model config");
+		response.Bundle.Resources.Strings["Title"]!["en-US"]!.ToString().Should().Be("Child title",
+			because: "child resource values should override parent values for the same key and culture");
+		response.Bundle.Parameters.Should().ContainSingle(parameter => parameter.Name == "AccountId" && parameter.IsOwnParameter,
+			because: "own parameters should be marked on the merged bundle output");
+		JToken? mergedOptionalProperty = response.Bundle.OptionalProperties
+			.Select(node => node is null ? null : JToken.Parse(node.ToJsonString()))
+			.SingleOrDefault(token => token?["key"]?.ToString() == "layout");
+		mergedOptionalProperty.Should().NotBeNull(
+			because: "the merged bundle should keep the overridden optional property");
+		mergedOptionalProperty!["value"]!.ToString().Should().Be("child",
+			because: "child optional properties should override duplicated parent keys");
+		response.Bundle.Handlers.Should().Be("[{ request: 'crt.HandleViewModelInitRequest' }]",
+			because: "non-JSON sections should come from the current schema part");
+		response.Raw.Body.Should().Be(expectedBody,
+			because: "raw.body should keep the current schema body for page-update round-trips");
+		string serializedResponse = System.Text.Json.JsonSerializer.Serialize(response);
+		serializedResponse.Should().Contain("\"page\"",
+			because: "the MCP-facing response should serialize the nested page block");
+		serializedResponse.Should().Contain("\"bundle\"",
+			because: "the MCP-facing response should serialize the nested bundle block");
+		serializedResponse.Should().Contain("\"raw\"",
+			because: "the MCP-facing response should serialize the raw payload block");
+		serializedResponse.Should().Contain("\"packageUId\":\"99999999-2222-3333-4444-555555555555\"",
+			because: "the MCP-facing response should keep the package identifier stable");
+	}
+
+	[Test]
+	[Description("TryGetPage returns error when schema metadata is not found in SysSchema")]
 	public void TryGetPage_WhenSchemaNotFound_ReturnsError() {
-		var applicationClient = Substitute.For<IApplicationClient>();
-		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		var logger = Substitute.For<ILogger>();
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://test/url");
-		var metadataResponse = new JObject {
+		JObject metadataResponse = new() {
 			["success"] = true,
 			["rows"] = new JArray()
 		};
 		applicationClient.ExecutePostRequest(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+				Arg.Any<string>(),
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
-		var command = new PageGetCommand(applicationClient, serviceUrlBuilder, logger);
-		var options = new PageGetOptions { SchemaName = "NonExistentPage" };
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger);
+		PageGetOptions options = new() { SchemaName = "NonExistentPage" };
+
+		// Act
 		bool result = command.TryGetPage(options, out PageGetResponse response);
-		result.Should().BeFalse();
-		response.Error.Should().Contain("NonExistentPage").And.Contain("not found");
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the page cannot be read when SysSchema does not contain the requested item");
+		response.Success.Should().BeFalse(
+			because: "the envelope should report the failed page lookup");
+		response.Error.Should().Contain("NonExistentPage").And.Contain("not found",
+			because: "the failure should explain which schema could not be resolved");
+	}
+
+	[Test]
+	[Description("TryGetPage returns a readable failure when the hierarchy client reports an invalid response")]
+	public void TryGetPage_WhenHierarchyReadFails_ReturnsReadableError() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		JObject metadataResponse = CreateMetadataResponse(
+			"UsrBroken_FormPage",
+			"broken-page-uid",
+			"broken-package-uid",
+			"UsrBroken",
+			"PageWithTabsFreedomTemplate");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(metadataResponse.ToString());
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetParentSchemas("broken-page-uid", "broken-package-uid")
+			.Returns(_ => throw new System.InvalidOperationException("Failed to load page schema hierarchy"));
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		PageGetOptions options = new() { SchemaName = "UsrBroken_FormPage" };
+
+		// Act
+		bool result = command.TryGetPage(options, out PageGetResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the read should fail when the designer hierarchy cannot be loaded");
+		response.Success.Should().BeFalse(
+			because: "the returned envelope should flag the failed hierarchy read");
+		response.Error.Should().Be("Failed to load page schema hierarchy",
+			because: "the hierarchy failure should stay readable in the command response");
+	}
+
+	[Test]
+	[Description("TryGetPage returns a readable failure when a schema body contains malformed JSON5 markers")]
+	public void TryGetPage_WhenBodySectionIsMalformed_ReturnsReadableError() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		JObject metadataResponse = CreateMetadataResponse(
+			"UsrMalformed_FormPage",
+			"malformed-page-uid",
+			"malformed-package-uid",
+			"UsrMalformed",
+			"PageWithTabsFreedomTemplate");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(metadataResponse.ToString());
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetParentSchemas("malformed-page-uid", "malformed-package-uid")
+			.Returns([
+				new PageDesignerHierarchySchema {
+					UId = "malformed-page-uid",
+					Name = "UsrMalformed_FormPage",
+					PackageUId = "malformed-package-uid",
+					PackageName = "UsrMalformed",
+					SchemaVersion = 1,
+					Body = CreatePageBody("[{ operation: 'insert', ]")
+				}
+			]);
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		PageGetOptions options = new() { SchemaName = "UsrMalformed_FormPage" };
+
+		// Act
+		bool result = command.TryGetPage(options, out PageGetResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the malformed body section cannot be parsed into a bundle");
+		response.Success.Should().BeFalse(
+			because: "the returned envelope should surface the parsing failure");
+		response.Error.Should().Contain("Failed to parse schema section 'SCHEMA_VIEW_CONFIG_DIFF'",
+			because: "the parsing error should explain which marker section is invalid");
+	}
+
+	[Test]
+	[Description("The raw body returned by TryGetPage can be passed unchanged to page-update dry-run")]
+	public void TryGetPage_RawBody_CanBePassed_To_PageUpdate_DryRun() {
+		// Arrange
+		IApplicationClient getApplicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder getServiceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger getLogger = Substitute.For<ILogger>();
+		getServiceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => $"http://test{callInfo.Arg<string>()}");
+		JObject metadataResponse = CreateMetadataResponse(
+			"UsrRoundTrip_FormPage",
+			"roundtrip-page-uid",
+			"roundtrip-package-uid",
+			"UsrRoundTrip",
+			"PageWithTabsFreedomTemplate");
+		string rawBody = CreatePageBody();
+		JObject hierarchyResponse = CreateHierarchyResponse(
+			new JObject {
+				["uId"] = "roundtrip-page-uid",
+				["name"] = "UsrRoundTrip_FormPage",
+				["package"] = new JObject {
+					["uId"] = "roundtrip-package-uid",
+					["name"] = "UsrRoundTrip"
+				},
+				["schemaVersion"] = 1,
+				["body"] = rawBody
+			});
+		int getCallIndex = 0;
+		getApplicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(_ => ++getCallIndex == 1 ? metadataResponse.ToString() : hierarchyResponse.ToString());
+		PageGetCommand getCommand = CreatePageGetCommand(getApplicationClient, getServiceUrlBuilder, getLogger);
+		PageGetOptions getOptions = new() { SchemaName = "UsrRoundTrip_FormPage" };
+
+		IApplicationClient updateApplicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder updateServiceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger updateLogger = Substitute.For<ILogger>();
+		updateServiceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		updateApplicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["rows"] = new JArray {
+					new JObject {
+						["UId"] = "roundtrip-page-uid"
+					}
+				}
+			}.ToString());
+		PageUpdateCommand updateCommand = new(updateApplicationClient, updateServiceUrlBuilder, updateLogger);
+
+		// Act
+		bool getResult = getCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
+		bool updateResult = updateCommand.TryUpdatePage(
+			new PageUpdateOptions {
+				SchemaName = "UsrRoundTrip_FormPage",
+				Body = getResponse.Raw.Body,
+				DryRun = true
+			},
+			out PageUpdateResponse updateResponse);
+
+		// Assert
+		getResult.Should().BeTrue(
+			because: "the page must be readable before its raw body can be reused");
+		updateResult.Should().BeTrue(
+			because: "page-update should still accept the raw body returned by page-get");
+		updateResponse.Success.Should().BeTrue(
+			because: "the dry-run should validate the raw body without saving");
+		updateResponse.DryRun.Should().BeTrue(
+			because: "the regression should stay non-destructive");
+		updateResponse.BodyLength.Should().Be(rawBody.Length,
+			because: "page-update should receive the exact raw body emitted by page-get");
 	}
 
 	[Test]
@@ -375,5 +853,73 @@ public class PageToolsTests {
 		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
 		result.Should().BeFalse();
 		response.Error.Should().Contain("MissingPage").And.Contain("not found");
+	}
+
+	private static PageGetCommand CreatePageGetCommand(
+		IApplicationClient applicationClient,
+		IServiceUrlBuilder serviceUrlBuilder,
+		ILogger logger,
+		IPageDesignerHierarchyClient hierarchyClient = null) {
+		return new PageGetCommand(
+			applicationClient,
+			serviceUrlBuilder,
+			logger,
+			hierarchyClient ?? new PageDesignerHierarchyClient(applicationClient, serviceUrlBuilder),
+			new PageSchemaBodyParser(),
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()));
+	}
+
+	private static JObject CreateMetadataResponse(
+		string schemaName,
+		string schemaUId,
+		string packageUId,
+		string packageName,
+		string parentSchemaName) {
+		return new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject {
+					["Name"] = schemaName,
+					["UId"] = schemaUId,
+					["PackageName"] = packageName,
+					["PackageUId"] = packageUId,
+					["ParentSchemaName"] = parentSchemaName
+				}
+			}
+		};
+	}
+
+	private static JObject CreateHierarchyResponse(params JObject[] values) {
+		return new JObject {
+			["success"] = true,
+			["values"] = new JArray(values)
+		};
+	}
+
+	private static string CreatePageBody(
+		string viewConfigDiff = "[]",
+		string viewModelConfig = "{}",
+		string viewModelConfigDiff = "[]",
+		string modelConfig = "{}",
+		string modelConfigDiff = "[]",
+		string deps = "[]",
+		string args = "()",
+		string handlers = "[]",
+		string converters = "{}",
+		string validators = "{}") {
+		return $$"""
+			define("TestPage", /**SCHEMA_DEPS*/{{deps}}/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/{{args}}/**SCHEMA_ARGS*/ {
+				return {
+					viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/{{viewConfigDiff}}/**SCHEMA_VIEW_CONFIG_DIFF*/,
+					viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{{viewModelConfig}}/**SCHEMA_VIEW_MODEL_CONFIG*/,
+					viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{{viewModelConfigDiff}}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,
+					modelConfig: /**SCHEMA_MODEL_CONFIG*/{{modelConfig}}/**SCHEMA_MODEL_CONFIG*/,
+					modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/{{modelConfigDiff}}/**SCHEMA_MODEL_CONFIG_DIFF*/,
+					handlers: /**SCHEMA_HANDLERS*/{{handlers}}/**SCHEMA_HANDLERS*/,
+					converters: /**SCHEMA_CONVERTERS*/{{converters}}/**SCHEMA_CONVERTERS*/,
+					validators: /**SCHEMA_VALIDATORS*/{{validators}}/**SCHEMA_VALIDATORS*/
+				};
+			});
+			""";
 	}
 }

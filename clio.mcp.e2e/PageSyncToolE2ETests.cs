@@ -1,6 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -8,8 +11,10 @@ using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 using NUnit.Framework;
 
 namespace Clio.Mcp.E2E;
@@ -24,6 +29,14 @@ namespace Clio.Mcp.E2E;
 public sealed class PageSyncToolE2ETests {
 
 	private const string ToolName = PageSyncTool.ToolName;
+	private const string ValidPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+		"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"/**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 	[Test]
 	[Description("Advertises page-sync MCP tool in the server tool list so callers can discover and invoke it.")]
@@ -43,12 +56,109 @@ public sealed class PageSyncToolE2ETests {
 			because: "page-sync must be advertised so MCP clients can discover the composite tool");
 	}
 
+	[Test]
+	[Description("Reports readable failures when page-sync is called with an invalid environment name.")]
+	[AllureTag(ToolName)]
+	[AllureName("page-sync reports invalid environment failures")]
+	[AllureDescription("Starts the real clio MCP server, invokes page-sync with an unknown environment name, and verifies that the failure stays human-readable.")]
+	public async Task PageSyncTool_Should_Report_Invalid_Environment_Failure() {
+		await using ArrangeContext context = await ArrangeAsync();
+		string invalidEnvironmentName = $"missing-page-sync-env-{Guid.NewGuid():N}";
+
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = "UsrMissing_FormPage",
+							["body"] = ValidPageBody
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		bool structuredFailure = TryExtractFailure(callResult, out PageSyncResponse? response)
+			&& response is not null
+			&& !response.Success;
+		string serializedCallResult = JsonSerializer.Serialize(new {
+			callResult.IsError,
+			callResult.StructuredContent,
+			callResult.Content
+		});
+
+		(callResult.IsError == true || structuredFailure).Should().BeTrue(
+			because: "page-sync should fail when the requested environment does not exist");
+		serializedCallResult.Should().MatchRegex(
+			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found|error occurred invoking)",
+			because: "the failure should explain that the requested environment is missing");
+	}
+
+	[Test]
+	[Description("Rejects an invalid page body through the real MCP server before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("page-sync rejects invalid body during client-side validation")]
+	[AllureDescription("Uses a reachable sandbox environment, sends an invalid page body through page-sync, and verifies that validation fails without requiring a real page save.")]
+	public async Task PageSyncTool_Should_Reject_Invalid_Page_Body_When_Validation_Is_Enabled() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run page-sync validation E2E.");
+		}
+
+		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
+			Assert.Ignore($"page-sync validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		}
+
+		await using ArrangeContext context = await ArrangeAsync();
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrValidationOnly_{Guid.NewGuid():N}",
+							["body"] = "define('BadPage', {})}"
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "validation failures should be reported as structured tool results");
+		response.Success.Should().BeFalse(
+			because: "client-side validation should reject malformed page bodies");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the malformed body should fail validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned when validation is enabled");
+		response.Pages[0].Validation!.MarkersOk.Should().BeFalse(
+			because: "the malformed body is missing required schema markers");
+		response.Pages[0].Error.Should().Contain("validation failed",
+			because: "the response should explain that client-side validation blocked the save");
+	}
+
+	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
+		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+			settings,
+			["ping-app", "-e", environmentName]);
+		return result.ExitCode == 0;
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-page-sync-e2e-{System.Guid.NewGuid():N}");
+		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-page-sync-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(rootDirectory);
-		string workspaceName = $"workspace-{System.Guid.NewGuid():N}";
+		string workspaceName = $"workspace-{Guid.NewGuid():N}";
 		string workspacePath = Path.Combine(rootDirectory, workspaceName);
 		CancellationTokenSource cancellationTokenSource = new(System.TimeSpan.FromMinutes(5));
 		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
@@ -57,6 +167,17 @@ public sealed class PageSyncToolE2ETests {
 			cancellationToken: cancellationTokenSource.Token);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new ArrangeContext(rootDirectory, workspacePath, session, cancellationTokenSource);
+	}
+
+	private static bool TryExtractFailure(CallToolResult callResult, out PageSyncResponse? response) {
+		try {
+			response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+			return true;
+		}
+		catch (InvalidOperationException) {
+			response = null;
+			return false;
+		}
 	}
 
 	private sealed record ArrangeContext(

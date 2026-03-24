@@ -1,0 +1,40 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    page-update - Update the raw schema body of a Freedom UI page
+
+DESCRIPTION
+    The page-update command validates and saves the raw JavaScript body of a
+    Freedom UI page schema. The request format is unchanged: pass the full
+    body string directly, typically after reading raw.body from page-get.
+
+SYNOPSIS
+    clio page-update [options]
+
+OPTIONS
+    --schema-name                      Page schema name to update
+
+    --body                             Full raw JavaScript schema body
+
+    --dry-run                          Validate only and do not save
+
+    --uri                    -u       Application uri
+
+    --Password               -p       User password
+
+    --Login                  -l       User login (administrator permission required)
+
+    --Environment            -e       Environment name
+
+    --Maintainer             -m       Maintainer name
+
+EXAMPLE
+    clio page-update --schema-name UsrTodo_FormPage --body "<raw body>" --dry-run true -e dev
+        validate a raw Freedom UI body without saving it
+
+    clio page-update --schema-name UsrTodo_FormPage --body "<edited raw body>" -e dev
+        save the edited raw Freedom UI body to the registered dev environment
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

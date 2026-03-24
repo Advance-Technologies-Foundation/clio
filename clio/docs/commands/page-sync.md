@@ -92,6 +92,6 @@ Pages are independent, so **processing continues** even if one page fails. The o
 
 ## See Also
 
-- `page-update` — update a single Freedom UI page
-- `page-get` — read a Freedom UI page body
+- `page-update` — update a single Freedom UI page raw body
+- `page-get` — read a Freedom UI page bundle plus raw body
 - `page-list` — list Freedom UI pages
