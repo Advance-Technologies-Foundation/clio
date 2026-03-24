@@ -12,6 +12,9 @@ internal interface IPageJsonDiffApplier {
 }
 
 internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
+	private const string NamePropertyName = "name";
+	private const string PropertyNameField = "propertyName";
+	private const string ValuesPropertyName = "values";
 	private readonly Dictionary<string, PageJsonDiffItemInfo> _cache = new(StringComparer.Ordinal);
 	private JArray _sourceObject = new();
 
@@ -161,15 +164,15 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 		_cache.Clear();
 	}
 
-	private bool Insert(JObject operation) {
-		JToken parent = ResolveInsertParent(operation);
+	private void Insert(JObject operation) {
+		JToken parent = ResolveInsertParent(operation).Token;
 		if (parent is null) {
-			return false;
+			return;
 		}
 
-		JToken item = operation["values"]?.DeepClone() ?? new JObject();
-		if (!string.IsNullOrWhiteSpace(operation.Value<string>("name")) && item is JObject itemObject) {
-			itemObject["name"] = operation.Value<string>("name");
+		JToken item = operation[ValuesPropertyName]?.DeepClone() ?? new JObject();
+		if (!string.IsNullOrWhiteSpace(operation.Value<string>(NamePropertyName)) && item is JObject itemObject) {
+			itemObject[NamePropertyName] = operation.Value<string>(NamePropertyName);
 		}
 
 		if (parent is JArray array) {
@@ -177,47 +180,44 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 			int index = Math.Clamp(requestedIndex, 0, array.Count);
 			array.Insert(index, item);
 			_cache.Clear();
-			return true;
+			return;
 		}
 
-		if (parent is JObject obj && operation.Value<string>("propertyName") is string propertyName) {
+		if (parent is JObject obj && operation.Value<string>(PropertyNameField) is string propertyName) {
 			obj[propertyName] = item;
 			_cache.Clear();
-			return true;
 		}
-
-		return false;
 	}
 
-	private JToken ResolveInsertParent(JObject operation) {
+	private PageJsonPathResolution ResolveInsertParent(JObject operation) {
 		IReadOnlyList<object> path = PageBundleMergeHelpers.GetPathSegments(operation);
 		string parentName = operation.Value<string>("parentName");
 		if (!string.IsNullOrWhiteSpace(parentName)) {
 			PageJsonDiffItemInfo itemInfo = FindItemByName(parentName);
 			if (itemInfo is null) {
-				return null;
+				return PageJsonPathResolution.Empty;
 			}
 
 			if (path.Count > 0) {
-				return ResolvePath(itemInfo.Item, path).Token;
+				return ResolvePath(itemInfo.Item, path);
 			}
 
-			if (operation.Value<string>("propertyName") is string propertyName && itemInfo.Item[propertyName] is JToken directChild) {
-				return directChild;
+			if (operation.Value<string>(PropertyNameField) is string propertyName && itemInfo.Item[propertyName] is JToken directChild) {
+				return new PageJsonPathResolution(directChild, itemInfo.Item, propertyName, 0, itemInfo.Depth + 1);
 			}
 
-			return itemInfo.Item;
+			return new PageJsonPathResolution(itemInfo.Item, itemInfo.ParentToken, itemInfo.PropertyName, itemInfo.Index, itemInfo.Depth);
 		}
 
 		return path.Count > 0
-			? ResolvePath(_sourceObject, path).Token
-			: _sourceObject;
+			? ResolvePath(_sourceObject, path)
+			: new PageJsonPathResolution(_sourceObject, null, null, 0, 0);
 	}
 
-	private bool Set(JObject operation) {
+	private void Set(JObject operation) {
 		PageJsonDiffItemInfo itemInfo = FindItem(operation);
 		if (itemInfo is null) {
-			return false;
+			return;
 		}
 
 		JObject insertOperation = (JObject)operation.DeepClone();
@@ -228,21 +228,21 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 				insertOperation["parentName"] = itemInfo.ParentName;
 			}
 			if (!string.IsNullOrWhiteSpace(itemInfo.PropertyName)) {
-				insertOperation["propertyName"] = itemInfo.PropertyName;
+				insertOperation[PropertyNameField] = itemInfo.PropertyName;
 			}
 		}
 		else if (itemInfo.ParentToken is JObject && !string.IsNullOrWhiteSpace(itemInfo.PropertyName)) {
-			insertOperation["propertyName"] = itemInfo.PropertyName;
+			insertOperation[PropertyNameField] = itemInfo.PropertyName;
 		}
 
 		Remove(operation);
-		return Insert(insertOperation);
+		Insert(insertOperation);
 	}
 
-	private bool Merge(JObject operation) {
+	private void Merge(JObject operation) {
 		PageJsonDiffItemInfo itemInfo = FindItem(operation);
-		if (itemInfo?.Item is not JObject target || operation["values"] is not JObject values) {
-			return false;
+		if (itemInfo?.Item is not JObject target || operation[ValuesPropertyName] is not JObject values) {
+			return;
 		}
 
 		foreach (JProperty property in values.Properties()) {
@@ -252,8 +252,6 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 
 			target[property.Name] = property.Value.DeepClone();
 		}
-
-		return true;
 	}
 
 	private static bool ShouldSkipMerge(JToken current, JToken replacement) {
@@ -268,10 +266,10 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 		return false;
 	}
 
-	private bool Remove(JObject operation) {
+	private void Remove(JObject operation) {
 		PageJsonDiffItemInfo itemInfo = FindItem(operation);
 		if (itemInfo is null) {
-			return false;
+			return;
 		}
 
 		if (operation["properties"] is JArray properties && itemInfo.Item is JObject targetObject) {
@@ -279,7 +277,7 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 				targetObject.Remove(property);
 			}
 
-			return true;
+			return;
 		}
 
 		if (itemInfo.ParentToken is JArray array) {
@@ -289,11 +287,10 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 			parentObject.Remove(itemInfo.PropertyName);
 		}
 		else {
-			return false;
+			return;
 		}
 
 		_cache.Clear();
-		return true;
 	}
 
 	private PageJsonDiffItemInfo FindItem(JObject operation) {
@@ -344,7 +341,7 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 
 		PageJsonDiffItemInfo result = null;
 		TraverseItems(_sourceObject, null, null, 0, null, info => {
-			string itemName = info.Item.Value<string>("name");
+			string itemName = info.Item.Value<string>(NamePropertyName);
 			if (string.Equals(itemName, name, StringComparison.Ordinal)) {
 				_cache[name] = info;
 				result = info;
@@ -366,13 +363,13 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 		int depth,
 		string parentName,
 		Func<PageJsonDiffItemInfo, bool> visitor) {
-		if (token is not JContainer container) {
+		if (token is not JContainer) {
 			return;
 		}
 
 		if (token is JArray array) {
 			for (int index = 0; index < array.Count; index++) {
-				if (array[index] is not JObject child || child["name"] is null) {
+				if (array[index] is not JObject child || child[NamePropertyName] is null) {
 					continue;
 				}
 
@@ -381,19 +378,19 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 					return;
 				}
 
-				TraverseChildProperties(child, depth + 1, child.Value<string>("name"), visitor);
+				TraverseChildProperties(child, depth + 1, child.Value<string>(NamePropertyName), visitor);
 			}
 
 			return;
 		}
 
-		if (token is JObject obj && obj["name"] is not null) {
+		if (token is JObject obj && obj[NamePropertyName] is not null) {
 			var info = new PageJsonDiffItemInfo(obj, parentToken, propertyName, 0, depth, parentName);
 			if (!visitor(info)) {
 				return;
 			}
 
-			TraverseChildProperties(obj, depth, obj.Value<string>("name"), visitor);
+			TraverseChildProperties(obj, depth, obj.Value<string>(NamePropertyName), visitor);
 		}
 	}
 
@@ -403,18 +400,18 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 		string parentName,
 		Func<PageJsonDiffItemInfo, bool> visitor) {
 		foreach (JProperty property in obj.Properties()) {
-			if (property.Value is JArray childArray && childArray.First is JObject childObject && childObject["name"] is not null) {
+			if (property.Value is JArray childArray && childArray.First is JObject childObject && childObject[NamePropertyName] is not null) {
 				TraverseItems(childArray, obj, property.Name, depth, parentName, visitor);
 				continue;
 			}
 
-			if (property.Value is JObject childItem && childItem["name"] is not null) {
+			if (property.Value is JObject childItem && childItem[NamePropertyName] is not null) {
 				TraverseItems(childItem, obj, property.Name, depth + 1, parentName, visitor);
 			}
 		}
 	}
 
-	private PageJsonPathResolution ResolvePath(JToken source, IReadOnlyList<object> path) {
+	private static PageJsonPathResolution ResolvePath(JToken source, IReadOnlyList<object> path) {
 		JToken current = source;
 		JToken parent = null;
 		string propertyName = null;

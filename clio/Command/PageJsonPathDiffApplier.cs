@@ -9,6 +9,8 @@ internal interface IPageJsonPathDiffApplier {
 }
 
 internal sealed class PageJsonPathDiffApplier : IPageJsonPathDiffApplier {
+	private const string ValuesPropertyName = "values";
+
 	public JObject Apply(JObject sourceObject, JArray operations) {
 		JObject result = sourceObject.DeepClone() as JObject ?? new JObject();
 		foreach (JObject operation in operations.Children<JObject>()) {
@@ -36,7 +38,7 @@ internal sealed class PageJsonPathDiffApplier : IPageJsonPathDiffApplier {
 
 	private static void Merge(JObject root, JObject operation) {
 		PageJsonPathTarget target = ResolveTarget(root, operation);
-		if (target.Token is JObject targetObject && operation["values"] is JObject values) {
+		if (target.Token is JObject targetObject && operation[ValuesPropertyName] is JObject values) {
 			JObject merged = PageBundleMergeHelpers.DeepMerge(targetObject, values);
 			ReplaceToken(target, merged);
 		}
@@ -44,16 +46,16 @@ internal sealed class PageJsonPathDiffApplier : IPageJsonPathDiffApplier {
 
 	private static void Set(JObject root, JObject operation) {
 		PageJsonPathTarget target = ResolveTarget(root, operation);
-		if (target.Token is null || operation["values"] is null) {
+		if (target.Token is null || operation[ValuesPropertyName] is null) {
 			return;
 		}
 
-		ReplaceToken(target, operation["values"].DeepClone());
+		ReplaceToken(target, operation[ValuesPropertyName].DeepClone());
 	}
 
 	private static void Insert(JObject root, JObject operation) {
 		PageJsonPathTarget target = ResolveInsertParent(root, operation);
-		JToken values = operation["values"]?.DeepClone();
+		JToken values = operation[ValuesPropertyName]?.DeepClone();
 		if (values is null) {
 			return;
 		}
@@ -104,7 +106,7 @@ internal sealed class PageJsonPathDiffApplier : IPageJsonPathDiffApplier {
 		Remove(root, operation);
 		JObject insertOperation = (JObject)operation.DeepClone();
 		insertOperation["operation"] = "insert";
-		insertOperation["values"] = movedValue;
+		insertOperation[ValuesPropertyName] = movedValue;
 		Insert(root, insertOperation);
 	}
 
@@ -183,33 +185,46 @@ internal sealed class PageJsonPathDiffApplier : IPageJsonPathDiffApplier {
 	}
 
 	private static PageJsonPathTarget FindByAlias(JToken token, string name, string aliasProperty) {
-		if (token is JObject obj) {
-			if (string.Equals(obj.Value<string>(aliasProperty), name, StringComparison.Ordinal)) {
-				return new PageJsonPathTarget(obj, null, null, 0);
-			}
+		return token switch {
+			JObject obj => FindByAliasInObject(obj, name, aliasProperty),
+			JArray array => FindByAliasInArray(array, name, aliasProperty),
+			_ => PageJsonPathTarget.Empty
+		};
+	}
 
-			foreach (JProperty property in obj.Properties()) {
-				PageJsonPathTarget found = FindByAlias(property.Value, name, aliasProperty);
-				if (found.Token is not null) {
-					return found.Parent is null
-						? found with { Parent = obj, PropertyName = property.Name }
-						: found;
-				}
+	private static PageJsonPathTarget FindByAliasInObject(JObject obj, string name, string aliasProperty) {
+		if (string.Equals(obj.Value<string>(aliasProperty), name, StringComparison.Ordinal)) {
+			return new PageJsonPathTarget(obj, null, null, 0);
+		}
+		foreach (JProperty property in obj.Properties()) {
+			PageJsonPathTarget found = FindByAlias(property.Value, name, aliasProperty);
+			if (found.Token is not null) {
+				return AttachObjectParent(found, obj, property.Name);
 			}
 		}
-
-		if (token is JArray array) {
-			for (int index = 0; index < array.Count; index++) {
-				PageJsonPathTarget found = FindByAlias(array[index], name, aliasProperty);
-				if (found.Token is not null) {
-					return found.Parent is null
-						? found with { Parent = array, Index = index }
-						: found;
-				}
-			}
-		}
-
 		return PageJsonPathTarget.Empty;
+	}
+
+	private static PageJsonPathTarget FindByAliasInArray(JArray array, string name, string aliasProperty) {
+		for (int index = 0; index < array.Count; index++) {
+			PageJsonPathTarget found = FindByAlias(array[index], name, aliasProperty);
+			if (found.Token is not null) {
+				return AttachArrayParent(found, array, index);
+			}
+		}
+		return PageJsonPathTarget.Empty;
+	}
+
+	private static PageJsonPathTarget AttachObjectParent(PageJsonPathTarget found, JObject parent, string propertyName) {
+		return found.Parent is null
+			? found with { Parent = parent, PropertyName = propertyName }
+			: found;
+	}
+
+	private static PageJsonPathTarget AttachArrayParent(PageJsonPathTarget found, JArray parent, int index) {
+		return found.Parent is null
+			? found with { Parent = parent, Index = index }
+			: found;
 	}
 
 	private sealed record PageJsonPathTarget(JToken Token, JToken Parent, string PropertyName, int Index) {

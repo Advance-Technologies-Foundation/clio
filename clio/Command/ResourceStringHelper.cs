@@ -7,9 +7,15 @@ using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 
 internal static class ResourceStringHelper {
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 	private static readonly Regex ResourceStringPattern = new(
 		@"#ResourceString\(([^)]+)\)#",
-		RegexOptions.Compiled);
+		RegexOptions.Compiled,
+		RegexTimeout);
+	private static readonly Regex CaptionBoundaryPattern = new(
+		"([a-z])([A-Z])",
+		RegexOptions.Compiled,
+		RegexTimeout);
 
 	public static HashSet<string> ExtractKeys(string body) {
 		var keys = new HashSet<string>();
@@ -44,7 +50,7 @@ internal static class ResourceStringHelper {
 		if (result.StartsWith("Usr")) {
 			result = result[3..];
 		}
-		result = Regex.Replace(result, "([a-z])([A-Z])", "$1 $2");
+		result = CaptionBoundaryPattern.Replace(result, "$1 $2");
 		result = result.Replace('_', ' ');
 		return result.Trim();
 	}
@@ -68,37 +74,15 @@ internal static class ResourceStringHelper {
 		HashSet<string> bodyKeys) {
 		var result = new JArray();
 		var existingCustomKeys = new HashSet<string>();
-		if (localizableStrings != null) {
-			foreach (JObject entry in localizableStrings.Children<JObject>()) {
-				string name = entry["name"]?.ToString();
-				if (name != null && name.StartsWith("Usr")) {
-					result.Add(entry);
-					existingCustomKeys.Add(name);
-				}
-			}
-		}
 		var registered = new List<string>();
-		foreach (string key in bodyKeys) {
-			if (existingCustomKeys.Contains(key)) {
-				continue;
-			}
-			string value;
-			if (resources != null && resources.TryGetValue(key, out string explicitValue)) {
-				value = explicitValue;
-			} else if (key.StartsWith("Usr")) {
-				value = DeriveCaption(key);
-			} else {
-				continue;
-			}
-			result.Add(CreateLocalizableEntry(key, value));
-			registered.Add(key);
-		}
+		CopyExistingCustomEntries(localizableStrings, result, existingCustomKeys);
+		RegisterMissingBodyKeys(bodyKeys, resources, existingCustomKeys, result, registered);
 		if (resources != null) {
-			foreach (var kvp in resources) {
-				if (!existingCustomKeys.Contains(kvp.Key) && !bodyKeys.Contains(kvp.Key)) {
-					result.Add(CreateLocalizableEntry(kvp.Key, kvp.Value));
-					registered.Add(kvp.Key);
-				}
+			foreach (KeyValuePair<string, string> kvp in resources.Where(kvp =>
+				         !existingCustomKeys.Contains(kvp.Key) &&
+				         !bodyKeys.Contains(kvp.Key))) {
+				result.Add(CreateLocalizableEntry(kvp.Key, kvp.Value));
+				registered.Add(kvp.Key);
 			}
 		}
 		return (result, registered);
@@ -127,5 +111,53 @@ internal static class ResourceStringHelper {
 			registered.Add(key);
 		}
 		return (result, registered);
+	}
+
+	private static void CopyExistingCustomEntries(
+		JArray localizableStrings,
+		JArray result,
+		ISet<string> existingCustomKeys) {
+		if (localizableStrings == null) {
+			return;
+		}
+		foreach (JObject entry in localizableStrings.Children<JObject>()) {
+			string name = entry["name"]?.ToString();
+			if (name == null || !name.StartsWith("Usr")) {
+				continue;
+			}
+			result.Add(entry);
+			existingCustomKeys.Add(name);
+		}
+	}
+
+	private static void RegisterMissingBodyKeys(
+		IEnumerable<string> bodyKeys,
+		IReadOnlyDictionary<string, string> resources,
+		ISet<string> existingCustomKeys,
+		JArray result,
+		ICollection<string> registered) {
+		foreach (string key in bodyKeys.Where(key => !existingCustomKeys.Contains(key))) {
+			if (!TryResolveResourceValue(resources, key, out string value)) {
+				continue;
+			}
+			result.Add(CreateLocalizableEntry(key, value));
+			registered.Add(key);
+		}
+	}
+
+	private static bool TryResolveResourceValue(
+		IReadOnlyDictionary<string, string> resources,
+		string key,
+		out string value) {
+		if (resources != null && resources.TryGetValue(key, out string explicitValue)) {
+			value = explicitValue;
+			return true;
+		}
+		if (key.StartsWith("Usr")) {
+			value = DeriveCaption(key);
+			return true;
+		}
+		value = null;
+		return false;
 	}
 }

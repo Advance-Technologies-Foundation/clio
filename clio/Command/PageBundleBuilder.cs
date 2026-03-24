@@ -85,33 +85,46 @@ internal sealed class PageBundleBuilder : IPageBundleBuilder {
 	private static JsonObject BuildResources(IReadOnlyList<PageSchemaBundlePart> parts) {
 		var result = new JsonObject();
 		foreach (PageSchemaBundlePart part in parts) {
-			foreach (JObject localizableString in part.Schema.LocalizableStrings.Children<JObject>()) {
-				string name = localizableString["name"]?.ToString();
-				if (string.IsNullOrWhiteSpace(name)) {
-					continue;
-				}
-
-				if (result[name] is not null and not JsonObject) {
-					continue;
-				}
-
-				JsonObject values = result[name] as JsonObject ?? new JsonObject();
-				if (localizableString["values"] is JArray localizableValues) {
-					foreach (JObject value in localizableValues.Children<JObject>()) {
-						string cultureName = value["cultureName"]?.ToString();
-						if (string.IsNullOrWhiteSpace(cultureName)) {
-							continue;
-						}
-
-						values[cultureName] = value["value"]?.ToString();
-					}
-				}
-
-				result[name] = values;
-			}
+			MergeLocalizableStrings(result, part.Schema.LocalizableStrings);
 		}
 
 		return result;
+	}
+
+	private static void MergeLocalizableStrings(JsonObject result, JArray localizableStrings) {
+		foreach (JObject localizableString in localizableStrings.Children<JObject>()) {
+			string name = localizableString["name"]?.ToString();
+			if (string.IsNullOrWhiteSpace(name)) {
+				continue;
+			}
+			JsonObject values = GetOrCreateResourceValues(result, name);
+			if (values is null) {
+				continue;
+			}
+			MergeLocalizedValues(values, localizableString["values"] as JArray);
+			result[name] = values;
+		}
+	}
+
+	private static JsonObject GetOrCreateResourceValues(JsonObject result, string name) {
+		if (result[name] is not null and not JsonObject) {
+			return null;
+		}
+
+		return result[name] as JsonObject ?? new JsonObject();
+	}
+
+	private static void MergeLocalizedValues(JsonObject values, JArray localizableValues) {
+		if (localizableValues == null) {
+			return;
+		}
+		foreach (JObject value in localizableValues.Children<JObject>()) {
+			string cultureName = value["cultureName"]?.ToString();
+			if (string.IsNullOrWhiteSpace(cultureName)) {
+				continue;
+			}
+			values[cultureName] = value["value"]?.ToString();
+		}
 	}
 
 	private static IReadOnlyList<PageParameterInfo> BuildParameters(

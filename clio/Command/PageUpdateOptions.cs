@@ -44,86 +44,21 @@ namespace Clio.Command {
 					response = validationError;
 					return false;
 				}
-				var (metadata, queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
-					_applicationClient, _serviceUrlBuilder, options.SchemaName,
-					("UId", "UId"));
-				if (metadata == null) {
-					response = new PageUpdateResponse { Success = false, Error = queryError };
+				if (!TryResolveSchemaUId(options.SchemaName, out string schemaUId, out response)) {
 					return false;
 				}
-				string schemaUId = metadata["UId"]?.ToString();
 				if (options.DryRun) {
-					response = new PageUpdateResponse {
-						Success = true,
-						SchemaName = options.SchemaName,
-						BodyLength = options.Body.Length,
-						DryRun = true
-					};
+					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
 					return true;
 				}
-				var getSchemaRequest = new JObject {
-					["schemaUId"] = schemaUId,
-					["useFullHierarchy"] = false
-				};
-				string designerUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
-				string getSchemaJson = _applicationClient.ExecutePostRequest(designerUrl, getSchemaRequest.ToString(Formatting.None));
-				var getSchemaResponse = JObject.Parse(getSchemaJson);
-				if (!(getSchemaResponse["success"]?.Value<bool>() ?? false) || getSchemaResponse["schema"] == null) {
-					response = new PageUpdateResponse { Success = false, Error = $"Failed to load schema '{options.SchemaName}'" };
+				if (!TryLoadSchemaForSave(options.SchemaName, schemaUId, out JObject schemaToSave, out response)) {
 					return false;
 				}
-				var schemaToSave = getSchemaResponse["schema"] as JObject;
-				schemaToSave["body"] = options.Body;
-				List<string> registeredKeys = null;
-				var bodyKeys = ResourceStringHelper.ExtractKeys(options.Body);
-				var existingStrings = schemaToSave["localizableStrings"] as JArray;
-				Dictionary<string, string> explicitResources = null;
-				if (!string.IsNullOrWhiteSpace(options.Resources)) {
-					try {
-						explicitResources = JsonConvert.DeserializeObject<Dictionary<string, string>>(options.Resources);
-					} catch {
-					}
-				}
-				var (cleaned, registered) = ResourceStringHelper.CleanAndMerge(
-					existingStrings, explicitResources, bodyKeys);
-				schemaToSave["localizableStrings"] = cleaned;
-				if (registered.Count > 0) {
-					registeredKeys = registered;
-				}
-				string saveUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
-				string saveJson = _applicationClient.ExecutePostRequest(saveUrl, schemaToSave.ToString(Formatting.None));
-				var saveResponse = JObject.Parse(saveJson);
-				if (!(saveResponse["success"]?.Value<bool>() ?? false)) {
-					string errorMessage = "Failed to save page schema";
-					var errorInfo = saveResponse["errorInfo"] as JObject;
-					if (errorInfo != null) {
-						string infoMessage = errorInfo["message"]?.ToString();
-						if (!string.IsNullOrWhiteSpace(infoMessage)) {
-							errorMessage = infoMessage;
-						}
-					}
-					var validationErrors = saveResponse["validationErrors"] as JArray;
-					if (validationErrors != null && validationErrors.Count > 0) {
-						var messages = validationErrors
-							.Select(e => e["message"]?.ToString() ?? e["caption"]?.ToString())
-							.Where(m => !string.IsNullOrWhiteSpace(m));
-						errorMessage = string.Join("; ", messages);
-					}
-					var addonsErrors = saveResponse["addonsErrors"] as JArray;
-					if (addonsErrors != null && addonsErrors.Count > 0) {
-						errorMessage = string.Join("; ", addonsErrors.Select(e => e.ToString()));
-					}
-					response = new PageUpdateResponse { Success = false, Error = errorMessage };
+				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, options);
+				if (!TrySaveSchema(schemaToSave, out response)) {
 					return false;
 				}
-				response = new PageUpdateResponse {
-					Success = true,
-					SchemaName = options.SchemaName,
-					BodyLength = options.Body.Length,
-					DryRun = false,
-					ResourcesRegistered = registeredKeys?.Count ?? 0,
-					RegisteredResourceKeys = registeredKeys
-				};
+				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
 				return true;
 			}
 			catch (Exception ex) {
@@ -136,6 +71,115 @@ namespace Clio.Command {
 			bool success = TryUpdatePage(options, out PageUpdateResponse response);
 			_logger.WriteInfo(JsonConvert.SerializeObject(response));
 			return success ? 0 : 1;
+		}
+
+		private bool TryResolveSchemaUId(string schemaName, out string schemaUId, out PageUpdateResponse response) {
+			var (metadata, queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
+				_applicationClient,
+				_serviceUrlBuilder,
+				schemaName,
+				("UId", "UId"));
+			if (metadata == null) {
+				schemaUId = null;
+				response = new PageUpdateResponse { Success = false, Error = queryError };
+				return false;
+			}
+			schemaUId = metadata["UId"]?.ToString();
+			response = null;
+			return true;
+		}
+
+		private bool TryLoadSchemaForSave(
+			string schemaName,
+			string schemaUId,
+			out JObject schemaToSave,
+			out PageUpdateResponse response) {
+			var getSchemaRequest = new JObject {
+				["schemaUId"] = schemaUId,
+				["useFullHierarchy"] = false
+			};
+			string designerUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+			string getSchemaJson = _applicationClient.ExecutePostRequest(designerUrl, getSchemaRequest.ToString(Formatting.None));
+			var getSchemaResponse = JObject.Parse(getSchemaJson);
+			if (!(getSchemaResponse["success"]?.Value<bool>() ?? false) || getSchemaResponse["schema"] is not JObject schema) {
+				schemaToSave = null;
+				response = new PageUpdateResponse { Success = false, Error = $"Failed to load schema '{schemaName}'" };
+				return false;
+			}
+			schemaToSave = schema;
+			response = null;
+			return true;
+		}
+
+		private static List<string> UpdateSchemaBody(JObject schemaToSave, PageUpdateOptions options) {
+			schemaToSave["body"] = options.Body;
+			var bodyKeys = ResourceStringHelper.ExtractKeys(options.Body);
+			var existingStrings = schemaToSave["localizableStrings"] as JArray;
+			Dictionary<string, string> explicitResources = ParseResources(options.Resources);
+			var (cleaned, registered) = ResourceStringHelper.CleanAndMerge(existingStrings, explicitResources, bodyKeys);
+			schemaToSave["localizableStrings"] = cleaned;
+			return registered.Count > 0 ? registered : null;
+		}
+
+		private static Dictionary<string, string> ParseResources(string resources) {
+			if (string.IsNullOrWhiteSpace(resources)) {
+				return null;
+			}
+			try {
+				return JsonConvert.DeserializeObject<Dictionary<string, string>>(resources);
+			}
+			catch (JsonException) {
+				return null;
+			}
+		}
+
+		private bool TrySaveSchema(JObject schemaToSave, out PageUpdateResponse response) {
+			string saveUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
+			string saveJson = _applicationClient.ExecutePostRequest(saveUrl, schemaToSave.ToString(Formatting.None));
+			var saveResponse = JObject.Parse(saveJson);
+			if (saveResponse["success"]?.Value<bool>() ?? false) {
+				response = null;
+				return true;
+			}
+			response = new PageUpdateResponse {
+				Success = false,
+				Error = BuildSaveErrorMessage(saveResponse)
+			};
+			return false;
+		}
+
+		private static string BuildSaveErrorMessage(JObject saveResponse) {
+			string errorMessage = "Failed to save page schema";
+			if (saveResponse["errorInfo"] is JObject errorInfo) {
+				string infoMessage = errorInfo["message"]?.ToString();
+				if (!string.IsNullOrWhiteSpace(infoMessage)) {
+					errorMessage = infoMessage;
+				}
+			}
+			if (saveResponse["validationErrors"] is JArray validationErrors && validationErrors.Count > 0) {
+				IEnumerable<string> messages = validationErrors
+					.Select(e => e["message"]?.ToString() ?? e["caption"]?.ToString())
+					.Where(m => !string.IsNullOrWhiteSpace(m));
+				errorMessage = string.Join("; ", messages);
+			}
+			if (saveResponse["addonsErrors"] is JArray addonsErrors && addonsErrors.Count > 0) {
+				errorMessage = string.Join("; ", addonsErrors.Select(e => e.ToString()));
+			}
+			return errorMessage;
+		}
+
+		private static PageUpdateResponse CreateSuccessResponse(
+			PageUpdateOptions options,
+			bool dryRun,
+			List<string> registeredKeys) {
+			return new PageUpdateResponse {
+				Success = true,
+				SchemaName = options.SchemaName,
+				BodyLength = options.Body.Length,
+				DryRun = dryRun,
+				ResourcesRegistered = registeredKeys?.Count ?? 0,
+				RegisteredResourceKeys = registeredKeys
+			};
 		}
 
 		private static PageUpdateResponse ValidateInput(PageUpdateOptions options) {

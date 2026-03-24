@@ -48,18 +48,9 @@ public sealed class ApplicationDeleteTool(
 			};
 			lock (CommandExecutionSyncRoot) {
 				CommandExecutionResult result = InternalExecute<UninstallAppCommand>(options);
-				string[] outputMessages = result.Output
-					.Select(message => message.Value?.ToString())
-					.Where(message => !string.IsNullOrWhiteSpace(message))
-					.Distinct()
-					.ToArray();
 				return new ApplicationDeleteResponse {
 					Success = result.ExitCode == 0,
-					Error = result.ExitCode != 0
-						? outputMessages.Length > 0
-							? string.Join("; ", outputMessages)
-							: "Application uninstall failed."
-						: null
+					Error = ResolveError(result)
 				};
 			}
 		} catch (Exception ex) {
@@ -68,6 +59,20 @@ public sealed class ApplicationDeleteTool(
 				Error = ex.Message
 			};
 		}
+	}
+
+	private static string? ResolveError(CommandExecutionResult result) {
+		if (result.ExitCode == 0) {
+			return null;
+		}
+		string[] outputMessages = result.Output
+			.Select(message => message.Value?.ToString())
+			.Where(message => !string.IsNullOrWhiteSpace(message))
+			.Distinct()
+			.ToArray();
+		return outputMessages.Length > 0
+			? string.Join("; ", outputMessages)
+			: "Application uninstall failed.";
 	}
 }
 
