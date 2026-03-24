@@ -28,9 +28,16 @@ public sealed class PageListTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		PageListCommand resolvedCommand = ResolveCommand<PageListCommand>(options);
-		resolvedCommand.TryListPages(options, out PageListResponse response);
-		return response;
+		lock (CommandExecutionSyncRoot) {
+			PageListCommand resolvedCommand;
+			try {
+				resolvedCommand = ResolveCommand<PageListCommand>(options);
+			} catch (Exception ex) {
+				return new PageListResponse { Success = false, Error = ex.Message };
+			}
+			resolvedCommand.TryListPages(options, out PageListResponse response);
+			return response;
+		}
 	}
 }
 
