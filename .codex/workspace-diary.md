@@ -958,3 +958,17 @@ Decision: Merged `origin/master` into `ENG-87492-Alfa-version-of-ADAC-+Clio`, re
 Discovery: The PR metadata had drifted far behind the branch state: the title/body still described only the original debug-build fix even though the branch now contains the later MCP/page/application/component work as well.
 Files: .codex/workspace-diary.md
 Impact: Future reviewers now see an up-to-date branch on top of `master` and a PR description that matches the actual diff instead of an outdated single-commit summary.
+
+## 2026-03-24 15:12 – Prefer local clio over global tool
+Context: User wanted plain `clio` to run the locally built repository binary first and fall back to the globally installed .NET tool only when the local build is absent.
+Decision: Added a home-level shim at `/Users/a.kravchuk/bin/clio` that prefers `/Users/a.kravchuk/Projects/clio/clio/bin/Debug/net8.0/clio`, then `Release`, and finally `~/.dotnet/tools/clio`, and appended `export PATH="$HOME/bin:$PATH"` at the end of `~/.zshrc` so the shim stays ahead of later PATH prepends.
+Discovery: The existing shell startup prepended additional paths after user config, so placing `$HOME/bin` earlier in `~/.zshrc` would not guarantee priority over later additions.
+Files: /Users/a.kravchuk/bin/clio, /Users/a.kravchuk/.zshrc, .codex/workspace-diary.md
+Impact: Future local Clio development now uses the repo build by default without uninstalling the global tool, while still preserving the global fallback when no local binary exists.
+
+## 2026-03-24 15:12 – Clear Sonar findings on PR 480
+Context: User asked to fix the Sonar issues blocking PR `#480`.
+Decision: Refactored the flagged page/resource helpers into smaller private methods, added regex timeouts for `ResourceStringHelper`, simplified `application-delete` error formatting, and added focused unit coverage for the new resource and JSON path helper behavior.
+Discovery: The `application-delete` MCP E2E fixtures pass locally when both `net10.0` and `net8.0` runtimes are exposed through `DOTNET_ROOT=/Users/a.kravchuk/.dotnet`; pointing E2E at `~/.dotnet-10` alone breaks `clio` startup because the MCP server executable still targets `net8.0`.
+Files: clio/Command/PageUpdateOptions.cs, clio/Command/ResourceStringHelper.cs, clio/Command/PageBundleBuilder.cs, clio/Command/PageJsonDiffApplier.cs, clio/Command/PageJsonPathDiffApplier.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio.tests/Command/ResourceStringHelperTests.cs, clio.tests/Command/PageJsonPathDiffApplierTests.cs, .codex/workspace-diary.md
+Impact: Future Sonar cleanup on this branch can reuse the runtime note for MCP E2E and rely on targeted tests around resource registration and nested `_id` path resolution instead of rediscovering the same low-level helper behavior.
