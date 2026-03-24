@@ -4019,11 +4019,15 @@ clio build-docker-image --from <zip-or-folder> --template <name-or-path> [option
 - `--template <NameOrPath>` - Required. Bundled template name (`dev`, `prod`) or custom template directory path
 - `--output-path <Path>` - Optional. Save the built image to a tar file with `docker save`
 - `--registry <Prefix>` - Optional. Tag and push the image to `<Prefix>/creatio-<template>:<tag>`
+- `--use-docker` - Optional. Force `docker` for this invocation
+- `--use-nerdctl` - Optional. Force `nerdctl` for this invocation; clio adds `--namespace k8s.io`
 
 ### Behavior
 
 - Accepts only `.NET 8+` Creatio payloads
 - Rejects `.NET Framework` distributions before Docker execution
+- Uses appsettings.json key `container-image-cli` to choose `docker` or `nerdctl` by default
+- Lets CLI flags override the configured container image CLI per invocation
 - Copies bundled templates to the local clio settings folder under `docker-templates`
 - Creates a temporary Docker build context and cleans it up after execution
 - Adds OCI label `org.creatio.database-source` with the original source payload name
@@ -4046,6 +4050,10 @@ clio build-docker-image \
   --template prod \
   --output-path "/tmp/creatio-prod.tar" \
   --registry "ghcr.io/acme"
+```
+
+```bash
+clio build-docker-image --from "/opt/builds/creatio-net8" --template prod --use-nerdctl
 ```
 
 ## deploy-creatio
