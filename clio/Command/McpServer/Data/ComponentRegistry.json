@@ -2962,7 +2962,7 @@
       },
       "config.series[].data.providing.attribute": {
         "type": "string",
-        "description": "Attribute in the schema to provide data for."
+        "description": "View model attribute name for the series data. Required for the data-source loading path (when DisableSupportWidgetDataSource feature is off). Use a unique name per series, e.g. \"MyChart_Series_0\"."
       },
       "config.series[].data.providing.rowCount": {
         "type": "integer",
@@ -2972,12 +2972,12 @@
       "config.series[].data.providing.grouping": {
         "type": "object",
         "required": true,
-        "description": "Grouping config. Two types supported: (1) by-value: { type: \"by-value\", column: EntityQueryColumn } — groups by a column value; (2) by-date-part: { type: \"by-date-part\", column: DatePartFunctionColumn[] } — groups by date parts (year, month, day)."
+        "description": "Grouping config. Two types: (1) by-value: { type: \"by-value\", column: { expression: { expressionType: 0, columnPath: \"<Column.Name>\" } } }; (2) by-date-part: { type: \"by-date-part\", column: DatePartFunctionColumn[] }. expressionType: 0=Column, 1=Function."
       },
       "config.series[].data.providing.aggregation": {
         "type": "object",
         "required": true,
-        "description": "Aggregation config: { column: AggregationFunctionColumn }. The column specifies the aggregation function type and column path."
+        "description": "Aggregation config: { column: AggregationFunctionColumn }. column.expression must include: expressionType (1=Function), functionType (2=Aggregation), aggregationType (0=None, 1=Count, 2=Sum, 3=Avg, 4=Min, 5=Max), aggregationEvalType (0=None, 1=All, 2=Distinct), functionArgument: { expressionType: 0, columnPath: \"<column>\" }."
       },
       "config.series[].data.providing.filters": {
         "type": "object",
@@ -3018,10 +3018,21 @@
           "scales": {
             "stacked": false,
             "xAxis": {
-              "name": ""
+              "name": "",
+              "formatting": {
+                "type": "string",
+                "maxLinesCount": 2,
+                "maxLineLength": 10
+              }
             },
             "yAxis": {
-              "name": ""
+              "name": "",
+              "formatting": {
+                "type": "number",
+                "thousandAbbreviation": {
+                  "enabled": false
+                }
+              }
             }
           },
           "series": [
@@ -3034,12 +3045,16 @@
               },
               "data": {
                 "providing": {
+                  "attribute": "ChartWidget_ByStatus_Series_0",
                   "schemaName": "Activity",
                   "rowCount": 50,
                   "grouping": {
                     "column": {
+                      "orderDirection": 0,
+                      "orderPosition": -1,
+                      "isVisible": true,
                       "expression": {
-                        "functionType": 0,
+                        "expressionType": 0,
                         "columnPath": "Status.Name"
                       }
                     },
@@ -3047,9 +3062,16 @@
                   },
                   "aggregation": {
                     "column": {
+                      "orderDirection": 0,
+                      "orderPosition": -1,
+                      "isVisible": true,
                       "expression": {
-                        "functionType": 1,
+                        "expressionType": 1,
+                        "functionType": 2,
+                        "aggregationType": 1,
+                        "aggregationEvalType": 0,
                         "functionArgument": {
+                          "expressionType": 0,
                           "columnPath": "Id"
                         }
                       }
@@ -3062,7 +3084,8 @@
                       "isEnabled": true,
                       "filterType": 6,
                       "rootSchemaName": "Activity"
-                    }
+                    },
+                    "filterAttributes": []
                   },
                   "sectionBindingColumn": {}
                 },
@@ -3075,7 +3098,10 @@
               }
             }
           ],
-          "seriesOrder": {}
+          "seriesOrder": {
+            "type": 1,
+            "direction": 1
+          }
         },
         "layoutConfig": {
           "column": 1,
@@ -3192,10 +3218,14 @@
               "aggregation": {
                 "column": {
                   "expression": {
-                    "functionType": 1,
+                    "functionType": 2,
                     "functionArgument": {
-                      "columnPath": "Id"
-                    }
+                      "columnPath": "Id",
+                      "expressionType": 0
+                    },
+                    "expressionType": 1,
+                    "aggregationType": 1,
+                    "aggregationEvalType": 0
                   }
                 }
               },
@@ -3208,7 +3238,8 @@
                   "rootSchemaName": "Contact"
                 }
               },
-              "sectionBindingColumn": {}
+              "sectionBindingColumn": {},
+              "attribute": "IndicatorWidget_Series_0"
             },
             "formatting": {
               "type": "number",
@@ -3362,10 +3393,14 @@
               "aggregation": {
                 "column": {
                   "expression": {
-                    "functionType": 1,
+                    "functionType": 2,
                     "functionArgument": {
-                      "columnPath": "Id"
-                    }
+                      "columnPath": "Id",
+                      "expressionType": 0
+                    },
+                    "expressionType": 1,
+                    "aggregationType": 1,
+                    "aggregationEvalType": 0
                   }
                 }
               },
@@ -3377,7 +3412,8 @@
                   "filterType": 6,
                   "rootSchemaName": "Activity"
                 }
-              }
+              },
+              "attribute": "GaugeWidget_Series_0"
             },
             "formatting": {
               "type": "number",
@@ -3849,8 +3885,8 @@
               "grouping": {
                 "column": {
                   "expression": {
-                    "functionType": 0,
-                    "columnPath": "Stage.Name"
+                    "columnPath": "Stage.Name",
+                    "expressionType": 0
                   }
                 },
                 "type": "by-value"
@@ -3858,10 +3894,14 @@
               "aggregation": {
                 "column": {
                   "expression": {
-                    "functionType": 1,
+                    "functionType": 2,
                     "functionArgument": {
-                      "columnPath": "Budget"
-                    }
+                      "columnPath": "Budget",
+                      "expressionType": 0
+                    },
+                    "expressionType": 1,
+                    "aggregationType": 1,
+                    "aggregationEvalType": 0
                   }
                 }
               },
@@ -3873,7 +3913,8 @@
                   "filterType": 6,
                   "rootSchemaName": "Opportunity"
                 }
-              }
+              },
+              "attribute": "SalesWaterfallWidget_Series_0"
             }
           }
         },
@@ -5406,6 +5447,11 @@
       "layoutConfig": {
         "type": "object",
         "description": "Standard grid placement."
+      },
+      "control": {
+        "type": "string",
+        "required": true,
+        "description": "Attribute binding for the multi-select value. Use \"$<AttributeName>\" syntax."
       }
     },
     "typicalChildren": [],
@@ -5416,7 +5462,8 @@
         "type": "crt.MultiSelect",
         "label": "#ResourceString(MultiSelect_Tags_label)#",
         "required": false,
-        "wrap": false
+        "wrap": false,
+        "control": "$PDS_UsrTags"
       },
       "parentName": "MainGrid",
       "propertyName": "items",
@@ -5471,6 +5518,11 @@
       "layoutConfig": {
         "type": "object",
         "description": "Standard grid placement."
+      },
+      "control": {
+        "type": "string",
+        "required": true,
+        "description": "Attribute binding for the tag selection. Use \"$<AttributeName>\" syntax."
       }
     },
     "typicalChildren": [],
@@ -5479,7 +5531,8 @@
       "name": "TagSelect",
       "values": {
         "type": "crt.TagSelect",
-        "label": ""
+        "label": "#ResourceString(TagSelect_label)#",
+        "control": "$PDS_UsrTags"
       },
       "parentName": "MainGrid",
       "propertyName": "items",
@@ -5686,7 +5739,8 @@
       "values": {
         "type": "crt.IconRadioButton",
         "items": [],
-        "direction": "row"
+        "direction": "row",
+        "value": "$PDS_UsrType"
       },
       "parentName": "ToolbarContainer",
       "propertyName": "items",
@@ -5822,7 +5876,8 @@
       "operation": "insert",
       "name": "RightSidebar",
       "values": {
-        "type": "crt.SidebarContainer"
+        "type": "crt.SidebarContainer",
+        "items": []
       },
       "parentName": "MainContainer",
       "propertyName": "items",
