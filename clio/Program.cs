@@ -666,7 +666,7 @@ internal class Program {
 				args = args.Where(x => x != "--log" && x != logTarget).ToArray();
 			}
 
-			bool isMcp = args.Contains("mcp-server");
+			bool isMcp = args.Contains("mcp-server") || args.Contains("mcp");
 			IsMcpServerMode = isMcp;
 			string[] clearArgs = args.Where(x => x.ToLower() != "--debug" && x.ToLower() != "--ts").ToArray();
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
