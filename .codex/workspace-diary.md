@@ -965,3 +965,38 @@ Decision: Refactored the flagged page/resource helpers into smaller private meth
 Discovery: The `application-delete` MCP E2E fixtures pass locally when both `net10.0` and `net8.0` runtimes are exposed through `DOTNET_ROOT=/Users/a.kravchuk/.dotnet`; pointing E2E at `~/.dotnet-10` alone breaks `clio` startup because the MCP server executable still targets `net8.0`.
 Files: clio/Command/PageUpdateOptions.cs, clio/Command/ResourceStringHelper.cs, clio/Command/PageBundleBuilder.cs, clio/Command/PageJsonDiffApplier.cs, clio/Command/PageJsonPathDiffApplier.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio.tests/Command/ResourceStringHelperTests.cs, clio.tests/Command/PageJsonPathDiffApplierTests.cs, .codex/workspace-diary.md
 Impact: Future Sonar cleanup on this branch can reuse the runtime note for MCP E2E and rely on targeted tests around resource registration and nested `_id` path resolution instead of rediscovering the same low-level helper behavior.
+
+## 2026-03-24 15:25 – Inventory current MCP surface
+Context: User asked what capabilities the current clio MCP server exposes.
+Decision: Audited the live MCP code surface from the server command, tool registrations, prompts, resources, and MCP tests instead of relying on docs or memory.
+Discovery: The server currently exposes 60 tool calls, 50 prompts, and 3 help resources, spanning workspace/package sync, Freedom UI/page operations, schema/user-task editing, application lifecycle, deployment/infrastructure, and local environment administration.
+Files: clio/Command/McpServer/McpServerCommand.cs, clio/Command/McpServer/Tools/ApplicationTool.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Resources/GetHelpResources.cs, .codex/workspace-diary.md
+Impact: Future MCP questions can be answered from a confirmed inventory, and missing surface areas can be evaluated against the actual registered contract instead of assumptions.
+
+## 2026-03-24 15:43 – Fix PR 480 build job regressions
+Context: Investigated GitHub Actions job `68372240263` from PR `#480` after the `Test Solution` step failed on six tests.
+Decision: Restored MCP resolver failures to the normal command-style exit code `1` in `BaseTool` and rewrote `ComponentInfoToolTests` to build registry paths from an OS-specific rooted path instead of a hard-coded Unix root.
+Discovery: `BaseTool.InternalExecute<TCommand>` had started converting environment-resolution failures into exit code `-1`, which diverged from the existing MCP unit/E2E contract for `generate-process-model` and `install-application`, and `MockFileSystem` on Windows crashes when `ComponentInfoToolTests` seed files under `/clio/...` with a Unix current directory.
+Files: clio/Command/McpServer/Tools/BaseTool.cs, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, .codex/workspace-diary.md
+Impact: PR 480’s CI-specific MCP regressions are now fixed without changing tool names or prompts, and the component-info unit tests should stay stable on both Windows runners and Unix developer machines.
+
+## 2026-03-24 15:33 – Detail docs help resource behavior
+Context: User asked for a deeper explanation of the `docs://help/command/{commandName}` MCP resource.
+Decision: Read the resource implementation and its companion prompt to explain exact lookup rules, runtime file resolution, and fallback behavior.
+Discovery: The resource resolves commands by `[Verb]` name or alias from the executing assembly, reads runtime help text from `help/en/<canonical-verb>.txt` next to the executable, returns `text/plain`, and falls back to `<commandName> command does not provide documentation.` on lookup or file-read failure.
+Files: clio/Command/McpServer/Resources/GetHelpResources.cs, clio/Command/McpServer/Prompts/LookupHelpPrompt.cs, clio/help/en/reg-web-app.txt, clio/help/en/mcp-server.txt, .codex/workspace-diary.md
+Impact: Future MCP/help questions can reference the real resolution path and fallback semantics without re-reading the implementation.
+
+## 2026-03-24 15:40 – Detail component-info MCP tool behavior
+Context: User asked for a deeper explanation of the `component-info` MCP capability.
+Decision: Reviewed the tool, its catalog loader, sample shipped registry entries, related page prompt guidance, and unit tests to describe exact request/response modes and search semantics.
+Discovery: `component-info` is a local read-only curated registry lookup, not a live Creatio introspection call; it supports list and detail modes, keyword search across component metadata, and returns a fallback grouped catalog when a requested component type is unknown.
+Files: clio/Command/McpServer/Tools/ComponentInfoTool.cs, clio/Command/McpServer/Tools/ComponentInfoCatalog.cs, clio/Command/McpServer/Data/ComponentRegistry.json, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, .codex/workspace-diary.md
+Impact: Future Freedom UI editing guidance can point to a precise local contract for unfamiliar `crt.*` components instead of guessing available properties or parent/child rules.
+
+## 2026-03-24 16:05 – Expand component-info from frontend sources
+Context: User asked to analyze the frontend sources and extend the `component-info` catalog with richer Freedom UI component metadata.
+Decision: Used frontend `@CrtViewElement`, `contentSlots`, collection-property usage, and menu/view-config contracts as the source of truth, then expanded the shipped registry and aligned unit plus MCP E2E coverage around property-metadata search and nested menu components.
+Discovery: Several important Freedom UI contracts were missing from the shipped registry even though the frontend exposes them clearly, including `crt.Calendar`, `crt.Gallery`, `crt.Chat`, `crt.Conversation`, `crt.Feed`, `crt.Summaries`, `crt.FilePreview`, and nested menu contracts like `crt.MenuItem`, `crt.MenuLabel`, and `crt.MenuDivider`; local MCP E2E execution is currently blocked here because `clio.mcp.e2e` targets `net10.0` while the installed SDK is `8.0.124`.
+Files: clio/Command/McpServer/Data/ComponentRegistry.json, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.mcp.e2e/ComponentInfoToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Future page-editing flows can inspect real frontend-derived component slots and action contracts directly through MCP, and the added tests guard both catalog search semantics and nested menu detail lookups.
