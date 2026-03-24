@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
@@ -11,8 +13,8 @@ namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 public sealed class ComponentInfoToolTests {
-	private const string RegistryRoot = "/clio";
-	private const string RegistryPath = "/clio/Command/McpServer/Data/ComponentRegistry.json";
+	private static readonly string RegistryRoot = GetRootedPath("clio");
+	private static readonly string RegistryPath = Path.Combine(RegistryRoot, "Command", "McpServer", "Data", "ComponentRegistry.json");
 	private const string TestRegistryJson = """
 	[
 	  {
@@ -42,16 +44,77 @@ public sealed class ComponentInfoToolTests {
 	    "container": false,
 	    "parentTypes": ["crt.GridContainer"],
 	    "properties": {
-	      "control": { "type": "string", "description": "Bound attribute." }
+	      "control": { "type": "string", "description": "Bound attribute." },
+	      "tools": { "type": "array", "description": "Trailing tool slot." }
 	    },
-	    "typicalChildren": [],
+	    "typicalChildren": ["crt.Button"],
 	    "example": {
 	      "operation": "insert",
 	      "name": "UsrName",
-	      "values": { "type": "crt.Input", "control": "$PDS_Name" },
+	      "values": { "type": "crt.Input", "control": "$PDS_Name", "tools": [] },
 	      "parentName": "MainGrid",
 	      "propertyName": "items",
 	      "index": 1
+	    }
+	  },
+	  {
+	    "componentType": "crt.Button",
+	    "category": "interactive",
+	    "description": "Menu button.",
+	    "container": false,
+	    "parentTypes": ["crt.FlexContainer"],
+	    "properties": {
+	      "caption": { "type": "string", "description": "Button caption." },
+	      "menuItems": { "type": "array", "description": "Nested menu items." }
+	    },
+	    "typicalChildren": ["crt.MenuItem"],
+	    "example": {
+	      "operation": "insert",
+	      "name": "ActionsButton",
+	      "values": { "type": "crt.Button", "caption": "Actions", "menuItems": [] },
+	      "parentName": "Header",
+	      "propertyName": "items",
+	      "index": 0
+	    }
+	  },
+	  {
+	    "componentType": "crt.Gallery",
+	    "category": "interactive",
+	    "description": "Gallery with bulk actions.",
+	    "container": false,
+	    "parentTypes": ["crt.GridContainer"],
+	    "properties": {
+	      "bulkActions": { "type": "array", "description": "Bulk selection actions." }
+	    },
+	    "typicalChildren": ["crt.MenuItem"],
+	    "example": {
+	      "operation": "insert",
+	      "name": "ProductsGallery",
+	      "values": { "type": "crt.Gallery", "bulkActions": [] },
+	      "parentName": "MainGrid",
+	      "propertyName": "items",
+	      "index": 2
+	    }
+	  },
+	  {
+	    "componentType": "crt.MenuItem",
+	    "category": "interactive",
+	    "description": "Nested menu action.",
+	    "container": true,
+	    "parentTypes": ["crt.Button", "crt.MenuItem"],
+	    "properties": {
+	      "caption": { "type": "string", "description": "Menu caption." },
+	      "items": { "type": "array", "description": "Submenu items." },
+	      "clicked": { "type": "object", "description": "Request descriptor." }
+	    },
+	    "typicalChildren": ["crt.MenuItem"],
+	    "example": {
+	      "operation": "insert",
+	      "name": "ExportAction",
+	      "values": { "type": "crt.MenuItem", "caption": "Export", "items": [] },
+	      "parentName": "ActionsButton",
+	      "propertyName": "menuItems",
+	      "index": 0
 	    }
 	  },
 	  {
@@ -126,7 +189,7 @@ public sealed class ComponentInfoToolTests {
 			because: "list mode should succeed when the shipped registry is available");
 		response.Mode.Should().Be("list",
 			because: "omitting component-type should switch the tool into list mode");
-		response.Count.Should().Be(3,
+		response.Count.Should().Be(6,
 			because: "all registry entries should be returned in grouped list mode");
 		response.Groups.Should().NotBeNull(
 			because: "list mode should return grouped component summaries");
@@ -183,6 +246,52 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("Finds components by frontend-derived property metadata such as bulkActions.")]
+	public void ComponentInfoTool_Should_Search_Across_Property_Metadata() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs(Search: "bulkActions"));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "property-name searches should work against the curated registry metadata");
+		response.Mode.Should().Be("list",
+			because: "search-only queries should stay in list mode");
+		response.Count.Should().Be(1,
+			because: "only crt.Gallery exposes bulkActions in the sample registry");
+		response.Groups.Should().ContainSingle(
+			because: "property metadata search should keep only matching categories");
+		response.Groups![0].Items[0].ComponentType.Should().Be("crt.Gallery",
+			because: "bulkActions should surface the gallery contract");
+	}
+
+	[Test]
+	[Description("Returns nested menu component details so action collections can be expanded safely.")]
+	public void ComponentInfoTool_Should_Return_Detail_For_Nested_Menu_Component() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs("crt.MenuItem"));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "nested menu contracts are curated component types in the registry");
+		response.Mode.Should().Be("detail",
+			because: "component-type lookups should return the detail contract");
+		response.ComponentType.Should().Be("crt.MenuItem",
+			because: "the detail response should echo the requested nested component type");
+		response.Container.Should().BeTrue(
+			because: "menu items can host submenu items");
+		response.Properties.Should().ContainKey("items",
+			because: "nested menu components should document their submenu slot");
+		response.TypicalChildren.Should().Contain("crt.MenuItem",
+			because: "menu items can recursively contain other menu items");
+	}
+
+	[Test]
 	[Description("Returns a readable error and available types when component-type does not exist.")]
 	public void ComponentInfoTool_Should_Return_Readable_Error_When_Component_Type_Is_Unknown() {
 		// Arrange
@@ -198,17 +307,27 @@ public sealed class ComponentInfoToolTests {
 			because: "the failure should identify the missing component type");
 		response.Groups.Should().NotBeNull(
 			because: "the tool should still return available types for discovery");
-		response.Count.Should().Be(3,
+		response.Count.Should().Be(6,
 			because: "the fallback list should expose the full catalog when no search filter is applied");
 	}
 
 	private static ComponentInfoTool CreateTool() {
 		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData> {
 			[RegistryPath] = new(TestRegistryJson)
-		}, "/");
+		}, RegistryRoot);
 		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 		workingDirectoriesProvider.ExecutingDirectory.Returns(RegistryRoot);
 		ComponentInfoCatalog catalog = new(fileSystem, workingDirectoriesProvider);
 		return new ComponentInfoTool(catalog);
+	}
+
+	private static string GetRootedPath(params string[] segments) {
+		string path = OperatingSystem.IsWindows()
+			? @"C:\"
+			: Path.DirectorySeparatorChar.ToString();
+		foreach (string segment in segments) {
+			path = Path.Combine(path, segment);
+		}
+		return path;
 	}
 }

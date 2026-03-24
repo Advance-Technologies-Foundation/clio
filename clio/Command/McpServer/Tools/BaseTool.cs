@@ -27,7 +27,7 @@ public abstract class BaseTool<T>(
 		try {
 			resolvedCommand = ResolveCommand<TCommand>(options);
 		} catch (Exception e) {
-			return new CommandExecutionResult(-1, [new ErrorMessage(e.Message)], null);
+			return new CommandExecutionResult(1, [new ErrorMessage(e.Message)], null);
 		}
 		configureCommand?.Invoke(resolvedCommand);
 		return InternalExecute(resolvedCommand, options);
