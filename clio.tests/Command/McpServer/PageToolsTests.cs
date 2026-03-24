@@ -94,6 +94,8 @@ public class PageToolsTests {
 			because: "page-get prompt guidance should match the current MCP argument contract");
 		prompt.Should().Contain("`environment-name`",
 			because: "page-get prompt guidance should match the current MCP argument contract");
+		prompt.Should().Contain($"`{ComponentInfoTool.ToolName}`",
+			because: "page-get prompt guidance should direct callers to component-info for unfamiliar Freedom UI types");
 		prompt.Should().Contain("`resources`",
 			because: "page-get prompt guidance should tell callers how to preserve ResourceString macros during page-update");
 		prompt.Should().NotContain("`schemaName`",

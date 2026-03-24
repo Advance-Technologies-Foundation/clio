@@ -1,0 +1,983 @@
+[
+  {
+    "componentType": "crt.TabPanel",
+    "category": "containers",
+    "description": "Top-level tab strip container. Holds crt.TabContainer items and controls tab switching.",
+    "container": true,
+    "parentTypes": [
+      "crt.FlexContainer",
+      "crt.GridContainer",
+      "crt.HeaderContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.TabPanel." },
+      "items": { "type": "array", "description": "Child tabs. Usually crt.TabContainer entries." },
+      "mode": { "type": "string", "default": "tab", "values": ["tab", "toggle"], "description": "Header interaction mode." },
+      "styleType": { "type": "string", "default": "default", "values": ["default", "underline"], "description": "Visual header style." },
+      "fitContent": { "type": "boolean", "default": true, "description": "Shrinks the panel to its content height when true." },
+      "stretch": { "type": "boolean", "default": false, "description": "Stretches the panel to fill available vertical space." },
+      "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." }
+    },
+    "typicalChildren": [
+      "crt.TabContainer"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "Tabs",
+      "values": {
+        "type": "crt.TabPanel",
+        "items": [],
+        "mode": "tab",
+        "styleType": "default",
+        "fitContent": true,
+        "visible": true
+      },
+      "parentName": "MainContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.TabContainer",
+    "category": "containers",
+    "description": "Single tab within a TabPanel. Contains child elements shown when the tab is active.",
+    "container": true,
+    "parentTypes": [
+      "crt.TabPanel"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.TabContainer." },
+      "caption": { "type": "string", "description": "Tab header text. Use #ResourceString(key)# for custom captions." },
+      "items": { "type": "array", "description": "Child view elements rendered inside the tab body." },
+      "iconPosition": { "type": "string", "default": "only-text", "values": ["only-text", "left-icon", "right-icon", "only-icon"], "description": "Header layout for icon and caption." },
+      "icon": { "type": "string", "description": "Optional tab icon name." },
+      "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." }
+    },
+    "typicalChildren": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.ExpansionPanel"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "UsrDetailsTab",
+      "values": {
+        "type": "crt.TabContainer",
+        "caption": "#ResourceString(UsrDetailsTab_caption)#",
+        "items": [],
+        "iconPosition": "only-text",
+        "visible": true
+      },
+      "parentName": "Tabs",
+      "propertyName": "items",
+      "index": 1
+    }
+  },
+  {
+    "componentType": "crt.GridContainer",
+    "category": "containers",
+    "description": "Grid-based layout container with explicit rows, columns, gap, and child layoutConfig placement.",
+    "container": true,
+    "parentTypes": [
+      "crt.TabContainer",
+      "crt.FlexContainer",
+      "crt.ExpansionPanel"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.GridContainer." },
+      "items": { "type": "array", "description": "Child items placed by layoutConfig coordinates." },
+      "rows": { "type": "string|array", "description": "CSS grid row template definition." },
+      "columns": { "type": "array", "description": "CSS grid column template definition." },
+      "gap": { "type": "object", "description": "Row and column gap definition." },
+      "padding": { "type": "object", "description": "Inner padding values." },
+      "alignItems": { "type": "string", "default": "stretch", "values": ["stretch", "start", "center", "end"], "description": "Cross-axis alignment for child items." },
+      "fitContent": { "type": "boolean", "default": true, "description": "Shrinks the container height to its content when true." },
+      "stretch": { "type": "boolean", "default": false, "description": "Stretches the container to available space when true." },
+      "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." }
+    },
+    "typicalChildren": [
+      "crt.Input",
+      "crt.NumberInput",
+      "crt.ComboBox",
+      "crt.Button",
+      "crt.FlexContainer"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "MainGrid",
+      "values": {
+        "type": "crt.GridContainer",
+        "items": [],
+        "rows": "minmax(32px, max-content)",
+        "columns": ["minmax(32px, 1fr)", "minmax(32px, 1fr)"],
+        "gap": { "columnGap": "large", "rowGap": "none" },
+        "alignItems": "stretch",
+        "fitContent": true,
+        "visible": true
+      },
+      "parentName": "UsrDetailsTab",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.FlexContainer",
+    "category": "containers",
+    "description": "Flexbox layout container for vertical or horizontal grouping of child elements.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.ExpansionPanel",
+      "crt.TabContainer",
+      "crt.HeaderContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.FlexContainer." },
+      "items": { "type": "array", "description": "Ordered child elements." },
+      "direction": { "type": "string", "default": "column", "values": ["row", "column"], "description": "Flex axis direction." },
+      "justifyContent": { "type": "string", "default": "start", "values": ["start", "center", "end", "space-between"], "description": "Main-axis alignment." },
+      "alignItems": { "type": "string", "default": "stretch", "values": ["stretch", "start", "center", "end"], "description": "Cross-axis alignment." },
+      "gap": { "type": "string|number", "default": "none", "description": "Space between child items." },
+      "wrap": { "type": "string", "default": "nowrap", "values": ["nowrap", "wrap"], "description": "Wrap behavior for row layouts." },
+      "padding": { "type": "object", "description": "Inner padding values." },
+      "fitContent": { "type": "boolean", "default": true, "description": "Shrinks the container to its content when true." },
+      "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." }
+    },
+    "typicalChildren": [
+      "crt.Label",
+      "crt.Input",
+      "crt.Button",
+      "crt.GridContainer"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "SummaryContainer",
+      "values": {
+        "type": "crt.FlexContainer",
+        "direction": "column",
+        "items": [],
+        "alignItems": "stretch",
+        "justifyContent": "start",
+        "gap": "none",
+        "wrap": "nowrap",
+        "fitContent": true,
+        "visible": true
+      },
+      "parentName": "MainGrid",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.HeaderContainer",
+    "category": "containers",
+    "description": "Header layout container commonly used for page title, actions, and compact summary content.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.HeaderContainer." },
+      "items": { "type": "array", "description": "Header child elements such as labels, buttons, and badges." },
+      "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." },
+      "padding": { "type": "object", "description": "Inner padding values." },
+      "color": { "type": "string", "default": "transparent", "description": "Background preset or color token." },
+      "borderRadius": { "type": "string", "default": "none", "description": "Border radius preset." },
+      "fitContent": { "type": "boolean", "default": true, "description": "Shrinks the header height to its content when true." }
+    },
+    "typicalChildren": [
+      "crt.Label",
+      "crt.Button",
+      "crt.FlexContainer"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "TitleContainer",
+      "values": {
+        "type": "crt.HeaderContainer",
+        "items": [],
+        "padding": { "top": "medium", "right": "large", "bottom": "medium", "left": "large" },
+        "color": "transparent",
+        "borderRadius": "none",
+        "fitContent": true,
+        "visible": true
+      },
+      "parentName": "MainContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.ExpansionPanel",
+    "category": "containers",
+    "description": "Collapsible container with header, title, tools area, and nested items content.",
+    "container": true,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.ExpansionPanel." },
+      "title": { "type": "string", "description": "Header caption. Use #ResourceString(key)# for custom titles." },
+      "items": { "type": "array", "description": "Content items shown inside the panel." },
+      "tools": { "type": "array", "description": "Header tool items rendered near the toggle icon." },
+      "expanded": { "type": "boolean", "default": true, "description": "Initial expanded state." },
+      "toggleType": { "type": "string", "default": "material", "values": ["material", "default"], "description": "Toggle icon style." },
+      "togglePosition": { "type": "string", "default": "after", "values": ["before", "after"], "description": "Header toggle placement." },
+      "fullWidthHeader": { "type": "boolean", "default": false, "description": "Expands the header to the full panel width when true." },
+      "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." }
+    },
+    "typicalChildren": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.Label"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "PrimaryContactExpansionPanel",
+      "values": {
+        "type": "crt.ExpansionPanel",
+        "tools": [],
+        "items": [],
+        "title": "#ResourceString(PrimaryContactExpansionPanel_title)#",
+        "toggleType": "material",
+        "togglePosition": "after",
+        "expanded": true,
+        "visible": true
+      },
+      "parentName": "MainGrid",
+      "propertyName": "items",
+      "index": 2
+    }
+  },
+  {
+    "componentType": "crt.ToggleContainer",
+    "category": "containers",
+    "description": "Container for switching between tab-like or segmented content blocks while keeping a single active branch visible.",
+    "container": true,
+    "parentTypes": [
+      "crt.FlexContainer",
+      "crt.GridContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.ToggleContainer." },
+      "items": { "type": "array", "description": "Toggle options or child content items." },
+      "selectedValue": { "type": "string", "description": "Currently selected toggle key or binding." },
+      "layout": { "type": "string", "default": "horizontal", "values": ["horizontal", "vertical"], "description": "Orientation of toggle buttons." },
+      "fitContent": { "type": "boolean", "default": true, "description": "Shrinks the container to content when true." },
+      "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." }
+    },
+    "typicalChildren": [
+      "crt.Button",
+      "crt.Label",
+      "crt.FlexContainer"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "DetailsToggle",
+      "values": {
+        "type": "crt.ToggleContainer",
+        "items": [],
+        "selectedValue": "$CurrentView",
+        "layout": "horizontal",
+        "fitContent": true,
+        "visible": true
+      },
+      "parentName": "MainContainer",
+      "propertyName": "items",
+      "index": 1
+    }
+  },
+  {
+    "componentType": "crt.Input",
+    "category": "fields",
+    "description": "Generic text input for short, medium, or multiline text values.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.Input." },
+      "label": { "type": "string", "description": "Visible label or resource binding." },
+      "control": { "type": "string", "description": "Primary bound attribute, usually $PDS_Field." },
+      "placeholder": { "type": "string", "default": "", "description": "Placeholder text." },
+      "tooltip": { "type": "string", "default": "", "description": "Tooltip text." },
+      "readonly": { "type": "boolean|string", "default": false, "description": "Read-only state or binding." },
+      "multiline": { "type": "boolean", "default": false, "description": "Enables textarea-style rendering when true." },
+      "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." },
+      "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "UsrCode",
+      "values": {
+        "type": "crt.Input",
+        "label": "$Resources.Strings.PDS_UsrCode",
+        "control": "$PDS_UsrCode",
+        "placeholder": "",
+        "tooltip": "",
+        "readonly": false,
+        "multiline": false,
+        "labelPosition": "auto"
+      },
+      "parentName": "FieldContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.NumberInput",
+    "category": "fields",
+    "description": "Numeric input for integer, decimal, money, and other number-like values.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.NumberInput." },
+      "label": { "type": "string", "description": "Visible label or resource binding." },
+      "control": { "type": "string", "description": "Primary bound numeric attribute." },
+      "placeholder": { "type": "string", "default": "", "description": "Placeholder text." },
+      "tooltip": { "type": "string", "default": "", "description": "Tooltip text." },
+      "readonly": { "type": "boolean|string", "default": false, "description": "Read-only state or binding." },
+      "format": { "type": "object", "description": "Number formatting, for example decimalPrecision." },
+      "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "UsrAmount",
+      "values": {
+        "type": "crt.NumberInput",
+        "label": "$Resources.Strings.PDS_UsrAmount",
+        "control": "$PDS_UsrAmount",
+        "placeholder": "",
+        "tooltip": "",
+        "readonly": false,
+        "format": { "decimalPrecision": 2 },
+        "labelPosition": "auto"
+      },
+      "parentName": "FieldContainer",
+      "propertyName": "items",
+      "index": 1
+    }
+  },
+  {
+    "componentType": "crt.Checkbox",
+    "category": "fields",
+    "description": "Boolean input rendered as a checkbox.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.Checkbox." },
+      "label": { "type": "string", "description": "Visible label or resource binding." },
+      "control": { "type": "string", "description": "Primary bound boolean attribute." },
+      "disabled": { "type": "boolean|string", "default": false, "description": "Disabled state or binding." },
+      "inversed": { "type": "boolean", "default": false, "description": "Inverts the visual boolean meaning when true." },
+      "ariaLabel": { "type": "string", "default": "", "description": "Accessibility label." },
+      "tooltip": { "type": "string", "default": "", "description": "Tooltip text." },
+      "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "UsrIsActive",
+      "values": {
+        "type": "crt.Checkbox",
+        "label": "$Resources.Strings.PDS_UsrIsActive",
+        "control": "$PDS_UsrIsActive",
+        "disabled": false,
+        "inversed": false,
+        "ariaLabel": "",
+        "tooltip": "",
+        "labelPosition": "auto"
+      },
+      "parentName": "FieldContainer",
+      "propertyName": "items",
+      "index": 2
+    }
+  },
+  {
+    "componentType": "crt.DateTimePicker",
+    "category": "fields",
+    "description": "Date, time, or datetime picker bound to a page attribute.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.DateTimePicker." },
+      "label": { "type": "string", "description": "Visible label or resource binding." },
+      "control": { "type": "string", "description": "Primary bound date attribute." },
+      "pickerType": { "type": "string", "values": ["date", "time", "datetime"], "description": "Picker mode matching the real field kind." },
+      "placeholder": { "type": "string", "default": "", "description": "Placeholder text." },
+      "readonly": { "type": "boolean|string", "default": false, "description": "Read-only state or binding." },
+      "tooltip": { "type": "string", "default": "", "description": "Tooltip text." },
+      "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "UsrDueDate",
+      "values": {
+        "type": "crt.DateTimePicker",
+        "label": "$Resources.Strings.PDS_UsrDueDate",
+        "control": "$PDS_UsrDueDate",
+        "pickerType": "date",
+        "placeholder": "",
+        "readonly": false,
+        "tooltip": "",
+        "labelPosition": "auto"
+      },
+      "parentName": "FieldContainer",
+      "propertyName": "items",
+      "index": 3
+    }
+  },
+  {
+    "componentType": "crt.ComboBox",
+    "category": "fields",
+    "description": "Lookup or selection field with optional add-record and list actions.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.ComboBox." },
+      "label": { "type": "string", "description": "Visible label or resource binding." },
+      "control": { "type": "string", "description": "Primary bound lookup attribute." },
+      "ariaLabel": { "type": "string", "default": "", "description": "Accessibility label." },
+      "isAddAllowed": { "type": "boolean", "default": true, "description": "Shows the add-record behavior when supported." },
+      "showValueAsLink": { "type": "boolean", "default": true, "description": "Renders selected lookup values as links when supported." },
+      "controlActions": { "type": "array", "default": [], "description": "Inline actions rendered near the field." },
+      "listActions": { "type": "array", "default": [], "description": "Actions rendered in the dropdown." },
+      "tooltip": { "type": "string", "default": "", "description": "Tooltip text." },
+      "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." }
+    },
+    "typicalChildren": [
+      "crt.ComboboxSearchTextAction"
+    ],
+    "example": {
+      "operation": "insert",
+      "name": "UsrStatus",
+      "values": {
+        "type": "crt.ComboBox",
+        "label": "$Resources.Strings.PDS_UsrStatus",
+        "ariaLabel": "",
+        "isAddAllowed": true,
+        "showValueAsLink": true,
+        "labelPosition": "auto",
+        "controlActions": [],
+        "listActions": [],
+        "tooltip": "",
+        "control": "$PDS_UsrStatus"
+      },
+      "parentName": "FieldContainer",
+      "propertyName": "items",
+      "index": 4
+    }
+  },
+  {
+    "componentType": "crt.RichTextEditor",
+    "category": "fields",
+    "description": "Rich text editor for large formatted text values.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.RichTextEditor." },
+      "label": { "type": "string", "description": "Visible label or resource binding." },
+      "control": { "type": "string", "description": "Primary bound rich text attribute." },
+      "placeholder": { "type": "string", "default": "", "description": "Placeholder text." },
+      "tooltip": { "type": "string", "default": "", "description": "Tooltip text." },
+      "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." },
+      "needHandleSave": { "type": "boolean", "default": true, "description": "Enables save handling for embedded assets." },
+      "filesStorage": { "type": "object", "description": "Optional file storage config for uploads and embeds." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "UsrDescription",
+      "values": {
+        "type": "crt.RichTextEditor",
+        "label": "$Resources.Strings.PDS_UsrDescription",
+        "control": "$PDS_UsrDescription",
+        "placeholder": "",
+        "tooltip": "",
+        "labelPosition": "auto",
+        "needHandleSave": true
+      },
+      "parentName": "FieldContainer",
+      "propertyName": "items",
+      "index": 5
+    }
+  },
+  {
+    "componentType": "crt.PhoneInput",
+    "category": "fields",
+    "description": "Phone-specific text input with frontend preprocessing for phone links.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.PhoneInput." },
+      "label": { "type": "string", "description": "Visible label or resource binding." },
+      "control": { "type": "string", "description": "Primary bound phone attribute." },
+      "placeholder": { "type": "string", "default": "", "description": "Placeholder text." },
+      "tooltip": { "type": "string", "default": "", "description": "Tooltip text." },
+      "needHandleSave": { "type": "boolean", "default": false, "description": "Phone input usually does not need explicit save handling." },
+      "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "UsrPhone",
+      "values": {
+        "type": "crt.PhoneInput",
+        "label": "$Resources.Strings.PDS_UsrPhone",
+        "control": "$PDS_UsrPhone",
+        "placeholder": "",
+        "tooltip": "",
+        "needHandleSave": false,
+        "labelPosition": "auto"
+      },
+      "parentName": "FieldContainer",
+      "propertyName": "items",
+      "index": 6
+    }
+  },
+  {
+    "componentType": "crt.EmailInput",
+    "category": "fields",
+    "description": "Email-specific text input with frontend email validation behavior.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.EmailInput." },
+      "label": { "type": "string", "description": "Visible label or resource binding." },
+      "control": { "type": "string", "description": "Primary bound email attribute." },
+      "placeholder": { "type": "string", "default": "", "description": "Placeholder text." },
+      "tooltip": { "type": "string", "default": "", "description": "Tooltip text." },
+      "needHandleSave": { "type": "boolean", "default": false, "description": "Email input usually does not need explicit save handling." },
+      "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "UsrEmail",
+      "values": {
+        "type": "crt.EmailInput",
+        "label": "$Resources.Strings.PDS_UsrEmail",
+        "control": "$PDS_UsrEmail",
+        "placeholder": "",
+        "tooltip": "",
+        "needHandleSave": false,
+        "labelPosition": "auto"
+      },
+      "parentName": "FieldContainer",
+      "propertyName": "items",
+      "index": 7
+    }
+  },
+  {
+    "componentType": "crt.WebInput",
+    "category": "fields",
+    "description": "URL-aware text input commonly used for web links.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.WebInput." },
+      "label": { "type": "string", "description": "Visible label or resource binding." },
+      "control": { "type": "string", "description": "Primary bound URL attribute." },
+      "placeholder": { "type": "string", "default": "", "description": "Placeholder text." },
+      "tooltip": { "type": "string", "default": "", "description": "Tooltip text." },
+      "needHandleSave": { "type": "boolean", "default": false, "description": "Web input usually does not need explicit save handling." },
+      "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "UsrWebsite",
+      "values": {
+        "type": "crt.WebInput",
+        "label": "$Resources.Strings.PDS_UsrWebsite",
+        "control": "$PDS_UsrWebsite",
+        "placeholder": "",
+        "tooltip": "",
+        "needHandleSave": false,
+        "labelPosition": "auto"
+      },
+      "parentName": "FieldContainer",
+      "propertyName": "items",
+      "index": 8
+    }
+  },
+  {
+    "componentType": "crt.ColorPicker",
+    "category": "fields",
+    "description": "Color picker for hex or palette-based color selection.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.ColorPicker." },
+      "label": { "type": "string", "description": "Visible label or resource binding." },
+      "control": { "type": "string", "description": "Primary bound color attribute." },
+      "pickerMode": { "type": "string", "default": "extended", "values": ["basic", "extended"], "description": "Color picker UI mode." },
+      "colors": { "type": "array", "description": "Optional custom palette." },
+      "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "UsrAccentColor",
+      "values": {
+        "type": "crt.ColorPicker",
+        "label": "$Resources.Strings.PDS_UsrAccentColor",
+        "control": "$PDS_UsrAccentColor",
+        "pickerMode": "extended",
+        "labelPosition": "auto"
+      },
+      "parentName": "FieldContainer",
+      "propertyName": "items",
+      "index": 9
+    }
+  },
+  {
+    "componentType": "crt.ImageInput",
+    "category": "fields",
+    "description": "Image uploader and preview control. Binds through the value property, not control.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.ImageInput." },
+      "label": { "type": "string", "description": "Visible label or resource binding." },
+      "value": { "type": "string", "description": "Primary bound image attribute." },
+      "readonly": { "type": "boolean|string", "default": false, "description": "Read-only state or binding." },
+      "placeholder": { "type": "string", "default": "", "description": "Placeholder text." },
+      "size": { "type": "string", "default": "large", "values": ["small", "medium", "large"], "description": "Preview size preset." },
+      "borderRadius": { "type": "string", "default": "medium", "description": "Preview border radius preset." },
+      "positioning": { "type": "string", "default": "cover", "values": ["cover", "contain"], "description": "Image fit mode." },
+      "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "UsrPhoto",
+      "values": {
+        "type": "crt.ImageInput",
+        "label": "$Resources.Strings.PDS_UsrPhoto",
+        "value": "$PDS_UsrPhoto",
+        "readonly": false,
+        "placeholder": "",
+        "size": "large",
+        "borderRadius": "medium",
+        "positioning": "cover",
+        "labelPosition": "auto"
+      },
+      "parentName": "FieldContainer",
+      "propertyName": "items",
+      "index": 10
+    }
+  },
+  {
+    "componentType": "crt.FileInput",
+    "category": "fields",
+    "description": "File picker and uploader for binary attachments.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.FileInput." },
+      "label": { "type": "string", "description": "Visible label or resource binding." },
+      "control": { "type": "string", "description": "Primary bound file attribute." },
+      "accept": { "type": "string", "description": "Accepted MIME types or file extensions." },
+      "maxFileSize": { "type": "number", "description": "Maximum file size in bytes." },
+      "tooltip": { "type": "string", "default": "", "description": "Tooltip text." },
+      "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "UsrAttachment",
+      "values": {
+        "type": "crt.FileInput",
+        "label": "$Resources.Strings.PDS_UsrAttachment",
+        "control": "$PDS_UsrAttachment",
+        "accept": ".pdf,.docx",
+        "labelPosition": "auto"
+      },
+      "parentName": "FieldContainer",
+      "propertyName": "items",
+      "index": 11
+    }
+  },
+  {
+    "componentType": "crt.EncryptedInput",
+    "category": "fields",
+    "description": "Masked secure input for secrets and encrypted values.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.EncryptedInput." },
+      "label": { "type": "string", "description": "Visible label or resource binding." },
+      "control": { "type": "string", "description": "Primary bound encrypted attribute." },
+      "state": { "type": "string", "values": ["masked", "unmasked"], "description": "Current masking state." },
+      "unmaskingDisabled": { "type": "boolean", "default": false, "description": "Disables unmasking when true." },
+      "toggleMaskValue": { "type": "boolean", "default": true, "description": "Allows toggling the mask state." },
+      "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "UsrApiKey",
+      "values": {
+        "type": "crt.EncryptedInput",
+        "label": "$Resources.Strings.PDS_UsrApiKey",
+        "control": "$PDS_UsrApiKey",
+        "state": "masked",
+        "unmaskingDisabled": false,
+        "toggleMaskValue": true,
+        "labelPosition": "auto"
+      },
+      "parentName": "FieldContainer",
+      "propertyName": "items",
+      "index": 12
+    }
+  },
+  {
+    "componentType": "crt.Slider",
+    "category": "fields",
+    "description": "Slider control for bounded numeric values.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.Slider." },
+      "label": { "type": "string", "description": "Visible label or resource binding." },
+      "control": { "type": "string", "description": "Primary bound numeric attribute." },
+      "minValue": { "type": "number", "description": "Lower bound of the slider." },
+      "maxValue": { "type": "number", "description": "Upper bound of the slider." },
+      "step": { "type": "number", "description": "Step increment between allowed values." },
+      "color": { "type": "string", "description": "Slider accent color or token." },
+      "labelPosition": { "type": "string", "default": "auto", "values": ["auto", "hidden"], "description": "Label placement mode." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "UsrScore",
+      "values": {
+        "type": "crt.Slider",
+        "label": "$Resources.Strings.PDS_UsrScore",
+        "control": "$PDS_UsrScore",
+        "minValue": 0,
+        "maxValue": 100,
+        "step": 5,
+        "labelPosition": "auto"
+      },
+      "parentName": "FieldContainer",
+      "propertyName": "items",
+      "index": 13
+    }
+  },
+  {
+    "componentType": "crt.Button",
+    "category": "interactive",
+    "description": "Clickable action element for requests, navigation, menus, and page commands.",
+    "container": false,
+    "parentTypes": [
+      "crt.FlexContainer",
+      "crt.GridContainer",
+      "crt.HeaderContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.Button." },
+      "caption": { "type": "string", "description": "Button text. Use #ResourceString(key)# for custom captions." },
+      "color": { "type": "string", "default": "default", "values": ["default", "primary", "accent", "warn", "outline"], "description": "Button color preset." },
+      "size": { "type": "string", "default": "large", "values": ["small", "medium", "large", "extra-large"], "description": "Button size preset." },
+      "iconPosition": { "type": "string", "default": "only-text", "values": ["only-text", "left-icon", "right-icon", "only-icon"], "description": "Icon placement mode." },
+      "icon": { "type": "string", "description": "Optional icon name." },
+      "clicked": { "type": "object", "description": "Request descriptor triggered on click." },
+      "clickMode": { "type": "string", "default": "default", "values": ["default", "menu"], "description": "Regular click or menu button behavior." },
+      "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "Button_Back",
+      "values": {
+        "type": "crt.Button",
+        "caption": "#ResourceString(Button_Back_caption)#",
+        "color": "default",
+        "disabled": false,
+        "size": "large",
+        "iconPosition": "only-icon",
+        "visible": true,
+        "icon": "back-button-icon",
+        "clicked": { "request": "crt.ClosePageRequest" },
+        "clickMode": "default"
+      },
+      "parentName": "TitleContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.DataGrid",
+    "category": "interactive",
+    "description": "Tabular list component for ListPage records and inline grid actions.",
+    "container": false,
+    "parentTypes": [
+      "crt.GridContainer",
+      "crt.FlexContainer",
+      "crt.TabContainer"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.DataGrid." },
+      "items": { "type": "string", "description": "Bound collection attribute, usually $DataTable_Items or a similar list." },
+      "columns": { "type": "array", "description": "Visible grid column definitions." },
+      "features": { "type": "object", "description": "Grid features such as row selection, toolbar, or edit mode." },
+      "primaryColumnName": { "type": "string", "description": "Primary key column code used by the grid." },
+      "activeRow": { "type": "string", "description": "Optional binding for the selected row." },
+      "fitContent": { "type": "boolean", "default": true, "description": "Shrinks the grid height to visible rows when true." },
+      "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "DataTable",
+      "values": {
+        "type": "crt.DataGrid",
+        "items": "$DataTable_Items",
+        "primaryColumnName": "PDS_Id",
+        "columns": [
+          {
+            "id": "f252f582-0000-0000-0000-000000000001",
+            "code": "PDS_Name",
+            "path": "Name",
+            "caption": "#ResourceString(PDS_Name)#",
+            "dataValueType": 1
+          }
+        ],
+        "features": {
+          "rows": { "selection": false, "toolbar": false },
+          "editable": { "enable": false, "itemsCreation": false }
+        },
+        "fitContent": true,
+        "visible": true
+      },
+      "parentName": "MainContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.ComboboxSearchTextAction",
+    "category": "interactive",
+    "description": "Action shown in a ComboBox dropdown, usually for create-record or custom lookup actions.",
+    "container": false,
+    "parentTypes": [
+      "crt.ComboBox"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.ComboboxSearchTextAction." },
+      "code": { "type": "string", "description": "Stable action code within the dropdown." },
+      "caption": { "type": "string", "description": "Action caption. Use #ResourceString(key)# for custom captions." },
+      "icon": { "type": "string", "description": "Action icon name." },
+      "clicked": { "type": "object", "description": "Request descriptor triggered when the action is selected." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "addRecord_ab12cd3",
+      "values": {
+        "code": "addRecord",
+        "type": "crt.ComboboxSearchTextAction",
+        "icon": "combobox-add-new",
+        "caption": "#ResourceString(addRecord_ab12cd3_caption)#",
+        "clicked": {
+          "request": "crt.CreateRecordFromLookupRequest",
+          "params": {}
+        }
+      },
+      "parentName": "UsrStatus",
+      "propertyName": "listActions",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.Label",
+    "category": "display",
+    "description": "Read-only text label for headings, captions, and inline explanatory copy.",
+    "container": false,
+    "parentTypes": [
+      "crt.FlexContainer",
+      "crt.GridContainer",
+      "crt.HeaderContainer",
+      "crt.ExpansionPanel"
+    ],
+    "properties": {
+      "type": { "type": "string", "required": true, "description": "Must be crt.Label." },
+      "caption": { "type": "string", "description": "Label text or template string." },
+      "labelType": { "type": "string", "default": "body-large", "description": "Typography preset." },
+      "labelThickness": { "type": "string", "default": "default", "description": "Font weight preset." },
+      "labelEllipsis": { "type": "boolean", "default": false, "description": "Truncates overflowing text when true." },
+      "labelColor": { "type": "string", "description": "Text color token or explicit color." },
+      "labelTextAlign": { "type": "string", "default": "start", "values": ["start", "center", "end"], "description": "Text alignment." },
+      "headingLevel": { "type": "string", "description": "Semantic heading level or label marker." },
+      "visible": { "type": "boolean|string", "default": true, "description": "Visibility flag or binding expression." }
+    },
+    "typicalChildren": [],
+    "example": {
+      "operation": "insert",
+      "name": "Label_ProductsOffered",
+      "values": {
+        "type": "crt.Label",
+        "caption": "#MacrosTemplateString(#ResourceString(Label_ProductsOffered_caption)#)#",
+        "labelType": "body-large",
+        "labelThickness": "default",
+        "labelEllipsis": false,
+        "labelColor": "#0D2E4E",
+        "labelBackgroundColor": "transparent",
+        "labelTextAlign": "start",
+        "headingLevel": "label",
+        "visible": true
+      },
+      "parentName": "SummaryContainer",
+      "propertyName": "items",
+      "index": 0
+    }
+  }
+]

@@ -18,6 +18,7 @@ DESCRIPTION
     - entity          Create and update entity schemas (DB-first)
     - schema-sync     Batch entity operations in a single call
     - page            Get and update Freedom UI page schemas
+    - component-info  Inspect curated Freedom UI component contracts
     - page-sync       Batch page operations in a single call
     - data-binding    Manage data bindings and seed data
 
@@ -35,6 +36,9 @@ EXAMPLES
     CLIO_CMD="clio" python3 scripts/mcp_client.py application-get-list '{"environment-name":"local"}'
         Call an MCP tool via the Python stdio client.
 
+    CLIO_CMD="clio" python3 scripts/mcp_client.py component-info '{"component-type":"crt.TabContainer"}'
+        Inspect a Freedom UI component contract from the shipped local registry.
+
 PREREQUISITES
     - clio version 8.0.2.35 or higher
     - At least one registered clio environment (clio reg-web-app)
@@ -43,6 +47,7 @@ PREREQUISITES
 NOTES
     - The server uses stdio transport (stdin/stdout), not HTTP
     - Environment-sensitive tools require either an "environment-name" or explicit connection args such as "uri", "login", and "password"
+    - "component-info" is local and read-only, so it does not require environment or connection args
     - Boolean parameters must be JSON booleans (true/false), not strings
     - Entity tools work DB-first: schemas are created directly in PostgreSQL
 
