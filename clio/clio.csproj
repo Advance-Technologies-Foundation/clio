@@ -82,6 +82,10 @@
 		<Content Include="help\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
+
+		<Content Include="Command\McpServer\Data\**">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
 		
 	</ItemGroup>
 
@@ -143,6 +147,7 @@
 		<PackageReference Include="Ignore" />
 		<PackageReference Include="YamlDotNet" />
 		<PackageReference Include="SharpZipLib" />
+		<PackageReference Include="HjsonSharp" />
 		<PackageReference Include="Microsoft.IdentityModel.Tokens" />
 		<PackageReference Include="Newtonsoft.Json" />
 		<PackageReference Include="FluentValidation" />

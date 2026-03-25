@@ -29,6 +29,7 @@ Each entry in the `pages` array must have:
 |---|---|---|
 | `schema-name` | Yes | Freedom UI page schema name |
 | `body` | Yes | Full JavaScript page body |
+| `resources` | No | JSON object string with resource key-value pairs for `#ResourceString(key)#` macros |
 
 ## Example
 
@@ -38,7 +39,8 @@ Each entry in the `pages` array must have:
   "pages": [
     {
       "schema-name": "UsrTodoList_FormPage",
-      "body": "define(\"UsrTodoList_FormPage\", ...full page body...)"
+      "body": "define(\"UsrTodoList_FormPage\", ...full page body...)",
+      "resources": "{\"UsrDetailsTab_caption\":\"Details\"}"
     },
     {
       "schema-name": "UsrTodoList_ListPage",
@@ -60,7 +62,8 @@ Each entry in the `pages` array must have:
       "schema-name": "UsrTodoList_FormPage",
       "success": true,
       "body-length": 3775,
-      "validation": {"markers-ok": true, "js-syntax-ok": true}
+      "validation": {"markers-ok": true, "js-syntax-ok": true},
+      "resources-registered": 1
     },
     {
       "schema-name": "UsrTodoList_ListPage",
@@ -85,6 +88,11 @@ being sent to Creatio:
 Validation failures prevent the page from being saved and are reported in the response.
 This replaces the need for separate dry-run calls.
 
+When a page body contains `#ResourceString(key)#` macros, `page-sync` forwards each page's
+optional `resources` JSON object string to `page-update`. The response returns
+`resources-registered` for each page so callers can see how many child-schema resources
+were added during save.
+
 ## Error Handling
 
 Pages are independent, so **processing continues** even if one page fails. The overall
@@ -92,6 +100,6 @@ Pages are independent, so **processing continues** even if one page fails. The o
 
 ## See Also
 
-- `page-update` — update a single Freedom UI page
-- `page-get` — read a Freedom UI page body
+- `page-update` — update a single Freedom UI page raw body
+- `page-get` — read a Freedom UI page bundle plus raw body
 - `page-list` — list Freedom UI pages

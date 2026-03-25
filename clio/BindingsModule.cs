@@ -176,11 +176,19 @@ public class BindingsModule {
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
 		services.AddTransient<PageUpdateCommand>();
+		services.AddTransient<IPageDesignerHierarchyClient, PageDesignerHierarchyClient>();
+		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
+		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
+		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
+		services.AddTransient<IPageBundleBuilder, PageBundleBuilder>();
+		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		
 		// MCP Tools
 		services.AddTransient<PageListTool>();
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
+		services.AddTransient<PageSyncTool>();
+		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGatePkgCommand>();

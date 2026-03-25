@@ -5,9 +5,11 @@ Clio Command Reference
 
 - [Arguments](#command-arguments)
 - [Help and Examples](#help-and-examples)
+- [AI Integration](#ai-integration)
 - [Package Management](#package-management)
 - [NuGet Packages](#nuget-packages)
 - [Application Management](#application)
+- [Freedom UI Pages](#freedom-ui-pages)
 - [Environment Settings](#environment-settings)
 - [Workspaces](#workspaces)
   - [Package Filtering](#package-filtering-in-workspace)
@@ -138,24 +140,31 @@ clio get-version
 clio i
 ```
 
-### Output Format
-**Default output (all versions):**
-```
-clio:   8.0.1.97
-gate:   2.0.0.38
-dotnet: 8.0.0
-settings file path: C:\Users\username\.clio\appsettings.json
+# AI Integration
+- [Start MCP server](#mcp-server)
+
+## mcp-server
+
+Starts the Model Context Protocol server over stdio for AI agents and editors.
+
+Aliases: `mcp`
+
+```bash
+clio mcp-server
+clio mcp
 ```
 
-**Individual component output:**
-```
-clio:   8.0.1.97
-```
+Use this command when an MCP client needs structured access to clio tools. Environment-sensitive
+tools accept either `environment-name` or explicit connection arguments such as `uri`, `login`,
+and `password`, depending on the tool contract.
 
-### Notes
-- The cliogate version shown is the version included with current clio installation
-- This may differ from the version installed on a specific Creatio instance
-- Use `get-info` command to check the actual cliogate version on an environment
+The MCP server exposes application, page, component-info, entity, schema-sync, page-sync,
+and data-binding tools. The local `component-info` helper does not require an environment.
+
+Notes:
+- Transport is stdio with JSON-RPC 2.0
+- The process stays running until stdin is closed or the process is terminated
+- Environment-sensitive tools accept either `environment-name` or explicit connection arguments such as `uri`, `login`, and `password`
 
 
 # Package Management
@@ -1166,6 +1175,53 @@ clio get-webservice-url <WEB_SERVICE_NAME> -e <ENVIRONMENT_NAME>
 ```
 
 Aliases: `gwu`
+
+
+# Freedom UI Pages
+- [List Freedom UI pages](#page-list)
+- [Read a Freedom UI page bundle](#page-get)
+- [Update a Freedom UI page body](#page-update)
+- [Sync multiple Freedom UI pages](./docs/commands/page-sync.md)
+
+## page-list
+
+Lists Freedom UI page schemas from `SysSchema` and returns a JSON envelope with page names,
+schema UIds, and package names.
+
+```bash
+clio page-list [--package-name <PACKAGE_NAME>] [--search-pattern <TEXT>] [--limit 50] -e <ENVIRONMENT_NAME>
+```
+
+Use `page-list` before `page-get` when you need to discover the schema name first.
+
+## page-get
+
+Reads a Freedom UI page as a merged bundle plus `raw.body`.
+
+```bash
+clio page-get --schema-name <ITEM_NAME> -e <ENVIRONMENT_NAME>
+```
+
+The response includes nested `page`, `bundle`, and `raw` blocks. Inspect `bundle.viewConfig`
+for the effective layout, then use `raw.body` as the editable payload for `page-update`.
+
+## page-update
+
+Validates and saves the raw JavaScript body of a Freedom UI page.
+
+```bash
+clio page-update --schema-name <ITEM_NAME> --body "<RAW_BODY>" [--dry-run true] [--resources '{"UsrTitle":"Title"}'] -e <ENVIRONMENT_NAME>
+```
+
+Recommended workflow:
+
+1. `page-list`
+2. `page-get`
+3. edit `raw.body`
+4. add `--resources` when the edited body introduces or changes `#ResourceString(key)#` macros
+5. `page-update`
+
+`--resources` must be a valid JSON object string. Malformed JSON fails validation.
 
 
 # Environment settings

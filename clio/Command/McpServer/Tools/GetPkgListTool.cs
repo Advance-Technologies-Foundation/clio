@@ -36,15 +36,18 @@ public sealed class GetPkgListTool(
 			Environment = args.EnvironmentName,
 			SearchPattern = args.Filter ?? string.Empty
 		};
-
-		GetPkgListCommand resolvedCommand = ResolveCommand<GetPkgListCommand>(options);
+		GetPkgListCommand resolvedCommand;
+		try {
+			resolvedCommand = ResolveCommand<GetPkgListCommand>(options);
+		} catch (Exception ex) {
+			throw new InvalidOperationException($"Failed to resolve environment: {ex.Message}", ex);
+		}
 		if (!resolvedCommand.TryGetFilteredPackages(options, out IReadOnlyList<PackageInfo> packages,
 				out string errorMessage, out string remediationMessage)) {
 			string message = string.Join(" ", new[] { errorMessage, remediationMessage }
 				.Where(value => !string.IsNullOrWhiteSpace(value)));
 			throw new InvalidOperationException(message);
 		}
-
 		return packages
 			.Select(package => new PackageListItemResult(
 				package.Descriptor.Name,

@@ -18,7 +18,7 @@ public sealed class PageListTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("List Freedom UI pages in Creatio")]
-	public PageListResponse ListPages([Description("Parameters: packageName, searchPattern, limit, environmentName (all optional)")] [Required] PageListArgs args) {
+	public PageListResponse ListPages([Description("Parameters: package-name, search-pattern, limit, environment-name (all optional)")] [Required] PageListArgs args) {
 		PageListOptions options = new() {
 			PackageName = args.PackageName,
 			SearchPattern = args.SearchPattern,
@@ -28,17 +28,36 @@ public sealed class PageListTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		PageListCommand resolvedCommand = ResolveCommand<PageListCommand>(options);
-		resolvedCommand.TryListPages(options, out PageListResponse response);
-		return response;
+		lock (CommandExecutionSyncRoot) {
+			PageListCommand resolvedCommand;
+			try {
+				resolvedCommand = ResolveCommand<PageListCommand>(options);
+			} catch (Exception ex) {
+				return new PageListResponse { Success = false, Error = ex.Message };
+			}
+			resolvedCommand.TryListPages(options, out PageListResponse response);
+			return response;
+		}
 	}
 }
 
 public sealed record PageListArgs(
-	[property: JsonPropertyName("packageName")] string? PackageName,
-	[property: JsonPropertyName("searchPattern")] string? SearchPattern,
-	[property: JsonPropertyName("limit")] int? Limit,
-	[property: JsonPropertyName("environmentName")] string? EnvironmentName,
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Filter by package name")]
+	string? PackageName,
+
+	[property: JsonPropertyName("search-pattern")]
+	[property: Description("Filter by schema name pattern, e.g. 'UsrMyApp*'")]
+	string? SearchPattern,
+
+	[property: JsonPropertyName("limit")]
+	[property: Description("Maximum number of results. Default: 50")]
+	int? Limit,
+
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name, e.g. 'local'")]
+	string? EnvironmentName,
+
 	[property: JsonPropertyName("uri")] string? Uri,
 	[property: JsonPropertyName("login")] string? Login,
 	[property: JsonPropertyName("password")] string? Password
