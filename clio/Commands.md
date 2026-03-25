@@ -4061,40 +4061,66 @@ You may need _**Administrator**_ privileges.
 
 ## build-docker-image
 
-Build a Docker image for a Creatio `.NET 8+` distribution from either a ZIP archive or an extracted application directory.
+Build a Docker image for a Creatio `.NET 8+` distribution from either a ZIP archive, an extracted application directory, or the bundled standalone `base` template.
 
-`.NET Framework` distributions are not supported by this command.
+`.NET Framework` distributions are not supported for templates that package Creatio files.
 
 ```bash
-clio build-docker-image --from <zip-or-folder> --template <name-or-path> [options]
+clio build-docker-image --template <name-or-path> [options]
 ```
 
 ### Options
 
-- `--from <Path>` - Required. Path to a Creatio ZIP archive or extracted application directory
-- `--template <NameOrPath>` - Required. Bundled template name (`dev`, `prod`) or custom template directory path
+- `--from <Path>` - Required except for `base`. Path to a Creatio ZIP archive or extracted application directory. Every non-`base` template currently requires it
+- `--template <NameOrPath>` - Required. Bundled template name (`base`, `dev`, `prod`) or custom template directory path
 - `--output-path <Path>` - Optional. Save the built image to a tar file with `docker save`
-- `--registry <Prefix>` - Optional. Tag and push the image to `<Prefix>/creatio-<template>:<tag>`
-- `--use-docker` - Optional. Force `docker` for this invocation
-- `--use-nerdctl` - Optional. Force `nerdctl` for this invocation; clio adds `--namespace k8s.io`
+- `--vscode-version <Version>` - Optional. Bundled `dev` only. Cache and stage the requested code-server version locally; default `4.112.0`
+- `--base-image <ImageRef>` - Optional. For `base`, the image reference to build. For bundled `dev` and `prod`, the local base image reference clio uses as the parent image. Default `creatio-base:8.0-v1`
+- `--registry <Prefix>` - Optional. Tag and push the image to `<Prefix>/creatio-<template>:<tag>`. Clio runs a registry preflight probe before the expensive image build starts
+- `--use-docker` - Optional. Force `docker` for this invocation and bypass runtime CLI auto-detection
+- `--use-nerdctl` - Optional. Force `nerdctl` for this invocation and bypass runtime CLI auto-detection; clio adds `--namespace k8s.io`
 
 ### Behavior
 
 - Accepts only `.NET 8+` Creatio payloads
 - Rejects `.NET Framework` distributions before Docker execution
-- Uses appsettings.json key `container-image-cli` to choose `docker` or `nerdctl` by default
-- Lets CLI flags override the configured container image CLI per invocation
+- Otherwise probes `docker info` first and `nerdctl info` second to choose the runtime CLI
+- Lets CLI flags override runtime CLI auto-detection per invocation
 - Copies bundled templates to the local clio settings folder under `docker-templates`
+- Excludes `db` directories from extracted payloads and the staged Docker context, and writes `.dockerignore` rules for `db` and `source/db`
 - Creates a temporary Docker build context and cleans it up after execution
+- Normalizes staged `*.sh` files to Unix LF line endings for Linux container compatibility
+- Runs image build with `--pull=false` so locally cached base images are reused instead of forcing a refresh
+- Bundled `dev` stages a cached `code-server-<version>-linux-amd64.tar.gz` archive into the Docker context instead of downloading it during `docker build`
+- Successful bundled `base` builds are cached as local image archives under the clio settings folder, and bundled `dev`/`prod` can restore that cache automatically when the local base image is missing
+- When `nerdctl` is used, clio also syncs the selected local base image into the `buildkit` namespace so BuildKit can resolve `FROM <base-image>` without a registry lookup
+- Local reusable files live under `%LOCALAPPDATA%\\creatio\\clio` on Windows or `~/.local/creatio/clio` on macOS/Linux:
+  `docker-templates` can be regenerated, `docker-assets\\code-server` can be re-downloaded, and `docker-image-cache` can be deleted if you accept losing auto-restore for the cached bundled base image
+- When `--registry` is set, clio probes the registry before building and fails early if `GET /v2/` or upload initiation for the target repository is rejected
+- Registry credentials are not passed through `build-docker-image`; authenticate first with `docker login <registry-host>` or `nerdctl login <registry-host>`
+- Clio now logs explicit `Tagging Docker image for registry push: ...` and `Pushing Docker image to registry: ...` lines before the registry operations start
 - Adds OCI label `org.creatio.database-source` with the original source payload name
 - Can build, save, and push in a single run
 
 ### Bundled templates
 
-- `dev` includes supervisor, SSH, and code-server for development workflows
-- `prod` supervises only the app process and is based on `.NET SDK 8.0` so Creatio can still invoke `dotnet build` inside the container
+- `base` builds the shared base image. Default output image ref is `creatio-base:8.0-v1`
+- `dev` includes supervisor, SSH, and code-server for development workflows and consumes a local base image
+- `prod` supervises only the app process, keeps `.NET SDK 8.0` available, and consumes a local base image
+
+Use `--base-image` to point bundled `dev` or `prod` at a different local base image. `clio` does not auto-build the base image anymore; build it explicitly with `--template base`.
+
+For bundled `dev`, clio caches the requested code-server archive locally and copies it into the Docker build context. Use `--vscode-version` to pick a specific version; the default is `4.112.0`.
 
 ### Examples
+
+```bash
+clio build-docker-image --template base
+```
+
+```bash
+clio build-docker-image --template base --base-image "ghcr.io/acme/creatio-base:dotnet10-vpn"
+```
 
 ```bash
 clio build-docker-image --from "C:\Creatio\8.3.3_StudioNet8.zip" --template dev
@@ -4110,6 +4136,10 @@ clio build-docker-image \
 
 ```bash
 clio build-docker-image --from "/opt/builds/creatio-net8" --template prod --use-nerdctl
+```
+
+```bash
+clio build-docker-image --from "/opt/builds/creatio-net8" --template dev --base-image "ghcr.io/acme/creatio-base:dotnet10-vpn"
 ```
 
 ## deploy-creatio

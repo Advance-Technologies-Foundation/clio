@@ -1,21 +1,5 @@
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS creatio-base
-
-ENV DOTNET_PRINT_TELEMETRY_MESSAGE=false \
-    DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      libgdiplus \
-      libc6-dev \
-      gss-ntlmssp \
-      supervisor && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /var/cache/apt/* && \
-    sed -i 's/openssl_conf/#openssl_conf/g' /etc/ssl/openssl.cnf && \
-    mkdir -p /var/log/supervisor
-
-
-FROM creatio-base
+ARG BASE_IMAGE=creatio-base:8.0-v1
+FROM ${BASE_IMAGE}
 
 LABEL org.creatio.capability.ssh="false" \
       org.creatio.capability.code-server="false"

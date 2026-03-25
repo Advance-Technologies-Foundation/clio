@@ -1057,6 +1057,34 @@ Discovery: Several important Freedom UI contracts were missing from the shipped 
 Files: clio/Command/McpServer/Data/ComponentRegistry.json, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.mcp.e2e/ComponentInfoToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Future page-editing flows can inspect real frontend-derived component slots and action contracts directly through MCP, and the added tests guard both catalog search semantics and nested menu detail lookups.
 
+## 2026-03-25 11:35 – Normalize Docker template shell scripts in build context
+Context: User reported that `build-docker-image` produced Linux images whose `/entrypoint.sh` had CRLF endings, causing Kubernetes containers to fail with `exec /entrypoint.sh: no such file or directory`.
+Decision: Normalized staged `*.sh` files to Unix LF inside `BuildDockerImageService.CreateBuildContext()` so Windows checkouts and custom templates still produce runnable Linux container entrypoints, and added a regression test that inspects the staged `entrypoint.sh` bytes during the `docker build` call.
+Discovery: The command has no existing MCP tool/prompt/resource surface to update for this fix, and focused `dotnet test` runs on this machine must override `BaseOutputPath`/`BaseIntermediateOutputPath` because a running local `clio` process locks the default `bin/Debug/net8.0` outputs.
+Files: clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future Docker image builds from Windows environments keep shell entrypoints executable under Linux/Kubernetes, and the isolated test-output workaround avoids false negatives from local binary locks.
+
+## 2026-03-25 12:05 – Exclude db payloads and avoid forced base-image refresh
+Context: User asked `build-docker-image` to keep `db` folders out of Docker images and to stop failing when registry DNS is unavailable but the base image is already cached locally.
+Decision: Removed `db` directories from extracted ZIP payloads and from the staged Docker context, generated `.dockerignore` entries for `db` and `source/db`, and changed the build invocation to pass `--pull=false` instead of relying on Dockerfile changes.
+Discovery: Docker’s official CLI reference documents `--pull` as “Always attempt to pull all referenced images”, so the correct fix is in the build command rather than the Dockerfile; focused tests now run cleanly after the user stopped the local `clio` process, though the isolated output-path override remains a safe fallback.
+Files: clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future ZIP-based image builds no longer carry database backups into container layers, and offline or flaky-network builds can reuse cached `mcr.microsoft.com/dotnet/sdk:8.0` images without forcing a metadata refresh.
+
+## 2026-03-25 12:30 – Introduce reusable bundled creatio-base image
+Context: User asked bundled `dev` and `prod` Docker templates to share a rarely rebuilt intermediate base image and requested explicit logging when clio has to build that base.
+Decision: Added a bundled `base` Docker template, changed bundled `dev` and `prod` to `FROM creatio-base:8.0-v1`, and updated `BuildDockerImageService` to inspect that local image before bundled builds, reuse it when present, or build it with a clear log message when missing.
+Discovery: The correct “build if missing” behavior belongs in clio rather than Dockerfile syntax; most existing service tests are simpler as custom-template flows, while two dedicated tests now cover base-image reuse and missing-base bootstrap for bundled templates.
+Files: clio/tpl/docker-templates/base/Dockerfile, clio/tpl/docker-templates/dev/Dockerfile, clio/tpl/docker-templates/prod/Dockerfile, clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Repeated bundled Docker builds now avoid re-running the shared apt/.NET base layer unless `creatio-base:8.0-v1` is absent, reducing rebuild cost and making the base-image lifecycle explicit in clio logs.
+
+## 2026-03-25 12:55 – Cache bundled code-server archive outside docker build
+Context: User asked to remove the bundled `dev` template’s repeated `curl` download of code-server and suggested an optional `--vscode-version` argument so clio can fetch and cache specific versions once.
+Decision: Added `--vscode-version` to `build-docker-image`, introduced `CodeServerArchiveCache` backed by `HttpClient` and the clio settings directory, changed the bundled `dev` Dockerfile to install `code-server.tar.gz` from the Docker context, and updated `BuildDockerImageService` to cache and stage that tarball only for bundled `dev` builds.
+Discovery: The best version-agnostic Dockerfile install path is to extract the staged archive and symlink the latest `code-server-*-linux-amd64/bin/code-server` directory rather than hardcoding the version into the Dockerfile; focused build-image tests remained sufficient after substituting the new cache service in `BuildDockerImageServiceTests`.
+Files: clio/Common/CodeServerArchiveCache.cs, clio/BindingsModule.cs, clio/Command/BuildDockerImageCommand.cs, clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/tpl/docker-templates/dev/Dockerfile, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Bundled `dev` image builds no longer hit GitHub during `docker build`, repeated runs reuse a local cache by version, and callers can opt into a different cached code-server version without editing the Dockerfile.
+
 ## 2026-03-24 22:20 – Fix PR 480 review comments on MCP mode and page-update resources
 Context: User asked to validate PR `#480` review comments, fix confirmed issues, push the branch, and respond in GitHub review threads.
 Decision: Confirmed both unresolved review findings, restricted MCP mode detection to the invoked verb instead of any argument value, made `page-update` reject malformed `--resources` payloads during validation, and aligned `page-update` docs plus MCP page prompt with the new behavior.
@@ -1125,3 +1153,84 @@ Decision: Used frontend `@CrtViewElement`, `contentSlots`, collection-property u
 Discovery: Several important Freedom UI contracts were missing from the shipped registry even though the frontend exposes them clearly, including `crt.Calendar`, `crt.Gallery`, `crt.Chat`, `crt.Conversation`, `crt.Feed`, `crt.Summaries`, `crt.FilePreview`, and nested menu contracts like `crt.MenuItem`, `crt.MenuLabel`, and `crt.MenuDivider`; local MCP E2E execution is currently blocked here because `clio.mcp.e2e` targets `net10.0` while the installed SDK is `8.0.124`.
 Files: clio/Command/McpServer/Data/ComponentRegistry.json, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.mcp.e2e/ComponentInfoToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Future page-editing flows can inspect real frontend-derived component slots and action contracts directly through MCP, and the added tests guard both catalog search semantics and nested menu detail lookups.
+
+## 2026-03-25 13:35 – Make Docker base image flow explicit
+Context: User wanted `build-docker-image` to treat the bundled base image as an explicit first-class target instead of auto-building it behind bundled `dev` and `prod` flows.
+Decision: Added `--base-image`, made `--template base` build a standalone base image without `--from`, changed bundled `dev`/`prod` Dockerfiles to consume `BASE_IMAGE`, and changed `BuildDockerImageService` to require an already available local base image for bundled builds instead of building it implicitly.
+Discovery: The explicit model keeps custom corporate base images flexible, fits future runtime changes like `.NET 10`, and still works with the existing cached code-server staging for bundled `dev`; focused build-image tests remained sufficient after rewriting service coverage around base-template and base-image behavior.
+Files: clio/Command/BuildDockerImageCommand.cs, clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/tpl/docker-templates/base/Dockerfile, clio/tpl/docker-templates/dev/Dockerfile, clio/tpl/docker-templates/prod/Dockerfile, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future teams can build and version base images explicitly, point bundled `dev` and `prod` at custom local base images, and avoid hidden rebuild behavior in clio.
+
+## 2026-03-25 14:05 – Harden explicit Docker base flow after review
+Context: Parallel review of the explicit `build-docker-image` base-image refactor found a registry-tagging edge case, unsanitized code-server version input, misleading base-image inspect errors, and a clean-build issue in the rewritten tests.
+Decision: Added semantic-version validation for cached code-server archives, preserved already qualified base-image references when `--registry` is also passed, surfaced `image inspect` stderr for invalid base refs, rewrote fragile NSubstitute assertions in `BuildDockerImageServiceTests`, and aligned docs/help so `--from` is described as required for every non-`base` template.
+Discovery: The focused tests had passed earlier because the filtered test run did not force a clean compile of the rewritten fixture; `dotnet build clio.tests\clio.tests.csproj --no-restore -v q` caught the invalid assertion patterns immediately.
+Files: clio/Common/CodeServerArchiveCache.cs, clio/Command/BuildDockerImageCommand.cs, clio/Command/BuildDockerImageService.cs, clio.tests/Common/CodeServerArchiveCacheTests.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future base-image and cached code-server changes now fail with clearer diagnostics, avoid invalid registry retagging, reject unsafe version strings before touching the filesystem, and keep the main Docker-image tests stable under clean builds.
+
+## 2026-03-25 15:18 – Stop nerdctl bundled builds from resolving local base through registry
+Context: User built the bundled base image successfully, but bundled `prod` still failed under `nerdctl` because BuildKit tried to resolve `FROM ${BASE_IMAGE}` against `docker.io` instead of using the already-present local `creatio-base:8.0-v1` image.
+Decision: Switched bundled `dev` and `prod` templates to `FROM clio-base-image` with Dockerfile syntax v1.4 and changed `BuildDockerImageService` to pass the selected base image through `--build-context clio-base-image=docker-image://...` instead of a `BASE_IMAGE` build arg.
+Discovery: `nerdctl image inspect` succeeding is not enough to guarantee `nerdctl build` will treat `FROM <tag>` as a local source; the named `docker-image://` build context makes the local image source explicit and avoids the unwanted registry metadata request path.
+Files: clio/Command/BuildDockerImageService.cs, clio/tpl/docker-templates/dev/Dockerfile, clio/tpl/docker-templates/prod/Dockerfile, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/Command/BuildDockerImageCommand.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future bundled `dev` and `prod` builds should reuse a locally built base image under both Docker and nerdctl without failing on offline DNS/registry lookups for the bundled base tag.
+
+## 2026-03-25 15:43 – Make bundled docker builds offline-safe under nerdctl
+Context: User asked for an end-to-end self-check after bundled ase and ZIP-based prod builds kept failing under Rancher Desktop 
+erdctl because BuildKit still tried registry lookups for local images.
+Decision: Removed the named docker-image:// base-image handoff for bundled templates, restored normal ARG BASE_IMAGE Dockerfiles for dev and prod, and taught BuildDockerImageService to materialize bundled base sources as exported rootfs tarballs (ase-rootfs.tar) when the selected container CLI is 
+erdctl.
+Discovery: Under this Windows/Rancher Desktop setup, 
+erdctl build still resolves local tags and docker-image:// named contexts through registry metadata paths, but FROM scratch plus ADD <exported-rootfs>.tar / is fully local and works for both the bundled SDK base image and the reusable creatio-base image. The exact sequential self-check succeeded with clio-dev build-docker-image --template base --use-nerdctl and then clio-dev build-docker-image --template prod --from F:\CreatioBuilds\8.3.4\8.3.4.1971_StudioNet8_Softkey_PostgreSQL_ENU.zip.
+Files: clio/Command/BuildDockerImageService.cs, clio/tpl/docker-templates/base/Dockerfile, clio/tpl/docker-templates/dev/Dockerfile, clio/tpl/docker-templates/prod/Dockerfile, clio.tests/Command/BuildDockerImageServiceTests.cs, .codex/workspace-diary.md
+Impact: Future bundled base/dev/prod builds can reuse cached local images under 
+erdctl without DNS access, and debugging this path no longer depends on BuildKit resolving custom local tags through a registry.
+
+## 2026-03-25 16:39 – Cache and restore bundled base images across Docker CLIs
+Context: User wanted the base-image strategy to keep working on hosts that use Docker as well as nerdctl, and wanted the Docker-image branch to stay operational while improving offline reuse.
+Decision: Added a clio-managed bundled base-image archive cache under the settings folder, made successful --template base builds persist a reusable tar archive, and taught bundled dev/prod to restore that archive automatically when the selected base image tag is missing locally before continuing the build.
+Discovery: The cached archive at C:\Users\k.krylov\AppData\Local\creatio\clio\docker-image-cache\creatio-base_8.0-v1.tar restored correctly during a live prod build after the local creatio-base:8.0-v1 image was deleted, so the recovery strategy now works end to end with the same CLI abstraction used for both Docker and nerdctl.
+Files: clio/Command/BuildDockerImageService.cs, clio/Command/BuildDockerImageCommand.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future bundled image builds can recover from missing local base tags without forcing a rebuild or a network pull, and the same cache/restore strategy now applies to both supported container CLIs.
+
+## 2026-03-25 17:08 – Autodetect Docker CLI at runtime for build-docker-image
+Context: User wanted `build-docker-image` to stop depending on `appsettings.json` for the default container CLI and instead choose Docker or nerdctl from what is actually available at runtime.
+Decision: Changed `BuildDockerImageService` to resolve the CLI in this order: explicit `--use-docker`, explicit `--use-nerdctl`, successful `docker info`, successful `nerdctl info`, otherwise fail with a clear availability error; updated focused tests and command docs to match.
+Discovery: The existing test fixture still stubbed `GetContainerImageCli()` from settings, so nerdctl-specific tests had to switch to explicit `UseNerdctl = true` or direct probe simulations to keep covering the right runtime path.
+Files: clio/Command/BuildDockerImageService.cs, clio/Command/BuildDockerImageCommand.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future image builds now pick the working container runtime from the host state instead of stale config, which reduces setup friction on machines that have either Docker Desktop or Rancher Desktop available.
+
+## 2026-03-25 19:30 – Replace nerdctl rootfs fallback with BuildKit namespace sync
+Context: User rejected the slow and bloated nerdctl workaround that exported the base image rootfs into every bundled prod/dev build context and asked for a proper fix after registry lookups kept failing for local base images.
+Decision: Removed the base-rootfs.tar fallback, restored normal `FROM ${BASE_IMAGE}` Dockerfiles for bundled dev/prod, and taught BuildDockerImageService to mirror required local images into nerdctl's `buildkit` namespace before build; also made temp-directory cleanup warnings non-fatal and updated build-docker-image docs accordingly.
+Discovery: On Rancher Desktop, `nerdctl --namespace k8s.io image inspect` succeeding is not enough for `nerdctl build`; BuildKit resolves local parents only when the image also exists in the `buildkit` namespace. After syncing `mcr.microsoft.com/dotnet/sdk:8.0` and `creatio-base:8.0-v1` there, live `clio.exe build-docker-image --template base --use-nerdctl` and `... --template prod --from F:\CreatioBuilds\8.3.4\8.3.4.1971_StudioNet8_Softkey_PostgreSQL_ENU.zip --use-nerdctl` both succeeded, and the prod build context dropped from the previous ~942 MB tar upload to ~3.22 MB.
+Files: clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future bundled image builds under nerdctl reuse real base layers again, avoid huge context uploads and size inflation, and tolerate temp-directory cleanup locks without turning a successful build into a failed command.
+
+## 2026-03-25 19:53 – Fix Windows code-server cache rename for bundled dev builds
+Context: User reported bundled `dev` builds failing on Windows right after `Downloading code-server v4.112.0 to local cache` with `The process cannot access the file because it is being used by another process.`
+Decision: Changed CodeServerArchiveCache to dispose the temporary destination stream before moving the downloaded archive into its final cache path, and added regression coverage for the download-and-move path.
+Discovery: The previous implementation attempted to `MoveFile(tempArchivePath, archivePath)` while the `CreateFile(tempArchivePath)` stream was still inside the active `using` scope; Windows rejects that rename with a sharing violation. A live `clio.exe build-docker-image --template dev --from F:\CreatioBuilds\8.3.4\8.3.4.1971_StudioNet8_Softkey_PostgreSQL_ENU.zip --use-nerdctl` run now downloads `code-server v4.112.0`, stages it into the build context, and completes successfully.
+Files: clio/Common/CodeServerArchiveCache.cs, clio.tests/Common/CodeServerArchiveCacheTests.cs, .codex/workspace-diary.md
+Impact: Future bundled dev builds on Windows can populate the code-server cache reliably instead of failing on the first download attempt.
+
+## 2026-03-25 20:07 – Document Docker build caches and slow BuildKit context upload
+Context: User asked for explicit documentation of local build caches, which folders are safe to delete, and why the last bundled dev build spent a long time in `#5 [internal] load build context`.
+Decision: Updated the build-docker-image help, markdown docs, and command index to document `%LOCALAPPDATA%\creatio\clio` / `~/.local/creatio/clio`, the roles of `docker-templates`, `docker-assets\code-server`, `docker-image-cache`, and the temp build folders, plus a note that Docker/BuildKit step numbers are separate from clio's own build-flow numbering.
+Discovery: The cached bundled dev code-server archive at `docker-assets\code-server\4.112.0\code-server-4.112.0-linux-amd64.tar.gz` is about 127.7 MB on this machine, and the last successful bundled dev build uploaded about 1.99 GB of build context, so the long `load build context` phase is mostly the Creatio app payload plus the extra code-server archive crossing the Windows-to-WSL BuildKit boundary under Rancher Desktop.
+Files: clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future users can identify which local files are disposable versus reusable cache state, and can distinguish slow BuildKit context uploads from actual Dockerfile execution problems.
+
+## 2026-03-25 21:06 – Add registry push preflight and explicit push logging
+Context: User reported `--registry` builds appearing stuck after the local image was built and wanted early failure when the target registry is unavailable or rejects pushes.
+Decision: Added a registry preflight service that probes `/v2/` and starts a blob upload before the expensive image build, integrated it into `build-docker-image`, and added explicit log lines before image tagging and pushing. Documented that registry credentials are provided through `docker login` or `nerdctl login`, not command flags.
+Discovery: A simple `/v2/` probe is not enough to prove a push will work; starting `POST /v2/<repo>/blobs/uploads/` catches anonymous-read but no-push registries, while `401 Unauthorized` can be turned into a direct login hint before spending time building the image.
+Files: clio/Common/ContainerRegistryPreflightService.cs, clio/Command/BuildDockerImageService.cs, clio/BindingsModule.cs, clio.tests/Common/ContainerRegistryPreflightServiceTests.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future `--registry` builds now fail fast on unreachable or non-writable registries, and users can see clearly when clio transitions from local build work into tag/push operations.
+
+## 2026-03-25 21:59 – Reuse Docker credential helpers during registry push preflight
+Context: A real `clio-dev build-docker-image --template dev --registry registry.krylov.cloud` run failed in preflight even though direct `nerdctl push` to the same Nexus registry succeeded.
+Decision: Added a Docker-config-backed registry credential provider, extended process execution with optional stdin so credential helpers can be queried, and changed the preflight to try anonymous probes first and then retry with locally configured credentials when the registry returns `401`.
+Discovery: On this machine `registry.krylov.cloud` is stored in `%USERPROFILE%\\.docker\\config.json` with `credsStore=wincred`, and `docker-credential-wincred get` returned valid credentials for `nerdctl`; after reusing those credentials the exact `clio-dev ... --template dev --registry registry.krylov.cloud` command completed and the pushed image could be pulled back from the registry with manifest digest `sha256:a8dea71aea19054faf0ccbab3def3e512445bd2f3b15e4002f80dcfd0f68ae77`.
+Files: clio/Common/ProcessExecutor.cs, clio/Common/ContainerRegistryCredentialProvider.cs, clio/Common/ContainerRegistryPreflightService.cs, clio/BindingsModule.cs, clio.tests/Common/ContainerRegistryPreflightServiceTests.cs, .codex/workspace-diary.md
+Impact: Future registry preflights now match the auth behavior of `docker` and `nerdctl`, so saved login credentials no longer cause false negatives before a build starts.
