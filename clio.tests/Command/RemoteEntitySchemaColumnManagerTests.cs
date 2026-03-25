@@ -151,6 +151,104 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Falls back to the column name when add requests an empty title so caption is never persisted as empty.")]
+	public void ModifyColumn_AddsOwnColumn_UsesColumnName_WhenTitleIsEmpty() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrVehicleStatus",
+			Type = "Lookup",
+			Title = string.Empty,
+			ReferenceSchemaName = "Contact"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
+		EntitySchemaDesignerSupport.GetLocalizableValue(addedColumn.Caption).Should().Be("UsrVehicleStatus",
+			because: "empty add titles should fall back to the column code instead of storing an empty caption");
+	}
+
+	[Test]
+	[Description("Falls back to the column name when add requests a whitespace title so caption is never persisted as empty.")]
+	public void ModifyColumn_AddsOwnColumn_UsesColumnName_WhenTitleIsWhitespace() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrVehicleStatus",
+			Type = "Lookup",
+			Title = "   ",
+			ReferenceSchemaName = "Contact"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
+		EntitySchemaDesignerSupport.GetLocalizableValue(addedColumn.Caption).Should().Be("UsrVehicleStatus",
+			because: "whitespace add titles should fall back to the column code instead of storing an empty caption");
+	}
+
+	[Test]
+	[Description("Keeps the existing caption when modify receives an empty title so blank payloads do not clear captions.")]
+	public void ModifyColumn_PreservesCaption_WhenTitleIsEmpty() {
+		// Arrange
+		EntitySchemaColumnDto statusColumn = CreateTextColumn("UsrVehicleStatus", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), statusColumn]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "UsrVehicleStatus",
+			Title = string.Empty
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
+		EntitySchemaDesignerSupport.GetLocalizableValue(savedColumn.Caption).Should().Be("UsrVehicleStatus",
+			because: "empty modify titles should be ignored and should not clear existing captions");
+	}
+
+	[Test]
+	[Description("Trims caption updates when modify receives a title with surrounding spaces.")]
+	public void ModifyColumn_UpdatesCaptionWithTrimmedValue_WhenTitleContainsWhitespacePadding() {
+		// Arrange
+		EntitySchemaColumnDto statusColumn = CreateTextColumn("UsrVehicleStatus", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), statusColumn]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "UsrVehicleStatus",
+			Title = "  Vehicle Status  "
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
+		EntitySchemaDesignerSupport.GetLocalizableValue(savedColumn.Caption).Should().Be("Vehicle Status",
+			because: "modify title updates should trim accidental whitespace from caller payloads");
+	}
+
+	[Test]
 	[Description("Removes an own column, reassigns display column fallback, and clears other schema-level references.")]
 	public void ModifyColumn_RemovesOwnColumn_AndReassignsReferences() {
 		// Arrange
