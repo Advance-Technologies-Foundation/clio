@@ -75,7 +75,7 @@ public sealed class PageSyncTool(
 			PageSyncValidationResult validationResult = null;
 			if (validate) {
 				validationResult = ValidateBody(page.Body);
-				if (!validationResult.MarkersOk || !validationResult.JsSyntaxOk) {
+				if (!validationResult.MarkersOk || !validationResult.JsSyntaxOk || !validationResult.ContentOk) {
 					return new PageSyncPageResult {
 						SchemaName = page.SchemaName,
 						Success = false,
@@ -132,17 +132,32 @@ public sealed class PageSyncTool(
 	private static PageSyncValidationResult ValidateBody(string body) {
 		SchemaValidationResult markerResult = SchemaValidationService.ValidateMarkerIntegrity(body);
 		SchemaValidationResult syntaxResult = SchemaValidationService.ValidateJsSyntax(body);
+		SchemaValidationResult contentResult = markerResult.IsValid
+			? SchemaValidationService.ValidateMarkerContent(body)
+			: new SchemaValidationResult { IsValid = true };
+		SchemaValidationResult bindingResult = contentResult.IsValid
+			? SchemaValidationService.ValidateColumnBindings(body)
+			: new SchemaValidationResult { IsValid = true };
 		var errors = new List<string>();
+		var warnings = new List<string>();
 		if (!markerResult.IsValid) {
 			errors.AddRange(markerResult.Errors);
 		}
 		if (!syntaxResult.IsValid) {
 			errors.AddRange(syntaxResult.Errors);
 		}
+		if (!contentResult.IsValid) {
+			errors.AddRange(contentResult.Errors);
+		}
+		if (!bindingResult.IsValid) {
+			warnings.AddRange(bindingResult.Errors);
+		}
 		return new PageSyncValidationResult {
 			MarkersOk = markerResult.IsValid,
 			JsSyntaxOk = syntaxResult.IsValid,
-			Errors = errors.Count > 0 ? errors : null
+			ContentOk = contentResult.IsValid,
+			Errors = errors.Count > 0 ? errors : null,
+			Warnings = warnings.Count > 0 ? warnings : null
 		};
 	}
 }
@@ -240,7 +255,14 @@ public sealed class PageSyncValidationResult {
 	[JsonPropertyName("js-syntax-ok")]
 	public bool JsSyntaxOk { get; init; }
 
+	[JsonPropertyName("content-ok")]
+	public bool ContentOk { get; init; }
+
 	[JsonPropertyName("errors")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> Errors { get; init; }
+
+	[JsonPropertyName("warnings")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Warnings { get; init; }
 }

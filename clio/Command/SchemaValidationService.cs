@@ -53,6 +53,149 @@ public static class SchemaValidationService
 		return result;
 	}
 
+	private static readonly string[] ArrayMarkers = {
+		"SCHEMA_VIEW_CONFIG_DIFF",
+		"SCHEMA_DIFF",
+		"SCHEMA_VIEW_MODEL_CONFIG_DIFF",
+		"SCHEMA_MODEL_CONFIG_DIFF",
+		"SCHEMA_HANDLERS",
+		"SCHEMA_HANDLERS_CONFIG",
+		"SCHEMA_DEPS"
+	};
+
+	private static readonly string[] ObjectMarkers = {
+		"SCHEMA_VIEW_MODEL_CONFIG",
+		"SCHEMA_MODEL_CONFIG",
+		"SCHEMA_CONVERTERS",
+		"SCHEMA_VALIDATORS"
+	};
+
+	public static SchemaValidationResult ValidateMarkerContent(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			result.IsValid = false;
+			result.Errors.Add("JS body is null or empty.");
+			return result;
+		}
+		foreach (string marker in ArrayMarkers) {
+			if (!PageSchemaSectionReader.TryRead(jsBody, out string content, marker)) {
+				continue;
+			}
+			if (!TryParseHjson(content, marker, result)) {
+				break;
+			}
+		}
+		foreach (string marker in ObjectMarkers) {
+			if (!PageSchemaSectionReader.TryRead(jsBody, out string content, marker)) {
+				continue;
+			}
+			if (!TryParseHjson(content, marker, result)) {
+				break;
+			}
+		}
+		return result;
+	}
+
+	private static bool TryParseHjson(string content, string marker, SchemaValidationResult result) {
+		try {
+			string cleaned = Regex.Replace(content, @",(\s*[\]\}])", "$1");
+			System.Text.Json.JsonDocument.Parse(cleaned);
+			return true;
+		} catch (Exception ex) {
+			result.IsValid = false;
+			result.Errors.Add($"Invalid JSON in {marker}: {ex.Message}");
+			return false;
+		}
+	}
+
+	public static SchemaValidationResult ValidateColumnBindings(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, "SCHEMA_VIEW_CONFIG_DIFF", "SCHEMA_DIFF")) {
+			return result;
+		}
+		var columnCodes = ExtractDataTableColumnCodes(vcdContent);
+		if (columnCodes.Count == 0) {
+			return result;
+		}
+		HashSet<string> boundPaths = new(StringComparer.OrdinalIgnoreCase);
+		if (PageSchemaSectionReader.TryRead(jsBody, out string vmContent, "SCHEMA_VIEW_MODEL_CONFIG_DIFF")) {
+			CollectModelPaths(vmContent, boundPaths);
+		}
+		if (PageSchemaSectionReader.TryRead(jsBody, out string vmContent2, "SCHEMA_VIEW_MODEL_CONFIG")) {
+			CollectModelPaths(vmContent2, boundPaths);
+		}
+		foreach (string code in columnCodes) {
+			string expectedPath = code.Replace("_", ".", StringComparison.Ordinal);
+			if (!boundPaths.Contains(expectedPath)) {
+				result.Errors.Add($"DataTable column '{code}' has no matching binding (expected path '{expectedPath}')");
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static List<string> ExtractDataTableColumnCodes(string vcdContent) {
+		var codes = new List<string>();
+		try {
+			string cleaned = Regex.Replace(vcdContent, @",(\s*[\]\}])", "$1");
+			using var doc = System.Text.Json.JsonDocument.Parse(cleaned);
+			foreach (var item in doc.RootElement.EnumerateArray()) {
+				if (!item.TryGetProperty("name", out var nameEl) || nameEl.GetString() != "DataTable") {
+					continue;
+				}
+				if (!item.TryGetProperty("values", out var values) ||
+				    !values.TryGetProperty("columns", out var columns)) {
+					continue;
+				}
+				foreach (var col in columns.EnumerateArray()) {
+					if (col.TryGetProperty("code", out var codeEl)) {
+						string code = codeEl.GetString();
+						if (!string.IsNullOrEmpty(code) && code.StartsWith("PDS_", StringComparison.Ordinal)) {
+							codes.Add(code);
+						}
+					}
+				}
+			}
+		} catch {
+		}
+		return codes;
+	}
+
+	private static void CollectModelPaths(string markerContent, HashSet<string> paths) {
+		try {
+			string cleaned = Regex.Replace(markerContent, @",(\s*[\]\}])", "$1");
+			CollectPathsRecursive(cleaned, paths);
+		} catch {
+		}
+	}
+
+	private static void CollectPathsRecursive(string json, HashSet<string> paths) {
+		using var doc = System.Text.Json.JsonDocument.Parse(json);
+		CollectPathsFromElement(doc.RootElement, paths);
+	}
+
+	private static void CollectPathsFromElement(System.Text.Json.JsonElement element, HashSet<string> paths) {
+		if (element.ValueKind == System.Text.Json.JsonValueKind.Object) {
+			if (element.TryGetProperty("modelConfig", out var mc) &&
+			    mc.TryGetProperty("path", out var pathEl) &&
+			    pathEl.ValueKind == System.Text.Json.JsonValueKind.String) {
+				paths.Add(pathEl.GetString());
+			}
+			foreach (var prop in element.EnumerateObject()) {
+				CollectPathsFromElement(prop.Value, paths);
+			}
+		} else if (element.ValueKind == System.Text.Json.JsonValueKind.Array) {
+			foreach (var item in element.EnumerateArray()) {
+				CollectPathsFromElement(item, paths);
+			}
+		}
+	}
+
 	public static SchemaValidationResult ValidateJsSyntax(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrEmpty(jsBody)) {
