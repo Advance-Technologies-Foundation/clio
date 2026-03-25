@@ -21,6 +21,7 @@ DESCRIPTION
     - Guid
     - Text, ShortText, MediumText, LongText, MaxSizeText
     - Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText
+    - Binary, Image, File (Blob is accepted as an alias for Binary)
     - Integer
     - Float
     - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, Currency0, Currency1, Currency2, Currency3
@@ -80,6 +81,7 @@ NOTES
     - v1 allows mutations for own columns only; inherited columns are read-only
     - remove clears schema-level references to the deleted column and validates required fallbacks locally
     - unspecified modify options are preserved as-is in the saved payload
+    - Binary, Image, and File columns do not support --default-value or --default-value-source Const
     - After save, the schema is reloaded immediately; save is treated as failed if the mutated column cannot be read back
 
 REPORTING BUGS

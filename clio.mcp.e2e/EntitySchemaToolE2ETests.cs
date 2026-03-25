@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.NUnit;
@@ -24,6 +25,7 @@ namespace Clio.Mcp.E2E;
 public sealed class EntitySchemaToolE2ETests {
 	private const string CreateToolName = CreateEntitySchemaTool.CreateEntitySchemaToolName;
 	private const string CreateLookupToolName = CreateLookupTool.CreateLookupToolName;
+	private const string UpdateToolName = UpdateEntitySchemaTool.UpdateEntitySchemaToolName;
 	private const string ReadSchemaToolName = GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName;
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
 	private const string ModifyToolName = ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName;
@@ -44,8 +46,10 @@ public sealed class EntitySchemaToolE2ETests {
 		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
 		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
 		CommandExecutionEnvelope addResult = await ActAddEntitySchemaColumnAsync(arrangeContext);
+		EntitySchemaPropertiesInfo schemaPropertiesAfterAdd = await ActGetSchemaPropertiesAsync(arrangeContext);
 		EntitySchemaColumnPropertiesInfo addedColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext);
 		CommandExecutionEnvelope modifyResult = await ActModifyEntitySchemaColumnAsync(arrangeContext);
+		EntitySchemaPropertiesInfo schemaPropertiesAfterModify = await ActGetSchemaPropertiesAsync(arrangeContext);
 		EntitySchemaColumnPropertiesInfo modifiedColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext);
 		CommandExecutionEnvelope removeResult = await ActRemoveEntitySchemaColumnAsync(arrangeContext);
 		EntitySchemaPropertiesInfo schemaPropertiesAfterRemove = await ActGetSchemaPropertiesAsync(arrangeContext);
@@ -60,11 +64,13 @@ public sealed class EntitySchemaToolE2ETests {
 			"modify-entity-schema-column should succeed when adding a valid own text-like column");
 		AssertIncludesInfoMessage(addResult,
 			"successful add mutation should emit progress output");
+		AssertSchemaPropertiesAfterAdd(schemaPropertiesAfterAdd, arrangeContext);
 		AssertAddedColumnProperties(addedColumnProperties, arrangeContext);
 		AssertCommandSucceeded(modifyResult,
 			"modify-entity-schema-column should succeed when updating the previously added own column");
 		AssertIncludesInfoMessage(modifyResult,
 			"successful modify mutation should emit progress output");
+		AssertSchemaPropertiesAfterModify(schemaPropertiesAfterModify, arrangeContext);
 		AssertModifiedColumnProperties(modifiedColumnProperties, arrangeContext);
 		AssertCommandSucceeded(removeResult,
 			"modify-entity-schema-column should succeed when removing the previously added own column");
@@ -96,6 +102,48 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the created lookup should be readable through the structured schema properties tool");
 		schemaProperties.ParentSchemaName.Should().Be("BaseLookup",
 			because: "create-lookup should force BaseLookup inheritance");
+		schemaProperties.Columns.Should().NotBeNullOrEmpty(
+			because: "lookup schema readback should expose nested columns for structured inspection");
+		schemaProperties.Columns!.Should().Contain(column => column.Source == "inherited",
+			because: "BaseLookup-derived schemas should expose inherited base columns in the schema read model");
+	}
+
+	[Test]
+	[Description("Adds Binary, Image, and File columns through update-entity-schema and verifies friendly type names through structured readback.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(UpdateToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("Update entity schema MCP tool adds binary-like columns with friendly readback types")]
+	[AllureDescription("Creates a sandbox entity schema, applies a batch update that adds Binary, Image, and File columns through the real MCP server, and verifies both schema and column readback use normalized friendly type names.")]
+	public async Task UpdateEntitySchema_Should_Add_BinaryLike_Columns_And_Read_Back_Friendly_Types() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string binaryColumnName = "Payload";
+		const string imageColumnName = "Preview";
+		const string fileColumnName = "Document";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope updateResult = await ActBatchAddBinaryLikeColumnsAsync(arrangeContext, binaryColumnName, imageColumnName, fileColumnName);
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+		EntitySchemaColumnPropertiesInfo binaryColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext, binaryColumnName);
+		EntitySchemaColumnPropertiesInfo imageColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext, imageColumnName);
+		EntitySchemaColumnPropertiesInfo fileColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext, fileColumnName);
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"the schema must exist before the batch update can add binary-like columns");
+		AssertIncludesInfoMessage(createResult,
+			"successful schema creation should emit progress output before the batch update");
+		AssertCommandSucceeded(updateResult,
+			"update-entity-schema should succeed when adding supported binary-like column types");
+		AssertIncludesInfoMessage(updateResult,
+			"successful batch updates should emit progress output");
+		AssertSchemaPropertiesIncludeBinaryLikeColumns(schemaProperties, binaryColumnName, imageColumnName, fileColumnName);
+		AssertBinaryLikeColumnProperties(binaryColumnProperties, binaryColumnName, "Binary");
+		AssertBinaryLikeColumnProperties(imageColumnProperties, imageColumnName, "Image");
+		AssertBinaryLikeColumnProperties(fileColumnProperties, fileColumnName, "File");
 	}
 
 	[Test]
@@ -358,15 +406,51 @@ public sealed class EntitySchemaToolE2ETests {
 
 	[AllureStep("Act by invoking get-entity-schema-column-properties through MCP")]
 	private static async Task<EntitySchemaColumnPropertiesInfo> ActGetColumnPropertiesAsync(
-		EntitySchemaArrangeContext arrangeContext) {
+		EntitySchemaArrangeContext arrangeContext,
+		string? columnName = null) {
 		CallToolResult callResult = await CallGetColumnPropertiesAsync(
 			arrangeContext.Session,
 			arrangeContext.EnvironmentName,
 			arrangeContext.PackageName,
 			arrangeContext.SchemaName,
-			arrangeContext.AddedColumnName,
+			columnName ?? arrangeContext.AddedColumnName,
 			arrangeContext.CancellationTokenSource.Token);
 		return EntitySchemaStructuredResultParser.Extract<EntitySchemaColumnPropertiesInfo>(callResult);
+	}
+
+	[AllureStep("Act by invoking update-entity-schema through MCP for binary-like columns")]
+	private static async Task<CommandExecutionEnvelope> ActBatchAddBinaryLikeColumnsAsync(
+		EntitySchemaArrangeContext arrangeContext,
+		string binaryColumnName,
+		string imageColumnName,
+		string fileColumnName) {
+		CallToolResult callResult = await CallUpdateEntitySchemaAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName,
+			arrangeContext.CancellationTokenSource.Token,
+			[
+				new Dictionary<string, object?> {
+					["action"] = "add",
+					["column-name"] = binaryColumnName,
+					["type"] = "Binary",
+					["title"] = "Payload"
+				},
+				new Dictionary<string, object?> {
+					["action"] = "add",
+					["column-name"] = imageColumnName,
+					["type"] = "Image",
+					["title"] = "Preview"
+				},
+				new Dictionary<string, object?> {
+					["action"] = "add",
+					["column-name"] = fileColumnName,
+					["type"] = "File",
+					["title"] = "Document"
+				}
+			]);
+		return McpCommandExecutionParser.Extract(callResult);
 	}
 
 	private static async Task<CallToolResult> CallCreateEntitySchemaAsync(
@@ -511,6 +595,30 @@ public sealed class EntitySchemaToolE2ETests {
 			cancellationToken);
 	}
 
+	private static async Task<CallToolResult> CallUpdateEntitySchemaAsync(
+		McpServerSession session,
+		string environmentName,
+		string packageName,
+		string schemaName,
+		CancellationToken cancellationToken,
+		IReadOnlyList<Dictionary<string, object?>> operations) {
+		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
+		tools.Select(tool => tool.Name).Should().Contain(UpdateToolName,
+			because: "the update-entity-schema MCP tool must be advertised before the end-to-end call can be executed");
+
+		return await session.CallToolAsync(
+			UpdateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["schema-name"] = schemaName,
+					["operations"] = operations
+				}
+			},
+			cancellationToken);
+	}
+
 	[AllureStep("Assert command execution succeeded")]
 	private static void AssertCommandSucceeded(CommandExecutionEnvelope execution, string because) {
 		execution.ExitCode.Should().Be(0, because: because);
@@ -534,6 +642,43 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the structured result should preserve the schema title from creation");
 		properties.OwnColumnCount.Should().BeGreaterThan(0,
 			because: "the created schema should contain at least the created text column and generated primary guid column");
+		properties.Columns.Should().NotBeNullOrEmpty(
+			because: "the structured schema readback should expose nested columns for direct verification");
+		properties.Columns!.Should().Contain(column =>
+			column.Name == arrangeContext.InitialColumnName
+			&& column.Source == "own"
+			&& column.Title == "Vehicle name",
+			because: "the created schema should surface the initially created own column in data.columns");
+	}
+
+	[AllureStep("Assert schema properties after add")]
+	private static void AssertSchemaPropertiesAfterAdd(
+		EntitySchemaPropertiesInfo properties,
+		EntitySchemaArrangeContext arrangeContext) {
+		properties.Columns.Should().NotBeNull(
+			because: "schema readback after add should still include nested columns");
+		EntitySchemaPropertyColumnInfo addedColumn = properties.Columns!.Single(column =>
+			column.Name == arrangeContext.AddedColumnName);
+		addedColumn.Source.Should().Be("own",
+			because: "columns added through modify-entity-schema-column should be reported as own");
+		addedColumn.Type.Should().Be("ShortText",
+			because: "the schema readback should preserve the added frontend-compatible column type alias");
+		addedColumn.Indexed.Should().BeTrue(
+			because: "schema readback should include indexed state for added columns");
+	}
+
+	[AllureStep("Assert schema properties after modify")]
+	private static void AssertSchemaPropertiesAfterModify(
+		EntitySchemaPropertiesInfo properties,
+		EntitySchemaArrangeContext arrangeContext) {
+		properties.Columns.Should().NotBeNull(
+			because: "schema readback after modify should still include nested columns");
+		EntitySchemaPropertyColumnInfo modifiedColumn = properties.Columns!.Single(column =>
+			column.Name == arrangeContext.AddedColumnName);
+		modifiedColumn.Title.Should().Be("Vehicle code updated",
+			because: "schema readback should reflect updated column metadata after modify");
+		modifiedColumn.Source.Should().Be("own",
+			because: "the modified column should remain an own column after update");
 	}
 
 	[AllureStep("Assert structured column properties")]
@@ -570,6 +715,35 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "clearing a default should remove the stored value from the structured result");
 	}
 
+	[AllureStep("Assert schema properties include Binary, Image, and File columns")]
+	private static void AssertSchemaPropertiesIncludeBinaryLikeColumns(
+		EntitySchemaPropertiesInfo properties,
+		string binaryColumnName,
+		string imageColumnName,
+		string fileColumnName) {
+		properties.Columns.Should().NotBeNullOrEmpty(
+			because: "schema readback after a batch update should expose nested columns for direct verification");
+		properties.Columns!.Should().Contain(column => column.Name == binaryColumnName && column.Type == "Binary",
+			because: "batch-added Binary columns should be reported with a normalized friendly type name");
+		properties.Columns!.Should().Contain(column => column.Name == imageColumnName && column.Type == "Image",
+			because: "batch-added Image columns should be reported with a normalized friendly type name");
+		properties.Columns!.Should().Contain(column => column.Name == fileColumnName && column.Type == "File",
+			because: "batch-added File columns should be reported with a normalized friendly type name");
+	}
+
+	[AllureStep("Assert structured binary-like column properties")]
+	private static void AssertBinaryLikeColumnProperties(
+		EntitySchemaColumnPropertiesInfo properties,
+		string columnName,
+		string expectedTypeName) {
+		properties.ColumnName.Should().Be(columnName,
+			because: "the structured column readback should identify the requested binary-like column");
+		properties.Source.Should().Be("own",
+			because: "columns added through batch update should be reported as own columns");
+		properties.Type.Should().Be(expectedTypeName,
+			because: "structured column readback should normalize binary-like type names into stable friendly values");
+	}
+
 	[AllureStep("Assert schema properties after remove")]
 	private static void AssertSchemaPropertiesAfterRemove(
 		EntitySchemaPropertiesInfo propertiesBeforeAdd,
@@ -579,11 +753,13 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the schema should remain readable after removing the added column");
 		propertiesAfterRemove.OwnColumnCount.Should().Be(propertiesBeforeAdd.OwnColumnCount,
 			because: "removing the added column should restore the original own column count");
+		propertiesAfterRemove.Columns.Should().NotContain(column => column.Name == arrangeContext.AddedColumnName,
+			because: "removed columns should disappear from the schema readback columns list");
 	}
 
 	[AllureStep("Assert top-level MCP failure is readable")]
 	private static void AssertTopLevelFailure(CallToolResult callResult, string environmentName, string because) {
-		callResult.IsError.Should().BeTrue(because: because);
+		callResult.IsError.Should().NotBeFalse(because: because);
 		string content = JsonSerializer.Serialize(callResult.Content);
 		string structuredContent = JsonSerializer.Serialize(callResult.StructuredContent);
 		$"{content}{Environment.NewLine}{structuredContent}".Should().MatchRegex(

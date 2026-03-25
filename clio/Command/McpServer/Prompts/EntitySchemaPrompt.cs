@@ -39,11 +39,13 @@ public static class EntitySchemaPrompt {
 		 Set `parent-schema-name` only when inheritance or replacement behavior was explicitly requested.
 		 Set `extend-parent` to `true` only when the request is specifically for a replacement schema, and only
 		 together with `parent-schema-name`.
-		 Include `columns` only when the request explicitly describes initial fields. For `Lookup` columns,
+		 Include `columns` only when the request explicitly describes initial fields. Supported column types include
+		 `Binary`, `Image`, and `File`, and `Blob` can be used as an alias for `Binary`. For `Lookup` columns,
 		 provide `reference-schema-name`. Current clio entity-schema tools are the supported ADAC integration
 		 contract, so keep using `create-entity-schema` instead of frontend-only names like `entity.create`.
 		 When the caller needs richer metadata, each `columns` item can also include `required`,
 		 `default-value-source`, `default-value`, and frontend-style type aliases such as `ShortText` or `Date`.
+		 Do not send `default-value` or `default-value-source=Const` for `Binary`, `Image`, or `File` columns.
 		 Current parent request: `{parentSchemaName ?? "<not provided>"}`. Current replacement request:
 		 `{extendParent}`.
 		 """;
@@ -97,7 +99,9 @@ public static class EntitySchemaPrompt {
 		 Pass `package-name`, `schema-name`, and `environment-name` exactly as provided. Encode all column
 		 changes in the ordered `operations` array. Each operation uses clio-native fields such as `action`,
 		 `column-name`, `type`, `title`, `reference-schema-name`, and `default-value-source`; do not translate
-		 them into frontend `entity.update.operationsJson`.
+		 them into frontend `entity.update.operationsJson`. Supported types include `Binary`, `Image`, and `File`,
+		 and `Blob` can be used as an alias for `Binary`. Do not send `default-value` or
+		 `default-value-source=Const` for `Binary`, `Image`, or `File` operations.
 		 """;
 
 	/// <summary>
@@ -118,7 +122,8 @@ public static class EntitySchemaPrompt {
 		$"""
 		 Use clio mcp server `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` to read structured
 		 properties for entity schema `{schemaName}` in package `{packageName}` from environment
-		 `{environmentName}`.
+		 `{environmentName}`. The result is a schema summary object with a nested `columns` list for
+		 machine-readable column inspection.
 		 Pass `package-name`, `schema-name`, and `environment-name` exactly as provided.
 		 """;
 
@@ -177,6 +182,8 @@ public static class EntitySchemaPrompt {
 		 `remove`, do not pass property-change options. Use this tool for a single-column mutation. For ordered
 		 multi-column updates, prefer `{UpdateEntitySchemaTool.UpdateEntitySchemaToolName}`. The tool accepts
 		 frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time`, plus explicit
-		 `default-value-source` values `Const` or `None`.
+		 `default-value-source` values `Const` or `None`. Supported types include `Binary`, `Image`, and `File`,
+		 and `Blob` can be used as an alias for `Binary`. Do not send `default-value` or
+		 `default-value-source=Const` for `Binary`, `Image`, or `File`.
 		 """;
 }

@@ -47,6 +47,9 @@ clio create-entity-schema [options]
 - `MediumText`
 - `LongText`
 - `MaxSizeText`
+- `Binary`
+- `Image`
+- `File`
 - `Integer`
 - `Float`
 - `Boolean`
@@ -55,7 +58,7 @@ clio create-entity-schema [options]
 - `Time`
 - `Lookup` with required reference schema name
 
-The command also accepts designer-native text and decimal variants such as `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`, `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`, `Currency0`, `Currency1`, `Currency2`, and `Currency3`.
+The command also accepts `Blob` as an alias for `Binary`, plus designer-native text and decimal variants such as `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`, `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`, `Currency0`, `Currency1`, `Currency2`, and `Currency3`.
 
 ## Examples
 
@@ -109,6 +112,7 @@ clio create-entity-schema -e dev --package Custom --name UsrAccount --title "Acc
 - Package resolution relies on the package list API, so `cliogate` must be installed on the target environment.
 - For schemas without a parent, `Id:Guid` is created automatically if no Guid column is supplied.
 - If no primary display column is defined, the first text-like column is used.
+- `Binary`, `Image`, and `File` columns do not support `default-value` or `default-value-source: Const`.
 - The command accepts frontend-style aliases such as `ShortText`, `Float`, `Date`, and `Time`, and maps them to the closest supported designer types.
 - Repeat `--column` for multiple entries; semicolons inside JSON payloads are treated as content, not separators.
 - After `SaveSchema`, the schema is reloaded immediately. The command treats save as failed if the schema cannot be read back.

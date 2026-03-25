@@ -58,7 +58,29 @@ internal class GetEntitySchemaPropertiesCommandTests : BaseCommandTests<GetEntit
 			true,
 			false,
 			false,
-			true));
+			true,
+			[
+				new EntitySchemaPropertyColumnInfo(
+					"Name",
+					System.Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+					"own",
+					"Vehicle name",
+					"Primary vehicle name",
+					"Text",
+					true,
+					true,
+					null),
+				new EntitySchemaPropertyColumnInfo(
+					"CreatedOn",
+					System.Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+					"inherited",
+					"Created on",
+					null,
+					"DateTime",
+					false,
+					false,
+					null)
+			]));
 
 		// Act
 		int result = _command.Execute(options);
@@ -68,6 +90,13 @@ internal class GetEntitySchemaPropertiesCommandTests : BaseCommandTests<GetEntit
 		_columnManager.Received(1).GetSchemaProperties(options);
 		_logger.Received(1).WriteInfo("Entity schema properties");
 		_logger.Received(1).WriteInfo("Parent schema: BaseEntity");
+		_logger.Received(1).WriteInfo("Own columns");
+		_logger.Received(1).WriteInfo("Inherited columns");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains("- Name")
+			&& message.Contains("type: Text")
+			&& message.Contains("required: true")
+			&& message.Contains("description: Primary vehicle name")));
 	}
 
 	[Test]

@@ -54,6 +54,9 @@ clio modify-entity-schema-column [options]
 - `MediumText`
 - `LongText`
 - `MaxSizeText`
+- `Binary`
+- `Image`
+- `File`
 - `Integer`
 - `Float`
 - `Boolean`
@@ -62,7 +65,7 @@ clio modify-entity-schema-column [options]
 - `Time`
 - `Lookup`
 
-The command also accepts designer-native text and decimal variants such as `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`, `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`, `Currency0`, `Currency1`, `Currency2`, and `Currency3`.
+The command also accepts `Blob` as an alias for `Binary`, plus designer-native text and decimal variants such as `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`, `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`, `Currency0`, `Currency1`, `Currency2`, and `Currency3`.
 
 ## Examples
 
@@ -103,6 +106,7 @@ clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicl
 - inherited columns are readable but not mutable in v1.
 - frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time` are accepted and mapped to the closest supported designer types.
 - `--default-value-source None` clears the stored default value; `Const` requires `--default-value`.
+- `Binary`, `Image`, and `File` columns do not support `--default-value` or `--default-value-source Const`.
 - After `SaveSchema`, the schema is reloaded immediately. The command treats save as failed if the mutated column cannot be read back.
 
 ## Related Commands

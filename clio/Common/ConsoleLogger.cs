@@ -23,6 +23,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 	private static readonly Lazy<ILogger> Lazy = new(() => new ConsoleLogger());
 	private readonly ConcurrentQueue<LogMessage> _logQueue = new();
 	private readonly object _scopedSinksLock = new();
+	private readonly object _messageBufferLock = new();
 	private readonly ConsoleColor _defaultConsoleColor = Console.ForegroundColor;
 	private readonly Dictionary<Guid, SharedAppendFileSinkLease> _scopedFileSinks = new();
 	public List<LogMessage> LogMessages { get; private set; } = [];
@@ -58,24 +59,25 @@ public class ConsoleLogger : ILogger, IDisposable{
 	#region Methods: Private
 	
 	private void FlushQueue() {
-		while (_logQueue.TryPeek( out LogMessage _)) {
-			bool isItem = _logQueue.TryDequeue(out LogMessage item);
-			if (!isItem) {
-				continue;
-			}
+		lock (_messageBufferLock) {
+			FlushQueueCore();
+		}
+	}
 
+	private void FlushQueueCore() {
+		while (_logQueue.TryDequeue(out LogMessage item)) {
 			if (PreserveMessages) {
 				LogMessages.Add(item);
 			}
 			Action action = item switch {
-								InfoMessage infoMessage => () => WriteInfoInternal(infoMessage.Value.ToString()),
-								ErrorMessage errorMessage => () => WriteErrorInternal(errorMessage.Value.ToString()),
-								WarningMessage warningMessage => () => WriteWarningInternal(warningMessage.Value.ToString()),
-								UndecoratedMessage noneMessage => () => WriteLineInternal(noneMessage.Value.ToString()),
-								TableMessage tableMessage => () => PrintTableInternal(tableMessage.Value),
-								DebugMessage debugMessage => () => PrintDebugInternal(debugMessage.Value.ToString()),
-								var _ => throw new ArgumentOutOfRangeException()
-							};
+				InfoMessage infoMessage => () => WriteInfoInternal(infoMessage.Value.ToString()),
+				ErrorMessage errorMessage => () => WriteErrorInternal(errorMessage.Value.ToString()),
+				WarningMessage warningMessage => () => WriteWarningInternal(warningMessage.Value.ToString()),
+				UndecoratedMessage noneMessage => () => WriteLineInternal(noneMessage.Value.ToString()),
+				TableMessage tableMessage => () => PrintTableInternal(tableMessage.Value),
+				DebugMessage debugMessage => () => PrintDebugInternal(debugMessage.Value.ToString()),
+				var _ => throw new ArgumentOutOfRangeException()
+			};
 			action.Invoke();
 		}
 	}
@@ -200,8 +202,22 @@ public class ConsoleLogger : ILogger, IDisposable{
 		_logQueue.Enqueue(new TableMessage(table));
 	}
 
+	internal IReadOnlyList<LogMessage> FlushAndSnapshotMessages(bool clearMessages = false) {
+		lock (_messageBufferLock) {
+			FlushQueueCore();
+			List<LogMessage> snapshot = [.. LogMessages];
+			if (clearMessages) {
+				LogMessages.Clear();
+			}
+			return snapshot;
+		}
+	}
+
 	public void ClearMessages() {
-		LogMessages.Clear();
+		lock (_messageBufferLock) {
+			FlushQueueCore();
+			LogMessages.Clear();
+		}
 	}
 
 	/// <summary>

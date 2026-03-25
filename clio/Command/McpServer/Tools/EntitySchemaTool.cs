@@ -379,7 +379,8 @@ public sealed record CreateEntitySchemaColumnArgs(
 	[property: Description("""
 						  Column type. Supported values:
 						  Guid, Text, ShortText, MediumText, LongText, MaxSizeText,
-						  Integer, Float, Boolean, Date, DateTime, Time, Lookup.
+						  Integer, Float, Boolean, Date, DateTime, Time, Lookup,
+						  Binary, Image, File. Blob is also accepted as an alias for Binary.
 						  """)]
 	[property: Required]
 	string Type,
@@ -401,11 +402,11 @@ public sealed record CreateEntitySchemaColumnArgs(
 	public bool? Required { get; init; }
 
 	[property: JsonPropertyName("default-value-source")]
-	[property: Description("Optional default value source. Supported values: Const, None.")]
+	[property: Description("Optional default value source. Supported values: Const, None. Binary, Image, and File columns do not support Const.")]
 	public string? DefaultValueSource { get; init; }
 
 	[property: JsonPropertyName("default-value")]
-	[property: Description("Optional constant default value.")]
+	[property: Description("Optional constant default value. Binary, Image, and File columns do not support constant defaults.")]
 	public string? DefaultValue { get; init; }
 }
 
@@ -432,6 +433,7 @@ public abstract record ColumnModificationArgsBase(
 						   Column type. Supported values:
 						   Guid, Integer, Float, Boolean, Date, DateTime, Time, Lookup,
 						   Text, ShortText, MediumText, LongText, MaxSizeText,
+						   Binary, Image, File, Blob,
 						   Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText, 
 						   Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
 						   Currency0, Currency1, Currency2, Currency3
@@ -467,11 +469,11 @@ public abstract record ColumnModificationArgsBase(
 	bool? TrackChanges = null,
 
 	[property: JsonPropertyName("default-value")]
-	[property: Description("Set a constant default value")]
+	[property: Description("Set a constant default value. Binary, Image, and File columns do not support constant defaults.")]
 	string? DefaultValue = null,
 
 	[property: JsonPropertyName("default-value-source")]
-	[property: Description("Default value source: Const or None")]
+	[property: Description("Default value source: Const or None. Binary, Image, and File columns do not support Const.")]
 	string? DefaultValueSource = null,
 
 	[property: JsonPropertyName("multiline-text")]

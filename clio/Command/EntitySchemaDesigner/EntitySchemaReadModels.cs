@@ -1,10 +1,25 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace Clio.Command.EntitySchemaDesigner;
 
 /// <summary>
-/// Represents a structured snapshot of remote entity schema properties.
+/// Represents a compact column entry returned as part of a schema properties snapshot.
+/// </summary>
+public sealed record EntitySchemaPropertyColumnInfo(
+	[property: JsonPropertyName("name")] string Name,
+	[property: JsonPropertyName("u-id")] Guid UId,
+	[property: JsonPropertyName("source")] string Source,
+	[property: JsonPropertyName("title")] string? Title,
+	[property: JsonPropertyName("description")] string? Description,
+	[property: JsonPropertyName("type")] string Type,
+	[property: JsonPropertyName("required")] bool Required,
+	[property: JsonPropertyName("indexed")] bool Indexed,
+	[property: JsonPropertyName("reference-schema-name")] string? ReferenceSchemaName);
+
+/// <summary>
+/// Represents a structured snapshot of remote entity schema properties with nested column metadata.
 /// </summary>
 public sealed record EntitySchemaPropertiesInfo(
 	[property: JsonPropertyName("name")] string Name,
@@ -28,7 +43,8 @@ public sealed record EntitySchemaPropertiesInfo(
 	[property: JsonPropertyName("administrated-by-columns")] bool AdministratedByColumns,
 	[property: JsonPropertyName("administrated-by-records")] bool AdministratedByRecords,
 	[property: JsonPropertyName("use-deny-record-rights")] bool UseDenyRecordRights,
-	[property: JsonPropertyName("use-live-editing")] bool UseLiveEditing);
+	[property: JsonPropertyName("use-live-editing")] bool UseLiveEditing,
+	[property: JsonPropertyName("columns")] IReadOnlyList<EntitySchemaPropertyColumnInfo>? Columns = null);
 
 /// <summary>
 /// Represents a structured snapshot of remote entity schema column properties.

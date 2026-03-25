@@ -36,6 +36,7 @@ NOTES
     - output is human-readable text, not JSON
     - the report includes whether the column is own or inherited
     - the report includes both default-value-source and default-value
+    - column type names are normalized to readable values such as Binary, Image, File, and ImageLookup
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

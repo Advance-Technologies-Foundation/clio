@@ -169,6 +169,10 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
 		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
 		List<EntitySchemaColumnDto> inheritedColumns = schema.InheritedColumns?.ToList() ?? [];
+		List<EntitySchemaPropertyColumnInfo> columns = ownColumns
+			.Select(column => MapSchemaPropertyColumn(column, "own", cultureName))
+			.Concat(inheritedColumns.Select(column => MapSchemaPropertyColumn(column, "inherited", cultureName)))
+			.ToList();
 		return new EntitySchemaPropertiesInfo(
 			schema.Name,
 			EntitySchemaDesignerSupport.GetLocalizableValue(schema.Caption, cultureName),
@@ -191,7 +195,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			schema.AdministratedByColumns,
 			schema.AdministratedByRecords,
 			schema.UseDenyRecordRights,
-			schema.UseLiveEditing);
+			schema.UseLiveEditing,
+			columns);
 	}
 
 	public void PrintSchemaProperties(GetEntitySchemaPropertiesOptions options) {
@@ -413,6 +418,11 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 		EntitySchemaColumnDefSource? defaultValueSource =
 			EntitySchemaDesignerSupport.ParseDefaultValueSource(options.DefaultValueSource);
+		if (EntitySchemaDesignerSupport.IsBinaryLikeDataValueType(dataValueType)
+			&& (options.DefaultValue != null || defaultValueSource == EntitySchemaColumnDefSource.Const)) {
+			throw new EntitySchemaDesignerException(
+				$"Type '{EntitySchemaDesignerSupport.GetFriendlyTypeName(dataValueType)}' does not support --default-value or --default-value-source Const.");
+		}
 		if (defaultValueSource == EntitySchemaColumnDefSource.None && options.DefaultValue != null) {
 			throw new EntitySchemaDesignerException(
 				"--default-value cannot be used when --default-value-source is None.");
@@ -458,6 +468,22 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 		throw new EntitySchemaDesignerException(
 			$"Column '{columnName}' was not found in schema '{schema.Name}'.");
+	}
+
+	private static EntitySchemaPropertyColumnInfo MapSchemaPropertyColumn(
+		EntitySchemaColumnDto column,
+		string source,
+		string cultureName) {
+		return new EntitySchemaPropertyColumnInfo(
+			column.Name,
+			column.UId,
+			source,
+			EntitySchemaDesignerSupport.GetLocalizableValue(column.Caption, cultureName),
+			EntitySchemaDesignerSupport.GetLocalizableValue(column.Description, cultureName),
+			EntitySchemaDesignerSupport.GetFriendlyTypeName(column.DataValueType),
+			IsRequired(column.RequirementType),
+			column.Indexed,
+			column.ReferenceSchema?.Name);
 	}
 
 	private void EnsureNameIsUnique(EntityDesignSchemaDto schema, string name, Guid? excludeUId) {

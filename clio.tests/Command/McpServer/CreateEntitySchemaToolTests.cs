@@ -172,6 +172,26 @@ public class CreateEntitySchemaToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[TestCase("Binary")]
+	[TestCase("Blob")]
+	[TestCase("Image")]
+	[TestCase("File")]
+	[Description("Preserves Binary, Blob alias, Image, and File type names when MCP create-column inputs are serialized for the command layer.")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Preserve_BinaryLike_Type_Names_In_Column_Serialization(string typeName) {
+		// Arrange
+		var columns = new[] {
+			new CreateEntitySchemaColumnArgs("Payload", typeName, "Payload")
+		};
+
+		// Act
+		string serializedColumn = CreateEntitySchemaTool.SerializeColumns(columns)!.Single();
+
+		// Assert
+		serializedColumn.Should().Be($"Payload:{typeName}:Payload",
+			because: "the MCP adapter should pass supported binary-like type names through without rewriting them");
+	}
+
 	[Test]
 	[Description("Maps create-lookup MCP arguments into create-entity-schema command options and forces BaseLookup as the parent schema.")]
 	[Category("Unit")]
