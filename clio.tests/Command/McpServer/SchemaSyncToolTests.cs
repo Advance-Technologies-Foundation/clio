@@ -58,8 +58,11 @@ public sealed class SchemaSyncToolTests {
 		// Arrange
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
@@ -85,6 +88,7 @@ public sealed class SchemaSyncToolTests {
 			because: "create-lookup must always inherit from BaseLookup");
 		fakeCreateCommand.CapturedOptions.Environment.Should().Be("dev",
 			because: "the environment should be forwarded from the batch args");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Todo Status");
 	}
 
 	[Test]
@@ -158,10 +162,13 @@ public sealed class SchemaSyncToolTests {
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
 		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
 		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
 			.Returns(fakeSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
@@ -194,6 +201,7 @@ public sealed class SchemaSyncToolTests {
 			because: "seed-data should target the same schema as the create operation");
 		fakeSeedCommand.CapturedOptions.RowsJson.Should().Contain("New",
 			because: "the seed rows should be serialized to JSON");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Todo Status");
 	}
 
 	[Test]
@@ -316,10 +324,13 @@ public sealed class SchemaSyncToolTests {
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
 		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
@@ -344,6 +355,7 @@ public sealed class SchemaSyncToolTests {
 			because: "operations should be processed in order");
 		response.Results[1].Operation.Should().Be("update-entity",
 			because: "the update should follow the create");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Status");
 	}
 
 	[Test]
@@ -365,12 +377,15 @@ public sealed class SchemaSyncToolTests {
 			"Done"
 		]);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
 		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
 			.Returns(fakeSeedCommand);
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
 		SchemaSyncTool tool = new(commandResolver, logger);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
@@ -418,6 +433,41 @@ public sealed class SchemaSyncToolTests {
 			because: "seed-data messages must not leak into the update result");
 		updateMessages.Should().NotContain(message => message.Contains("Entity schema", System.StringComparison.Ordinal),
 			because: "schema creation messages must not leak into the update result");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Todo Status");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails create-lookup when Lookups registration throws so schema-sync does not report partial success")]
+	public void SchemaSync_CreateLookup_Should_Fail_When_Lookup_Registration_Fails() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		registrationService
+			.When(service => service.EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Todo Status"))
+			.Do(_ => throw new InvalidOperationException("Lookup registration failed."));
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+
+		// Act
+		SchemaSyncResponse response = tool.SchemaSync(new SchemaSyncArgs(
+			"dev",
+			"UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", Title: "Todo Status")]));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "lookup registration is part of successful create-lookup execution");
+		response.Results.Should().HaveCount(1,
+			because: "schema-sync should stop after the create-lookup registration failure");
+		response.Results[0].Success.Should().BeFalse(
+			because: "the create-lookup result should surface the registration failure");
+		response.Results[0].Error.Should().Contain("Lookup registration failed",
+			because: "the failing registration error should be returned to the caller");
 	}
 
 	private static System.Text.Json.JsonElement ToJsonElement(string value) {

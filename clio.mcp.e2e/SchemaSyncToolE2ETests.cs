@@ -10,6 +10,7 @@ using Allure.NUnit.Attributes;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -84,6 +85,10 @@ public sealed class SchemaSyncToolE2ETests {
 			context.PackageName!,
 			context.LookupSchemaName!,
 			context.CancellationTokenSource.Token);
+		LookupRegistrationSnapshot registrationSnapshot = LookupRegistrationProbe.Read(
+			context.EnvironmentName!,
+			context.PackageName!,
+			context.LookupSchemaName!);
 		EntitySchemaColumnPropertiesInfo columnProperties = await GetColumnPropertiesAsync(
 			context.Session,
 			context.EnvironmentName!,
@@ -123,6 +128,16 @@ public sealed class SchemaSyncToolE2ETests {
 			because: "schema creation messages must not leak into the update-entity result");
 		lookupProperties.ParentSchemaName.Should().Be("BaseLookup",
 			because: "schema-sync should create the lookup with BaseLookup inheritance");
+		registrationSnapshot.LookupRowCount.Should().Be(1,
+			because: "schema-sync should register the created lookup exactly once in the Lookup entity");
+		registrationSnapshot.LookupRowTitle.Should().Be("Schema Sync Lookup",
+			because: "schema-sync should reuse the create-lookup title for the Lookup registration caption");
+		registrationSnapshot.BindingCount.Should().Be(1,
+			because: "schema-sync should create exactly one canonical package schema data binding for the lookup");
+		registrationSnapshot.BindingEntitySchemaName.Should().Be("Lookup",
+			because: "the lookup registration binding should target the Lookup entity");
+		registrationSnapshot.BoundRecordIds.Should().Equal([registrationSnapshot.LookupRowId!],
+			because: "the canonical lookup binding should point only to the created registration row");
 		columnProperties.SchemaName.Should().Be(context.EntitySchemaName,
 			because: "the added lookup column should be readable from the updated entity schema");
 		columnProperties.ColumnName.Should().Be(context.LookupColumnName,

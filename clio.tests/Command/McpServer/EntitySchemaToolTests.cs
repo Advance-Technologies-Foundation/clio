@@ -328,6 +328,8 @@ public sealed class EntitySchemaToolTests {
 			because: "create prompt guidance should reference the exact production tool name");
 		lookupPrompt.Should().Contain(CreateLookupTool.CreateLookupToolName,
 			because: "lookup prompt guidance should reference the exact production tool name");
+		lookupPrompt.Should().Contain("Lookups",
+			because: "lookup prompt guidance should mention automatic registration in the standard Lookups section");
 		lookupPrompt.Should().Contain(GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 			because: "lookup prompt guidance should direct callers to the canonical post-create verification path");
 		updatePrompt.Should().Contain(UpdateEntitySchemaTool.UpdateEntitySchemaToolName,

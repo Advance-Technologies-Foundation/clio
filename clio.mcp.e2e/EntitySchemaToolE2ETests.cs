@@ -7,6 +7,7 @@ using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -92,6 +93,10 @@ public sealed class EntitySchemaToolE2ETests {
 		// Act
 		CommandExecutionEnvelope createResult = await ActCreateLookupAsync(arrangeContext);
 		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+		LookupRegistrationSnapshot registrationSnapshot = LookupRegistrationProbe.Read(
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName);
 
 		// Assert
 		AssertCommandSucceeded(createResult,
@@ -106,6 +111,16 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "lookup schema readback should expose nested columns for structured inspection");
 		schemaProperties.Columns!.Should().Contain(column => column.Source == "inherited",
 			because: "BaseLookup-derived schemas should expose inherited base columns in the schema read model");
+		registrationSnapshot.LookupRowCount.Should().Be(1,
+			because: "create-lookup should register the schema exactly once in the Lookup entity");
+		registrationSnapshot.LookupRowTitle.Should().Be("Order status",
+			because: "the Lookup registration row should reuse the requested business caption");
+		registrationSnapshot.BindingCount.Should().Be(1,
+			because: "create-lookup should create exactly one canonical package schema data binding");
+		registrationSnapshot.BindingEntitySchemaName.Should().Be("Lookup",
+			because: "the package schema data binding should target the Lookup entity");
+		registrationSnapshot.BoundRecordIds.Should().Equal([registrationSnapshot.LookupRowId!],
+			because: "the canonical Lookup binding should point only to the created registration row");
 	}
 
 	[Test]

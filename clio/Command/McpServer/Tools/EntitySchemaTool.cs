@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -101,14 +102,21 @@ public sealed class CreateEntitySchemaTool(
 /// <summary>
 /// MCP tool surface for remote lookup schema creation.
 /// </summary>
-public sealed class CreateLookupTool(
-	CreateEntitySchemaCommand command,
-	ILogger logger,
-	IToolCommandResolver commandResolver)
-	: BaseTool<CreateEntitySchemaOptions>(command, logger, commandResolver) {
+public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
+	private readonly ILogger _logger;
+	private readonly IToolCommandResolver _commandResolver;
 
 	internal const string CreateLookupToolName = "create-lookup";
 	private const string BaseLookupParentSchemaName = "BaseLookup";
+
+	public CreateLookupTool(
+		CreateEntitySchemaCommand command,
+		ILogger logger,
+		IToolCommandResolver commandResolver)
+		: base(command, logger, commandResolver) {
+		_logger = logger;
+		_commandResolver = commandResolver;
+	}
 
 	/// <summary>
 	/// Creates a remote lookup schema in a package on the requested Creatio environment.
@@ -128,7 +136,37 @@ public sealed class CreateLookupTool(
 			args,
 			BaseLookupParentSchemaName,
 			extendParent: false);
-		return InternalExecute<CreateEntitySchemaCommand>(options);
+		int exitCode = -1;
+		lock (CommandExecutionSyncRoot) {
+			bool previousPreserveMessages = _logger.PreserveMessages;
+			_logger.PreserveMessages = true;
+			try {
+				CreateEntitySchemaCommand resolvedCommand = ResolveCommand<CreateEntitySchemaCommand>(options);
+				exitCode = resolvedCommand.Execute(options);
+				if (exitCode == 0) {
+					ILookupRegistrationService registrationService =
+						_commandResolver.Resolve<ILookupRegistrationService>(options);
+					registrationService.EnsureLookupRegistration(args.PackageName, args.SchemaName, args.Title);
+				}
+
+				CommandExecutionResult returnResult = new(
+					exitCode,
+					[.. _logger.FlushAndSnapshotMessages(clearMessages: true)],
+					null);
+				return returnResult;
+			}
+			catch (Exception exception) {
+				List<LogMessage> logMessages = [.. _logger.FlushAndSnapshotMessages(clearMessages: true), new ErrorMessage(exception.Message)];
+				CommandExecutionResult returnResult = new(
+					exitCode > 0 ? exitCode : 1,
+					logMessages,
+					null);
+				return returnResult;
+			}
+			finally {
+				_logger.PreserveMessages = previousPreserveMessages;
+			}
+		}
 	}
 }
 

@@ -222,6 +222,7 @@ public class BindingsModule {
 		services.AddTransient<IDataBindingValueConverter, DataBindingValueConverter>();
 		services.AddTransient<IDataBindingDisplayValueResolver, DataBindingDisplayValueResolver>();
 		services.AddTransient<IDataBindingService, DataBindingService>();
+		services.AddTransient<ILookupRegistrationService, LookupRegistrationService>();
 		services.AddTransient<CreateDataBindingCommand>();
 		services.AddTransient<AddDataBindingRowCommand>();
 		services.AddTransient<RemoveDataBindingRowCommand>();

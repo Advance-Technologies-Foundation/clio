@@ -17,6 +17,7 @@ clio mcp
 - Uses stdio transport with JSON-RPC 2.0.
 - Runs until stdin is closed or the process is terminated.
 - Exposes structured clio MCP tools such as application, page, component-info, entity, schema-sync, page-sync, and data-binding tools.
+- `create-lookup` and `schema-sync` `create-lookup` operations register new lookup schemas in the standard `Lookups` section as part of successful completion.
 - `component-info` is a local read-only helper and does not require a target environment.
 
 ## Connection Notes

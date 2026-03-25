@@ -90,6 +90,14 @@ public sealed class SchemaSyncTool(
 				parentSchemaName, extendParent);
 			CreateEntitySchemaCommand command = commandResolver.Resolve<CreateEntitySchemaCommand>(options);
 			int exitCode = command.Execute(options);
+			if (exitCode == 0 && string.Equals(operationName, "create-lookup", StringComparison.Ordinal)) {
+				ILookupRegistrationService registrationService =
+					commandResolver.Resolve<ILookupRegistrationService>(options);
+				registrationService.EnsureLookupRegistration(
+					args.PackageName,
+					op.SchemaName,
+					op.Title ?? op.SchemaName);
+			}
 			return new SchemaSyncOperationResult {
 				Operation = operationName, SchemaName = op.SchemaName,
 				Success = exitCode == 0,

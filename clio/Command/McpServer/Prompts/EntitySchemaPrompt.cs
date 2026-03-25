@@ -72,8 +72,10 @@ public static class EntitySchemaPrompt {
 		 Use clio mcp server `{CreateLookupTool.CreateLookupToolName}` to create lookup schema
 		 `{schemaName}` in package `{packageName}` for environment `{environmentName}` with title `{title}`.
 		 Use this tool when the caller explicitly requested a lookup entity. The tool always creates the schema
-		 with parent `BaseLookup`, so do not pass parent override arguments. Include `columns` only when the
-		 request explicitly describes initial fields. After creation, verify the result with
+		 with parent `BaseLookup`, so do not pass parent override arguments. Successful execution also registers
+		 the lookup in the standard `Lookups` section, so treat the tool result as failed when the schema exists
+		 but the lookup is not available in `Lookups`. Include `columns` only when the request explicitly
+		 describes initial fields. After creation, verify the result with
 		 `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` as the canonical post-create read
 		 path.
 		 """;
