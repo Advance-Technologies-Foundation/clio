@@ -230,11 +230,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EnsureNameIsUnique(schema, options.ColumnName, null);
 		int dataValueType = ParseSupportedType(options.Type, "add");
 		ValidateOptionsForType(options, dataValueType, isAdd: true);
+		string effectiveTitle = ResolveEffectiveTitle(options.Title, options.ColumnName);
 		EntitySchemaColumnDto column = new() {
 			UId = Guid.NewGuid(),
 			Name = options.ColumnName,
 			DataValueType = dataValueType,
-			Caption = [EntitySchemaDesignerSupport.CreateLocalizableString(options.Title ?? options.ColumnName)],
+			Caption = [EntitySchemaDesignerSupport.CreateLocalizableString(effectiveTitle)],
 			Description = string.IsNullOrWhiteSpace(options.Description)
 				? []
 				: [EntitySchemaDesignerSupport.CreateLocalizableString(options.Description)],
@@ -286,7 +287,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		List<LocalizableStringDto> caption = column.Caption?.ToList() ?? [];
 		List<LocalizableStringDto> description = column.Description?.ToList() ?? [];
 		if (!string.IsNullOrWhiteSpace(options.Title)) {
-			EntitySchemaDesignerSupport.SetLocalizableValue(caption, options.Title);
+			EntitySchemaDesignerSupport.SetLocalizableValue(caption, options.Title.Trim());
 		}
 		if (!string.IsNullOrWhiteSpace(options.Description)) {
 			EntitySchemaDesignerSupport.SetLocalizableValue(description, options.Description);
@@ -682,6 +683,10 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private static string FormatText(string? value) {
 		return string.IsNullOrWhiteSpace(value) ? "<none>" : value;
+	}
+
+	private static string ResolveEffectiveTitle(string? title, string columnName) {
+		return string.IsNullOrWhiteSpace(title) ? columnName : title.Trim();
 	}
 
 	private void WriteInfo(string message) {
