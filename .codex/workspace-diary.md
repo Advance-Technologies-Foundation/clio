@@ -1057,76 +1057,6 @@ Discovery: Several important Freedom UI contracts were missing from the shipped 
 Files: clio/Command/McpServer/Data/ComponentRegistry.json, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.mcp.e2e/ComponentInfoToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Future page-editing flows can inspect real frontend-derived component slots and action contracts directly through MCP, and the added tests guard both catalog search semantics and nested menu detail lookups.
 
-## 2026-03-26 08:43 – Fix PR 485 handler validation and sonar findings
-Context: User asked to inspect PR `#485`, address the inline review comment, and clear the SonarCloud quality-gate failures.
-Decision: Stopped treating `SCHEMA_HANDLERS` blocks as JSON content, centralized JSON normalization/parsing with regex timeouts, split `RemoteEntitySchemaColumnManager` type-validation into focused helpers, and added handler-specific regression coverage in unit and MCP E2E tests.
-Discovery: `page-sync` validation can reject valid Freedom UI pages when handler sections contain JavaScript functions if handler markers are included in JSON content validation; the Sonar quality gate on this PR was also driven by regex timeout hotspots and two cognitive-complexity findings in the same touched code paths.
-Files: clio/Command/SchemaValidationService.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, .codex/workspace-diary.md
-Impact: Future PRs touching `page-sync` validation or entity-schema column mutation rules can reuse the safer JSON helper pattern and the new handler-focused regression tests instead of rediscovering the same production regression and Sonar issues.
-
-## 2026-03-26 08:50 – Resolve PR 485 master merge conflict
-Context: User asked whether PR `#485` still had merge conflicts and then requested resolving them.
-Decision: Merged the latest `origin/master` into `ENG-87492-Alfa-version-of-ADAC-+Clio-final`, resolved the only conflict in `clio/clio.csproj` by keeping the newer default `AssemblyVersion` from `master`, and verified the project still builds.
-Discovery: GitHub marked PR `#485` as `CONFLICTING`/`DIRTY`, but the merge conflict was limited to a single version-line change in `clio/clio.csproj` (`8.0.2.39` vs `8.0.2.40`).
-Files: clio/clio.csproj, .codex/workspace-diary.md
-Impact: Future PR conflict checks on this branch can assume the remaining mergeability risk was cleared after the version bump was reconciled with `master`.
-
-## 2026-03-26 08:59 – Release 8.0.2.41 preparation
-Context: User asked to wait for PR `#485` workflows to pass and then produce the next release.
-Decision: Merged PR `#485` into `master`, fast-forwarded local `master` to the merged remote head, and bumped the default `AssemblyVersion` in `clio/clio.csproj` from `8.0.2.40` to `8.0.2.41` before tagging the next release.
-Discovery: The repository’s current release flow is tag-driven but still keeps the default `AssemblyVersion` in source aligned with the latest released version; `release-to-nuget` extracts the semantic version from the published GitHub release tag and overrides build/package version properties from that tag.
-Files: clio/clio.csproj, .codex/workspace-diary.md
-Impact: The next release continues the existing `chore(release): bump clio version to <version>` pattern and keeps the repository’s source version aligned with the release/tag history.
-
-## 2026-03-25 15:45 – Auto-register MCP-created lookups in Lookups
-Context: Implemented ENG-87524 so AI-created lookup schemas become immediately manageable through the standard `Lookups` section.
-Decision: Added an internal `ILookupRegistrationService` that writes the `Lookup` row plus canonical deterministic `Lookup_<schema>` package schema data binding, then invoked it from both direct `create-lookup` and `schema-sync` `create-lookup` flows so registration is part of successful lookup creation.
-Discovery: The frontend canonical registration path inserts into `Lookup` and saves schema data while skipping `CreatedBy` and `ModifiedBy`; local MCP E2E still requires the `net10.0` SDK, but this machine can run those tests through `DOTNET_ROOT=/Users/a.kravchuk/.dotnet` where the destructive lookup scenarios currently skip on sandbox gating rather than compile/runtime issues.
-Files: clio/Command/DataBindingDbCommand.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio/BindingsModule.cs, clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, clio/docs/commands/schema-sync.md, clio/docs/commands/mcp-server.md, clio.tests/Command/LookupRegistrationServiceTests.cs, clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/SchemaSyncToolTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.mcp.e2e/Support/Creatio/LookupRegistrationProbe.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs, .codex/workspace-diary.md
-Impact: Future lookup-generation work can assume MCP-created lookups are visible in `Lookups` without manual remediation, and the deterministic binding name plus direct service tests reduce the chance of duplicate registration artifacts resurfacing.
-
-## 2026-03-25 12:56 – Native binary-like entity columns
-Context: User requested native `Binary` / `Image` / `File` support in `clio` entity-schema tooling after ADAC flows failed on `Image` columns and fell back to `BaseFile` detail schemas.
-Decision: Extended the shared entity-schema type registry to accept `Binary`, `Image`, `File`, and `Blob` alias; normalized readback type names; rejected constant defaults for binary-like columns; aligned MCP prompts/tool descriptions and command docs with the new contract.
-Discovery: `update-entity-schema` had no MCP E2E coverage before this task; local E2E runs require `DOTNET_ROOT=/Users/a.kravchuk/.dotnet` because the system `dotnet` only exposes SDK `8.0.124`, while `~/.dotnet` contains both SDKs `8.0.406` and `10.0.201`.
-Files: clio/Command/EntitySchemaDesigner/EntitySchemaDesignerSupport.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, clio.tests/Command/EntitySchemaDesignerSupportTests.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs, clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio/help/en/create-entity-schema.txt, clio/help/en/modify-entity-schema-column.txt, clio/help/en/update-entity-schema.txt, clio/help/en/get-entity-schema-column-properties.txt, clio/help/en/get-entity-schema-properties.txt, clio/docs/commands/create-entity-schema.md, clio/docs/commands/modify-entity-schema-column.md, clio/docs/commands/update-entity-schema.md, clio/docs/commands/get-entity-schema-column-properties.md, clio/docs/commands/get-entity-schema-properties.md, clio/Commands.md, .codex/workspace-diary.md
-Impact: ADAC and MCP callers can now model native binary-like columns directly in remote schemas without attachment-entity workarounds, and readback/docs stay consistent with the supported contract.
-
-## 2026-03-25 12:40 – Fix schema-sync message capture boundaries
-Context: User asked to implement the `schema-sync` message misalignment fix where operation logs shifted into the next result payload.
-Decision: Added a deterministic logger snapshot path in `ConsoleLogger`, routed `SchemaSyncTool` through flush-and-snapshot capture instead of raw `LogMessages`, removed the timing sleep, and added focused unit plus MCP E2E coverage for operation-local message capture.
-Discovery: The defect came from async queue draining after `SchemaSyncTool` cleared preserved messages; locking queue flushes and snapshots together fixes the boundary, while local MCP E2E execution remains blocked on this machine because `clio.mcp.e2e` targets `net10.0` and only `net8.0`/`net9.0` SDKs are installed.
-Files: clio/Common/ConsoleLogger.cs, clio/Common/LoggerMessageCaptureExtensions.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio.tests/Command/McpServer/SchemaSyncToolTests.cs, clio.tests/Common/ConsoleLoggerTests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs, .codex/workspace-diary.md
-Impact: Future MCP batching fixes can rely on deterministic per-operation log capture without timing sleeps, and the diary preserves the runtime constraint that currently blocks local `clio.mcp.e2e` execution.
-
-## 2026-03-25 12:37 – Add nested schema columns to get-entity-schema-properties
-Context: User needed `get-entity-schema-properties` to stop returning summary-only metadata and expose a machine-readable column list for schema verification flows.
-Decision: Kept the root summary contract intact, added nested `columns` entries with compact metadata and `source`, updated CLI output to print grouped own/inherited column listings, and aligned MCP prompt plus command docs to the new shape.
-Discovery: `RemoteEntitySchemaColumnManager` already loads both `schema.Columns` and `schema.InheritedColumns`; the missing columns problem was caused by the shared read model dropping them before CLI/MCP serialization. Local verification is partially blocked because `clio.tests` currently fails in unrelated `SchemaSyncToolTests` compile errors and `clio.mcp.e2e` still targets `net10.0` while the installed SDK is `8.0.124`.
-Files: clio/Command/EntitySchemaDesigner/EntitySchemaReadModels.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs, clio/Command/GetEntitySchemaPropertiesCommand.cs, clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs, clio.tests/Command/GetEntitySchemaPropertiesCommandTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio/docs/commands/get-entity-schema-properties.md, clio/help/en/get-entity-schema-properties.txt, clio/Commands.md, .codex/workspace-diary.md
-Impact: Future schema-inspection flows can verify concrete columns via `data.columns` without breaking existing summary consumers, and the repository now documents the nested readback contract explicitly.
-
-## 2026-03-25 11:20 – Verify NuGet release version mismatch
-Context: User asked whether GitHub Actions run `23518118190` released `8.0.2.39` correctly because the package seemed to contain `8.0.2.38` internally.
-Decision: Verified the release run, job logs, tagged commit, workflow file, and the published `clio.8.0.2.39.nupkg` from NuGet instead of relying on the GitHub UI alone.
-Discovery: Release `8.0.2.39` points to commit `edd1f98`, but that commit still has default `AssemblyVersion` `8.0.2.38` in `clio/clio.csproj`; the workflow builds without version overrides, creating `clio.8.0.2.38.nupkg`, then packs/pushes `clio.8.0.2.39.nupkg`, so the published package metadata is `8.0.2.39` while embedded binary version strings remain `8.0.2.38`.
-Files: .github/workflows/reliase-to-nuget.yml, clio/clio.csproj, .codex/workspace-diary.md
-Impact: Future release fixes should pass version properties into the build step or build once with release version and pack with `--no-build`, otherwise NuGet package versions can drift from the actual compiled binary version.
-
-## 2026-03-25 11:40 – Create corrective release 8.0.2.40
-Context: User asked to supersede the broken `8.0.2.39` binary with a minimal corrective release and keep the GitHub release description short.
-Decision: Created a detached-worktree-based hotfix commit on top of `origin/master` that changes only `clio/clio.csproj` default `AssemblyVersion` to `8.0.2.40`, pushed it to `master`, tagged `8.0.2.40`, and published GitHub release `Release 8.0.2.40` with notes `Updated version to 8.0.2.40`.
-Discovery: Remote tag `8.0.2.40` and release now point to commit `715fc93`, but the `release-to-nuget` workflow run `23536712207` is still queued on the self-hosted runner, so final NuGet package verification remains externally blocked; local pack verification was also blocked by a `403` from the private source `https://ts1-infr-nexus.bpmonline.com/repository/nuget-v3/index.json`.
-Files: /tmp/clio-master-check/clio/clio.csproj, .codex/workspace-diary.md
-Impact: The repository state is ready for a corrected publish once the self-hosted runner picks up the queued release workflow, and the fix itself is isolated to the version source used by the current packaging pipeline.
-
-## 2026-03-25 13:15 – Deliver combined entity-schema and schema-sync work
-Context: User asked to push the accumulated changes from the last three Codex implementation sessions into the current branch.
-Decision: Kept all three verified implementations together in the active feature branch, validated the touched unit and MCP E2E suites with the local multi-SDK dotnet installation, and prepared the branch for a single delivery commit.
-Discovery: `clio.tests` passes for the touched entity-schema and schema-sync coverage set (`101` tests), while `clio.mcp.e2e` passes the targeted suites with four environment-gated skips even when built on `net10.0` from `/Users/a.kravchuk/.dotnet`.
-Files: clio/Command/EntitySchemaDesigner/EntitySchemaDesignerSupport.cs, clio/Command/EntitySchemaDesigner/EntitySchemaReadModels.cs, clio/Common/ConsoleLogger.cs, clio/Common/LoggerMessageCaptureExtensions.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio.tests/Command/EntitySchemaDesignerSupportTests.cs, clio.tests/Command/McpServer/SchemaSyncToolTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs, .codex/workspace-diary.md
-Impact: Future delivery handoffs can reference one branch commit that combines binary-like entity-column support, nested schema-property columns, and deterministic schema-sync message capture with aligned docs and MCP coverage.
-
 ## 2026-03-24 22:20 – Fix PR 480 review comments on MCP mode and page-update resources
 Context: User asked to validate PR `#480` review comments, fix confirmed issues, push the branch, and respond in GitHub review threads.
 Decision: Confirmed both unresolved review findings, restricted MCP mode detection to the invoked verb instead of any argument value, made `page-update` reject malformed `--resources` payloads during validation, and aligned `page-update` docs plus MCP page prompt with the new behavior.
@@ -1195,3 +1125,118 @@ Decision: Used frontend `@CrtViewElement`, `contentSlots`, collection-property u
 Discovery: Several important Freedom UI contracts were missing from the shipped registry even though the frontend exposes them clearly, including `crt.Calendar`, `crt.Gallery`, `crt.Chat`, `crt.Conversation`, `crt.Feed`, `crt.Summaries`, `crt.FilePreview`, and nested menu contracts like `crt.MenuItem`, `crt.MenuLabel`, and `crt.MenuDivider`; local MCP E2E execution is currently blocked here because `clio.mcp.e2e` targets `net10.0` while the installed SDK is `8.0.124`.
 Files: clio/Command/McpServer/Data/ComponentRegistry.json, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.mcp.e2e/ComponentInfoToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Future page-editing flows can inspect real frontend-derived component slots and action contracts directly through MCP, and the added tests guard both catalog search semantics and nested menu detail lookups.
+
+## 2026-03-25 13:35 – Make Docker base image flow explicit
+Context: User wanted `build-docker-image` to treat the bundled base image as an explicit first-class target instead of auto-building it behind bundled `dev` and `prod` flows.
+Decision: Added `--base-image`, made `--template base` build a standalone base image without `--from`, changed bundled `dev`/`prod` Dockerfiles to consume `BASE_IMAGE`, and changed `BuildDockerImageService` to require an already available local base image for bundled builds instead of building it implicitly.
+Discovery: The explicit model keeps custom corporate base images flexible, fits future runtime changes like `.NET 10`, and still works with the existing cached code-server staging for bundled `dev`; focused build-image tests remained sufficient after rewriting service coverage around base-template and base-image behavior.
+Files: clio/Command/BuildDockerImageCommand.cs, clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/tpl/docker-templates/base/Dockerfile, clio/tpl/docker-templates/dev/Dockerfile, clio/tpl/docker-templates/prod/Dockerfile, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future teams can build and version base images explicitly, point bundled `dev` and `prod` at custom local base images, and avoid hidden rebuild behavior in clio.
+
+## 2026-03-25 14:05 – Harden explicit Docker base flow after review
+Context: Parallel review of the explicit `build-docker-image` base-image refactor found a registry-tagging edge case, unsanitized code-server version input, misleading base-image inspect errors, and a clean-build issue in the rewritten tests.
+Decision: Added semantic-version validation for cached code-server archives, preserved already qualified base-image references when `--registry` is also passed, surfaced `image inspect` stderr for invalid base refs, rewrote fragile NSubstitute assertions in `BuildDockerImageServiceTests`, and aligned docs/help so `--from` is described as required for every non-`base` template.
+Discovery: The focused tests had passed earlier because the filtered test run did not force a clean compile of the rewritten fixture; `dotnet build clio.tests\clio.tests.csproj --no-restore -v q` caught the invalid assertion patterns immediately.
+Files: clio/Common/CodeServerArchiveCache.cs, clio/Command/BuildDockerImageCommand.cs, clio/Command/BuildDockerImageService.cs, clio.tests/Common/CodeServerArchiveCacheTests.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future base-image and cached code-server changes now fail with clearer diagnostics, avoid invalid registry retagging, reject unsafe version strings before touching the filesystem, and keep the main Docker-image tests stable under clean builds.
+
+## 2026-03-25 15:18 – Stop nerdctl bundled builds from resolving local base through registry
+Context: User built the bundled base image successfully, but bundled `prod` still failed under `nerdctl` because BuildKit tried to resolve `FROM ${BASE_IMAGE}` against `docker.io` instead of using the already-present local `creatio-base:8.0-v1` image.
+Decision: Switched bundled `dev` and `prod` templates to `FROM clio-base-image` with Dockerfile syntax v1.4 and changed `BuildDockerImageService` to pass the selected base image through `--build-context clio-base-image=docker-image://...` instead of a `BASE_IMAGE` build arg.
+Discovery: `nerdctl image inspect` succeeding is not enough to guarantee `nerdctl build` will treat `FROM <tag>` as a local source; the named `docker-image://` build context makes the local image source explicit and avoids the unwanted registry metadata request path.
+Files: clio/Command/BuildDockerImageService.cs, clio/tpl/docker-templates/dev/Dockerfile, clio/tpl/docker-templates/prod/Dockerfile, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/Command/BuildDockerImageCommand.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future bundled `dev` and `prod` builds should reuse a locally built base image under both Docker and nerdctl without failing on offline DNS/registry lookups for the bundled base tag.
+
+## 2026-03-25 15:43 – Make bundled docker builds offline-safe under nerdctl
+Context: User asked for an end-to-end self-check after bundled ase and ZIP-based prod builds kept failing under Rancher Desktop 
+erdctl because BuildKit still tried registry lookups for local images.
+Decision: Removed the named docker-image:// base-image handoff for bundled templates, restored normal ARG BASE_IMAGE Dockerfiles for dev and prod, and taught BuildDockerImageService to materialize bundled base sources as exported rootfs tarballs (ase-rootfs.tar) when the selected container CLI is 
+erdctl.
+Discovery: Under this Windows/Rancher Desktop setup, 
+erdctl build still resolves local tags and docker-image:// named contexts through registry metadata paths, but FROM scratch plus ADD <exported-rootfs>.tar / is fully local and works for both the bundled SDK base image and the reusable creatio-base image. The exact sequential self-check succeeded with clio-dev build-docker-image --template base --use-nerdctl and then clio-dev build-docker-image --template prod --from F:\CreatioBuilds\8.3.4\8.3.4.1971_StudioNet8_Softkey_PostgreSQL_ENU.zip.
+Files: clio/Command/BuildDockerImageService.cs, clio/tpl/docker-templates/base/Dockerfile, clio/tpl/docker-templates/dev/Dockerfile, clio/tpl/docker-templates/prod/Dockerfile, clio.tests/Command/BuildDockerImageServiceTests.cs, .codex/workspace-diary.md
+Impact: Future bundled base/dev/prod builds can reuse cached local images under 
+erdctl without DNS access, and debugging this path no longer depends on BuildKit resolving custom local tags through a registry.
+
+## 2026-03-25 16:39 – Cache and restore bundled base images across Docker CLIs
+Context: User wanted the base-image strategy to keep working on hosts that use Docker as well as nerdctl, and wanted the Docker-image branch to stay operational while improving offline reuse.
+Decision: Added a clio-managed bundled base-image archive cache under the settings folder, made successful --template base builds persist a reusable tar archive, and taught bundled dev/prod to restore that archive automatically when the selected base image tag is missing locally before continuing the build.
+Discovery: The cached archive at C:\Users\k.krylov\AppData\Local\creatio\clio\docker-image-cache\creatio-base_8.0-v1.tar restored correctly during a live prod build after the local creatio-base:8.0-v1 image was deleted, so the recovery strategy now works end to end with the same CLI abstraction used for both Docker and nerdctl.
+Files: clio/Command/BuildDockerImageService.cs, clio/Command/BuildDockerImageCommand.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future bundled image builds can recover from missing local base tags without forcing a rebuild or a network pull, and the same cache/restore strategy now applies to both supported container CLIs.
+
+## 2026-03-25 17:08 – Autodetect Docker CLI at runtime for build-docker-image
+Context: User wanted `build-docker-image` to stop depending on `appsettings.json` for the default container CLI and instead choose Docker or nerdctl from what is actually available at runtime.
+Decision: Changed `BuildDockerImageService` to resolve the CLI in this order: explicit `--use-docker`, explicit `--use-nerdctl`, successful `docker info`, successful `nerdctl info`, otherwise fail with a clear availability error; updated focused tests and command docs to match.
+Discovery: The existing test fixture still stubbed `GetContainerImageCli()` from settings, so nerdctl-specific tests had to switch to explicit `UseNerdctl = true` or direct probe simulations to keep covering the right runtime path.
+Files: clio/Command/BuildDockerImageService.cs, clio/Command/BuildDockerImageCommand.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future image builds now pick the working container runtime from the host state instead of stale config, which reduces setup friction on machines that have either Docker Desktop or Rancher Desktop available.
+
+## 2026-03-25 19:30 – Replace nerdctl rootfs fallback with BuildKit namespace sync
+Context: User rejected the slow and bloated nerdctl workaround that exported the base image rootfs into every bundled prod/dev build context and asked for a proper fix after registry lookups kept failing for local base images.
+Decision: Removed the base-rootfs.tar fallback, restored normal `FROM ${BASE_IMAGE}` Dockerfiles for bundled dev/prod, and taught BuildDockerImageService to mirror required local images into nerdctl's `buildkit` namespace before build; also made temp-directory cleanup warnings non-fatal and updated build-docker-image docs accordingly.
+Discovery: On Rancher Desktop, `nerdctl --namespace k8s.io image inspect` succeeding is not enough for `nerdctl build`; BuildKit resolves local parents only when the image also exists in the `buildkit` namespace. After syncing `mcr.microsoft.com/dotnet/sdk:8.0` and `creatio-base:8.0-v1` there, live `clio.exe build-docker-image --template base --use-nerdctl` and `... --template prod --from F:\CreatioBuilds\8.3.4\8.3.4.1971_StudioNet8_Softkey_PostgreSQL_ENU.zip --use-nerdctl` both succeeded, and the prod build context dropped from the previous ~942 MB tar upload to ~3.22 MB.
+Files: clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future bundled image builds under nerdctl reuse real base layers again, avoid huge context uploads and size inflation, and tolerate temp-directory cleanup locks without turning a successful build into a failed command.
+
+## 2026-03-25 19:53 – Fix Windows code-server cache rename for bundled dev builds
+Context: User reported bundled `dev` builds failing on Windows right after `Downloading code-server v4.112.0 to local cache` with `The process cannot access the file because it is being used by another process.`
+Decision: Changed CodeServerArchiveCache to dispose the temporary destination stream before moving the downloaded archive into its final cache path, and added regression coverage for the download-and-move path.
+Discovery: The previous implementation attempted to `MoveFile(tempArchivePath, archivePath)` while the `CreateFile(tempArchivePath)` stream was still inside the active `using` scope; Windows rejects that rename with a sharing violation. A live `clio.exe build-docker-image --template dev --from F:\CreatioBuilds\8.3.4\8.3.4.1971_StudioNet8_Softkey_PostgreSQL_ENU.zip --use-nerdctl` run now downloads `code-server v4.112.0`, stages it into the build context, and completes successfully.
+Files: clio/Common/CodeServerArchiveCache.cs, clio.tests/Common/CodeServerArchiveCacheTests.cs, .codex/workspace-diary.md
+Impact: Future bundled dev builds on Windows can populate the code-server cache reliably instead of failing on the first download attempt.
+
+## 2026-03-25 20:07 – Document Docker build caches and slow BuildKit context upload
+Context: User asked for explicit documentation of local build caches, which folders are safe to delete, and why the last bundled dev build spent a long time in `#5 [internal] load build context`.
+Decision: Updated the build-docker-image help, markdown docs, and command index to document `%LOCALAPPDATA%\creatio\clio` / `~/.local/creatio/clio`, the roles of `docker-templates`, `docker-assets\code-server`, `docker-image-cache`, and the temp build folders, plus a note that Docker/BuildKit step numbers are separate from clio's own build-flow numbering.
+Discovery: The cached bundled dev code-server archive at `docker-assets\code-server\4.112.0\code-server-4.112.0-linux-amd64.tar.gz` is about 127.7 MB on this machine, and the last successful bundled dev build uploaded about 1.99 GB of build context, so the long `load build context` phase is mostly the Creatio app payload plus the extra code-server archive crossing the Windows-to-WSL BuildKit boundary under Rancher Desktop.
+Files: clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future users can identify which local files are disposable versus reusable cache state, and can distinguish slow BuildKit context uploads from actual Dockerfile execution problems.
+
+## 2026-03-25 21:06 – Add registry push preflight and explicit push logging
+Context: User reported `--registry` builds appearing stuck after the local image was built and wanted early failure when the target registry is unavailable or rejects pushes.
+Decision: Added a registry preflight service that probes `/v2/` and starts a blob upload before the expensive image build, integrated it into `build-docker-image`, and added explicit log lines before image tagging and pushing. Documented that registry credentials are provided through `docker login` or `nerdctl login`, not command flags.
+Discovery: A simple `/v2/` probe is not enough to prove a push will work; starting `POST /v2/<repo>/blobs/uploads/` catches anonymous-read but no-push registries, while `401 Unauthorized` can be turned into a direct login hint before spending time building the image.
+Files: clio/Common/ContainerRegistryPreflightService.cs, clio/Command/BuildDockerImageService.cs, clio/BindingsModule.cs, clio.tests/Common/ContainerRegistryPreflightServiceTests.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future `--registry` builds now fail fast on unreachable or non-writable registries, and users can see clearly when clio transitions from local build work into tag/push operations.
+
+## 2026-03-25 21:59 – Reuse Docker credential helpers during registry push preflight
+Context: A real `clio-dev build-docker-image --template dev --registry registry.krylov.cloud` run failed in preflight even though direct `nerdctl push` to the same Nexus registry succeeded.
+Decision: Added a Docker-config-backed registry credential provider, extended process execution with optional stdin so credential helpers can be queried, and changed the preflight to try anonymous probes first and then retry with locally configured credentials when the registry returns `401`.
+Discovery: On this machine `registry.krylov.cloud` is stored in `%USERPROFILE%\\.docker\\config.json` with `credsStore=wincred`, and `docker-credential-wincred get` returned valid credentials for `nerdctl`; after reusing those credentials the exact `clio-dev ... --template dev --registry registry.krylov.cloud` command completed and the pushed image could be pulled back from the registry with manifest digest `sha256:a8dea71aea19054faf0ccbab3def3e512445bd2f3b15e4002f80dcfd0f68ae77`.
+Files: clio/Common/ProcessExecutor.cs, clio/Common/ContainerRegistryCredentialProvider.cs, clio/Common/ContainerRegistryPreflightService.cs, clio/BindingsModule.cs, clio.tests/Common/ContainerRegistryPreflightServiceTests.cs, .codex/workspace-diary.md
+Impact: Future registry preflights now match the auth behavior of `docker` and `nerdctl`, so saved login credentials no longer cause false negatives before a build starts.
+
+## 2026-03-25 21:13 – Add bundled db backup image template
+Context: User wanted `build-docker-image` to support `--template db` for wrapping a Creatio database backup from `zip-root/db` or `<folder>/db` into an image consumable by the operator.
+Decision: Added a bundled `db` template based on `busybox:1.36.1`, taught `BuildDockerImageService` to resolve only the `db` payload for that template, and labeled the image with `org.creatio.capability.db=true` plus `org.creatio.capability.db-source=<zip-or-folder-name>`.
+Discovery: The db flow must bypass the normal `.NET 8+` application validation and the existing `db`-folder exclusion logic used by `dev` and `prod`; a live `clio.exe build-docker-image --from F:\CreatioBuilds\8.3.4\8.3.4.1971_StudioNet8_Softkey_PostgreSQL_ENU.zip --template db --use-nerdctl` run produced `creatio-db:8.3.4.1971_studionet8_softkey_postgresql_enu` with the expected OCI labels and `/db/BPMonline834StudioNet8.backup` payload.
+Files: clio/Command/BuildDockerImageCommand.cs, clio/Command/BuildDockerImageService.cs, clio/tpl/docker-templates/db/Dockerfile, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future operator flows can distribute database backups as a lightweight image artifact without forking custom Dockerfiles, and the command docs now describe the exact source shape and OCI labels for that image type.
+
+## 2026-03-26 09:10 – Add operator-facing db image spec
+Context: User needed a concise contract document describing the bundled `db` image so an AI coding agent could wire `creatio-operator` against its labels, base image, and filesystem layout.
+Decision: Added a feature spec at `spec/db-image/db-image-spec.md` covering source resolution, `busybox:1.36.1` base image, `/db` payload layout, backup discovery assumptions, OCI labels, and current metadata limitations.
+Discovery: The repo’s documentation convention expects feature docs under `spec/<feature-name>/<feature-name>-<logical-block>.md`, so the requested `db-image.spec.md` content was stored as `spec/db-image/db-image-spec.md` instead of a flat top-level markdown file.
+Files: spec/db-image/db-image-spec.md, .codex/workspace-diary.md
+Impact: Future operator work can consume a stable, pathed contract for the db image format without reverse-engineering `build-docker-image` implementation details.
+
+## 2026-03-26 09:24 – Document direct ZIP-to-template PostgreSQL restore flow
+Context: User needed an operator-facing specification for how `clio rdb --backupPath <zip> --drop-if-exists --as-template` creates a PostgreSQL template database from a Creatio ZIP package without exposing clio implementation details.
+Decision: Added `spec/db-image/db-image-restore-from-zip-spec.md` describing the exact source identifier derivation, metadata-comment format, template lookup strategy, generated `template_<guid>` naming, SQL used for create/drop/comment/template marking, and the in-pod `pg_restore` command sequence.
+Discovery: The direct ZIP-based template flow does not use a deterministic template database name. It primarily identifies existing templates by a database comment token in the form `sourceFile:<zip-name-without-extension>`, with `template_<source-identifier>` used only as a backward-compatibility fallback.
+Files: spec/db-image/db-image-restore-from-zip-spec.md, .codex/workspace-diary.md
+Impact: Future `creatio-operator` work can reproduce or interoperate with clio’s PostgreSQL template behavior by matching comments and SQL semantics instead of reverse-engineering the restore command code.
+
+## 2026-03-26 08:45 – Accept nerdctl buildkit-only base images during docker-image preflight
+Context: User hit `build-docker-image` failures where bundled `prod` could not find `creatio-base:8.0-v1` and bundled `base` could not find `mcr.microsoft.com/dotnet/sdk:8.0`, even though both images were visible in `nerdctl --namespace buildkit images`.
+Decision: Changed `BuildDockerImageService` to inspect required images across both nerdctl namespaces, `k8s.io` and `buildkit`, and to treat a `buildkit` hit as sufficient instead of failing the build. Updated the `build-docker-image` docs/help to describe that behavior and added regression tests for both bundled `prod` and bundled `base`.
+Discovery: The previous preflight logic only looked in `k8s.io`; Rancher Desktop can leave images available only in `buildkit`, which is enough for BuildKit to build successfully but caused clio to fail before the build started. After the patch, live reruns of `clio.exe build-docker-image --template base` and `clio.exe build-docker-image --from F:\CreatioBuilds\8.3.4\8.3.4.2034_StudioNet8_Softkey_PostgreSQL_ENU.zip --template prod --registry registry.krylov.cloud` both completed successfully.
+Files: clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future nerdctl-based image builds no longer fail just because the required base or source image is resident only in the `buildkit` namespace, which matches the actual runtime behavior of BuildKit on Rancher Desktop.
+## 2026-03-26 09:55 – Fix registry-qualified image detection and effective preflight target
+Context: User brought review feedback on `build-docker-image` around registry-qualified image refs with ports, incorrect registry preflight target selection, and Sonar’s missing regex timeout warning.
+Decision: Fixed `IsRegistryQualifiedImageReference` to inspect the first path segment without stripping port information, changed registry preflight to derive the registry host from the effective `registryImageReference`, and added a timeout to the Dockerfile `FROM` regex.
+Discovery: Fully qualified base-image refs such as `registry.internal:5000/acme/base:1` were previously treated as unqualified, which could both mangle push targets and preflight the wrong registry even though the final effective image reference was already correct.
+Files: clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future private-registry pushes with explicit ports and fully qualified base-image refs will preflight and push against the correct destination, and Sonar no longer flags the Dockerfile `FROM` regex timeout.
