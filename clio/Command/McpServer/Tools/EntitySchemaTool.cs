@@ -127,11 +127,17 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 				 Creates a remote lookup schema in an existing Creatio package through EntitySchemaDesignerService.
 				 
 				 The schema always inherits from BaseLookup. Use this when the caller explicitly requested a lookup
-				 entity instead of a generic entity schema.
+				 entity instead of a generic entity schema. BaseLookup already provides Name and Description, so do
+				 not send them as custom columns.
 				 """)]
 	public CommandExecutionResult CreateLookup(
 		[Description("Parameters: environment-name, package-name, schema-name, title (all required); columns (optional)")] [Required] CreateLookupArgs args
 	) {
+		try {
+			ModelingGuardrails.EnsureLookupColumnsDoNotShadowInheritedBaseLookupColumns(args.Columns);
+		} catch (ArgumentException exception) {
+			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null);
+		}
 		CreateEntitySchemaOptions options = CreateEntitySchemaTool.CreateOptions(
 			args,
 			BaseLookupParentSchemaName,

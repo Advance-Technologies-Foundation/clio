@@ -237,6 +237,8 @@ public sealed class ApplicationToolE2ETests {
 			because: "successful application-create calls should return the created application's primary package identifier");
 		actResult.Result.PackageName.Should().NotBeNullOrWhiteSpace(
 			because: "successful application-create calls should return the created application's primary package name");
+		actResult.Result.CanonicalMainEntityName.Should().Be(applicationCode,
+			because: "application-create should surface the canonical main entity explicitly for MCP clients");
 		actResult.Result.Error.Should().BeNullOrWhiteSpace(
 			because: "successful create calls should not include an error payload");
 	}

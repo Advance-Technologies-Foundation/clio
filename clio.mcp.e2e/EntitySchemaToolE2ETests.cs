@@ -111,6 +111,11 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "lookup schema readback should expose nested columns for structured inspection");
 		schemaProperties.Columns!.Should().Contain(column => column.Source == "inherited",
 			because: "BaseLookup-derived schemas should expose inherited base columns in the schema read model");
+		schemaProperties.Columns!.Should().Contain(column =>
+				column.Name == arrangeContext.LookupColumnName
+				&& column.Source == "own"
+				&& column.Type == "Integer",
+			because: "create-lookup should still allow explicit custom columns beyond the inherited BaseLookup fields");
 		registrationSnapshot.LookupRowCount.Should().Be(1,
 			because: "create-lookup should register the schema exactly once in the Lookup entity");
 		registrationSnapshot.LookupRowTitle.Should().Be("Order status",
@@ -159,6 +164,47 @@ public sealed class EntitySchemaToolE2ETests {
 		AssertBinaryLikeColumnProperties(binaryColumnProperties, binaryColumnName, "Binary");
 		AssertBinaryLikeColumnProperties(imageColumnProperties, imageColumnName, "Image");
 		AssertBinaryLikeColumnProperties(fileColumnProperties, fileColumnName, "File");
+	}
+
+	[Test]
+	[Description("Rejects inherited BaseLookup columns before environment resolution when create-lookup tries to redefine Name.")]
+	[AllureTag(CreateLookupToolName)]
+	[AllureName("Create lookup rejects inherited BaseLookup columns")]
+	[AllureDescription("Uses the real MCP server to call create-lookup with a Name column and verifies the tool returns a structured validation failure before any environment lookup is needed.")]
+	public async Task CreateLookup_Should_Reject_Inherited_BaseLookup_Columns() {
+		// Arrange
+		await using InvalidEnvironmentArrangeContext arrangeContext = await ArrangeInvalidEnvironmentAsync();
+
+		// Act
+		CallToolResult callResult = await CallCreateLookupAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			"UsrPkg",
+			"UsrInvalidLookup",
+			arrangeContext.CancellationTokenSource.Token,
+			columns: [
+				new Dictionary<string, object?> {
+					["name"] = "Name",
+					["type"] = "Text",
+					["title"] = "Lookup name"
+				}
+			]);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "create-lookup should surface inherited-column validation as a structured command failure");
+		execution.ExitCode.Should().Be(1,
+			because: "create-lookup should fail when callers try to redefine inherited BaseLookup columns");
+		execution.Output.Should().Contain(message =>
+				message.Value?.Contains("BaseLookup", StringComparison.Ordinal) == true,
+			because: "the failure should explain that Name already comes from BaseLookup");
+		execution.Output.Should().Contain(message =>
+				message.Value?.Contains("Name", StringComparison.Ordinal) == true,
+			because: "the failure should identify the rejected inherited column");
+		execution.Output.Should().NotContain(message =>
+				message.Value?.Contains(arrangeContext.EnvironmentName, StringComparison.Ordinal) == true,
+			because: "validation should happen before environment resolution");
 	}
 
 	[Test]
@@ -279,6 +325,7 @@ public sealed class EntitySchemaToolE2ETests {
 		string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
 		string schemaName = $"Usr{Guid.NewGuid():N}".Substring(0, 22);
 		string initialColumnName = "Name";
+		string lookupColumnName = "UsrSortOrder";
 		string addedColumnName = "Code";
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(8));
 
@@ -305,6 +352,7 @@ public sealed class EntitySchemaToolE2ETests {
 			packageName,
 			schemaName,
 			initialColumnName,
+			lookupColumnName,
 			addedColumnName,
 			session,
 			cancellationTokenSource);
@@ -381,9 +429,9 @@ public sealed class EntitySchemaToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token,
 			columns: [
 				new Dictionary<string, object?> {
-					["name"] = arrangeContext.InitialColumnName,
-					["type"] = "Text",
-					["title"] = "Lookup name"
+					["name"] = arrangeContext.LookupColumnName,
+					["type"] = "Integer",
+					["title"] = "Sort order"
 				}
 			]);
 		return McpCommandExecutionParser.Extract(callResult);
@@ -826,6 +874,7 @@ public sealed class EntitySchemaToolE2ETests {
 		string PackageName,
 		string SchemaName,
 		string InitialColumnName,
+		string LookupColumnName,
 		string AddedColumnName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {

@@ -82,6 +82,9 @@ public sealed class SchemaSyncTool(
 		SchemaSyncOperation op, SchemaSyncArgs args,
 		string parentSchemaName, bool extendParent, string operationName) {
 		try {
+			if (string.Equals(operationName, "create-lookup", StringComparison.Ordinal)) {
+				ModelingGuardrails.EnsureLookupColumnsDoNotShadowInheritedBaseLookupColumns(op.Columns);
+			}
 			CreateEntitySchemaOptions options = CreateEntitySchemaTool.CreateOptions(
 				new CreateLookupArgs(
 					args.PackageName, op.SchemaName,

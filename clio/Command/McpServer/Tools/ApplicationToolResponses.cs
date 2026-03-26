@@ -27,6 +27,7 @@ public sealed record ApplicationContextResponse(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("package-u-id")] string? PackageUId = null,
 	[property: JsonPropertyName("package-name")] string? PackageName = null,
+	[property: JsonPropertyName("canonical-main-entity-name")] string? CanonicalMainEntityName = null,
 	[property: JsonPropertyName("entities")] IReadOnlyList<ApplicationEntityResult>? Entities = null,
 	[property: JsonPropertyName("error")] string? Error = null);
 

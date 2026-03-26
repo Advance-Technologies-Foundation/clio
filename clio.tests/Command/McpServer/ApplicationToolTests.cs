@@ -163,11 +163,11 @@ public sealed class ApplicationToolTests {
 		applicationInfoService.GetApplicationInfo("sandbox", "app-id", null).Returns(
 			new ApplicationInfoResult(
 				"pkg-uid",
-				"Pkg",
+				"UsrVehicle",
 				[
 					new ApplicationEntityInfoResult(
 						"entity-uid",
-						"UsrEntity",
+						"UsrVehicle",
 						"Entity",
 						[
 							new ApplicationColumnInfoResult(
@@ -195,8 +195,10 @@ public sealed class ApplicationToolTests {
 			because: "successful info calls should not include an error payload");
 		result.PackageUId.Should().Be("pkg-uid",
 			because: "the MCP tool should preserve the primary package identifier");
-		result.PackageName.Should().Be("Pkg",
+		result.PackageName.Should().Be("UsrVehicle",
 			because: "the MCP tool should preserve the primary package name");
+		result.CanonicalMainEntityName.Should().Be("UsrVehicle",
+			because: "the MCP tool should expose the canonical main entity when it matches the primary package");
 		result.Entities.Should().ContainSingle(
 			because: "the MCP tool should surface the entity metadata returned by the backend service");
 		result.Entities![0].Columns[0].DataValueType.Should().Be("Text",
@@ -287,11 +289,11 @@ public sealed class ApplicationToolTests {
 				Arg.Any<ApplicationCreateRequest>())
 			.Returns(new ApplicationInfoResult(
 				"pkg-uid",
-				"Pkg",
+				"UsrCodexApp",
 				[
 					new ApplicationEntityInfoResult(
 						"entity-uid",
-						"UsrEntity",
+						"UsrCodexApp",
 						"Entity",
 						[
 							new ApplicationColumnInfoResult(
@@ -341,6 +343,8 @@ public sealed class ApplicationToolTests {
 			because: "successful create calls should not include an error payload");
 		result.PackageUId.Should().Be("pkg-uid",
 			because: "the create MCP tool should preserve the primary package identifier from the backend service");
+		result.CanonicalMainEntityName.Should().Be("UsrCodexApp",
+			because: "the create MCP tool should expose the canonical main entity when the created app returns one");
 		result.Entities![0].Columns[0].DataValueType.Should().Be("Text",
 			because: "the create MCP tool should preserve Clio-style column metadata");
 	}
@@ -354,6 +358,7 @@ public sealed class ApplicationToolTests {
 			Success: true,
 			PackageUId: "pkg-uid",
 			PackageName: "Pkg",
+			CanonicalMainEntityName: "UsrEntity",
 			Entities: [
 				new ApplicationEntityResult(
 					UId: "entity-uid",
@@ -376,6 +381,8 @@ public sealed class ApplicationToolTests {
 			because: "application context responses should keep Clio kebab-case payload fields");
 		json.Should().Contain("\"package-name\":\"Pkg\"",
 			because: "application context responses should keep Clio kebab-case payload fields");
+		json.Should().Contain("\"canonical-main-entity-name\":\"UsrEntity\"",
+			because: "application context responses should expose the canonical main entity when it is known");
 		json.Should().Contain("\"u-id\":\"entity-uid\"",
 			because: "entity payloads should keep Clio kebab-case payload fields");
 		json.Should().Contain("\"data-value-type\":\"Text\"",

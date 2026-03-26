@@ -93,6 +93,46 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects inherited BaseLookup columns inside schema-sync create-lookup operations before any command executes.")]
+	public void SchemaSync_CreateLookup_Should_Reject_Inherited_BaseLookup_Columns() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation(
+					"create-lookup",
+					"UsrTodoStatus",
+					Title: "Todo Status",
+					Columns: [
+						new CreateEntitySchemaColumnArgs("Name", "Text", "Name")
+					])
+			]);
+
+		// Act
+		SchemaSyncResponse response = tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "schema-sync should fail fast when a create-lookup operation tries to redefine inherited BaseLookup columns");
+		response.Results.Should().HaveCount(1,
+			because: "validation should stop the batch on the rejected create-lookup operation");
+		response.Results[0].Operation.Should().Be("create-lookup",
+			because: "the failed result should still identify the rejected operation");
+		response.Results[0].Error.Should().Contain("BaseLookup",
+			because: "the failure should explain the inherited-column guardrail");
+		response.Results[0].Error.Should().Contain("Name",
+			because: "the failure should identify the rejected inherited column");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "schema-sync should not execute the create command after validation fails");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Routes create-entity operation with custom parent schema")]
 	public void SchemaSync_CreateEntity_Should_Use_Custom_Parent_Schema() {
 		// Arrange

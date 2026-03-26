@@ -19,6 +19,7 @@ internal sealed record ApplicationContextResponseEnvelope(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("package-u-id")] string? PackageUId,
 	[property: JsonPropertyName("package-name")] string? PackageName,
+	[property: JsonPropertyName("canonical-main-entity-name")] string? CanonicalMainEntityName,
 	[property: JsonPropertyName("entities")] IReadOnlyList<ApplicationEntityEnvelope>? Entities,
 	[property: JsonPropertyName("error")] string? Error);
 
