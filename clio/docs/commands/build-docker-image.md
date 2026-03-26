@@ -2,11 +2,11 @@
 
 ## Purpose
 
-`build-docker-image` builds a Docker image either from a Creatio `.NET 8+` distribution or from the bundled standalone `base` template. It supports bundled `base`, `dev`, and `prod` templates, or a custom template directory, and can optionally save the image to a tar file and push it to a registry.
+`build-docker-image` builds a Docker image either from a Creatio `.NET 8+` distribution, from a bundled database-backup payload, or from the bundled standalone `base` template. It supports bundled `base`, `dev`, `prod`, and `db` templates, or a custom template directory, and can optionally save the image to a tar file and push it to a registry.
 
 The command can run through either `docker` or `nerdctl`. You can force either CLI per invocation with `--use-docker` or `--use-nerdctl`; otherwise clio detects the first available runtime by probing `docker info` and then `nerdctl info`.
 
-`.NET Framework` distributions are permanently unsupported for templates that package Creatio files. Template `base` does not require `--from`.
+`.NET Framework` distributions are permanently unsupported for templates that package Creatio files. Bundled template `db` instead expects a `db` directory in the source payload and packages only that directory. Template `base` does not require `--from`.
 
 ## Usage
 
@@ -18,8 +18,8 @@ clio build-docker-image --template <name-or-path> [options]
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `--from` | Required except for `base` | Path to a Creatio ZIP archive or extracted application directory. Every non-`base` template currently requires it. |
-| `--template` | Yes | Bundled template name (`base`, `dev`, `prod`) or custom template directory path |
+| `--from` | Required except for `base` | Path to a Creatio ZIP archive or extracted application directory. Every non-`base` template currently requires it. Bundled `db` expects a `db` folder in that source. |
+| `--template` | Yes | Bundled template name (`base`, `dev`, `prod`, `db`) or custom template directory path |
 | `--output-path` | No | Optional tar file path used by `docker save` |
 | `--vscode-version` | No | Optional code-server version for bundled `dev` images; clio caches the matching archive locally and stages it into the Docker build context. Default: `4.112.0` |
 | `--base-image` | No | For template `base`, the image reference to build. For bundled `dev` and `prod`, the local base image reference that clio uses as the parent image. Default: `creatio-base:8.0-v1` |
@@ -42,6 +42,11 @@ When `nerdctl` is used, clio runs every image command with:
 ```text
 --namespace k8s.io
 ```
+
+For bundled-template base-image preflight under `nerdctl`, clio accepts required images if they already exist in either namespace:
+
+- `k8s.io`
+- `buildkit`
 
 ## Registry Authentication
 
@@ -70,9 +75,12 @@ When `--registry` is set, clio now probes the registry before the build starts. 
 
 ## Runtime Validation
 
-The command accepts only Creatio `.NET 8+` distributions.
+Validation depends on the template:
 
-Expected `.NET 8+` markers:
+- bundled `db` requires a `db` directory in the source ZIP or directory
+- `dev`, `prod`, and custom templates that package Creatio files accept only Creatio `.NET 8+` distributions
+
+Expected `.NET 8+` markers for application-packaging templates:
 - `Terrasoft.WebHost.dll`
 - `Terrasoft.WebHost.dll.config`
 
@@ -80,15 +88,23 @@ If the source looks like a `.NET Framework` deployment, for example `Web.config`
 
 ## Image Naming
 
-For bundled `dev`, `prod`, and custom templates that package Creatio files, the image reference is generated automatically.
+The image reference is generated automatically.
 
 - Repository: `creatio-<template-name>`
 - Tag: sanitized source archive or directory name
-- OCI label: `org.creatio.database-source=<original source archive-or-directory name>`
+
+OCI labels:
+
+- `dev`, `prod`, and custom Creatio templates:
+  `org.creatio.database-source=<original source archive-or-directory name>`
+- bundled `db`:
+  `org.creatio.capability.db=true`
+  `org.creatio.capability.db-source=<zip file name without .zip or folder name>`
 
 Examples:
 - Source `8.3.3_StudioNet8.zip` with template `dev` becomes `creatio-dev:8.3.3_studionet8`
 - Source folder `release-build` with template `prod` becomes `creatio-prod:release-build`
+- Source `8.3.4.1971_StudioNet8_Softkey_PostgreSQL_ENU.zip` with template `db` becomes `creatio-db:8.3.4.1971_studionet8_softkey_postgresql_enu`
 
 When `--registry` is provided, clio tags and pushes:
 
@@ -109,6 +125,7 @@ ghcr.io/acme/creatio-prod:8.3.3_studionet8
 - `base`: Shared bundled base image. Builds `creatio-base:8.0-v1` by default, or the image reference passed in `--base-image`
 - `dev`: Development-oriented image that consumes a local base image, with supervisor, SSH, and code-server
 - `prod`: Production-oriented image that consumes a local base image and supervises only the Creatio app process
+- `db`: Database-backup image based on `busybox:1.36.1`. Clio copies only the source `db/` payload into `/db` inside the image and adds OCI labels `org.creatio.capability.db=true` and `org.creatio.capability.db-source=<source-name>`
 
 Base image behavior:
 
@@ -118,7 +135,8 @@ Base image behavior:
 - clio does not auto-build the base image when you build `dev` or `prod`
 - successful bundled `base` builds are cached as local image archives under the clio settings folder
 - bundled `dev` and `prod` can restore that cached archive automatically when the local base image is missing
-- when `nerdctl` is used, clio also syncs the selected local base image into the `buildkit` namespace so BuildKit can resolve `FROM <base-image>` without a registry round-trip
+- when `nerdctl` is used, clio accepts required base/source images from either `k8s.io` or `buildkit`
+- when a required image exists only in `k8s.io`, clio also syncs it into `buildkit` so BuildKit can resolve `FROM <base-image>` without a registry round-trip
 - bundled `dev` uses a local cached code-server archive instead of downloading from GitHub during `docker build`
 - `--vscode-version` selects which `code-server-<version>-linux-amd64.tar.gz` archive clio fetches and caches for bundled `dev`
 
@@ -137,7 +155,7 @@ Clio stores reusable Docker build assets under the clio settings root:
 Important subfolders:
 
 - `docker-templates/`
-  Local copy of the bundled `base`, `dev`, and `prod` templates.
+  Local copy of the bundled `base`, `dev`, `prod`, and `db` templates.
   Safe to delete. Clio recreates it automatically the next time you build a bundled template.
 
 - `docker-assets/code-server/<version>/`
@@ -170,23 +188,25 @@ The command performs these steps:
 1. Resolve the bundled or custom template
 2. For templates other than `base`, validate the source path
 3. Build a temporary Docker context
-4. Exclude `db` directories from the extracted payload and staged Docker context, and write `.dockerignore` rules for `db` and `source/db`
-5. Normalize staged `*.sh` files to Unix LF line endings for Linux container compatibility
+4. For bundled `db`, locate the source `db` directory and copy it into the Docker build context as `db/`
+5. For `dev`, `prod`, and custom Creatio templates, exclude `db` directories from the extracted payload and staged Docker context, and write `.dockerignore` rules for `db` and `source/db`
+6. Normalize staged `*.sh` files to Unix LF line endings for Linux container compatibility
    For bundled `dev`, ensure the requested code-server archive is available in the local clio cache and copy it into the Docker build context as `code-server.tar.gz`
-6. Resolve the effective container image CLI from explicit flags or runtime probing
-7. Run the CLI version check
-8. For bundled `dev` and `prod`, verify that the selected base image is available locally
+7. Resolve the effective container image CLI from explicit flags or runtime probing
+8. Run the CLI version check
+9. For bundled `dev` and `prod`, verify that the selected base image is available locally
    If it is missing and a cached base image archive exists, restore it first
-   When `nerdctl` is used, also mirror that image into the `buildkit` namespace before `build`
-9. If `--registry` is set, run registry push preflight before the expensive image build
+   When `nerdctl` is used, clio accepts the image from either `k8s.io` or `buildkit`
+   If it exists only in `k8s.io`, clio also mirrors it into `buildkit` before `build`
+10. If `--registry` is set, run registry push preflight before the expensive image build
    Probe `GET /v2/` to confirm the registry is reachable
    Probe `POST /v2/<repository>/blobs/uploads/` to confirm upload initiation for the exact target repository
    Fail early when the registry is unreachable, rejects upload initiation, or requires authentication
-10. Run image build with `--pull=false` so cached base images are reused instead of forcing a refresh
-11. Optionally run image save
-12. Optionally run image tag and image push
+11. Run image build with `--pull=false` so cached base images are reused instead of forcing a refresh
+12. Optionally run image save
+13. Optionally run image tag and image push
    Clio now prints explicit `Tagging Docker image for registry push: ...` and `Pushing Docker image to registry: ...` lines before those actions
-13. Clean up temporary files
+14. Clean up temporary files
 
 ## Why `#5 [internal] load build context` can be slow
 
@@ -243,6 +263,12 @@ clio build-docker-image --from "/opt/builds/creatio-net8" --template dev --base-
 
 ```bash
 clio build-docker-image --from "/opt/builds/creatio-net8" --template prod
+```
+
+### Build a database-backup image from a ZIP archive
+
+```bash
+clio build-docker-image --from "C:\Creatio\8.3.4_StudioNet8.zip" --template db
 ```
 
 ### Force nerdctl for one build
@@ -306,6 +332,13 @@ The built image also includes an OCI label that preserves the original source pa
 org.creatio.database-source=8.3.4.1671_StudioNet8_Softkey_PostgreSQL_ENU
 ```
 
+Bundled `db` images instead include:
+
+```text
+org.creatio.capability.db=true
+org.creatio.capability.db-source=8.3.4.1671_StudioNet8_Softkey_PostgreSQL_ENU
+```
+
 ## Common Errors
 
 ### Container image CLI is not installed
@@ -314,7 +347,7 @@ If clio reports that the selected container image CLI is not installed or not av
 
 ### Unknown bundled template
 
-If the bundled template name is not found, use one of the shipped names (`base`, `dev`, `prod`) or pass a valid custom template directory.
+If the bundled template name is not found, use one of the shipped names (`base`, `dev`, `prod`, `db`) or pass a valid custom template directory.
 
 ### Custom template missing Dockerfile
 
@@ -323,6 +356,10 @@ Custom templates must contain a `Dockerfile`. Add one before running the command
 ### .NET Framework source
 
 If the source looks like a `.NET Framework` Creatio deployment, the command stops immediately. Use a `.NET 8+` distribution instead.
+
+### Missing `db` directory for bundled `db`
+
+If you use `--template db`, the source ZIP or directory must contain a `db` folder, or you can point `--from` directly at the `db` folder itself.
 
 ## Related Commands
 

@@ -37,11 +37,13 @@ public sealed class BuildDockerImageService(
 	IDockerTemplatePathProvider dockerTemplatePathProvider)
 	: IBuildDockerImageService {
 	private const string BaseBundledTemplateName = "base";
+	private const string DbBundledTemplateName = "db";
 	private const string BaseImageBuildArgumentName = "BASE_IMAGE";
 	private const string BundledBaseImageArchiveExtension = ".tar";
 	private const string BundledBaseImageArchiveFolderName = "docker-image-cache";
 	private const string DefaultBundledBaseImageReference = "creatio-base:8.0-v1";
 	private const string DatabaseSourceLabelName = "org.creatio.database-source";
+	private const string DbCapabilitySourceLabelName = "org.creatio.capability.db-source";
 	private const string BuildContextDockerIgnoreFileName = ".dockerignore";
 	private const string BuildWithoutPullFlag = "--pull=false";
 	private const string DatabaseDirectoryName = "db";
@@ -91,7 +93,7 @@ public sealed class BuildDockerImageService(
 			stagingRoot = CreateTemporaryDirectory("build-docker-image");
 			_logger.WriteInfo($"Created temp directory: {stagingRoot}");
 
-			string preparedSourceRoot = isBaseTemplate ? string.Empty : PrepareSourceRoot(sourcePath, stagingRoot);
+			string preparedSourceRoot = isBaseTemplate ? string.Empty : PrepareSourceRoot(sourcePath, stagingRoot, templateResolution);
 			ContainerImageCliKind containerImageCli = ResolveContainerImageCli(options);
 			ProcessExecutionResult versionResult = ExecuteContainerCli(containerImageCli, "--version", null);
 			if (!WasSuccessful(versionResult)) {
@@ -220,10 +222,20 @@ public sealed class BuildDockerImageService(
 		BuildDockerImageOptions options) {
 		string baseImageBuildArgument = BuildTemplateBaseImageBuildArgument(containerImageCli, templateResolution, options);
 		string buildkitHostArgument = BuildNerdctlBuildkitHostArgument(containerImageCli);
-		string imageLabelArgument = IsBaseTemplate(templateResolution)
-			? string.Empty
-			: $" --label \"{BuildDockerLabel(DatabaseSourceLabelName, sourceLeafName)}\"";
-		return $"build {BuildWithoutPullFlag}{buildkitHostArgument}{baseImageBuildArgument}{imageLabelArgument} -t \"{localImageReference}\" \".\"";
+		string imageLabelArguments = BuildTemplateImageLabelArguments(templateResolution, sourceLeafName);
+		return $"build {BuildWithoutPullFlag}{buildkitHostArgument}{baseImageBuildArgument}{imageLabelArguments} -t \"{localImageReference}\" \".\"";
+	}
+
+	private string BuildTemplateImageLabelArguments(DockerTemplateResolution templateResolution, string sourceLeafName) {
+		if (string.IsNullOrWhiteSpace(sourceLeafName) || IsBaseTemplate(templateResolution)) {
+			return string.Empty;
+		}
+
+		if (IsDbTemplate(templateResolution)) {
+			return $" --label \"{BuildDockerLabel(DbCapabilitySourceLabelName, sourceLeafName)}\"";
+		}
+
+		return $" --label \"{BuildDockerLabel(DatabaseSourceLabelName, sourceLeafName)}\"";
 	}
 
 	private string BuildNerdctlBuildkitHostArgument(ContainerImageCliKind containerImageCli) {
@@ -273,8 +285,15 @@ public sealed class BuildDockerImageService(
 		bool isBaseTemplate) {
 		string buildContextPath = _fileSystem.Combine(stagingRoot, "context");
 		_fileSystem.CopyDirectory(templateResolution.TemplatePath, buildContextPath, true);
-		RemoveDatabaseDirectory(buildContextPath);
-		if (!isBaseTemplate) {
+		if (IsDbTemplate(templateResolution)) {
+			string buildContextDatabasePath = _fileSystem.Combine(buildContextPath, DatabaseDirectoryName);
+			_fileSystem.CopyDirectory(sourceRootPath, buildContextDatabasePath, true);
+		}
+		else {
+			RemoveDatabaseDirectory(buildContextPath);
+		}
+
+		if (!isBaseTemplate && !IsDbTemplate(templateResolution)) {
 			EnsureDockerIgnoreExcludesDatabase(buildContextPath);
 			string buildContextSourcePath = _fileSystem.Combine(buildContextPath, SourceFolderName);
 			_fileSystem.CopyDirectory(sourceRootPath, buildContextSourcePath, true);
@@ -391,6 +410,10 @@ public sealed class BuildDockerImageService(
 		return string.Equals(templateResolution.Name, BaseBundledTemplateName, StringComparison.OrdinalIgnoreCase);
 	}
 
+	private bool IsDbTemplate(DockerTemplateResolution templateResolution) {
+		return string.Equals(templateResolution.Name, DbBundledTemplateName, StringComparison.OrdinalIgnoreCase);
+	}
+
 	private bool IsRegistryQualifiedImageReference(string imageReference) {
 		if (string.IsNullOrWhiteSpace(imageReference)) {
 			return false;
@@ -443,7 +466,11 @@ public sealed class BuildDockerImageService(
 		return _fileSystem.GetFullPath(outputPath);
 	}
 
-	private string PrepareSourceRoot(string sourcePath, string stagingRoot) {
+	private string PrepareSourceRoot(string sourcePath, string stagingRoot, DockerTemplateResolution templateResolution) {
+		if (IsDbTemplate(templateResolution)) {
+			return PrepareDatabaseSourceRoot(sourcePath, stagingRoot);
+		}
+
 		if (_fileSystem.ExistsDirectory(sourcePath)) {
 			string sourceRoot = ResolveApplicationRoot(sourcePath);
 			ValidateDotNetPayload(sourceRoot);
@@ -461,6 +488,19 @@ public sealed class BuildDockerImageService(
 		RemoveDatabaseDirectory(extractedSourceRoot);
 		ValidateDotNetPayload(extractedSourceRoot);
 		return extractedSourceRoot;
+	}
+
+	private string PrepareDatabaseSourceRoot(string sourcePath, string stagingRoot) {
+		if (_fileSystem.ExistsDirectory(sourcePath)) {
+			return ResolveDatabasePayloadRoot(sourcePath);
+		}
+
+		string extractedPath = _fileSystem.Combine(stagingRoot, "extracted");
+		_fileSystem.CreateDirectoryIfNotExists(extractedPath);
+
+		_logger.WriteInfo($"Extracting source ZIP to: {extractedPath}");
+		_zipFile.ExtractToDirectory(sourcePath, extractedPath);
+		return ResolveDatabasePayloadRoot(extractedPath);
 	}
 
 	private void RemoveDatabaseDirectory(string rootPath) {
@@ -515,6 +555,29 @@ public sealed class BuildDockerImageService(
 
 		throw new InvalidOperationException(
 			$"Could not detect a Creatio application root under '{normalizedRootPath}'.");
+	}
+
+	private string ResolveDatabasePayloadRoot(string rootPath) {
+		string normalizedRootPath = _fileSystem.GetFullPath(rootPath);
+		if (string.Equals(_msFileSystem.Path.GetFileName(normalizedRootPath.TrimEnd('/', '\\')),
+				DatabaseDirectoryName,
+				StringComparison.OrdinalIgnoreCase)) {
+			return normalizedRootPath;
+		}
+
+		string directDatabasePath = _fileSystem.Combine(normalizedRootPath, DatabaseDirectoryName);
+		if (_fileSystem.ExistsDirectory(directDatabasePath)) {
+			return directDatabasePath;
+		}
+
+		string[] nestedCandidates =
+			_fileSystem.GetDirectories(normalizedRootPath, DatabaseDirectoryName, SearchOption.AllDirectories);
+		if (nestedCandidates.Length == 1) {
+			return nestedCandidates[0];
+		}
+
+		throw new InvalidOperationException(
+			$"Source '{normalizedRootPath}' does not contain a '{DatabaseDirectoryName}' directory required by the bundled 'db' template.");
 	}
 
 	private string ResolveBaseImageReference(BuildDockerImageOptions options) {
@@ -677,6 +740,36 @@ public sealed class BuildDockerImageService(
 		}
 	}
 
+	private ProcessExecutionResult InspectImageForBuild(
+		ContainerImageCliKind containerImageCli,
+		string imageReference,
+		out string resolvedNerdctlNamespace) {
+		resolvedNerdctlNamespace = string.Empty;
+		if (containerImageCli != ContainerImageCliKind.Nerdctl) {
+			return ExecuteContainerCli(containerImageCli, $"image inspect \"{imageReference}\"", null);
+		}
+
+		ProcessExecutionResult defaultNamespaceInspectResult =
+			ExecuteContainerCli(ContainerImageCliKind.Nerdctl, $"image inspect \"{imageReference}\"", null);
+		if (WasSuccessful(defaultNamespaceInspectResult)) {
+			resolvedNerdctlNamespace = NerdctlNamespace;
+			return defaultNamespaceInspectResult;
+		}
+
+		ProcessExecutionResult buildkitNamespaceInspectResult =
+			ExecuteContainerCli(ContainerImageCliKind.Nerdctl, $"image inspect \"{imageReference}\"", null, BuildkitNerdctlNamespace);
+		if (WasSuccessful(buildkitNamespaceInspectResult)) {
+			resolvedNerdctlNamespace = BuildkitNerdctlNamespace;
+			_logger.WriteInfo(
+				$"Using image '{imageReference}' from nerdctl namespace '{BuildkitNerdctlNamespace}'.");
+			return buildkitNamespaceInspectResult;
+		}
+
+		return !string.IsNullOrWhiteSpace(defaultNamespaceInspectResult.StandardError)
+			? defaultNamespaceInspectResult
+			: buildkitNamespaceInspectResult;
+	}
+
 	private void StageBundledDevAssets(
 		string buildContextPath,
 		DockerTemplateResolution templateResolution,
@@ -725,9 +818,10 @@ public sealed class BuildDockerImageService(
 		}
 
 		ProcessExecutionResult inspectResult =
-			ExecuteContainerCli(containerImageCli, $"image inspect \"{imageReferenceToInspect}\"", null);
+			InspectImageForBuild(containerImageCli, imageReferenceToInspect, out string resolvedNerdctlNamespace);
 		if (WasSuccessful(inspectResult)) {
 			if (containerImageCli == ContainerImageCliKind.Nerdctl
+				&& !string.Equals(resolvedNerdctlNamespace, BuildkitNerdctlNamespace, StringComparison.Ordinal)
 				&& !EnsureImageAvailableInNerdctlBuildkitNamespace(imageReferenceToInspect)) {
 				_logger.WriteError(
 					$"Failed to prepare base image '{imageReferenceToInspect}' for nerdctl BuildKit namespace '{BuildkitNerdctlNamespace}'.");

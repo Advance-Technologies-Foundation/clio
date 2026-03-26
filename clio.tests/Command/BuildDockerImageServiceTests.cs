@@ -451,6 +451,51 @@ public class BuildDockerImageServiceTests {
 	}
 
 	[Test]
+	[Description("Execute should accept a bundled prod base image that exists only in the nerdctl buildkit namespace.")]
+	public void Execute_ShouldUseBundledProdBaseImageFromNerdctlBuildkitNamespace() {
+		// Arrange
+		string sourceDirectory = CreateDotNetSourceDirectory("Prod Source Buildkit Only");
+		string templateDirectory = CreateTemplateDirectory("prod-template", "ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		_templatePathProvider.ResolveTemplate("prod")
+			.Returns(new DockerTemplateResolution("prod", templateDirectory, true));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(callInfo => {
+				ProcessExecutionOptions executionOptions = callInfo.Arg<ProcessExecutionOptions>();
+				if (executionOptions.Arguments == "--namespace k8s.io image inspect \"creatio-base:8.0-v1\"") {
+					return Task.FromResult(new ProcessExecutionResult {
+						Started = true,
+						ExitCode = 1
+					});
+				}
+
+				return Task.FromResult(new ProcessExecutionResult {
+					Started = true,
+					ExitCode = 0
+				});
+			});
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "prod",
+			UseNerdctl = true
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because nerdctl builds should accept base images that are already available to BuildKit in its own namespace");
+		_processExecutor.Received().ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
+			o.Arguments == "--namespace buildkit image inspect \"creatio-base:8.0-v1\""));
+		GetReceivedExecutionOptions().Should().Contain(o =>
+				o.Arguments.StartsWith("--namespace k8s.io build --pull=false", StringComparison.Ordinal),
+			"because the final nerdctl build should proceed once the base image is confirmed in the buildkit namespace");
+		_processExecutor.DidNotReceive().ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
+			o.Arguments.Contains("save --output", StringComparison.Ordinal)
+			&& o.Arguments.Contains("\"creatio-base:8.0-v1\"", StringComparison.Ordinal)));
+	}
+
+	[Test]
 	[Description("Execute should surface base-image inspect errors instead of reporting every inspect failure as a missing local image.")]
 	public void Execute_ShouldReportInspectFailureDetailsForInvalidBaseImageReference() {
 		// Arrange
@@ -489,6 +534,46 @@ public class BuildDockerImageServiceTests {
 		_logger.Received().WriteError(Arg.Is<string>(s =>
 			s.Contains("Failed to inspect base image 'INVALID@@REF'", StringComparison.Ordinal)
 			&& s.Contains("invalid reference format", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Execute should accept the bundled base template source image when it exists only in the nerdctl buildkit namespace.")]
+	public void Execute_ShouldBuildBundledBaseTemplateWhenSourceImageExistsOnlyInNerdctlBuildkitNamespace() {
+		// Arrange
+		string templateDirectory = CreateTemplateDirectory("base-template", "FROM mcr.microsoft.com/dotnet/sdk:8.0\n");
+		_templatePathProvider.ResolveTemplate("base")
+			.Returns(new DockerTemplateResolution("base", templateDirectory, true));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(callInfo => {
+				ProcessExecutionOptions executionOptions = callInfo.Arg<ProcessExecutionOptions>();
+				if (executionOptions.Arguments == "--namespace k8s.io image inspect \"mcr.microsoft.com/dotnet/sdk:8.0\"") {
+					return Task.FromResult(new ProcessExecutionResult {
+						Started = true,
+						ExitCode = 1
+					});
+				}
+
+				return Task.FromResult(new ProcessExecutionResult {
+					Started = true,
+					ExitCode = 0
+				});
+			});
+
+		BuildDockerImageOptions options = new() {
+			Template = "base",
+			UseNerdctl = true
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because a bundled base build should proceed when the source SDK image is already available in the nerdctl buildkit namespace");
+		_processExecutor.Received().ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
+			o.Arguments == "--namespace buildkit image inspect \"mcr.microsoft.com/dotnet/sdk:8.0\""));
+		GetReceivedExecutionOptions().Should().Contain(o =>
+				o.Arguments.StartsWith("--namespace k8s.io build --pull=false", StringComparison.Ordinal),
+			"because the nerdctl base build should continue after the source image is found in the buildkit namespace");
 	}
 
 	[Test]
@@ -746,6 +831,132 @@ public class BuildDockerImageServiceTests {
 	}
 
 	[Test]
+	[Description("Execute should build the bundled db template from a directory source by staging only the db folder and applying db source labels.")]
+	public void Execute_ShouldBuildBundledDbTemplateFromDirectorySource() {
+		// Arrange
+		string sourceDirectory = CreateDatabaseSourceDirectory("Db Backup Source");
+		string templateDirectory = CreateTemplateDirectory("db-template", "FROM busybox:1.36.1\nCOPY db/ ./\n");
+		_templatePathProvider.ResolveTemplate("db")
+			.Returns(new DockerTemplateResolution("db", templateDirectory, true));
+		string stagedBackupContents = string.Empty;
+		bool stagedApplicationSourceExists = false;
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(callInfo => {
+				ProcessExecutionOptions executionOptions = callInfo.Arg<ProcessExecutionOptions>();
+				if (executionOptions.Arguments.StartsWith("build --pull=false", StringComparison.Ordinal)) {
+					string workingDirectory = executionOptions.WorkingDirectory ?? string.Empty;
+					stagedBackupContents = _msFileSystem.File.ReadAllText(
+						_msFileSystem.Path.Combine(workingDirectory, "db", "backup.dump"));
+					stagedApplicationSourceExists = _msFileSystem.Directory.Exists(
+						_msFileSystem.Path.Combine(workingDirectory, "source"));
+				}
+
+				return Task.FromResult(new ProcessExecutionResult {
+					Started = true,
+					ExitCode = 0
+				});
+			});
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "db"
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because the bundled db template should accept a source directory that only contains a db backup");
+		stagedBackupContents.Should().Be("backup-data",
+			"because the bundled db template should copy the source db folder into the Docker build context");
+		stagedApplicationSourceExists.Should().BeFalse(
+			"because the bundled db template should not stage the regular application source directory");
+		GetReceivedExecutionOptions().Should().Contain(o =>
+				o.Arguments.Contains("-t \"creatio-db:db_backup_source\"", StringComparison.Ordinal)
+				&& o.Arguments.Contains("--label \"org.creatio.capability.db-source=Db Backup Source\"", StringComparison.Ordinal),
+			"because bundled db images should be tagged as creatio-db and labeled with the original source leaf name");
+	}
+
+	[Test]
+	[Description("Execute should build the bundled db template from a zip source by extracting and staging the db folder from the archive root.")]
+	public void Execute_ShouldBuildBundledDbTemplateFromZipSource() {
+		// Arrange
+		string sourceZipPath = _msFileSystem.Path.Combine(_tempRoot, "8.3.4.1971_StudioNet8_Softkey_PostgreSQL_ENU.zip");
+		_msFileSystem.File.WriteAllText(sourceZipPath, "zip-placeholder");
+		string templateDirectory = CreateTemplateDirectory("db-template", "FROM busybox:1.36.1\nCOPY db/ ./\n");
+		_templatePathProvider.ResolveTemplate("db")
+			.Returns(new DockerTemplateResolution("db", templateDirectory, true));
+		_zipFile.When(z => z.ExtractToDirectory(sourceZipPath, Arg.Any<string>()))
+			.Do(callInfo => {
+				string extractedPath = callInfo.ArgAt<string>(1);
+				string extractedDbPath = _msFileSystem.Path.Combine(extractedPath, "db");
+				_msFileSystem.Directory.CreateDirectory(extractedDbPath);
+				_msFileSystem.File.WriteAllText(_msFileSystem.Path.Combine(extractedDbPath, "backup.dump"), "zip-backup-data");
+			});
+		string stagedBackupContents = string.Empty;
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(callInfo => {
+				ProcessExecutionOptions executionOptions = callInfo.Arg<ProcessExecutionOptions>();
+				if (executionOptions.Arguments.StartsWith("build --pull=false", StringComparison.Ordinal)) {
+					stagedBackupContents = _msFileSystem.File.ReadAllText(
+						_msFileSystem.Path.Combine(executionOptions.WorkingDirectory ?? string.Empty, "db", "backup.dump"));
+				}
+
+				return Task.FromResult(new ProcessExecutionResult {
+					Started = true,
+					ExitCode = 0
+				});
+			});
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceZipPath,
+			Template = "db"
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because the bundled db template should accept zip sources that expose a db folder");
+		stagedBackupContents.Should().Be("zip-backup-data",
+			"because the extracted db folder should be the only payload staged into the image build context");
+		GetReceivedExecutionOptions().Should().Contain(o =>
+				o.Arguments.Contains("--label \"org.creatio.capability.db-source=8.3.4.1971_StudioNet8_Softkey_PostgreSQL_ENU\"", StringComparison.Ordinal),
+			"because bundled db images should label the backup source using the zip file name without the extension");
+	}
+
+	[Test]
+	[Description("Execute should fail the bundled db template before invoking Docker when the source does not contain a db folder.")]
+	public void Execute_ShouldRejectBundledDbTemplateWhenDatabaseDirectoryIsMissing() {
+		// Arrange
+		string sourceDirectory = _msFileSystem.Path.Combine(_tempRoot, "missing-db");
+		_msFileSystem.Directory.CreateDirectory(sourceDirectory);
+		string templateDirectory = CreateTemplateDirectory("db-template", "FROM busybox:1.36.1\nCOPY db/ ./\n");
+		_templatePathProvider.ResolveTemplate("db")
+			.Returns(new DockerTemplateResolution("db", templateDirectory, true));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				ExitCode = 0
+			}));
+
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "db"
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because the bundled db template cannot build without a db directory to package");
+		_logger.Received().WriteError(Arg.Is<string>(s =>
+			s.Contains("does not contain a 'db' directory", StringComparison.Ordinal)));
+		_processExecutor.DidNotReceive().ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
+			o.Arguments.Contains("build --pull=false", StringComparison.Ordinal)));
+	}
+
+	[Test]
 	[Description("Execute should reject .NET Framework payloads before trying to invoke Docker.")]
 	public void Execute_ShouldRejectNetFrameworkSource() {
 		// Arrange
@@ -781,6 +992,15 @@ public class BuildDockerImageServiceTests {
 		_msFileSystem.File.WriteAllText(_msFileSystem.Path.Combine(sourceDirectory, "Terrasoft.WebHost.dll"), "dll");
 		_msFileSystem.File.WriteAllText(_msFileSystem.Path.Combine(sourceDirectory, "Terrasoft.WebHost.dll.config"), "config");
 		_msFileSystem.File.WriteAllText(_msFileSystem.Path.Combine(sourceDirectory, "appsettings.json"), "{}");
+		return sourceDirectory;
+	}
+
+	private string CreateDatabaseSourceDirectory(string leafName) {
+		string sourceDirectory = _msFileSystem.Path.Combine(_tempRoot, leafName);
+		string databaseDirectory = _msFileSystem.Path.Combine(sourceDirectory, "db");
+		_msFileSystem.Directory.CreateDirectory(databaseDirectory);
+		_msFileSystem.File.WriteAllText(_msFileSystem.Path.Combine(databaseDirectory, "backup.dump"), "backup-data");
+		_msFileSystem.File.WriteAllText(_msFileSystem.Path.Combine(sourceDirectory, "ignore-me.txt"), "not-part-of-db-image");
 		return sourceDirectory;
 	}
 

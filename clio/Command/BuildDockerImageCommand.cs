@@ -6,18 +6,18 @@ namespace Clio.Command;
 /// <summary>
 /// Options for the <c>build-docker-image</c> command.
 /// </summary>
-[Verb("build-docker-image", HelpText = "Build a Docker image for a Creatio .NET 8+ distribution")]
+[Verb("build-docker-image", HelpText = "Build a Docker image for a Creatio .NET 8+ distribution or bundled database backup")]
 public class BuildDockerImageOptions {
 	/// <summary>
 	/// Gets or sets the path to the source ZIP archive or extracted application directory.
 	/// </summary>
-	[Option("from", Required = false, HelpText = "Path to a Creatio ZIP archive or extracted application directory; required for every template except `base`")]
+	[Option("from", Required = false, HelpText = "Path to a Creatio ZIP archive or extracted directory; required for every template except `base`. Bundled `db` expects a `db` folder in the source")]
 	public string SourcePath { get; set; } = string.Empty;
 
 	/// <summary>
 	/// Gets or sets the bundled template name or custom template directory path.
 	/// </summary>
-	[Option("template", Required = true, HelpText = "Bundled template name (base, dev, prod) or template directory path")]
+	[Option("template", Required = true, HelpText = "Bundled template name (base, dev, prod, db) or template directory path")]
 	public string Template { get; set; } = string.Empty;
 
 	/// <summary>

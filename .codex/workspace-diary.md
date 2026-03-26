@@ -1234,3 +1234,31 @@ Decision: Added a Docker-config-backed registry credential provider, extended pr
 Discovery: On this machine `registry.krylov.cloud` is stored in `%USERPROFILE%\\.docker\\config.json` with `credsStore=wincred`, and `docker-credential-wincred get` returned valid credentials for `nerdctl`; after reusing those credentials the exact `clio-dev ... --template dev --registry registry.krylov.cloud` command completed and the pushed image could be pulled back from the registry with manifest digest `sha256:a8dea71aea19054faf0ccbab3def3e512445bd2f3b15e4002f80dcfd0f68ae77`.
 Files: clio/Common/ProcessExecutor.cs, clio/Common/ContainerRegistryCredentialProvider.cs, clio/Common/ContainerRegistryPreflightService.cs, clio/BindingsModule.cs, clio.tests/Common/ContainerRegistryPreflightServiceTests.cs, .codex/workspace-diary.md
 Impact: Future registry preflights now match the auth behavior of `docker` and `nerdctl`, so saved login credentials no longer cause false negatives before a build starts.
+
+## 2026-03-25 21:13 – Add bundled db backup image template
+Context: User wanted `build-docker-image` to support `--template db` for wrapping a Creatio database backup from `zip-root/db` or `<folder>/db` into an image consumable by the operator.
+Decision: Added a bundled `db` template based on `busybox:1.36.1`, taught `BuildDockerImageService` to resolve only the `db` payload for that template, and labeled the image with `org.creatio.capability.db=true` plus `org.creatio.capability.db-source=<zip-or-folder-name>`.
+Discovery: The db flow must bypass the normal `.NET 8+` application validation and the existing `db`-folder exclusion logic used by `dev` and `prod`; a live `clio.exe build-docker-image --from F:\CreatioBuilds\8.3.4\8.3.4.1971_StudioNet8_Softkey_PostgreSQL_ENU.zip --template db --use-nerdctl` run produced `creatio-db:8.3.4.1971_studionet8_softkey_postgresql_enu` with the expected OCI labels and `/db/BPMonline834StudioNet8.backup` payload.
+Files: clio/Command/BuildDockerImageCommand.cs, clio/Command/BuildDockerImageService.cs, clio/tpl/docker-templates/db/Dockerfile, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future operator flows can distribute database backups as a lightweight image artifact without forking custom Dockerfiles, and the command docs now describe the exact source shape and OCI labels for that image type.
+
+## 2026-03-26 09:10 – Add operator-facing db image spec
+Context: User needed a concise contract document describing the bundled `db` image so an AI coding agent could wire `creatio-operator` against its labels, base image, and filesystem layout.
+Decision: Added a feature spec at `spec/db-image/db-image-spec.md` covering source resolution, `busybox:1.36.1` base image, `/db` payload layout, backup discovery assumptions, OCI labels, and current metadata limitations.
+Discovery: The repo’s documentation convention expects feature docs under `spec/<feature-name>/<feature-name>-<logical-block>.md`, so the requested `db-image.spec.md` content was stored as `spec/db-image/db-image-spec.md` instead of a flat top-level markdown file.
+Files: spec/db-image/db-image-spec.md, .codex/workspace-diary.md
+Impact: Future operator work can consume a stable, pathed contract for the db image format without reverse-engineering `build-docker-image` implementation details.
+
+## 2026-03-26 09:24 – Document direct ZIP-to-template PostgreSQL restore flow
+Context: User needed an operator-facing specification for how `clio rdb --backupPath <zip> --drop-if-exists --as-template` creates a PostgreSQL template database from a Creatio ZIP package without exposing clio implementation details.
+Decision: Added `spec/db-image/db-image-restore-from-zip-spec.md` describing the exact source identifier derivation, metadata-comment format, template lookup strategy, generated `template_<guid>` naming, SQL used for create/drop/comment/template marking, and the in-pod `pg_restore` command sequence.
+Discovery: The direct ZIP-based template flow does not use a deterministic template database name. It primarily identifies existing templates by a database comment token in the form `sourceFile:<zip-name-without-extension>`, with `template_<source-identifier>` used only as a backward-compatibility fallback.
+Files: spec/db-image/db-image-restore-from-zip-spec.md, .codex/workspace-diary.md
+Impact: Future `creatio-operator` work can reproduce or interoperate with clio’s PostgreSQL template behavior by matching comments and SQL semantics instead of reverse-engineering the restore command code.
+
+## 2026-03-26 08:45 – Accept nerdctl buildkit-only base images during docker-image preflight
+Context: User hit `build-docker-image` failures where bundled `prod` could not find `creatio-base:8.0-v1` and bundled `base` could not find `mcr.microsoft.com/dotnet/sdk:8.0`, even though both images were visible in `nerdctl --namespace buildkit images`.
+Decision: Changed `BuildDockerImageService` to inspect required images across both nerdctl namespaces, `k8s.io` and `buildkit`, and to treat a `buildkit` hit as sufficient instead of failing the build. Updated the `build-docker-image` docs/help to describe that behavior and added regression tests for both bundled `prod` and bundled `base`.
+Discovery: The previous preflight logic only looked in `k8s.io`; Rancher Desktop can leave images available only in `buildkit`, which is enough for BuildKit to build successfully but caused clio to fail before the build started. After the patch, live reruns of `clio.exe build-docker-image --template base` and `clio.exe build-docker-image --from F:\CreatioBuilds\8.3.4\8.3.4.2034_StudioNet8_Softkey_PostgreSQL_ENU.zip --template prod --registry registry.krylov.cloud` both completed successfully.
+Files: clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future nerdctl-based image builds no longer fail just because the required base or source image is resident only in the `buildkit` namespace, which matches the actual runtime behavior of BuildKit on Rancher Desktop.
