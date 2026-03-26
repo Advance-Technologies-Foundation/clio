@@ -23,7 +23,7 @@ clio build-docker-image --template <name-or-path> [options]
 | `--output-path` | No | Optional tar file path used by `docker save` |
 | `--vscode-version` | No | Optional code-server version for bundled `dev` images; clio caches the matching archive locally and stages it into the Docker build context. Default: `4.112.0` |
 | `--base-image` | No | For template `base`, the image reference to build. For bundled `dev` and `prod`, the local base image reference that clio uses as the parent image. Default: `creatio-base:8.0-v1` |
-| `--registry` | No | Optional registry or repository prefix used by `docker push`. Clio now runs a registry preflight check before the expensive image build starts. |
+| `--registry` | No | Optional registry or repository prefix used by `docker push`. If template `base` already builds a fully qualified `--base-image`, that fully qualified image remains the effective push target. Clio now runs a registry preflight check before the expensive image build starts. |
 | `--use-docker` | No | Force the command to use `docker` for this invocation |
 | `--use-nerdctl` | No | Force the command to use `nerdctl` for this invocation; clio adds `--namespace k8s.io` automatically |
 

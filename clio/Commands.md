@@ -4084,7 +4084,7 @@ clio build-docker-image --template <name-or-path> [options]
 - `--output-path <Path>` - Optional. Save the built image to a tar file with `docker save`
 - `--vscode-version <Version>` - Optional. Bundled `dev` only. Cache and stage the requested code-server version locally; default `4.112.0`
 - `--base-image <ImageRef>` - Optional. For `base`, the image reference to build. For bundled `dev` and `prod`, the local base image reference clio uses as the parent image. Default `creatio-base:8.0-v1`
-- `--registry <Prefix>` - Optional. Tag and push the image to `<Prefix>/creatio-<template>:<tag>`. Clio runs a registry preflight probe before the expensive image build starts
+- `--registry <Prefix>` - Optional. Tag and push the image to `<Prefix>/creatio-<template>:<tag>`. If template `base` already uses a fully qualified `--base-image`, that fully qualified image remains the effective push target. Clio runs a registry preflight probe before the expensive image build starts
 - `--use-docker` - Optional. Force `docker` for this invocation and bypass runtime CLI auto-detection
 - `--use-nerdctl` - Optional. Force `nerdctl` for this invocation and bypass runtime CLI auto-detection; clio adds `--namespace k8s.io`
 

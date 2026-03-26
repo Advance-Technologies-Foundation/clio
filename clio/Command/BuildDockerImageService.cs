@@ -58,6 +58,7 @@ public sealed class BuildDockerImageService(
 	private const string TerrasoftWebHostDll = "Terrasoft.WebHost.dll";
 	private const string TerrasoftWebHostConfig = "Terrasoft.WebHost.dll.config";
 	private const string NetFrameworkConfig = "Web.config";
+	private static readonly TimeSpan DockerfileFromInstructionRegexTimeout = TimeSpan.FromSeconds(1);
 
 	private readonly ICodeServerArchiveCache _codeServerArchiveCache =
 		codeServerArchiveCache ?? throw new ArgumentNullException(nameof(codeServerArchiveCache));
@@ -107,7 +108,7 @@ public sealed class BuildDockerImageService(
 			}
 
 			int registryPreflightResult =
-				ValidateRegistryPushTarget(containerImageCli, registryImageReference, options.Registry);
+				ValidateRegistryPushTarget(containerImageCli, registryImageReference);
 			if (registryPreflightResult != 0) {
 				return registryPreflightResult;
 			}
@@ -419,13 +420,12 @@ public sealed class BuildDockerImageService(
 			return false;
 		}
 
-		string repositoryPart = imageReference.Split(':')[0];
-		int slashIndex = repositoryPart.IndexOf('/');
+		int slashIndex = imageReference.IndexOf('/');
 		if (slashIndex <= 0) {
 			return false;
 		}
 
-		string firstSegment = repositoryPart[..slashIndex];
+		string firstSegment = imageReference[..slashIndex];
 		return firstSegment.Contains('.', StringComparison.Ordinal)
 			|| firstSegment.Contains(':', StringComparison.Ordinal)
 			|| string.Equals(firstSegment, "localhost", StringComparison.OrdinalIgnoreCase);
@@ -623,7 +623,11 @@ public sealed class BuildDockerImageService(
 		if (templateResolution.IsBundled && IsBaseTemplate(templateResolution)) {
 			string dockerfilePath = _fileSystem.Combine(buildContextPath, "Dockerfile");
 			string dockerfileContents = _fileSystem.ReadAllText(dockerfilePath);
-			Match fromMatch = Regex.Match(dockerfileContents, @"(?im)^\s*FROM\s+(?<image>[^\s]+)");
+			Match fromMatch = Regex.Match(
+				dockerfileContents,
+				@"^\s*FROM\s+(?<image>[^\s]+)",
+				RegexOptions.IgnoreCase | RegexOptions.Multiline,
+				DockerfileFromInstructionRegexTimeout);
 			if (!fromMatch.Success) {
 				throw new InvalidOperationException(
 					$"Could not determine the bundled base template source image from '{dockerfilePath}'.");
@@ -883,11 +887,28 @@ public sealed class BuildDockerImageService(
 		throw new InvalidOperationException($"Source '{fullSourcePath}' was not found.");
 	}
 
+	private string ExtractRegistryPrefix(string registryImageReference) {
+		if (string.IsNullOrWhiteSpace(registryImageReference)) {
+			return string.Empty;
+		}
+
+		int slashIndex = registryImageReference.IndexOf('/');
+		if (slashIndex <= 0) {
+			return string.Empty;
+		}
+
+		return registryImageReference[..slashIndex];
+	}
+
 	private int ValidateRegistryPushTarget(
 		ContainerImageCliKind containerImageCli,
-		string registryImageReference,
-		string registryPrefix) {
-		if (string.IsNullOrWhiteSpace(registryImageReference) || string.IsNullOrWhiteSpace(registryPrefix)) {
+		string registryImageReference) {
+		if (string.IsNullOrWhiteSpace(registryImageReference)) {
+			return 0;
+		}
+
+		string registryPrefix = ExtractRegistryPrefix(registryImageReference);
+		if (string.IsNullOrWhiteSpace(registryPrefix)) {
 			return 0;
 		}
 

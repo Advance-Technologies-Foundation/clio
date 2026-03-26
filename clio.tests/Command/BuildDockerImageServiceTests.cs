@@ -309,6 +309,50 @@ public class BuildDockerImageServiceTests {
 	}
 
 	[Test]
+	[Description("Execute should treat a base image reference with a registry port as already qualified and preflight the effective push target instead of the raw --registry option.")]
+	public void Execute_ShouldUseEffectiveQualifiedBaseImageTargetWhenRegistryAndPortQualifiedBaseImageAreProvided() {
+		// Arrange
+		string templateDirectory = CreateTemplateDirectory("base-template", "FROM scratch\n");
+		_templatePathProvider.ResolveTemplate("base")
+			.Returns(new DockerTemplateResolution("base", templateDirectory, true));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessExecutionResult {
+				Started = true,
+				ExitCode = 0
+			}));
+		_containerRegistryPreflightService.ValidatePushTarget(
+				"registry.internal:5000",
+				"registry.internal:5000/acme/base:1")
+			.Returns(new ContainerRegistryPreflightResult(
+				true,
+				"https://registry.internal:5000/",
+				"accepted"));
+
+		BuildDockerImageOptions options = new() {
+			Template = "base",
+			BaseImage = "registry.internal:5000/acme/base:1",
+			Registry = "docker.io"
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			"because a fully-qualified base image reference with a registry port should remain the effective push target");
+		_containerRegistryPreflightService.Received(1).ValidatePushTarget(
+			"registry.internal:5000",
+			"registry.internal:5000/acme/base:1");
+		_containerRegistryPreflightService.DidNotReceive().ValidatePushTarget(
+			"docker.io",
+			Arg.Any<string>());
+		_processExecutor.Received().ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
+			o.Arguments == "tag \"registry.internal:5000/acme/base:1\" \"registry.internal:5000/acme/base:1\""));
+		_processExecutor.Received().ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
+			o.Arguments == "push \"registry.internal:5000/acme/base:1\""));
+	}
+
+	[Test]
 	[Description("Execute should fail before the expensive image build when registry preflight indicates that the configured push target is not writable.")]
 	public void Execute_ShouldFailBeforeBuildWhenRegistryPreflightFails() {
 		// Arrange
@@ -587,19 +631,35 @@ public class BuildDockerImageServiceTests {
 		string cachedArchivePath = _msFileSystem.Path.Combine(_tempRoot, "settings", "docker-image-cache", "creatio-base_8.0-v1.tar");
 		_msFileSystem.Directory.CreateDirectory(_msFileSystem.Path.GetDirectoryName(cachedArchivePath) ?? string.Empty);
 		_msFileSystem.File.WriteAllText(cachedArchivePath, "cached-base");
-		int inspectCallCount = 0;
+		int k8sInspectCallCount = 0;
+		int buildkitInspectCallCount = 0;
 		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
 			.Returns(callInfo => {
 				ProcessExecutionOptions executionOptions = callInfo.Arg<ProcessExecutionOptions>();
 				if (executionOptions.Arguments == "--namespace k8s.io image inspect \"creatio-base:8.0-v1\"") {
-					inspectCallCount++;
+					k8sInspectCallCount++;
 					return Task.FromResult(new ProcessExecutionResult {
 						Started = true,
-						ExitCode = inspectCallCount == 1 ? 1 : 0
+						ExitCode = k8sInspectCallCount == 1 ? 1 : 0
+					});
+				}
+
+				if (executionOptions.Arguments == "--namespace buildkit image inspect \"creatio-base:8.0-v1\"") {
+					buildkitInspectCallCount++;
+					return Task.FromResult(new ProcessExecutionResult {
+						Started = true,
+						ExitCode = buildkitInspectCallCount == 1 ? 1 : 0
 					});
 				}
 
 				if (executionOptions.Arguments == "--namespace k8s.io load --input \"" + cachedArchivePath + "\"") {
+					return Task.FromResult(new ProcessExecutionResult {
+						Started = true,
+						ExitCode = 0
+					});
+				}
+
+				if (executionOptions.Arguments == "--namespace buildkit load --input \"" + cachedArchivePath + "\"") {
 					return Task.FromResult(new ProcessExecutionResult {
 						Started = true,
 						ExitCode = 0

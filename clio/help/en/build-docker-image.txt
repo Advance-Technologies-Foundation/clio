@@ -72,6 +72,10 @@ OPTIONS
         The command tags the built image as:
             <PREFIX>/creatio-<template-name>:<tag>
         and then pushes that tagged image.
+        If template `base` already builds a fully-qualified `--base-image`
+        reference such as `registry.internal:5000/acme/base:1`, clio uses that
+        fully-qualified image reference as the effective push target instead of
+        prepending `PREFIX`.
         Before the image build starts, clio runs a registry preflight probe against
         the final push target and fails fast if the registry is unreachable or
         upload initiation is rejected.
