@@ -1064,6 +1064,13 @@ Discovery: `page-sync` validation can reject valid Freedom UI pages when handler
 Files: clio/Command/SchemaValidationService.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Future PRs touching `page-sync` validation or entity-schema column mutation rules can reuse the safer JSON helper pattern and the new handler-focused regression tests instead of rediscovering the same production regression and Sonar issues.
 
+## 2026-03-26 08:50 – Resolve PR 485 master merge conflict
+Context: User asked whether PR `#485` still had merge conflicts and then requested resolving them.
+Decision: Merged the latest `origin/master` into `ENG-87492-Alfa-version-of-ADAC-+Clio-final`, resolved the only conflict in `clio/clio.csproj` by keeping the newer default `AssemblyVersion` from `master`, and verified the project still builds.
+Discovery: GitHub marked PR `#485` as `CONFLICTING`/`DIRTY`, but the merge conflict was limited to a single version-line change in `clio/clio.csproj` (`8.0.2.39` vs `8.0.2.40`).
+Files: clio/clio.csproj, .codex/workspace-diary.md
+Impact: Future PR conflict checks on this branch can assume the remaining mergeability risk was cleared after the version bump was reconciled with `master`.
+
 ## 2026-03-25 15:45 – Auto-register MCP-created lookups in Lookups
 Context: Implemented ENG-87524 so AI-created lookup schemas become immediately manageable through the standard `Lookups` section.
 Decision: Added an internal `ILookupRegistrationService` that writes the `Lookup` row plus canonical deterministic `Lookup_<schema>` package schema data binding, then invoked it from both direct `create-lookup` and `schema-sync` `create-lookup` flows so registration is part of successful lookup creation.
