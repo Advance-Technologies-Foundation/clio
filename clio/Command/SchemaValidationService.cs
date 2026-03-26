@@ -2,6 +2,7 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 public static class SchemaValidationService
@@ -51,6 +52,182 @@ public static class SchemaValidationService
 			}
 		}
 		return result;
+	}
+
+	private static readonly string[] JsonArrayMarkers = {
+		"SCHEMA_VIEW_CONFIG_DIFF",
+		"SCHEMA_DIFF",
+		"SCHEMA_VIEW_MODEL_CONFIG_DIFF",
+		"SCHEMA_MODEL_CONFIG_DIFF",
+		"SCHEMA_DEPS"
+	};
+
+	private static readonly string[] JsonObjectMarkers = {
+		"SCHEMA_VIEW_MODEL_CONFIG",
+		"SCHEMA_MODEL_CONFIG",
+		"SCHEMA_CONVERTERS",
+		"SCHEMA_VALIDATORS"
+	};
+
+	public static SchemaValidationResult ValidateMarkerContent(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			result.IsValid = false;
+			result.Errors.Add("JS body is null or empty.");
+			return result;
+		}
+		if (!ValidateMarkers(jsBody, JsonArrayMarkers, result)) {
+			return result;
+		}
+		ValidateMarkers(jsBody, JsonObjectMarkers, result);
+		return result;
+	}
+
+	private static bool ValidateMarkers(
+		string jsBody,
+		IEnumerable<string> markers,
+		SchemaValidationResult result) {
+		foreach (string marker in markers) {
+			if (!PageSchemaSectionReader.TryRead(jsBody, out string content, marker)) {
+				continue;
+			}
+			if (!TryParseJson(content, marker, result)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static bool TryParseJson(string content, string marker, SchemaValidationResult result) {
+		if (TryParseJsonDocument(content, out JsonDocument document, out string errorMessage)) {
+			using (document) {
+				return true;
+			}
+		}
+		result.IsValid = false;
+		result.Errors.Add($"Invalid JSON in {marker}: {errorMessage}");
+		return false;
+	}
+
+	public static SchemaValidationResult ValidateColumnBindings(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, "SCHEMA_VIEW_CONFIG_DIFF", "SCHEMA_DIFF")) {
+			return result;
+		}
+		var columnCodes = ExtractDataTableColumnCodes(vcdContent);
+		if (columnCodes.Count == 0) {
+			return result;
+		}
+		HashSet<string> boundPaths = new(StringComparer.OrdinalIgnoreCase);
+		if (PageSchemaSectionReader.TryRead(jsBody, out string vmContent, "SCHEMA_VIEW_MODEL_CONFIG_DIFF")) {
+			CollectModelPaths(vmContent, boundPaths);
+		}
+		if (PageSchemaSectionReader.TryRead(jsBody, out string vmContent2, "SCHEMA_VIEW_MODEL_CONFIG")) {
+			CollectModelPaths(vmContent2, boundPaths);
+		}
+		foreach (string code in columnCodes) {
+			string expectedPath = code.Replace("_", ".", StringComparison.Ordinal);
+			if (!boundPaths.Contains(expectedPath)) {
+				result.Errors.Add($"DataTable column '{code}' has no matching binding (expected path '{expectedPath}')");
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static List<string> ExtractDataTableColumnCodes(string vcdContent) {
+		if (!TryParseJsonDocument(vcdContent, out JsonDocument document, out _)) {
+			return [];
+		}
+		using (document) {
+			if (document.RootElement.ValueKind != JsonValueKind.Array) {
+				return [];
+			}
+			var codes = new List<string>();
+			foreach (JsonElement item in document.RootElement.EnumerateArray()) {
+				if (TryGetDataTableColumns(item, out JsonElement columns)) {
+					AddColumnCodes(columns, codes);
+				}
+			}
+			return codes;
+		}
+	}
+
+	private static void CollectModelPaths(string markerContent, HashSet<string> paths) {
+		if (!TryParseJsonDocument(markerContent, out JsonDocument document, out _)) {
+			return;
+		}
+		using (document) {
+			CollectPathsFromElement(document.RootElement, paths);
+		}
+	}
+
+	private static bool TryGetDataTableColumns(JsonElement item, out JsonElement columns) {
+		columns = default;
+		return item.TryGetProperty("name", out JsonElement nameElement)
+			&& string.Equals(nameElement.GetString(), "DataTable", StringComparison.Ordinal)
+			&& item.TryGetProperty("values", out JsonElement values)
+			&& values.TryGetProperty("columns", out columns)
+			&& columns.ValueKind == JsonValueKind.Array;
+	}
+
+	private static void AddColumnCodes(JsonElement columns, List<string> codes) {
+		foreach (JsonElement column in columns.EnumerateArray()) {
+			if (TryGetColumnCode(column, out string code)) {
+				codes.Add(code);
+			}
+		}
+	}
+
+	private static bool TryGetColumnCode(JsonElement column, out string code) {
+		code = string.Empty;
+		if (!column.TryGetProperty("code", out JsonElement codeElement)) {
+			return false;
+		}
+		string? candidate = codeElement.GetString();
+		if (string.IsNullOrEmpty(candidate) || !candidate.StartsWith("PDS_", StringComparison.Ordinal)) {
+			return false;
+		}
+		code = candidate;
+		return true;
+	}
+
+	private static bool TryParseJsonDocument(string content, out JsonDocument document, out string errorMessage) {
+		try {
+			document = JsonDocument.Parse(NormalizeJson(content));
+			errorMessage = string.Empty;
+			return true;
+		} catch (Exception ex) {
+			document = null!;
+			errorMessage = ex.Message;
+			return false;
+		}
+	}
+
+	private static string NormalizeJson(string content) {
+		return Regex.Replace(content, @",(\s*[\]\}])", "$1", RegexOptions.None, RegexTimeout);
+	}
+
+	private static void CollectPathsFromElement(JsonElement element, HashSet<string> paths) {
+		if (element.ValueKind == JsonValueKind.Object) {
+			if (element.TryGetProperty("modelConfig", out var mc) &&
+			    mc.TryGetProperty("path", out var pathEl) &&
+			    pathEl.ValueKind == JsonValueKind.String) {
+				paths.Add(pathEl.GetString());
+			}
+			foreach (var prop in element.EnumerateObject()) {
+				CollectPathsFromElement(prop.Value, paths);
+			}
+		} else if (element.ValueKind == JsonValueKind.Array) {
+			foreach (var item in element.EnumerateArray()) {
+				CollectPathsFromElement(item, paths);
+			}
+		}
 	}
 
 	public static SchemaValidationResult ValidateJsSyntax(string jsBody) {

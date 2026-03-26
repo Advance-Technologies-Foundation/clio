@@ -11,7 +11,10 @@ internal static class EntitySchemaDesignerSupport
 {
 	internal const string DefaultCultureName = "en-US";
 	internal const string EntitySchemaManagerName = "EntitySchemaManager";
+	private const string BinaryTypeName = "binary";
 	private const string DateTimeTypeName = "datetime";
+	private const string FileTypeName = "file";
+	private const string ImageTypeName = "image";
 
 	internal static readonly Dictionary<string, int> SupportedDataValueTypes =
 		new(StringComparer.OrdinalIgnoreCase) {
@@ -25,7 +28,9 @@ internal static class EntitySchemaDesignerSupport
 			["webLink"] = 44,
 			["email"] = 45,
 			["richText"] = 43,
-			
+			[BinaryTypeName] = 13,
+			[ImageTypeName] = 14,
+			[FileTypeName] = 25,
 			["integer"] = 4,
 			[DateTimeTypeName] = 7,
 			["lookup"] = 10,
@@ -48,6 +53,7 @@ internal static class EntitySchemaDesignerSupport
 			["mediumtext"] = "text250",
 			["longtext"] = "text500",
 			["maxsizetext"] = "textUnlimited",
+			["blob"] = BinaryTypeName,
 			["float"] = "decimal2",
 			["date"] = DateTimeTypeName,
 			["time"] = DateTimeTypeName
@@ -63,6 +69,11 @@ internal static class EntitySchemaDesignerSupport
 		SupportedDataValueTypes["webLink"],
 		SupportedDataValueTypes["email"],
 		SupportedDataValueTypes["richText"]
+	];
+	private static readonly HashSet<int> BinaryLikeDataValueTypes = [
+		SupportedDataValueTypes[BinaryTypeName],
+		SupportedDataValueTypes[ImageTypeName],
+		SupportedDataValueTypes[FileTypeName]
 	];
 
 	internal static string GetCurrentCultureName() {
@@ -168,12 +179,20 @@ internal static class EntitySchemaDesignerSupport
 		return dataValueType == SupportedDataValueTypes[DateTimeTypeName];
 	}
 
+	internal static bool IsBinaryLikeDataValueType(int dataValueType) {
+		return BinaryLikeDataValueTypes.Contains(dataValueType);
+	}
+
 	internal static string GetFriendlyTypeName(int? dataValueType) {
 		if (dataValueType == null) {
 			return "<none>";
 		}
 
 		return dataValueType.Value switch {
+			13 => "Binary",
+			14 => "Image",
+			16 => "ImageLookup",
+			25 => "File",
 			27 => "ShortText",
 			28 => "MediumText",
 			30 => "LongText",

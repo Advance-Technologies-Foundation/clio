@@ -23,6 +23,7 @@ DESCRIPTION
     - Guid
     - Text, ShortText, MediumText, LongText, MaxSizeText
     - Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText
+    - Binary, Image, File (Blob is accepted as an alias for Binary)
     - Integer
     - Float
     - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, Currency0, Currency1, Currency2, Currency3
@@ -73,6 +74,7 @@ NOTES
     - Package resolution requires cliogate to be installed on the target environment
     - If no Guid column is supplied for a root schema, Id:Guid is added automatically
     - If no display column is set, the first text-like column is used as primary display column
+    - Binary, Image, and File columns do not support --default-value or --default-value-source Const
     - After save, the schema is reloaded immediately; save is treated as failed if the schema cannot be read back
     - Schema names longer than 22 characters are rejected before the server call
 

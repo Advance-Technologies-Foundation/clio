@@ -1,12 +1,13 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
-using NUnit.Framework.Internal;
 using ILogger = Clio.Common.ILogger;
 
 namespace Clio.Tests.Common;
@@ -112,6 +113,71 @@ internal class ConsoleLoggerTests
 		logger.Dispose();
 		Assert.That(logger.LogFileWriter, Is.Null);
 		Assert.DoesNotThrow(() => logger.Dispose());
+	}
+
+	[Test]
+	[Description("Flushes queued log messages before returning a preserved snapshot")]
+	public void FlushAndSnapshotMessages_Should_DrainQueuedMessages_BeforeReturningSnapshot() {
+		// Arrange
+		ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
+		bool previousPreserveMessages = logger.PreserveMessages;
+		Console.SetOut(TextWriter.Null);
+		Console.SetError(TextWriter.Null);
+		logger.ClearMessages();
+		logger.PreserveMessages = true;
+		logger.WriteInfo("Queued info");
+		logger.WriteWarning("Queued warning");
+
+		try {
+			// Act
+			IReadOnlyList<LogMessage> snapshot = logger.FlushAndSnapshotMessages();
+			string[] values = snapshot.Select(message => message.Value?.ToString()).ToArray();
+
+			// Assert
+			values.Should().ContainInOrder(
+				["Queued info", "Queued warning"],
+				because: "the snapshot should flush pending queued messages before it is returned");
+		}
+		finally {
+			logger.ClearMessages();
+			logger.PreserveMessages = previousPreserveMessages;
+		}
+	}
+
+	[Test]
+	[Description("Clears flushed messages so prior queued entries do not leak into the next snapshot")]
+	public void ClearMessages_Should_Prevent_PreviousQueuedMessages_From_Leaking_IntoNextSnapshot() {
+		// Arrange
+		ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
+		bool previousPreserveMessages = logger.PreserveMessages;
+		Console.SetOut(TextWriter.Null);
+		Console.SetError(TextWriter.Null);
+		logger.ClearMessages();
+		logger.PreserveMessages = true;
+		logger.WriteInfo("First batch");
+		logger.ClearMessages();
+		logger.WriteInfo("Second batch");
+
+		try {
+			// Act
+			IReadOnlyList<LogMessage> snapshot = logger.FlushAndSnapshotMessages(clearMessages: true);
+			IReadOnlyList<LogMessage> nextSnapshot = logger.FlushAndSnapshotMessages();
+			string[] snapshotValues = snapshot.Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
+
+			// Assert
+			snapshotValues.Should().ContainSingle(
+				message => string.Equals(message, "Second batch", StringComparison.Ordinal),
+				because: "clearing after the first batch should prevent prior queued messages from leaking into the next capture");
+			snapshotValues.Should().NotContain(
+				message => string.Equals(message, "First batch", StringComparison.Ordinal),
+				because: "the cleared first batch should not appear in the later snapshot");
+			nextSnapshot.Should().BeEmpty(
+				because: "clearMessages=true should empty the preserved buffer after capture");
+		}
+		finally {
+			logger.ClearMessages();
+			logger.PreserveMessages = previousPreserveMessages;
+		}
 	}
 
 }

@@ -146,6 +146,61 @@ public sealed class PageSyncToolE2ETests {
 			because: "the response should explain that client-side validation blocked the save");
 	}
 
+	[Test]
+	[Description("Keeps JavaScript handlers out of JSON content validation failures.")]
+	[AllureTag(ToolName)]
+	[AllureName("page-sync ignores handler JavaScript during content validation")]
+	[AllureDescription("Uses a reachable sandbox environment, sends a page body with JavaScript handlers plus a malformed JSON-backed marker, and verifies that validation reports the real JSON marker instead of the handler block.")]
+	public async Task PageSyncTool_Should_Not_Report_Handler_Marker_As_Invalid_Json() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run page-sync validation E2E.");
+		}
+		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
+			Assert.Ignore($"page-sync validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		}
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithHandlerAndBrokenJson = ValidPageBody
+			.Replace(
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"name\":\"DataTable\"},,]/**SCHEMA_VIEW_CONFIG_DIFF*/")
+			.Replace(
+				"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+				"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrHandlerValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithHandlerAndBrokenJson
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "validation failures should stay in the structured response");
+		response.Success.Should().BeFalse(
+			because: "the malformed JSON-backed marker should still fail validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "page-sync should return validation details for the rejected body");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "viewConfigDiff contains invalid JSON-like content");
+		response.Pages[0].Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
+			because: "the malformed JSON-backed marker should be identified in the validation error");
+		response.Pages[0].Error.Should().NotContain("SCHEMA_HANDLERS",
+			because: "handler blocks may contain JavaScript and should not be parsed as JSON");
+	}
+
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
 		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
 			settings,

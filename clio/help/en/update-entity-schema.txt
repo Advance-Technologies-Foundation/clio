@@ -14,7 +14,8 @@ DESCRIPTION
     This command is the clio-native batch mutation contract for entity schemas.
     Each operation uses the same column-level semantics as
     modify-entity-schema-column, but several mutations can be applied in one
-    request.
+    request. Supported operation types include Binary, Image, and File, and
+    Blob is accepted as an alias for Binary.
 
 OPTIONS
     --package              Target package name
@@ -40,6 +41,7 @@ NOTES
     - execution stops on the first failed operation
     - the batch is saved and materialized once after all operations are applied
     - this is the clio-native alternative to frontend-style entity.update.operationsJson
+    - Binary, Image, and File operations do not support default-value or default-value-source Const
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

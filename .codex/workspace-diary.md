@@ -1057,34 +1057,6 @@ Discovery: Several important Freedom UI contracts were missing from the shipped 
 Files: clio/Command/McpServer/Data/ComponentRegistry.json, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.mcp.e2e/ComponentInfoToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Future page-editing flows can inspect real frontend-derived component slots and action contracts directly through MCP, and the added tests guard both catalog search semantics and nested menu detail lookups.
 
-## 2026-03-25 11:35 – Normalize Docker template shell scripts in build context
-Context: User reported that `build-docker-image` produced Linux images whose `/entrypoint.sh` had CRLF endings, causing Kubernetes containers to fail with `exec /entrypoint.sh: no such file or directory`.
-Decision: Normalized staged `*.sh` files to Unix LF inside `BuildDockerImageService.CreateBuildContext()` so Windows checkouts and custom templates still produce runnable Linux container entrypoints, and added a regression test that inspects the staged `entrypoint.sh` bytes during the `docker build` call.
-Discovery: The command has no existing MCP tool/prompt/resource surface to update for this fix, and focused `dotnet test` runs on this machine must override `BaseOutputPath`/`BaseIntermediateOutputPath` because a running local `clio` process locks the default `bin/Debug/net8.0` outputs.
-Files: clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
-Impact: Future Docker image builds from Windows environments keep shell entrypoints executable under Linux/Kubernetes, and the isolated test-output workaround avoids false negatives from local binary locks.
-
-## 2026-03-25 12:05 – Exclude db payloads and avoid forced base-image refresh
-Context: User asked `build-docker-image` to keep `db` folders out of Docker images and to stop failing when registry DNS is unavailable but the base image is already cached locally.
-Decision: Removed `db` directories from extracted ZIP payloads and from the staged Docker context, generated `.dockerignore` entries for `db` and `source/db`, and changed the build invocation to pass `--pull=false` instead of relying on Dockerfile changes.
-Discovery: Docker’s official CLI reference documents `--pull` as “Always attempt to pull all referenced images”, so the correct fix is in the build command rather than the Dockerfile; focused tests now run cleanly after the user stopped the local `clio` process, though the isolated output-path override remains a safe fallback.
-Files: clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
-Impact: Future ZIP-based image builds no longer carry database backups into container layers, and offline or flaky-network builds can reuse cached `mcr.microsoft.com/dotnet/sdk:8.0` images without forcing a metadata refresh.
-
-## 2026-03-25 12:30 – Introduce reusable bundled creatio-base image
-Context: User asked bundled `dev` and `prod` Docker templates to share a rarely rebuilt intermediate base image and requested explicit logging when clio has to build that base.
-Decision: Added a bundled `base` Docker template, changed bundled `dev` and `prod` to `FROM creatio-base:8.0-v1`, and updated `BuildDockerImageService` to inspect that local image before bundled builds, reuse it when present, or build it with a clear log message when missing.
-Discovery: The correct “build if missing” behavior belongs in clio rather than Dockerfile syntax; most existing service tests are simpler as custom-template flows, while two dedicated tests now cover base-image reuse and missing-base bootstrap for bundled templates.
-Files: clio/tpl/docker-templates/base/Dockerfile, clio/tpl/docker-templates/dev/Dockerfile, clio/tpl/docker-templates/prod/Dockerfile, clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
-Impact: Repeated bundled Docker builds now avoid re-running the shared apt/.NET base layer unless `creatio-base:8.0-v1` is absent, reducing rebuild cost and making the base-image lifecycle explicit in clio logs.
-
-## 2026-03-25 12:55 – Cache bundled code-server archive outside docker build
-Context: User asked to remove the bundled `dev` template’s repeated `curl` download of code-server and suggested an optional `--vscode-version` argument so clio can fetch and cache specific versions once.
-Decision: Added `--vscode-version` to `build-docker-image`, introduced `CodeServerArchiveCache` backed by `HttpClient` and the clio settings directory, changed the bundled `dev` Dockerfile to install `code-server.tar.gz` from the Docker context, and updated `BuildDockerImageService` to cache and stage that tarball only for bundled `dev` builds.
-Discovery: The best version-agnostic Dockerfile install path is to extract the staged archive and symlink the latest `code-server-*-linux-amd64/bin/code-server` directory rather than hardcoding the version into the Dockerfile; focused build-image tests remained sufficient after substituting the new cache service in `BuildDockerImageServiceTests`.
-Files: clio/Common/CodeServerArchiveCache.cs, clio/BindingsModule.cs, clio/Command/BuildDockerImageCommand.cs, clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/tpl/docker-templates/dev/Dockerfile, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
-Impact: Bundled `dev` image builds no longer hit GitHub during `docker build`, repeated runs reuse a local cache by version, and callers can opt into a different cached code-server version without editing the Dockerfile.
-
 ## 2026-03-24 22:20 – Fix PR 480 review comments on MCP mode and page-update resources
 Context: User asked to validate PR `#480` review comments, fix confirmed issues, push the branch, and respond in GitHub review threads.
 Decision: Confirmed both unresolved review findings, restricted MCP mode detection to the invoked verb instead of any argument value, made `page-update` reject malformed `--resources` payloads during validation, and aligned `page-update` docs plus MCP page prompt with the new behavior.

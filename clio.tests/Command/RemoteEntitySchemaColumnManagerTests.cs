@@ -151,6 +151,104 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Falls back to the column name when add requests an empty title so caption is never persisted as empty.")]
+	public void ModifyColumn_AddsOwnColumn_UsesColumnName_WhenTitleIsEmpty() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrVehicleStatus",
+			Type = "Lookup",
+			Title = string.Empty,
+			ReferenceSchemaName = "Contact"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
+		EntitySchemaDesignerSupport.GetLocalizableValue(addedColumn.Caption).Should().Be("UsrVehicleStatus",
+			because: "empty add titles should fall back to the column code instead of storing an empty caption");
+	}
+
+	[Test]
+	[Description("Falls back to the column name when add requests a whitespace title so caption is never persisted as empty.")]
+	public void ModifyColumn_AddsOwnColumn_UsesColumnName_WhenTitleIsWhitespace() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrVehicleStatus",
+			Type = "Lookup",
+			Title = "   ",
+			ReferenceSchemaName = "Contact"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
+		EntitySchemaDesignerSupport.GetLocalizableValue(addedColumn.Caption).Should().Be("UsrVehicleStatus",
+			because: "whitespace add titles should fall back to the column code instead of storing an empty caption");
+	}
+
+	[Test]
+	[Description("Keeps the existing caption when modify receives an empty title so blank payloads do not clear captions.")]
+	public void ModifyColumn_PreservesCaption_WhenTitleIsEmpty() {
+		// Arrange
+		EntitySchemaColumnDto statusColumn = CreateTextColumn("UsrVehicleStatus", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), statusColumn]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "UsrVehicleStatus",
+			Title = string.Empty
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
+		EntitySchemaDesignerSupport.GetLocalizableValue(savedColumn.Caption).Should().Be("UsrVehicleStatus",
+			because: "empty modify titles should be ignored and should not clear existing captions");
+	}
+
+	[Test]
+	[Description("Trims caption updates when modify receives a title with surrounding spaces.")]
+	public void ModifyColumn_UpdatesCaptionWithTrimmedValue_WhenTitleContainsWhitespacePadding() {
+		// Arrange
+		EntitySchemaColumnDto statusColumn = CreateTextColumn("UsrVehicleStatus", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), statusColumn]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "UsrVehicleStatus",
+			Title = "  Vehicle Status  "
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
+		EntitySchemaDesignerSupport.GetLocalizableValue(savedColumn.Caption).Should().Be("Vehicle Status",
+			because: "modify title updates should trim accidental whitespace from caller payloads");
+	}
+
+	[Test]
 	[Description("Removes an own column, reassigns display column fallback, and clears other schema-level references.")]
 	public void ModifyColumn_RemovesOwnColumn_AndReassignsReferences() {
 		// Arrange
@@ -287,8 +385,19 @@ internal class RemoteEntitySchemaColumnManagerTests
 		// Arrange
 		EntitySchemaColumnDto idColumn = CreateGuidColumn("Id", IdColumnUId);
 		EntitySchemaColumnDto nameColumn = CreateTextColumn("Name", NameColumnUId);
+		nameColumn.Description = [new Clio.Command.EntitySchemaDesigner.LocalizableStringDto {
+			CultureName = "en-US",
+			Value = "Vehicle name"
+		}];
+		nameColumn.Indexed = true;
+		nameColumn.RequirementType = (int)EntitySchemaColumnRequirementType.ApplicationLevel;
+		EntitySchemaColumnDto ownerColumn = CreateLookupColumn("Owner", CodeColumnUId, "Contact");
+		ownerColumn.Description = [new Clio.Command.EntitySchemaDesigner.LocalizableStringDto {
+			CultureName = "en-US",
+			Value = "Owner lookup"
+		}];
 		_loadedSchema = CreateSchema(columns: [idColumn, nameColumn],
-			inheritedColumns: [CreateLookupColumn("Owner", CodeColumnUId, "Contact")],
+			inheritedColumns: [ownerColumn],
 			primaryColumn: idColumn,
 			primaryDisplayColumn: nameColumn);
 		_loadedSchema.ParentSchema = new EntityDesignSchemaDto {
@@ -313,6 +422,26 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "inherited column count should be included in the structured result");
 		result.TrackChangesInDb.Should().BeTrue(
 			because: "schema flags should remain available to both MCP and CLI formatters");
+		result.Columns.Should().HaveCount(3,
+			because: "the schema read model should expose both own and inherited columns for structured verification");
+			result.Columns!.Select(column => column.Name).Should().Equal(["Id", "Name", "Owner"],
+				because: "schema columns should keep designer order with own columns before inherited columns");
+		result.Columns[1].Source.Should().Be("own",
+			because: "columns loaded from schema.Columns should be marked as own");
+		result.Columns[1].Title.Should().Be("Name",
+			because: "localized captions should be projected into the compact schema column model");
+		result.Columns[1].Description.Should().Be("Vehicle name",
+			because: "localized descriptions should be projected into the compact schema column model");
+		result.Columns[1].Type.Should().Be("Text",
+			because: "friendly type aliases should be reused for schema column projections");
+		result.Columns[1].Required.Should().BeTrue(
+			because: "required flags should be projected through the shared schema read model");
+		result.Columns[1].Indexed.Should().BeTrue(
+			because: "indexed flags should be projected through the shared schema read model");
+		result.Columns[2].Source.Should().Be("inherited",
+			because: "columns loaded from schema.InheritedColumns should be marked as inherited");
+		result.Columns[2].ReferenceSchemaName.Should().Be("Contact",
+			because: "lookup columns should expose their reference schema in the schema read model");
 	}
 
 	[Test]
@@ -400,6 +529,117 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "frontend ShortText aliases should map to the closest supported designer value");
 		_savedSchema.PrimaryDisplayColumn.Name.Should().Be("Status",
 			because: "frontend text aliases should still count as display-capable text columns");
+	}
+
+	[TestCase("Binary", 13)]
+	[TestCase("Blob", 13)]
+	[TestCase("Image", 14)]
+	[TestCase("File", 25)]
+	[Description("Adds Binary, Image, File, and Blob-alias columns and persists their runtime data value type ids without assigning a text display column.")]
+	public void ModifyColumn_AddsOwnBinaryLikeColumn(string typeName, int expectedDataValueType) {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "Payload",
+			Type = typeName,
+			Title = "Payload"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "Payload");
+		addedColumn.DataValueType.Should().Be(expectedDataValueType,
+			because: "supported binary-like column types should map to their expected runtime data value ids");
+		_savedSchema.PrimaryDisplayColumn.Should().BeNull(
+			because: "binary-like columns should not be promoted to primary display columns");
+	}
+
+	[TestCase("Binary", 13)]
+	[TestCase("Blob", 13)]
+	[TestCase("Image", 14)]
+	[TestCase("File", 25)]
+	[Description("Allows modify flows to switch an own column to Binary, Image, File, or Blob alias without treating it as lookup metadata.")]
+	public void ModifyColumn_UpdatesOwnColumn_ToBinaryLikeType(string typeName, int expectedDataValueType) {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), CreateTextColumn("Payload", NameColumnUId)],
+			primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "Payload",
+			Type = typeName
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "Payload");
+		savedColumn.DataValueType.Should().Be(expectedDataValueType,
+			because: "modify flows should preserve supported binary-like runtime type ids");
+		savedColumn.ReferenceSchema.Should().BeNull(
+			because: "binary-like columns should not carry lookup reference metadata after modify");
+	}
+
+	[TestCase("Binary")]
+	[TestCase("Image")]
+	[TestCase("File")]
+	[Description("Rejects constant defaults for Binary, Image, and File column mutations because the mutation contract does not support binary default payloads.")]
+	public void ModifyColumn_Throws_WhenBinaryLikeTypeUsesConstDefault(string typeName) {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "Payload",
+			Type = typeName,
+			DefaultValueSource = "Const",
+			DefaultValue = "AAECAw=="
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*does not support --default-value or --default-value-source Const*",
+				because: "binary-like mutation flows should reject unsupported constant default payloads");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[TestCase(13, "Binary")]
+	[TestCase(14, "Image")]
+	[TestCase(16, "ImageLookup")]
+	[TestCase(25, "File")]
+	[Description("Returns normalized friendly type names for binary-like and image lookup columns through structured readback.")]
+	public void GetColumnProperties_ReturnsFriendlyTypeNames_ForBinaryLikeColumns(int dataValueType, string expectedTypeName) {
+		// Arrange
+		EntitySchemaColumnDto payloadColumn = CreateTextColumn("Payload", NameColumnUId);
+		payloadColumn.DataValueType = dataValueType;
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), payloadColumn], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(new GetEntitySchemaColumnPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ColumnName = "Payload"
+		});
+
+		// Assert
+		result.Type.Should().Be(expectedTypeName,
+			because: "structured readback should expose normalized friendly type names instead of raw numeric ids");
 	}
 
 	[Test]

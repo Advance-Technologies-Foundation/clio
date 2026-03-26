@@ -46,6 +46,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Creates a root entity schema, auto-adds Id when needed, and persists the requested text column metadata.")]
 	public void Create_CreatesSchemaWithoutParent_AndShapesSavePayload()
 	{
 		string saveBody = null;
@@ -112,6 +113,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Creates an entity schema with an assigned parent schema before saving the final designer payload.")]
 	public void Create_CreatesSchemaWithParent_AndCallsAssignParentSchema()
 	{
 		bool saveDbStructureCalled = false;
@@ -167,6 +169,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Stops entity creation before save when the requested schema name is already occupied in the target package context.")]
 	public void Create_StopsBeforeSave_WhenSchemaNameAlreadyExists()
 	{
 		SetupApplicationClient((url, _) => {
@@ -195,6 +198,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Stops entity creation before save when a requested lookup reference schema does not exist on the target environment.")]
 	public void Create_StopsBeforeSave_WhenLookupReferenceSchemaDoesNotExist()
 	{
 		SetupApplicationClient((url, _) => {
@@ -321,6 +325,91 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			because: "structured create-column specs should preserve the requested default value");
 		saveDbStructureCalled.Should().BeTrue();
 		runtimeVerifyCalled.Should().BeTrue();
+	}
+
+	[TestCase("Binary", 13)]
+	[TestCase("Blob", 13)]
+	[TestCase("Image", 14)]
+	[TestCase("File", 25)]
+	[Description("Creates schemas with Binary, Image, File, and Blob-alias columns and persists their runtime data value type ids.")]
+	public void Create_CreatesSchema_With_BinaryLike_Column_Types(string typeName, int expectedDataValueType) {
+		// Arrange
+		string saveBody = null;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = [$"Payload:{typeName}:Payload"]
+		});
+
+		// Assert
+		JToken savedColumn = JObject.Parse(saveBody)["columns"]!.Single(column => column["name"]!.Value<string>() == "Payload");
+		savedColumn["type"]!.Value<int>().Should().Be(expectedDataValueType,
+			because: "supported binary-like create column types should be persisted with their expected runtime data value ids");
+	}
+
+	[TestCase("Binary")]
+	[TestCase("Image")]
+	[TestCase("File")]
+	[Description("Rejects constant defaults for Binary, Image, and File create-column payloads because the command does not serialize binary defaults.")]
+	public void Create_StopsBeforeSave_When_BinaryLike_Column_Uses_Const_Default(string typeName) {
+		// Arrange
+		SetupApplicationClient((url, _) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+		string structuredColumn = JsonSerializer.Serialize(new {
+			name = "Payload",
+			type = typeName,
+			title = "Payload",
+			default_value_source = "Const",
+			default_value = "AAECAw=="
+		}).Replace("default_value_source", "default-value-source").Replace("default_value", "default-value");
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = [structuredColumn]
+		});
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*does not support default-value or default-value-source Const*",
+				because: "binary-like create columns should reject unsupported constant default payloads before save");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SaveSchema", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
 	}
 
 	private void SetupApplicationClient(Func<string, string, string> handler)

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -172,6 +173,26 @@ public class CreateEntitySchemaToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[TestCase("Binary")]
+	[TestCase("Blob")]
+	[TestCase("Image")]
+	[TestCase("File")]
+	[Description("Preserves Binary, Blob alias, Image, and File type names when MCP create-column inputs are serialized for the command layer.")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Preserve_BinaryLike_Type_Names_In_Column_Serialization(string typeName) {
+		// Arrange
+		var columns = new[] {
+			new CreateEntitySchemaColumnArgs("Payload", typeName, "Payload")
+		};
+
+		// Act
+		string serializedColumn = CreateEntitySchemaTool.SerializeColumns(columns)!.Single();
+
+		// Assert
+		serializedColumn.Should().Be($"Payload:{typeName}:Payload",
+			because: "the MCP adapter should pass supported binary-like type names through without rewriting them");
+	}
+
 	[Test]
 	[Description("Maps create-lookup MCP arguments into create-entity-schema command options and forces BaseLookup as the parent schema.")]
 	[Category("Unit")]
@@ -181,8 +202,11 @@ public class CreateEntitySchemaToolTests {
 		FakeCreateEntitySchemaCommand defaultCommand = new();
 		FakeCreateEntitySchemaCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
 		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
@@ -212,6 +236,7 @@ public class CreateEntitySchemaToolTests {
 		resolvedCommand.CapturedOptions!.Columns.Should().BeEquivalentTo(new[] {
 			"Name:Text:Name"
 		}, because: "create-lookup should reuse the existing create-entity-schema column serialization");
+		registrationService.Received(1).EnsureLookupRegistration("MyPackage", "UsrOrderStatus", "Order status");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -224,8 +249,11 @@ public class CreateEntitySchemaToolTests {
 		FakeCreateEntitySchemaCommand defaultCommand = new();
 		FakeCreateEntitySchemaCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
 		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
@@ -246,6 +274,7 @@ public class CreateEntitySchemaToolTests {
 			because: "lookup creation should always inherit from BaseLookup");
 		resolvedCommand.CapturedOptions.ExtendParent.Should().BeFalse(
 			because: "lookup creation should not create replacement schemas");
+		registrationService.Received(1).EnsureLookupRegistration("MyPackage", "UsrOrderStatus", "Order status");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -258,8 +287,11 @@ public class CreateEntitySchemaToolTests {
 		FakeCreateEntitySchemaCommand defaultCommand = new();
 		FakeCreateEntitySchemaCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
 		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
@@ -293,6 +325,44 @@ public class CreateEntitySchemaToolTests {
 			because: "structured serialization should preserve the requested default source");
 		document.RootElement.GetProperty("default-value").GetString().Should().Be("Draft",
 			because: "structured serialization should preserve the default value");
+		registrationService.Received(1).EnsureLookupRegistration("MyPackage", "UsrOrderStatus", "Order status");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Returns a failed MCP result when lookup creation succeeds but Lookups registration fails.")]
+	[Category("Unit")]
+	public void CreateLookup_Should_Fail_When_Lookup_Registration_Fails() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateEntitySchemaCommand defaultCommand = new();
+		FakeCreateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		registrationService
+			.When(service => service.EnsureLookupRegistration("MyPackage", "UsrOrderStatus", "Order status"))
+			.Do(_ => throw new InvalidOperationException("Lookup registration failed."));
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateLookup(new CreateLookupArgs(
+			"MyPackage",
+			"UsrOrderStatus",
+			"Order status",
+			"docker_fix2"));
+		bool hasRegistrationFailure = result.Output.Any(message =>
+			message.Value != null &&
+			message.Value.ToString().Contains("Lookup registration failed.", StringComparison.Ordinal));
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "create-lookup should fail when Lookups registration does not complete");
+		hasRegistrationFailure.Should().BeTrue(
+			because: "the registration failure should be surfaced to the MCP caller");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 

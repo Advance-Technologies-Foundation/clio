@@ -70,7 +70,19 @@ public sealed class EntitySchemaToolTests {
 			true,
 			false,
 			false,
-			true);
+			true,
+			[
+				new EntitySchemaPropertyColumnInfo(
+					"Name",
+					System.Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+					"own",
+					"Vehicle name",
+					"Primary vehicle name",
+					"Text",
+					true,
+					true,
+					null)
+			]);
 		IRemoteEntitySchemaColumnManager columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
 		columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(expectedResult);
 		GetEntitySchemaPropertiesCommand resolvedCommand = new(columnManager, Substitute.For<ILogger>());
@@ -316,6 +328,8 @@ public sealed class EntitySchemaToolTests {
 			because: "create prompt guidance should reference the exact production tool name");
 		lookupPrompt.Should().Contain(CreateLookupTool.CreateLookupToolName,
 			because: "lookup prompt guidance should reference the exact production tool name");
+		lookupPrompt.Should().Contain("Lookups",
+			because: "lookup prompt guidance should mention automatic registration in the standard Lookups section");
 		lookupPrompt.Should().Contain(GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 			because: "lookup prompt guidance should direct callers to the canonical post-create verification path");
 		updatePrompt.Should().Contain(UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
@@ -328,6 +342,68 @@ public sealed class EntitySchemaToolTests {
 			because: "modify prompt guidance should reference the exact production tool name");
 		modifyPrompt.Should().Contain("type",
 			because: "mutation prompt guidance should remind callers about action-specific options");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("MCP argument descriptions and prompts advertise Binary, Image, File, Blob alias support, and binary default restrictions.")]
+	public void EntitySchemaMcpContract_Should_Advertise_BinaryLike_Types_And_Default_Restrictions() {
+		// Arrange
+		string createTypeDescription = typeof(CreateEntitySchemaColumnArgs)
+			.GetProperty(nameof(CreateEntitySchemaColumnArgs.Type))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), inherit: false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single()
+			.Description;
+		string createDefaultSourceDescription = typeof(CreateEntitySchemaColumnArgs)
+			.GetProperty(nameof(CreateEntitySchemaColumnArgs.DefaultValueSource))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), inherit: false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single()
+			.Description;
+		string modifyTypeDescription = typeof(ColumnModificationArgsBase)
+			.GetProperty(nameof(ColumnModificationArgsBase.Type))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), inherit: false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single()
+			.Description;
+		string modifyDefaultDescription = typeof(ColumnModificationArgsBase)
+			.GetProperty(nameof(ColumnModificationArgsBase.DefaultValue))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), inherit: false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single()
+			.Description;
+
+		// Act
+		string createPrompt = EntitySchemaPrompt.CreateEntitySchema("UsrPkg", "UsrVehicle", "Vehicle", "dev");
+		string updatePrompt = EntitySchemaPrompt.UpdateEntitySchema("UsrPkg", "UsrVehicle", "dev");
+		string modifyPrompt = EntitySchemaPrompt.ModifyEntitySchemaColumn("UsrPkg", "UsrVehicle", "add", "Payload", "dev");
+
+		// Assert
+		createTypeDescription.Should().Contain("Binary",
+			because: "create MCP input descriptions should list supported binary-like column types");
+		createTypeDescription.Should().Contain("Image",
+			because: "create MCP input descriptions should list supported image column types");
+		createTypeDescription.Should().Contain("File",
+			because: "create MCP input descriptions should list supported file column types");
+		createTypeDescription.Should().Contain("Blob",
+			because: "create MCP input descriptions should advertise the Binary compatibility alias");
+		createDefaultSourceDescription.Should().Contain("do not support Const",
+			because: "create MCP input descriptions should explain binary-like default restrictions");
+		modifyTypeDescription.Should().Contain("Binary",
+			because: "mutation MCP input descriptions should list supported binary-like column types");
+		modifyTypeDescription.Should().Contain("Blob",
+			because: "mutation MCP input descriptions should advertise the Binary compatibility alias");
+		modifyDefaultDescription.Should().Contain("do not support constant defaults",
+			because: "mutation MCP input descriptions should explain binary-like default restrictions");
+		createPrompt.Should().Contain("Blob",
+			because: "create prompt guidance should advertise the Binary compatibility alias");
+		updatePrompt.Should().Contain("Binary",
+			because: "update prompt guidance should advertise binary-like column support");
+		updatePrompt.Should().Contain("default-value-source=Const",
+			because: "update prompt guidance should explain unsupported binary default usage");
+		modifyPrompt.Should().Contain("File",
+			because: "modify prompt guidance should advertise file column support");
 	}
 
 	private sealed class FakeModifyEntitySchemaColumnCommand : ModifyEntitySchemaColumnCommand {

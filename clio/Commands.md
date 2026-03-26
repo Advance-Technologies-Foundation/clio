@@ -1740,6 +1740,7 @@ clio create-entity-schema --package <PACKAGE_NAME> --name <SCHEMA_NAME> --title 
 - `Guid`
 - `Text`, `ShortText`, `MediumText`, `LongText`, `MaxSizeText`
 - `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`
+- `Binary`, `Image`, `File` (`Blob` is accepted as an alias for `Binary`)
 - `Integer`, `Float`
 - `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`
 - `Currency0`, `Currency1`, `Currency2`, `Currency3`
@@ -1759,6 +1760,7 @@ clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle
 
 **Notes:**
 - Current `clio` entity-schema tools are the supported ADAC integration surface; use current `clio` naming instead of frontend-only aliases like `entity.create`
+- `Binary`, `Image`, and `File` columns do not support `default-value` or `default-value-source Const`
 - Save succeeds only when the schema can be reloaded immediately after `SaveSchema`
 
 ## modify-entity-schema-column
@@ -1775,7 +1777,7 @@ clio modify-entity-schema-column --package <PACKAGE_NAME> --schema-name <SCHEMA_
 - `--action <add|modify|remove>` (required): Column mutation type
 - `--column-name <COLUMN_NAME>` (required): Target column name
 - `--new-name <COLUMN_NAME>` (optional): Rename the column
-- `--type <TYPE>` (optional for modify, required for add): Column type. Supports `Guid`, `Text`, `ShortText`, `MediumText`, `LongText`, `MaxSizeText`, `Integer`, `Float`, `Boolean`, `Date`, `DateTime`, `Time`, `Lookup`, plus designer-native text and decimal variants
+- `--type <TYPE>` (optional for modify, required for add): Column type. Supports `Guid`, `Text`, `ShortText`, `MediumText`, `LongText`, `MaxSizeText`, `Binary`, `Image`, `File`, `Blob`, `Integer`, `Float`, `Boolean`, `Date`, `DateTime`, `Time`, `Lookup`, plus designer-native text and decimal variants
 - `--title <CAPTION>` (optional): Column caption
 - `--description <TEXT>` (optional): Column description
 - `--reference-schema <SCHEMA_NAME>` (optional): Reference schema for lookup columns
@@ -1816,6 +1818,7 @@ clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle --
 - v1 mutates own columns only; inherited columns are read-only
 - remove clears direct schema-level references to the removed column and validates required fallbacks locally
 - `--default-value-source None` clears the stored default value; `Const` requires `--default-value`
+- `Binary`, `Image`, and `File` columns do not support `--default-value` or `--default-value-source Const`
 - Save succeeds only when the mutated column can be read back immediately after `SaveSchema`
 
 ## update-entity-schema
@@ -1850,6 +1853,8 @@ clio update-entity-schema --package MyPackage --schema-name UsrVehicle -e dev ^
 - each operation uses the same column-level contract as `modify-entity-schema-column`
 - operations run in order and stop on the first failure
 - this is the clio-native batch alternative to frontend-style `entity.update.operationsJson`
+- supported operation types include `Binary`, `Image`, `File`, and `Blob` as an alias for `Binary`
+- `Binary`, `Image`, and `File` operations do not support `default-value` or `default-value-source Const`
 
 ## get-entity-schema-column-properties
 
@@ -1878,11 +1883,12 @@ clio get-entity-schema-column-properties --package MyPackage --schema-name UsrVe
 **Notes:**
 - own columns are searched first, then inherited columns
 - the readback includes `default-value-source` and `default-value`
+- the readback normalizes type names to readable values such as `Binary`, `Image`, `File`, and `ImageLookup`
 - this is the canonical verification path after `modify-entity-schema-column`
 
 ## get-entity-schema-properties
 
-Print a human-readable summary of a remote entity schema.
+Print a human-readable summary of a remote entity schema and grouped own/inherited columns.
 
 ```bash
 clio get-entity-schema-properties --package <PACKAGE_NAME> --schema-name <SCHEMA_NAME> -e <ENVIRONMENT_NAME>
@@ -1901,7 +1907,9 @@ clio get-entity-schema-properties --package MyPackage --schema-name UsrVehicle -
 ```
 
 **Notes:**
-- the summary includes column counts, parent schema, primary columns, indexes, and key schema flags
+- the CLI output includes column counts, parent schema, primary columns, indexes, key schema flags, and grouped own/inherited column lists
+- structured and MCP consumers should read the nested `data.columns` collection from the schema summary object
+- nested column entries use normalized type names such as `Binary`, `Image`, `File`, and `ImageLookup`
 - this is the canonical verification path after `create-entity-schema`
 
 ## add-user-task
