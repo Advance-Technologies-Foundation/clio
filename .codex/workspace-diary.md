@@ -1071,6 +1071,13 @@ Discovery: GitHub marked PR `#485` as `CONFLICTING`/`DIRTY`, but the merge confl
 Files: clio/clio.csproj, .codex/workspace-diary.md
 Impact: Future PR conflict checks on this branch can assume the remaining mergeability risk was cleared after the version bump was reconciled with `master`.
 
+## 2026-03-26 08:59 – Release 8.0.2.41 preparation
+Context: User asked to wait for PR `#485` workflows to pass and then produce the next release.
+Decision: Merged PR `#485` into `master`, fast-forwarded local `master` to the merged remote head, and bumped the default `AssemblyVersion` in `clio/clio.csproj` from `8.0.2.40` to `8.0.2.41` before tagging the next release.
+Discovery: The repository’s current release flow is tag-driven but still keeps the default `AssemblyVersion` in source aligned with the latest released version; `release-to-nuget` extracts the semantic version from the published GitHub release tag and overrides build/package version properties from that tag.
+Files: clio/clio.csproj, .codex/workspace-diary.md
+Impact: The next release continues the existing `chore(release): bump clio version to <version>` pattern and keeps the repository’s source version aligned with the release/tag history.
+
 ## 2026-03-25 15:45 – Auto-register MCP-created lookups in Lookups
 Context: Implemented ENG-87524 so AI-created lookup schemas become immediately manageable through the standard `Lookups` section.
 Decision: Added an internal `ILookupRegistrationService` that writes the `Lookup` row plus canonical deterministic `Lookup_<schema>` package schema data binding, then invoked it from both direct `create-lookup` and `schema-sync` `create-lookup` flows so registration is part of successful lookup creation.
