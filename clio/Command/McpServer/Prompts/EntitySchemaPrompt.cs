@@ -43,6 +43,7 @@ public static class EntitySchemaPrompt {
 		 `Binary`, `Image`, and `File`, and `Blob` can be used as an alias for `Binary`. For `Lookup` columns,
 		 provide `reference-schema-name`. Current clio entity-schema tools are the supported ADAC integration
 		 contract, so keep using `create-entity-schema` instead of frontend-only names like `entity.create`.
+		 For broader app-modeling guardrails, read `docs://mcp/guides/app-modeling`.
 		 When the caller needs richer metadata, each `columns` item can also include `required`,
 		 `default-value-source`, `default-value`, and frontend-style type aliases such as `ShortText` or `Date`.
 		 Do not send `default-value` or `default-value-source=Const` for `Binary`, `Image`, or `File` columns.
@@ -74,10 +75,12 @@ public static class EntitySchemaPrompt {
 		 Use this tool when the caller explicitly requested a lookup entity. The tool always creates the schema
 		 with parent `BaseLookup`, so do not pass parent override arguments. Successful execution also registers
 		 the lookup in the standard `Lookups` section, so treat the tool result as failed when the schema exists
-		 but the lookup is not available in `Lookups`. Include `columns` only when the request explicitly
+		 but the lookup is not available in `Lookups`. `BaseLookup` already provides `Name` and `Description`;
+		 keep `Name` as the display field and do not add duplicate title-like columns just to mirror the lookup
+		 caption. Include `columns` only when the request explicitly
 		 describes initial fields. After creation, verify the result with
 		 `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` as the canonical post-create read
-		 path.
+		 path. For broader app-modeling guardrails, read `docs://mcp/guides/app-modeling`.
 		 """;
 
 	/// <summary>
@@ -103,7 +106,10 @@ public static class EntitySchemaPrompt {
 		 `column-name`, `type`, `title`, `reference-schema-name`, and `default-value-source`; do not translate
 		 them into frontend `entity.update.operationsJson`. Supported types include `Binary`, `Image`, and `File`,
 		 and `Blob` can be used as an alias for `Binary`. Do not send `default-value` or
-		 `default-value-source=Const` for `Binary`, `Image`, or `File` operations.
+		 `default-value-source=Const` for `Binary`, `Image`, or `File` operations. For create + seed + update
+		 workflows, prefer `schema-sync`. Seed rows create data only; model default requirements separately as
+		 `schema default` or `ui default`. For broader app-modeling guardrails, read
+		 `docs://mcp/guides/app-modeling`.
 		 """;
 
 	/// <summary>

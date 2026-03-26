@@ -756,5 +756,9 @@ public sealed class ApplicationToolTests {
 			because: "the create prompt should explain the new required input contract");
 		createPrompt.Should().Contain("`optional-template-data-json`",
 			because: "the create prompt should mention the JSON string template-data field");
+		createPrompt.Should().Contain("docs://mcp/guides/app-modeling",
+			because: "the create prompt should point callers to the MCP-owned modeling guidance instead of relying only on consumer AGENTS instructions");
+		createPrompt.Should().Contain("canonical main entity",
+			because: "the create prompt should explain how callers should treat the template-created primary entity");
 	}
 }

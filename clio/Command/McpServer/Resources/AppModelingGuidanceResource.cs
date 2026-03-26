@@ -1,0 +1,48 @@
+using System.ComponentModel;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
+
+namespace Clio.Command.McpServer.Resources;
+
+/// <summary>
+/// Provides canonical AI-facing guidance for Creatio app modeling through clio MCP.
+/// </summary>
+[McpServerResourceType]
+public sealed class AppModelingGuidanceResource {
+	private const string ResourceUri = "docs://mcp/guides/app-modeling";
+
+	/// <summary>
+	/// Returns the canonical guidance article for DB-first app creation, schema modeling, and page workflows.
+	/// </summary>
+	[McpServerResource(UriTemplate = ResourceUri, Name = "app-modeling-guidance")]
+	[Description("Returns canonical MCP guidance for Creatio application modeling, schema design, and page-editing workflows.")]
+	public ResourceContents GetGuide() =>
+		new TextResourceContents {
+			Uri = ResourceUri,
+			MimeType = "text/plain",
+			Text = """
+			       clio MCP app modeling guide
+
+			       Core contract
+			       - clio MCP is a stdio MCP server, not an HTTP or browser API.
+			       - Use discovered tool names exactly as advertised.
+			       - Newer design tools use kebab-case JSON argument names such as `environment-name`, `package-name`, and `schema-name`.
+
+			       Preferred workflow
+			       - Discover with `application-get-list`, `application-get-info`, `page-list`, and `page-get` before mutating.
+			       - Prefer `schema-sync` for multi-step schema work and `page-sync` for multi-page saves.
+			       - Entity-schema mutations are DB-first. After a successful schema tool call, treat the schema as immediately usable without a compile step.
+
+			       Application modeling guardrails
+			       - For a new app with one primary record type, `application-create` usually returns the canonical main entity. Extend that entity instead of creating a synonym entity for the same records.
+			       - Use `create-lookup` or `schema-sync` `create-lookup` for managed enum-like values such as status or type catalogs.
+			       - `create-lookup` always uses `BaseLookup`. `Name` and `Description` are inherited, and `Name` remains the display field. Do not add duplicate title-like columns just to mirror the lookup caption.
+			       - Seed rows create data only. A requirement like "defaults to New" still needs an explicit `schema default` or `ui default`.
+
+			       Page editing guardrails
+			       - Preferred page flow: `page-list` -> `page-get` -> `component-info` when needed -> `page-update` or `page-sync`.
+			       - Use the raw page body returned by `page-get` as the editable source of truth.
+			       - Pass `resources` when edited bodies introduce `#ResourceString(key)#` macros.
+			       """
+		};
+}

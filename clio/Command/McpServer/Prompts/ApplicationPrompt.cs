@@ -72,6 +72,8 @@ public static class ApplicationPrompt {
 		 Use clio mcp server `{ApplicationCreateTool.ApplicationCreateToolName}` to create a Creatio application and return its primary package and entity metadata.
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Provide `name`, `code`, `template-code`, and `icon-background`.
+		 For end-to-end app modeling guardrails, read `docs://mcp/guides/app-modeling`.
+		 For a new app with one primary record type, treat the entity returned by `application-create` as the canonical main entity and extend it instead of creating a synonym entity for the same records.
 		 Pass `description` only when the application needs one.
 		 Pass `icon-id` only when a specific icon identifier is required.
 		 Pass `client-type-id` only when a non-default Creatio client type is required.
