@@ -169,6 +169,10 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
 		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
 		List<EntitySchemaColumnDto> inheritedColumns = schema.InheritedColumns?.ToList() ?? [];
+		List<EntitySchemaPropertyColumnInfo> columns = ownColumns
+			.Select(column => MapSchemaPropertyColumn(column, "own", cultureName))
+			.Concat(inheritedColumns.Select(column => MapSchemaPropertyColumn(column, "inherited", cultureName)))
+			.ToList();
 		return new EntitySchemaPropertiesInfo(
 			schema.Name,
 			EntitySchemaDesignerSupport.GetLocalizableValue(schema.Caption, cultureName),
@@ -191,7 +195,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			schema.AdministratedByColumns,
 			schema.AdministratedByRecords,
 			schema.UseDenyRecordRights,
-			schema.UseLiveEditing);
+			schema.UseLiveEditing,
+			columns);
 	}
 
 	public void PrintSchemaProperties(GetEntitySchemaPropertiesOptions options) {
@@ -225,11 +230,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EnsureNameIsUnique(schema, options.ColumnName, null);
 		int dataValueType = ParseSupportedType(options.Type, "add");
 		ValidateOptionsForType(options, dataValueType, isAdd: true);
+		string effectiveTitle = ResolveEffectiveTitle(options.Title, options.ColumnName);
 		EntitySchemaColumnDto column = new() {
 			UId = Guid.NewGuid(),
 			Name = options.ColumnName,
 			DataValueType = dataValueType,
-			Caption = [EntitySchemaDesignerSupport.CreateLocalizableString(options.Title ?? options.ColumnName)],
+			Caption = [EntitySchemaDesignerSupport.CreateLocalizableString(effectiveTitle)],
 			Description = string.IsNullOrWhiteSpace(options.Description)
 				? []
 				: [EntitySchemaDesignerSupport.CreateLocalizableString(options.Description)],
@@ -281,7 +287,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		List<LocalizableStringDto> caption = column.Caption?.ToList() ?? [];
 		List<LocalizableStringDto> description = column.Description?.ToList() ?? [];
 		if (!string.IsNullOrWhiteSpace(options.Title)) {
-			EntitySchemaDesignerSupport.SetLocalizableValue(caption, options.Title);
+			EntitySchemaDesignerSupport.SetLocalizableValue(caption, options.Title.Trim());
 		}
 		if (!string.IsNullOrWhiteSpace(options.Description)) {
 			EntitySchemaDesignerSupport.SetLocalizableValue(description, options.Description);
@@ -383,36 +389,65 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private void ValidateOptionsForType(ModifyEntitySchemaColumnOptions options, int dataValueType, bool isAdd) {
 		bool isLookup = dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"];
-		bool isText = EntitySchemaDesignerSupport.IsTextLikeDataValueType(dataValueType);
-		bool isDateTime = EntitySchemaDesignerSupport.IsDateTimeLikeDataValueType(dataValueType);
+		ValidateLookupOptions(options, isLookup, isAdd);
+		ValidateTextOptions(options, dataValueType);
+		ValidateDateTimeOptions(options, dataValueType);
+		ValidateDefaultValueOptions(options, dataValueType);
+	}
+
+	private static void ValidateLookupOptions(
+		ModifyEntitySchemaColumnOptions options,
+		bool isLookup,
+		bool isAdd) {
 		if (isLookup) {
 			if (string.IsNullOrWhiteSpace(options.ReferenceSchemaName) && isAdd) {
 				throw new EntitySchemaDesignerException("Lookup columns require --reference-schema.");
 			}
-		} else if (!string.IsNullOrWhiteSpace(options.ReferenceSchemaName)
-			|| options.SimpleLookup.HasValue
-			|| options.Cascade.HasValue
-			|| options.DoNotControlIntegrity.HasValue) {
+			return;
+		}
+		if (HasLookupSpecificOptions(options)) {
 			throw new EntitySchemaDesignerException(
 				"Lookup-specific options can be used only when the effective column type is Lookup.");
 		}
+	}
 
-		if (!isText && (options.MultilineText.HasValue
+	private static bool HasLookupSpecificOptions(ModifyEntitySchemaColumnOptions options) {
+		return !string.IsNullOrWhiteSpace(options.ReferenceSchemaName)
+			|| options.SimpleLookup.HasValue
+			|| options.Cascade.HasValue
+			|| options.DoNotControlIntegrity.HasValue;
+	}
+
+	private static void ValidateTextOptions(ModifyEntitySchemaColumnOptions options, int dataValueType) {
+		if (EntitySchemaDesignerSupport.IsTextLikeDataValueType(dataValueType) || !HasTextSpecificOptions(options)) {
+			return;
+		}
+		throw new EntitySchemaDesignerException(
+			"Text-specific options can be used only when the effective column type is Text.");
+	}
+
+	private static bool HasTextSpecificOptions(ModifyEntitySchemaColumnOptions options) {
+		return options.MultilineText.HasValue
 			|| options.LocalizableText.HasValue
 			|| options.AccentInsensitive.HasValue
 			|| options.Masked.HasValue
-			|| options.FormatValidated.HasValue)) {
-			throw new EntitySchemaDesignerException(
-				"Text-specific options can be used only when the effective column type is Text.");
-		}
+			|| options.FormatValidated.HasValue;
+	}
 
-		if (!isDateTime && options.UseSeconds.HasValue) {
+	private static void ValidateDateTimeOptions(ModifyEntitySchemaColumnOptions options, int dataValueType) {
+		if (!EntitySchemaDesignerSupport.IsDateTimeLikeDataValueType(dataValueType) && options.UseSeconds.HasValue) {
 			throw new EntitySchemaDesignerException(
 				"--use-seconds can be used only when the effective column type is DateTime.");
 		}
+	}
 
+	private static void ValidateDefaultValueOptions(ModifyEntitySchemaColumnOptions options, int dataValueType) {
 		EntitySchemaColumnDefSource? defaultValueSource =
 			EntitySchemaDesignerSupport.ParseDefaultValueSource(options.DefaultValueSource);
+		if (UsesUnsupportedBinaryDefaultValue(options, defaultValueSource, dataValueType)) {
+			throw new EntitySchemaDesignerException(
+				$"Type '{EntitySchemaDesignerSupport.GetFriendlyTypeName(dataValueType)}' does not support --default-value or --default-value-source Const.");
+		}
 		if (defaultValueSource == EntitySchemaColumnDefSource.None && options.DefaultValue != null) {
 			throw new EntitySchemaDesignerException(
 				"--default-value cannot be used when --default-value-source is None.");
@@ -422,6 +457,14 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			throw new EntitySchemaDesignerException(
 				"--default-value is required when --default-value-source is Const.");
 		}
+	}
+
+	private static bool UsesUnsupportedBinaryDefaultValue(
+		ModifyEntitySchemaColumnOptions options,
+		EntitySchemaColumnDefSource? defaultValueSource,
+		int dataValueType) {
+		return EntitySchemaDesignerSupport.IsBinaryLikeDataValueType(dataValueType)
+			&& (options.DefaultValue != null || defaultValueSource == EntitySchemaColumnDefSource.Const);
 	}
 
 	private EntitySchemaColumnDto FindOwnColumnForMutation(EntityDesignSchemaDto schema, string columnName) {
@@ -458,6 +501,22 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 		throw new EntitySchemaDesignerException(
 			$"Column '{columnName}' was not found in schema '{schema.Name}'.");
+	}
+
+	private static EntitySchemaPropertyColumnInfo MapSchemaPropertyColumn(
+		EntitySchemaColumnDto column,
+		string source,
+		string cultureName) {
+		return new EntitySchemaPropertyColumnInfo(
+			column.Name,
+			column.UId,
+			source,
+			EntitySchemaDesignerSupport.GetLocalizableValue(column.Caption, cultureName),
+			EntitySchemaDesignerSupport.GetLocalizableValue(column.Description, cultureName),
+			EntitySchemaDesignerSupport.GetFriendlyTypeName(column.DataValueType),
+			IsRequired(column.RequirementType),
+			column.Indexed,
+			column.ReferenceSchema?.Name);
 	}
 
 	private void EnsureNameIsUnique(EntityDesignSchemaDto schema, string name, Guid? excludeUId) {
@@ -656,6 +715,10 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private static string FormatText(string? value) {
 		return string.IsNullOrWhiteSpace(value) ? "<none>" : value;
+	}
+
+	private static string ResolveEffectiveTitle(string? title, string columnName) {
+		return string.IsNullOrWhiteSpace(title) ? columnName : title.Trim();
 	}
 
 	private void WriteInfo(string message) {

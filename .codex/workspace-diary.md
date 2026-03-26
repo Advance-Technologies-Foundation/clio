@@ -1057,6 +1057,69 @@ Discovery: Several important Freedom UI contracts were missing from the shipped 
 Files: clio/Command/McpServer/Data/ComponentRegistry.json, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.mcp.e2e/ComponentInfoToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Future page-editing flows can inspect real frontend-derived component slots and action contracts directly through MCP, and the added tests guard both catalog search semantics and nested menu detail lookups.
 
+## 2026-03-26 08:43 – Fix PR 485 handler validation and sonar findings
+Context: User asked to inspect PR `#485`, address the inline review comment, and clear the SonarCloud quality-gate failures.
+Decision: Stopped treating `SCHEMA_HANDLERS` blocks as JSON content, centralized JSON normalization/parsing with regex timeouts, split `RemoteEntitySchemaColumnManager` type-validation into focused helpers, and added handler-specific regression coverage in unit and MCP E2E tests.
+Discovery: `page-sync` validation can reject valid Freedom UI pages when handler sections contain JavaScript functions if handler markers are included in JSON content validation; the Sonar quality gate on this PR was also driven by regex timeout hotspots and two cognitive-complexity findings in the same touched code paths.
+Files: clio/Command/SchemaValidationService.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Future PRs touching `page-sync` validation or entity-schema column mutation rules can reuse the safer JSON helper pattern and the new handler-focused regression tests instead of rediscovering the same production regression and Sonar issues.
+
+## 2026-03-26 08:50 – Resolve PR 485 master merge conflict
+Context: User asked whether PR `#485` still had merge conflicts and then requested resolving them.
+Decision: Merged the latest `origin/master` into `ENG-87492-Alfa-version-of-ADAC-+Clio-final`, resolved the only conflict in `clio/clio.csproj` by keeping the newer default `AssemblyVersion` from `master`, and verified the project still builds.
+Discovery: GitHub marked PR `#485` as `CONFLICTING`/`DIRTY`, but the merge conflict was limited to a single version-line change in `clio/clio.csproj` (`8.0.2.39` vs `8.0.2.40`).
+Files: clio/clio.csproj, .codex/workspace-diary.md
+Impact: Future PR conflict checks on this branch can assume the remaining mergeability risk was cleared after the version bump was reconciled with `master`.
+
+## 2026-03-25 15:45 – Auto-register MCP-created lookups in Lookups
+Context: Implemented ENG-87524 so AI-created lookup schemas become immediately manageable through the standard `Lookups` section.
+Decision: Added an internal `ILookupRegistrationService` that writes the `Lookup` row plus canonical deterministic `Lookup_<schema>` package schema data binding, then invoked it from both direct `create-lookup` and `schema-sync` `create-lookup` flows so registration is part of successful lookup creation.
+Discovery: The frontend canonical registration path inserts into `Lookup` and saves schema data while skipping `CreatedBy` and `ModifiedBy`; local MCP E2E still requires the `net10.0` SDK, but this machine can run those tests through `DOTNET_ROOT=/Users/a.kravchuk/.dotnet` where the destructive lookup scenarios currently skip on sandbox gating rather than compile/runtime issues.
+Files: clio/Command/DataBindingDbCommand.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio/BindingsModule.cs, clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, clio/docs/commands/schema-sync.md, clio/docs/commands/mcp-server.md, clio.tests/Command/LookupRegistrationServiceTests.cs, clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/SchemaSyncToolTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.mcp.e2e/Support/Creatio/LookupRegistrationProbe.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Future lookup-generation work can assume MCP-created lookups are visible in `Lookups` without manual remediation, and the deterministic binding name plus direct service tests reduce the chance of duplicate registration artifacts resurfacing.
+
+## 2026-03-25 12:56 – Native binary-like entity columns
+Context: User requested native `Binary` / `Image` / `File` support in `clio` entity-schema tooling after ADAC flows failed on `Image` columns and fell back to `BaseFile` detail schemas.
+Decision: Extended the shared entity-schema type registry to accept `Binary`, `Image`, `File`, and `Blob` alias; normalized readback type names; rejected constant defaults for binary-like columns; aligned MCP prompts/tool descriptions and command docs with the new contract.
+Discovery: `update-entity-schema` had no MCP E2E coverage before this task; local E2E runs require `DOTNET_ROOT=/Users/a.kravchuk/.dotnet` because the system `dotnet` only exposes SDK `8.0.124`, while `~/.dotnet` contains both SDKs `8.0.406` and `10.0.201`.
+Files: clio/Command/EntitySchemaDesigner/EntitySchemaDesignerSupport.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, clio.tests/Command/EntitySchemaDesignerSupportTests.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs, clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio/help/en/create-entity-schema.txt, clio/help/en/modify-entity-schema-column.txt, clio/help/en/update-entity-schema.txt, clio/help/en/get-entity-schema-column-properties.txt, clio/help/en/get-entity-schema-properties.txt, clio/docs/commands/create-entity-schema.md, clio/docs/commands/modify-entity-schema-column.md, clio/docs/commands/update-entity-schema.md, clio/docs/commands/get-entity-schema-column-properties.md, clio/docs/commands/get-entity-schema-properties.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: ADAC and MCP callers can now model native binary-like columns directly in remote schemas without attachment-entity workarounds, and readback/docs stay consistent with the supported contract.
+
+## 2026-03-25 12:40 – Fix schema-sync message capture boundaries
+Context: User asked to implement the `schema-sync` message misalignment fix where operation logs shifted into the next result payload.
+Decision: Added a deterministic logger snapshot path in `ConsoleLogger`, routed `SchemaSyncTool` through flush-and-snapshot capture instead of raw `LogMessages`, removed the timing sleep, and added focused unit plus MCP E2E coverage for operation-local message capture.
+Discovery: The defect came from async queue draining after `SchemaSyncTool` cleared preserved messages; locking queue flushes and snapshots together fixes the boundary, while local MCP E2E execution remains blocked on this machine because `clio.mcp.e2e` targets `net10.0` and only `net8.0`/`net9.0` SDKs are installed.
+Files: clio/Common/ConsoleLogger.cs, clio/Common/LoggerMessageCaptureExtensions.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio.tests/Command/McpServer/SchemaSyncToolTests.cs, clio.tests/Common/ConsoleLoggerTests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Future MCP batching fixes can rely on deterministic per-operation log capture without timing sleeps, and the diary preserves the runtime constraint that currently blocks local `clio.mcp.e2e` execution.
+
+## 2026-03-25 12:37 – Add nested schema columns to get-entity-schema-properties
+Context: User needed `get-entity-schema-properties` to stop returning summary-only metadata and expose a machine-readable column list for schema verification flows.
+Decision: Kept the root summary contract intact, added nested `columns` entries with compact metadata and `source`, updated CLI output to print grouped own/inherited column listings, and aligned MCP prompt plus command docs to the new shape.
+Discovery: `RemoteEntitySchemaColumnManager` already loads both `schema.Columns` and `schema.InheritedColumns`; the missing columns problem was caused by the shared read model dropping them before CLI/MCP serialization. Local verification is partially blocked because `clio.tests` currently fails in unrelated `SchemaSyncToolTests` compile errors and `clio.mcp.e2e` still targets `net10.0` while the installed SDK is `8.0.124`.
+Files: clio/Command/EntitySchemaDesigner/EntitySchemaReadModels.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs, clio/Command/GetEntitySchemaPropertiesCommand.cs, clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs, clio.tests/Command/GetEntitySchemaPropertiesCommandTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio/docs/commands/get-entity-schema-properties.md, clio/help/en/get-entity-schema-properties.txt, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future schema-inspection flows can verify concrete columns via `data.columns` without breaking existing summary consumers, and the repository now documents the nested readback contract explicitly.
+
+## 2026-03-25 11:20 – Verify NuGet release version mismatch
+Context: User asked whether GitHub Actions run `23518118190` released `8.0.2.39` correctly because the package seemed to contain `8.0.2.38` internally.
+Decision: Verified the release run, job logs, tagged commit, workflow file, and the published `clio.8.0.2.39.nupkg` from NuGet instead of relying on the GitHub UI alone.
+Discovery: Release `8.0.2.39` points to commit `edd1f98`, but that commit still has default `AssemblyVersion` `8.0.2.38` in `clio/clio.csproj`; the workflow builds without version overrides, creating `clio.8.0.2.38.nupkg`, then packs/pushes `clio.8.0.2.39.nupkg`, so the published package metadata is `8.0.2.39` while embedded binary version strings remain `8.0.2.38`.
+Files: .github/workflows/reliase-to-nuget.yml, clio/clio.csproj, .codex/workspace-diary.md
+Impact: Future release fixes should pass version properties into the build step or build once with release version and pack with `--no-build`, otherwise NuGet package versions can drift from the actual compiled binary version.
+
+## 2026-03-25 11:40 – Create corrective release 8.0.2.40
+Context: User asked to supersede the broken `8.0.2.39` binary with a minimal corrective release and keep the GitHub release description short.
+Decision: Created a detached-worktree-based hotfix commit on top of `origin/master` that changes only `clio/clio.csproj` default `AssemblyVersion` to `8.0.2.40`, pushed it to `master`, tagged `8.0.2.40`, and published GitHub release `Release 8.0.2.40` with notes `Updated version to 8.0.2.40`.
+Discovery: Remote tag `8.0.2.40` and release now point to commit `715fc93`, but the `release-to-nuget` workflow run `23536712207` is still queued on the self-hosted runner, so final NuGet package verification remains externally blocked; local pack verification was also blocked by a `403` from the private source `https://ts1-infr-nexus.bpmonline.com/repository/nuget-v3/index.json`.
+Files: /tmp/clio-master-check/clio/clio.csproj, .codex/workspace-diary.md
+Impact: The repository state is ready for a corrected publish once the self-hosted runner picks up the queued release workflow, and the fix itself is isolated to the version source used by the current packaging pipeline.
+
+## 2026-03-25 13:15 – Deliver combined entity-schema and schema-sync work
+Context: User asked to push the accumulated changes from the last three Codex implementation sessions into the current branch.
+Decision: Kept all three verified implementations together in the active feature branch, validated the touched unit and MCP E2E suites with the local multi-SDK dotnet installation, and prepared the branch for a single delivery commit.
+Discovery: `clio.tests` passes for the touched entity-schema and schema-sync coverage set (`101` tests), while `clio.mcp.e2e` passes the targeted suites with four environment-gated skips even when built on `net10.0` from `/Users/a.kravchuk/.dotnet`.
+Files: clio/Command/EntitySchemaDesigner/EntitySchemaDesignerSupport.cs, clio/Command/EntitySchemaDesigner/EntitySchemaReadModels.cs, clio/Common/ConsoleLogger.cs, clio/Common/LoggerMessageCaptureExtensions.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio.tests/Command/EntitySchemaDesignerSupportTests.cs, clio.tests/Command/McpServer/SchemaSyncToolTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Future delivery handoffs can reference one branch commit that combines binary-like entity-column support, nested schema-property columns, and deterministic schema-sync message capture with aligned docs and MCP coverage.
+
 ## 2026-03-24 22:20 – Fix PR 480 review comments on MCP mode and page-update resources
 Context: User asked to validate PR `#480` review comments, fix confirmed issues, push the branch, and respond in GitHub review threads.
 Decision: Confirmed both unresolved review findings, restricted MCP mode detection to the invoked verb instead of any argument value, made `page-update` reject malformed `--resources` payloads during validation, and aligned `page-update` docs plus MCP page prompt with the new behavior.

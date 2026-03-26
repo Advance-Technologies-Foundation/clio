@@ -8,6 +8,7 @@ clio update-entity-schema [options]
 
 This command is the clio-native batch mutation surface for entity schemas. It applies an ordered list of
 column operations and reuses the same validation and DB-first save flow as `modify-entity-schema-column`.
+Supported operation types include `Binary`, `Image`, and `File`, and `Blob` is accepted as an alias for `Binary`.
 
 ## Options
 
@@ -49,3 +50,4 @@ clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle \
 - the batch is saved and materialized once after all operations are applied
 - use this command when the caller already knows a full batch of entity column mutations
 - use `modify-entity-schema-column` for one-off single-column changes
+- `Binary`, `Image`, and `File` operations do not support `default-value` or `default-value-source: Const`

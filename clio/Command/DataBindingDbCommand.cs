@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using Clio.Command.ProcessModel;
 using Clio.Common;
 using Clio.Package;
@@ -161,12 +162,320 @@ public interface IDataBindingDbService {
 	void RemoveRow(RemoveDataBindingRowDbOptions options);
 }
 
-internal sealed class DataBindingDbService(
+internal interface ILookupRegistrationService {
+	void EnsureLookupRegistration(string packageName, string lookupSchemaName, string lookupTitle);
+}
+
+internal sealed class LookupRegistrationService(
 	IApplicationClient applicationClient,
 	IServiceUrlBuilder serviceUrlBuilder,
 	IApplicationPackageListProvider packageListProvider,
 	IDataBindingSchemaClient schemaClient,
-	EnvironmentSettings environmentSettings) : IDataBindingDbService {
+	ILogger logger) : ILookupRegistrationService {
+	private const string LookupSectionSchemaName = "Lookup";
+	private static readonly HashSet<string> SkippedLookupBindingColumns = new(StringComparer.OrdinalIgnoreCase) {
+		"CreatedBy",
+		"ModifiedBy"
+	};
+
+	public void EnsureLookupRegistration(string packageName, string lookupSchemaName, string lookupTitle) {
+		if (string.IsNullOrWhiteSpace(packageName)) {
+			throw new InvalidOperationException("Package name is required for lookup registration.");
+		}
+		if (string.IsNullOrWhiteSpace(lookupSchemaName)) {
+			throw new InvalidOperationException("Lookup schema name is required for lookup registration.");
+		}
+
+		string resolvedLookupTitle = string.IsNullOrWhiteSpace(lookupTitle)
+			? lookupSchemaName
+			: lookupTitle.Trim();
+		PackageRef packageRef = ResolvePackageRef(packageName);
+		DataBindingDbSchema lookupBindingSchema = BuildLookupBindingSchema(FetchSchema(LookupSectionSchemaName));
+		DataBindingDbSchema registeredLookupSchema = FetchSchema(lookupSchemaName);
+		LookupRegistrationRow? lookupRegistrationRow = FindLookupRegistrationRow(registeredLookupSchema.EntitySchemaUId);
+		string lookupRegistrationRowId = EnsureLookupRegistrationRow(
+			lookupBindingSchema.SchemaColumns,
+			registeredLookupSchema.EntitySchemaUId,
+			resolvedLookupTitle,
+			lookupRegistrationRow);
+		string bindingName = BuildBindingName(lookupSchemaName);
+		PackageSchemaDataBinding? existingBinding = FindPackageSchemaDataBinding(packageRef.UId, bindingName);
+		if (existingBinding is not null &&
+			!string.Equals(existingBinding.EntitySchemaName, LookupSectionSchemaName, StringComparison.OrdinalIgnoreCase)) {
+			throw new InvalidOperationException(
+				$"Package schema data '{bindingName}' already exists for schema '{existingBinding.EntitySchemaName}'.");
+		}
+
+		string requestBody = DataBindingDbService.BuildSaveSchemaDataRequest(
+			packageRef,
+			bindingName,
+			LookupSectionSchemaName,
+			lookupBindingSchema,
+			[lookupRegistrationRowId],
+			existingBinding?.UId);
+		string response = applicationClient.ExecutePostRequest(
+			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveSchemaData),
+			requestBody);
+		DataBindingDbService.ThrowIfUnsuccessful(response, "SaveSchema");
+		logger.WriteInfo($"Lookup '{lookupSchemaName}' registered in Lookups.");
+	}
+
+	private PackageRef ResolvePackageRef(string packageName) {
+		PackageInfo? package = packageListProvider.GetPackages()
+			.FirstOrDefault(pkg =>
+				string.Equals(pkg.Descriptor.Name, packageName, StringComparison.OrdinalIgnoreCase));
+		if (package is null) {
+			throw new InvalidOperationException($"Package '{packageName}' was not found in the remote environment.");
+		}
+
+		return new PackageRef(package.Descriptor.UId, package.Descriptor.Name);
+	}
+
+	private DataBindingDbSchema FetchSchema(string schemaName) {
+		DataBindingSchema schema = schemaClient.Fetch(schemaName);
+		return new DataBindingDbSchema(
+			schema.UId,
+			schema.Name,
+			schema.Columns.Select(c => c.Name).ToList(),
+			schema.Columns);
+	}
+
+	private LookupRegistrationRow? FindLookupRegistrationRow(Guid lookupSchemaUId) {
+		LookupRegistrationSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<LookupRegistrationSelectResponse>(
+			applicationClient,
+			serviceUrlBuilder,
+			SelectQueryHelper.BuildSelectQuery(
+				LookupSectionSchemaName,
+				[
+					new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
+					new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name")
+				],
+				[
+					new SelectQueryHelper.SelectQueryFilterDefinition(
+						"SysEntitySchemaUId",
+						lookupSchemaUId.ToString(),
+						SelectQueryHelper.GuidDataValueType)
+				]));
+		if (response.Rows.Count > 1) {
+			throw new InvalidOperationException(
+				$"Lookup '{lookupSchemaUId}' already has multiple registrations in Lookup.");
+		}
+
+		LookupRegistrationRowDto? row = response.Rows.SingleOrDefault();
+		if (row is null) {
+			return null;
+		}
+		if (!Guid.TryParse(row.Id, out Guid parsedRowId)) {
+			throw new InvalidOperationException(
+				$"Lookup registration row for schema '{lookupSchemaUId}' returned an invalid Id.");
+		}
+
+		return new LookupRegistrationRow(parsedRowId, row.Name ?? string.Empty);
+	}
+
+	private PackageSchemaDataBinding? FindPackageSchemaDataBinding(Guid packageUId, string bindingName) {
+		PackageSchemaDataSelectResponse response =
+			SelectQueryHelper.ExecuteSelectQuery<PackageSchemaDataSelectResponse>(
+				applicationClient,
+				serviceUrlBuilder,
+				SelectQueryHelper.BuildSelectQuery(
+					"SysPackageSchemaData",
+					[
+						new SelectQueryHelper.SelectQueryColumnDefinition("UId", "UId"),
+						new SelectQueryHelper.SelectQueryColumnDefinition("SysSchema.Name", "EntitySchemaName")
+					],
+					[
+						new SelectQueryHelper.SelectQueryFilterDefinition(
+							"Name",
+							bindingName,
+							SelectQueryHelper.TextDataValueType),
+						new SelectQueryHelper.SelectQueryFilterDefinition(
+							"SysPackage.UId",
+							packageUId.ToString(),
+							SelectQueryHelper.GuidDataValueType)
+					]));
+		if (response.Rows.Count > 1) {
+			throw new InvalidOperationException(
+				$"Package schema data '{bindingName}' already has multiple registrations in package '{packageUId}'.");
+		}
+
+		PackageSchemaDataBindingDto? row = response.Rows.SingleOrDefault();
+		if (row is null) {
+			return null;
+		}
+		if (!Guid.TryParse(row.UId, out Guid parsedUId)) {
+			throw new InvalidOperationException(
+				$"Package schema data '{bindingName}' returned an invalid UId.");
+		}
+
+		return new PackageSchemaDataBinding(parsedUId, row.EntitySchemaName ?? string.Empty);
+	}
+
+	private string EnsureLookupRegistrationRow(
+		IReadOnlyList<DataBindingSchemaColumn> lookupSchemaColumns,
+		Guid lookupSchemaUId,
+		string lookupTitle,
+		LookupRegistrationRow? existingRow) {
+		if (existingRow is null) {
+			string rowId = Guid.NewGuid().ToString();
+			string response = applicationClient.ExecutePostRequest(
+				serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert),
+				BuildLookupInsertBody(rowId, lookupTitle, lookupSchemaUId, lookupSchemaColumns));
+			DataBindingDbService.ThrowIfUnsuccessful(response, "InsertQuery");
+			return rowId;
+		}
+		if (!string.Equals(existingRow.Name, lookupTitle, StringComparison.Ordinal)) {
+			string response = applicationClient.ExecutePostRequest(
+				serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Update),
+				BuildLookupUpdateBody(existingRow.RowId.ToString(), lookupTitle, lookupSchemaColumns));
+			DataBindingDbService.ThrowIfUnsuccessful(response, "UpdateQuery");
+		}
+
+		return existingRow.RowId.ToString();
+	}
+
+	private static DataBindingDbSchema BuildLookupBindingSchema(DataBindingDbSchema schema) {
+		List<DataBindingSchemaColumn> bindingColumns = schema.SchemaColumns
+			.Where(column => !SkippedLookupBindingColumns.Contains(column.Name))
+			.ToList();
+		return new DataBindingDbSchema(
+			schema.EntitySchemaUId,
+			schema.SchemaName,
+			bindingColumns.Select(column => column.Name).ToList(),
+			bindingColumns);
+	}
+
+	private static string BuildLookupInsertBody(
+		string rowId,
+		string lookupTitle,
+		Guid lookupSchemaUId,
+		IReadOnlyList<DataBindingSchemaColumn> lookupSchemaColumns) {
+		return JsonSerializer.Serialize(new {
+			rootSchemaName = LookupSectionSchemaName,
+			columnValues = new {
+				items = new Dictionary<string, object> {
+					["Id"] = CreateColumnValueExpression(
+						ResolveInsertDataValueType("Id", lookupSchemaColumns),
+						rowId),
+					["Name"] = CreateColumnValueExpression(
+						ResolveInsertDataValueType("Name", lookupSchemaColumns),
+						lookupTitle),
+					["SysEntitySchemaUId"] = CreateColumnValueExpression(
+						ResolveInsertDataValueType("SysEntitySchemaUId", lookupSchemaColumns),
+						lookupSchemaUId.ToString())
+				}
+			}
+		});
+	}
+
+	private static string BuildLookupUpdateBody(
+		string rowId,
+		string lookupTitle,
+		IReadOnlyList<DataBindingSchemaColumn> lookupSchemaColumns) {
+		return JsonSerializer.Serialize(new {
+			rootSchemaName = LookupSectionSchemaName,
+			columnValues = new {
+				items = new Dictionary<string, object> {
+					["Name"] = CreateColumnValueExpression(
+						ResolveInsertDataValueType("Name", lookupSchemaColumns),
+						lookupTitle)
+				}
+			},
+			filters = BuildPrimaryKeyFilter(rowId)
+		});
+	}
+
+	private static object CreateColumnValueExpression(int dataValueType, string value) {
+		return new {
+			expressionType = 2,
+			parameter = new {
+				dataValueType,
+				value
+			}
+		};
+	}
+
+	private static int ResolveInsertDataValueType(
+		string columnName,
+		IReadOnlyList<DataBindingSchemaColumn> schemaColumns) {
+		DataBindingSchemaColumn? column = schemaColumns
+			.FirstOrDefault(c => string.Equals(c.Name, columnName, StringComparison.OrdinalIgnoreCase));
+		int dataValueType = column?.DataValueType ?? 1;
+		if (dataValueType is 26 or 27 or 28 or 29 or 30) {
+			dataValueType = 1;
+		}
+
+		return dataValueType;
+	}
+
+	private static object BuildPrimaryKeyFilter(string keyValue) {
+		return new {
+			filterType = 6,
+			isEnabled = true,
+			trimDateTimeParameterToDate = false,
+			logicalOperation = 0,
+			items = new {
+				primaryFilter = new {
+					filterType = 1,
+					comparisonType = 3,
+					isEnabled = true,
+					trimDateTimeParameterToDate = false,
+					leftExpression = new {
+						expressionType = 0,
+						columnPath = "Id"
+					},
+					rightExpression = new {
+						expressionType = 2,
+						parameter = new {
+							dataValueType = 0,
+							value = keyValue
+						}
+					}
+				}
+			}
+		};
+	}
+
+	private static string BuildBindingName(string lookupSchemaName) {
+		return $"Lookup_{lookupSchemaName}";
+	}
+
+	private sealed record LookupRegistrationRow(Guid RowId, string Name);
+
+	private sealed record PackageSchemaDataBinding(Guid UId, string EntitySchemaName);
+
+	private sealed class LookupRegistrationSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[JsonPropertyName("rows")]
+		public List<LookupRegistrationRowDto> Rows { get; init; } = [];
+	}
+
+	private sealed class LookupRegistrationRowDto {
+		[JsonPropertyName("Id")]
+		public string? Id { get; init; }
+
+		[JsonPropertyName("Name")]
+		public string? Name { get; init; }
+	}
+
+	private sealed class PackageSchemaDataSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[JsonPropertyName("rows")]
+		public List<PackageSchemaDataBindingDto> Rows { get; init; } = [];
+	}
+
+	private sealed class PackageSchemaDataBindingDto {
+		[JsonPropertyName("UId")]
+		public string? UId { get; init; }
+
+		[JsonPropertyName("EntitySchemaName")]
+		public string? EntitySchemaName { get; init; }
+	}
+}
+
+internal sealed class DataBindingDbService(
+	IApplicationClient applicationClient,
+	IServiceUrlBuilder serviceUrlBuilder,
+	IApplicationPackageListProvider packageListProvider,
+	IDataBindingSchemaClient schemaClient) : IDataBindingDbService {
 
 	public DataBindingResult CreateBinding(CreateDataBindingDbOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
@@ -298,7 +607,7 @@ internal sealed class DataBindingDbService(
 			schema.Columns);
 	}
 
-	private static string BuildSaveSchemaDataRequest(
+	internal static string BuildSaveSchemaDataRequest(
 		PackageRef packageRef,
 		string bindingName,
 		string entitySchemaName,
@@ -700,7 +1009,7 @@ internal sealed class DataBindingDbService(
 		ThrowIfUnsuccessful(response, "DeletePackageSchemaDataRequest");
 	}
 
-	private static void ThrowIfUnsuccessful(string response, string operationName) {
+	internal static void ThrowIfUnsuccessful(string response, string operationName) {
 		if (string.IsNullOrWhiteSpace(response)) {
 			return;
 		}

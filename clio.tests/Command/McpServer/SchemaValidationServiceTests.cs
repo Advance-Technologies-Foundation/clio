@@ -171,4 +171,123 @@ public class SchemaValidationServiceTests {
 		result.IsValid.Should().BeFalse("because there is a closing brace with no matching opening brace");
 		result.Errors.Should().ContainMatch("*Unexpected closing*", "because the error should mention the unexpected bracket");
 	}
+
+	[Test]
+	[Description("Valid list page body passes marker content validation")]
+	public void ValidateMarkerContent_ValidListPageBody_ReturnsValid() {
+		var result = SchemaValidationService.ValidateMarkerContent(ValidListPageBody);
+		result.IsValid.Should().BeTrue("because all marker sections contain valid JSON");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Valid form page body passes marker content validation")]
+	public void ValidateMarkerContent_ValidFormPageBody_ReturnsValid() {
+		var result = SchemaValidationService.ValidateMarkerContent(ValidFormPageBody);
+		result.IsValid.Should().BeTrue("because all marker sections contain valid JSON");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Body with double comma inside viewConfigDiff fails content validation")]
+	public void ValidateMarkerContent_DoubleComma_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"a\":1},,{\"b\":2}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		var result = SchemaValidationService.ValidateMarkerContent(body);
+		result.IsValid.Should().BeFalse("because double comma is invalid JSON");
+		result.Errors.Should().ContainMatch("*SCHEMA_VIEW_CONFIG_DIFF*",
+			"because the error should identify the broken marker section");
+	}
+
+	[Test]
+	[Description("Body with trailing comma passes content validation (Hjson tolerates trailing commas)")]
+	public void ValidateMarkerContent_TrailingComma_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"a\":1},{\"b\":2},]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		var result = SchemaValidationService.ValidateMarkerContent(body);
+		result.IsValid.Should().BeTrue("because Hjson tolerates trailing commas");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Body with JavaScript handler functions passes content validation")]
+	public void ValidateMarkerContent_JavaScriptHandlers_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		var result = SchemaValidationService.ValidateMarkerContent(body);
+		result.IsValid.Should().BeTrue("because handlers can contain JavaScript and should not be parsed as JSON content");
+		result.Errors.Should().BeEmpty("because the JSON-backed markers remain valid");
+	}
+
+	[Test]
+	[Description("Body with malformed JSON in converters fails content validation")]
+	public void ValidateMarkerContent_MalformedConverters_ReturnsInvalid() {
+		string body = ValidFormPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{\"key\": }/**SCHEMA_CONVERTERS*/");
+		var result = SchemaValidationService.ValidateMarkerContent(body);
+		result.IsValid.Should().BeFalse("because the converters section contains malformed JSON");
+		result.Errors.Should().ContainMatch("*SCHEMA_CONVERTERS*");
+	}
+
+	[Test]
+	[Description("Empty body fails marker content validation")]
+	public void ValidateMarkerContent_EmptyBody_ReturnsInvalid() {
+		var result = SchemaValidationService.ValidateMarkerContent("");
+		result.IsValid.Should().BeFalse("because an empty body is not valid");
+	}
+
+	[Test]
+	[Description("ListPage with matching column bindings passes validation")]
+	public void ValidateColumnBindings_MatchingBindings_ReturnsValid() {
+		string body =
+			"define(\"Test\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"name\":\"DataTable\",\"values\":{\"columns\":[" +
+			"{\"code\":\"PDS_Name\"},{\"code\":\"PDS_UsrStatus\"}]}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{" +
+			"\"PDS_Name\":{\"modelConfig\":{\"path\":\"PDS.Name\"}}," +
+			"\"PDS_UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}" +
+			"}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var result = SchemaValidationService.ValidateColumnBindings(body);
+		result.IsValid.Should().BeTrue("because all DataTable columns have matching bindings");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("ListPage with missing column bindings reports errors")]
+	public void ValidateColumnBindings_MissingBindings_ReturnsInvalid() {
+		string body =
+			"define(\"Test\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"name\":\"DataTable\",\"values\":{\"columns\":[" +
+			"{\"code\":\"PDS_Name\"},{\"code\":\"PDS_UsrStatus\"},{\"code\":\"PDS_UsrDueDate\"}]}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{" +
+			"\"PDS_Name\":{\"modelConfig\":{\"path\":\"PDS.Name\"}}" +
+			"}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var result = SchemaValidationService.ValidateColumnBindings(body);
+		result.IsValid.Should().BeFalse("because PDS_UsrStatus and PDS_UsrDueDate have no matching bindings");
+		result.Errors.Should().HaveCount(2);
+		result.Errors.Should().ContainMatch("*PDS_UsrStatus*");
+		result.Errors.Should().ContainMatch("*PDS_UsrDueDate*");
+	}
+
+	[Test]
+	[Description("Page without DataTable passes column binding validation")]
+	public void ValidateColumnBindings_NoDataTable_ReturnsValid() {
+		var result = SchemaValidationService.ValidateColumnBindings(ValidFormPageBody);
+		result.IsValid.Should().BeTrue("because FormPage without DataTable should pass");
+		result.Errors.Should().BeEmpty();
+	}
 }

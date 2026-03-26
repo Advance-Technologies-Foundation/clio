@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Prints a human-readable summary of a remote Creatio entity schema.
+Prints a human-readable summary of a remote Creatio entity schema and lists its own and inherited columns.
 
 ## Usage
 
@@ -25,8 +25,10 @@ clio get-entity-schema-properties -e dev --package Custom --schema-name UsrVehic
 
 ## Behavior Notes
 
-- output is human-readable text and includes column counts, indexes, and key schema flags
+- CLI output is human-readable text and includes column counts, indexes, key schema flags, and grouped own/inherited column listings
 - the summary includes primary and primary display columns when they are defined
+- structured and MCP consumers should read the nested `data.columns` collection from the schema summary object
+- nested column entries expose normalized type names such as `Binary`, `Image`, `File`, and `ImageLookup`
 - this command is the canonical readback path after `create-entity-schema`
 
 ## Related Commands

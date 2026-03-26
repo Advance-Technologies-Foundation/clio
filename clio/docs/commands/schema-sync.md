@@ -28,7 +28,7 @@ fields depend on the operation type.
 
 #### `create-lookup`
 
-Creates a lookup schema inheriting from `BaseLookup`.
+Creates a lookup schema inheriting from `BaseLookup` and automatically registers it in the standard `Lookups` section.
 
 | Field | Required | Description |
 |---|---|---|
@@ -37,6 +37,8 @@ Creates a lookup schema inheriting from `BaseLookup`.
 | `title` | No | Schema title (defaults to schema-name) |
 | `columns` | No | Initial columns (same format as `create-entity-schema`) |
 | `seed-rows` | No | Rows to insert after creation |
+
+A `create-lookup` result is successful only when both the schema creation and the `Lookups` registration complete successfully.
 
 #### `create-entity`
 
@@ -146,8 +148,9 @@ Each seed row must have a `values` key containing column name-value pairs:
 ## Error Handling
 
 Operations execute in order and **stop on first failure**. Subsequent operations may depend
-on earlier ones (e.g., a lookup must exist before it can be referenced as a column type).
-Partial results are returned so the caller knows which operations succeeded.
+on earlier ones (e.g., a lookup must exist and be registered before it can be maintained through
+`Lookups` or referenced as a column type). Partial results are returned so the caller knows which
+operations succeeded.
 
 ## See Also
 

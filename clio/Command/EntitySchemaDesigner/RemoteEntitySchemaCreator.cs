@@ -187,6 +187,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			throw new InvalidOperationException(
 				$"Column type '{parsedColumn.Type}' is not supported. Supported types: {GetSupportedTypesList()}.");
 		}
+		ValidateDefaultValue(parsedColumn, dataValueType);
 
 		EntitySchemaColumnDto column = new() {
 			UId = Guid.NewGuid(),
@@ -222,6 +223,21 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 
 		return column;
+	}
+
+	private static void ValidateDefaultValue(ParsedColumn parsedColumn, int dataValueType) {
+		if (!EntitySchemaDesignerSupport.IsBinaryLikeDataValueType(dataValueType)) {
+			return;
+		}
+
+		EntitySchemaColumnDefSource? defaultValueSource =
+			EntitySchemaDesignerSupport.ParseDefaultValueSource(parsedColumn.DefaultValueSource);
+		if (parsedColumn.DefaultValue == null && defaultValueSource != EntitySchemaColumnDefSource.Const) {
+			return;
+		}
+
+		throw new InvalidOperationException(
+			$"Column '{parsedColumn.Name}' of type '{EntitySchemaDesignerSupport.GetFriendlyTypeName(dataValueType)}' does not support default-value or default-value-source Const.");
 	}
 
 	private Dictionary<string, ManagerItemDto> GetReferenceSchemas(Guid packageUId, CreateEntitySchemaOptions options) {

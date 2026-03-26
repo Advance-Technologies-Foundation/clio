@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using CommandLine;
@@ -19,7 +21,7 @@ public class GetEntitySchemaPropertiesOptions : RemoteCommandOptions
 }
 
 /// <summary>
-/// Prints summary properties for a remote entity schema.
+/// Prints summary properties and grouped column listings for a remote entity schema.
 /// </summary>
 public class GetEntitySchemaPropertiesCommand : Command<GetEntitySchemaPropertiesOptions>
 {
@@ -81,6 +83,25 @@ public class GetEntitySchemaPropertiesCommand : Command<GetEntitySchemaPropertie
 		_logger.WriteInfo($"Administrated by records: {FormatBoolean(properties.AdministratedByRecords)}");
 		_logger.WriteInfo($"Use deny record rights: {FormatBoolean(properties.UseDenyRecordRights)}");
 		_logger.WriteInfo($"Use live editing: {FormatBoolean(properties.UseLiveEditing)}");
+		WriteColumnGroup("Own columns", properties.Columns?.Where(column => column.Source == "own") ?? []);
+		WriteColumnGroup("Inherited columns", properties.Columns?.Where(column => column.Source == "inherited") ?? []);
+	}
+
+	private void WriteColumnGroup(string title, IEnumerable<EntitySchemaPropertyColumnInfo> columns) {
+		List<EntitySchemaPropertyColumnInfo> columnList = columns.ToList();
+		_logger.WriteInfo(title);
+		if (columnList.Count == 0) {
+			_logger.WriteInfo("<none>");
+			return;
+		}
+		foreach (EntitySchemaPropertyColumnInfo column in columnList) {
+			_logger.WriteInfo(FormatColumn(column));
+		}
+	}
+
+	private static string FormatColumn(EntitySchemaPropertyColumnInfo column) {
+		return
+			$"- {column.Name} | title: {FormatText(column.Title)} | type: {column.Type} | required: {FormatBoolean(column.Required)} | indexed: {FormatBoolean(column.Indexed)} | reference schema: {FormatText(column.ReferenceSchemaName)} | description: {FormatText(column.Description)}";
 	}
 
 	private static string FormatBoolean(bool value) {

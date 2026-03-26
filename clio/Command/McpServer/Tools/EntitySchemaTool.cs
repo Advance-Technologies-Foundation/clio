@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -101,14 +102,21 @@ public sealed class CreateEntitySchemaTool(
 /// <summary>
 /// MCP tool surface for remote lookup schema creation.
 /// </summary>
-public sealed class CreateLookupTool(
-	CreateEntitySchemaCommand command,
-	ILogger logger,
-	IToolCommandResolver commandResolver)
-	: BaseTool<CreateEntitySchemaOptions>(command, logger, commandResolver) {
+public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
+	private readonly ILogger _logger;
+	private readonly IToolCommandResolver _commandResolver;
 
 	internal const string CreateLookupToolName = "create-lookup";
 	private const string BaseLookupParentSchemaName = "BaseLookup";
+
+	public CreateLookupTool(
+		CreateEntitySchemaCommand command,
+		ILogger logger,
+		IToolCommandResolver commandResolver)
+		: base(command, logger, commandResolver) {
+		_logger = logger;
+		_commandResolver = commandResolver;
+	}
 
 	/// <summary>
 	/// Creates a remote lookup schema in a package on the requested Creatio environment.
@@ -128,7 +136,37 @@ public sealed class CreateLookupTool(
 			args,
 			BaseLookupParentSchemaName,
 			extendParent: false);
-		return InternalExecute<CreateEntitySchemaCommand>(options);
+		int exitCode = -1;
+		lock (CommandExecutionSyncRoot) {
+			bool previousPreserveMessages = _logger.PreserveMessages;
+			_logger.PreserveMessages = true;
+			try {
+				CreateEntitySchemaCommand resolvedCommand = ResolveCommand<CreateEntitySchemaCommand>(options);
+				exitCode = resolvedCommand.Execute(options);
+				if (exitCode == 0) {
+					ILookupRegistrationService registrationService =
+						_commandResolver.Resolve<ILookupRegistrationService>(options);
+					registrationService.EnsureLookupRegistration(args.PackageName, args.SchemaName, args.Title);
+				}
+
+				CommandExecutionResult returnResult = new(
+					exitCode,
+					[.. _logger.FlushAndSnapshotMessages(clearMessages: true)],
+					null);
+				return returnResult;
+			}
+			catch (Exception exception) {
+				List<LogMessage> logMessages = [.. _logger.FlushAndSnapshotMessages(clearMessages: true), new ErrorMessage(exception.Message)];
+				CommandExecutionResult returnResult = new(
+					exitCode > 0 ? exitCode : 1,
+					logMessages,
+					null);
+				return returnResult;
+			}
+			finally {
+				_logger.PreserveMessages = previousPreserveMessages;
+			}
+		}
 	}
 }
 
@@ -379,7 +417,8 @@ public sealed record CreateEntitySchemaColumnArgs(
 	[property: Description("""
 						  Column type. Supported values:
 						  Guid, Text, ShortText, MediumText, LongText, MaxSizeText,
-						  Integer, Float, Boolean, Date, DateTime, Time, Lookup.
+						  Integer, Float, Boolean, Date, DateTime, Time, Lookup,
+						  Binary, Image, File. Blob is also accepted as an alias for Binary.
 						  """)]
 	[property: Required]
 	string Type,
@@ -401,11 +440,11 @@ public sealed record CreateEntitySchemaColumnArgs(
 	public bool? Required { get; init; }
 
 	[property: JsonPropertyName("default-value-source")]
-	[property: Description("Optional default value source. Supported values: Const, None.")]
+	[property: Description("Optional default value source. Supported values: Const, None. Binary, Image, and File columns do not support Const.")]
 	public string? DefaultValueSource { get; init; }
 
 	[property: JsonPropertyName("default-value")]
-	[property: Description("Optional constant default value.")]
+	[property: Description("Optional constant default value. Binary, Image, and File columns do not support constant defaults.")]
 	public string? DefaultValue { get; init; }
 }
 
@@ -432,6 +471,7 @@ public abstract record ColumnModificationArgsBase(
 						   Column type. Supported values:
 						   Guid, Integer, Float, Boolean, Date, DateTime, Time, Lookup,
 						   Text, ShortText, MediumText, LongText, MaxSizeText,
+						   Binary, Image, File, Blob,
 						   Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText, 
 						   Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
 						   Currency0, Currency1, Currency2, Currency3
@@ -467,11 +507,11 @@ public abstract record ColumnModificationArgsBase(
 	bool? TrackChanges = null,
 
 	[property: JsonPropertyName("default-value")]
-	[property: Description("Set a constant default value")]
+	[property: Description("Set a constant default value. Binary, Image, and File columns do not support constant defaults.")]
 	string? DefaultValue = null,
 
 	[property: JsonPropertyName("default-value-source")]
-	[property: Description("Default value source: Const or None")]
+	[property: Description("Default value source: Const or None. Binary, Image, and File columns do not support Const.")]
 	string? DefaultValueSource = null,
 
 	[property: JsonPropertyName("multiline-text")]

@@ -93,6 +93,34 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Trims operation titles and maps whitespace-only values to null before forwarding batch mutations.")]
+	public void Execute_MapsTrimmedAndWhitespaceTitles_WhenBuildingMutations() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = [
+				"""{"action":"modify","column-name":"UsrStatus","title":"  Status  "}""",
+				"""{"action":"add","column-name":"UsrPriority","type":"Text","title":"   "}"""
+			]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "title normalization should preserve successful execution for valid operations");
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Count() == 2
+			&& mutations.ElementAt(0).ColumnName == "UsrStatus"
+			&& mutations.ElementAt(0).Title == "Status"
+			&& mutations.ElementAt(1).ColumnName == "UsrPriority"
+			&& mutations.ElementAt(1).Action == "add"
+			&& mutations.ElementAt(1).Title == null));
+	}
+
+	[Test]
 	[Description("Rejects malformed JSON operation payloads with a clear error before executing any mutation.")]
 	public void Execute_ReturnsFailure_WhenOperationJsonIsInvalid() {
 		// Arrange

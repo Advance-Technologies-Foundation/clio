@@ -144,7 +144,7 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 				ColumnName = operation.ColumnName,
 				NewName = operation.NewName,
 				Type = operation.Type,
-				Title = operation.Title,
+				Title = NormalizeTitle(operation.Title),
 				Description = operation.Description,
 				ReferenceSchemaName = operation.ReferenceSchemaName,
 				Required = operation.Required,
@@ -165,6 +165,13 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 			};
 			index++;
 		}
+	}
+
+	private static string? NormalizeTitle(string? title) {
+		if (string.IsNullOrWhiteSpace(title)) {
+			return null;
+		}
+		return title.Trim();
 	}
 
 	private static void Validate(UpdateEntitySchemaOptions options) {

@@ -5,7 +5,6 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -56,7 +55,6 @@ public sealed class SchemaSyncTool(
 						}
 					}
 				}
-				Thread.Sleep(500);
 			} finally {
 				logger.ClearMessages();
 				logger.PreserveMessages = previousPreserveMessages;
@@ -92,16 +90,26 @@ public sealed class SchemaSyncTool(
 				parentSchemaName, extendParent);
 			CreateEntitySchemaCommand command = commandResolver.Resolve<CreateEntitySchemaCommand>(options);
 			int exitCode = command.Execute(options);
+			if (exitCode == 0 && string.Equals(operationName, "create-lookup", StringComparison.Ordinal)) {
+				ILookupRegistrationService registrationService =
+					commandResolver.Resolve<ILookupRegistrationService>(options);
+				registrationService.EnsureLookupRegistration(
+					args.PackageName,
+					op.SchemaName,
+					op.Title ?? op.SchemaName);
+			}
 			return new SchemaSyncOperationResult {
 				Operation = operationName, SchemaName = op.SchemaName,
 				Success = exitCode == 0,
-				Messages = logger.LogMessages.ToList(),
+				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)],
 				Error = exitCode != 0 ? $"{operationName} failed with exit code {exitCode}" : null
 			};
 		} catch (Exception ex) {
 			return new SchemaSyncOperationResult {
 				Operation = operationName, SchemaName = op.SchemaName,
-				Success = false, Error = ex.Message
+				Success = false,
+				Error = ex.Message,
+				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
 			};
 		}
 	}
@@ -127,13 +135,15 @@ public sealed class SchemaSyncTool(
 			return new SchemaSyncOperationResult {
 				Operation = "update-entity", SchemaName = op.SchemaName,
 				Success = exitCode == 0,
-				Messages = logger.LogMessages.ToList(),
+				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)],
 				Error = exitCode != 0 ? "update-entity failed with exit code " + exitCode : null
 			};
 		} catch (Exception ex) {
 			return new SchemaSyncOperationResult {
 				Operation = "update-entity", SchemaName = op.SchemaName,
-				Success = false, Error = ex.Message
+				Success = false,
+				Error = ex.Message,
+				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
 			};
 		}
 	}
@@ -152,13 +162,15 @@ public sealed class SchemaSyncTool(
 			return new SchemaSyncOperationResult {
 				Operation = "seed-data", SchemaName = op.SchemaName,
 				Success = exitCode == 0,
-				Messages = logger.LogMessages.ToList(),
+				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)],
 				Error = exitCode != 0 ? "seed-data failed with exit code " + exitCode : null
 			};
 		} catch (Exception ex) {
 			return new SchemaSyncOperationResult {
 				Operation = "seed-data", SchemaName = op.SchemaName,
-				Success = false, Error = ex.Message
+				Success = false,
+				Error = ex.Message,
+				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
 			};
 		}
 	}
