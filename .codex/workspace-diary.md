@@ -1057,6 +1057,13 @@ Discovery: Several important Freedom UI contracts were missing from the shipped 
 Files: clio/Command/McpServer/Data/ComponentRegistry.json, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.mcp.e2e/ComponentInfoToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Future page-editing flows can inspect real frontend-derived component slots and action contracts directly through MCP, and the added tests guard both catalog search semantics and nested menu detail lookups.
 
+## 2026-03-26 08:43 – Fix PR 485 handler validation and sonar findings
+Context: User asked to inspect PR `#485`, address the inline review comment, and clear the SonarCloud quality-gate failures.
+Decision: Stopped treating `SCHEMA_HANDLERS` blocks as JSON content, centralized JSON normalization/parsing with regex timeouts, split `RemoteEntitySchemaColumnManager` type-validation into focused helpers, and added handler-specific regression coverage in unit and MCP E2E tests.
+Discovery: `page-sync` validation can reject valid Freedom UI pages when handler sections contain JavaScript functions if handler markers are included in JSON content validation; the Sonar quality gate on this PR was also driven by regex timeout hotspots and two cognitive-complexity findings in the same touched code paths.
+Files: clio/Command/SchemaValidationService.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Future PRs touching `page-sync` validation or entity-schema column mutation rules can reuse the safer JSON helper pattern and the new handler-focused regression tests instead of rediscovering the same production regression and Sonar issues.
+
 ## 2026-03-25 15:45 – Auto-register MCP-created lookups in Lookups
 Context: Implemented ENG-87524 so AI-created lookup schemas become immediately manageable through the standard `Lookups` section.
 Decision: Added an internal `ILookupRegistrationService` that writes the `Lookup` row plus canonical deterministic `Lookup_<schema>` package schema data binding, then invoked it from both direct `create-lookup` and `schema-sync` `create-lookup` flows so registration is part of successful lookup creation.

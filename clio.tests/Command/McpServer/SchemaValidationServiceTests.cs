@@ -212,6 +212,17 @@ public class SchemaValidationServiceTests {
 	}
 
 	[Test]
+	[Description("Body with JavaScript handler functions passes content validation")]
+	public void ValidateMarkerContent_JavaScriptHandlers_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		var result = SchemaValidationService.ValidateMarkerContent(body);
+		result.IsValid.Should().BeTrue("because handlers can contain JavaScript and should not be parsed as JSON content");
+		result.Errors.Should().BeEmpty("because the JSON-backed markers remain valid");
+	}
+
+	[Test]
 	[Description("Body with malformed JSON in converters fails content validation")]
 	public void ValidateMarkerContent_MalformedConverters_ReturnsInvalid() {
 		string body = ValidFormPageBody.Replace(

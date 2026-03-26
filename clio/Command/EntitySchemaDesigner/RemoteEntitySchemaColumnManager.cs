@@ -389,38 +389,62 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private void ValidateOptionsForType(ModifyEntitySchemaColumnOptions options, int dataValueType, bool isAdd) {
 		bool isLookup = dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"];
-		bool isText = EntitySchemaDesignerSupport.IsTextLikeDataValueType(dataValueType);
-		bool isDateTime = EntitySchemaDesignerSupport.IsDateTimeLikeDataValueType(dataValueType);
+		ValidateLookupOptions(options, isLookup, isAdd);
+		ValidateTextOptions(options, dataValueType);
+		ValidateDateTimeOptions(options, dataValueType);
+		ValidateDefaultValueOptions(options, dataValueType);
+	}
+
+	private static void ValidateLookupOptions(
+		ModifyEntitySchemaColumnOptions options,
+		bool isLookup,
+		bool isAdd) {
 		if (isLookup) {
 			if (string.IsNullOrWhiteSpace(options.ReferenceSchemaName) && isAdd) {
 				throw new EntitySchemaDesignerException("Lookup columns require --reference-schema.");
 			}
-		} else if (!string.IsNullOrWhiteSpace(options.ReferenceSchemaName)
-			|| options.SimpleLookup.HasValue
-			|| options.Cascade.HasValue
-			|| options.DoNotControlIntegrity.HasValue) {
+			return;
+		}
+		if (HasLookupSpecificOptions(options)) {
 			throw new EntitySchemaDesignerException(
 				"Lookup-specific options can be used only when the effective column type is Lookup.");
 		}
+	}
 
-		if (!isText && (options.MultilineText.HasValue
+	private static bool HasLookupSpecificOptions(ModifyEntitySchemaColumnOptions options) {
+		return !string.IsNullOrWhiteSpace(options.ReferenceSchemaName)
+			|| options.SimpleLookup.HasValue
+			|| options.Cascade.HasValue
+			|| options.DoNotControlIntegrity.HasValue;
+	}
+
+	private static void ValidateTextOptions(ModifyEntitySchemaColumnOptions options, int dataValueType) {
+		if (EntitySchemaDesignerSupport.IsTextLikeDataValueType(dataValueType) || !HasTextSpecificOptions(options)) {
+			return;
+		}
+		throw new EntitySchemaDesignerException(
+			"Text-specific options can be used only when the effective column type is Text.");
+	}
+
+	private static bool HasTextSpecificOptions(ModifyEntitySchemaColumnOptions options) {
+		return options.MultilineText.HasValue
 			|| options.LocalizableText.HasValue
 			|| options.AccentInsensitive.HasValue
 			|| options.Masked.HasValue
-			|| options.FormatValidated.HasValue)) {
-			throw new EntitySchemaDesignerException(
-				"Text-specific options can be used only when the effective column type is Text.");
-		}
+			|| options.FormatValidated.HasValue;
+	}
 
-		if (!isDateTime && options.UseSeconds.HasValue) {
+	private static void ValidateDateTimeOptions(ModifyEntitySchemaColumnOptions options, int dataValueType) {
+		if (!EntitySchemaDesignerSupport.IsDateTimeLikeDataValueType(dataValueType) && options.UseSeconds.HasValue) {
 			throw new EntitySchemaDesignerException(
 				"--use-seconds can be used only when the effective column type is DateTime.");
 		}
+	}
 
+	private static void ValidateDefaultValueOptions(ModifyEntitySchemaColumnOptions options, int dataValueType) {
 		EntitySchemaColumnDefSource? defaultValueSource =
 			EntitySchemaDesignerSupport.ParseDefaultValueSource(options.DefaultValueSource);
-		if (EntitySchemaDesignerSupport.IsBinaryLikeDataValueType(dataValueType)
-			&& (options.DefaultValue != null || defaultValueSource == EntitySchemaColumnDefSource.Const)) {
+		if (UsesUnsupportedBinaryDefaultValue(options, defaultValueSource, dataValueType)) {
 			throw new EntitySchemaDesignerException(
 				$"Type '{EntitySchemaDesignerSupport.GetFriendlyTypeName(dataValueType)}' does not support --default-value or --default-value-source Const.");
 		}
@@ -433,6 +457,14 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			throw new EntitySchemaDesignerException(
 				"--default-value is required when --default-value-source is Const.");
 		}
+	}
+
+	private static bool UsesUnsupportedBinaryDefaultValue(
+		ModifyEntitySchemaColumnOptions options,
+		EntitySchemaColumnDefSource? defaultValueSource,
+		int dataValueType) {
+		return EntitySchemaDesignerSupport.IsBinaryLikeDataValueType(dataValueType)
+			&& (options.DefaultValue != null || defaultValueSource == EntitySchemaColumnDefSource.Const);
 	}
 
 	private EntitySchemaColumnDto FindOwnColumnForMutation(EntityDesignSchemaDto schema, string columnName) {
