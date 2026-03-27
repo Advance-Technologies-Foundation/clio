@@ -1538,6 +1538,9 @@ clio cdp false -e <ENVIRONMENT_NAME>
 # Workspaces
 - [Create workspace](#create-workspace)
 - [Restore workspace](#restore-workspace)
+- [Install skills](#install-skills)
+- [Update skill](#update-skill)
+- [Delete skill](#delete-skill)
 - [Push code to an environment](#push-workspace)
 - [Build workspace](#build-workspace)
 - [Configure workspace](#configure-workspace)
@@ -1589,6 +1592,40 @@ in a professional IDE of your choice. To open solution execute command
 ```powershell
 OpenSolution.cmd
 ```
+
+## install-skills
+
+Install workspace-local skills into `.agents/skills` in the current clio workspace.
+
+```bash
+clio install-skills [--skill <name>] [--repo <local-path-or-git-url>]
+```
+
+- Installs all discovered skills when `--skill` is omitted
+- Uses the default bootstrap repository when `--repo` is omitted
+- Tracks managed installs in `.agents/skills/.clio-managed.json`
+
+## update-skill
+
+Update managed workspace-local skills when the source repository HEAD commit hash changed.
+
+```bash
+clio update-skill [--skill <name>] [--repo <local-path-or-git-url>]
+```
+
+- Updates all managed skills for the selected repository when `--skill` is omitted
+- Reports `already up to date` when the stored hash matches repository HEAD
+
+## delete-skill
+
+Delete one managed workspace-local skill from the current clio workspace.
+
+```bash
+clio delete-skill --skill <name>
+```
+
+- Deletes only skills tracked in `.agents/skills/.clio-managed.json`
+- Fails for unmanaged skill folders
 
 ## push-workspace
 

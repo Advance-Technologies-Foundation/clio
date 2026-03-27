@@ -1240,3 +1240,24 @@ Decision: Fixed `IsRegistryQualifiedImageReference` to inspect the first path se
 Discovery: Fully qualified base-image refs such as `registry.internal:5000/acme/base:1` were previously treated as unqualified, which could both mangle push targets and preflight the wrong registry even though the final effective image reference was already correct.
 Files: clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
 Impact: Future private-registry pushes with explicit ports and fully qualified base-image refs will preflight and push against the correct destination, and Sonar no longer flags the Dockerfile `FROM` regex timeout.
+
+## 2026-03-27 16:40 – Add workspace skill install, update, and delete flows
+Context: User requested implementation of workspace-local skill management with CLI commands, MCP tools, docs, specs, and tests.
+Decision: Added `install-skills`, `update-skill`, and `delete-skill` commands backed by a DI-managed skill service that resolves local/git repositories, tracks managed installs in `.agents/skills/.clio-managed.json`, and versions updates by repository HEAD commit hash. Added matching MCP tools/prompts plus command docs/spec files.
+Discovery: Update matching needs normalized relative-path comparison because repository discovery returns `.agents\skills\...` on Windows while manifests/docs/tests may use forward slashes. The MCP E2E project currently has unrelated compile errors in `EntitySchemaToolE2ETests.cs`, so new E2E coverage cannot build until that pre-existing file is fixed.
+Files: clio/Command/SkillCommands.cs, clio/Common/SkillManagementService.cs, clio/Command/McpServer/Tools/SkillManagementTool.cs, clio/Command/McpServer/Prompts/SkillManagementPrompt.cs, clio.tests/Command/SkillManagementCommandTests.cs, clio.tests/Command/McpServer/SkillManagementToolTests.cs, clio.mcp.e2e/SkillManagementToolE2ETests.cs, clio/help/en/install-skills.txt, clio/help/en/update-skill.txt, clio/help/en/delete-skill.txt, clio/docs/commands/install-skills.md, clio/docs/commands/update-skill.md, clio/docs/commands/delete-skill.md, clio/Commands.md, spec/install-skills/install-skills-spec.md, spec/install-skills/install-skills-plan.md, spec/install-skills/install-skills-qa.md, .codex/workspace-diary.md
+Impact: Future workspace automation and MCP flows can install/update/remove managed skills consistently, while docs/specs/tests now define the contract and highlight the remaining unrelated E2E project blocker.
+
+## 2026-03-27 17:05 – Persist cached skill repositories by repo name
+Context: User asked to stop cloning skill repositories into throwaway temp folders and instead keep a reusable cache under the clio local-data directory.
+Decision: Changed `SkillRepositoryResolver` to store remote repositories under `SettingsRepository.AppSettingsFolderPath/skills-repos/<repo-name>`, derive `<repo-name>` from the repo locator, and reuse that cache with `git pull --ff-only` instead of recloning on every run.
+Discovery: `SettingsRepository.AppSettingsFolderPath` already resolves to the existing `%LOCALAPPDATA%\creatio\clio` convention on Windows, so the skill-repo cache now lives alongside other clio caches without adding new configuration. Unit tests needed to assert clone-vs-pull behavior against the persistent cache path rather than the old temp directory path.
+Files: clio/Common/SkillManagementService.cs, clio.tests/Command/SkillManagementCommandTests.cs, .codex/workspace-diary.md
+Impact: Repeated `install-skills` and `update-skill` runs now avoid full reclones and keep a stable local cache directory per repository name, which should improve performance and reduce repeated network traffic.
+
+## 2026-03-27 17:18 – Simplify cached skill repo path
+Context: User wanted the persisted remote skill repository stored directly under the clio app-data directory using the repository name instead of an extra cache subfolder.
+Decision: Changed `SkillRepositoryResolver` to cache remote repositories at `SettingsRepository.AppSettingsFolderPath/<repo-name>` and updated the skill-management tests to assert the simplified path.
+Discovery: The extra `skills-repos` segment was not carrying useful routing information because the repository name already provides a stable cache key inside `%LOCALAPPDATA%\creatio\clio`.
+Files: clio/Common/SkillManagementService.cs, clio.tests/Command/SkillManagementCommandTests.cs, .codex/workspace-diary.md
+Impact: The default remote cache location is now the exact directory the user requested, which makes the clone location easier to predict and inspect.
