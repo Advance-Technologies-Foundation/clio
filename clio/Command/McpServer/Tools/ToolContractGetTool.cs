@@ -887,7 +887,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildUpsertDataBindingRowDb() {
 		return new ToolContractDefinition(
 			UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName,
-			"Upserts a single row in an existing DB-first binding.",
+			"Upserts a single row in an existing DB-first binding. " +
+			"The binding must already exist; call create-data-binding-db first if it does not.",
 			new ToolInputSchemaContract(
 				["environment-name", "package-name", "binding-name", "values"],
 				[
@@ -897,7 +898,12 @@ internal static class ToolContractCatalog {
 					Field("values", "string", "JSON object keyed by column name.")
 				]),
 			CommandExecutionOutput(),
-			CommonErrorContract,
+			new ToolErrorContract([
+				..CommonErrorContract.Codes,
+				new ToolErrorCodeContract("binding-not-found",
+					"The specified binding does not exist in the remote environment. " +
+					"Create it first with create-data-binding-db.")
+			]),
 			[
 				Alias("parameter", "environment-name", "environmentName", "rejected", "Use 'environment-name' instead of 'environmentName'."),
 				Alias("parameter", "package-name", "packageName", "rejected", "Use 'package-name' instead of 'packageName'."),
@@ -912,7 +918,8 @@ internal static class ToolContractCatalog {
 					["values"] = "{\"Name\":\"New\"}"
 				})
 			],
-			Flow([UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName], "Standalone DB-first binding maintenance."),
+			Flow(["create-data-binding-db", UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName],
+				"create-data-binding-db → upsert-data-binding-row-db: create the binding first, then upsert individual rows."),
 			[],
 			[]);
 	}
