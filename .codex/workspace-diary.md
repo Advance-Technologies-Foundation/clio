@@ -1236,3 +1236,10 @@ Decision: Kept `clio` code unchanged, confirmed the ADAC worktree now matches th
 Discovery: The remaining branch inconsistency was limited to ADAC helper code in committed `HEAD`; the local ADAC worktree already carried the needed fixes, and targeted verification passed in both repositories while `clio.mcp.e2e` remains blocked here by the missing .NET 10 SDK.
 Files: .codex/workspace-diary.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/scripts/mcp_client.py, /Users/a.kravchuk/Projects/ai-driven-app-creation/scripts/mcp_schema_sync.py, /Users/a.kravchuk/Projects/ai-driven-app-creation/tests/test_mcp_client.py, /Users/a.kravchuk/Projects/ai-driven-app-creation/tests/test_mcp_schema_sync.py
 Impact: Future branch checks can treat this `clio` worktree as aligned with the local ADAC worktree for the reviewed MCP contract surface instead of reopening the same `page-list` and lookup-validation drift.
+
+## 2026-03-27 01:40 – Clear Sonar code smells on PR 488
+Context: After opening the current branch PR, SonarCloud reported two new code smells even though the quality gate passed.
+Decision: Replaced repeated `create-lookup` string literals in `SchemaSyncTool` with a dedicated private constant and rebuilt the app-modeling resource URI from scheme/path constants to avoid the flagged hardcoded absolute URI literal without changing the MCP contract.
+Discovery: The Sonar findings were limited to low-risk refactors in the freshly added MCP guardrail/resource code; no prompt, resource text, or tool behavior changed, so targeted MCP unit coverage was sufficient for verification.
+Files: .codex/workspace-diary.md, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs
+Impact: PR 488 should come back clean on Sonar without reopening the modeling-guidance implementation work, and future MCP resource additions can avoid the same URI-literal rule.

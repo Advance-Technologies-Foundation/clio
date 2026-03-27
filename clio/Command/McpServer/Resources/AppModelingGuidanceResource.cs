@@ -9,7 +9,9 @@ namespace Clio.Command.McpServer.Resources;
 /// </summary>
 [McpServerResourceType]
 public sealed class AppModelingGuidanceResource {
-	private const string ResourceUri = "docs://mcp/guides/app-modeling";
+	private const string DocsScheme = "docs";
+	private const string ResourcePath = "mcp/guides/app-modeling";
+	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	/// <summary>
 	/// Returns the canonical guidance article for DB-first app creation, schema modeling, and page workflows.

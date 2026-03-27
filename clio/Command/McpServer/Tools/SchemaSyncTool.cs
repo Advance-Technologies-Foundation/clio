@@ -21,6 +21,7 @@ public sealed class SchemaSyncTool(
 	ILogger logger) {
 
 	internal const string ToolName = "schema-sync";
+	private const string CreateLookupOperationName = "create-lookup";
 
 	/// <summary>
 	/// Executes a batch of schema operations in a single MCP call.
@@ -68,7 +69,7 @@ public sealed class SchemaSyncTool(
 
 	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args) {
 		return op.Type switch {
-			"create-lookup" => ExecuteCreateSchema(op, args, "BaseLookup", false, "create-lookup"),
+			CreateLookupOperationName => ExecuteCreateSchema(op, args, "BaseLookup", false, CreateLookupOperationName),
 			"create-entity" => ExecuteCreateSchema(op, args, op.ParentSchemaName, op.ExtendParent, "create-entity"),
 			"update-entity" => ExecuteUpdateEntity(op, args),
 			_ => new SchemaSyncOperationResult {
@@ -82,7 +83,7 @@ public sealed class SchemaSyncTool(
 		SchemaSyncOperation op, SchemaSyncArgs args,
 		string parentSchemaName, bool extendParent, string operationName) {
 		try {
-			if (string.Equals(operationName, "create-lookup", StringComparison.Ordinal)) {
+			if (string.Equals(operationName, CreateLookupOperationName, StringComparison.Ordinal)) {
 				ModelingGuardrails.EnsureLookupColumnsDoNotShadowInheritedBaseLookupColumns(op.Columns);
 			}
 			CreateEntitySchemaOptions options = CreateEntitySchemaTool.CreateOptions(
@@ -93,7 +94,7 @@ public sealed class SchemaSyncTool(
 				parentSchemaName, extendParent);
 			CreateEntitySchemaCommand command = commandResolver.Resolve<CreateEntitySchemaCommand>(options);
 			int exitCode = command.Execute(options);
-			if (exitCode == 0 && string.Equals(operationName, "create-lookup", StringComparison.Ordinal)) {
+			if (exitCode == 0 && string.Equals(operationName, CreateLookupOperationName, StringComparison.Ordinal)) {
 				ILookupRegistrationService registrationService =
 					commandResolver.Resolve<ILookupRegistrationService>(options);
 				registrationService.EnsureLookupRegistration(
