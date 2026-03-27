@@ -43,7 +43,8 @@ public static class EntitySchemaPrompt {
 		 together with `parent-schema-name`.
 		 Include `columns` only when the request explicitly describes initial fields. Every column must provide
 		 `title-localizations` with at least `en-US`. Supported column types include
-		 `Binary`, `Image`, and `File`, and `Blob` can be used as an alias for `Binary`. For `Lookup` columns,
+		 `Binary`, `Image`, `File`, and `SecureText`. `Blob` can be used as an alias for `Binary`, and
+		 `Encrypted` / `Password` can be used as aliases for `SecureText`. For `Lookup` columns,
 		 provide `reference-schema-name`. Current clio entity-schema tools are the supported ADAC integration
 		 contract, so keep using `create-entity-schema` instead of frontend-only names like `entity.create`.
 		 For broader app-modeling guardrails, read `docs://mcp/guides/app-modeling`.
@@ -57,7 +58,7 @@ public static class EntitySchemaPrompt {
 	/// <summary>
 	/// Builds a prompt that directs the agent to create a remote lookup schema through MCP.
 	/// </summary>
-	[McpServerPrompt(Name = CreateLookupTool.CreateLookupToolName),
+[McpServerPrompt(Name = CreateLookupTool.CreateLookupToolName),
 		Description("Prompt to create a remote lookup schema")]
 	public static string CreateLookup(
 		[Required]
@@ -111,8 +112,9 @@ public static class EntitySchemaPrompt {
 		 `column-name`, `type`, `title-localizations`, `description-localizations`,
 		 `reference-schema-name`, and `default-value-source`; do not send legacy scalar `title` or
 		 `description`, and do not translate the payload into frontend `entity.update.operationsJson`.
-		 `add` operations must provide `title-localizations` with at least `en-US`. Supported types include `Binary`, `Image`, and `File`,
-		 and `Blob` can be used as an alias for `Binary`. Do not send `default-value` or
+		 `add` operations must provide `title-localizations` with at least `en-US`. Supported types include
+		 `Binary`, `Image`, `File`, and `SecureText`. `Blob` can be used as an alias for `Binary`, and
+		 `Encrypted` / `Password` can be used as aliases for `SecureText`. Do not send `default-value` or
 		 `default-value-source=Const` for `Binary`, `Image`, or `File` operations. For create + seed + update
 		 workflows, prefer `schema-sync`. Seed rows create data only; model default requirements separately as
 		 `schema default` or `ui default`. For broader app-modeling guardrails, read

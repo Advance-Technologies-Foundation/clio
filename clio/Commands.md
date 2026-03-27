@@ -1740,7 +1740,7 @@ clio create-entity-schema --package <PACKAGE_NAME> --name <SCHEMA_NAME> --title 
 - `Guid`
 - `Text`, `ShortText`, `MediumText`, `LongText`, `MaxSizeText`
 - `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`
-- `Binary`, `Image`, `File` (`Blob` is accepted as an alias for `Binary`)
+- `Binary`, `Image`, `File`, `SecureText` (`Blob` is accepted as an alias for `Binary`; `Encrypted` and `Password` are accepted as aliases for `SecureText`)
 - `Integer`, `Float`
 - `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`
 - `Currency0`, `Currency1`, `Currency2`, `Currency3`
@@ -1777,7 +1777,7 @@ clio modify-entity-schema-column --package <PACKAGE_NAME> --schema-name <SCHEMA_
 - `--action <add|modify|remove>` (required): Column mutation type
 - `--column-name <COLUMN_NAME>` (required): Target column name
 - `--new-name <COLUMN_NAME>` (optional): Rename the column
-- `--type <TYPE>` (optional for modify, required for add): Column type. Supports `Guid`, `Text`, `ShortText`, `MediumText`, `LongText`, `MaxSizeText`, `Binary`, `Image`, `File`, `Blob`, `Integer`, `Float`, `Boolean`, `Date`, `DateTime`, `Time`, `Lookup`, plus designer-native text and decimal variants
+- `--type <TYPE>` (optional for modify, required for add): Column type. Supports `Guid`, `Text`, `ShortText`, `MediumText`, `LongText`, `MaxSizeText`, `Binary`, `Image`, `File`, `Blob`, `SecureText`, `Encrypted`, `Password`, `Integer`, `Float`, `Boolean`, `Date`, `DateTime`, `Time`, `Lookup`, plus designer-native text and decimal variants
 - `--title <CAPTION>` (optional): Column caption
 - `--description <TEXT>` (optional): Column description
 - `--reference-schema <SCHEMA_NAME>` (optional): Reference schema for lookup columns
@@ -1853,7 +1853,7 @@ clio update-entity-schema --package MyPackage --schema-name UsrVehicle -e dev ^
 - each operation uses the same column-level contract as `modify-entity-schema-column`
 - operations run in order and stop on the first failure
 - this is the clio-native batch alternative to frontend-style `entity.update.operationsJson`
-- supported operation types include `Binary`, `Image`, `File`, and `Blob` as an alias for `Binary`
+- supported operation types include `Binary`, `Image`, `File`, `SecureText`, `Blob` as an alias for `Binary`, and `Encrypted` / `Password` as aliases for `SecureText`
 - `Binary`, `Image`, and `File` operations do not support `default-value` or `default-value-source Const`
 
 ## get-entity-schema-column-properties
