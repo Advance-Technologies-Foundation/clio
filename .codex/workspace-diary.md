@@ -1296,3 +1296,10 @@ Decision: Updated the command-doc surfaces for `create-entity-schema`, `modify-e
 Discovery: The MCP tool descriptions in `EntitySchemaTool.cs` were already correct; the stale discoverability gap was in CLI help, markdown docs, `Commands.md`, and prompt guidance only.
 Files: clio/help/en/create-entity-schema.txt, clio/help/en/modify-entity-schema-column.txt, clio/help/en/update-entity-schema.txt, clio/docs/commands/create-entity-schema.md, clio/docs/commands/modify-entity-schema-column.md, clio/docs/commands/update-entity-schema.md, clio/Commands.md, clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, .codex/workspace-diary.md
 Impact: Users and MCP callers can now discover the accepted secure-text aliases consistently across `-H`, GitHub docs, command index text, and entity-schema prompt guidance.
+
+## 2026-03-27 14:40 – Align single-column MCP prompt with SecureText aliases
+Context: Follow-up review noted that `EntitySchemaPrompt.ModifyEntitySchemaColumn` still advertised only `Binary` / `Image` / `File` / `Blob`, even after the create and batch-update MCP guidance was updated for secure-text aliases.
+Decision: Updated the single-column modify prompt to mention `SecureText` plus `Encrypted` / `Password` aliases so all entity-schema MCP mutation prompts describe the same accepted type set.
+Discovery: The underlying MCP argument contract in `ColumnModificationArgsBase` was already correct, so the gap was prompt guidance only.
+Files: clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, .codex/workspace-diary.md
+Impact: MCP callers that rely on prompt text for `modify-entity-schema-column` now receive the same secure-text guidance as `create-entity-schema` and `update-entity-schema`.

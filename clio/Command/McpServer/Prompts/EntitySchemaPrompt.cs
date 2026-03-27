@@ -200,8 +200,9 @@ public static class EntitySchemaPrompt {
 		 `description-localizations` instead of legacy scalar `title` or `description`. For `remove`, do not pass property-change options. Use this tool for a single-column mutation. For ordered
 		 multi-column updates, prefer `{UpdateEntitySchemaTool.UpdateEntitySchemaToolName}`. The tool accepts
 		 frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time`, plus explicit
-		 `default-value-source` values `Const` or `None`. Supported types include `Binary`, `Image`, and `File`,
-		 and `Blob` can be used as an alias for `Binary`. Do not send `default-value` or
+		 `default-value-source` values `Const` or `None`. Supported types include `Binary`, `Image`, `File`,
+		 and `SecureText`. `Blob` can be used as an alias for `Binary`, and `Encrypted` / `Password` can be
+		 used as aliases for `SecureText`. Do not send `default-value` or
 		 `default-value-source=Const` for `Binary`, `Image`, or `File`.
 		 """;
 }
