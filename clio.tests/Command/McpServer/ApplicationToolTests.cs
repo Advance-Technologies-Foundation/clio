@@ -767,5 +767,11 @@ public sealed class ApplicationToolTests {
 			because: "the create prompt should point callers to the MCP-owned modeling guidance instead of relying only on consumer AGENTS instructions");
 		createPrompt.Should().Contain("canonical main entity",
 			because: "the create prompt should explain how callers should treat the template-created primary entity");
+		createPrompt.Should().Contain("scalar app-shell tool",
+			because: "the create prompt should state that application-create keeps app shell fields as plain strings");
+		createPrompt.Should().Contain("Do not send `title-localizations`",
+			because: "the create prompt should prevent callers from mixing application-create with entity-schema localization maps");
+		createPrompt.Should().Contain("follow-up entity-schema tools",
+			because: "the create prompt should direct callers to schema tools when localized captions are needed");
 	}
 }

@@ -9,6 +9,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.ModelBuilder;
 using Clio.Project;
+using Clio.Tests.Infrastructure;
 using ConsoleTables;
 using FluentValidation.Results;
 using FluentAssertions;
@@ -59,8 +60,10 @@ public sealed class AddItemModelToolTests {
 	[Description("Resolves the environment-aware add-item command and maps the MCP namespace, folder, and environment-name arguments into add-item model options.")]
 	public void AddItemModel_Should_Resolve_Command_And_Map_Arguments() {
 		// Arrange
-		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), @"C:\");
-		fileSystem.AddDirectory(@"C:\Models");
+		string rootPath = GetRootedPath();
+		string modelsPath = GetRootedPath("Models");
+		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), rootPath);
+		fileSystem.AddDirectory(modelsPath);
 		FakeAddItemCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<AddItemCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
@@ -69,7 +72,7 @@ public sealed class AddItemModelToolTests {
 		// Act
 		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
 			"Contoso.Models",
-			@"C:\Models",
+			modelsPath,
 			"dev"));
 
 		// Assert
@@ -85,7 +88,7 @@ public sealed class AddItemModelToolTests {
 			because: "the first MCP slice intentionally covers only all-model generation");
 		resolvedCommand.CapturedOptions.Namespace.Should().Be("Contoso.Models",
 			because: "the requested namespace must be forwarded to add-item model generation");
-		resolvedCommand.CapturedOptions.DestinationPath.Should().Be(@"C:\Models",
+		resolvedCommand.CapturedOptions.DestinationPath.Should().Be(modelsPath,
 			because: "the requested folder must become the add-item destination path");
 		resolvedCommand.CapturedOptions.Environment.Should().Be("dev",
 			because: "the requested environment name must be preserved for schema loading");
@@ -102,7 +105,7 @@ public sealed class AddItemModelToolTests {
 	[Description("Rejects a missing folder before command execution so add-item-model does not rely on the server working directory.")]
 	public void AddItemModel_Should_Reject_Missing_Folder() {
 		// Arrange
-		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), @"C:\");
+		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), GetRootedPath());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		AddItemModelTool tool = new(ConsoleLogger.Instance, commandResolver, fileSystem);
 
@@ -127,7 +130,7 @@ public sealed class AddItemModelToolTests {
 	[Description("Rejects relative folders before command execution so add-item-model always uses an explicit absolute destination.")]
 	public void AddItemModel_Should_Reject_Relative_Folder() {
 		// Arrange
-		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), @"C:\");
+		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), GetRootedPath());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		AddItemModelTool tool = new(ConsoleLogger.Instance, commandResolver, fileSystem);
 
@@ -152,7 +155,7 @@ public sealed class AddItemModelToolTests {
 	[Description("Rejects UNC folders before command execution so add-item-model does not write generated models to network shares.")]
 	public void AddItemModel_Should_Reject_Network_Folder() {
 		// Arrange
-		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), @"C:\");
+		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), GetRootedPath());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		AddItemModelTool tool = new(ConsoleLogger.Instance, commandResolver, fileSystem);
 
@@ -177,13 +180,13 @@ public sealed class AddItemModelToolTests {
 	[Description("Creates a missing absolute local folder before command execution so add-item-model stays aligned with the wrapped model-generation command.")]
 	public void AddItemModel_Should_Create_Missing_Absolute_Folder() {
 		// Arrange
-		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), @"C:\");
+		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), GetRootedPath());
 		TestLogger logger = new();
 		FakeAddItemCommand resolvedCommand = new(logger, fileSystem);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<AddItemCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
 		AddItemModelTool tool = new(logger, commandResolver, fileSystem);
-		string missingFolder = @"C:\Missing\Models";
+		string missingFolder = GetRootedPath("Missing", "Models");
 
 		// Act
 		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
@@ -207,15 +210,17 @@ public sealed class AddItemModelToolTests {
 	[Description("Compacts repeated per-model progress output into one MCP summary line while keeping non-progress messages visible.")]
 	public void AddItemModel_Should_Compact_Progress_Into_Summary_Message() {
 		// Arrange
-		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), @"C:\");
-		fileSystem.AddDirectory(@"C:\Models");
+		string rootPath = GetRootedPath();
+		string modelsPath = GetRootedPath("Models");
+		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), rootPath);
+		fileSystem.AddDirectory(modelsPath);
 		TestLogger logger = new();
 		FakeAddItemCommand resolvedCommand = new(
 			logger,
 			fileSystem,
 			onExecute: _ => {
 				logger.WriteInfo("Generating models...");
-				logger.WriteLine(@"Models will be generated in directory: C:\Models");
+				logger.WriteLine($"Models will be generated in directory: {modelsPath}");
 				logger.Write("Generated: 1 models from 3\r");
 				logger.Write("Generated: 2 models from 3\r");
 				logger.Write("Generated: 3 models from 3\r");
@@ -228,7 +233,7 @@ public sealed class AddItemModelToolTests {
 		// Act
 		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
 			"Contoso.Models",
-			@"C:\Models",
+			modelsPath,
 			"dev"));
 
 		// Assert
@@ -240,7 +245,7 @@ public sealed class AddItemModelToolTests {
 			because: "non-progress info messages should remain visible after compaction");
 		result.Output.Should().Contain(message =>
 			message.LogDecoratorType == LogDecoratorType.None &&
-			Equals(message.Value, @"Models will be generated in directory: C:\Models"),
+			Equals(message.Value, $"Models will be generated in directory: {modelsPath}"),
 			because: "non-progress undecorated messages should remain visible after compaction");
 		result.Output.Should().Contain(message =>
 			message.LogDecoratorType == LogDecoratorType.Info &&
@@ -258,8 +263,10 @@ public sealed class AddItemModelToolTests {
 	[Description("Falls back to counting generated model files when the command output does not include a final progress line.")]
 	public void AddItemModel_Should_Fallback_To_File_Count_For_Summary() {
 		// Arrange
-		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), @"C:\");
-		fileSystem.AddDirectory(@"C:\Models");
+		string rootPath = GetRootedPath();
+		string modelsPath = GetRootedPath("Models");
+		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), rootPath);
+		fileSystem.AddDirectory(modelsPath);
 		TestLogger logger = new();
 		FakeAddItemCommand resolvedCommand = new(
 			logger,
@@ -276,7 +283,7 @@ public sealed class AddItemModelToolTests {
 		// Act
 		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
 			"Contoso.Models",
-			@"C:\Models",
+			modelsPath,
 			"dev"));
 
 		// Assert
@@ -291,14 +298,16 @@ public sealed class AddItemModelToolTests {
 	[Description("Preserves warnings and errors while still removing repeated progress noise from failed or partial command output.")]
 	public void AddItemModel_Should_Preserve_Warnings_And_Errors_During_Compaction() {
 		// Arrange
-		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), @"C:\");
-		fileSystem.AddDirectory(@"C:\Models");
+		string rootPath = GetRootedPath();
+		string modelsPath = GetRootedPath("Models");
+		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData>(), rootPath);
+		fileSystem.AddDirectory(modelsPath);
 		TestLogger logger = new();
 		FakeAddItemCommand resolvedCommand = new(
 			logger,
 			fileSystem,
 			onExecute: _ => {
-				logger.WriteLine(@"Models will be generated in directory: C:\Models");
+				logger.WriteLine($"Models will be generated in directory: {modelsPath}");
 				logger.Write("Generated: 1 models from 3\r");
 				logger.WriteWarning("One schema was skipped.");
 				logger.WriteError("Model generation failed.");
@@ -311,7 +320,7 @@ public sealed class AddItemModelToolTests {
 		// Act
 		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
 			"Contoso.Models",
-			@"C:\Models",
+			modelsPath,
 			"dev"));
 
 		// Assert
@@ -343,7 +352,7 @@ public sealed class AddItemModelToolTests {
 		// Act
 		string prompt = AddItemModelPrompt.AddItemModel(
 			"Contoso.Models",
-			@"C:\Models",
+			GetRootedPath("Models"),
 			"dev");
 
 		// Assert
@@ -376,7 +385,7 @@ public sealed class AddItemModelToolTests {
 				new AddItemOptionsValidator(),
 				Substitute.For<IVsProjectFactory>(),
 				logger ?? Substitute.For<ILogger>(),
-				fileSystem ?? new MockFileSystem(new Dictionary<string, MockFileData>(), @"C:\"),
+				fileSystem ?? new MockFileSystem(new Dictionary<string, MockFileData>(), GetRootedPath()),
 				Substitute.For<IModelBuilder>()) {
 			_onExecute = onExecute;
 			_exitCode = exitCode;
@@ -409,5 +418,9 @@ public sealed class AddItemModelToolTests {
 		public void WriteDebug(string value) => LogMessages.Add(new DebugMessage(value));
 		public void PrintTable(ConsoleTable table) => LogMessages.Add(new TableMessage(table));
 		public void PrintValidationFailureErrors(IEnumerable<ValidationFailure> errors) { }
+	}
+
+	private static string GetRootedPath(params string[] segments) {
+		return TestFileSystem.GetRootedPath(segments);
 	}
 }

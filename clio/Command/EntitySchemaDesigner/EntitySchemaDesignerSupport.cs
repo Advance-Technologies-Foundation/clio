@@ -100,6 +100,82 @@ internal static class EntitySchemaDesignerSupport
 		};
 	}
 
+	internal static IReadOnlyDictionary<string, string>? NormalizeLocalizationMap(
+		IReadOnlyDictionary<string, string>? values,
+		string fieldName) {
+		if (values == null) {
+			return null;
+		}
+
+		Dictionary<string, string> normalizedValues = new(StringComparer.OrdinalIgnoreCase);
+		foreach (KeyValuePair<string, string> value in values) {
+			string cultureName = value.Key?.Trim();
+			if (string.IsNullOrWhiteSpace(cultureName)) {
+				throw new EntitySchemaDesignerException($"{fieldName} must not contain empty culture names.");
+			}
+
+			if (string.IsNullOrWhiteSpace(value.Value)) {
+				throw new EntitySchemaDesignerException($"{fieldName} must not contain empty values.");
+			}
+
+			normalizedValues[cultureName] = value.Value.Trim();
+		}
+
+		if (normalizedValues.Count == 0) {
+			throw new EntitySchemaDesignerException($"{fieldName} must contain at least one localization.");
+		}
+
+		if (!normalizedValues.ContainsKey(DefaultCultureName)) {
+			throw new EntitySchemaDesignerException(
+				$"{fieldName} must contain a non-empty '{DefaultCultureName}' value.");
+		}
+
+		return normalizedValues;
+	}
+
+	internal static List<LocalizableStringDto> CreateLocalizableStrings(
+		IReadOnlyDictionary<string, string>? values,
+		string? fallbackValue = null) {
+		if (values != null) {
+			return BuildLocalizableStrings(NormalizeLocalizationMap(values, "localizations"));
+		}
+
+		if (string.IsNullOrWhiteSpace(fallbackValue)) {
+			return [];
+		}
+
+		return [CreateLocalizableString(fallbackValue)];
+	}
+
+	internal static List<LocalizableStringDto> CreateLocalizableStrings(
+		IReadOnlyDictionary<string, string> values) {
+		return BuildLocalizableStrings(NormalizeLocalizationMap(values, "localizations"));
+	}
+
+	internal static void ReplaceLocalizableValues(
+		ICollection<LocalizableStringDto> values,
+		IReadOnlyDictionary<string, string> localizations) {
+		ArgumentNullException.ThrowIfNull(values);
+		values.Clear();
+		foreach (LocalizableStringDto localizableValue in CreateLocalizableStrings(localizations)) {
+			values.Add(localizableValue);
+		}
+	}
+
+	internal static string GetRequiredLocalizationValue(
+		IReadOnlyDictionary<string, string> values,
+		string fieldName,
+		string cultureName = DefaultCultureName) {
+		IReadOnlyDictionary<string, string> normalizedValues = NormalizeLocalizationMap(values, fieldName)
+			?? throw new EntitySchemaDesignerException($"{fieldName} must contain at least one localization.");
+		if (!normalizedValues.TryGetValue(cultureName, out string? value) || string.IsNullOrWhiteSpace(value)) {
+			throw new EntitySchemaDesignerException(
+				$"{fieldName} must contain a non-empty '{cultureName}' value.");
+		}
+
+		return value;
+	}
+
 	internal static string GetLocalizableValue(IEnumerable<LocalizableStringDto> values, string cultureName = null) {
 		List<LocalizableStringDto> localizableValues = values?.ToList() ?? [];
 		if (localizableValues.Count == 0) {
@@ -133,6 +209,22 @@ internal static class EntitySchemaDesignerSupport
 		}
 
 		values?.Add(CreateLocalizableString(value, effectiveCultureName));
+	}
+
+	private static List<LocalizableStringDto> BuildLocalizableStrings(
+		IReadOnlyDictionary<string, string>? values) {
+		if (values == null) {
+			return [];
+		}
+
+		return values
+			.OrderBy(value => string.Equals(value.Key, DefaultCultureName, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+			.ThenBy(value => value.Key, StringComparer.OrdinalIgnoreCase)
+			.Select(value => new LocalizableStringDto {
+				CultureName = value.Key,
+				Value = value.Value
+			})
+			.ToList();
 	}
 
 	internal static bool IsLookupType(this EntitySchemaColumnDto column) {

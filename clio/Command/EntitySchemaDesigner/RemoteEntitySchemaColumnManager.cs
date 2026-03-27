@@ -230,15 +230,25 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EnsureNameIsUnique(schema, options.ColumnName, null);
 		int dataValueType = ParseSupportedType(options.Type, "add");
 		ValidateOptionsForType(options, dataValueType, isAdd: true);
+		IReadOnlyDictionary<string, string>? titleLocalizations = options.TitleLocalizations == null
+			? null
+			: EntitySchemaDesignerSupport.NormalizeLocalizationMap(
+				options.TitleLocalizations,
+				"title-localizations");
+		IReadOnlyDictionary<string, string>? descriptionLocalizations = options.DescriptionLocalizations == null
+			? null
+			: EntitySchemaDesignerSupport.NormalizeLocalizationMap(
+				options.DescriptionLocalizations,
+				"description-localizations");
 		string effectiveTitle = ResolveEffectiveTitle(options.Title, options.ColumnName);
 		EntitySchemaColumnDto column = new() {
 			UId = Guid.NewGuid(),
 			Name = options.ColumnName,
 			DataValueType = dataValueType,
-			Caption = [EntitySchemaDesignerSupport.CreateLocalizableString(effectiveTitle)],
-			Description = string.IsNullOrWhiteSpace(options.Description)
-				? []
-				: [EntitySchemaDesignerSupport.CreateLocalizableString(options.Description)],
+			Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(titleLocalizations, effectiveTitle),
+			Description = EntitySchemaDesignerSupport.CreateLocalizableStrings(
+				descriptionLocalizations,
+				options.Description),
 			RequirementType = MapRequirementType(options.Required),
 			Indexed = options.Indexed ?? false,
 			IsValueCloneable = options.Cloneable ?? false,
@@ -286,10 +296,22 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 		List<LocalizableStringDto> caption = column.Caption?.ToList() ?? [];
 		List<LocalizableStringDto> description = column.Description?.ToList() ?? [];
-		if (!string.IsNullOrWhiteSpace(options.Title)) {
+		if (options.TitleLocalizations != null) {
+			EntitySchemaDesignerSupport.ReplaceLocalizableValues(
+				caption,
+				EntitySchemaDesignerSupport.NormalizeLocalizationMap(
+					options.TitleLocalizations,
+					"title-localizations")!);
+		} else if (!string.IsNullOrWhiteSpace(options.Title)) {
 			EntitySchemaDesignerSupport.SetLocalizableValue(caption, options.Title.Trim());
 		}
-		if (!string.IsNullOrWhiteSpace(options.Description)) {
+		if (options.DescriptionLocalizations != null) {
+			EntitySchemaDesignerSupport.ReplaceLocalizableValues(
+				description,
+				EntitySchemaDesignerSupport.NormalizeLocalizationMap(
+					options.DescriptionLocalizations,
+					"description-localizations")!);
+		} else if (!string.IsNullOrWhiteSpace(options.Description)) {
 			EntitySchemaDesignerSupport.SetLocalizableValue(description, options.Description);
 		}
 		column.Caption = caption;

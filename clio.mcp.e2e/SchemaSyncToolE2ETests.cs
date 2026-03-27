@@ -170,12 +170,12 @@ public sealed class SchemaSyncToolE2ETests {
 						new Dictionary<string, object?> {
 							["type"] = "create-lookup",
 							["schema-name"] = "UsrTodoStatus",
-							["title"] = "Todo Status",
+							["title-localizations"] = BuildLocalizations("Todo Status"),
 							["columns"] = new object?[] {
 								new Dictionary<string, object?> {
 									["name"] = "Name",
 									["type"] = "Text",
-									["title"] = "Name"
+									["title-localizations"] = BuildLocalizations("Name")
 								}
 							}
 						}
@@ -340,19 +340,19 @@ public sealed class SchemaSyncToolE2ETests {
 						new Dictionary<string, object?> {
 							["type"] = "create-entity",
 							["schema-name"] = entitySchemaName,
-							["title"] = "Schema Sync Entity",
+							["title-localizations"] = BuildLocalizations("Schema Sync Entity"),
 							["columns"] = new object?[] {
 								new Dictionary<string, object?> {
 									["name"] = "UsrTitle",
 									["type"] = "Text",
-									["title"] = "Title"
+									["title-localizations"] = BuildLocalizations("Title")
 								}
 							}
 						},
 						new Dictionary<string, object?> {
 							["type"] = "create-lookup",
 							["schema-name"] = lookupSchemaName,
-							["title"] = "Schema Sync Lookup",
+							["title-localizations"] = BuildLocalizations("Schema Sync Lookup"),
 							["seed-rows"] = new object?[] {
 								new Dictionary<string, object?> {
 									["values"] = new Dictionary<string, object?> {
@@ -374,7 +374,7 @@ public sealed class SchemaSyncToolE2ETests {
 									["action"] = "add",
 									["column-name"] = lookupColumnName,
 									["type"] = "Lookup",
-									["title"] = "Status",
+									["title-localizations"] = BuildLocalizations("Status"),
 									["reference-schema-name"] = lookupSchemaName,
 									["required"] = true
 								}
@@ -540,6 +540,16 @@ public sealed class SchemaSyncToolE2ETests {
 					? valueElement.GetString() ?? string.Empty
 					: string.Empty)
 		];
+	}
+
+	private static Dictionary<string, string> BuildLocalizations(string enUs, string? ukUa = null) {
+		Dictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase) {
+			["en-US"] = enUs
+		};
+		if (!string.IsNullOrWhiteSpace(ukUa)) {
+			result["uk-UA"] = ukUa;
+		}
+		return result;
 	}
 
 	private sealed record ArrangeContext(

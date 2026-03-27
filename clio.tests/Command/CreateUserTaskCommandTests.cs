@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
 using Clio.Command;
 using Clio.Common;
 using Clio.Package;
+using Clio.Tests.Infrastructure;
 using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
@@ -43,8 +45,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		Guid schemaId = Guid.Parse("937d9454-ef79-49e3-b098-4340bca01fd8");
 		Guid editPageSchemaUId = Guid.Parse("c748bf4e-e4e1-454e-8f5b-4f65f91d8396");
 		Guid dcmEditPageSchemaUId = Guid.Parse("d748bf4e-e4e1-454e-8f5b-4f65f91d8396");
-		string packagePath = @"C:\workspace\packages\MyPackage";
-		string descriptorPath = $"{packagePath}\\descriptor.json";
+		string packagePath = TestFileSystem.GetRootedPath("workspace", "packages", "MyPackage");
+		string descriptorPath = Path.Combine(packagePath, "descriptor.json");
 		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.CreateUserTaskSchema)
 			.Returns(CreateNewSchemaUrl);
 		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveUserTaskSchema)
@@ -148,8 +150,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new();
-		string packagePath = @"C:\workspace\packages\Custom";
-		string descriptorPath = $"{packagePath}\\descriptor.json";
+		string packagePath = TestFileSystem.GetRootedPath("workspace", "packages", "Custom");
+		string descriptorPath = Path.Combine(packagePath, "descriptor.json");
 		workspacePathBuilder.IsWorkspace.Returns(true);
 		workspacePathBuilder.BuildPackagePath("Custom").Returns(packagePath);
 		fileSystem.ExistsDirectory(packagePath).Returns(false);
@@ -222,8 +224,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new();
 		Guid packageUId = Guid.Parse("a00051f4-cde3-4f3f-b08e-c5ad1a5c735a");
-		string packagePath = @"C:\workspace\packages\MyPackage";
-		string descriptorPath = $"{packagePath}\\descriptor.json";
+		string packagePath = TestFileSystem.GetRootedPath("workspace", "packages", "MyPackage");
+		string descriptorPath = Path.Combine(packagePath, "descriptor.json");
 		workspacePathBuilder.IsWorkspace.Returns(true);
 		workspacePathBuilder.BuildPackagePath("MyPackage").Returns(packagePath);
 		fileSystem.ExistsDirectory(packagePath).Returns(true);
@@ -367,8 +369,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		Guid schemaId = Guid.Parse("937d9454-ef79-49e3-b098-4340bca01fd8");
 		Guid editPageSchemaUId = Guid.Parse("c748bf4e-e4e1-454e-8f5b-4f65f91d8396");
 		Guid dcmEditPageSchemaUId = Guid.Parse("d748bf4e-e4e1-454e-8f5b-4f65f91d8396");
-		string packagePath = @"C:\workspace\packages\MyPackage";
-		string descriptorPath = $"{packagePath}\\descriptor.json";
+		string packagePath = TestFileSystem.GetRootedPath("workspace", "packages", "MyPackage");
+		string descriptorPath = Path.Combine(packagePath, "descriptor.json");
 		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.CreateUserTaskSchema)
 			.Returns(CreateNewSchemaUrl);
 		workspacePathBuilder.IsWorkspace.Returns(true);
@@ -433,8 +435,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 			IsNetCore = false
 		};
 		Guid packageUId = Guid.Parse("a00051f4-cde3-4f3f-b08e-c5ad1a5c735a");
-		string packagePath = @"C:\workspace\packages\MyPackage";
-		string descriptorPath = $"{packagePath}\\descriptor.json";
+		string packagePath = TestFileSystem.GetRootedPath("workspace", "packages", "MyPackage");
+		string descriptorPath = Path.Combine(packagePath, "descriptor.json");
 		workspacePathBuilder.IsWorkspace.Returns(true);
 		workspacePathBuilder.BuildPackagePath("MyPackage").Returns(packagePath);
 		fileSystem.ExistsDirectory(packagePath).Returns(true);

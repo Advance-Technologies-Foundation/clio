@@ -45,16 +45,17 @@ public class AssertCommandTests : BaseCommandTests<AssertOptions>
 		_k8ServiceResolver = Substitute.For<IK8ServiceResolver>();
 		_redisDatabaseSelector = Substitute.For<IRedisDatabaseSelector>();
 		_settingsRepository = Substitute.For<ISettingsRepository>();
+		containerBuilder.AddTransient(_ => _settingsRepository);
 
-		containerBuilder.AddTransient(_ => new K8ContextValidator(_kubernetesClient));
-		containerBuilder.AddTransient(_ => new K8DatabaseAssertion(
+		containerBuilder.AddTransient<IK8ContextValidator>(_ => new K8ContextValidator(_kubernetesClient));
+		containerBuilder.AddTransient<IK8DatabaseAssertion>(_ => new K8DatabaseAssertion(
 			_databaseDiscovery,
 			_databaseConnectivityChecker,
 			_databaseCapabilityChecker,
 			_kubernetesClient));
-		containerBuilder.AddTransient(_ => new K8RedisAssertion(_kubernetesClient, _k8ServiceResolver, _redisDatabaseSelector));
-		containerBuilder.AddTransient(_ => new FsPathAssertion(_settingsRepository, _logger));
-		containerBuilder.AddTransient(_ => new FsPermissionAssertion(_settingsRepository, _logger));
+		containerBuilder.AddTransient<IK8RedisAssertion>(_ => new K8RedisAssertion(_kubernetesClient, _k8ServiceResolver, _redisDatabaseSelector));
+		containerBuilder.AddTransient<IFsPathAssertion>(_ => new FsPathAssertion(_settingsRepository, _logger));
+		containerBuilder.AddTransient<IFsPermissionAssertion>(_ => new FsPermissionAssertion(_settingsRepository, _logger));
 
 		_localDatabaseAssertion = Substitute.For<ILocalDatabaseAssertion>();
 		_localRedisAssertion = Substitute.For<ILocalRedisAssertion>();
@@ -343,27 +344,37 @@ public class AssertCommandTests : BaseCommandTests<AssertOptions>
 		}
 
 		// Arrange
-		string tempDir = Path.Combine(Path.GetTempPath(), $"clio-assert-fs-{System.Guid.NewGuid()}");
-		Directory.CreateDirectory(tempDir);
-		_settingsRepository.GetIISClioRootPath().Returns(tempDir);
+		IFsPathAssertion fsPathAssertion = Substitute.For<IFsPathAssertion>();
+		IFsPermissionAssertion fsPermissionAssertion = Substitute.For<IFsPermissionAssertion>();
+		fsPathAssertion.Execute("iis-clio-root-path").Returns(new AssertionResult {
+			Status = "pass",
+			Scope = AssertionScope.Fs,
+			Resolved = new Dictionary<string, object> { ["path"] = "/tmp/clio-assert-fs" },
+			Details = new Dictionary<string, object> { ["requestedPath"] = "iis-clio-root-path" }
+		});
+		AssertCommand command = new(
+			_logger,
+			_kubernetesClient,
+			Container.GetRequiredService<IK8ContextValidator>(),
+			Container.GetRequiredService<IK8DatabaseAssertion>(),
+			Container.GetRequiredService<IK8RedisAssertion>(),
+			fsPathAssertion,
+			fsPermissionAssertion,
+			_localDatabaseAssertion,
+			_localRedisAssertion);
 		AssertOptions options = new()
 		{
 			Scope = "fs",
 			All = true
 		};
 
-		try
-		{
-			// Act
-			int result = _sut.Execute(options);
+		// Act
+		int result = command.Execute(options);
 
-			// Assert
-			result.Should().Be(0, because: "non-Windows filesystem --all should only require successful path assertion");
-		}
-		finally
-		{
-			Directory.Delete(tempDir, true);
-		}
+		// Assert
+		result.Should().Be(0, because: "non-Windows filesystem --all should only require successful path assertion");
+		fsPathAssertion.Received(1).Execute("iis-clio-root-path");
+		fsPermissionAssertion.DidNotReceive().Execute(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
 	}
 
 	[Test]
