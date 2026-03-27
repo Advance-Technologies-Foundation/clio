@@ -1268,3 +1268,10 @@ Decision: Verified that the version-bearing project file is `clio/clio.csproj` a
 Discovery: The working tree is clean, so there is no missing unstaged `csproj` change to add; the PR just needs to include `clio/clio.csproj` if the version bump is part of the branch.
 Files: clio/clio.csproj, .codex/workspace-diary.md
 Impact: Future release prep can reference the exact project file that carries the shipped CLI version without re-scanning the repo.
+
+## 2026-03-27 18:05 – Remove Windows 11 26H1 .NET 3.5 FoD checks from manage-windows-features
+Context: User reported `manage-windows-features` failures on Windows 11 26H1 (build 28000) and newer because .NET Framework 3.5 is no longer exposed as a Windows Feature on Demand.
+Decision: Removed the legacy `WCF-HTTP-Activation` and `WCF-NonHTTP-Activation` entries from `tpl/windows_features/RequirmentNetFramework.txt`, updated the manage/check Windows-feature docs to note the Windows 11 26H1 behavior, and added a regression test that validates the source manifest rather than copied build output.
+Discovery: The command already sourced its required feature list from `clio/tpl/windows_features/RequirmentNetFramework.txt`; the bug path was the shipped manifest and stale docs, not a separate hard-coded MCP or command branch. There is no MCP tool/prompt/resource for `manage-windows-features`, so MCP reviewed, no update required.
+Files: clio/tpl/windows_features/RequirmentNetFramework.txt, clio/tests/Command/WindowsFeatureManagerTestFixture.cs, clio/help/en/manage-windows-features.txt, clio/docs/commands/manage-windows-features.md, clio/Commands.md, clio/clio.csproj, .codex/workspace-diary.md
+Impact: Future Windows 11 26H1+ runs will no longer try to check or install the removed .NET Framework 3.5 WCF Feature-on-Demand components, and the release version is prepared at 8.0.2.45.

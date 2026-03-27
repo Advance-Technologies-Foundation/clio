@@ -7,7 +7,9 @@ NAME
 DESCRIPTION
     manage-windows-features command allows you to check, install, or uninstall
     Windows features required for running Creatio on Windows Server or Windows
-    desktop operating systems.
+    desktop operating systems. Starting with Windows 11 26H1 (build 28000),
+    the command does not check or install .NET Framework 3.5 Feature on Demand
+    components because Windows no longer exposes them through Windows Features.
 
     This command is only available on Windows operating system. Administrator
     rights are required for install and uninstall operations. When executed on
@@ -58,7 +60,7 @@ EXAMPLE
     OK : Default Document
     OK : HTTP Errors
     OK : ASP.NET 4.8
-    OK : .NET Extensibility 4.8
+    OK : HTTP Activation
     OK : IIS Management Console
     OK : Windows Authentication
 
@@ -68,11 +70,11 @@ EXAMPLE
     Check started:
     OK : Static Content
     Not installed : ASP.NET 4.8
-    Not installed : IIS Management Console
+    Not installed : HTTP Activation
 
     Windows has missed components:
     Not installed : ASP.NET 4.8
-    Not installed : IIS Management Console
+    Not installed : HTTP Activation
 
 EXIT CODES
     0               Operation completed successfully
