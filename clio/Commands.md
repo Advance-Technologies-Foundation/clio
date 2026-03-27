@@ -3377,10 +3377,11 @@ clio check-windows-features
 **Example output**:
 ```
 [INF] Check started:
-[INF] OK : NET-Framework-Core
-[INF] Not installed : NET-Framework-45-Core
+[INF] .NET Framework 4.7.2 or higher: ✓ Installed (Detected: 4.8)
+[INF] OK : Static Content
+[INF] Not installed : HTTP Activation
 [ERR] Windows has missed components:
-[INF] Not installed : NET-Framework-45-Core
+[INF] Not installed : HTTP Activation
 ```
 
 ---
@@ -3390,6 +3391,7 @@ clio check-windows-features
 Manage Windows features required for Creatio installation. Install, uninstall, or check the status of required Windows features.
 
 **Note**: This command is only available on Windows operating system. Administrator rights are required for install and uninstall operations. When executed on macOS or Linux, it will return an error message with exit code 1.
+Starting with Windows 11 26H1 (build 28000), clio does not check or install `.NET Framework 3.5` Feature on Demand components because Windows no longer exposes them through Windows Features.
 
 **Description**: This command allows you to manage Windows features in three modes:
 
