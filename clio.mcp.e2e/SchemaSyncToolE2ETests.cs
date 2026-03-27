@@ -146,6 +146,65 @@ public sealed class SchemaSyncToolE2ETests {
 			because: "the added column should reference the lookup created in the same schema-sync batch");
 	}
 
+	[Test]
+	[Description("Rejects inherited BaseLookup columns in create-lookup operations before environment resolution.")]
+	[AllureTag(ToolName)]
+	[AllureName("schema-sync rejects inherited BaseLookup columns before environment resolution")]
+	[AllureDescription("Starts the real MCP server without requiring a reachable environment, invokes schema-sync with a create-lookup operation that tries to redefine Name, and verifies the tool returns a structured validation failure.")]
+	public async Task SchemaSyncTool_Should_Reject_Inherited_BaseLookup_Columns_Before_Environment_Resolution() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-schema-sync-env-{Guid.NewGuid():N}";
+		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
+		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+			because: "schema-sync must be advertised before the validation scenario can be invoked");
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							["schema-name"] = "UsrTodoStatus",
+							["title"] = "Todo Status",
+							["columns"] = new object?[] {
+								new Dictionary<string, object?> {
+									["name"] = "Name",
+									["type"] = "Text",
+									["title"] = "Name"
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement[] results = response.GetProperty("results").EnumerateArray().ToArray();
+		JsonElement createLookupResult = results.Single();
+		string error = createLookupResult.GetProperty("error").GetString()!;
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "schema-sync should return a structured failure payload for inherited-column validation");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "the batch should fail when create-lookup tries to redefine inherited BaseLookup columns");
+		results.Should().HaveCount(1,
+			because: "validation should stop the batch on the rejected create-lookup operation");
+		createLookupResult.GetProperty("operation").GetString().Should().Be("create-lookup",
+			because: "the failed result should still identify the rejected operation");
+		error.Should().Contain("BaseLookup",
+			because: "the failure should explain the inherited-column guardrail");
+		error.Should().Contain("Name",
+			because: "the failure should identify the rejected inherited column");
+		error.Should().NotContain(invalidEnvironmentName,
+			because: "validation should happen before environment resolution");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();

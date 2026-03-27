@@ -332,8 +332,14 @@ public sealed class EntitySchemaToolTests {
 			because: "lookup prompt guidance should mention automatic registration in the standard Lookups section");
 		lookupPrompt.Should().Contain(GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 			because: "lookup prompt guidance should direct callers to the canonical post-create verification path");
+		lookupPrompt.Should().Contain("`Name`",
+			because: "lookup prompt guidance should explain the inherited display-field contract for BaseLookup");
+		lookupPrompt.Should().Contain("docs://mcp/guides/app-modeling",
+			because: "lookup prompt guidance should point callers to the MCP-owned modeling guide");
 		updatePrompt.Should().Contain(UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
 			because: "batch update prompt guidance should reference the exact production tool name");
+		updatePrompt.Should().Contain("schema default",
+			because: "batch update prompt guidance should explain that seed rows do not define defaults");
 		schemaPrompt.Should().Contain(GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 			because: "schema-read prompt guidance should reference the exact production tool name");
 		columnPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
@@ -402,6 +408,8 @@ public sealed class EntitySchemaToolTests {
 			because: "update prompt guidance should advertise binary-like column support");
 		updatePrompt.Should().Contain("default-value-source=Const",
 			because: "update prompt guidance should explain unsupported binary default usage");
+		updatePrompt.Should().Contain("schema-sync",
+			because: "update prompt guidance should steer multi-step schema workflows toward the composite MCP tool");
 		modifyPrompt.Should().Contain("File",
 			because: "modify prompt guidance should advertise file column support");
 	}

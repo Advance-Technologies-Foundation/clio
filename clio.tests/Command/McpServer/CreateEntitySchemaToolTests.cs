@@ -216,7 +216,7 @@ public class CreateEntitySchemaToolTests {
 			"Order status",
 			"docker_fix2",
 			new List<CreateEntitySchemaColumnArgs> {
-				new("Name", "Text", "Name")
+				new("UsrSortOrder", "Integer", "Sort order")
 			}));
 
 		// Assert
@@ -234,9 +234,56 @@ public class CreateEntitySchemaToolTests {
 		resolvedCommand.CapturedOptions.Should().NotBeNull(
 			because: "the resolved command should receive the mapped lookup creation options");
 		resolvedCommand.CapturedOptions!.Columns.Should().BeEquivalentTo(new[] {
-			"Name:Text:Name"
+			"UsrSortOrder:Integer:Sort order"
 		}, because: "create-lookup should reuse the existing create-entity-schema column serialization");
 		registrationService.Received(1).EnsureLookupRegistration("MyPackage", "UsrOrderStatus", "Order status");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Rejects inherited BaseLookup columns when create-lookup callers try to redefine Name or Description.")]
+	[Category("Unit")]
+	public void CreateLookup_Should_Reject_Inherited_BaseLookup_Columns() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateEntitySchemaCommand defaultCommand = new();
+		FakeCreateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateLookup(new CreateLookupArgs(
+			"MyPackage",
+			"UsrOrderStatus",
+			"Order status",
+			"docker_fix2",
+			[
+				new CreateEntitySchemaColumnArgs("Name", "Text", "Name"),
+				new CreateEntitySchemaColumnArgs("Description", "Text", "Description")
+			]));
+		string[] outputValues = result.Output
+			.Select(message => message.Value?.ToString() ?? string.Empty)
+			.ToArray();
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "create-lookup should reject attempts to redefine inherited BaseLookup columns");
+		outputValues.Should().Contain(value => value.Contains("BaseLookup", StringComparison.Ordinal),
+			because: "the MCP caller should receive a readable explanation of the inherited-column guardrail");
+		outputValues.Should().Contain(value =>
+				value.Contains("Name", StringComparison.Ordinal)
+				&& value.Contains("Description", StringComparison.Ordinal),
+			because: "the validation error should identify the rejected inherited columns");
+		defaultCommand.CapturedOptions.Should().BeNull(
+			because: "the default injected command should not be executed when validation fails");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "the resolved command should not be executed when validation fails");
+		registrationService.DidNotReceiveWithAnyArgs().EnsureLookupRegistration(default!, default!, default!);
 		ConsoleLogger.Instance.ClearMessages();
 	}
 

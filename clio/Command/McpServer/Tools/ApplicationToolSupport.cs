@@ -5,11 +5,16 @@ namespace Clio.Command.McpServer.Tools;
 
 internal static class ApplicationToolResultMapper {
 	public static ApplicationContextResponse Map(ApplicationInfoResult result) {
+		IReadOnlyList<ApplicationEntityInfoResult> entities = result.Entities;
+		string? canonicalMainEntityName = ModelingGuardrails.ResolveCanonicalMainEntityName(
+			result.PackageName,
+			entities);
 		return new ApplicationContextResponse(
 			true,
 			result.PackageUId,
 			result.PackageName,
-			result.Entities
+			canonicalMainEntityName,
+			entities
 				.Select(entity => new ApplicationEntityResult(
 					entity.UId,
 					entity.Name,
