@@ -74,6 +74,9 @@ public static class ApplicationPrompt {
 		 Provide `name`, `code`, `template-code`, and `icon-background`.
 		 For end-to-end app modeling guardrails, read `docs://mcp/guides/app-modeling`.
 		 For a new app with one primary record type, treat the entity returned by `application-create` as the canonical main entity and extend it instead of creating a synonym entity for the same records.
+		 `application-create` is a scalar app-shell tool. Keep `name`, `description`, and `optional-template-data-json.appSectionDescription` as plain strings.
+		 Do not send `title-localizations`, `description-localizations`, `name-localizations`, or other localization-map fields to `application-create`.
+		 If the app needs localized entity or column captions, run follow-up entity-schema tools such as `schema-sync` or `update-entity-schema` after `application-create`.
 		 Pass `description` only when the application needs one.
 		 Pass `icon-id` only when a specific icon identifier is required.
 		 Pass `client-type-id` only when a non-default Creatio client type is required.

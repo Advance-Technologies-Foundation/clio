@@ -79,6 +79,45 @@ public sealed class ApplicationInfoServiceTests {
 	}
 
 	[Test]
+	[Description("Falls back to design-time entity and column captions when the runtime schema omits localized captions.")]
+	public void GetApplicationInfo_Should_Fall_Back_To_Design_Time_Captions_When_Runtime_Captions_Are_Empty() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysInstalledApp\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"app-uid","Code":"APP","Name":"App","Version":"1.0"}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("GetApplicationPackages", StringComparison.Ordinal)),
+				Arg.Any<string>())
+			.Returns("""{"success":true,"packages":[{"uId":"11111111-1111-1111-1111-111111111111","name":"PrimaryPkg","isApplicationPrimaryPackage":true}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationEntity\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"UId":"entity-a","Name":"UsrAlpha","Caption":"Base object"}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"uId\":\"entity-a\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"schema":{"uId":"entity-a","name":"UsrAlpha","caption":{},"columns":{"Items":{"visible":{"name":"UsrEmail","caption":{},"dataValueType":45,"isInherited":false}}}}}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("GetSchemaDesignItem", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"name\":\"UsrAlpha\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"schema":{"caption":[{"cultureName":"en-US","value":"Alpha from designer"}],"columns":[{"name":"UsrEmail","caption":[{"cultureName":"en-US","value":"Email from designer"}]}]}}""");
+
+		// Act
+		ApplicationInfoResult result = _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		result.Entities.Should().ContainSingle(
+			because: "the fallback scenario still represents a single resolved application entity");
+		result.Entities[0].Caption.Should().Be("Alpha from designer",
+			because: "design-time entity captions should win when runtime localized captions are empty");
+		result.Entities[0].Columns.Should().ContainSingle(
+			because: "the runtime entity still exposes the non-inherited column");
+		result.Entities[0].Columns[0].Caption.Should().Be("Email from designer",
+			because: "design-time column captions should be used before falling back to the technical column name");
+	}
+
+	[Test]
 	[Description("Returns a readable not-found failure when the installed-application lookup matches no rows.")]
 	public void GetApplicationInfo_Should_Throw_When_Application_Is_Not_Found() {
 		// Arrange

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Text.Json;
 using Clio.Command;
@@ -15,7 +16,7 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDataBindingOptions> {
-	private const string WorkspaceRoot = @"C:\workspace";
+	private static readonly string WorkspaceRoot = Path.Combine(Path.GetTempPath(), $"clio-create-data-binding-command-{Guid.NewGuid():N}");
 	private const string PackageName = "TestPkg";
 	private const string BindingName = "SysSettings";
 
@@ -38,11 +39,19 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 
 	protected override MockFileSystem CreateFs() {
 		return new MockFileSystem(new Dictionary<string, MockFileData> {
-			[$@"{WorkspaceRoot}\.clio\workspaceSettings.json"] = new("{}"),
-			[$@"{WorkspaceRoot}\packages\{PackageName}\descriptor.json"] = new("{}"),
-			[$@"{WorkspaceRoot}\assets\icon.png"] = new(new byte[] { 1, 2, 3 }),
-			[@"C:\outside\icon.png"] = new(new byte[] { 9, 9, 9 })
+			[WorkspacePath(".clio", "workspaceSettings.json")] = new("{}"),
+			[WorkspacePath("packages", PackageName, "descriptor.json")] = new("{}"),
+			[WorkspacePath("assets", "icon.png")] = new(new byte[] { 1, 2, 3 }),
+			[Path.Combine(Path.GetTempPath(), "outside", "icon.png")] = new(new byte[] { 9, 9, 9 })
 		}, WorkspaceRoot);
+	}
+
+	private static string WorkspacePath(params string[] segments) {
+		string path = WorkspaceRoot;
+		foreach (string segment in segments) {
+			path = Path.Combine(path, segment);
+		}
+		return path;
 	}
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
@@ -82,17 +91,17 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 
 		// Assert
 		result.Should().Be(0, because: "template generation should succeed for a valid workspace package and runtime schema");
-		FileSystem.FileExists($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\descriptor.json").Should().BeTrue(
+		FileSystem.FileExists(WorkspacePath("packages", PackageName, "Data", BindingName, "descriptor.json")).Should().BeTrue(
 			because: "create-data-binding should write the descriptor file");
-		FileSystem.FileExists($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\data.json").Should().BeTrue(
+		FileSystem.FileExists(WorkspacePath("packages", PackageName, "Data", BindingName, "data.json")).Should().BeTrue(
 			because: "create-data-binding should write the package data file");
-		FileSystem.FileExists($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\filter.json").Should().BeTrue(
+		FileSystem.FileExists(WorkspacePath("packages", PackageName, "Data", BindingName, "filter.json")).Should().BeTrue(
 			because: "create-data-binding should always create filter.json");
-		FileSystem.FileExists($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\Localization\data.en-US.json").Should().BeTrue(
+		FileSystem.FileExists(WorkspacePath("packages", PackageName, "Data", BindingName, "Localization", "data.en-US.json")).Should().BeTrue(
 			because: "template mode should scaffold the default localization file");
 
-		string descriptorJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\descriptor.json");
-		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\data.json");
+		string descriptorJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", BindingName, "descriptor.json"));
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", BindingName, "data.json"));
 		descriptorJson.Should().Contain("\"Name\": \"SysSettings\"",
 			because: "the generated descriptor should use the default binding folder name");
 		descriptorJson.Should().Contain("\"ColumnName\": \"ReferenceSchemaUId\"",
@@ -107,7 +116,7 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 			because: "template mode should include the primary key column row entry");
 		dataJson.Should().Contain("\"Value\": \"\"",
 			because: "template mode should create empty placeholder values");
-		FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\filter.json").Should().BeEmpty(
+		FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", BindingName, "filter.json")).Should().BeEmpty(
 			because: "filter.json should be created as an empty file");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
 	}
@@ -128,9 +137,9 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 
 		// Assert
 		result.Should().Be(0, because: "explicit row generation should succeed for known columns");
-		string descriptorJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\descriptor.json");
-		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\data.json");
-		string localizationJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\Localization\data.ru-RU.json");
+		string descriptorJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", BindingName, "descriptor.json"));
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", BindingName, "data.json"));
+		string localizationJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", BindingName, "Localization", "data.ru-RU.json"));
 		string? generatedId = null;
 		foreach (JsonElement rowValue in JsonDocument.Parse(dataJson).RootElement.GetProperty("PackageData")[0].GetProperty("Row").EnumerateArray()) {
 			if (rowValue.GetProperty("SchemaColumnUId").GetString() == "ae0e45ca-c495-4fe7-a39d-3ab7278e1617") {
@@ -194,7 +203,7 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		// Assert
 		result.Should().Be(0,
 			because: "the built-in SysModule template should allow offline binding creation");
-		string descriptorJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\descriptor.json");
+		string descriptorJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "SysModule", "descriptor.json"));
 		descriptorJson.Should().Contain("\"ColumnName\": \"Image16\"",
 			because: "the SysModule template should include the small image column");
 		descriptorJson.Should().Contain("\"ColumnName\": \"Image20\"",
@@ -223,7 +232,7 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		// Assert
 		result.Should().Be(0,
 			because: "structured lookup and image-reference payloads with explicit displayValue should be accepted");
-		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\data.json");
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "SysModule", "data.json"));
 		dataJson.Should().Contain("\"DisplayValue\": \"Provided folder mode\"",
 			because: "lookup columns should preserve the caller-supplied display value");
 		dataJson.Should().Contain("\"DisplayValue\": \"Provided module logo\"",
@@ -248,7 +257,7 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		// Assert
 		result.Should().Be(0,
 			because: "create-data-binding should backfill display values when the runtime schema and select query are available");
-		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\UsrLookupBinding\data.json");
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "UsrLookupBinding", "data.json"));
 		dataJson.Should().Contain("\"DisplayValue\": \"Resolved status\"",
 			because: "lookup rows should serialize the resolved display text alongside the identifier");
 	}
@@ -282,7 +291,7 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		CreateDataBindingOptions options = new() {
 			PackageName = PackageName,
 			SchemaName = "SysModule",
-			ValuesJson = """{"Code":"UsrImageModule","Image16":"assets\\icon.png"}"""
+			ValuesJson = "{\"Code\":\"UsrImageModule\",\"Image16\":\"" + Path.Combine("assets", "icon.png") + "\"}"
 		};
 
 		// Act
@@ -291,7 +300,7 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		// Assert
 		result.Should().Be(0,
 			because: "create-data-binding should accept a local image file path for image-content columns");
-		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\data.json");
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "SysModule", "data.json"));
 		dataJson.Should().Contain("\"SchemaColumnUId\": \"6d827ba7-a622-47cc-8f11-b40b91c7441a\"",
 			because: "the selected image-content column should be written to the row payload");
 		dataJson.Should().Contain("\"Value\": \"AQID\"",
@@ -314,7 +323,7 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		// Assert
 		result.Should().Be(0,
 			because: "allowed SysModule colors should pass validation during create-data-binding");
-		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\data.json");
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "SysModule", "data.json"));
 		dataJson.Should().Contain("\"Value\": \"#A6DE00\"",
 			because: "allowed SysModule colors should be normalized to the predefined palette value");
 	}
@@ -345,7 +354,7 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		CreateDataBindingOptions options = new() {
 			PackageName = PackageName,
 			SchemaName = "SysModule",
-			ValuesJson = """{"Code":"UsrImageModule","Image16":"C:\\outside\\icon.png"}"""
+			ValuesJson = "{\"Code\":\"UsrImageModule\",\"Image16\":\"" + Path.Combine(Path.GetTempPath(), "outside", "icon.png") + "\"}"
 		};
 
 		// Act
@@ -522,7 +531,7 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 
 [TestFixture]
 internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBindingRowOptions> {
-	private const string WorkspaceRoot = @"C:\workspace";
+	private static readonly string WorkspaceRoot = Path.Combine(Path.GetTempPath(), $"clio-add-data-binding-row-command-{Guid.NewGuid():N}");
 	private const string PackageName = "TestPkg";
 	private const string BindingName = "SysSettings";
 
@@ -543,10 +552,10 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 
 	protected override MockFileSystem CreateFs() {
 		return new MockFileSystem(new Dictionary<string, MockFileData> {
-			[$@"{WorkspaceRoot}\.clio\workspaceSettings.json"] = new("{}"),
-			[$@"{WorkspaceRoot}\packages\{PackageName}\descriptor.json"] = new("{}"),
-			[$@"{WorkspaceRoot}\assets\icon.png"] = new(new byte[] { 1, 2, 3 }),
-			[$@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\descriptor.json"] = new("""
+			[WorkspacePath(".clio", "workspaceSettings.json")] = new("{}"),
+			[WorkspacePath("packages", PackageName, "descriptor.json")] = new("{}"),
+			[WorkspacePath("assets", "icon.png")] = new(new byte[] { 1, 2, 3 }),
+			[WorkspacePath("packages", PackageName, "Data", BindingName, "descriptor.json")] = new("""
 			{
 			  "Descriptor": {
 			    "UId": "c653d44c-9c7c-125d-e269-b9257b353ff9",
@@ -575,7 +584,7 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 			  }
 			}
 			"""),
-			[$@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\data.json"] = new("""
+			[WorkspacePath("packages", PackageName, "Data", BindingName, "data.json")] = new("""
 			{
 			  "PackageData": [
 			    {
@@ -593,7 +602,7 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 			  ]
 			}
 			"""),
-			[$@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\Localization\data.en-US.json"] = new("""
+			[WorkspacePath("packages", PackageName, "Data", BindingName, "Localization", "data.en-US.json")] = new("""
 			{
 			  "PackageData": [
 			    {
@@ -614,7 +623,7 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 			}
 			""")
 			,
-			[$@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\descriptor.json"] = new("""
+			[WorkspacePath("packages", PackageName, "Data", "SysModule", "descriptor.json")] = new("""
 			{
 			  "Descriptor": {
 			    "UId": "0c75996c-164e-af1b-81c9-c0fa2c3ab0ab",
@@ -671,12 +680,20 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 			  }
 			}
 			"""),
-			[$@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\data.json"] = new("""
+			[WorkspacePath("packages", PackageName, "Data", "SysModule", "data.json")] = new("""
 			{
 			  "PackageData": []
 			}
 			""")
 		}, WorkspaceRoot);
+	}
+
+	private static string WorkspacePath(params string[] segments) {
+		string path = WorkspaceRoot;
+		foreach (string segment in segments) {
+			path = Path.Combine(path, segment);
+		}
+		return path;
 	}
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
@@ -705,8 +722,8 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 
 		// Assert
 		result.Should().Be(0, because: "add-data-binding-row should replace existing rows when the primary key already exists");
-		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\data.json");
-		string localizationJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\Localization\data.en-US.json");
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", BindingName, "data.json"));
+		string localizationJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", BindingName, "Localization", "data.en-US.json"));
 		dataJson.Should().Contain("New name",
 			because: "the existing binding row should be updated with the new payload");
 		dataJson.Should().NotContain("Old name",
@@ -730,7 +747,7 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 
 		// Assert
 		result.Should().Be(0, because: "add-data-binding-row should generate a GUID primary key when the descriptor primary key is omitted");
-		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\data.json");
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", BindingName, "data.json"));
 		dataJson.Should().Contain("Generated key row",
 			because: "the newly added row should preserve the requested business-column payload");
 		int guidCount = 0;
@@ -762,7 +779,7 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 
 		// Assert
 		result.Should().Be(0, because: "a null GUID primary key should be treated as missing and regenerated");
-		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\data.json");
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", BindingName, "data.json"));
 		dataJson.Should().Contain("Null key row",
 			because: "the row payload should still be written after the generated key is injected");
 		dataJson.Should().NotContain("\"Value\": null",
@@ -776,7 +793,7 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 		AddDataBindingRowOptions options = new() {
 			PackageName = PackageName,
 			BindingName = "SysModule",
-			ValuesJson = """{"Code":"UsrImageModule","Image16":"assets\\icon.png"}"""
+			ValuesJson = "{\"Code\":\"UsrImageModule\",\"Image16\":\"" + Path.Combine("assets", "icon.png") + "\"}"
 		};
 
 		// Act
@@ -785,7 +802,7 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 		// Assert
 		result.Should().Be(0,
 			because: "add-data-binding-row should accept a local image file path for image-content columns");
-		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\data.json");
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "SysModule", "data.json"));
 		dataJson.Should().Contain("\"Value\": \"AQID\"",
 			because: "the command should base64-encode the file bytes before writing the binding row");
 	}
@@ -826,7 +843,7 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 		// Assert
 		result.Should().Be(0,
 			because: "local add-data-binding-row should keep explicit display values for lookup and image-reference columns");
-		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\SysModule\data.json");
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "SysModule", "data.json"));
 		dataJson.Should().Contain("\"DisplayValue\": \"Folder mode display\"",
 			because: "lookup rows should serialize the provided display text");
 		dataJson.Should().Contain("\"DisplayValue\": \"Logo display\"",
@@ -857,7 +874,7 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 
 [TestFixture]
 internal sealed class RemoveDataBindingRowCommandTests : BaseCommandTests<RemoveDataBindingRowOptions> {
-	private const string WorkspaceRoot = @"C:\workspace";
+	private static readonly string WorkspaceRoot = Path.Combine(Path.GetTempPath(), $"clio-remove-data-binding-row-command-{Guid.NewGuid():N}");
 	private const string PackageName = "TestPkg";
 	private const string BindingName = "SysSettings";
 
@@ -878,9 +895,9 @@ internal sealed class RemoveDataBindingRowCommandTests : BaseCommandTests<Remove
 
 	protected override MockFileSystem CreateFs() {
 		return new MockFileSystem(new Dictionary<string, MockFileData> {
-			[$@"{WorkspaceRoot}\.clio\workspaceSettings.json"] = new("{}"),
-			[$@"{WorkspaceRoot}\packages\{PackageName}\descriptor.json"] = new("{}"),
-			[$@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\descriptor.json"] = new("""
+			[WorkspacePath(".clio", "workspaceSettings.json")] = new("{}"),
+			[WorkspacePath("packages", PackageName, "descriptor.json")] = new("{}"),
+			[WorkspacePath("packages", PackageName, "Data", BindingName, "descriptor.json")] = new("""
 			{
 			  "Descriptor": {
 			    "UId": "c653d44c-9c7c-125d-e269-b9257b353ff9",
@@ -909,7 +926,7 @@ internal sealed class RemoveDataBindingRowCommandTests : BaseCommandTests<Remove
 			  }
 			}
 			"""),
-			[$@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\data.json"] = new("""
+			[WorkspacePath("packages", PackageName, "Data", BindingName, "data.json")] = new("""
 			{
 			  "PackageData": [
 			    {
@@ -927,7 +944,7 @@ internal sealed class RemoveDataBindingRowCommandTests : BaseCommandTests<Remove
 			  ]
 			}
 			"""),
-			[$@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\Localization\data.en-US.json"] = new("""
+			[WorkspacePath("packages", PackageName, "Data", BindingName, "Localization", "data.en-US.json")] = new("""
 			{
 			  "PackageData": [
 			    {
@@ -948,6 +965,14 @@ internal sealed class RemoveDataBindingRowCommandTests : BaseCommandTests<Remove
 			}
 			""")
 		}, WorkspaceRoot);
+	}
+
+	private static string WorkspacePath(params string[] segments) {
+		string path = WorkspaceRoot;
+		foreach (string segment in segments) {
+			path = Path.Combine(path, segment);
+		}
+		return path;
 	}
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
@@ -975,8 +1000,8 @@ internal sealed class RemoveDataBindingRowCommandTests : BaseCommandTests<Remove
 
 		// Assert
 		result.Should().Be(0, because: "remove-data-binding-row should delete rows that match the supplied primary key");
-		string dataJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\data.json");
-		string localizationJson = FileSystem.File.ReadAllText($@"{WorkspaceRoot}\packages\{PackageName}\Data\{BindingName}\Localization\data.en-US.json");
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", BindingName, "data.json"));
+		string localizationJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", BindingName, "Localization", "data.en-US.json"));
 		dataJson.Should().NotContain("4f41bcc2-7ed0-45e8-a1fd-474918966d15",
 			because: "the main data file should no longer contain the removed primary-key row");
 		localizationJson.Should().NotContain("Old name",

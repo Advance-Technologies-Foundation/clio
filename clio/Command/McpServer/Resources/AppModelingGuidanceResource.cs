@@ -37,8 +37,13 @@ public sealed class AppModelingGuidanceResource {
 
 			       Application modeling guardrails
 			       - For a new app with one primary record type, `application-create` usually returns the canonical main entity. Extend that entity instead of creating a synonym entity for the same records.
+			       - `application-create` is scalar-only for app shell fields. Keep `name`, `description`, and `optional-template-data-json.appSectionDescription` as plain strings.
+			       - Do not send localization-map fields such as `title-localizations`, `description-localizations`, or `name-localizations` to `application-create`.
+			       - If the app needs localized entity or column captions, create the app first and then apply those captions through `schema-sync`, `create-entity-schema`, `update-entity-schema`, or related entity-schema MCP tools.
 			       - Use `create-lookup` or `schema-sync` `create-lookup` for managed enum-like values such as status or type catalogs.
 			       - `create-lookup` always uses `BaseLookup`. `Name` and `Description` are inherited, and `Name` remains the display field. Do not add duplicate title-like columns just to mirror the lookup caption.
+			       - Entity-schema MCP write tools use explicit localization maps. Send schema and column captions through `title-localizations`, and column descriptions through `description-localizations`. Every provided localization map must include `en-US`.
+			       - Do not send legacy scalar `title`, `caption`, or `description` fields to entity-schema MCP write tools.
 			       - Seed rows create data only. A requirement like "defaults to New" still needs an explicit `schema default` or `ui default`.
 
 			       Page editing guardrails

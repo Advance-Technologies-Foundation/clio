@@ -34,7 +34,7 @@ Creates a lookup schema inheriting from `BaseLookup` and automatically registers
 |---|---|---|
 | `type` | Yes | `"create-lookup"` |
 | `schema-name` | Yes | Lookup entity schema name |
-| `title` | No | Schema title (defaults to schema-name) |
+| `title-localizations` | Yes | Schema title localizations. Must include `en-US` |
 | `columns` | No | Initial columns (same format as `create-entity-schema`) |
 | `seed-rows` | No | Rows to insert after creation |
 
@@ -48,7 +48,7 @@ Creates an entity schema with an optional parent.
 |---|---|---|
 | `type` | Yes | `"create-entity"` |
 | `schema-name` | Yes | Entity schema name |
-| `title` | No | Schema title |
+| `title-localizations` | Yes | Schema title localizations. Must include `en-US` |
 | `parent-schema-name` | No | Parent schema name |
 | `extend-parent` | No | Create a replacement schema (default: false) |
 | `columns` | No | Initial columns |
@@ -85,7 +85,10 @@ Each seed row must have a `values` key containing column name-value pairs:
     {
       "type": "create-lookup",
       "schema-name": "UsrTodoStatus",
-      "title": "Todo Status",
+      "title-localizations": {
+        "en-US": "Todo Status",
+        "uk-UA": "Статус справи"
+      },
       "seed-rows": [
         {"values": {"Name": "New"}},
         {"values": {"Name": "In Progress"}},
@@ -95,7 +98,9 @@ Each seed row must have a `values` key containing column name-value pairs:
     {
       "type": "create-lookup",
       "schema-name": "UsrTodoPriority",
-      "title": "Todo Priority",
+      "title-localizations": {
+        "en-US": "Todo Priority"
+      },
       "seed-rows": [
         {"values": {"Name": "Low"}},
         {"values": {"Name": "Medium"}},
@@ -110,6 +115,9 @@ Each seed row must have a `values` key containing column name-value pairs:
           "action": "add",
           "column-name": "UsrStatus",
           "type": "Lookup",
+          "title-localizations": {
+            "en-US": "Status"
+          },
           "reference-schema-name": "UsrTodoStatus",
           "required": true
         },
@@ -117,18 +125,32 @@ Each seed row must have a `values` key containing column name-value pairs:
           "action": "add",
           "column-name": "UsrPriority",
           "type": "Lookup",
+          "title-localizations": {
+            "en-US": "Priority"
+          },
           "reference-schema-name": "UsrTodoPriority"
         },
         {
           "action": "add",
           "column-name": "UsrDueDate",
-          "type": "Date"
+          "type": "Date",
+          "title-localizations": {
+            "en-US": "Due date"
+          }
         }
       ]
     }
   ]
 }
 ```
+
+## Localization Contract
+
+- `create-lookup` and `create-entity` require `title-localizations`.
+- `columns` in create operations require `title-localizations`.
+- `update-operations` use `title-localizations` and `description-localizations`.
+- Every localization map must include a non-empty `en-US` value.
+- Legacy scalar `title`, `caption`, and `description` fields are rejected by the MCP contract.
 
 ## Response
 

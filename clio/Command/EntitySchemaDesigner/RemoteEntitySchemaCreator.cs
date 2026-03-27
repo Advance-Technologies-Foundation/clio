@@ -33,6 +33,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		string Name,
 		string Type,
 		string Title,
+		IReadOnlyDictionary<string, string>? TitleLocalizations,
 		string? ReferenceSchemaName,
 		bool? Required,
 		string? DefaultValueSource,
@@ -43,7 +44,10 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	private sealed record StructuredColumnSpec(
 		[property: JsonPropertyName("name")] string Name,
 		[property: JsonPropertyName("type")] string Type,
-		[property: JsonPropertyName("title")] string? Title = null) {
+		[property: JsonPropertyName("title-localizations")] Dictionary<string, string>? TitleLocalizations = null) {
+		[property: JsonPropertyName("title")]
+		public string? Title { get; init; }
+
 		[property: JsonPropertyName("caption")]
 		public string? Caption { get; init; }
 
@@ -84,12 +88,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		PackageInfo package) {
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
 		schema.Name = options.SchemaName;
-		schema.Caption = [
-			new LocalizableStringDto {
-				CultureName = cultureName,
-				Value = options.Title
-			}
-		];
+		schema.Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(options.TitleLocalizations, options.Title);
 		EntitySchemaDesignerSupport.EnsurePackageAssigned(schema, package);
 		schema.Columns ??= [];
 		schema.Indexes ??= [];
@@ -105,7 +104,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 		if (!schema.ParentSchema.HasValue() && columns.All(column => !column.IsGuidType())) {
 			columns.Insert(0, CreateColumn(
-				new ParsedColumn("Id", "guid", "Id", null, null, null, null),
+				new ParsedColumn("Id", "guid", "Id", null, null, null, null, null),
 				referenceSchemas,
 				cultureName));
 		}
@@ -193,12 +192,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			UId = Guid.NewGuid(),
 			Name = parsedColumn.Name,
 			DataValueType = dataValueType,
-			Caption = [
-				new LocalizableStringDto {
-					CultureName = cultureName,
-					Value = parsedColumn.Title
-				}
-			],
+			Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(
+				parsedColumn.TitleLocalizations,
+				parsedColumn.Title),
 			RequirementType = parsedColumn.Required == true
 				? (int)EntitySchemaColumnRequirementType.ApplicationLevel
 				: (int)EntitySchemaColumnRequirementType.None
@@ -274,6 +270,11 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		string name = structuredColumn.Name?.Trim();
 		string type = structuredColumn.Type?.Trim();
 		ValidateSupportedColumnValues(columnSpec, name, type);
+		IReadOnlyDictionary<string, string>? titleLocalizations = structuredColumn.TitleLocalizations == null
+			? null
+			: EntitySchemaDesignerSupport.NormalizeLocalizationMap(
+				structuredColumn.TitleLocalizations,
+				"title-localizations");
 		string title = ResolveTitle(structuredColumn, name);
 		string? referenceSchemaName = string.IsNullOrWhiteSpace(structuredColumn.ReferenceSchemaName)
 			? null
@@ -285,6 +286,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			name,
 			type,
 			title,
+			titleLocalizations,
 			referenceSchemaName,
 			structuredColumn.Required,
 			structuredColumn.DefaultValueSource,
@@ -351,10 +353,15 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		string? referenceSchemaName = GetLookupReferenceSchemaName(parts);
 		ValidateLookupReferenceSchema(columnSpec, type, referenceSchemaName);
 
-		return new ParsedColumn(name, type, title, referenceSchemaName, null, null, null);
+		return new ParsedColumn(name, type, title, null, referenceSchemaName, null, null, null);
 	}
 
 	private static string ResolveTitle(StructuredColumnSpec column, string fallbackName) {
+		if (column.TitleLocalizations?.Count > 0) {
+			return EntitySchemaDesignerSupport.GetRequiredLocalizationValue(
+				column.TitleLocalizations,
+				"title-localizations");
+		}
 		if (!string.IsNullOrWhiteSpace(column.Title)) {
 			return column.Title.Trim();
 		}

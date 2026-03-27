@@ -94,8 +94,14 @@ public class StopCommandTestCase : BaseCommandTests<StopOptions>
 		int result = _command.Execute(options);
 
 		// Assert
-		// Should attempt IIS, then OS service, then background process
-		_iisSiteDetector.Received(1).GetSitesByPath(envPath);
+		if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+		{
+			_iisSiteDetector.Received(1).GetSitesByPath(envPath);
+		}
+		else
+		{
+			_iisSiteDetector.DidNotReceive().GetSitesByPath(Arg.Any<string>());
+		}
 		_serviceManager.Received().IsServiceRunning(Arg.Any<string>());
 	}
 
