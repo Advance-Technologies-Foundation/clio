@@ -1,0 +1,47 @@
+COMMAND TYPE
+    Workspace commands
+
+NAME
+    install-skills - Install workspace-local skills from a repository
+
+DESCRIPTION
+    install-skills copies one or more skills from a source repository into the
+    current clio workspace under `.agents/skills`.
+
+    The command must be executed from inside a clio workspace directory
+    (a directory containing `.clio/workspaceSettings.json`, or any child folder
+    below it).
+
+    By default, clio uses the bootstrap skills repository:
+        https://creatio.ghe.com/engineering/bootstrap-composable-app-starter-kit
+
+    Clio inspects only the repository `.agents/skills` folder and discovers
+    skills by locating `SKILL.md` files.
+
+    install-skills installs only new skills. If the destination skill already
+    exists and is managed by clio, the command fails and asks you to use
+    update-skill instead. If the destination skill exists but is unmanaged,
+    the command also fails and does not overwrite it.
+
+SYNOPSIS
+    clio install-skills [options]
+
+OPTIONS
+    --skill                             Optional skill name to install.
+                                        When omitted, all discovered skills are installed.
+
+    --repo                              Optional local repository path or git URL.
+                                        When omitted, clio uses the default bootstrap skills repository.
+
+EXAMPLES
+    Install all skills from the default bootstrap repository:
+        clio install-skills
+
+    Install one skill from the default bootstrap repository:
+        clio install-skills --skill my-skill
+
+    Install all skills from a local repository checkout:
+        clio install-skills --repo C:\Repos\bootstrap-composable-app-starter-kit
+
+    Install one skill from a remote git repository:
+        clio install-skills --repo https://creatio.ghe.com/engineering/bootstrap-composable-app-starter-kit --skill my-skill

@@ -1,0 +1,29 @@
+COMMAND TYPE
+    Workspace commands
+
+NAME
+    delete-skill - Delete a managed workspace-local skill
+
+DESCRIPTION
+    delete-skill removes one clio-managed skill from the current workspace.
+
+    The command must be executed from inside a clio workspace directory
+    (a directory containing `.clio/workspaceSettings.json`, or any child folder
+    below it).
+
+    delete-skill removes only skills recorded in
+    `.agents/skills/.clio-managed.json`.
+
+    If the skill exists in `.agents/skills` but is not managed by clio,
+    the command fails and leaves the folder unchanged.
+
+SYNOPSIS
+    clio delete-skill --skill <name>
+
+OPTIONS
+    --skill                             Managed skill name to delete.
+                                        Required.
+
+EXAMPLES
+    Delete one managed skill:
+        clio delete-skill --skill my-skill
