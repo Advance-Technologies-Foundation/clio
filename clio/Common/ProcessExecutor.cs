@@ -78,6 +78,11 @@ public sealed record ProcessExecutionOptions {
 	public Action<string, ProcessOutputStream> OnOutput { get; init; }
 
 	/// <summary>
+	/// Gets optional text written to standard input immediately after process start.
+	/// </summary>
+	public string StandardInput { get; init; }
+
+	/// <summary>
 	/// Gets optional environment variables to add or override for the started process.
 	/// </summary>
 	public IReadOnlyDictionary<string, string> EnvironmentVariables { get; init; }
@@ -279,6 +284,7 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 			CreateNoWindow = true,
 			UseShellExecute = false,
 			WorkingDirectory = options.WorkingDirectory ?? Environment.CurrentDirectory,
+			RedirectStandardInput = !string.IsNullOrEmpty(options.StandardInput),
 			RedirectStandardOutput = redirectOutput,
 			RedirectStandardError = redirectOutput
 		};
@@ -311,6 +317,12 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 					StartedAtUtc = startedAt,
 					FinishedAtUtc = DateTimeOffset.UtcNow
 				};
+			}
+
+			if (!string.IsNullOrEmpty(options.StandardInput)) {
+				await process.StandardInput.WriteAsync(options.StandardInput);
+				await process.StandardInput.FlushAsync();
+				process.StandardInput.Close();
 			}
 
 			Task stdoutTask = ReadStreamAsync(process.StandardOutput, ProcessOutputStream.StdOut, stdout, options,
