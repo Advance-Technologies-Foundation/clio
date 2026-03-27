@@ -1261,3 +1261,10 @@ Decision: Changed `SkillRepositoryResolver` to cache remote repositories at `Set
 Discovery: The extra `skills-repos` segment was not carrying useful routing information because the repository name already provides a stable cache key inside `%LOCALAPPDATA%\creatio\clio`.
 Files: clio/Common/SkillManagementService.cs, clio.tests/Command/SkillManagementCommandTests.cs, .codex/workspace-diary.md
 Impact: The default remote cache location is now the exact directory the user requested, which makes the clone location easier to predict and inspect.
+
+## 2026-03-27 17:24 – Confirm release version already in clio csproj
+Context: User asked to include the project file in the PR after bumping the product version to `8.0.2.44`.
+Decision: Verified that the version-bearing project file is `clio/clio.csproj` and that it already sets `AssemblyVersion`, `FileVersion`, and `Version` to `8.0.2.44`.
+Discovery: The working tree is clean, so there is no missing unstaged `csproj` change to add; the PR just needs to include `clio/clio.csproj` if the version bump is part of the branch.
+Files: clio/clio.csproj, .codex/workspace-diary.md
+Impact: Future release prep can reference the exact project file that carries the shipped CLI version without re-scanning the repo.
