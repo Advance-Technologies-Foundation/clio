@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -248,10 +249,10 @@ public class OpenAppCommandTests : BaseCommandTests<OpenAppOptions>{
 
 		// Assert
 		result.Should().Be(0, "command should succeed when environment has valid URI on macOS");
-		_processExecutor.Received(1).Execute(
-			"open",
-			Arg.Is<string>(url => url.Contains("test.creatio.com")),
-			false);
+		_processExecutor.Received(1).FireAndForgetAsync(
+			Arg.Is<ProcessExecutionOptions>(execution =>
+				execution.Program == "open" &&
+				execution.Arguments.Contains("test.creatio.com")));
 	}
 
 	[Test]
@@ -311,6 +312,8 @@ public class OpenAppCommandTests : BaseCommandTests<OpenAppOptions>{
 		_environmentSettings = new EnvironmentSettings();
 		_webBrowser = Substitute.For<IWebBrowser>();
 		_processExecutor = Substitute.For<IProcessExecutor>();
+		_processExecutor.FireAndForgetAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessLaunchResult { Started = true }));
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_command = new OpenAppCommand(_applicationClient, _environmentSettings, _webBrowser, _processExecutor,
 			_settingsRepository);

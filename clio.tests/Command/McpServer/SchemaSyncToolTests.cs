@@ -66,7 +66,7 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
-			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", Title: "Todo Status")]);
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
 
 		// Act
 		SchemaSyncResponse response = tool.SchemaSync(args);
@@ -107,9 +107,9 @@ public sealed class SchemaSyncToolTests {
 				new SchemaSyncOperation(
 					"create-lookup",
 					"UsrTodoStatus",
-					Title: "Todo Status",
+					TitleLocalizations: Localizations("Todo Status"),
 					Columns: [
-						new CreateEntitySchemaColumnArgs("Name", "Text", "Name")
+						new CreateEntitySchemaColumnArgs("Name", "Text", Localizations("Name"))
 					])
 			]);
 
@@ -144,7 +144,7 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-entity", "UsrTodoList",
-				Title: "Todo List", ParentSchemaName: "BaseEntity")]);
+				TitleLocalizations: Localizations("Todo List"), ParentSchemaName: "BaseEntity")]);
 
 		// Act
 		SchemaSyncResponse response = tool.SchemaSync(args);
@@ -171,9 +171,9 @@ public sealed class SchemaSyncToolTests {
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
 				UpdateOperations: [
 					new UpdateEntitySchemaOperationArgs("add", "UsrStatus",
-						Type: "Lookup", ReferenceSchemaName: "UsrTodoStatus"),
+						Type: "Lookup", TitleLocalizations: Localizations("Status"), ReferenceSchemaName: "UsrTodoStatus"),
 					new UpdateEntitySchemaOperationArgs("add", "UsrDueDate",
-						Type: "Date")
+						Type: "Date", TitleLocalizations: Localizations("Due date"))
 				])]);
 
 		// Act
@@ -213,7 +213,7 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
-				Title: "Todo Status",
+				TitleLocalizations: Localizations("Todo Status"),
 				SeedRows: [
 					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
 						["Name"] = ToJsonElement("New")
@@ -259,8 +259,8 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
-				new SchemaSyncOperation("create-lookup", "UsrFirst", Title: "First"),
-				new SchemaSyncOperation("create-lookup", "UsrSecond", Title: "Second")
+				new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First")),
+				new SchemaSyncOperation("create-lookup", "UsrSecond", TitleLocalizations: Localizations("Second"))
 			]);
 
 		// Act
@@ -325,6 +325,39 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects legacy scalar title fields in schema-sync create operations even when title-localizations are also provided.")]
+	public void SchemaSync_CreateLookup_Should_Reject_Legacy_Title_Field() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev",
+			"UsrPkg",
+			[
+				new SchemaSyncOperation(
+					"create-lookup",
+					"UsrTodoStatus",
+					TitleLocalizations: Localizations("Todo Status")) {
+					LegacyTitle = "Todo Status"
+				}
+			]);
+
+		// Act
+		SchemaSyncResponse response = tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse();
+		response.Results.Should().ContainSingle();
+		response.Results[0].Error.Should().Contain("legacy 'title'",
+			because: "schema-sync should reject the old scalar field instead of silently accepting it");
+		fakeCreateCommand.CapturedOptions.Should().BeNull();
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Stops seed-data when create-lookup fails and does not seed")]
 	public void SchemaSync_SeedRows_Should_Not_Execute_When_Create_Fails() {
 		// Arrange
@@ -339,7 +372,7 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrBroken",
-				Title: "Broken",
+				TitleLocalizations: Localizations("Broken"),
 				SeedRows: [new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
 					["Name"] = ToJsonElement("value")
 				})])]);
@@ -375,11 +408,11 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[
-				new SchemaSyncOperation("create-lookup", "UsrTodoStatus", Title: "Status"),
+				new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Status")),
 				new SchemaSyncOperation("update-entity", "UsrTodoList",
 					UpdateOperations: [
 						new UpdateEntitySchemaOperationArgs("add", "UsrStatus",
-							Type: "Lookup", ReferenceSchemaName: "UsrTodoStatus")
+							Type: "Lookup", TitleLocalizations: Localizations("Status"), ReferenceSchemaName: "UsrTodoStatus")
 					])
 			]);
 
@@ -431,7 +464,7 @@ public sealed class SchemaSyncToolTests {
 			"dev", "UsrPkg",
 			[
 				new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
-					Title: "Todo Status",
+					TitleLocalizations: Localizations("Todo Status"),
 					SeedRows: [
 						new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
 							["Name"] = ToJsonElement("New")
@@ -440,7 +473,7 @@ public sealed class SchemaSyncToolTests {
 				new SchemaSyncOperation("update-entity", "UsrTodoList",
 					UpdateOperations: [
 						new UpdateEntitySchemaOperationArgs("add", "UsrStatus",
-							Type: "Lookup", ReferenceSchemaName: "UsrTodoStatus")
+							Type: "Lookup", TitleLocalizations: Localizations("Status"), ReferenceSchemaName: "UsrTodoStatus")
 					])
 			]);
 
@@ -497,7 +530,7 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncResponse response = tool.SchemaSync(new SchemaSyncArgs(
 			"dev",
 			"UsrPkg",
-			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", Title: "Todo Status")]));
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]));
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -518,6 +551,16 @@ public sealed class SchemaSyncToolTests {
 		return result.Messages?
 			.Select(message => message.Value?.ToString() ?? string.Empty)
 			.ToArray() ?? [];
+	}
+
+	private static Dictionary<string, string> Localizations(string enUs, string? ukUa = null) {
+		Dictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase) {
+			["en-US"] = enUs
+		};
+		if (!string.IsNullOrWhiteSpace(ukUa)) {
+			result["uk-UA"] = ukUa;
+		}
+		return result;
 	}
 
 	private sealed class FakeCreateEntitySchemaCommand : CreateEntitySchemaCommand {

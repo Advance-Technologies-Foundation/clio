@@ -19,6 +19,8 @@ clio mcp
 - Exposes structured clio MCP tools such as application, page, component-info, entity, schema-sync, page-sync, and data-binding tools.
 - `create-lookup` and `schema-sync` `create-lookup` operations register new lookup schemas in the standard `Lookups` section as part of successful completion.
 - `component-info` is a local read-only helper and does not require a target environment.
+- Entity-schema MCP write tools use explicit localization maps. Send schema and column captions through `title-localizations`, column descriptions through `description-localizations`, and include `en-US` in every localization map.
+- `application-create` stays scalar-only. Keep `name`, `description`, and `optional-template-data-json.appSectionDescription` as plain strings, and apply localized schema captions later through entity-schema MCP write tools.
 
 ## Connection Notes
 

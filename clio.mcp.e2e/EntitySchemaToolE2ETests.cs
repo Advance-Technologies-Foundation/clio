@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.NUnit;
@@ -186,7 +189,7 @@ public sealed class EntitySchemaToolE2ETests {
 				new Dictionary<string, object?> {
 					["name"] = "Name",
 					["type"] = "Text",
-					["title"] = "Lookup name"
+					["title-localizations"] = BuildLocalizations("Lookup name")
 				}
 			]);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
@@ -198,13 +201,13 @@ public sealed class EntitySchemaToolE2ETests {
 		execution.ExitCode.Should().Be(1,
 			because: "create-lookup should fail when callers try to redefine inherited BaseLookup columns");
 		execution.Output.Should().Contain(message =>
-				message.Value != null && message.Value.ToString().Contains("BaseLookup", StringComparison.Ordinal),
+				message.Value != null && message.Value.Contains("BaseLookup", StringComparison.Ordinal),
 			because: "the failure should explain that Name already comes from BaseLookup");
 		execution.Output.Should().Contain(message =>
-				message.Value != null && message.Value.ToString().Contains("Name", StringComparison.Ordinal),
+				message.Value != null && message.Value.Contains("Name", StringComparison.Ordinal),
 			because: "the failure should identify the rejected inherited column");
 		execution.Output.Should().NotContain(message =>
-				message.Value != null && message.Value.ToString().Contains(environmentName, StringComparison.Ordinal),
+				message.Value != null && message.Value.Contains(environmentName, StringComparison.Ordinal),
 			because: "validation should happen before environment resolution");
 	}
 
@@ -280,7 +283,8 @@ public sealed class EntitySchemaToolE2ETests {
 			"add",
 			"Name",
 			arrangeContext.CancellationTokenSource.Token,
-			type: "Text");
+			type: "Text",
+			titleLocalizations: BuildLocalizations("Name"));
 
 		// Assert
 		AssertTopLevelFailure(callResult, arrangeContext.EnvironmentName,
@@ -381,7 +385,7 @@ public sealed class EntitySchemaToolE2ETests {
 				new Dictionary<string, object?> {
 					["name"] = arrangeContext.InitialColumnName,
 					["type"] = "Text",
-					["title"] = "Vehicle name"
+					["title-localizations"] = BuildLocalizations("Vehicle name")
 				}
 			]);
 		return McpCommandExecutionParser.Extract(callResult);
@@ -411,7 +415,7 @@ public sealed class EntitySchemaToolE2ETests {
 			arrangeContext.AddedColumnName,
 			arrangeContext.CancellationTokenSource.Token,
 			type: "ShortText",
-			title: "Vehicle code",
+			titleLocalizations: BuildLocalizations("Vehicle code"),
 			indexed: true,
 			defaultValueSource: "Const",
 			defaultValue: "Draft");
@@ -430,7 +434,7 @@ public sealed class EntitySchemaToolE2ETests {
 				new Dictionary<string, object?> {
 					["name"] = arrangeContext.LookupColumnName,
 					["type"] = "Integer",
-					["title"] = "Sort order"
+					["title-localizations"] = BuildLocalizations("Sort order")
 				}
 			]);
 		return McpCommandExecutionParser.Extract(callResult);
@@ -447,7 +451,7 @@ public sealed class EntitySchemaToolE2ETests {
 			"modify",
 			arrangeContext.AddedColumnName,
 			arrangeContext.CancellationTokenSource.Token,
-			title: "Vehicle code updated",
+			titleLocalizations: BuildLocalizations("Vehicle code updated"),
 			defaultValueSource: "None");
 		return McpCommandExecutionParser.Extract(callResult);
 	}
@@ -497,19 +501,19 @@ public sealed class EntitySchemaToolE2ETests {
 					["action"] = "add",
 					["column-name"] = binaryColumnName,
 					["type"] = "Binary",
-					["title"] = "Payload"
+					["title-localizations"] = BuildLocalizations("Payload")
 				},
 				new Dictionary<string, object?> {
 					["action"] = "add",
 					["column-name"] = imageColumnName,
 					["type"] = "Image",
-					["title"] = "Preview"
+					["title-localizations"] = BuildLocalizations("Preview")
 				},
 				new Dictionary<string, object?> {
 					["action"] = "add",
 					["column-name"] = fileColumnName,
 					["type"] = "File",
-					["title"] = "Document"
+					["title-localizations"] = BuildLocalizations("Document")
 				}
 			]);
 		return McpCommandExecutionParser.Extract(callResult);
@@ -533,7 +537,7 @@ public sealed class EntitySchemaToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["schema-name"] = schemaName,
-					["title"] = "Vehicle",
+					["title-localizations"] = BuildLocalizations("Vehicle"),
 					["columns"] = columns
 				}
 			},
@@ -558,7 +562,7 @@ public sealed class EntitySchemaToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["schema-name"] = schemaName,
-					["title"] = "Order status",
+					["title-localizations"] = BuildLocalizations("Order status"),
 					["columns"] = columns
 				}
 			},
@@ -620,7 +624,7 @@ public sealed class EntitySchemaToolE2ETests {
 		string columnName,
 		CancellationToken cancellationToken,
 		string? type = null,
-		string? title = null,
+		Dictionary<string, string>? titleLocalizations = null,
 		bool? indexed = null,
 		string? defaultValueSource = null,
 		string? defaultValue = null) {
@@ -638,8 +642,8 @@ public sealed class EntitySchemaToolE2ETests {
 		if (!string.IsNullOrWhiteSpace(type)) {
 			args["type"] = type;
 		}
-		if (!string.IsNullOrWhiteSpace(title)) {
-			args["title"] = title;
+		if (titleLocalizations?.Count > 0) {
+			args["title-localizations"] = titleLocalizations;
 		}
 		if (indexed.HasValue) {
 			args["indexed"] = indexed.Value;
@@ -863,6 +867,16 @@ public sealed class EntitySchemaToolE2ETests {
 			["push-workspace", "-e", environmentName],
 			workingDirectory: workspacePath,
 			cancellationToken: cancellationToken);
+	}
+
+	private static Dictionary<string, string> BuildLocalizations(string enUs, string? ukUa = null) {
+		Dictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase) {
+			["en-US"] = enUs
+		};
+		if (!string.IsNullOrWhiteSpace(ukUa)) {
+			result["uk-UA"] = ukUa;
+		}
+		return result;
 	}
 
 	private sealed record EntitySchemaArrangeContext(

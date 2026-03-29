@@ -72,7 +72,7 @@ Environment variables should use the standard double-underscore form, for exampl
 - The repository includes [`run-e2e-tests.ps1`](./run-e2e-tests.ps1) for the common manual workflow.
 - From [`clio.mcp.e2e`](.), that script:
   - clears the existing `allure-report` output
-  - clears `bin\Debug\net10.0`
+  - clears `bin\Debug\net8.0`
   - runs `dotnet test .\clio.mcp.e2e.csproj`
   - runs all tests when no filter argument is provided
   - accepts a shorthand fixture name such as `ClearRedis` and resolves it to the matching `Clio.Mcp.E2E.*ToolE2ETests` `FullyQualifiedName` filter

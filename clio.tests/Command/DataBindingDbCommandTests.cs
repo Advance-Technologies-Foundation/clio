@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Text.Json;
@@ -16,6 +17,7 @@ namespace Clio.Tests.Command;
 [TestFixture]
 internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	private const string PackageName = "TestPkg";
+	private static readonly string WorkspaceRoot = Path.Combine(Path.GetTempPath(), $"clio-data-binding-db-command-{Guid.NewGuid():N}");
 	private static readonly Guid PackageUId = Guid.Parse("1d07fd0e-2ca4-4d20-93b4-eb5a795ea03f");
 	private static readonly Guid ExistingRowId = Guid.Parse("4f41bcc2-7ed0-45e8-a1fd-474918966d15");
 	private static readonly Guid ExistingBindingUId = Guid.Parse("c653d44c-9c7c-125d-e269-b9257b353ff9");
@@ -51,7 +53,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	protected override MockFileSystem CreateFs() {
-		return new MockFileSystem(new Dictionary<string, MockFileData>(), currentDirectory: @"C:\workspace");
+		return new MockFileSystem(new Dictionary<string, MockFileData>(), currentDirectory: WorkspaceRoot);
 	}
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {

@@ -36,10 +36,13 @@ public static class EntitySchemaPrompt {
 		$"""
 		 Use clio mcp server `{CreateEntitySchemaTool.CreateEntitySchemaToolName}` to create entity schema
 		 `{schemaName}` in package `{packageName}` for environment `{environmentName}` with title `{title}`.
+		 Send schema captions only through `title-localizations`, for example
+		 `title-localizations.en-US = <title>`. Do not send legacy scalar `title`.
 		 Set `parent-schema-name` only when inheritance or replacement behavior was explicitly requested.
 		 Set `extend-parent` to `true` only when the request is specifically for a replacement schema, and only
 		 together with `parent-schema-name`.
-		 Include `columns` only when the request explicitly describes initial fields. Supported column types include
+		 Include `columns` only when the request explicitly describes initial fields. Every column must provide
+		 `title-localizations` with at least `en-US`. Supported column types include
 		 `Binary`, `Image`, and `File`, and `Blob` can be used as an alias for `Binary`. For `Lookup` columns,
 		 provide `reference-schema-name`. Current clio entity-schema tools are the supported ADAC integration
 		 contract, so keep using `create-entity-schema` instead of frontend-only names like `entity.create`.
@@ -72,6 +75,8 @@ public static class EntitySchemaPrompt {
 		$"""
 		 Use clio mcp server `{CreateLookupTool.CreateLookupToolName}` to create lookup schema
 		 `{schemaName}` in package `{packageName}` for environment `{environmentName}` with title `{title}`.
+		 Send schema captions only through `title-localizations`, for example
+		 `title-localizations.en-US = <title>`. Do not send legacy scalar `title`.
 		 Use this tool when the caller explicitly requested a lookup entity. The tool always creates the schema
 		 with parent `BaseLookup`, so do not pass parent override arguments. Successful execution also registers
 		 the lookup in the standard `Lookups` section, so treat the tool result as failed when the schema exists
@@ -103,8 +108,10 @@ public static class EntitySchemaPrompt {
 		 mutations to entity schema `{schemaName}` in package `{packageName}` on environment `{environmentName}`.
 		 Pass `package-name`, `schema-name`, and `environment-name` exactly as provided. Encode all column
 		 changes in the ordered `operations` array. Each operation uses clio-native fields such as `action`,
-		 `column-name`, `type`, `title`, `reference-schema-name`, and `default-value-source`; do not translate
-		 them into frontend `entity.update.operationsJson`. Supported types include `Binary`, `Image`, and `File`,
+		 `column-name`, `type`, `title-localizations`, `description-localizations`,
+		 `reference-schema-name`, and `default-value-source`; do not send legacy scalar `title` or
+		 `description`, and do not translate the payload into frontend `entity.update.operationsJson`.
+		 `add` operations must provide `title-localizations` with at least `en-US`. Supported types include `Binary`, `Image`, and `File`,
 		 and `Blob` can be used as an alias for `Binary`. Do not send `default-value` or
 		 `default-value-source=Const` for `Binary`, `Image`, or `File` operations. For create + seed + update
 		 workflows, prefer `schema-sync`. Seed rows create data only; model default requirements separately as
@@ -185,9 +192,10 @@ public static class EntitySchemaPrompt {
 		 Use clio mcp server `{ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName}` to perform action
 		 `{action}` on column `{columnName}` in entity schema `{schemaName}` from package `{packageName}` on
 		 environment `{environmentName}`.
-		 Pass only the option fields required for the requested action. For `add`, supply `type`; for `Lookup`,
-		 also supply `reference-schema-name`. For `modify`, include only the fields that should change. For
-		 `remove`, do not pass property-change options. Use this tool for a single-column mutation. For ordered
+		 Pass only the option fields required for the requested action. For `add`, supply `type` and
+		 `title-localizations` with at least `en-US`; for `Lookup`, also supply `reference-schema-name`. For
+		 `modify`, include only the fields that should change, using `title-localizations` and
+		 `description-localizations` instead of legacy scalar `title` or `description`. For `remove`, do not pass property-change options. Use this tool for a single-column mutation. For ordered
 		 multi-column updates, prefer `{UpdateEntitySchemaTool.UpdateEntitySchemaToolName}`. The tool accepts
 		 frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time`, plus explicit
 		 `default-value-source` values `Const` or `None`. Supported types include `Binary`, `Image`, and `File`,

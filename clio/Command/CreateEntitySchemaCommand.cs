@@ -18,6 +18,8 @@ public class CreateEntitySchemaOptions : RemoteCommandOptions
 	[Option("title", Required = true, HelpText = "Schema title")]
 	public string Title { get; set; }
 
+	public IReadOnlyDictionary<string, string>? TitleLocalizations { get; set; }
+
 	[Option("parent", Required = false, HelpText = "Parent schema name")]
 	public string ParentSchemaName { get; set; }
 

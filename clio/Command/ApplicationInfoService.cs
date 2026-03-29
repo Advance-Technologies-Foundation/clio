@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.UserEnvironment;
 using static Clio.Package.SelectQueryHelper;
 
@@ -126,7 +127,7 @@ public sealed class ApplicationInfoService(
 			GetApplicationEntities(client, serviceUrlBuilder, application.Id, primaryPackage.UId);
 		IReadOnlyList<ApplicationEntityInfoResult> entities = entityRows
 			.GroupBy(entity => entity.UId, StringComparer.OrdinalIgnoreCase)
-			.Select(group => LoadEntityInfo(client, serviceUrlBuilder, group.First()))
+			.Select(group => LoadEntityInfo(client, serviceUrlBuilder, primaryPackage.UId, group.First()))
 			.OrderBy(entity => entity.Caption, StringComparer.OrdinalIgnoreCase)
 			.ThenBy(entity => entity.Name, StringComparer.OrdinalIgnoreCase)
 			.ToList();
@@ -197,6 +198,7 @@ public sealed class ApplicationInfoService(
 	private static ApplicationEntityInfoResult LoadEntityInfo(
 		IApplicationClient client,
 		ServiceUrlBuilder serviceUrlBuilder,
+		string packageUId,
 		ApplicationEntityRecordDto entityRow)
 	{
 		string responseJson = client.ExecutePostRequest(
@@ -211,26 +213,26 @@ public sealed class ApplicationInfoService(
 				response.ErrorInfo?.Message ?? $"Runtime entity schema '{entityRow.UId}' was not returned.");
 		}
 
-		List<ApplicationColumnInfoResult> columns = (response.Schema.Columns?.Items?.Values ??
-			Enumerable.Empty<RuntimeSchemaColumnDto>())
-			.Where(column => !column.IsInherited)
-			.Select(MapColumn)
-			.OrderBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
-			.ToList();
-
 		string entityName = !string.IsNullOrWhiteSpace(response.Schema.Name)
 			? response.Schema.Name
 			: entityRow.Name ?? throw new InvalidOperationException("Entity name was not returned.");
-		string fallbackCaption = !string.IsNullOrWhiteSpace(entityRow.Caption) ? entityRow.Caption : entityName;
+		DesignSchemaDto? designSchema = TryLoadDesignSchema(client, serviceUrlBuilder, packageUId, entityName);
+		IReadOnlyDictionary<string, DesignSchemaColumnDto> designColumns = BuildDesignColumnIndex(designSchema);
+		List<ApplicationColumnInfoResult> columns = (response.Schema.Columns?.Items?.Values ??
+			Enumerable.Empty<RuntimeSchemaColumnDto>())
+			.Where(column => !column.IsInherited)
+			.Select(column => MapColumn(column, GetDesignColumn(designColumns, column.Name)))
+			.OrderBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
+			.ToList();
 
 		return new ApplicationEntityInfoResult(
 			entityRow.UId,
 			entityName,
-			ToLocalizedText(response.Schema.Caption, fallbackCaption),
+			ResolveLocalizedText(response.Schema.Caption, designSchema?.Caption, entityRow.Caption, entityName),
 			columns);
 	}
 
-	private static ApplicationColumnInfoResult MapColumn(RuntimeSchemaColumnDto column)
+	private static ApplicationColumnInfoResult MapColumn(RuntimeSchemaColumnDto column, DesignSchemaColumnDto? designColumn)
 	{
 		string name = !string.IsNullOrWhiteSpace(column.Name)
 			? column.Name
@@ -244,13 +246,40 @@ public sealed class ApplicationInfoService(
 
 		return new ApplicationColumnInfoResult(
 			name,
-			ToLocalizedText(column.Caption, name),
+			ResolveLocalizedText(column.Caption, designColumn?.Caption, name),
 			DataValueTypeNames.TryGetValue(column.DataValueType, out string? dataValueTypeName)
 				? dataValueTypeName
 				: column.DataValueType.ToString(),
 			column.ReferenceSchemaName,
 			defaultValueSource,
 			defaultValue);
+	}
+
+	private static DesignSchemaColumnDto? GetDesignColumn(
+		IReadOnlyDictionary<string, DesignSchemaColumnDto> designColumns,
+		string? columnName)
+	{
+		if (string.IsNullOrWhiteSpace(columnName))
+		{
+			return null;
+		}
+
+		return designColumns.TryGetValue(columnName, out DesignSchemaColumnDto? designColumn)
+			? designColumn
+			: null;
+	}
+
+	private static IReadOnlyDictionary<string, DesignSchemaColumnDto> BuildDesignColumnIndex(DesignSchemaDto? designSchema)
+	{
+		if (designSchema?.Columns is null)
+		{
+			return new Dictionary<string, DesignSchemaColumnDto>(StringComparer.OrdinalIgnoreCase);
+		}
+
+		return designSchema.Columns
+			.Where(column => !string.IsNullOrWhiteSpace(column.Name))
+			.GroupBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
+			.ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 	}
 
 	private static object? GetDefaultValue(DefaultValueDto? defaultValue)
@@ -268,14 +297,112 @@ public sealed class ApplicationInfoService(
 		return ConvertJsonElement(defaultValue.ValueSource);
 	}
 
-	private static string ToLocalizedText(
-		IReadOnlyDictionary<string, string>? localizedValues,
-		string fallback)
+	private static string ResolveLocalizedText(
+		IReadOnlyDictionary<string, string>? runtimeValues,
+		IEnumerable<DesignLocalizableStringDto>? designValues,
+		params string?[] fallbacks)
 	{
-		return localizedValues?.Values
+		return GetRuntimeLocalizedText(runtimeValues)
+			?? GetDesignLocalizedText(designValues)
+			?? fallbacks
+				.Select(value => value?.Trim())
+				.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
+			?? string.Empty;
+	}
+
+	private static string? GetRuntimeLocalizedText(IReadOnlyDictionary<string, string>? localizedValues)
+	{
+		if (localizedValues == null || localizedValues.Count == 0)
+		{
+			return null;
+		}
+
+		foreach (string cultureName in GetPreferredCultureNames())
+		{
+			if (localizedValues.TryGetValue(cultureName, out string? value) && !string.IsNullOrWhiteSpace(value))
+			{
+				return value.Trim();
+			}
+		}
+
+		return localizedValues.Values
 			.Select(value => value?.Trim())
-			.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
-			?? fallback;
+			.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+	}
+
+	private static string? GetDesignLocalizedText(IEnumerable<DesignLocalizableStringDto>? localizedValues)
+	{
+		List<DesignLocalizableStringDto> values = localizedValues?
+			.Where(value => !string.IsNullOrWhiteSpace(value.CultureName) && !string.IsNullOrWhiteSpace(value.Value))
+			.ToList() ?? [];
+		if (values.Count == 0)
+		{
+			return null;
+		}
+
+		foreach (string cultureName in GetPreferredCultureNames())
+		{
+			DesignLocalizableStringDto? exactMatch = values.FirstOrDefault(value =>
+				string.Equals(value.CultureName, cultureName, StringComparison.OrdinalIgnoreCase));
+			if (exactMatch is not null)
+			{
+				return exactMatch.Value.Trim();
+			}
+		}
+
+			return values[0].Value.Trim();
+	}
+
+	private static IReadOnlyList<string> GetPreferredCultureNames()
+	{
+		string currentCultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
+		if (string.Equals(currentCultureName, EntitySchemaDesignerSupport.DefaultCultureName, StringComparison.OrdinalIgnoreCase))
+		{
+			return [EntitySchemaDesignerSupport.DefaultCultureName];
+		}
+
+		return [currentCultureName, EntitySchemaDesignerSupport.DefaultCultureName];
+	}
+
+	private static DesignSchemaDto? TryLoadDesignSchema(
+		IApplicationClient client,
+		ServiceUrlBuilder serviceUrlBuilder,
+		string packageUId,
+		string entityName)
+	{
+		if (!Guid.TryParse(packageUId, out Guid parsedPackageUId))
+		{
+			return null;
+		}
+
+		try
+		{
+			string responseJson = client.ExecutePostRequest(
+				serviceUrlBuilder.Build("ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem"),
+				JsonSerializer.Serialize(new
+				{
+					name = entityName,
+					packageUId = parsedPackageUId,
+					useFullHierarchy = true,
+					cultures = GetPreferredCultureNames()
+				}));
+			if (string.IsNullOrWhiteSpace(responseJson))
+			{
+				return null;
+			}
+
+			DesignSchemaResponseDto? response = JsonSerializer.Deserialize<DesignSchemaResponseDto>(responseJson, JsonOptions);
+			if (response?.Success != true || response.Schema is null)
+			{
+				return null;
+			}
+
+			return response.Schema;
+		}
+		catch
+		{
+			return null;
+		}
 	}
 
 	private static T ExecuteSelectQuery<T>(
@@ -419,6 +546,15 @@ public sealed class ApplicationInfoService(
 		public RuntimeSchemaDto? Schema { get; set; }
 	}
 
+	private sealed class DesignSchemaResponseDto
+	{
+		[JsonPropertyName("success")]
+		public bool Success { get; set; }
+
+		[JsonPropertyName("schema")]
+		public DesignSchemaDto? Schema { get; set; }
+	}
+
 	private sealed class ErrorInfoDto
 	{
 		[JsonPropertyName("message")]
@@ -504,6 +640,33 @@ public sealed class ApplicationInfoService(
 
 		[JsonPropertyName("defValue")]
 		public DefaultValueDto? DefaultValue { get; set; }
+	}
+
+	private sealed class DesignSchemaDto
+	{
+		[JsonPropertyName("caption")]
+		public List<DesignLocalizableStringDto> Caption { get; set; } = [];
+
+		[JsonPropertyName("columns")]
+		public List<DesignSchemaColumnDto> Columns { get; set; } = [];
+	}
+
+	private sealed class DesignSchemaColumnDto
+	{
+		[JsonPropertyName("name")]
+		public string? Name { get; set; }
+
+		[JsonPropertyName("caption")]
+		public List<DesignLocalizableStringDto> Caption { get; set; } = [];
+	}
+
+	private sealed class DesignLocalizableStringDto
+	{
+		[JsonPropertyName("cultureName")]
+		public string? CultureName { get; set; }
+
+		[JsonPropertyName("value")]
+		public string? Value { get; set; }
 	}
 
 	private sealed class DefaultValueDto
