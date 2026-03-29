@@ -5,12 +5,17 @@ using Clio.Command.EntitySchemaDesigner;
 namespace Clio.Command.McpServer.Tools;
 
 internal static class EntitySchemaLocalizationContract {
+	private const string DescriptionFieldName = "description";
+	private const string DescriptionLocalizationsFieldName = "description-localizations";
+	private const string TitleFieldName = "title";
+	private const string TitleLocalizationsFieldName = "title-localizations";
+
 	internal static IReadOnlyDictionary<string, string> RequireTitleLocalizations(
 		IReadOnlyDictionary<string, string>? titleLocalizations,
 		string? legacyTitle,
 		string context) {
-		RejectLegacyField(legacyTitle, "title", "title-localizations", context);
-		return RequireLocalizations(titleLocalizations, "title-localizations", context);
+		RejectLegacyField(legacyTitle, TitleFieldName, TitleLocalizationsFieldName, context);
+		return RequireLocalizations(titleLocalizations, TitleLocalizationsFieldName, context);
 	}
 
 	internal static IReadOnlyDictionary<string, string> RequireTitleLocalizations(
@@ -18,17 +23,17 @@ internal static class EntitySchemaLocalizationContract {
 		string? legacyTitle,
 		string? legacyCaption,
 		string context) {
-		RejectLegacyField(legacyTitle, "title", "title-localizations", context);
-		RejectLegacyField(legacyCaption, "caption", "title-localizations", context);
-		return RequireLocalizations(titleLocalizations, "title-localizations", context);
+		RejectLegacyField(legacyTitle, TitleFieldName, TitleLocalizationsFieldName, context);
+		RejectLegacyField(legacyCaption, "caption", TitleLocalizationsFieldName, context);
+		return RequireLocalizations(titleLocalizations, TitleLocalizationsFieldName, context);
 	}
 
 	internal static IReadOnlyDictionary<string, string>? NormalizeOptionalTitleLocalizations(
 		IReadOnlyDictionary<string, string>? titleLocalizations,
 		string? legacyTitle,
 		string context) {
-		RejectLegacyField(legacyTitle, "title", "title-localizations", context);
-		return NormalizeOptionalLocalizations(titleLocalizations, "title-localizations", context);
+		RejectLegacyField(legacyTitle, TitleFieldName, TitleLocalizationsFieldName, context);
+		return NormalizeOptionalLocalizations(titleLocalizations, TitleLocalizationsFieldName, context);
 	}
 
 	internal static IReadOnlyDictionary<string, string>? NormalizeOptionalTitleLocalizations(
@@ -36,17 +41,17 @@ internal static class EntitySchemaLocalizationContract {
 		string? legacyTitle,
 		string? legacyCaption,
 		string context) {
-		RejectLegacyField(legacyTitle, "title", "title-localizations", context);
-		RejectLegacyField(legacyCaption, "caption", "title-localizations", context);
-		return NormalizeOptionalLocalizations(titleLocalizations, "title-localizations", context);
+		RejectLegacyField(legacyTitle, TitleFieldName, TitleLocalizationsFieldName, context);
+		RejectLegacyField(legacyCaption, "caption", TitleLocalizationsFieldName, context);
+		return NormalizeOptionalLocalizations(titleLocalizations, TitleLocalizationsFieldName, context);
 	}
 
 	internal static IReadOnlyDictionary<string, string>? NormalizeOptionalDescriptionLocalizations(
 		IReadOnlyDictionary<string, string>? descriptionLocalizations,
 		string? legacyDescription,
 		string context) {
-		RejectLegacyField(legacyDescription, "description", "description-localizations", context);
-		return NormalizeOptionalLocalizations(descriptionLocalizations, "description-localizations", context);
+		RejectLegacyField(legacyDescription, DescriptionFieldName, DescriptionLocalizationsFieldName, context);
+		return NormalizeOptionalLocalizations(descriptionLocalizations, DescriptionLocalizationsFieldName, context);
 	}
 
 	internal static IReadOnlyDictionary<string, string>? NormalizeMutationTitleLocalizations(
@@ -55,8 +60,8 @@ internal static class EntitySchemaLocalizationContract {
 		string? legacyTitle,
 		string context) {
 		if (IsRemoveAction(action)) {
-			RejectLocalizationField(titleLocalizations, "title-localizations", context);
-			RejectLegacyField(legacyTitle, "title", "title-localizations", context);
+			RejectLocalizationField(titleLocalizations, TitleLocalizationsFieldName, context);
+			RejectLegacyField(legacyTitle, TitleFieldName, TitleLocalizationsFieldName, context);
 			return null;
 		}
 
@@ -71,8 +76,8 @@ internal static class EntitySchemaLocalizationContract {
 		string? legacyDescription,
 		string context) {
 		if (IsRemoveAction(action)) {
-			RejectLocalizationField(descriptionLocalizations, "description-localizations", context);
-			RejectLegacyField(legacyDescription, "description", "description-localizations", context);
+			RejectLocalizationField(descriptionLocalizations, DescriptionLocalizationsFieldName, context);
+			RejectLegacyField(legacyDescription, DescriptionFieldName, DescriptionLocalizationsFieldName, context);
 			return null;
 		}
 
@@ -85,7 +90,7 @@ internal static class EntitySchemaLocalizationContract {
 		try {
 			return EntitySchemaDesignerSupport.GetRequiredLocalizationValue(
 				titleLocalizations,
-				"title-localizations",
+				TitleLocalizationsFieldName,
 				EntitySchemaDesignerSupport.DefaultCultureName);
 		} catch (Exception exception) {
 			throw new InvalidOperationException($"{context}: {exception.Message}", exception);
