@@ -1358,3 +1358,10 @@ Decision: Removed the overlapping default-parameter overload in `EntitySchemaDes
 Discovery: After the earlier review-fix push, the only unresolved review thread left in GitHub was the already-addressed outdated `required` vs `is-required` thread; the remaining actionable work was entirely in Sonar's open issue list for the PR leak period.
 Files: clio/Command/EntitySchemaDesigner/EntitySchemaDesignerSupport.cs, clio/Command/ApplicationInfoService.cs, clio/Command/McpServer/Tools/EntitySchemaLocalizationContract.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, .codex/workspace-diary.md
 Impact: The branch now removes the last Sonar blocker in PR scope and reduces the repeated-literal/code-smell surface before the next Sonar re-analysis.
+
+## 2026-03-30 01:10 – Prepare clio release 8.0.2.46 from master
+Context: User asked to perform the next `clio` release after PR `#494` had already been merged into `master`.
+Decision: Created a dedicated `master` worktree from `origin/master`, bumped the default `AssemblyVersion` in `clio/clio.csproj` from `8.0.2.45` to `8.0.2.46`, and used that release commit as the source for the next Git tag and GitHub release.
+Discovery: The latest published release and latest reachable tag from `origin/master` were both `8.0.2.45`, so the next valid release number was `8.0.2.46`; performing the release from a separate master worktree avoided disturbing the still-open feature checkout and its local diary edits.
+Files: clio/clio.csproj, .codex/workspace-diary.md
+Impact: Master now carries the next default CLI version, and the release tag can be created from the same commit that records the version bump.
