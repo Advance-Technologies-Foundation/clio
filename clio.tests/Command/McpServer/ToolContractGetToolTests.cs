@@ -74,6 +74,23 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	public void ToolContractGet_Should_Use_Canonical_Required_Key_For_Modify_Entity_Contract() {
+		ToolContractGetTool tool = new();
+
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
+		]));
+
+		result.Success.Should().BeTrue();
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "required");
+		contract.InputSchema.Properties.Should().NotContain(field => field.Name == "is-required");
+		contract.Examples.SelectMany(example => example.Arguments.Keys).Should().Contain("required");
+		contract.Examples.SelectMany(example => example.Arguments.Keys).Should().NotContain("is-required");
+	}
+
+	[Test]
+	[Category("Unit")]
 	public void ToolContractGet_Should_Return_Field_Level_Error_For_Blank_Tool_Name() {
 		ToolContractGetTool tool = new();
 

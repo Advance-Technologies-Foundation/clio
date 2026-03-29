@@ -63,6 +63,31 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("tool-contract-get returns canonical required field name for modify-entity-schema-column")]
+	public async Task ToolContractGet_Should_Return_Canonical_Required_Field_Name() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
+				}
+			});
+
+		response.Success.Should().BeTrue();
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "required");
+		contract.InputSchema.Properties.Should().NotContain(field => field.Name == "is-required");
+		contract.Examples.SelectMany(example => example.Arguments.Keys).Should().Contain("required");
+		contract.Examples.SelectMany(example => example.Arguments.Keys).Should().NotContain("is-required");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("tool-contract-get returns structured unknown tool suggestions")]
 	public async Task ToolContractGet_Should_Return_Structured_Unknown_Tool_Suggestions() {
 		McpE2ESettings settings = TestConfiguration.Load();

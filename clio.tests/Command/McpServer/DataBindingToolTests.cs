@@ -239,7 +239,10 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 			_packageName,
 			"SysModule",
 			_workspaceRoot,
-			ValuesJson: "{\"Code\":\"UsrImageModule\",\"Image16\":\"" + Path.Combine("assets", "icon.png") + "\"}"));
+			ValuesJson: JsonSerializer.Serialize(new Dictionary<string, string> {
+				["Code"] = "UsrImageModule",
+				["Image16"] = Path.Combine("assets", "icon.png")
+			})));
 
 		// Assert
 		result.ExitCode.Should().Be(0,

@@ -450,11 +450,8 @@ internal static class ToolContractCatalog {
 			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call.",
 			new ToolInputSchemaContract(
 				["environment-name", "package-name", "operations"],
-				[
-					Field("environment-name", "string", "Registered clio environment name."),
-					Field("package-name", "string", "Target package name."),
-					Field("operations", "array", "Ordered schema operations.")
-				],
+				EnvironmentPackageFields(
+					Field("operations", "array", "Ordered schema operations.")),
 				Validators: [
 					new ToolContractValidator(
 						"schema-sync-operations-localizations",
@@ -470,10 +467,7 @@ internal static class ToolContractCatalog {
 				Field("results", "array", "Per-operation execution results.")
 			),
 			CommonErrorContract,
-			[
-				Alias("parameter", "environment-name", "environmentName", "rejected", "Use 'environment-name' instead of 'environmentName'."),
-				Alias("parameter", "package-name", "packageName", "rejected", "Use 'package-name' instead of 'packageName'.")
-			],
+			EnvironmentPackageAliases(),
 			[],
 			[
 				Example("Create a lookup and extend the main entity", new Dictionary<string, object?> {
@@ -483,9 +477,7 @@ internal static class ToolContractCatalog {
 						new Dictionary<string, object?> {
 							["type"] = "create-lookup",
 							["schema-name"] = "UsrTaskStatus",
-							["title-localizations"] = new Dictionary<string, string> {
-								["en-US"] = "Task Status"
-							}
+							["title-localizations"] = LocalizationMap("Task Status")
 						},
 						new Dictionary<string, object?> {
 							["type"] = "update-entity",
@@ -495,9 +487,7 @@ internal static class ToolContractCatalog {
 									["action"] = "add",
 									["column-name"] = "UsrStatus",
 									["type"] = "Lookup",
-									["title-localizations"] = new Dictionary<string, string> {
-										["en-US"] = "Status"
-									},
+									["title-localizations"] = LocalizationMap("Status"),
 									["reference-schema-name"] = "UsrTaskStatus"
 								}
 							}
@@ -592,19 +582,11 @@ internal static class ToolContractCatalog {
 			"Lists Freedom UI pages for the requested package.",
 			new ToolInputSchemaContract(
 				[],
-				[
+				EnvironmentOrExplicitConnectionFields(
 					Field("package-name", "string", "Package name to inspect."),
 					Field("search-pattern", "string", "Optional case-insensitive schema-name filter."),
-					Field("limit", "number", "Optional max result count."),
-					Field("environment-name", "string", "Registered clio environment name."),
-					Field("uri", "string", "Explicit Creatio URL."),
-					Field("login", "string", "Explicit login."),
-					Field("password", "string", "Explicit password.")
-				],
-				AnyOf: [
-					new[] { "environment-name" },
-					new[] { "uri", "login", "password" }
-				]),
+					Field("limit", "number", "Optional max result count.")),
+				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				"success",
 				[
@@ -616,9 +598,9 @@ internal static class ToolContractCatalog {
 			),
 			CommonErrorContract,
 			[
-				Alias("parameter", "package-name", "packageName", "rejected", "Use 'package-name' instead of 'packageName'."),
+				PackageNameParameterAlias(),
 				Alias("parameter", "search-pattern", "searchPattern", "rejected", "Use 'search-pattern' instead of 'searchPattern'."),
-				Alias("parameter", "environment-name", "environmentName", "rejected", "Use 'environment-name' instead of 'environmentName'.")
+				EnvironmentNameParameterAlias()
 			],
 			[],
 			[
@@ -638,17 +620,9 @@ internal static class ToolContractCatalog {
 			"Reads a Freedom UI page bundle plus the raw editable body.",
 			new ToolInputSchemaContract(
 				["schema-name"],
-				[
-					Field("schema-name", "string", "Freedom UI page schema name."),
-					Field("environment-name", "string", "Registered clio environment name."),
-					Field("uri", "string", "Explicit Creatio URL."),
-					Field("login", "string", "Explicit login for uri-based execution."),
-					Field("password", "string", "Explicit password for uri-based execution.")
-				],
-				AnyOf: [
-					new[] { "environment-name" },
-					new[] { "uri", "login", "password" }
-				]),
+				EnvironmentOrExplicitConnectionFields(
+					Field("schema-name", "string", "Freedom UI page schema name.")),
+				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				"success",
 				[
@@ -662,8 +636,8 @@ internal static class ToolContractCatalog {
 			),
 			CommonErrorContract,
 			[
-				Alias("parameter", "schema-name", "schemaName", "rejected", "Use 'schema-name' instead of 'schemaName'."),
-				Alias("parameter", "environment-name", "environmentName", "rejected", "Use 'environment-name' instead of 'environmentName'.")
+				SchemaNameParameterAlias(),
+				EnvironmentNameParameterAlias()
 			],
 			[],
 			[
@@ -683,49 +657,30 @@ internal static class ToolContractCatalog {
 			"Creates a BaseLookup schema directly in the target package.",
 			new ToolInputSchemaContract(
 				["environment-name", "package-name", "schema-name", "title-localizations"],
-				[
-					Field("environment-name", "string", "Registered clio environment name."),
-					Field("package-name", "string", "Target package name."),
-					Field("schema-name", "string", "Lookup schema name."),
+				EnvironmentPackageSchemaFields(
+					"Lookup schema name.",
 					Field("title-localizations", "object", "Localization map that must include en-US."),
-					Field("columns", "array", "Optional custom columns.")
-				],
+					Field("columns", "array", "Optional custom columns.")),
 				Validators: [
-					new ToolContractValidator("localizations-map", "invalid-localization-map", "title-localizations", Context: "Parameter", Required: true)
+					RequiredLocalizationMapValidator("title-localizations")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
-			[
-				Alias("parameter", "environment-name", "environmentName", "rejected", "Use 'environment-name' instead of 'environmentName'."),
-				Alias("parameter", "package-name", "packageName", "rejected", "Use 'package-name' instead of 'packageName'."),
-				Alias("parameter", "schema-name", "schemaName", "rejected", "Use 'schema-name' instead of 'schemaName'."),
-				Alias("parameter", "title-localizations", "title", "rejected", "Use 'title-localizations' instead of legacy scalar 'title'."),
-				Alias("parameter", "title-localizations", "caption", "rejected", "Use 'title-localizations' instead of legacy scalar 'caption'.")
-			],
+			EnvironmentPackageSchemaAliases(
+				TitleParameterAlias(),
+				CaptionParameterAlias()),
 			[],
 			[
 				Example("Create a lookup schema", new Dictionary<string, object?> {
 					["environment-name"] = "local",
 					["package-name"] = "UsrTaskApp",
 					["schema-name"] = "UsrTaskStatus",
-					["title-localizations"] = new Dictionary<string, string> {
-						["en-US"] = "Task Status"
-					}
+					["title-localizations"] = LocalizationMap("Task Status")
 				})
 			],
-			Flow(
-				[
-					SchemaSyncTool.ToolName
-				],
-				"Prefer schema-sync for ordered multi-step entity work."),
+			PreferSchemaSyncFlow(),
 			[],
-			[
-				new ToolDeprecation(
-					"Prefer schema-sync as the canonical entity mutation path. Keep create-lookup for explicit fallback or isolated operations.",
-					[
-						SchemaSyncTool.ToolName
-					])
-			]);
+			PreferSchemaSyncDeprecations(CreateLookupTool.CreateLookupToolName));
 	}
 
 	private static ToolContractDefinition BuildCreateEntity() {
@@ -734,54 +689,35 @@ internal static class ToolContractCatalog {
 			"Creates an entity schema directly in the target package.",
 			new ToolInputSchemaContract(
 				["environment-name", "package-name", "schema-name", "title-localizations"],
-				[
-					Field("environment-name", "string", "Registered clio environment name."),
-					Field("package-name", "string", "Target package name."),
-					Field("schema-name", "string", "Entity schema name."),
+				EnvironmentPackageSchemaFields(
+					"Entity schema name.",
 					Field("title-localizations", "object", "Localization map that must include en-US."),
 					Field("columns", "array", "Optional initial columns."),
 					Field("parent-schema-name", "string", "Optional parent schema name."),
-					Field("extend-parent", "boolean", "Optional replacement-schema flag.")
-				],
+					Field("extend-parent", "boolean", "Optional replacement-schema flag.")),
 				Validators: [
-					new ToolContractValidator("localizations-map", "invalid-localization-map", "title-localizations", Context: "Parameter", Required: true)
+					RequiredLocalizationMapValidator("title-localizations")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
-			[
-				Alias("parameter", "environment-name", "environmentName", "rejected", "Use 'environment-name' instead of 'environmentName'."),
-				Alias("parameter", "package-name", "packageName", "rejected", "Use 'package-name' instead of 'packageName'."),
-				Alias("parameter", "schema-name", "schemaName", "rejected", "Use 'schema-name' instead of 'schemaName'."),
+			EnvironmentPackageSchemaAliases(
 				Alias("parameter", "parent-schema-name", "parentSchemaName", "rejected", "Use 'parent-schema-name' instead of 'parentSchemaName'."),
 				Alias("parameter", "extend-parent", "extendParent", "rejected", "Use 'extend-parent' instead of 'extendParent'."),
-				Alias("parameter", "title-localizations", "title", "rejected", "Use 'title-localizations' instead of legacy scalar 'title'."),
-				Alias("parameter", "title-localizations", "caption", "rejected", "Use 'title-localizations' instead of legacy scalar 'caption'.")
-			],
+				TitleParameterAlias(),
+				CaptionParameterAlias()),
 			[],
 			[
 				Example("Create an additional business entity", new Dictionary<string, object?> {
 					["environment-name"] = "local",
 					["package-name"] = "UsrTaskApp",
 					["schema-name"] = "UsrTaskComment",
-					["title-localizations"] = new Dictionary<string, string> {
-						["en-US"] = "Task Comment"
-					},
+					["title-localizations"] = LocalizationMap("Task Comment"),
 					["parent-schema-name"] = "BaseEntity"
 				})
 			],
-			Flow(
-				[
-					SchemaSyncTool.ToolName
-				],
-				"Prefer schema-sync for ordered multi-step entity work."),
+			PreferSchemaSyncFlow(),
 			[],
-			[
-				new ToolDeprecation(
-					"Prefer schema-sync as the canonical entity mutation path. Keep create-entity-schema for explicit fallback or isolated operations.",
-					[
-						SchemaSyncTool.ToolName
-					])
-			]);
+			PreferSchemaSyncDeprecations(CreateEntitySchemaTool.CreateEntitySchemaToolName));
 	}
 
 	private static ToolContractDefinition BuildUpdateEntity() {
@@ -790,22 +726,15 @@ internal static class ToolContractCatalog {
 			"Applies explicit add, modify, or remove column operations to an entity schema.",
 			new ToolInputSchemaContract(
 				["environment-name", "package-name", "schema-name", "operations"],
-				[
-					Field("environment-name", "string", "Registered clio environment name."),
-					Field("package-name", "string", "Target package name."),
-					Field("schema-name", "string", "Entity schema name."),
-					Field("operations", "array", "Explicit column mutation operations.")
-				],
+				EnvironmentPackageSchemaFields(
+					"Entity schema name.",
+					Field("operations", "array", "Explicit column mutation operations.")),
 				Validators: [
 					new ToolContractValidator("update-operations-localizations", "invalid-localization-map", "operations")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
-			[
-				Alias("parameter", "environment-name", "environmentName", "rejected", "Use 'environment-name' instead of 'environmentName'."),
-				Alias("parameter", "package-name", "packageName", "rejected", "Use 'package-name' instead of 'packageName'."),
-				Alias("parameter", "schema-name", "schemaName", "rejected", "Use 'schema-name' instead of 'schemaName'.")
-			],
+			EnvironmentPackageSchemaAliases(),
 			[],
 			[
 				Example("Add a lookup column to an existing entity", new Dictionary<string, object?> {
@@ -817,27 +746,15 @@ internal static class ToolContractCatalog {
 							["action"] = "add",
 							["column-name"] = "UsrStatus",
 							["type"] = "Lookup",
-							["title-localizations"] = new Dictionary<string, string> {
-								["en-US"] = "Status"
-							},
+							["title-localizations"] = LocalizationMap("Status"),
 							["reference-schema-name"] = "UsrTaskStatus"
 						}
 					}
 				})
 			],
-			Flow(
-				[
-					SchemaSyncTool.ToolName
-				],
-				"Prefer schema-sync for ordered multi-step entity work."),
+			PreferSchemaSyncFlow(),
 			[],
-			[
-				new ToolDeprecation(
-					"Prefer schema-sync as the canonical entity mutation path. Keep update-entity-schema for explicit fallback or isolated operations.",
-					[
-						SchemaSyncTool.ToolName
-					])
-			]);
+			PreferSchemaSyncDeprecations(UpdateEntitySchemaTool.UpdateEntitySchemaToolName));
 	}
 
 	private static ToolContractDefinition BuildCreateDataBindingDb() {
@@ -846,20 +763,13 @@ internal static class ToolContractCatalog {
 			"Creates or updates a DB-first package data binding and optionally applies rows immediately.",
 			new ToolInputSchemaContract(
 				["environment-name", "package-name", "schema-name"],
-				[
-					Field("environment-name", "string", "Registered clio environment name."),
-					Field("package-name", "string", "Target package name."),
-					Field("schema-name", "string", "Entity schema name for the binding."),
+				EnvironmentPackageSchemaFields(
+					"Entity schema name for the binding.",
 					Field("binding-name", "string", "Optional binding name; defaults to the schema name."),
-					Field("rows", "string", "Optional JSON array of rows.")
-				]),
+					Field("rows", "string", "Optional JSON array of rows."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
-			[
-				Alias("parameter", "environment-name", "environmentName", "rejected", "Use 'environment-name' instead of 'environmentName'."),
-				Alias("parameter", "package-name", "packageName", "rejected", "Use 'package-name' instead of 'packageName'."),
-				Alias("parameter", "schema-name", "schemaName", "rejected", "Use 'schema-name' instead of 'schemaName'.")
-			],
+			EnvironmentPackageSchemaAliases(),
 			[],
 			[
 				Example("Create a default lookup binding with rows", new Dictionary<string, object?> {
@@ -869,11 +779,7 @@ internal static class ToolContractCatalog {
 					["rows"] = "[{\"values\":{\"Name\":\"New\"}}]"
 				})
 			],
-			Flow(
-				[
-					SchemaSyncTool.ToolName
-				],
-				"Prefer inline seed-rows inside schema-sync when the flow can stay batched."),
+			Flow([SchemaSyncTool.ToolName], "Prefer inline seed-rows inside schema-sync when the flow can stay batched."),
 			[],
 			[
 				new ToolDeprecation(
@@ -891,12 +797,9 @@ internal static class ToolContractCatalog {
 			"The binding must already exist; call create-data-binding-db first if it does not.",
 			new ToolInputSchemaContract(
 				["environment-name", "package-name", "binding-name", "values"],
-				[
-					Field("environment-name", "string", "Registered clio environment name."),
-					Field("package-name", "string", "Target package name."),
+				EnvironmentPackageFields(
 					Field("binding-name", "string", "Binding name."),
-					Field("values", "string", "JSON object keyed by column name.")
-				]),
+					Field("values", "string", "JSON object keyed by column name."))),
 			CommandExecutionOutput(),
 			new ToolErrorContract([
 				..CommonErrorContract.Codes,
@@ -904,11 +807,8 @@ internal static class ToolContractCatalog {
 					"The specified binding does not exist in the remote environment. " +
 					"Create it first with create-data-binding-db.")
 			]),
-			[
-				Alias("parameter", "environment-name", "environmentName", "rejected", "Use 'environment-name' instead of 'environmentName'."),
-				Alias("parameter", "package-name", "packageName", "rejected", "Use 'package-name' instead of 'packageName'."),
-				Alias("parameter", "binding-name", "bindingName", "rejected", "Use 'binding-name' instead of 'bindingName'.")
-			],
+			EnvironmentPackageAliases(
+				BindingNameParameterAlias()),
 			[],
 			[
 				Example("Upsert one binding row", new Dictionary<string, object?> {
@@ -930,18 +830,14 @@ internal static class ToolContractCatalog {
 			"Removes a single row from an existing DB-first binding by key value.",
 			new ToolInputSchemaContract(
 				["environment-name", "package-name", "binding-name", "key-value"],
-				[
-					Field("environment-name", "string", "Registered clio environment name."),
-					Field("package-name", "string", "Target package name."),
+				EnvironmentPackageFields(
 					Field("binding-name", "string", "Binding name."),
-					Field("key-value", "string", "Primary-key value of the row to remove.")
-				]),
+					Field("key-value", "string", "Primary-key value of the row to remove."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			[
-				Alias("parameter", "environment-name", "environmentName", "rejected", "Use 'environment-name' instead of 'environmentName'."),
-				Alias("parameter", "package-name", "packageName", "rejected", "Use 'package-name' instead of 'packageName'."),
-				Alias("parameter", "binding-name", "bindingName", "rejected", "Use 'binding-name' instead of 'bindingName'."),
+				..EnvironmentPackageAliases(
+					BindingNameParameterAlias()),
 				Alias("parameter", "key-value", "keyValue", "rejected", "Use 'key-value' instead of 'keyValue'.")
 			],
 			[],
@@ -964,28 +860,15 @@ internal static class ToolContractCatalog {
 			"Returns a structured summary of entity schema metadata.",
 			new ToolInputSchemaContract(
 				["environment-name", "package-name", "schema-name"],
-				[
-					Field("environment-name", "string", "Registered clio environment name."),
-					Field("package-name", "string", "Target package name."),
-					Field("schema-name", "string", "Entity schema name.")
-				]),
-			new ToolOutputContract(
-				"structured-result",
-				null,
-				[
-					"structured result cannot be parsed"
-				],
+				EnvironmentPackageSchemaFields("Entity schema name.")),
+			StructuredResultOutput(
 				[
 					Field("name", "string", "Schema name."),
 					Field("title", "string", "Schema title."),
 					Field("columns", "array", "Column metadata.")
 				]),
 			CommonErrorContract,
-			[
-				Alias("parameter", "environment-name", "environmentName", "rejected", "Use 'environment-name' instead of 'environmentName'."),
-				Alias("parameter", "package-name", "packageName", "rejected", "Use 'package-name' instead of 'packageName'."),
-				Alias("parameter", "schema-name", "schemaName", "rejected", "Use 'schema-name' instead of 'schemaName'.")
-			],
+			EnvironmentPackageSchemaAliases(),
 			[],
 			[
 				Example("Read deployed schema properties", new Dictionary<string, object?> {
@@ -1005,30 +888,18 @@ internal static class ToolContractCatalog {
 			"Returns detailed metadata for one deployed entity schema column.",
 			new ToolInputSchemaContract(
 				["environment-name", "package-name", "schema-name", "column-name"],
-				[
-					Field("environment-name", "string", "Registered clio environment name."),
-					Field("package-name", "string", "Target package name."),
-					Field("schema-name", "string", "Entity schema name."),
-					Field("column-name", "string", "Column name.")
-				]),
-			new ToolOutputContract(
-				"structured-result",
-				null,
-				[
-					"structured result cannot be parsed"
-				],
+				EnvironmentPackageSchemaFields(
+					"Entity schema name.",
+					Field("column-name", "string", "Column name."))),
+			StructuredResultOutput(
 				[
 					Field("name", "string", "Column name."),
 					Field("data-value-type", "string", "Column type."),
 					Field("source", "string", "Column source.")
 				]),
 			CommonErrorContract,
-			[
-				Alias("parameter", "environment-name", "environmentName", "rejected", "Use 'environment-name' instead of 'environmentName'."),
-				Alias("parameter", "package-name", "packageName", "rejected", "Use 'package-name' instead of 'packageName'."),
-				Alias("parameter", "schema-name", "schemaName", "rejected", "Use 'schema-name' instead of 'schemaName'."),
-				Alias("parameter", "column-name", "columnName", "rejected", "Use 'column-name' instead of 'columnName'.")
-			],
+			EnvironmentPackageSchemaAliases(
+				ColumnNameParameterAlias()),
 			[],
 			[
 				Example("Read one deployed column", new Dictionary<string, object?> {
@@ -1049,34 +920,27 @@ internal static class ToolContractCatalog {
 			"Adds, modifies, or removes a single entity schema column directly.",
 			new ToolInputSchemaContract(
 				["environment-name", "package-name", "schema-name", "action", "column-name"],
-				[
-					Field("environment-name", "string", "Registered clio environment name."),
-					Field("package-name", "string", "Target package name."),
-					Field("schema-name", "string", "Entity schema name."),
+				EnvironmentPackageSchemaFields(
+					"Entity schema name.",
 					Field("action", "string", "Column action: add, modify, or remove."),
 					Field("column-name", "string", "Column name."),
 					Field("type", "string", "Optional column data type."),
 					Field("title-localizations", "object", "Optional localization map."),
 					Field("description-localizations", "object", "Optional localization map."),
 					Field("reference-schema-name", "string", "Optional lookup target."),
-					Field("is-required", "boolean", "Optional required flag."),
+					Field("required", "boolean", "Optional required flag."),
 					Field("default-value-source", "string", "Optional default source."),
-					Field("default-value", "string", "Optional default value.")
-				]),
+					Field("default-value", "string", "Optional default value."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
-			[
-				Alias("parameter", "environment-name", "environmentName", "rejected", "Use 'environment-name' instead of 'environmentName'."),
-				Alias("parameter", "package-name", "packageName", "rejected", "Use 'package-name' instead of 'packageName'."),
-				Alias("parameter", "schema-name", "schemaName", "rejected", "Use 'schema-name' instead of 'schemaName'."),
-				Alias("parameter", "column-name", "columnName", "rejected", "Use 'column-name' instead of 'columnName'."),
-				Alias("parameter", "reference-schema-name", "referenceSchemaName", "rejected", "Use 'reference-schema-name' instead of 'referenceSchemaName'."),
-				Alias("parameter", "default-value", "defaultValue", "rejected", "Use 'default-value' instead of 'defaultValue'."),
-				Alias("parameter", "default-value-source", "defaultValueSource", "rejected", "Use 'default-value-source' instead of 'defaultValueSource'."),
-				Alias("parameter", "title-localizations", "title", "rejected", "Use 'title-localizations' instead of legacy scalar 'title'."),
-				Alias("parameter", "title-localizations", "caption", "rejected", "Use 'title-localizations' instead of legacy scalar 'caption'."),
-				Alias("parameter", "description-localizations", "description", "rejected", "Use 'description-localizations' instead of legacy scalar 'description'.")
-			],
+			EnvironmentPackageSchemaAliases(
+				ColumnNameParameterAlias(),
+				ReferenceSchemaNameParameterAlias(),
+				DefaultValueParameterAlias(),
+				DefaultValueSourceParameterAlias(),
+				TitleParameterAlias(),
+				CaptionParameterAlias(),
+				DescriptionParameterAlias()),
 			[],
 			[
 				Example("Add one required text column", new Dictionary<string, object?> {
@@ -1086,25 +950,13 @@ internal static class ToolContractCatalog {
 					["action"] = "add",
 					["column-name"] = "UsrShortCode",
 					["type"] = "Text",
-					["title-localizations"] = new Dictionary<string, string> {
-						["en-US"] = "Short Code"
-					},
-					["is-required"] = true
+					["title-localizations"] = LocalizationMap("Short Code"),
+					["required"] = true
 				})
 			],
-			Flow(
-				[
-					SchemaSyncTool.ToolName
-				],
-				"Prefer schema-sync for ordered multi-step entity work."),
+			PreferSchemaSyncFlow(),
 			[],
-			[
-				new ToolDeprecation(
-					"Prefer schema-sync as the canonical entity mutation path. Keep modify-entity-schema-column for explicit fallback or isolated operations.",
-					[
-						SchemaSyncTool.ToolName
-					])
-			]);
+			PreferSchemaSyncDeprecations(ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName));
 	}
 
 	private static ToolContractDefinition BuildComponentInfo() {
@@ -1150,20 +1002,12 @@ internal static class ToolContractCatalog {
 			"Saves a full Freedom UI page body for one page.",
 			new ToolInputSchemaContract(
 				["schema-name", "body"],
-				[
+				EnvironmentOrExplicitConnectionFields(
 					Field("schema-name", "string", "Freedom UI page schema name."),
 					Field("body", "string", "Full page body with all marker pairs."),
 					Field("dry-run", "boolean", "Validate without saving."),
-					Field("resources", "string", "Optional JSON object of resource strings."),
-					Field("environment-name", "string", "Registered clio environment name."),
-					Field("uri", "string", "Explicit Creatio URL."),
-					Field("login", "string", "Explicit login."),
-					Field("password", "string", "Explicit password.")
-				],
-				AnyOf: [
-					new[] { "environment-name" },
-					new[] { "uri", "login", "password" }
-				]),
+					Field("resources", "string", "Optional JSON object of resource strings.")),
+				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				"success",
 				[
@@ -1178,8 +1022,8 @@ internal static class ToolContractCatalog {
 			),
 			CommonErrorContract,
 			[
-				Alias("parameter", "schema-name", "schemaName", "rejected", "Use 'schema-name' instead of 'schemaName'."),
-				Alias("parameter", "environment-name", "environmentName", "rejected", "Use 'environment-name' instead of 'environmentName'."),
+				SchemaNameParameterAlias(),
+				EnvironmentNameParameterAlias(),
 				Alias("parameter", "dry-run", "dryRun", "rejected", "Use 'dry-run' instead of 'dryRun'.")
 			],
 			[],
@@ -1191,11 +1035,7 @@ internal static class ToolContractCatalog {
 					["environment-name"] = "local"
 				})
 			],
-			Flow(
-				[
-					PageSyncTool.ToolName
-				],
-				"Prefer page-sync as the canonical page write path."),
+			PreferPageSyncFlow(),
 			[
 				Flow(
 					[
@@ -1206,13 +1046,7 @@ internal static class ToolContractCatalog {
 					],
 					"Fallback when the flow must dry-run and save one page explicitly.")
 			],
-			[
-				new ToolDeprecation(
-					"Prefer page-sync as the canonical page write path. Keep page-update for explicit fallback or targeted single-page saves.",
-					[
-						PageSyncTool.ToolName
-					])
-			]);
+			PreferPageSyncDeprecations());
 	}
 
 	private static ToolContractDefinition BuildApplicationDelete() {
@@ -1221,17 +1055,9 @@ internal static class ToolContractCatalog {
 			"Deletes an installed application by name or code.",
 			new ToolInputSchemaContract(
 				["app-name"],
-				[
-					Field("app-name", "string", "Application name or code."),
-					Field("environment-name", "string", "Registered clio environment name."),
-					Field("uri", "string", "Explicit Creatio URL."),
-					Field("login", "string", "Explicit login."),
-					Field("password", "string", "Explicit password.")
-				],
-				AnyOf: [
-					new[] { "environment-name" },
-					new[] { "uri", "login", "password" }
-				]),
+				EnvironmentOrExplicitConnectionFields(
+					Field("app-name", "string", "Application name or code.")),
+				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				"success",
 				[
@@ -1256,6 +1082,159 @@ internal static class ToolContractCatalog {
 
 	private static ToolContractField Field(string name, string type, string description) {
 		return new ToolContractField(name, type, description);
+	}
+
+	private static IReadOnlyDictionary<string, string> LocalizationMap(string enUs) {
+		return new Dictionary<string, string> {
+			["en-US"] = enUs
+		};
+	}
+
+	private static IReadOnlyList<ToolContractField> EnvironmentPackageFields(params ToolContractField[] extraFields) {
+		return [
+			Field("environment-name", "string", "Registered clio environment name."),
+			Field("package-name", "string", "Target package name."),
+			..extraFields
+		];
+	}
+
+	private static IReadOnlyList<ToolContractField> EnvironmentPackageSchemaFields(string schemaDescription, params ToolContractField[] extraFields) {
+		return [
+			..EnvironmentPackageFields(
+				Field("schema-name", "string", schemaDescription)),
+			..extraFields
+		];
+	}
+
+	private static IReadOnlyList<ToolContractField> EnvironmentOrExplicitConnectionFields(params ToolContractField[] leadingFields) {
+		return [
+			..leadingFields,
+			Field("environment-name", "string", "Registered clio environment name."),
+			Field("uri", "string", "Explicit Creatio URL."),
+			Field("login", "string", "Explicit login."),
+			Field("password", "string", "Explicit password.")
+		];
+	}
+
+	private static IReadOnlyList<IReadOnlyList<string>> EnvironmentOrExplicitConnectionRequirements() {
+		return [
+			new[] { "environment-name" },
+			new[] { "uri", "login", "password" }
+		];
+	}
+
+	private static ToolContractAlias EnvironmentNameParameterAlias() {
+		return Alias("parameter", "environment-name", "environmentName", "rejected",
+			"Use 'environment-name' instead of 'environmentName'.");
+	}
+
+	private static ToolContractAlias PackageNameParameterAlias() {
+		return Alias("parameter", "package-name", "packageName", "rejected",
+			"Use 'package-name' instead of 'packageName'.");
+	}
+
+	private static ToolContractAlias SchemaNameParameterAlias() {
+		return Alias("parameter", "schema-name", "schemaName", "rejected",
+			"Use 'schema-name' instead of 'schemaName'.");
+	}
+
+	private static ToolContractAlias ColumnNameParameterAlias() {
+		return Alias("parameter", "column-name", "columnName", "rejected",
+			"Use 'column-name' instead of 'columnName'.");
+	}
+
+	private static ToolContractAlias BindingNameParameterAlias() {
+		return Alias("parameter", "binding-name", "bindingName", "rejected",
+			"Use 'binding-name' instead of 'bindingName'.");
+	}
+
+	private static ToolContractAlias ReferenceSchemaNameParameterAlias() {
+		return Alias("parameter", "reference-schema-name", "referenceSchemaName", "rejected",
+			"Use 'reference-schema-name' instead of 'referenceSchemaName'.");
+	}
+
+	private static ToolContractAlias DefaultValueParameterAlias() {
+		return Alias("parameter", "default-value", "defaultValue", "rejected",
+			"Use 'default-value' instead of 'defaultValue'.");
+	}
+
+	private static ToolContractAlias DefaultValueSourceParameterAlias() {
+		return Alias("parameter", "default-value-source", "defaultValueSource", "rejected",
+			"Use 'default-value-source' instead of 'defaultValueSource'.");
+	}
+
+	private static ToolContractAlias TitleParameterAlias() {
+		return Alias("parameter", "title-localizations", "title", "rejected",
+			"Use 'title-localizations' instead of legacy scalar 'title'.");
+	}
+
+	private static ToolContractAlias CaptionParameterAlias() {
+		return Alias("parameter", "title-localizations", "caption", "rejected",
+			"Use 'title-localizations' instead of legacy scalar 'caption'.");
+	}
+
+	private static ToolContractAlias DescriptionParameterAlias() {
+		return Alias("parameter", "description-localizations", "description", "rejected",
+			"Use 'description-localizations' instead of legacy scalar 'description'.");
+	}
+
+	private static IReadOnlyList<ToolContractAlias> EnvironmentPackageAliases(params ToolContractAlias[] extraAliases) {
+		return [
+			EnvironmentNameParameterAlias(),
+			PackageNameParameterAlias(),
+			..extraAliases
+		];
+	}
+
+	private static IReadOnlyList<ToolContractAlias> EnvironmentPackageSchemaAliases(params ToolContractAlias[] extraAliases) {
+		return [
+			..EnvironmentPackageAliases(),
+			SchemaNameParameterAlias(),
+			..extraAliases
+		];
+	}
+
+	private static ToolContractValidator RequiredLocalizationMapValidator(string field) {
+		return new ToolContractValidator("localizations-map", "invalid-localization-map", field,
+			Context: "Parameter", Required: true);
+	}
+
+	private static ToolFlowHint PreferSchemaSyncFlow() {
+		return Flow([SchemaSyncTool.ToolName], "Prefer schema-sync for ordered multi-step entity work.");
+	}
+
+	private static IReadOnlyList<ToolDeprecation> PreferSchemaSyncDeprecations(string toolName) {
+		return [
+			new ToolDeprecation(
+				$"Prefer schema-sync as the canonical entity mutation path. Keep {toolName} for explicit fallback or isolated operations.",
+				[
+					SchemaSyncTool.ToolName
+				])
+		];
+	}
+
+	private static ToolFlowHint PreferPageSyncFlow() {
+		return Flow([PageSyncTool.ToolName], "Prefer page-sync as the canonical page write path.");
+	}
+
+	private static IReadOnlyList<ToolDeprecation> PreferPageSyncDeprecations() {
+		return [
+			new ToolDeprecation(
+				"Prefer page-sync as the canonical page write path. Keep page-update for explicit fallback or targeted single-page saves.",
+				[
+					PageSyncTool.ToolName
+				])
+		];
+	}
+
+	private static ToolOutputContract StructuredResultOutput(params ToolContractField[] fields) {
+		return new ToolOutputContract(
+			"structured-result",
+			null,
+			[
+				"structured result cannot be parsed"
+			],
+			fields);
 	}
 
 	private static ToolContractAlias Alias(string scope, string canonicalName, string alias, string status, string message) {

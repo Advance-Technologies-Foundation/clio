@@ -1344,3 +1344,10 @@ Decision: Fetched `origin/master`, resolved the merge conflicts by keeping the c
 Discovery: The only conflicts were in `clio.mcp.e2e/EntitySchemaToolE2ETests.cs` and `.codex/workspace-diary.md`; the rest of the branch merged cleanly.
 Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs, .codex/workspace-diary.md
 Impact: The feature branch now carries the latest `master` changes without dropping local E2E fixes or diary context.
+
+## 2026-03-30 00:22 – Fix PR feedback for tool-contract metadata and Windows JSON paths
+Context: Ten minutes after opening PR `#494`, the follow-up check showed one P1 review comment against `tool-contract-get`, a failed Sonar duplication gate, and a failed Build job on Windows-specific data-binding tests.
+Decision: Changed the modify-entity tool contract to publish the canonical `required` key, added unit and MCP E2E assertions for that contract, serialized image-path JSON payloads in the affected data-binding tests to keep Windows backslashes escaped, and refactored repeated `ToolContractGetTool` field/alias/flow builders into shared helpers to reduce duplicated new code.
+Discovery: The Build failure was not a product regression; the failing tests were constructing JSON strings manually, so Windows path separators broke parsing before workspace validation could run. Local parallel `dotnet test` invocations also raced on `apphost`, so verification had to be rerun sequentially with `--no-build`.
+Files: clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/DataBindingCommandTests.cs, clio.tests/Command/McpServer/DataBindingToolTests.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.mcp.e2e/ToolContractGetToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The PR now addresses the actionable review comment, removes the Windows-specific JSON-path test failure mode that broke CI, and gives Sonar a leaner tool-contract implementation to re-analyze on the next push.
