@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.NUnit;
@@ -97,6 +96,7 @@ public sealed class EntitySchemaToolE2ETests {
 			arrangeContext.EnvironmentName,
 			arrangeContext.PackageName,
 			arrangeContext.SchemaName);
+		string lookupColumnName = arrangeContext.LookupColumnName;
 
 		// Assert
 		AssertCommandSucceeded(createResult,
@@ -112,7 +112,7 @@ public sealed class EntitySchemaToolE2ETests {
 		schemaProperties.Columns!.Should().Contain(column => column.Source == "inherited",
 			because: "BaseLookup-derived schemas should expose inherited base columns in the schema read model");
 		schemaProperties.Columns!.Should().Contain(column =>
-				column.Name == arrangeContext.LookupColumnName
+				column.Name == lookupColumnName
 				&& column.Source == "own"
 				&& column.Type == "Integer",
 			because: "create-lookup should still allow explicit custom columns beyond the inherited BaseLookup fields");
@@ -190,6 +190,7 @@ public sealed class EntitySchemaToolE2ETests {
 				}
 			]);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		string environmentName = arrangeContext.EnvironmentName;
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
@@ -197,13 +198,13 @@ public sealed class EntitySchemaToolE2ETests {
 		execution.ExitCode.Should().Be(1,
 			because: "create-lookup should fail when callers try to redefine inherited BaseLookup columns");
 		execution.Output.Should().Contain(message =>
-				message.Value?.Contains("BaseLookup", StringComparison.Ordinal) == true,
+				message.Value != null && message.Value.ToString().Contains("BaseLookup", StringComparison.Ordinal),
 			because: "the failure should explain that Name already comes from BaseLookup");
 		execution.Output.Should().Contain(message =>
-				message.Value?.Contains("Name", StringComparison.Ordinal) == true,
+				message.Value != null && message.Value.ToString().Contains("Name", StringComparison.Ordinal),
 			because: "the failure should identify the rejected inherited column");
 		execution.Output.Should().NotContain(message =>
-				message.Value?.Contains(arrangeContext.EnvironmentName, StringComparison.Ordinal) == true,
+				message.Value != null && message.Value.ToString().Contains(environmentName, StringComparison.Ordinal),
 			because: "validation should happen before environment resolution");
 	}
 
@@ -345,9 +346,7 @@ public sealed class EntitySchemaToolE2ETests {
 
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new EntitySchemaArrangeContext(
-			settings,
 			rootDirectory,
-			workspacePath,
 			settings.Sandbox.EnvironmentName!,
 			packageName,
 			schemaName,
@@ -867,9 +866,7 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	private sealed record EntitySchemaArrangeContext(
-		McpE2ESettings Settings,
 		string RootDirectory,
-		string WorkspacePath,
 		string EnvironmentName,
 		string PackageName,
 		string SchemaName,

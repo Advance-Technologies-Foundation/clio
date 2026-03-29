@@ -160,7 +160,7 @@ public async Task UpdateSkill_ShouldReportNoOp_WhenHeadIsUnchanged() {
 		AssertSuccessIncludesInfoMessage(actResult);
 		actResult.Execution.Output.Should().Contain(message =>
 			message.MessageType == LogDecoratorType.Info &&
-			(message.Value?.Contains("already up to date", StringComparison.OrdinalIgnoreCase) ?? false),
+			message.Value != null && message.Value.ToString().Contains("already up to date", StringComparison.OrdinalIgnoreCase),
 			because: "update-skill should report an already-up-to-date no-op when repository HEAD is unchanged");
 	}
 

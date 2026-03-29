@@ -1275,3 +1275,18 @@ Decision: Removed the legacy `WCF-HTTP-Activation` and `WCF-NonHTTP-Activation` 
 Discovery: The command already sourced its required feature list from `clio/tpl/windows_features/RequirmentNetFramework.txt`; the bug path was the shipped manifest and stale docs, not a separate hard-coded MCP or command branch. There is no MCP tool/prompt/resource for `manage-windows-features`, so MCP reviewed, no update required.
 Files: clio/tpl/windows_features/RequirmentNetFramework.txt, clio/tests/Command/WindowsFeatureManagerTestFixture.cs, clio/help/en/manage-windows-features.txt, clio/docs/commands/manage-windows-features.md, clio/Commands.md, clio/clio.csproj, .codex/workspace-diary.md
 Impact: Future Windows 11 26H1+ runs will no longer try to check or install the removed .NET Framework 3.5 WCF Feature-on-Demand components, and the release version is prepared at 8.0.2.45.
+
+## 2026-03-29 05:20 – Fix entity schema MCP E2E compile regression
+Context: User reported that `clio.mcp.e2e/EntitySchemaToolE2ETests.cs` stopped compiling around the inherited BaseLookup validation test.
+Decision: Replaced null-conditional assertion predicates with expression-tree-compatible null checks plus `ToString().Contains(...)`, hoisted disposable-context values into locals before FluentAssertions predicates, and removed unused arrange-context fields that were only generating warnings.
+Discovery: FluentAssertions collection predicates in this test file are compiled as expression trees, so `?.` and pattern matching (`is string`) both fail even though the equivalent runtime logic is valid in normal delegates.
+Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The entity schema MCP E2E project builds again, unblocking newer MCP test additions that were previously blocked by this file.
+
+## 2026-03-29 05:22 – Mirror expression-tree fix in skill management E2E test
+Context: Verifying the repaired entity schema test with a full `clio.mcp.e2e` build exposed the same compile pattern in `SkillManagementToolE2ETests.cs`.
+Decision: Applied the same expression-tree-safe `message.Value != null && message.Value.ToString().Contains(...)` predicate shape in the skill update no-op assertion.
+Discovery: After the compile fix, the targeted skill-management test reaches runtime and currently fails during temporary directory cleanup with `UnauthorizedAccessException`, which is a separate existing teardown issue rather than another compile regression.
+Files: clio.mcp.e2e/SkillManagementToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The full MCP E2E project now compiles successfully, and any remaining failure in the skill-management test is isolated to runtime cleanup behavior.
+
