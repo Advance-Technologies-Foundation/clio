@@ -10,8 +10,6 @@ Application Initialization
 Directory Browsing
 IIS Management Console
 WebSocket Protocol
-WCF-HTTP-Activation
-WCF-NonHTTP-Activation
 ASP.NET 4.8
 WCF services
 HTTP Activation

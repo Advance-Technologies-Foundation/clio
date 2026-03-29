@@ -174,6 +174,9 @@ public class BindingsModule {
 		services.AddTransient<SysSettingsCommand>();
 		services.AddTransient<BuildInfoCommand>();
 		services.AddTransient<BuildDockerImageCommand>();
+		services.AddTransient<InstallSkillsCommand>();
+		services.AddTransient<UpdateSkillCommand>();
+		services.AddTransient<DeleteSkillCommand>();
 		services.AddTransient<PushPackageCommand>();
 		services.AddTransient<InstallApplicationCommand>();
 		services.AddTransient<PageListCommand>();
