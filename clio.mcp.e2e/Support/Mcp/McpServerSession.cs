@@ -21,6 +21,7 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			Command = process.Command,
 			Arguments = [.. process.Arguments],
 			WorkingDirectory = process.WorkingDirectory,
+			EnvironmentVariables = settings.ProcessEnvironmentVariables,
 			Name = "clio-mcp-e2e",
 			ShutdownTimeout = TimeSpan.FromSeconds(10)
 		}, NullLoggerFactory.Instance);

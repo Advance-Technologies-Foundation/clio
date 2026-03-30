@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -88,6 +89,40 @@ public async Task InstallSkills_ShouldInstallSelectedSkillOnly() {
 	}
 
 [Test]
+[AllureTag(InstallSkillsTool.ToolName)]
+[Description("Installs all discovered skills into the configured user scope through the MCP install-skills tool.")]
+[AllureDescription("Starts the real clio MCP server with an isolated CODEX_HOME override, installs all skills from a local git repository into user scope, and verifies the copied skill files and manifest.")]
+[AllureName("Install Skills Tool installs all skills into user scope")]
+public async Task InstallSkills_ShouldInstallAllSkillsIntoUserScope() {
+		// Arrange
+		await using SkillManagementArrangeContext arrangeContext = await ArrangeAsync();
+		CreateSkillRepository(arrangeContext.RepositoryPath, new Dictionary<string, string> {
+			["alpha"] = "alpha v1",
+			["beta"] = "beta v1"
+		});
+
+		// Act
+		SkillManagementActResult actResult = await CallToolAsync(
+			arrangeContext,
+			InstallSkillsTool.ToolName,
+			new Dictionary<string, object?> {
+				["scope"] = GetScopeArgumentValue(SkillScope.User),
+				["repo"] = arrangeContext.RepositoryPath
+			});
+
+		// Assert
+		AssertToolCallSucceeded(actResult);
+		AssertCommandExitCode(actResult, 0);
+		AssertSuccessIncludesInfoMessage(actResult);
+		File.Exists(Path.Combine(arrangeContext.UserScopeHomePath, "skills", "alpha", "SKILL.md")).Should().BeTrue(
+			because: "install-skills should copy the alpha skill into user scope");
+		File.Exists(Path.Combine(arrangeContext.UserScopeHomePath, "skills", "beta", "SKILL.md")).Should().BeTrue(
+			because: "install-skills should copy the beta skill into user scope");
+		File.Exists(Path.Combine(arrangeContext.UserScopeHomePath, "skills", ".clio-managed.json")).Should().BeTrue(
+			because: "install-skills should create the managed manifest under the configured agent home");
+	}
+
+[Test]
 [AllureTag(UpdateSkillTool.ToolName)]
 [Description("Updates a managed skill after the source repository advances to a new HEAD commit.")]
 [AllureDescription("Starts the real clio MCP server, installs a skill from a local git repository, advances repository HEAD with a new commit, updates the managed skill, and verifies the refreshed content.")]
@@ -165,6 +200,44 @@ public async Task UpdateSkill_ShouldReportNoOp_WhenHeadIsUnchanged() {
 	}
 
 [Test]
+[AllureTag(UpdateSkillTool.ToolName)]
+[Description("Updates a managed user-scope skill after the source repository advances to a new HEAD commit.")]
+[AllureDescription("Starts the real clio MCP server with an isolated CODEX_HOME override, installs a skill into user scope from a local git repository, advances repository HEAD with a new commit, updates the managed skill, and verifies the refreshed content.")]
+[AllureName("Update Skill Tool refreshes managed user-scope skills when repository HEAD changed")]
+public async Task UpdateSkill_ShouldRefreshManagedUserScopeSkill_WhenHeadChanges() {
+		// Arrange
+		await using SkillManagementArrangeContext arrangeContext = await ArrangeAsync();
+		CreateSkillRepository(arrangeContext.RepositoryPath, new Dictionary<string, string> {
+			["alpha"] = "alpha v1"
+		});
+		await CallToolAsync(
+			arrangeContext,
+			InstallSkillsTool.ToolName,
+			new Dictionary<string, object?> {
+				["scope"] = GetScopeArgumentValue(SkillScope.User),
+				["repo"] = arrangeContext.RepositoryPath
+			});
+		UpdateSkillRepository(arrangeContext.RepositoryPath, "alpha", "alpha v2");
+
+		// Act
+		SkillManagementActResult actResult = await CallToolAsync(
+			arrangeContext,
+			UpdateSkillTool.ToolName,
+			new Dictionary<string, object?> {
+				["scope"] = GetScopeArgumentValue(SkillScope.User),
+				["repo"] = arrangeContext.RepositoryPath,
+				["skillName"] = "alpha"
+			});
+
+		// Assert
+		AssertToolCallSucceeded(actResult);
+		AssertCommandExitCode(actResult, 0);
+		AssertSuccessIncludesInfoMessage(actResult);
+		File.ReadAllText(Path.Combine(arrangeContext.UserScopeHomePath, "skills", "alpha", "SKILL.md")).Should().Contain("alpha v2",
+			because: "update-skill should replace the installed user-scope skill files when repository HEAD changed");
+	}
+
+[Test]
 [AllureTag(DeleteSkillTool.ToolName)]
 [Description("Deletes a managed skill from a temporary workspace through the MCP delete-skill tool.")]
 [AllureDescription("Starts the real clio MCP server, installs a skill from a local git repository, deletes the managed skill, and verifies the workspace folder is removed.")]
@@ -227,18 +300,58 @@ public async Task DeleteSkill_ShouldRejectUnmanagedSkill() {
 			because: "delete-skill should not remove unmanaged skill folders when it rejects the request");
 	}
 
+[Test]
+[AllureTag(DeleteSkillTool.ToolName)]
+[Description("Deletes a managed user-scope skill through the MCP delete-skill tool.")]
+[AllureDescription("Starts the real clio MCP server with an isolated CODEX_HOME override, installs a skill into user scope from a local git repository, deletes the managed skill, and verifies the user-scope folder is removed.")]
+[AllureName("Delete Skill Tool removes a managed user-scope skill")]
+public async Task DeleteSkill_ShouldDeleteManagedUserScopeSkill() {
+		// Arrange
+		await using SkillManagementArrangeContext arrangeContext = await ArrangeAsync();
+		CreateSkillRepository(arrangeContext.RepositoryPath, new Dictionary<string, string> {
+			["alpha"] = "alpha v1"
+		});
+		await CallToolAsync(
+			arrangeContext,
+			InstallSkillsTool.ToolName,
+			new Dictionary<string, object?> {
+				["scope"] = GetScopeArgumentValue(SkillScope.User),
+				["repo"] = arrangeContext.RepositoryPath
+			});
+
+		// Act
+		SkillManagementActResult actResult = await CallToolAsync(
+			arrangeContext,
+			DeleteSkillTool.ToolName,
+			new Dictionary<string, object?> {
+				["scope"] = GetScopeArgumentValue(SkillScope.User),
+				["skillName"] = "alpha"
+			});
+
+		// Assert
+		AssertToolCallSucceeded(actResult);
+		AssertCommandExitCode(actResult, 0);
+		AssertSuccessIncludesInfoMessage(actResult);
+		Directory.Exists(Path.Combine(arrangeContext.UserScopeHomePath, "skills", "alpha")).Should().BeFalse(
+			because: "delete-skill should remove the managed skill folder from user scope");
+	}
+
 	[AllureStep("Arrange temporary workspace, repository, and MCP session")]
 	private static async Task<SkillManagementArrangeContext> ArrangeAsync() {
 		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-skill-management-e2e-{Guid.NewGuid():N}");
 		string workspacePath = Path.Combine(rootDirectory, "workspace");
 		string repositoryPath = Path.Combine(rootDirectory, "repo");
+		string userScopeHomePath = Path.Combine(rootDirectory, "codex-home");
 		Directory.CreateDirectory(Path.Combine(workspacePath, ".clio"));
 		File.WriteAllText(Path.Combine(workspacePath, ".clio", "workspaceSettings.json"), "{}");
 		Directory.CreateDirectory(repositoryPath);
+		Directory.CreateDirectory(userScopeHomePath);
 		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		settings.ProcessEnvironmentVariables["CODEX_HOME"] = userScopeHomePath;
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new SkillManagementArrangeContext(rootDirectory, workspacePath, repositoryPath, session, cancellationTokenSource);
+		return new SkillManagementArrangeContext(rootDirectory, workspacePath, repositoryPath, userScopeHomePath, session, cancellationTokenSource);
 	}
 
 	[AllureStep("Call workspace skill management tool")]
@@ -252,7 +365,9 @@ public async Task DeleteSkill_ShouldRejectUnmanagedSkill() {
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			toolName,
-			arguments,
+			new Dictionary<string, object?> {
+				["args"] = arguments
+			},
 			arrangeContext.CancellationTokenSource.Token);
 
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
@@ -345,10 +460,15 @@ public async Task DeleteSkill_ShouldRejectUnmanagedSkill() {
 			callResult.Content.Select(content => content?.ToString() ?? "<null>"));
 	}
 
+	private static string GetScopeArgumentValue(SkillScope scope) {
+		return scope.ToString().ToLowerInvariant();
+	}
+
 	private sealed record SkillManagementArrangeContext(
 		string RootDirectory,
 		string WorkspacePath,
 		string RepositoryPath,
+		string UserScopeHomePath,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
 		public async ValueTask DisposeAsync() {

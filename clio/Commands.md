@@ -1599,36 +1599,40 @@ OpenSolution.cmd
 
 ## install-skills
 
-Install workspace-local skills into `.agents/skills` in the current clio workspace.
+Install managed skills into workspace or user scope.
 
 ```bash
-clio install-skills [--skill <name>] [--repo <local-path-or-git-url>]
+clio install-skills [--skill <name>] [--repo <local-path-or-git-url>] [--scope <workspace|user>]
 ```
 
 - Installs all discovered skills when `--skill` is omitted
 - Uses the default bootstrap repository when `--repo` is omitted
-- Tracks managed installs in `.agents/skills/.clio-managed.json`
+- Uses `workspace` scope by default
+- Installs into `.agents/skills` for workspace scope or `<agent-home>/skills` for user scope
+- Tracks managed installs in the selected scope `.clio-managed.json` manifest
 
 ## update-skill
 
-Update managed workspace-local skills when the source repository HEAD commit hash changed.
+Update managed skills in workspace or user scope when the source repository HEAD commit hash changed.
 
 ```bash
-clio update-skill [--skill <name>] [--repo <local-path-or-git-url>]
+clio update-skill [--skill <name>] [--repo <local-path-or-git-url>] [--scope <workspace|user>]
 ```
 
 - Updates all managed skills for the selected repository when `--skill` is omitted
+- Uses `workspace` scope by default
 - Reports `already up to date` when the stored hash matches repository HEAD
 
 ## delete-skill
 
-Delete one managed workspace-local skill from the current clio workspace.
+Delete one managed skill from workspace or user scope.
 
 ```bash
-clio delete-skill --skill <name>
+clio delete-skill --skill <name> [--scope <workspace|user>]
 ```
 
-- Deletes only skills tracked in `.agents/skills/.clio-managed.json`
+- Uses `workspace` scope by default
+- Deletes only skills tracked in the selected scope `.clio-managed.json` manifest
 - Fails for unmanaged skill folders
 
 ## push-workspace
