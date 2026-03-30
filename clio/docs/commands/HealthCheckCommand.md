@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Performs comprehensive health monitoring of Creatio application components. Use this command to verify that both WebHost and WebApp components are running properly and responding to requests. This is essential for monitoring production environments and verifying deployments.
+Performs health monitoring of Creatio application endpoints. Use this command to verify the endpoint implied by the configured runtime, or explicitly probe the WebApp and WebHost health endpoints when you need to compare both routes.
 
 ## Usage
 
@@ -14,12 +14,12 @@ clio hc [options]
 ## Arguments
 
 ### Required Arguments
-At least one of the following health check options must be specified:
+When no component option is specified, the command checks the endpoint implied by the configured `isNetCore` setting for the target environment.
 
 | Argument     | Short | Description                    | Example             |
 |--------------|-------|--------------------------------|---------------------|
-| `--webhost`  | `-h`  | Check WebHost component health | `--webhost true`    |
-| `--webapp`   | `-a`  | Check WebApp component health  | `--webapp true`     |
+| `--webhost`  | `-h`  | Check WebHost component health explicitly | `--webhost true`    |
+| `--webapp`   | `-a`  | Check WebApp component health explicitly  | `--webapp true`     |
 
 ### Optional Arguments
 
@@ -51,12 +51,17 @@ At least one of the following health check options must be specified:
 
 ### Basic Usage (Recommended)
 
-Check WebApp health using environment configuration:
+Check the configured runtime route:
+```bash
+clio healthcheck -e production
+```
+
+Check WebApp health explicitly:
 ```bash
 clio healthcheck -e production --webapp true
 ```
 
-Check WebHost health:
+Check WebHost health explicitly:
 ```bash
 clio healthcheck -e production --webhost true
 ```
@@ -108,8 +113,6 @@ clio healthcheck -e production --webapp true --timeout 60000
 
 ### Successful Health Check
 ```
-Checking WebAppLoader https://myapp.creatio.com/api/HealthCheck/Ping ...
-	WebAppLoader - OK
 Checking WebHost https://myapp.creatio.com/0/api/HealthCheck/Ping ...
 	WebHost - OK
 ```
@@ -131,6 +134,15 @@ Checking WebAppLoader https://myapp.creatio.com/api/HealthCheck/Ping ...
 
 ## Notes
 
+### Default Behavior
+
+Without `--webapp true` or `--webhost true`, the command uses the environment's configured `isNetCore` value:
+
+- `isNetCore=true` -> `GET /api/HealthCheck/Ping`
+- `isNetCore=false` -> `GET /0/api/HealthCheck/Ping`
+
+This makes `healthcheck` suitable for validating whether the currently configured runtime route is usable.
+
 ### Component Types
 
 **WebApp Component** (`--webapp true`):
@@ -150,10 +162,10 @@ The command uses this authentication priority:
 3. **Username/password** - provide login and password
 
 ### Technical Requirements
-- **Only works with .NET Core Creatio applications**
-- **At least one component option required** (webhost or webapp)
-- **Both options expect "true" as the value**
-- **Returns 0 for success, non-zero for failures**
+- Works for both `.NET Core` and `.NET Framework` Creatio environments
+- `--webapp true` and `--webhost true` remain available for explicit route probing
+- Returns `0` only when all requested checks succeed
+- Returns non-zero when any requested check fails
 
 ### Common Use Cases
 - **Production monitoring**: Continuous health verification
