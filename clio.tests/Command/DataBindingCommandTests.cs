@@ -291,7 +291,10 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		CreateDataBindingOptions options = new() {
 			PackageName = PackageName,
 			SchemaName = "SysModule",
-			ValuesJson = "{\"Code\":\"UsrImageModule\",\"Image16\":\"" + Path.Combine("assets", "icon.png") + "\"}"
+			ValuesJson = JsonSerializer.Serialize(new Dictionary<string, string> {
+				["Code"] = "UsrImageModule",
+				["Image16"] = Path.Combine("assets", "icon.png")
+			})
 		};
 
 		// Act
@@ -354,7 +357,10 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		CreateDataBindingOptions options = new() {
 			PackageName = PackageName,
 			SchemaName = "SysModule",
-			ValuesJson = "{\"Code\":\"UsrImageModule\",\"Image16\":\"" + Path.Combine(Path.GetTempPath(), "outside", "icon.png") + "\"}"
+			ValuesJson = JsonSerializer.Serialize(new Dictionary<string, string> {
+				["Code"] = "UsrImageModule",
+				["Image16"] = Path.Combine(Path.GetTempPath(), "outside", "icon.png")
+			})
 		};
 
 		// Act
@@ -793,7 +799,10 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 		AddDataBindingRowOptions options = new() {
 			PackageName = PackageName,
 			BindingName = "SysModule",
-			ValuesJson = "{\"Code\":\"UsrImageModule\",\"Image16\":\"" + Path.Combine("assets", "icon.png") + "\"}"
+			ValuesJson = JsonSerializer.Serialize(new Dictionary<string, string> {
+				["Code"] = "UsrImageModule",
+				["Image16"] = Path.Combine("assets", "icon.png")
+			})
 		};
 
 		// Act

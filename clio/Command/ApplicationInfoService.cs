@@ -350,7 +350,7 @@ public sealed class ApplicationInfoService(
 			}
 		}
 
-		return values.First().Value.Trim();
+			return values[0].Value.Trim();
 	}
 
 	private static IReadOnlyList<string> GetPreferredCultureNames()

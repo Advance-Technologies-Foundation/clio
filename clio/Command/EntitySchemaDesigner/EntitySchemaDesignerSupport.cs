@@ -135,7 +135,7 @@ internal static class EntitySchemaDesignerSupport
 
 	internal static List<LocalizableStringDto> CreateLocalizableStrings(
 		IReadOnlyDictionary<string, string>? values,
-		string? fallbackValue = null) {
+		string? fallbackValue) {
 		if (values != null) {
 			return BuildLocalizableStrings(NormalizeLocalizationMap(values, "localizations"));
 		}

@@ -1240,7 +1240,6 @@ Decision: Fixed `IsRegistryQualifiedImageReference` to inspect the first path se
 Discovery: Fully qualified base-image refs such as `registry.internal:5000/acme/base:1` were previously treated as unqualified, which could both mangle push targets and preflight the wrong registry even though the final effective image reference was already correct.
 Files: clio/Command/BuildDockerImageService.cs, clio.tests/Command/BuildDockerImageServiceTests.cs, clio/help/en/build-docker-image.txt, clio/docs/commands/build-docker-image.md, clio/Commands.md, .codex/workspace-diary.md
 Impact: Future private-registry pushes with explicit ports and fully qualified base-image refs will preflight and push against the correct destination, and Sonar no longer flags the Dockerfile `FROM` regex timeout.
-
 ## 2026-03-27 00:00 – Fix expression-tree null propagation in entity schema MCP E2E test
 Context: User reported IDE/compiler errors in `clio.mcp.e2e/EntitySchemaToolE2ETests.cs` saying expression tree lambdas cannot contain the null-propagating operator.
 Decision: Replaced the three FluentAssertions collection predicates that used `message.Value?.Contains(...) == true` with equivalent `message.Value != null && message.Value.Contains(...)` expressions so they remain valid expression trees.
@@ -1303,3 +1302,79 @@ Decision: Updated the single-column modify prompt to mention `SecureText` plus `
 Discovery: The underlying MCP argument contract in `ColumnModificationArgsBase` was already correct, so the gap was prompt guidance only.
 Files: clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, .codex/workspace-diary.md
 Impact: MCP callers that rely on prompt text for `modify-entity-schema-column` now receive the same secure-text guidance as `create-entity-schema` and `update-entity-schema`.
+## 2026-03-27 16:40 – Add workspace skill install, update, and delete flows
+Context: User requested implementation of workspace-local skill management with CLI commands, MCP tools, docs, specs, and tests.
+Decision: Added `install-skills`, `update-skill`, and `delete-skill` commands backed by a DI-managed skill service that resolves local/git repositories, tracks managed installs in `.agents/skills/.clio-managed.json`, and versions updates by repository HEAD commit hash. Added matching MCP tools/prompts plus command docs/spec files.
+Discovery: Update matching needs normalized relative-path comparison because repository discovery returns `.agents\skills\...` on Windows while manifests/docs/tests may use forward slashes. The MCP E2E project currently has unrelated compile errors in `EntitySchemaToolE2ETests.cs`, so new E2E coverage cannot build until that pre-existing file is fixed.
+Files: clio/Command/SkillCommands.cs, clio/Common/SkillManagementService.cs, clio/Command/McpServer/Tools/SkillManagementTool.cs, clio/Command/McpServer/Prompts/SkillManagementPrompt.cs, clio.tests/Command/SkillManagementCommandTests.cs, clio.tests/Command/McpServer/SkillManagementToolTests.cs, clio.mcp.e2e/SkillManagementToolE2ETests.cs, clio/help/en/install-skills.txt, clio/help/en/update-skill.txt, clio/help/en/delete-skill.txt, clio/docs/commands/install-skills.md, clio/docs/commands/update-skill.md, clio/docs/commands/delete-skill.md, clio/Commands.md, spec/install-skills/install-skills-spec.md, spec/install-skills/install-skills-plan.md, spec/install-skills/install-skills-qa.md, .codex/workspace-diary.md
+Impact: Future workspace automation and MCP flows can install/update/remove managed skills consistently, while docs/specs/tests now define the contract and highlight the remaining unrelated E2E project blocker.
+
+## 2026-03-27 17:05 – Persist cached skill repositories by repo name
+Context: User asked to stop cloning skill repositories into throwaway temp folders and instead keep a reusable cache under the clio local-data directory.
+Decision: Changed `SkillRepositoryResolver` to store remote repositories under `SettingsRepository.AppSettingsFolderPath/skills-repos/<repo-name>`, derive `<repo-name>` from the repo locator, and reuse that cache with `git pull --ff-only` instead of recloning on every run.
+Discovery: `SettingsRepository.AppSettingsFolderPath` already resolves to the existing `%LOCALAPPDATA%\creatio\clio` convention on Windows, so the skill-repo cache now lives alongside other clio caches without adding new configuration. Unit tests needed to assert clone-vs-pull behavior against the persistent cache path rather than the old temp directory path.
+Files: clio/Common/SkillManagementService.cs, clio.tests/Command/SkillManagementCommandTests.cs, .codex/workspace-diary.md
+Impact: Repeated `install-skills` and `update-skill` runs now avoid full reclones and keep a stable local cache directory per repository name, which should improve performance and reduce repeated network traffic.
+
+## 2026-03-27 17:18 – Simplify cached skill repo path
+Context: User wanted the persisted remote skill repository stored directly under the clio app-data directory using the repository name instead of an extra cache subfolder.
+Decision: Changed `SkillRepositoryResolver` to cache remote repositories at `SettingsRepository.AppSettingsFolderPath/<repo-name>` and updated the skill-management tests to assert the simplified path.
+Discovery: The extra `skills-repos` segment was not carrying useful routing information because the repository name already provides a stable cache key inside `%LOCALAPPDATA%\creatio\clio`.
+Files: clio/Common/SkillManagementService.cs, clio.tests/Command/SkillManagementCommandTests.cs, .codex/workspace-diary.md
+Impact: The default remote cache location is now the exact directory the user requested, which makes the clone location easier to predict and inspect.
+
+## 2026-03-27 17:24 – Confirm release version already in clio csproj
+Context: User asked to include the project file in the PR after bumping the product version to `8.0.2.44`.
+Decision: Verified that the version-bearing project file is `clio/clio.csproj` and that it already sets `AssemblyVersion`, `FileVersion`, and `Version` to `8.0.2.44`.
+Discovery: The working tree is clean, so there is no missing unstaged `csproj` change to add; the PR just needs to include `clio/clio.csproj` if the version bump is part of the branch.
+Files: clio/clio.csproj, .codex/workspace-diary.md
+Impact: Future release prep can reference the exact project file that carries the shipped CLI version without re-scanning the repo.
+
+## 2026-03-27 18:05 – Remove Windows 11 26H1 .NET 3.5 FoD checks from manage-windows-features
+Context: User reported `manage-windows-features` failures on Windows 11 26H1 (build 28000) and newer because .NET Framework 3.5 is no longer exposed as a Windows Feature on Demand.
+Decision: Removed the legacy `WCF-HTTP-Activation` and `WCF-NonHTTP-Activation` entries from `tpl/windows_features/RequirmentNetFramework.txt`, updated the manage/check Windows-feature docs to note the Windows 11 26H1 behavior, and added a regression test that validates the source manifest rather than copied build output.
+Discovery: The command already sourced its required feature list from `clio/tpl/windows_features/RequirmentNetFramework.txt`; the bug path was the shipped manifest and stale docs, not a separate hard-coded MCP or command branch. There is no MCP tool/prompt/resource for `manage-windows-features`, so MCP reviewed, no update required.
+Files: clio/tpl/windows_features/RequirmentNetFramework.txt, clio/tests/Command/WindowsFeatureManagerTestFixture.cs, clio/help/en/manage-windows-features.txt, clio/docs/commands/manage-windows-features.md, clio/Commands.md, clio/clio.csproj, .codex/workspace-diary.md
+Impact: Future Windows 11 26H1+ runs will no longer try to check or install the removed .NET Framework 3.5 WCF Feature-on-Demand components, and the release version is prepared at 8.0.2.45.
+
+## 2026-03-29 05:20 – Fix entity schema MCP E2E compile regression
+Context: User reported that `clio.mcp.e2e/EntitySchemaToolE2ETests.cs` stopped compiling around the inherited BaseLookup validation test.
+Decision: Replaced null-conditional assertion predicates with expression-tree-compatible null checks plus `ToString().Contains(...)`, hoisted disposable-context values into locals before FluentAssertions predicates, and removed unused arrange-context fields that were only generating warnings.
+Discovery: FluentAssertions collection predicates in this test file are compiled as expression trees, so `?.` and pattern matching (`is string`) both fail even though the equivalent runtime logic is valid in normal delegates.
+Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The entity schema MCP E2E project builds again, unblocking newer MCP test additions that were previously blocked by this file.
+
+## 2026-03-29 05:22 – Mirror expression-tree fix in skill management E2E test
+Context: Verifying the repaired entity schema test with a full `clio.mcp.e2e` build exposed the same compile pattern in `SkillManagementToolE2ETests.cs`.
+Decision: Applied the same expression-tree-safe `message.Value != null && message.Value.ToString().Contains(...)` predicate shape in the skill update no-op assertion.
+Discovery: After the compile fix, the targeted skill-management test reaches runtime and currently fails during temporary directory cleanup with `UnauthorizedAccessException`, which is a separate existing teardown issue rather than another compile regression.
+Files: clio.mcp.e2e/SkillManagementToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The full MCP E2E project now compiles successfully, and any remaining failure in the skill-management test is isolated to runtime cleanup behavior.
+
+## 2026-03-30 00:00 – Merge latest master into ENG-87492-Alfa-version-03-27
+Context: User asked to update the active feature branch to the latest `master`.
+Decision: Fetched `origin/master`, resolved the merge conflicts by keeping the current expression-tree-safe entity-schema E2E assertions together with the newer MCP localization payload contract, and preserved both branches' diary history before completing the merge.
+Discovery: The only conflicts were in `clio.mcp.e2e/EntitySchemaToolE2ETests.cs` and `.codex/workspace-diary.md`; the rest of the branch merged cleanly.
+Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The feature branch now carries the latest `master` changes without dropping local E2E fixes or diary context.
+
+## 2026-03-30 00:22 – Fix PR feedback for tool-contract metadata and Windows JSON paths
+Context: Ten minutes after opening PR `#494`, the follow-up check showed one P1 review comment against `tool-contract-get`, a failed Sonar duplication gate, and a failed Build job on Windows-specific data-binding tests.
+Decision: Changed the modify-entity tool contract to publish the canonical `required` key, added unit and MCP E2E assertions for that contract, serialized image-path JSON payloads in the affected data-binding tests to keep Windows backslashes escaped, and refactored repeated `ToolContractGetTool` field/alias/flow builders into shared helpers to reduce duplicated new code.
+Discovery: The Build failure was not a product regression; the failing tests were constructing JSON strings manually, so Windows path separators broke parsing before workspace validation could run. Local parallel `dotnet test` invocations also raced on `apphost`, so verification had to be rerun sequentially with `--no-build`.
+Files: clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/DataBindingCommandTests.cs, clio.tests/Command/McpServer/DataBindingToolTests.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.mcp.e2e/ToolContractGetToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The PR now addresses the actionable review comment, removes the Windows-specific JSON-path test failure mode that broke CI, and gives Sonar a leaner tool-contract implementation to re-analyze on the next push.
+
+## 2026-03-30 00:49 – Remove remaining PR Sonar blocker and literal smells
+Context: User asked for another PR `#494` status check after Sonar turned green, but the PR still exposed one open Sonar blocker and a set of open literal-duplication smells on the leak period.
+Decision: Removed the overlapping default-parameter overload in `EntitySchemaDesignerSupport`, replaced `Enumerable.First()` with indexed access in `ApplicationInfoService`, collapsed repeated localization field names into constants in `EntitySchemaLocalizationContract`, and replaced repeated contract field/type/example literals in `ToolContractGetTool` with shared constants while also removing the two array creations Sonar flagged around structured-result output helpers.
+Discovery: After the earlier review-fix push, the only unresolved review thread left in GitHub was the already-addressed outdated `required` vs `is-required` thread; the remaining actionable work was entirely in Sonar's open issue list for the PR leak period.
+Files: clio/Command/EntitySchemaDesigner/EntitySchemaDesignerSupport.cs, clio/Command/ApplicationInfoService.cs, clio/Command/McpServer/Tools/EntitySchemaLocalizationContract.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, .codex/workspace-diary.md
+Impact: The branch now removes the last Sonar blocker in PR scope and reduces the repeated-literal/code-smell surface before the next Sonar re-analysis.
+
+## 2026-03-30 01:10 – Prepare clio release 8.0.2.46 from master
+Context: User asked to perform the next `clio` release after PR `#494` had already been merged into `master`.
+Decision: Created a dedicated `master` worktree from `origin/master`, bumped the default `AssemblyVersion` in `clio/clio.csproj` from `8.0.2.45` to `8.0.2.46`, and used that release commit as the source for the next Git tag and GitHub release.
+Discovery: The latest published release and latest reachable tag from `origin/master` were both `8.0.2.45`, so the next valid release number was `8.0.2.46`; performing the release from a separate master worktree avoided disturbing the still-open feature checkout and its local diary edits.
+Files: clio/clio.csproj, .codex/workspace-diary.md
+Impact: Master now carries the next default CLI version, and the release tag can be created from the same commit that records the version bump.
