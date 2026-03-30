@@ -15,7 +15,7 @@ DESCRIPTION
     parent schema, applies the requested name, title, and initial columns, and
     then saves the result.
 
-    Current clio entity-schema commands are the supported ADAC integration
+    Current clio entity-schema commands are part of the canonical clio MCP
     contract. Keep using create-entity-schema / modify-entity-schema-column
     rather than frontend-only aliases like entity.create / entity.update.
 

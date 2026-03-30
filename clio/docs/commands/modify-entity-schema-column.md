@@ -4,7 +4,7 @@
 
 Adds, modifies, or removes one own column in a remote Creatio entity schema by loading the current design item, mutating it locally, and saving it back through `EntitySchemaDesignerService`.
 
-This command is the supported ADAC-compatible mutation surface in `clio`. Batch-style frontend update plans should be decomposed into repeated `modify-entity-schema-column` calls rather than translated into a different `clio` tool name.
+This command is part of the canonical `clio` MCP mutation surface for explicit single-column edits. Batch-style frontend update plans should be decomposed into repeated `modify-entity-schema-column` calls or moved into `schema-sync` rather than translated into a different `clio` tool name.
 
 ## Usage
 

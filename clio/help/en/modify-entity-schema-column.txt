@@ -12,6 +12,10 @@ DESCRIPTION
     mutates one own column locally, and saves the schema back through
     EntitySchemaDesignerService.
 
+    This command is part of the canonical clio MCP mutation surface for
+    explicit single-column edits. Use schema-sync when the work spans
+    multiple ordered schema operations.
+
     Supported actions:
     - add
     - modify

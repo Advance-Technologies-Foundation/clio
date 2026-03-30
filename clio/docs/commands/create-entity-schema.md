@@ -4,7 +4,7 @@
 
 Creates a remote entity schema inside an existing Creatio package by calling `EntitySchemaDesignerService`. This command is intended for environment-side schema creation from `clio`, not for generating local package files.
 
-Current `clio` entity-schema commands are also the supported ADAC integration surface. Keep using `create-entity-schema` and `modify-entity-schema-column`; frontend-only aliases such as `entity.create` or `entity.update` are conceptual only and are not the direct `clio` API.
+Current `clio` entity-schema commands are part of the canonical `clio` MCP contract. Keep using `create-entity-schema` and `modify-entity-schema-column`; frontend-only aliases such as `entity.create` or `entity.update` are conceptual only and are not the direct `clio` API.
 
 ## Usage
 

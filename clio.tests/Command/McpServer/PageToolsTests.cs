@@ -96,15 +96,19 @@ public class PageToolsTests {
 			because: "page-get prompt guidance should match the current MCP argument contract");
 		prompt.Should().Contain($"`{ComponentInfoTool.ToolName}`",
 			because: "page-get prompt guidance should direct callers to component-info for unfamiliar Freedom UI types");
+		prompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
+			because: "page-get prompt guidance should point callers to the MCP-owned existing-app maintenance guide");
 		prompt.Should().Contain("`resources`",
 			because: "page-get prompt guidance should tell callers how to preserve ResourceString macros during page-update");
 		prompt.Should().Contain("valid JSON object string",
 			because: "page-get prompt guidance should clarify that malformed resource payloads are rejected");
+		prompt.Should().Contain("discover -> inspect -> mutate -> verify",
+			because: "page-get prompt guidance should describe the canonical maintenance sequence for minimal page edits");
 		prompt.Should().NotContain("`schemaName`",
 			because: "page-get prompt guidance should no longer advertise removed camelCase request fields");
 		prompt.Should().NotContain("`environmentName`",
 			because: "page-get prompt guidance should no longer advertise removed camelCase request fields");
-		}
+	}
 
 	[Test]
 	[Description("Serializes page-update resource registration metadata in the command response.")]

@@ -21,8 +21,10 @@ public static class ApplicationPrompt {
 		string? environmentName = null) =>
 		$"""
 		 Use clio mcp server `{ApplicationGetListTool.ApplicationGetListToolName}` to return installed Creatio applications as structured JSON.
+		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
 		 Pass `environment-name` when you need to target a registered clio environment explicitly.
 		 Do not pass application filters; this tool always returns the full installed application list for the selected environment.
+		 Use this discovery step before `{ApplicationGetInfoTool.ApplicationGetInfoToolName}` when the target app is not fully known.
 		 """;
 
 	/// <summary>
@@ -39,9 +41,11 @@ public static class ApplicationPrompt {
 		string? appCode = null) =>
 		$"""
 		 Use clio mcp server `{ApplicationGetInfoTool.ApplicationGetInfoToolName}` to return the primary package and runtime entity metadata for one installed Creatio application.
+		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Pass exactly one identifier: `app-id` when you already have the installed application GUID, or `app-code` when you have the installed application code.
 		 Do not include both identifiers in the same call.
+		 Use this after `{ApplicationGetListTool.ApplicationGetListToolName}` when the target app is not fully known.
 		 """;
 
 	/// <summary>

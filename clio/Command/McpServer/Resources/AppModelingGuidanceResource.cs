@@ -29,9 +29,10 @@ public sealed class AppModelingGuidanceResource {
 			       - clio MCP is a stdio MCP server, not an HTTP or browser API.
 			       - Use discovered tool names exactly as advertised.
 			       - Newer design tools use kebab-case JSON argument names such as `environment-name`, `package-name`, and `schema-name`.
+			       - For existing-app minimal edits, read `docs://mcp/guides/existing-app-maintenance`.
 
 			       Preferred workflow
-			       - Discover with `application-get-list`, `application-get-info`, `page-list`, and `page-get` before mutating.
+			       - Use `application-create` when the workflow is modeling a new app shell rather than editing an existing installed app.
 			       - Prefer `schema-sync` for multi-step schema work and `page-sync` for multi-page saves.
 			       - Entity-schema mutations are DB-first. After a successful schema tool call, treat the schema as immediately usable without a compile step.
 

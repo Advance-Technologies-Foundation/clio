@@ -751,12 +751,18 @@ public sealed class ApplicationToolTests {
 			because: "the list prompt should no longer advertise application filters");
 		listPrompt.Should().NotContain("`app-code`",
 			because: "the list prompt should no longer advertise application filters");
+		listPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
+			because: "the list prompt should point existing-app flows to the dedicated MCP maintenance guide");
+		listPrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
+			because: "the list prompt should direct callers to the canonical follow-up application inspection step");
 		infoPrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
 			because: "the info prompt should reference the exact production tool name");
 		infoPrompt.Should().Contain("`environment-name`",
 			because: "the info prompt should keep the normalized environment argument visible");
 		infoPrompt.Should().Contain("exactly one identifier",
 			because: "the info prompt should require the core-aligned identifier rule");
+		infoPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
+			because: "the info prompt should point callers to the dedicated MCP maintenance guide for discover and inspect flows");
 		createPrompt.Should().Contain(ApplicationCreateTool.ApplicationCreateToolName,
 			because: "the create prompt should reference the exact production tool name");
 		createPrompt.Should().Contain("Provide `name`, `code`, `template-code`, and `icon-background`",

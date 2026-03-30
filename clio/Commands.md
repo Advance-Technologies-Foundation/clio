@@ -160,11 +160,15 @@ and `password`, depending on the tool contract.
 
 The MCP server exposes application, page, component-info, entity, schema-sync, page-sync,
 and data-binding tools. The local `component-info` helper does not require an environment.
+It also exposes MCP-owned guidance resources such as `docs://mcp/guides/app-modeling` and
+`docs://mcp/guides/existing-app-maintenance`.
 
 Notes:
 - Transport is stdio with JSON-RPC 2.0
 - The process stays running until stdin is closed or the process is terminated
 - Environment-sensitive tools accept either `environment-name` or explicit connection arguments such as `uri`, `login`, and `password`
+- Use `tool-contract-get` when the MCP client needs the authoritative clio MCP contract and preferred discovery or mutation flow
+- Preferred existing-app flow is `application-get-list` -> `application-get-info`, then page or schema inspection, then `page-update`, `modify-entity-schema-column`, or `schema-sync`
 
 
 # Package Management
@@ -1796,7 +1800,7 @@ clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle
 ```
 
 **Notes:**
-- Current `clio` entity-schema tools are the supported ADAC integration surface; use current `clio` naming instead of frontend-only aliases like `entity.create`
+- Current `clio` entity-schema tools are part of the canonical `clio` MCP contract; use current `clio` naming instead of frontend-only aliases like `entity.create`
 - `Binary`, `Image`, and `File` columns do not support `default-value` or `default-value-source Const`
 - Save succeeds only when the schema can be reloaded immediately after `SaveSchema`
 

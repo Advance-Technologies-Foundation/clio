@@ -45,7 +45,7 @@ public static class EntitySchemaPrompt {
 		 `title-localizations` with at least `en-US`. Supported column types include
 		 `Binary`, `Image`, `File`, and `SecureText`. `Blob` can be used as an alias for `Binary`, and
 		 `Encrypted` / `Password` can be used as aliases for `SecureText`. For `Lookup` columns,
-		 provide `reference-schema-name`. Current clio entity-schema tools are the supported ADAC integration
+		 provide `reference-schema-name`. Current clio entity-schema tools are part of the canonical clio MCP
 		 contract, so keep using `create-entity-schema` instead of frontend-only names like `entity.create`.
 		 For broader app-modeling guardrails, read `docs://mcp/guides/app-modeling`.
 		 When the caller needs richer metadata, each `columns` item can also include `required`,
@@ -117,8 +117,9 @@ public static class EntitySchemaPrompt {
 		 `Encrypted` / `Password` can be used as aliases for `SecureText`. Do not send `default-value` or
 		 `default-value-source=Const` for `Binary`, `Image`, or `File` operations. For create + seed + update
 		 workflows, prefer `schema-sync`. Seed rows create data only; model default requirements separately as
-		 `schema default` or `ui default`. For broader app-modeling guardrails, read
-		 `docs://mcp/guides/app-modeling`.
+		 `schema default` or `ui default`. For existing-app maintenance guidance, read
+		 `docs://mcp/guides/existing-app-maintenance`.
+		 Inspect current schema metadata with `get-entity-schema-properties` first. For one-column changes, prefer `modify-entity-schema-column`.
 		 """;
 
 	/// <summary>
@@ -142,6 +143,8 @@ public static class EntitySchemaPrompt {
 		 `{environmentName}`. The result is a schema summary object with a nested `columns` list for
 		 machine-readable column inspection.
 		 Pass `package-name`, `schema-name`, and `environment-name` exactly as provided.
+		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 Use this read step before `modify-entity-schema-column` or `schema-sync`, and read the schema again after mutation when explicit verification is needed.
 		 """;
 
 	/// <summary>
@@ -167,6 +170,8 @@ public static class EntitySchemaPrompt {
 		 structured properties for column `{columnName}` in entity schema `{schemaName}` from package
 		 `{packageName}` on environment `{environmentName}`.
 		 Pass `package-name`, `schema-name`, `column-name`, and `environment-name` exactly as provided.
+		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 Use this read step before and after `modify-entity-schema-column` when the requested change is scoped to one column.
 		 """;
 
 	/// <summary>
@@ -204,5 +209,7 @@ public static class EntitySchemaPrompt {
 		 and `SecureText`. `Blob` can be used as an alias for `Binary`, and `Encrypted` / `Password` can be
 		 used as aliases for `SecureText`. Do not send `default-value` or
 		 `default-value-source=Const` for `Binary`, `Image`, or `File`.
+		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 Prefer reading current metadata with `{GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName}` first and reading it back after the mutation when explicit verification is needed.
 		 """;
 }
