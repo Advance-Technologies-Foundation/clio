@@ -239,6 +239,12 @@ public sealed class ApplicationToolE2ETests {
 			because: "successful application-create calls should return the created application's primary package name");
 		actResult.Result.CanonicalMainEntityName.Should().Be(applicationCode,
 			because: "application-create should surface the canonical main entity explicitly for MCP clients");
+		ApplicationEntityEnvelope? canonicalMainEntity = actResult.Result.Entities?
+			.FirstOrDefault(entity => string.Equals(entity.Name, applicationCode, StringComparison.OrdinalIgnoreCase));
+		canonicalMainEntity.Should().NotBeNull(
+			because: "successful application-create calls should include the canonical main entity payload");
+		canonicalMainEntity!.Caption.Should().Be(applicationName,
+			because: "the canonical main entity caption should reflect the requested application name instead of the generic template fallback");
 		actResult.Result.Error.Should().BeNullOrWhiteSpace(
 			because: "successful create calls should not include an error payload");
 	}

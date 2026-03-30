@@ -118,6 +118,41 @@ public sealed class ApplicationInfoServiceTests {
 	}
 
 	[Test]
+	[Description("Prefers the design-time title for the canonical main entity when the runtime metadata falls back to the generic Base object caption.")]
+	public void GetApplicationInfo_Should_Prefer_Design_Time_Caption_For_Canonical_Main_Entity_When_Runtime_Caption_Is_BaseObject() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysInstalledApp\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"app-uid","Code":"APP","Name":"App","Version":"1.0"}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("GetApplicationPackages", StringComparison.Ordinal)),
+				Arg.Any<string>())
+			.Returns("""{"success":true,"packages":[{"uId":"11111111-1111-1111-1111-111111111111","name":"UsrTodo","isApplicationPrimaryPackage":true}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationEntity\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"UId":"entity-a","Name":"UsrTodo","Caption":"Base object"}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"uId\":\"entity-a\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"schema":{"uId":"entity-a","name":"UsrTodo","caption":{"en-US":"Base object"},"columns":{"Items":{}}}}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("GetSchemaDesignItem", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"name\":\"UsrTodo\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"schema":{"caption":[{"cultureName":"en-US","value":"Todo"}],"columns":[]}}""");
+
+		// Act
+		ApplicationInfoResult result = _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		result.Entities.Should().ContainSingle(
+			because: "the canonical-main-entity regression scenario still resolves a single application entity");
+		result.Entities[0].Caption.Should().Be("Todo",
+			because: "the canonical main entity should prefer the design-time title over the generic Base object runtime fallback");
+	}
+
+	[Test]
 	[Description("Returns a readable not-found failure when the installed-application lookup matches no rows.")]
 	public void GetApplicationInfo_Should_Throw_When_Application_Is_Not_Found() {
 		// Arrange

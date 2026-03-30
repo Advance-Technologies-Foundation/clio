@@ -1378,3 +1378,10 @@ Decision: Created a dedicated `master` worktree from `origin/master`, bumped the
 Discovery: The latest published release and latest reachable tag from `origin/master` were both `8.0.2.45`, so the next valid release number was `8.0.2.46`; performing the release from a separate master worktree avoided disturbing the still-open feature checkout and its local diary edits.
 Files: clio/clio.csproj, .codex/workspace-diary.md
 Impact: Master now carries the next default CLI version, and the release tag can be created from the same commit that records the version bump.
+
+## 2026-03-30 18:05 – Prefer design title over Base object fallback for application MCP
+Context: User asked to fix the application-get-info / application-create main-entity title regression only in clio, without adding orchestration-side workarounds.
+Decision: Updated ApplicationInfoService to treat Base object as a generic runtime fallback only for the canonical main entity and prefer the design-time title when it is available, added a unit regression test for that case, and tightened the MCP E2E create assertion to require the created canonical entity caption to match the requested application name.
+Discovery: The existing caption pipeline already preferred runtime metadata over design metadata, so a non-empty generic runtime caption blocked the correct title from GetSchemaDesignItem; the MCP prompts/resources were still accurate after review, so MCP reviewed, no update required there.
+Files: clio/Command/ApplicationInfoService.cs, clio.tests/Command/ApplicationInfoServiceTests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs, .codex/workspace-diary.md
+Impact: New app flows now keep the short MCP application envelope aligned with the authoritative schema title for the canonical main entity instead of surfacing the inherited BaseEntity caption.
