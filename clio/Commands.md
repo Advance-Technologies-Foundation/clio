@@ -1778,7 +1778,7 @@ clio create-entity-schema --package <PACKAGE_NAME> --name <SCHEMA_NAME> --title 
 - `--title <TITLE>` (required): Entity schema title/caption
 - `--parent <SCHEMA_NAME>` (optional): Parent schema name
 - `--extend-parent` (optional): Create a replacement schema; requires `--parent`
-- `--column <COLUMN_SPEC>` (optional): Column spec in legacy `<name>:<type>[:<title>[:<refSchema>]]` format or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, `default-value-source`, `default-value`. Repeat the option for multiple columns
+- `--column <COLUMN_SPEC>` (optional): Column spec in legacy `<name>:<type>[:<title>[:<refSchema>]]` format or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, legacy `default-value-source` / `default-value`, or structured `default-value-config`. Repeat the option for multiple columns
 - `-e, --environment <ENVIRONMENT_NAME>` (required): Target environment
 
 **Supported types:**
@@ -1801,10 +1801,14 @@ clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle
 
 # Create with structured column metadata
 clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" -e dev --column "{\"name\":\"Status\",\"type\":\"ShortText\",\"title\":\"Status\",\"required\":true,\"default-value-source\":\"Const\",\"default-value\":\"Draft\"}"
+
+# Create with structured default-value-config metadata
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" -e dev --column "{\"name\":\"UsrStartDate\",\"type\":\"DateTime\",\"title\":\"Start date\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
 ```
 
 **Notes:**
 - Current `clio` entity-schema tools are part of the canonical `clio` MCP contract; use current `clio` naming instead of frontend-only aliases like `entity.create`
+- Prefer structured `default-value-config` for `Settings`, `SystemValue`, or `Sequence`; keep legacy `default-value-source` / `default-value` only for shorthand `Const` and `None`
 - `Binary`, `Image`, and `File` columns do not support `default-value` or `default-value-source Const`
 - Save succeeds only when the schema can be reloaded immediately after `SaveSchema`
 
@@ -1863,6 +1867,7 @@ clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle --
 - v1 mutates own columns only; inherited columns are read-only
 - remove clears direct schema-level references to the removed column and validates required fallbacks locally
 - `--default-value-source None` clears the stored default value; `Const` requires `--default-value`
+- MCP callers can also send structured `default-value-config` with `source` set to `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`; the direct CLI flags remain shorthand for `Const` and `None`
 - `Binary`, `Image`, and `File` columns do not support `--default-value` or `--default-value-source Const`
 - Save succeeds only when the mutated column can be read back immediately after `SaveSchema`
 
@@ -1892,10 +1897,15 @@ clio update-entity-schema --package MyPackage --schema-name UsrVehicle -e dev ^
 clio update-entity-schema --package MyPackage --schema-name UsrVehicle -e dev ^
   --operation "{\"action\":\"modify\",\"column-name\":\"Owner\",\"new-name\":\"PrimaryOwner\",\"title\":\"Primary owner\"}" ^
   --operation "{\"action\":\"modify\",\"column-name\":\"Status\",\"default-value-source\":\"None\"}"
+
+# Set a system-value default in one batch
+clio update-entity-schema --package MyPackage --schema-name UsrVehicle -e dev ^
+  --operation "{\"action\":\"modify\",\"column-name\":\"UsrStartDate\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
 ```
 
 **Notes:**
 - each operation uses the same column-level contract as `modify-entity-schema-column`
+- operation JSON can also use structured `default-value-config`; legacy `default-value-source` / `default-value` remain shorthand for `Const` and `None`
 - operations run in order and stop on the first failure
 - this is the clio-native batch alternative to frontend-style `entity.update.operationsJson`
 - supported operation types include `Binary`, `Image`, `File`, `SecureText`, `Blob` as an alias for `Binary`, and `Encrypted` / `Password` as aliases for `SecureText`
@@ -1927,7 +1937,7 @@ clio get-entity-schema-column-properties --package MyPackage --schema-name UsrVe
 
 **Notes:**
 - own columns are searched first, then inherited columns
-- the readback includes `default-value-source` and `default-value`
+- the readback includes `default-value-source`, `default-value`, and structured `default-value-config`
 - the readback normalizes type names to readable values such as `Binary`, `Image`, `File`, and `ImageLookup`
 - this is the canonical verification path after `modify-entity-schema-column`
 

@@ -205,6 +205,66 @@ public sealed class SchemaSyncToolE2ETests {
 			because: "validation should happen before environment resolution");
 	}
 
+	[Test]
+	[Description("Applies structured default-value-config through schema-sync update-entity and verifies the resulting DateTime column readback.")]
+	[AllureTag(ToolName)]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("schema-sync applies structured system-value defaults on update-entity")]
+	[AllureDescription("Creates a sandbox entity through schema-sync on a real environment, adds a DateTime column with default-value-config source SystemValue, and verifies the remote side effect plus structured readback metadata.")]
+	public async Task SchemaSyncTool_Should_Apply_Structured_DefaultValueConfig_On_UpdateEntity() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+		const string startDateColumnName = "UsrStartDate";
+
+		// Act
+		CallToolResult callResult = await CallSchemaSyncWithStructuredDefaultValueAsync(
+			context.Session,
+			context.EnvironmentName!,
+			context.PackageName!,
+			context.EntitySchemaName!,
+			startDateColumnName,
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement[] results = response.GetProperty("results").EnumerateArray().ToArray();
+		JsonElement createEntityResult = FindResult(results, "create-entity", context.EntitySchemaName!);
+		JsonElement updateResult = FindResult(results, "update-entity", context.EntitySchemaName!);
+		string[] createEntityMessages = GetMessageValues(createEntityResult);
+		string[] updateMessages = GetMessageValues(updateResult);
+		EntitySchemaColumnPropertiesInfo columnProperties = await GetColumnPropertiesAsync(
+			context.Session,
+			context.EnvironmentName!,
+			context.PackageName!,
+			context.EntitySchemaName!,
+			startDateColumnName,
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "schema-sync should return a structured success payload when update-entity applies a valid system-value default");
+		response.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: "the schema-sync batch should succeed when adding a DateTime column with a structured system-value default");
+		results.Should().HaveCount(2,
+			because: "the focused batch should produce one result for create-entity and one for update-entity");
+		createEntityMessages.Should().Contain(message => message.Contains(context.EntitySchemaName!, StringComparison.Ordinal),
+			because: "the create-entity result should keep its own schema creation evidence");
+		updateMessages.Should().Contain(message => message.Contains(startDateColumnName, StringComparison.Ordinal),
+			because: "the update-entity result should report the DateTime column mutated by the structured default flow");
+		columnProperties.ColumnName.Should().Be(startDateColumnName,
+			because: "the structured column readback should identify the DateTime column created by schema-sync");
+		columnProperties.Type.Should().Be("DateTime",
+			because: "the structured column readback should preserve the DateTime type created by schema-sync");
+		columnProperties.DefaultValueSource.Should().Be("SystemValue",
+			because: "legacy summary fields should expose the resolved system-value source for schema-sync updates");
+		columnProperties.DefaultValue.Should().Be("CurrentDateTime",
+			because: "legacy summary fields should expose the resolved system value name for schema-sync updates");
+		columnProperties.DefaultValueConfig.Should().NotBeNull(
+			because: "structured column readback should expose default-value-config metadata for schema-sync updates");
+		columnProperties.DefaultValueConfig!.Source.Should().Be("SystemValue",
+			because: "the structured default value config should preserve the resolved system-value source");
+		columnProperties.DefaultValueConfig.ValueSource.Should().Be("CurrentDateTime",
+			because: "the structured default value config should preserve the system value name");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -386,6 +446,55 @@ public sealed class SchemaSyncToolE2ETests {
 			cancellationToken);
 	}
 
+	private static async Task<CallToolResult> CallSchemaSyncWithStructuredDefaultValueAsync(
+		McpServerSession session,
+		string environmentName,
+		string packageName,
+		string entitySchemaName,
+		string columnName,
+		CancellationToken cancellationToken) {
+		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
+		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+			because: "schema-sync must be advertised before the structured default-value scenario can be executed");
+
+		return await session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-entity",
+							["schema-name"] = entitySchemaName,
+							["title-localizations"] = BuildLocalizations("Schema Sync Entity"),
+							["columns"] = new object?[] {
+								new Dictionary<string, object?> {
+									["name"] = "UsrTitle",
+									["type"] = "Text",
+									["title-localizations"] = BuildLocalizations("Title")
+								}
+							}
+						},
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							["schema-name"] = entitySchemaName,
+							["update-operations"] = new object?[] {
+								new Dictionary<string, object?> {
+									["action"] = "add",
+									["column-name"] = columnName,
+									["type"] = "DateTime",
+									["title-localizations"] = BuildLocalizations("Start date"),
+									["default-value-config"] = BuildSystemValueDefaultValueConfig("CurrentDateTime")
+								}
+							}
+						}
+					}
+				}
+			},
+			cancellationToken);
+	}
+
 	private static async Task<EntitySchemaPropertiesInfo> GetSchemaPropertiesAsync(
 		McpServerSession session,
 		string environmentName,
@@ -550,6 +659,13 @@ public sealed class SchemaSyncToolE2ETests {
 			result["uk-UA"] = ukUa;
 		}
 		return result;
+	}
+
+	private static Dictionary<string, object?> BuildSystemValueDefaultValueConfig(string valueSource) {
+		return new Dictionary<string, object?> {
+			["source"] = "SystemValue",
+			["value-source"] = valueSource
+		};
 	}
 
 	private sealed record ArrangeContext(

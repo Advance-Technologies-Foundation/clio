@@ -134,4 +134,28 @@ internal class ModifyEntitySchemaColumnCommandTests : BaseCommandTests<ModifyEnt
 		_columnManager.Received(1).ModifyColumn(options);
 		_logger.Received(1).WriteInfo("Done");
 	}
+
+	[Test]
+	[Description("Treats default-value-config as a mutable option so MCP callers can apply structured defaults without changing other fields.")]
+	public void Execute_CallsColumnManager_WhenModifyOnlyChangesDefaultValueConfig() {
+		// Arrange
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "UsrStartDate",
+			DefaultValueConfig = new EntitySchemaDefaultValueConfig {
+				Source = "SystemValue",
+				ValueSource = "CurrentDateTime"
+			}
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "structured default value changes should count as a valid modification request");
+		_columnManager.Received(1).ModifyColumn(options);
+		_logger.Received(1).WriteInfo("Done");
+	}
 }

@@ -47,8 +47,8 @@ OPTIONS
     --indexed                      Set indexed flag
     --cloneable                    Set make-copy flag
     --track-changes                Set update-change-log flag
-    --default-value-source         Default value source: Const or None
-    --default-value                Set a constant default value
+    --default-value-source         Legacy default value shorthand: Const or None
+    --default-value                Legacy constant default value shorthand
     --multiline-text               Set multi-line text flag (Text only)
     --localizable-text             Set localizable text flag (Text only)
     --accent-insensitive           Set accent-insensitive flag (Text only)
@@ -85,6 +85,9 @@ NOTES
     - v1 allows mutations for own columns only; inherited columns are read-only
     - remove clears schema-level references to the deleted column and validates required fallbacks locally
     - unspecified modify options are preserved as-is in the saved payload
+    - MCP callers can also send structured default-value-config with source
+      None, Const, Settings, SystemValue, or Sequence; direct CLI flags remain
+      shorthand for Const and None
     - Binary, Image, and File columns do not support --default-value or --default-value-source Const
     - After save, the schema is reloaded immediately; save is treated as failed if the mutated column cannot be read back
 

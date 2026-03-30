@@ -281,6 +281,43 @@ public sealed class EntitySchemaToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps structured default-value-config MCP mutation arguments into modify-entity-schema-column command options.")]
+	public void ModifyEntitySchemaColumn_Should_Map_DefaultValueConfig() {
+		// Arrange
+		FakeModifyEntitySchemaColumnCommand defaultCommand = new();
+		FakeModifyEntitySchemaColumnCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
+			.Returns(resolvedCommand);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			"modify",
+			"UsrStartDate") {
+			DefaultValueConfig = new EntitySchemaDefaultValueConfig {
+				Source = "SystemValue",
+				ValueSource = "CurrentDateTime"
+			}
+		});
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "structured default-value-config should be a valid MCP mutation payload");
+		resolvedCommand.CapturedOptions!.DefaultValueConfig.Should().NotBeNull(
+			because: "the resolved command should receive the structured default value config");
+		resolvedCommand.CapturedOptions.DefaultValueConfig!.Source.Should().Be("SystemValue",
+			because: "the source should be preserved through tool mapping");
+		resolvedCommand.CapturedOptions.DefaultValueConfig.ValueSource.Should().Be("CurrentDateTime",
+			because: "the value-source should be preserved through tool mapping");
+		resolvedCommand.CapturedOptions.DefaultValueSource.Should().BeNull(
+			because: "structured default configs should not be flattened into legacy shorthand fields");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects legacy scalar title and description fields on the MCP mutation surface.")]
 	public void ModifyEntitySchemaColumn_Should_Reject_Legacy_Localization_Fields() {
 		// Arrange
@@ -517,6 +554,8 @@ public sealed class EntitySchemaToolTests {
 			because: "create MCP input descriptions should advertise the Binary compatibility alias");
 		createDefaultSourceDescription.Should().Contain("do not support Const",
 			because: "create MCP input descriptions should explain binary-like default restrictions");
+		createDefaultSourceDescription.Should().Contain("default-value-config",
+			because: "create MCP input descriptions should direct callers to the structured default value contract");
 		modifyTypeDescription.Should().Contain("Binary",
 			because: "mutation MCP input descriptions should list supported binary-like column types");
 		modifyTypeDescription.Should().Contain("Blob",
@@ -525,14 +564,20 @@ public sealed class EntitySchemaToolTests {
 			because: "mutation MCP input descriptions should explain binary-like default restrictions");
 		createPrompt.Should().Contain("Blob",
 			because: "create prompt guidance should advertise the Binary compatibility alias");
+		createPrompt.Should().Contain("default-value-config",
+			because: "create prompt guidance should advertise the structured default value contract");
 		updatePrompt.Should().Contain("Binary",
 			because: "update prompt guidance should advertise binary-like column support");
+		updatePrompt.Should().Contain("default-value-config",
+			because: "update prompt guidance should advertise the structured default value contract");
 		updatePrompt.Should().Contain("default-value-source=Const",
-			because: "update prompt guidance should explain unsupported binary default usage");
+			because: "update prompt guidance should still explain unsupported legacy binary default usage");
 		updatePrompt.Should().Contain("schema-sync",
 			because: "update prompt guidance should steer multi-step schema workflows toward the composite MCP tool");
 		modifyPrompt.Should().Contain("File",
 			because: "modify prompt guidance should advertise file column support");
+		modifyPrompt.Should().Contain("default-value-config",
+			because: "modify prompt guidance should advertise the structured default value contract");
 	}
 
 	private sealed class FakeModifyEntitySchemaColumnCommand : ModifyEntitySchemaColumnCommand {

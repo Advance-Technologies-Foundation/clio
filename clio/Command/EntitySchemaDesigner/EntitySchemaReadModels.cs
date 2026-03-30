@@ -72,7 +72,8 @@ public sealed record EntitySchemaColumnPropertiesInfo(
 	[property: JsonPropertyName("accent-insensitive")] bool AccentInsensitive,
 	[property: JsonPropertyName("masked")] bool Masked,
 	[property: JsonPropertyName("format-validated")] bool FormatValidated,
-	[property: JsonPropertyName("use-seconds")] bool UseSeconds);
+	[property: JsonPropertyName("use-seconds")] bool UseSeconds,
+	[property: JsonPropertyName("default-value-config")] EntitySchemaDefaultValueConfig? DefaultValueConfig = null);
 
 /// <summary>
 /// Represents a domain-specific entity schema designer failure.

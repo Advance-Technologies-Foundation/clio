@@ -1046,14 +1046,16 @@ internal static class ToolContractCatalog {
 					Field(DescriptionLocalizationsFieldName, ObjectType, "Optional localization map."),
 					Field(ReferenceSchemaNameFieldName, StringType, "Optional lookup target."),
 					Field("required", BooleanType, "Optional required flag."),
-					Field("default-value-source", StringType, "Optional default source."),
-					Field("default-value", StringType, "Optional default value."))),
+					Field("default-value-source", StringType, "Legacy optional default source shorthand. Supports only Const or None."),
+					Field("default-value", StringType, "Legacy optional default value shorthand for Const."),
+					Field("default-value-config", ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
 				ColumnNameParameterAlias(),
 				ReferenceSchemaNameParameterAlias(),
 				DefaultValueParameterAlias(),
+				DefaultValueConfigParameterAlias(),
 				DefaultValueSourceParameterAlias(),
 				TitleParameterAlias(),
 				CaptionParameterAlias(),
@@ -1069,6 +1071,17 @@ internal static class ToolContractCatalog {
 					["type"] = "Text",
 					[TitleLocalizationsFieldName] = LocalizationMap("Short Code"),
 					["required"] = true
+				}),
+				Example("Set a system-value default on one column", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[SchemaNameFieldName] = ExamplePackageName,
+					[ActionFieldName] = "modify",
+					[ColumnNameFieldName] = "UsrStartDate",
+					["default-value-config"] = new Dictionary<string, object?> {
+						["source"] = "SystemValue",
+						["value-source"] = "CurrentDateTime"
+					}
 				})
 			],
 			Flow(
@@ -1302,6 +1315,11 @@ internal static class ToolContractCatalog {
 	private static ToolContractAlias DefaultValueParameterAlias() {
 		return Alias(ParameterScope, "default-value", "defaultValue", RejectedStatus,
 			"Use 'default-value' instead of 'defaultValue'.");
+	}
+
+	private static ToolContractAlias DefaultValueConfigParameterAlias() {
+		return Alias(ParameterScope, "default-value-config", "defaultValueConfig", RejectedStatus,
+			"Use 'default-value-config' instead of 'defaultValueConfig'.");
 	}
 
 	private static ToolContractAlias DefaultValueSourceParameterAlias() {

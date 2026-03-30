@@ -41,7 +41,8 @@ OPTIONS
                            <name>:<type>[:<title>[:<refSchema>]]
                            or JSON with name/type/title or caption/
                            reference-schema-name/required/
-                           default-value-source/default-value.
+                           legacy default-value-source/default-value or
+                           structured default-value-config.
                            Repeat the option for multiple columns
 
     Environment options are also available:
@@ -63,6 +64,9 @@ EXAMPLES
     # Create a column with frontend-style type alias and default metadata
     clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --column "{\"name\":\"Status\",\"type\":\"ShortText\",\"title\":\"Status\",\"required\":true,\"default-value-source\":\"Const\",\"default-value\":\"Draft\"}"
 
+    # Create a column with structured default-value-config metadata
+    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --column "{\"name\":\"UsrStartDate\",\"type\":\"DateTime\",\"title\":\"Start date\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
+
     # Create a schema inheriting from a parent schema
     clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --parent BaseEntity
 
@@ -74,6 +78,8 @@ NOTES
     - Package resolution requires cliogate to be installed on the target environment
     - If no Guid column is supplied for a root schema, Id:Guid is added automatically
     - If no display column is set, the first text-like column is used as primary display column
+    - Prefer default-value-config for Settings, SystemValue, or Sequence; keep
+      default-value-source/default-value as shorthand only for Const and None
     - Binary, Image, and File columns do not support --default-value or --default-value-source Const
     - After save, the schema is reloaded immediately; save is treated as failed if the schema cannot be read back
     - Schema names longer than 22 characters are rejected before the server call

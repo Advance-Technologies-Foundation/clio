@@ -49,8 +49,12 @@ public static class EntitySchemaPrompt {
 		 contract, so keep using `create-entity-schema` instead of frontend-only names like `entity.create`.
 		 For broader app-modeling guardrails, read `docs://mcp/guides/app-modeling`.
 		 When the caller needs richer metadata, each `columns` item can also include `required`,
-		 `default-value-source`, `default-value`, and frontend-style type aliases such as `ShortText` or `Date`.
-		 Do not send `default-value` or `default-value-source=Const` for `Binary`, `Image`, or `File` columns.
+		 `default-value-config`, legacy shorthand `default-value-source` / `default-value`, and frontend-style
+		 type aliases such as `ShortText` or `Date`. Prefer `default-value-config` with `source` set to
+		 `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`. Keep legacy `default-value-source` and
+		 `default-value` only for shorthand `Const` and `None`. Do not send `default-value` or
+		 `default-value-source=Const` for `Binary`, `Image`, or `File` columns, and use
+		 `default-value-config` source `Sequence` only for text columns.
 		 Current parent request: `{parentSchemaName ?? "<not provided>"}`. Current replacement request:
 		 `{extendParent}`.
 		 """;
@@ -110,13 +114,16 @@ public static class EntitySchemaPrompt {
 		 Pass `package-name`, `schema-name`, and `environment-name` exactly as provided. Encode all column
 		 changes in the ordered `operations` array. Each operation uses clio-native fields such as `action`,
 		 `column-name`, `type`, `title-localizations`, `description-localizations`,
-		 `reference-schema-name`, and `default-value-source`; do not send legacy scalar `title` or
+		 `reference-schema-name`, and `default-value-config`; keep legacy `default-value-source` and
+		 `default-value` only for shorthand `Const` and `None`. Do not send legacy scalar `title` or
 		 `description`, and do not translate the payload into frontend `entity.update.operationsJson`.
 		 `add` operations must provide `title-localizations` with at least `en-US`. Supported types include
 		 `Binary`, `Image`, `File`, and `SecureText`. `Blob` can be used as an alias for `Binary`, and
-		 `Encrypted` / `Password` can be used as aliases for `SecureText`. Do not send `default-value` or
-		 `default-value-source=Const` for `Binary`, `Image`, or `File` operations. For create + seed + update
-		 workflows, prefer `schema-sync`. Seed rows create data only; model default requirements separately as
+		 `Encrypted` / `Password` can be used as aliases for `SecureText`. Prefer `default-value-config`
+		 sources `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`. Do not send `default-value` or
+		 `default-value-source=Const` for `Binary`, `Image`, or `File` operations, and use
+		 `default-value-config` source `Sequence` only for text columns. For create + seed + update workflows,
+		 prefer `schema-sync`. Seed rows create data only; model default requirements separately as
 		 `schema default` or `ui default`. For existing-app maintenance guidance, read
 		 `docs://mcp/guides/existing-app-maintenance`.
 		 Inspect current schema metadata with `get-entity-schema-properties` first. For one-column changes, prefer `modify-entity-schema-column`.
@@ -204,11 +211,13 @@ public static class EntitySchemaPrompt {
 		 `modify`, include only the fields that should change, using `title-localizations` and
 		 `description-localizations` instead of legacy scalar `title` or `description`. For `remove`, do not pass property-change options. Use this tool for a single-column mutation. For ordered
 		 multi-column updates, prefer `{UpdateEntitySchemaTool.UpdateEntitySchemaToolName}`. The tool accepts
-		 frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time`, plus explicit
-		 `default-value-source` values `Const` or `None`. Supported types include `Binary`, `Image`, `File`,
-		 and `SecureText`. `Blob` can be used as an alias for `Binary`, and `Encrypted` / `Password` can be
-		 used as aliases for `SecureText`. Do not send `default-value` or
-		 `default-value-source=Const` for `Binary`, `Image`, or `File`.
+		 frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time`. For default values,
+		 prefer `default-value-config` with `source` set to `None`, `Const`, `Settings`, `SystemValue`, or
+		 `Sequence`. Keep legacy `default-value-source` and `default-value` only for shorthand `Const` and
+		 `None`. Supported types include `Binary`, `Image`, `File`, and `SecureText`. `Blob` can be used as
+		 an alias for `Binary`, and `Encrypted` / `Password` can be used as aliases for `SecureText`. Do not
+		 send `default-value` or `default-value-source=Const` for `Binary`, `Image`, or `File`, and use
+		 `default-value-config` source `Sequence` only for text columns.
 		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
 		 Prefer reading current metadata with `{GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName}` first and reading it back after the mutation when explicit verification is needed.
 		 """;

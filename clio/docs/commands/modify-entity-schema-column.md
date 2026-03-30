@@ -107,6 +107,7 @@ clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicl
 - inherited columns are readable but not mutable in v1.
 - frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time` are accepted and mapped to the closest supported designer types.
 - `--default-value-source None` clears the stored default value; `Const` requires `--default-value`.
+- MCP callers can also send structured `default-value-config` with `source` set to `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`; the direct CLI flags remain shorthand for `Const` and `None`.
 - `Binary`, `Image`, and `File` columns do not support `--default-value` or `--default-value-source Const`.
 - After `SaveSchema`, the schema is reloaded immediately. The command treats save as failed if the mutated column cannot be read back.
 

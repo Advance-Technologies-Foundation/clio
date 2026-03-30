@@ -474,6 +474,12 @@ internal class RemoteEntitySchemaColumnManagerTests
 		result.Type.Should().Be("ShortText", because: "frontend-compatible aliases should be projected for supported designer text subtypes");
 		result.DefaultValueSource.Should().Be("Const", because: "the structured result should preserve the explicit default source");
 		result.DefaultValue.Should().Be("Vehicle", because: "default values should remain available in the structured result");
+		result.DefaultValueConfig.Should().NotBeNull(
+			because: "column readback should also expose the structured default value config");
+		result.DefaultValueConfig!.Source.Should().Be("Const",
+			because: "the structured default value config should preserve the explicit default source");
+		result.DefaultValueConfig.Value.Should().Be("Vehicle",
+			because: "the structured default value config should preserve the constant payload");
 		result.MultilineText.Should().BeTrue(because: "text-specific flags should be projected");
 	}
 
@@ -503,6 +509,38 @@ internal class RemoteEntitySchemaColumnManagerTests
 		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "Name");
 		savedColumn.DefValue.Should().BeNull(
 			because: "explicit None should clear the persisted default value instead of preserving stale data");
+	}
+
+	[Test]
+	[Description("Applies structured default-value-config metadata so system-value defaults can be set without legacy shorthand fields.")]
+	public void ModifyColumn_AppliesStructuredDefaultValueConfig() {
+		// Arrange
+		EntitySchemaColumnDto startDateColumn = CreateTextColumn("UsrStartDate", NameColumnUId);
+		startDateColumn.DataValueType = 7;
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), startDateColumn]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "UsrStartDate",
+			DefaultValueConfig = new EntitySchemaDefaultValueConfig {
+				Source = "SystemValue",
+				ValueSource = "CurrentDateTime"
+			}
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrStartDate");
+		savedColumn.DefValue.Should().NotBeNull(
+			because: "structured default value configs should create designer default value metadata");
+		savedColumn.DefValue!.ValueSourceType.Should().Be(EntitySchemaColumnDefSource.SystemValue,
+			because: "the structured config source should map to the designer system-value source");
+		savedColumn.DefValue.ValueSource.Should().Be("CurrentDateTime",
+			because: "the structured config value-source should be preserved");
 	}
 
 	[Test]

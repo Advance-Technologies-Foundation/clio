@@ -121,6 +121,34 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Maps structured default-value-config payloads onto batch mutation options without flattening them into legacy shorthand fields.")]
+	public void Execute_Maps_DefaultValueConfig_WhenBuildingMutations() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = [
+				"""{"action":"modify","column-name":"UsrStartDate","default-value-config":{"source":"SystemValue","value-source":"CurrentDateTime"}}"""
+			]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "structured default value configs should remain valid batch operations");
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Count() == 1
+			&& mutations.ElementAt(0).ColumnName == "UsrStartDate"
+			&& mutations.ElementAt(0).DefaultValueConfig != null
+			&& mutations.ElementAt(0).DefaultValueConfig!.Source == "SystemValue"
+			&& mutations.ElementAt(0).DefaultValueConfig!.ValueSource == "CurrentDateTime"
+			&& mutations.ElementAt(0).DefaultValueSource == null
+			&& mutations.ElementAt(0).DefaultValue == null));
+	}
+
+	[Test]
 	[Description("Rejects malformed JSON operation payloads with a clear error before executing any mutation.")]
 	public void Execute_ReturnsFailure_WhenOperationJsonIsInvalid() {
 		// Arrange
