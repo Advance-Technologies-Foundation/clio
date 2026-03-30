@@ -15,6 +15,7 @@ internal static class EntitySchemaDesignerSupport
 	private const string DateTimeTypeName = "datetime";
 	private const string FileTypeName = "file";
 	private const string ImageTypeName = "image";
+	private const string SecureTextTypeName = "secureText";
 
 	internal static readonly Dictionary<string, int> SupportedDataValueTypes =
 		new(StringComparer.OrdinalIgnoreCase) {
@@ -31,6 +32,7 @@ internal static class EntitySchemaDesignerSupport
 			[BinaryTypeName] = 13,
 			[ImageTypeName] = 14,
 			[FileTypeName] = 25,
+			[SecureTextTypeName] = 24,
 			["integer"] = 4,
 			[DateTimeTypeName] = 7,
 			["lookup"] = 10,
@@ -56,7 +58,10 @@ internal static class EntitySchemaDesignerSupport
 			["blob"] = BinaryTypeName,
 			["float"] = "decimal2",
 			["date"] = DateTimeTypeName,
-			["time"] = DateTimeTypeName
+			["time"] = DateTimeTypeName,
+			["encrypted"] = SecureTextTypeName,
+			["securetext"] = SecureTextTypeName,
+			["password"] = SecureTextTypeName
 		};
 
 	private static readonly HashSet<int> TextDataValueTypes = [
@@ -284,6 +289,7 @@ internal static class EntitySchemaDesignerSupport
 			13 => "Binary",
 			14 => "Image",
 			16 => "ImageLookup",
+			24 => "SecureText",
 			25 => "File",
 			27 => "ShortText",
 			28 => "MediumText",

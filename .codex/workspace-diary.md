@@ -1289,6 +1289,19 @@ Discovery: Targeted verification passed cleanly: `dotnet test clio.tests/clio.te
 Files: clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, clio/docs/commands/mcp-server.md, clio.tests/Command/McpServer/ApplicationToolTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, /Users/a.kravchuk/Projects/ai-driven-app-creation/scripts/mcp_client.py, /Users/a.kravchuk/Projects/ai-driven-app-creation/tests/test_mcp_client.py, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/essentials.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/mcp-application-tools-reference.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/docs/mcp-testing-guide.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/agents/03-implementation-plan.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/agents/04-implementation.md, .codex/workspace-diary.md
 Impact: MCP callers now have one unambiguous rule: `application-create` creates the scalar app shell only, while all localized schema and column labels belong to the explicit localization-map entity-schema tools. This avoids leaking the schema contract into `CreateApp` and prevents orchestrators from inventing unsupported localization fields on app creation.
 
+## 2026-03-27 14:18 – Document SecureText column type aliases
+Context: Review feedback on the Password column change noted that CLI help and GitHub command docs still omitted the new `SecureText` / `Encrypted` / `Password` type values for entity-schema commands.
+Decision: Updated the command-doc surfaces for `create-entity-schema`, `modify-entity-schema-column`, and the shared `update-entity-schema` batch contract, and aligned the entity-schema MCP prompt text with the same alias set.
+Discovery: The MCP tool descriptions in `EntitySchemaTool.cs` were already correct; the stale discoverability gap was in CLI help, markdown docs, `Commands.md`, and prompt guidance only.
+Files: clio/help/en/create-entity-schema.txt, clio/help/en/modify-entity-schema-column.txt, clio/help/en/update-entity-schema.txt, clio/docs/commands/create-entity-schema.md, clio/docs/commands/modify-entity-schema-column.md, clio/docs/commands/update-entity-schema.md, clio/Commands.md, clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, .codex/workspace-diary.md
+Impact: Users and MCP callers can now discover the accepted secure-text aliases consistently across `-H`, GitHub docs, command index text, and entity-schema prompt guidance.
+
+## 2026-03-27 14:40 – Align single-column MCP prompt with SecureText aliases
+Context: Follow-up review noted that `EntitySchemaPrompt.ModifyEntitySchemaColumn` still advertised only `Binary` / `Image` / `File` / `Blob`, even after the create and batch-update MCP guidance was updated for secure-text aliases.
+Decision: Updated the single-column modify prompt to mention `SecureText` plus `Encrypted` / `Password` aliases so all entity-schema MCP mutation prompts describe the same accepted type set.
+Discovery: The underlying MCP argument contract in `ColumnModificationArgsBase` was already correct, so the gap was prompt guidance only.
+Files: clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, .codex/workspace-diary.md
+Impact: MCP callers that rely on prompt text for `modify-entity-schema-column` now receive the same secure-text guidance as `create-entity-schema` and `update-entity-schema`.
 ## 2026-03-27 16:40 – Add workspace skill install, update, and delete flows
 Context: User requested implementation of workspace-local skill management with CLI commands, MCP tools, docs, specs, and tests.
 Decision: Added `install-skills`, `update-skill`, and `delete-skill` commands backed by a DI-managed skill service that resolves local/git repositories, tracks managed installs in `.agents/skills/.clio-managed.json`, and versions updates by repository HEAD commit hash. Added matching MCP tools/prompts plus command docs/spec files.
