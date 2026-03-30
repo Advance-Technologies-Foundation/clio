@@ -2,18 +2,21 @@ COMMAND TYPE
     Workspace commands
 
 NAME
-    update-skill - Update managed workspace-local skills from a repository
+    update-skill - Update managed skills from a repository
 
 DESCRIPTION
-    update-skill refreshes clio-managed skills in the current workspace
-    when the source repository HEAD commit hash changed.
+    update-skill refreshes clio-managed skills in the selected scope when the
+    source repository HEAD commit hash changed.
 
-    The command must be executed from inside a clio workspace directory
-    (a directory containing `.clio/workspaceSettings.json`, or any child folder
-    below it).
+    With --scope workspace, the command must be executed from inside a clio
+    workspace directory (a directory containing `.clio/workspaceSettings.json`,
+    or any child folder below it).
 
-    Managed skills are tracked in `.agents/skills/.clio-managed.json`.
-    update-skill only operates on skills recorded in that manifest.
+    With --scope user, the command can run from any directory. Clio resolves
+    the agent home from `CODEX_HOME` when it is set, or falls back to `~/.codex`.
+
+    Managed skills are tracked in the selected scope manifest.
+    update-skill only operates on skills recorded there.
 
     By default, clio uses the bootstrap skills repository:
         https://creatio.ghe.com/engineering/bootstrap-composable-app-starter-kit
@@ -34,12 +37,21 @@ OPTIONS
     --repo                              Optional local repository path or git URL.
                                         When omitted, clio uses the default bootstrap skills repository.
 
+    --scope                             Skill target scope: workspace or user.
+                                        Defaults to workspace.
+
 EXAMPLES
     Update all managed skills from the default bootstrap repository:
         clio update-skill
+
+    Update all managed skills in user scope:
+        clio update-skill --scope user
 
     Update one managed skill from the default bootstrap repository:
         clio update-skill --skill my-skill
 
     Update all managed skills from a local repository checkout:
         clio update-skill --repo C:\Repos\bootstrap-composable-app-starter-kit
+
+    Update one managed skill in user scope from a local repository checkout:
+        clio update-skill --scope user --repo C:\Repos\bootstrap-composable-app-starter-kit --skill my-skill

@@ -13,9 +13,9 @@ public sealed class ToolContractGetTool {
 	internal const string ToolName = "tool-contract-get";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Returns the authoritative clio MCP executable contract for app-generation tools, including parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints.")]
+	[Description("Returns the authoritative clio MCP executable contract for discovery, inspection, and mutation tools, including parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints.")]
 	public ToolContractGetResponse GetToolContracts(
-		[Description("Parameters: tool-names (optional array of tool names). Omit to return all app-generation tool contracts.")]
+		[Description("Parameters: tool-names (optional array of tool names). Omit to return the canonical clio MCP contract set.")]
 		[Required]
 		ToolContractGetArgs args) {
 		return ToolContractCatalog.GetContracts(args.ToolNames);
@@ -24,7 +24,7 @@ public sealed class ToolContractGetTool {
 
 public sealed record ToolContractGetArgs(
 	[property: JsonPropertyName("tool-names")]
-	[property: Description("Optional array of tool names. Omit to return all app-generation tool contracts.")]
+	[property: Description("Optional array of tool names. Omit to return the canonical clio MCP contract set.")]
 	IReadOnlyList<string>? ToolNames = null
 );
 
@@ -197,7 +197,7 @@ internal static class ToolContractCatalog {
 			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete()
 		};
 
-	private static readonly string[] AppGenerationToolNames = [
+	private static readonly string[] CanonicalToolNames = [
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationGetInfoTool.ApplicationGetInfoToolName,
 		ApplicationGetListTool.ApplicationGetListToolName,
@@ -223,7 +223,7 @@ internal static class ToolContractCatalog {
 		if (toolNames is null || toolNames.Count == 0) {
 			return new ToolContractGetResponse(
 				true,
-				AppGenerationToolNames.Select(name => Contracts[name]).ToArray());
+				CanonicalToolNames.Select(name => Contracts[name]).ToArray());
 		}
 		List<string> normalizedNames = [];
 		for (int index = 0; index < toolNames.Count; index++) {
@@ -291,11 +291,11 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildToolContractGet() {
 		return new ToolContractDefinition(
 			ToolContractGetTool.ToolName,
-			"Returns the authoritative executable contract for clio MCP app-generation tools.",
+			"Returns the authoritative executable contract for canonical clio MCP discovery, inspection, and mutation tools.",
 			new ToolInputSchemaContract(
 				[],
 				[
-					Field("tool-names", ArrayType, "Optional array of tool names. Omit to return all app-generation tool contracts.")
+					Field("tool-names", ArrayType, "Optional array of tool names. Omit to return the canonical clio MCP contract set.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -310,12 +310,12 @@ internal static class ToolContractCatalog {
 			[],
 			[],
 			[
-				Example("Return all app-generation tool contracts", new Dictionary<string, object?>()),
-				Example("Return the contract for application-create and schema-sync", new Dictionary<string, object?> {
-					["tool-names"] = new[] { "application-create", "schema-sync" }
+				Example("Return the canonical clio MCP contract set", new Dictionary<string, object?>()),
+				Example("Return the contract for application-get-list, page-update, and modify-entity-schema-column", new Dictionary<string, object?> {
+					["tool-names"] = new[] { "application-get-list", "page-update", "modify-entity-schema-column" }
 				})
 			],
-			Flow(["tool-contract-get"], "Use before execution when the caller needs authoritative MCP metadata."),
+			Flow(["tool-contract-get"], "Use before execution when the caller needs authoritative clio MCP metadata or must choose the next discovery, inspection, or mutation step."),
 			[],
 			[]);
 	}
@@ -323,7 +323,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationCreate() {
 		return new ToolContractDefinition(
 			ApplicationCreateTool.ApplicationCreateToolName,
-			"Creates a Creatio application and returns the created application context envelope.",
+			"Creates a Creatio application and returns installed application identity plus the created application context envelope.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, "name", "code", TemplateCodeFieldName, IconBackgroundFieldName],
 				[
@@ -362,6 +362,10 @@ internal static class ToolContractCatalog {
 				Field("package-u-id", StringType, "Primary package identifier."),
 				Field(PackageNameFieldName, StringType, "Primary package name."),
 				Field("canonical-main-entity-name", StringType, "Canonical main entity name."),
+				Field("application-id", StringType, "Installed application identifier."),
+				Field("application-name", StringType, "Installed application display name."),
+				Field("application-code", StringType, "Installed application code."),
+				Field("application-version", StringType, "Installed application version."),
 				Field("entities", ArrayType, "Application entities."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
@@ -405,7 +409,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationGetInfo() {
 		return new ToolContractDefinition(
 			ApplicationGetInfoTool.ApplicationGetInfoToolName,
-			"Returns the current package and entity metadata for an installed application.",
+			"Returns installed application identity plus current package and entity metadata so callers can inspect the right app before mutating it.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
@@ -426,6 +430,10 @@ internal static class ToolContractCatalog {
 				Field("package-u-id", StringType, "Primary package identifier."),
 				Field(PackageNameFieldName, StringType, "Primary package name."),
 				Field("canonical-main-entity-name", StringType, "Canonical main entity name."),
+				Field("application-id", StringType, "Installed application identifier."),
+				Field("application-name", StringType, "Installed application display name."),
+				Field("application-code", StringType, "Installed application code."),
+				Field("application-version", StringType, "Installed application version."),
 				Field("entities", ArrayType, "Application entities."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
@@ -438,7 +446,12 @@ internal static class ToolContractCatalog {
 					[AppCodeFieldName] = ExamplePackageName
 				})
 			],
-			Flow([ApplicationGetInfoTool.ApplicationGetInfoToolName], "Refresh once after schema-sync completes."),
+			Flow(
+				[
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName
+				],
+				"Use after application-get-list when the target app is not fully known, or refresh again after mutations when app context must be re-read."),
 			[],
 			[]);
 	}
@@ -446,7 +459,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationGetList() {
 		return new ToolContractDefinition(
 			ApplicationGetListTool.ApplicationGetListToolName,
-			"Lists installed applications from the target Creatio environment.",
+			"Lists installed applications from the target Creatio environment so the caller can discover the right existing app first.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
@@ -614,7 +627,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageList() {
 		return new ToolContractDefinition(
 			PageListTool.ToolName,
-			"Lists Freedom UI pages for the requested package.",
+			"Lists Freedom UI pages for the requested package with package and parent schema context so the caller can discover candidate page schemas before inspection or mutation.",
 			new ToolInputSchemaContract(
 				[],
 				EnvironmentOrExplicitConnectionFields(
@@ -628,7 +641,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field(PagesFieldName, ArrayType, "Discovered pages."),
+				Field(PagesFieldName, ArrayType, "Discovered pages with schema, package, and parent schema context."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -644,15 +657,30 @@ internal static class ToolContractCatalog {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
-			Flow([PageListTool.ToolName], "Use before page-get when the exact page schema names are not yet known."),
-			[],
+			Flow(
+				[
+					PageListTool.ToolName,
+					PageGetTool.ToolName,
+					PageUpdateTool.ToolName
+				],
+				"Use when the page schema is not yet known and the workflow is a minimal single-page edit."),
+			[
+				Flow(
+					[
+						PageListTool.ToolName,
+						PageGetTool.ToolName,
+						PageSyncTool.ToolName,
+						PageGetTool.ToolName
+					],
+					"Fallback when the workflow needs multi-page save orchestration or explicit page read-back verification.")
+			],
 			[]);
 	}
 
 	private static ToolContractDefinition BuildPageGet() {
 		return new ToolContractDefinition(
 			PageGetTool.ToolName,
-			"Reads a Freedom UI page bundle plus the raw editable body.",
+			"Reads a Freedom UI page bundle plus the raw editable body so the caller can inspect before mutating.",
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
@@ -681,8 +709,23 @@ internal static class ToolContractCatalog {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
-			Flow([PageGetTool.ToolName], "Read before any page-editing workflow."),
-			[],
+			Flow(
+				[
+					PageListTool.ToolName,
+					PageGetTool.ToolName,
+					PageUpdateTool.ToolName,
+					PageGetTool.ToolName
+				],
+				"Use after page-list to inspect the raw body before a minimal page edit and to read back after saving when needed."),
+			[
+				Flow(
+					[
+						PageGetTool.ToolName,
+						ComponentInfoTool.ToolName,
+						PageUpdateTool.ToolName
+					],
+					"Call component-info before editing when bundle.viewConfig contains unfamiliar crt.* component types.")
+			],
 			[]);
 	}
 
@@ -758,7 +801,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildUpdateEntity() {
 		return new ToolContractDefinition(
 			UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
-			"Applies explicit add, modify, or remove column operations to an entity schema.",
+			"Applies explicit add, modify, or remove column operations to an entity schema when the target schema is already known.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName, OperationsFieldName],
 				EnvironmentPackageSchemaFields(
@@ -787,9 +830,24 @@ internal static class ToolContractCatalog {
 					}
 				})
 			],
-			PreferSchemaSyncFlow(),
-			[],
-			PreferSchemaSyncDeprecations(UpdateEntitySchemaTool.UpdateEntitySchemaToolName));
+			Flow(
+				[
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+					UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName
+				],
+				"Use for explicit multi-column mutations within one existing schema when the caller wants read-before-write and read-back verification."),
+			[
+				PreferSchemaSyncFlow(),
+				Flow(
+					[
+						GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
+						ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+						GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName
+					],
+					"Fallback when the requested change is only one isolated column mutation.")
+			],
+			[]);
 	}
 
 	private static ToolContractDefinition BuildCreateDataBindingDb() {
@@ -892,7 +950,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildGetEntitySchemaProperties() {
 		return new ToolContractDefinition(
 			GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
-			"Returns a structured summary of entity schema metadata.",
+			"Returns a structured summary of entity schema metadata for read-before-write inspection and read-back verification.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName],
 				EnvironmentPackageSchemaFields(EntitySchemaNameDescription)),
@@ -910,15 +968,29 @@ internal static class ToolContractCatalog {
 					[SchemaNameFieldName] = ExamplePackageName
 				})
 			],
-			Flow([GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName], "Use for machine-readable schema verification after mutations."),
-			[],
+			Flow(
+				[
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+					ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName
+				],
+				"Use to inspect an existing schema before mutation and to verify the deployed shape after a minimal change."),
+			[
+				Flow(
+					[
+						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+						SchemaSyncTool.ToolName,
+						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName
+					],
+					"Fallback when the schema change is part of a larger ordered schema-sync workflow.")
+			],
 			[]);
 	}
 
 	private static ToolContractDefinition BuildGetEntitySchemaColumnProperties() {
 		return new ToolContractDefinition(
 			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
-			"Returns detailed metadata for one deployed entity schema column.",
+			"Returns detailed metadata for one deployed entity schema column for read-before-write inspection and read-back verification.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName, ColumnNameFieldName],
 				EnvironmentPackageSchemaFields(
@@ -940,15 +1012,29 @@ internal static class ToolContractCatalog {
 					[ColumnNameFieldName] = "UsrStatus"
 				})
 			],
-			Flow([GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName], "Use for machine-readable verification of one deployed column."),
-			[],
+			Flow(
+				[
+					GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
+					ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+					GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName
+				],
+				"Use when the change is scoped to one existing column and the caller wants read-before-write plus read-back verification."),
+			[
+				Flow(
+					[
+						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+						SchemaSyncTool.ToolName,
+						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName
+					],
+					"Fallback when the requested work expands into a larger ordered schema-sync plan.")
+			],
 			[]);
 	}
 
 	private static ToolContractDefinition BuildModifyEntitySchemaColumn() {
 		return new ToolContractDefinition(
 			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
-			"Adds, modifies, or removes a single entity schema column directly.",
+			"Adds, modifies, or removes one entity schema column directly for minimal existing-schema edits.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName, ActionFieldName, ColumnNameFieldName],
 				EnvironmentPackageSchemaFields(
@@ -960,14 +1046,16 @@ internal static class ToolContractCatalog {
 					Field(DescriptionLocalizationsFieldName, ObjectType, "Optional localization map."),
 					Field(ReferenceSchemaNameFieldName, StringType, "Optional lookup target."),
 					Field("required", BooleanType, "Optional required flag."),
-					Field("default-value-source", StringType, "Optional default source."),
-					Field("default-value", StringType, "Optional default value."))),
+					Field("default-value-source", StringType, "Legacy optional default source shorthand. Supports only Const or None."),
+					Field("default-value", StringType, "Legacy optional default value shorthand for Const."),
+					Field("default-value-config", ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
 				ColumnNameParameterAlias(),
 				ReferenceSchemaNameParameterAlias(),
 				DefaultValueParameterAlias(),
+				DefaultValueConfigParameterAlias(),
 				DefaultValueSourceParameterAlias(),
 				TitleParameterAlias(),
 				CaptionParameterAlias(),
@@ -983,11 +1071,37 @@ internal static class ToolContractCatalog {
 					["type"] = "Text",
 					[TitleLocalizationsFieldName] = LocalizationMap("Short Code"),
 					["required"] = true
+				}),
+				Example("Set a system-value default on one column", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[SchemaNameFieldName] = ExamplePackageName,
+					[ActionFieldName] = "modify",
+					[ColumnNameFieldName] = "UsrStartDate",
+					["default-value-config"] = new Dictionary<string, object?> {
+						["source"] = "SystemValue",
+						["value-source"] = "CurrentDateTime"
+					}
 				})
 			],
-			PreferSchemaSyncFlow(),
-			[],
-			PreferSchemaSyncDeprecations(ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName));
+			Flow(
+				[
+					GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
+					ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+					GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName
+				],
+				"Use for a single-column mutation when the caller can inspect current metadata first and verify the column again after saving."),
+			[
+				Flow(
+					[
+						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+						ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName
+					],
+					"Fallback when schema-level verification is more useful than column-level read-back."),
+				PreferSchemaSyncFlow()
+			],
+			[]);
 	}
 
 	private static ToolContractDefinition BuildComponentInfo() {
@@ -1030,7 +1144,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageUpdate() {
 		return new ToolContractDefinition(
 			PageUpdateTool.ToolName,
-			"Saves a full Freedom UI page body for one page.",
+			"Saves a full Freedom UI page body for one page as the minimal page-mutation path.",
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName, "body"],
 				EnvironmentOrExplicitConnectionFields(
@@ -1066,18 +1180,32 @@ internal static class ToolContractCatalog {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
-			PreferPageSyncFlow(),
+			Flow(
+				[
+					PageGetTool.ToolName,
+					PageUpdateTool.ToolName,
+					PageGetTool.ToolName
+				],
+				"Use for a minimal single-page edit after reading the raw body with page-get and read back with page-get when verification is needed."),
 			[
 				Flow(
 					[
+						PageListTool.ToolName,
 						PageGetTool.ToolName,
-						PageUpdateTool.ToolName,
 						PageUpdateTool.ToolName,
 						PageGetTool.ToolName
 					],
-					"Fallback when the flow must dry-run and save one page explicitly.")
+					"Fallback when the schema name must be discovered first before a single-page edit."),
+				Flow(
+					[
+						PageListTool.ToolName,
+						PageGetTool.ToolName,
+						PageSyncTool.ToolName,
+						PageGetTool.ToolName
+					],
+					"Fallback when the workflow expands into a multi-page save or ordered page-sync plan.")
 			],
-			PreferPageSyncDeprecations());
+			[]);
 	}
 
 	private static ToolContractDefinition BuildApplicationDelete() {
@@ -1189,6 +1317,11 @@ internal static class ToolContractCatalog {
 			"Use 'default-value' instead of 'defaultValue'.");
 	}
 
+	private static ToolContractAlias DefaultValueConfigParameterAlias() {
+		return Alias(ParameterScope, "default-value-config", "defaultValueConfig", RejectedStatus,
+			"Use 'default-value-config' instead of 'defaultValueConfig'.");
+	}
+
 	private static ToolContractAlias DefaultValueSourceParameterAlias() {
 		return Alias(ParameterScope, "default-value-source", "defaultValueSource", RejectedStatus,
 			"Use 'default-value-source' instead of 'defaultValueSource'.");
@@ -1240,20 +1373,6 @@ internal static class ToolContractCatalog {
 				$"Prefer schema-sync as the canonical entity mutation path. Keep {toolName} for explicit fallback or isolated operations.",
 				[
 					SchemaSyncTool.ToolName
-				])
-		];
-	}
-
-	private static ToolFlowHint PreferPageSyncFlow() {
-		return Flow([PageSyncTool.ToolName], "Prefer page-sync as the canonical page write path.");
-	}
-
-	private static IReadOnlyList<ToolDeprecation> PreferPageSyncDeprecations() {
-		return [
-			new ToolDeprecation(
-				"Prefer page-sync as the canonical page write path. Keep page-update for explicit fallback or targeted single-page saves.",
-				[
-					PageSyncTool.ToolName
 				])
 		];
 	}

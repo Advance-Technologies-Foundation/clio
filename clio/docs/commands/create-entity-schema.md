@@ -4,7 +4,7 @@
 
 Creates a remote entity schema inside an existing Creatio package by calling `EntitySchemaDesignerService`. This command is intended for environment-side schema creation from `clio`, not for generating local package files.
 
-Current `clio` entity-schema commands are also the supported ADAC integration surface. Keep using `create-entity-schema` and `modify-entity-schema-column`; frontend-only aliases such as `entity.create` or `entity.update` are conceptual only and are not the direct `clio` API.
+Current `clio` entity-schema commands are part of the canonical `clio` MCP contract. Keep using `create-entity-schema` and `modify-entity-schema-column`; frontend-only aliases such as `entity.create` or `entity.update` are conceptual only and are not the direct `clio` API.
 
 ## Usage
 
@@ -28,7 +28,7 @@ clio create-entity-schema [options]
 |----------|-------------|---------|
 | `--parent` | Parent schema name | `--parent BaseEntity` |
 | `--extend-parent` | Create a replacement schema. Requires `--parent` | `--extend-parent` |
-| `--column` | Column definition in format `<name>:<type>[:<title>[:<refSchema>]]` or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, `default-value-source`, `default-value`. Repeat the option for multiple columns. | `--column "Name:Text:Name"` |
+| `--column` | Column definition in format `<name>:<type>[:<title>[:<refSchema>]]` or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, legacy `default-value-source` / `default-value`, or structured `default-value-config`. Repeat the option for multiple columns. | `--column "Name:Text:Name"` |
 
 ### Environment Configuration
 
@@ -50,6 +50,7 @@ clio create-entity-schema [options]
 - `Binary`
 - `Image`
 - `File`
+- `SecureText`
 - `Integer`
 - `Float`
 - `Boolean`
@@ -58,7 +59,7 @@ clio create-entity-schema [options]
 - `Time`
 - `Lookup` with required reference schema name
 
-The command also accepts `Blob` as an alias for `Binary`, plus designer-native text and decimal variants such as `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`, `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`, `Currency0`, `Currency1`, `Currency2`, and `Currency3`.
+The command also accepts `Blob` as an alias for `Binary`, `Encrypted` and `Password` as aliases for `SecureText`, plus designer-native text and decimal variants such as `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`, `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`, `Currency0`, `Currency1`, `Currency2`, and `Currency3`.
 
 ## Examples
 
@@ -91,6 +92,13 @@ clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Veh
   --column "{\"name\":\"Status\",\"type\":\"ShortText\",\"title\":\"Status\",\"required\":true,\"default-value-source\":\"Const\",\"default-value\":\"Draft\"}"
 ```
 
+### Create a Column with Structured Default Value Config
+
+```bash
+clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" \
+  --column "{\"name\":\"UsrStartDate\",\"type\":\"DateTime\",\"title\":\"Start date\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
+```
+
 ### Create a Schema with Inheritance
 
 ```bash
@@ -113,6 +121,7 @@ clio create-entity-schema -e dev --package Custom --name UsrAccount --title "Acc
 - For schemas without a parent, `Id:Guid` is created automatically if no Guid column is supplied.
 - If no primary display column is defined, the first text-like column is used.
 - `Binary`, `Image`, and `File` columns do not support `default-value` or `default-value-source: Const`.
+- Prefer `default-value-config` for `Settings`, `SystemValue`, or `Sequence`; keep `default-value-source` / `default-value` as shorthand only for `Const` and `None`.
 - The command accepts frontend-style aliases such as `ShortText`, `Float`, `Date`, and `Time`, and maps them to the closest supported designer types.
 - Repeat `--column` for multiple entries; semicolons inside JSON payloads are treated as content, not separators.
 - After `SaveSchema`, the schema is reloaded immediately. The command treats save as failed if the schema cannot be read back.

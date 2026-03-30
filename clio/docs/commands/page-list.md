@@ -4,6 +4,7 @@
 `page-list` lists Freedom UI page schemas available in a Creatio environment.
 
 Use this command to discover candidate schema names before calling `page-get`.
+The response also includes package ownership and direct parent schema names so AI clients can choose the right page before opening it.
 
 ## Usage
 ```bash
@@ -35,7 +36,8 @@ clio page-list [options]
     {
       "name": "UsrTodo_FormPage",
       "uId": "guid",
-      "packageName": "UsrApp"
+      "packageName": "UsrApp",
+      "parentSchemaName": "PageWithTabsFreedomTemplate"
     }
   ],
   "error": null

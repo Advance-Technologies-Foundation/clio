@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -181,6 +182,45 @@ public class CreateEntitySchemaToolTests {
 			because: "structured serialization should preserve the requested default source");
 		document.RootElement.GetProperty("default-value").GetString().Should().Be("Draft",
 			because: "structured serialization should preserve the default value");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Serializes structured default-value-config metadata when the MCP caller supplies non-legacy default settings.")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Serialize_DefaultValueConfig_As_Json() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateEntitySchemaCommand defaultCommand = new();
+		FakeCreateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+			"MyPackage",
+			"UsrVehicle",
+			Localizations("Vehicle"),
+			"docker_fix2",
+			Columns: [
+				new CreateEntitySchemaColumnArgs("UsrStartDate", "DateTime", Localizations("Start date")) {
+					DefaultValueConfig = new EntitySchemaDefaultValueConfig {
+						Source = "SystemValue",
+						ValueSource = "CurrentDateTime"
+					}
+				}
+			]));
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "structured default-value-config should be a valid MCP create-column payload");
+		string serializedColumn = resolvedCommand.CapturedOptions!.Columns!.Single();
+		using JsonDocument document = JsonDocument.Parse(serializedColumn);
+		document.RootElement.GetProperty("default-value-config").GetProperty("source").GetString().Should().Be("SystemValue",
+			because: "structured serialization should preserve the default source name");
+		document.RootElement.GetProperty("default-value-config").GetProperty("value-source").GetString().Should().Be("CurrentDateTime",
+			because: "structured serialization should preserve the system value source");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 

@@ -14,6 +14,10 @@ internal static class ApplicationToolResultMapper {
 			result.PackageUId,
 			result.PackageName,
 			canonicalMainEntityName,
+			result.ApplicationId,
+			result.ApplicationName,
+			result.ApplicationCode,
+			result.ApplicationVersion,
 			entities
 				.Select(entity => new ApplicationEntityResult(
 					entity.UId,

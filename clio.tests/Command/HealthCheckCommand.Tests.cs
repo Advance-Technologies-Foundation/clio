@@ -13,11 +13,9 @@ public class HealthCheckCommandTestCase
 	private EnvironmentSettings _environmentSettings;
 	private IApplicationClient _applicationClient;
 	private HealthCheckCommand _hcCommand;
-	private HealthCheckOptions _options;
 	[SetUp]
 	public void SetUp()
 	{
-			
 		_environmentSettings = new EnvironmentSettings
 		{
 			Login = "Test",
@@ -28,27 +26,72 @@ public class HealthCheckCommandTestCase
 		};
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_hcCommand = new HealthCheckCommand(_applicationClient, _environmentSettings);
-		_options = Substitute.For<HealthCheckOptions>();
 	}
 
 
 	[Test, Category("Unit")]
 	public void HealthCheckCommand_FormsCorrectApplicationRequest_WhenWebHostIsTrue() {
-			
-		_options.WebHost = "true";
-		_hcCommand.Execute(_options);
+		HealthCheckOptions options = new() { WebHost = "true" };
+		_hcCommand.Execute(options);
 		_applicationClient.Received(1).ExecuteGetRequest(
-			_environmentSettings.Uri + "/0/api/HealthCheck/Ping",Timeout.Infinite);
+			_environmentSettings.Uri + "/0/api/HealthCheck/Ping",
+			options.TimeOut,
+			options.RetryCount,
+			options.RetryDelay);
 	}
 
 
 	[Test, Category("Unit")]
 	public void HealthCheckCommand_FormsCorrectApplicationRequest_WhenWebAppIsTrue()
 	{
-		_options.WebApp = "true";
-		_hcCommand.Execute(_options);
+		HealthCheckOptions options = new() { WebApp = "true" };
+		_hcCommand.Execute(options);
 		_applicationClient.Received(1).ExecuteGetRequest(
-			_environmentSettings.Uri + "/api/HealthCheck/Ping", Timeout.Infinite);
+			_environmentSettings.Uri + "/api/HealthCheck/Ping",
+			options.TimeOut,
+			options.RetryCount,
+			options.RetryDelay);
+	}
+
+	[Test, Category("Unit")]
+	public void HealthCheckCommand_UsesConfiguredFrameworkRoute_WhenNoFlagsProvided()
+	{
+		HealthCheckOptions options = new();
+		_hcCommand.Execute(options);
+		_applicationClient.Received(1).ExecuteGetRequest(
+			_environmentSettings.Uri + "/0/api/HealthCheck/Ping",
+			options.TimeOut,
+			options.RetryCount,
+			options.RetryDelay);
+	}
+
+	[Test, Category("Unit")]
+	public void HealthCheckCommand_UsesConfiguredNetCoreRoute_WhenNoFlagsProvided()
+	{
+		_environmentSettings.IsNetCore = true;
+		_hcCommand = new HealthCheckCommand(_applicationClient, _environmentSettings);
+		HealthCheckOptions options = new();
+		_hcCommand.Execute(options);
+		_applicationClient.Received(1).ExecuteGetRequest(
+			_environmentSettings.Uri + "/api/HealthCheck/Ping",
+			options.TimeOut,
+			options.RetryCount,
+			options.RetryDelay);
+	}
+
+	[Test, Category("Unit")]
+	public void HealthCheckCommand_ReturnsFailure_WhenRequestThrows()
+	{
+		HealthCheckOptions options = new();
+		_applicationClient
+			.When(client => client.ExecuteGetRequest(
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>()))
+			.Do(_ => throw new System.Net.WebException("boom"));
+		int result = _hcCommand.Execute(options);
+		Assert.That(result, Is.EqualTo(1));
 	}
 
 	[Test, Category("Unit")]

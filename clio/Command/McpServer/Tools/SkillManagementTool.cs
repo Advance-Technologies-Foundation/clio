@@ -11,7 +11,7 @@ using IFileSystem = System.IO.Abstractions.IFileSystem;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// Shared workspace-path validation and current-directory execution flow for local workspace skill tools.
+/// Shared scope-aware execution flow for skill management MCP tools.
 /// </summary>
 public abstract class WorkspaceSkillToolBase<TOptions>(
 	Command<TOptions> command,
@@ -19,6 +19,16 @@ public abstract class WorkspaceSkillToolBase<TOptions>(
 	IFileSystem fileSystem)
 	: BaseTool<TOptions>(command, logger) {
 	private readonly IFileSystem _fileSystem = fileSystem;
+
+	protected CommandExecutionResult ExecuteForScope(string scopeValue, string workspacePath, Func<CommandExecutionResult> execute) {
+		if (!SkillScopeParser.TryParse(scopeValue, out SkillScope scope, out string errorMessage)) {
+			return CreateFailureResult(errorMessage);
+		}
+
+		return scope == SkillScope.User
+			? execute()
+			: ExecuteInWorkspace(workspacePath, execute);
+	}
 
 	protected CommandExecutionResult ExecuteInWorkspace(string workspacePath, Func<CommandExecutionResult> execute) {
 		if (string.IsNullOrWhiteSpace(workspacePath)) {
@@ -91,17 +101,18 @@ public sealed class InstallSkillsTool(
 	internal const string ToolName = "install-skills";
 
 	/// <summary>
-	/// Installs new workspace-local skills from the selected repository.
+	/// Installs new managed skills into the selected scope from the selected repository.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-	[Description("Installs one or more new workspace-local skills into `.agents/skills` from a local repository path or git URL")]
+	[Description("Installs one or more new managed skills into workspace or user scope from a local repository path or git URL")]
 	public CommandExecutionResult InstallSkills(
 		[Description("Install-skills parameters")] [Required] InstallSkillsArgs args) {
 		InstallSkillsOptions options = new() {
 			Skill = args.SkillName,
-			Repo = args.Repo
+			Repo = args.Repo,
+			Scope = args.Scope
 		};
-		return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute(options));
+		return ExecuteForScope(args.Scope, args.WorkspacePath, () => InternalExecute(options));
 	}
 }
 
@@ -117,17 +128,18 @@ public sealed class UpdateSkillTool(
 	internal const string ToolName = "update-skill";
 
 	/// <summary>
-	/// Updates managed workspace-local skills when the source commit hash has changed.
+	/// Updates managed skills in the selected scope when the source commit hash has changed.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Updates one or more managed workspace-local skills in `.agents/skills` from a local repository path or git URL")]
+	[Description("Updates one or more managed skills in workspace or user scope from a local repository path or git URL")]
 	public CommandExecutionResult UpdateSkill(
 		[Description("Update-skill parameters")] [Required] UpdateSkillArgs args) {
 		UpdateSkillOptions options = new() {
 			Skill = args.SkillName,
-			Repo = args.Repo
+			Repo = args.Repo,
+			Scope = args.Scope
 		};
-		return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute(options));
+		return ExecuteForScope(args.Scope, args.WorkspacePath, () => InternalExecute(options));
 	}
 }
 
@@ -143,16 +155,17 @@ public sealed class DeleteSkillTool(
 	internal const string ToolName = "delete-skill";
 
 	/// <summary>
-	/// Deletes a managed workspace-local skill.
+	/// Deletes a managed skill from the selected scope.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
-	[Description("Deletes a managed workspace-local skill from `.agents/skills` in the selected workspace")]
+	[Description("Deletes a managed skill from workspace or user scope")]
 	public CommandExecutionResult DeleteSkill(
 		[Description("Delete-skill parameters")] [Required] DeleteSkillArgs args) {
 		DeleteSkillOptions options = new() {
-			Skill = args.SkillName
+			Skill = args.SkillName,
+			Scope = args.Scope
 		};
-		return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute(options));
+		return ExecuteForScope(args.Scope, args.WorkspacePath, () => InternalExecute(options));
 	}
 }
 
@@ -161,9 +174,12 @@ public sealed class DeleteSkillTool(
 /// </summary>
 public sealed record InstallSkillsArgs(
 	[property: JsonPropertyName("workspacePath")]
-	[property: Description("Absolute path to the local clio workspace")]
-	[property: Required]
-	string WorkspacePath,
+	[property: Description("Absolute path to the local clio workspace when scope is workspace")]
+	string WorkspacePath = null,
+
+	[property: JsonPropertyName("scope")]
+	[property: Description("Skill target scope: workspace or user")]
+	string Scope = SkillScopeParser.Workspace,
 
 	[property: JsonPropertyName("skillName")]
 	[property: Description("Optional specific skill name to install")]
@@ -179,9 +195,12 @@ public sealed record InstallSkillsArgs(
 /// </summary>
 public sealed record UpdateSkillArgs(
 	[property: JsonPropertyName("workspacePath")]
-	[property: Description("Absolute path to the local clio workspace")]
-	[property: Required]
-	string WorkspacePath,
+	[property: Description("Absolute path to the local clio workspace when scope is workspace")]
+	string WorkspacePath = null,
+
+	[property: JsonPropertyName("scope")]
+	[property: Description("Skill target scope: workspace or user")]
+	string Scope = SkillScopeParser.Workspace,
 
 	[property: JsonPropertyName("skillName")]
 	[property: Description("Optional specific managed skill name to update")]
@@ -196,13 +215,16 @@ public sealed record UpdateSkillArgs(
 /// MCP arguments for the <c>delete-skill</c> tool.
 /// </summary>
 public sealed record DeleteSkillArgs(
-	[property: JsonPropertyName("workspacePath")]
-	[property: Description("Absolute path to the local clio workspace")]
-	[property: Required]
-	string WorkspacePath,
-
 	[property: JsonPropertyName("skillName")]
 	[property: Description("Managed skill name to delete")]
 	[property: Required]
-	string SkillName
+	string SkillName,
+
+	[property: JsonPropertyName("scope")]
+	[property: Description("Skill target scope: workspace or user")]
+	string Scope = SkillScopeParser.Workspace,
+
+	[property: JsonPropertyName("workspacePath")]
+	[property: Description("Absolute path to the local clio workspace when scope is workspace")]
+	string WorkspacePath = null
 );

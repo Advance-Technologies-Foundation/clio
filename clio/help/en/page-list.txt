@@ -6,9 +6,9 @@ NAME
 
 DESCRIPTION
     The page-list command queries SysSchema for Freedom UI client schemas and
-    returns a JSON envelope with the matching page names, schema UIds, and
-    package names. Use this command to discover candidate schema names before
-    calling page-get.
+    returns a JSON envelope with the matching page names, schema UIds,
+    package names, and parent schema names. Use this command to discover
+    candidate schema names before calling page-get.
 
 SYNOPSIS
     clio page-list [options]

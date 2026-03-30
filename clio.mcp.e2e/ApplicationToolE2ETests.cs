@@ -92,6 +92,14 @@ public sealed class ApplicationToolE2ETests {
 			because: $"a valid application-get-info request should return structured package and entity metadata. Actual result: {DescribeCallResult(actResult.CallResult)}");
 		actResult.Result.Success.Should().BeTrue(
 			because: "successful info calls should return the core-style success envelope");
+		actResult.Result.ApplicationCode.Should().Be(appCode,
+			because: "application-get-info should echo the installed application code that was used to resolve the target app");
+		actResult.Result.ApplicationId.Should().NotBeNullOrWhiteSpace(
+			because: "application-get-info should return the installed application identifier for follow-up targeting");
+		actResult.Result.ApplicationName.Should().NotBeNullOrWhiteSpace(
+			because: "application-get-info should return the installed application display name");
+		actResult.Result.ApplicationVersion.Should().NotBeNullOrWhiteSpace(
+			because: "application-get-info should return the installed application version");
 		actResult.Result.PackageUId.Should().NotBeNullOrWhiteSpace(
 			because: "the application info response should include the primary package identifier");
 		actResult.Result.PackageName.Should().NotBeNullOrWhiteSpace(
@@ -239,6 +247,18 @@ public sealed class ApplicationToolE2ETests {
 			because: "successful application-create calls should return the created application's primary package name");
 		actResult.Result.CanonicalMainEntityName.Should().Be(applicationCode,
 			because: "application-create should surface the canonical main entity explicitly for MCP clients");
+		actResult.Result.ApplicationCode.Should().Be(applicationCode,
+			because: "application-create should return the created installed application code in the same envelope shape as application-get-info");
+		actResult.Result.ApplicationName.Should().Be(applicationName,
+			because: "application-create should return the created installed application display name");
+		actResult.Result.ApplicationId.Should().NotBeNullOrWhiteSpace(
+			because: "application-create should return the created installed application identifier");
+		ApplicationEntityEnvelope? canonicalMainEntity = actResult.Result.Entities?
+			.FirstOrDefault(entity => string.Equals(entity.Name, applicationCode, StringComparison.OrdinalIgnoreCase));
+		canonicalMainEntity.Should().NotBeNull(
+			because: "successful application-create calls should include the canonical main entity payload");
+		canonicalMainEntity!.Caption.Should().Be(applicationName,
+			because: "the canonical main entity caption should reflect the requested application name instead of the generic template fallback");
 		actResult.Result.Error.Should().BeNullOrWhiteSpace(
 			because: "successful create calls should not include an error payload");
 	}

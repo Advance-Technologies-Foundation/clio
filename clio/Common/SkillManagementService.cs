@@ -74,27 +74,68 @@ public interface IGitCommandRunner {
 }
 
 /// <summary>
-/// Install request for workspace-local skills.
+/// Resolves the user-level agent home path for global skills and plugins.
+/// </summary>
+public interface IAgentHomePathProvider {
+	/// <summary>
+	/// Gets the absolute agent home path.
+	/// </summary>
+	/// <returns>Absolute agent home path.</returns>
+	string GetAgentHomePath();
+}
+
+/// <summary>
+/// Default provider for the user-level agent home path.
+/// </summary>
+public sealed class AgentHomePathProvider(Clio.Common.IFileSystem fileSystem) : IAgentHomePathProvider {
+	private readonly Clio.Common.IFileSystem _fileSystem = fileSystem;
+
+	/// <inheritdoc />
+	public string GetAgentHomePath() {
+		string configuredAgentHome = Environment.GetEnvironmentVariable("CODEX_HOME")?.Trim();
+		string agentHomePath = string.IsNullOrWhiteSpace(configuredAgentHome)
+			? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex")
+			: configuredAgentHome;
+		return _fileSystem.GetFullPath(agentHomePath);
+	}
+}
+
+/// <summary>
+/// Install request for managed skills.
 /// </summary>
 /// <param name="WorkspacePath">Absolute workspace root path.</param>
 /// <param name="SkillName">Optional specific skill name.</param>
 /// <param name="RepositoryLocator">Optional local repository path or git URL.</param>
-public sealed record InstallSkillsRequest(string WorkspacePath, string SkillName, string RepositoryLocator);
+/// <param name="Scope">Skill target scope.</param>
+public sealed record InstallSkillsRequest(
+	string WorkspacePath,
+	string SkillName,
+	string RepositoryLocator,
+	SkillScope Scope = SkillScope.Workspace);
 
 /// <summary>
-/// Update request for workspace-local skills.
+/// Update request for managed skills.
 /// </summary>
 /// <param name="WorkspacePath">Absolute workspace root path.</param>
 /// <param name="SkillName">Optional specific skill name.</param>
 /// <param name="RepositoryLocator">Optional local repository path or git URL.</param>
-public sealed record UpdateSkillsRequest(string WorkspacePath, string SkillName, string RepositoryLocator);
+/// <param name="Scope">Skill target scope.</param>
+public sealed record UpdateSkillsRequest(
+	string WorkspacePath,
+	string SkillName,
+	string RepositoryLocator,
+	SkillScope Scope = SkillScope.Workspace);
 
 /// <summary>
-/// Delete request for a managed workspace-local skill.
+/// Delete request for a managed skill.
 /// </summary>
 /// <param name="WorkspacePath">Absolute workspace root path.</param>
 /// <param name="SkillName">Managed skill name to delete.</param>
-public sealed record DeleteSkillRequest(string WorkspacePath, string SkillName);
+/// <param name="Scope">Skill target scope.</param>
+public sealed record DeleteSkillRequest(
+	string WorkspacePath,
+	string SkillName,
+	SkillScope Scope = SkillScope.Workspace);
 
 /// <summary>
 /// User-facing result for workspace skill operations.
@@ -293,9 +334,11 @@ public class GitCommandRunner(IProcessExecutor processExecutor) : IGitCommandRun
 /// </summary>
 public class SkillManagementService(
 	Clio.Common.IFileSystem fileSystem,
-	ISkillRepositoryResolver skillRepositoryResolver)
+	ISkillRepositoryResolver skillRepositoryResolver,
+	IAgentHomePathProvider agentHomePathProvider)
 	: ISkillManagementService {
 	private const string SkillsRootRelativePath = ".agents/skills";
+	private const string UserSkillsRootRelativePath = "skills";
 	private const string ManifestFileName = ".clio-managed.json";
 
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -305,6 +348,7 @@ public class SkillManagementService(
 
 	private readonly Clio.Common.IFileSystem _fileSystem = fileSystem;
 	private readonly ISkillRepositoryResolver _skillRepositoryResolver = skillRepositoryResolver;
+	private readonly IAgentHomePathProvider _agentHomePathProvider = agentHomePathProvider;
 
 	/// <inheritdoc />
 	public SkillOperationResult Install(InstallSkillsRequest request) {
@@ -337,35 +381,35 @@ public class SkillManagementService(
 	}
 
 	private SkillOperationResult InstallInternal(InstallSkillsRequest request) {
-		string workspacePath = ValidateWorkspace(request.WorkspacePath);
+		string targetRootPath = ResolveTargetRootPath(request.Scope, request.WorkspacePath);
 		using ResolvedSkillRepository repository = _skillRepositoryResolver.Resolve(request.RepositoryLocator);
 		Dictionary<string, SkillSourceDefinition> discoveredSkills = DiscoverSkills(repository);
 		List<SkillSourceDefinition> selectedSkills = SelectSkills(discoveredSkills, request.SkillName);
-		ManagedSkillsManifest manifest = LoadManifest(workspacePath);
-		string workspaceSkillsRoot = GetWorkspaceSkillsRoot(workspacePath);
+		ManagedSkillsManifest manifest = LoadManifest(targetRootPath, request.Scope);
+		string skillsRootPath = GetSkillsRootPath(targetRootPath, request.Scope);
 
 		foreach (SkillSourceDefinition skill in selectedSkills) {
-			string targetPath = GetSkillTargetPath(workspacePath, skill.Name);
+			string targetPath = GetSkillTargetPath(targetRootPath, request.Scope, skill.Name);
 			ManagedSkillEntry existingManagedEntry = FindEntry(manifest, skill.Name);
 			bool targetExists = _fileSystem.ExistsDirectory(targetPath);
 			if (existingManagedEntry is not null) {
-				return Failure($"Skill '{skill.Name}' is already managed in this workspace. Use update-skill instead.");
+				return Failure($"Skill '{skill.Name}' is already managed in {GetScopeDisplayName(request.Scope)}. Use update-skill instead.");
 			}
 
 			if (targetExists) {
-				return Failure($"Skill '{skill.Name}' already exists in the workspace but is not managed by clio.");
+				return Failure($"Skill '{skill.Name}' already exists in {GetScopeDisplayName(request.Scope)} but is not managed by clio.");
 			}
 		}
 
-		_fileSystem.CreateDirectoryIfNotExists(workspaceSkillsRoot);
+		_fileSystem.CreateDirectoryIfNotExists(skillsRootPath);
 		List<string> infoMessages = [];
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 		foreach (SkillSourceDefinition skill in selectedSkills) {
-			string targetPath = GetSkillTargetPath(workspacePath, skill.Name);
+			string targetPath = GetSkillTargetPath(targetRootPath, request.Scope, skill.Name);
 			_fileSystem.CopyDirectory(skill.DirectoryPath, targetPath, false);
 			manifest.Entries.Add(new ManagedSkillEntry {
 				SkillName = skill.Name,
-				TargetPath = BuildWorkspaceRelativeSkillPath(skill.Name),
+				TargetPath = BuildTargetRelativeSkillPath(request.Scope, skill.Name),
 				SourceRepo = repository.SourceLocator,
 				SourceRelativePath = skill.SourceRelativePath,
 				CommitHash = repository.CommitHash,
@@ -375,20 +419,20 @@ public class SkillManagementService(
 			infoMessages.Add($"Installed skill '{skill.Name}' from '{repository.SourceLocator}' at commit '{repository.CommitHash}'.");
 		}
 
-		SaveManifest(workspacePath, manifest);
+		SaveManifest(targetRootPath, request.Scope, manifest);
 		infoMessages.Add("Done");
 		return Success(infoMessages);
 	}
 
 	private SkillOperationResult UpdateInternal(UpdateSkillsRequest request) {
-		string workspacePath = ValidateWorkspace(request.WorkspacePath);
-		ManagedSkillsManifest manifest = LoadManifest(workspacePath);
+		string targetRootPath = ResolveTargetRootPath(request.Scope, request.WorkspacePath);
+		ManagedSkillsManifest manifest = LoadManifest(targetRootPath, request.Scope);
 		if (manifest.Entries.Count == 0) {
-			return Failure("This workspace does not have any clio-managed skills.");
+			return Failure($"There are no clio-managed skills in {GetScopeDisplayName(request.Scope)}.");
 		}
 
 		using ResolvedSkillRepository repository = _skillRepositoryResolver.Resolve(request.RepositoryLocator);
-		List<ManagedSkillEntry> selectedEntries = SelectEntriesForUpdate(manifest, repository.SourceLocator, request.SkillName);
+		List<ManagedSkillEntry> selectedEntries = SelectEntriesForUpdate(manifest, repository.SourceLocator, request.SkillName, request.Scope);
 		Dictionary<string, SkillSourceDefinition> discoveredSkills = DiscoverSkills(repository);
 		List<string> infoMessages = [];
 		List<string> errorMessages = [];
@@ -407,7 +451,7 @@ public class SkillManagementService(
 				continue;
 			}
 
-			string targetPath = GetSkillTargetPath(workspacePath, entry.SkillName);
+			string targetPath = GetSkillTargetPath(targetRootPath, request.Scope, entry.SkillName);
 			_fileSystem.DeleteDirectoryIfExists(targetPath);
 			_fileSystem.CopyDirectory(discoveredSkill.DirectoryPath, targetPath, false);
 			entry.CommitHash = repository.CommitHash;
@@ -417,7 +461,7 @@ public class SkillManagementService(
 		}
 
 		if (updatedAny) {
-			SaveManifest(workspacePath, manifest);
+			SaveManifest(targetRootPath, request.Scope, manifest);
 		}
 
 		if (errorMessages.Count > 0) {
@@ -433,22 +477,22 @@ public class SkillManagementService(
 	}
 
 	private SkillOperationResult DeleteInternal(DeleteSkillRequest request) {
-		string workspacePath = ValidateWorkspace(request.WorkspacePath);
-		ManagedSkillsManifest manifest = LoadManifest(workspacePath);
+		string targetRootPath = ResolveTargetRootPath(request.Scope, request.WorkspacePath);
+		ManagedSkillsManifest manifest = LoadManifest(targetRootPath, request.Scope);
 		ManagedSkillEntry entry = FindEntry(manifest, request.SkillName);
-		string targetPath = GetSkillTargetPath(workspacePath, request.SkillName);
+		string targetPath = GetSkillTargetPath(targetRootPath, request.Scope, request.SkillName);
 
 		if (entry is null) {
 			if (_fileSystem.ExistsDirectory(targetPath)) {
-				return Failure($"Skill '{request.SkillName}' exists in the workspace but is not managed by clio.");
+				return Failure($"Skill '{request.SkillName}' exists in {GetScopeDisplayName(request.Scope)} but is not managed by clio.");
 			}
 
-			return Failure($"Managed skill '{request.SkillName}' was not found in this workspace.");
+			return Failure($"Managed skill '{request.SkillName}' was not found in {GetScopeDisplayName(request.Scope)}.");
 		}
 
 		_fileSystem.DeleteDirectoryIfExists(targetPath);
 		manifest.Entries.Remove(entry);
-		SaveManifest(workspacePath, manifest);
+		SaveManifest(targetRootPath, request.Scope, manifest);
 		return Success([
 			$"Deleted managed skill '{request.SkillName}'.",
 			"Done"
@@ -504,7 +548,8 @@ public class SkillManagementService(
 	private List<ManagedSkillEntry> SelectEntriesForUpdate(
 		ManagedSkillsManifest manifest,
 		string sourceRepo,
-		string skillName) {
+		string skillName,
+		SkillScope scope) {
 		IEnumerable<ManagedSkillEntry> entries = manifest.Entries
 			.Where(entry => string.Equals(entry.SourceRepo, sourceRepo, StringComparison.OrdinalIgnoreCase));
 
@@ -524,10 +569,16 @@ public class SkillManagementService(
 			.ToList();
 		if (selectedEntries.Count == 0) {
 			throw new InvalidOperationException(
-				$"No managed skills are registered for repository '{sourceRepo}' in this workspace.");
+				$"No managed skills are registered for repository '{sourceRepo}' in {GetScopeDisplayName(scope)}.");
 		}
 
 		return selectedEntries;
+	}
+
+	private string ResolveTargetRootPath(SkillScope scope, string workspacePath) {
+		return scope == SkillScope.User
+			? _agentHomePathProvider.GetAgentHomePath()
+			: ValidateWorkspace(workspacePath);
 	}
 
 	private string ValidateWorkspace(string workspacePath) {
@@ -544,8 +595,8 @@ public class SkillManagementService(
 		return fullWorkspacePath;
 	}
 
-	private ManagedSkillsManifest LoadManifest(string workspacePath) {
-		string manifestPath = GetManifestPath(workspacePath);
+	private ManagedSkillsManifest LoadManifest(string targetRootPath, SkillScope scope) {
+		string manifestPath = GetManifestPath(targetRootPath, scope);
 		if (!_fileSystem.ExistsFile(manifestPath)) {
 			return new ManagedSkillsManifest();
 		}
@@ -555,10 +606,10 @@ public class SkillManagementService(
 		return manifest ?? new ManagedSkillsManifest();
 	}
 
-	private void SaveManifest(string workspacePath, ManagedSkillsManifest manifest) {
-		string workspaceSkillsRoot = GetWorkspaceSkillsRoot(workspacePath);
-		string manifestPath = GetManifestPath(workspacePath);
-		_fileSystem.CreateDirectoryIfNotExists(workspaceSkillsRoot);
+	private void SaveManifest(string targetRootPath, SkillScope scope, ManagedSkillsManifest manifest) {
+		string skillsRootPath = GetSkillsRootPath(targetRootPath, scope);
+		string manifestPath = GetManifestPath(targetRootPath, scope);
+		_fileSystem.CreateDirectoryIfNotExists(skillsRootPath);
 
 		if (manifest.Entries.Count == 0) {
 			_fileSystem.DeleteFileIfExists(manifestPath);
@@ -576,16 +627,25 @@ public class SkillManagementService(
 			string.Equals(entry.SkillName, skillName, StringComparison.OrdinalIgnoreCase));
 	}
 
-	private string GetWorkspaceSkillsRoot(string workspacePath) =>
-		_fileSystem.Combine(workspacePath, ".agents", "skills");
+	private string GetSkillsRootPath(string targetRootPath, SkillScope scope) {
+		return scope == SkillScope.User
+			? _fileSystem.Combine(targetRootPath, UserSkillsRootRelativePath)
+			: _fileSystem.Combine(targetRootPath, ".agents", "skills");
+	}
 
-	private string GetManifestPath(string workspacePath) =>
-		_fileSystem.Combine(GetWorkspaceSkillsRoot(workspacePath), ManifestFileName);
+	private string GetManifestPath(string targetRootPath, SkillScope scope) =>
+		_fileSystem.Combine(GetSkillsRootPath(targetRootPath, scope), ManifestFileName);
 
-	private string GetSkillTargetPath(string workspacePath, string skillName) =>
-		_fileSystem.Combine(GetWorkspaceSkillsRoot(workspacePath), skillName);
+	private string GetSkillTargetPath(string targetRootPath, SkillScope scope, string skillName) =>
+		_fileSystem.Combine(GetSkillsRootPath(targetRootPath, scope), skillName);
 
-	private static string BuildWorkspaceRelativeSkillPath(string skillName) => $".agents/skills/{skillName}";
+	private static string BuildTargetRelativeSkillPath(SkillScope scope, string skillName) {
+		return scope == SkillScope.User
+			? $"{UserSkillsRootRelativePath}/{skillName}"
+			: $"{SkillsRootRelativePath}/{skillName}";
+	}
+
+	private static string GetScopeDisplayName(SkillScope scope) => scope == SkillScope.User ? "user scope" : "this workspace";
 
 	private static SkillOperationResult Success(IReadOnlyList<string> infoMessages) =>
 		new(0, infoMessages, Array.Empty<string>());
@@ -619,7 +679,7 @@ public class SkillManagementService(
 }
 
 /// <summary>
-/// Manifest that tracks clio-managed workspace-local skills.
+/// Manifest that tracks clio-managed skills.
 /// </summary>
 public sealed class ManagedSkillsManifest {
 	/// <summary>
@@ -638,7 +698,7 @@ public sealed class ManagedSkillEntry {
 	public string SkillName { get; set; }
 
 	/// <summary>
-	/// Gets or sets the workspace-relative target path.
+	/// Gets or sets the scope-relative target path.
 	/// </summary>
 	public string TargetPath { get; set; }
 

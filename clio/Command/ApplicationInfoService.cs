@@ -33,6 +33,7 @@ public sealed class ApplicationInfoService(
 	IApplicationClientFactory applicationClientFactory)
 	: IApplicationInfoService
 {
+	private const string BaseObjectCaption = "Base object";
 	private static readonly JsonSerializerOptions JsonOptions = new()
 	{
 		PropertyNameCaseInsensitive = true
@@ -127,12 +128,19 @@ public sealed class ApplicationInfoService(
 			GetApplicationEntities(client, serviceUrlBuilder, application.Id, primaryPackage.UId);
 		IReadOnlyList<ApplicationEntityInfoResult> entities = entityRows
 			.GroupBy(entity => entity.UId, StringComparer.OrdinalIgnoreCase)
-			.Select(group => LoadEntityInfo(client, serviceUrlBuilder, primaryPackage.UId, group.First()))
+			.Select(group => LoadEntityInfo(client, serviceUrlBuilder, primaryPackage.UId, primaryPackage.Name, group.First()))
 			.OrderBy(entity => entity.Caption, StringComparer.OrdinalIgnoreCase)
 			.ThenBy(entity => entity.Name, StringComparer.OrdinalIgnoreCase)
 			.ToList();
 
-		return new ApplicationInfoResult(primaryPackage.UId, primaryPackage.Name, entities);
+		return new ApplicationInfoResult(
+			primaryPackage.UId,
+			primaryPackage.Name,
+			entities,
+			application.Id,
+			application.Name,
+			application.Code,
+			application.Version);
 	}
 
 	private static InstalledApplicationDto ResolveApplication(
@@ -199,6 +207,7 @@ public sealed class ApplicationInfoService(
 		IApplicationClient client,
 		ServiceUrlBuilder serviceUrlBuilder,
 		string packageUId,
+		string canonicalMainEntityName,
 		ApplicationEntityRecordDto entityRow)
 	{
 		string responseJson = client.ExecutePostRequest(
@@ -228,7 +237,12 @@ public sealed class ApplicationInfoService(
 		return new ApplicationEntityInfoResult(
 			entityRow.UId,
 			entityName,
-			ResolveLocalizedText(response.Schema.Caption, designSchema?.Caption, entityRow.Caption, entityName),
+			ResolveEntityCaption(
+				string.Equals(entityName, canonicalMainEntityName, StringComparison.OrdinalIgnoreCase),
+				response.Schema.Caption,
+				designSchema?.Caption,
+				entityRow.Caption,
+				entityName),
 			columns);
 	}
 
@@ -304,10 +318,45 @@ public sealed class ApplicationInfoService(
 	{
 		return GetRuntimeLocalizedText(runtimeValues)
 			?? GetDesignLocalizedText(designValues)
-			?? fallbacks
-				.Select(value => value?.Trim())
-				.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
+			?? GetFallbackText(fallbacks)
 			?? string.Empty;
+	}
+
+	private static string ResolveEntityCaption(
+		bool isCanonicalMainEntity,
+		IReadOnlyDictionary<string, string>? runtimeValues,
+		IEnumerable<DesignLocalizableStringDto>? designValues,
+		params string?[] fallbacks)
+	{
+		string? runtimeCaption = GetRuntimeLocalizedText(runtimeValues);
+		string? designCaption = GetDesignLocalizedText(designValues);
+		if (ShouldPreferDesignCaptionForCanonicalMainEntity(isCanonicalMainEntity, runtimeCaption, designCaption))
+		{
+			return designCaption!;
+		}
+
+		return runtimeCaption
+			?? designCaption
+			?? GetFallbackText(fallbacks)
+			?? string.Empty;
+	}
+
+	private static bool ShouldPreferDesignCaptionForCanonicalMainEntity(
+		bool isCanonicalMainEntity,
+		string? runtimeCaption,
+		string? designCaption)
+	{
+		return isCanonicalMainEntity &&
+			string.Equals(runtimeCaption, BaseObjectCaption, StringComparison.OrdinalIgnoreCase) &&
+			!string.IsNullOrWhiteSpace(designCaption) &&
+			!string.Equals(runtimeCaption, designCaption, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static string? GetFallbackText(IEnumerable<string?> fallbacks)
+	{
+		return fallbacks
+			.Select(value => value?.Trim())
+			.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 	}
 
 	private static string? GetRuntimeLocalizedText(IReadOnlyDictionary<string, string>? localizedValues)
@@ -688,10 +737,18 @@ public sealed class ApplicationInfoService(
 /// <param name="PackageUId">Primary package identifier.</param>
 /// <param name="PackageName">Primary package name.</param>
 /// <param name="Entities">Application entity details.</param>
+/// <param name="ApplicationId">Installed application identifier.</param>
+/// <param name="ApplicationName">Installed application display name.</param>
+/// <param name="ApplicationCode">Installed application code.</param>
+/// <param name="ApplicationVersion">Installed application version.</param>
 public sealed record ApplicationInfoResult(
 	string PackageUId,
 	string PackageName,
-	IReadOnlyList<ApplicationEntityInfoResult> Entities);
+	IReadOnlyList<ApplicationEntityInfoResult> Entities,
+	string? ApplicationId = null,
+	string? ApplicationName = null,
+	string? ApplicationCode = null,
+	string? ApplicationVersion = null);
 
 /// <summary>
 /// Structured entity information returned as part of application info results.

@@ -37,7 +37,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		string? ReferenceSchemaName,
 		bool? Required,
 		string? DefaultValueSource,
-		string? DefaultValue){
+		string? DefaultValue,
+		EntitySchemaDefaultValueConfig? DefaultValueConfig){
 		public bool IsLookup => EntitySchemaDesignerSupport.IsLookupTypeName(Type);
 	}
 
@@ -62,6 +63,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 		[property: JsonPropertyName("default-value")]
 		public string? DefaultValue { get; init; }
+
+		[property: JsonPropertyName("default-value-config")]
+		public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; init; }
 	}
 
 	#endregion
@@ -104,7 +108,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 		if (!schema.ParentSchema.HasValue() && columns.All(column => !column.IsGuidType())) {
 			columns.Insert(0, CreateColumn(
-				new ParsedColumn("Id", "guid", "Id", null, null, null, null, null),
+				new ParsedColumn("Id", "guid", "Id", null, null, null, null, null, null),
 				referenceSchemas,
 				cultureName));
 		}
@@ -143,30 +147,24 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	}
 
 	private static void ApplyDefaultValue(EntitySchemaColumnDto column, ParsedColumn parsedColumn) {
-		EntitySchemaColumnDefSource? defaultValueSource = EntitySchemaDesignerSupport.ParseDefaultValueSource(
-			parsedColumn.DefaultValueSource);
-		if (defaultValueSource == null && parsedColumn.DefaultValue == null) {
+		EntitySchemaDefaultValueConfig? defaultValueConfig = EntitySchemaDesignerSupport.ResolveDefaultValueConfig(
+			parsedColumn.DefaultValueConfig,
+			parsedColumn.DefaultValueSource,
+			parsedColumn.DefaultValue,
+			$"Column '{parsedColumn.Name}'");
+		if (defaultValueConfig == null) {
 			return;
 		}
-
+		EntitySchemaColumnDefSource defaultValueSource = EntitySchemaDesignerSupport.ParseDefaultValueSource(
+			defaultValueConfig.Source)
+			?? throw new InvalidOperationException(
+				$"Column '{parsedColumn.Name}' requires default-value-config.source.");
 		if (defaultValueSource == EntitySchemaColumnDefSource.None) {
-			if (parsedColumn.DefaultValue != null) {
-				throw new InvalidOperationException(
-					$"Column '{parsedColumn.Name}' cannot specify default-value when default-value-source is None.");
-			}
 			column.DefValue = null;
 			return;
 		}
-
-		if (parsedColumn.DefaultValue == null) {
-			throw new InvalidOperationException(
-				$"Column '{parsedColumn.Name}' requires default-value when default-value-source is Const.");
-		}
-
-		column.DefValue = new EntitySchemaColumnDefValueDto {
-			ValueSourceType = defaultValueSource ?? EntitySchemaColumnDefSource.Const,
-			Value = parsedColumn.DefaultValue
-		};
+		column.DefValue = EntitySchemaDesignerSupport.CreateDefaultValueDto(defaultValueConfig,
+			$"Column '{parsedColumn.Name}'");
 	}
 
 	private bool CheckUniqueSchemaName(string schemaName, Guid excludeUId, CreateEntitySchemaOptions options) {
@@ -222,18 +220,27 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	}
 
 	private static void ValidateDefaultValue(ParsedColumn parsedColumn, int dataValueType) {
-		if (!EntitySchemaDesignerSupport.IsBinaryLikeDataValueType(dataValueType)) {
-			return;
+		if (UsesUnsupportedLegacyBinaryDefaultValue(parsedColumn, dataValueType)) {
+			throw new InvalidOperationException(
+				$"Column '{parsedColumn.Name}' of type '{EntitySchemaDesignerSupport.GetFriendlyTypeName(dataValueType)}' does not support default-value or default-value-source Const.");
 		}
+		EntitySchemaDefaultValueConfig? defaultValueConfig = EntitySchemaDesignerSupport.ResolveDefaultValueConfig(
+			parsedColumn.DefaultValueConfig,
+			parsedColumn.DefaultValueSource,
+			parsedColumn.DefaultValue,
+			$"Column '{parsedColumn.Name}'");
+		EntitySchemaDesignerSupport.ValidateDefaultValueConfig(defaultValueConfig, dataValueType,
+			$"Column '{parsedColumn.Name}'");
+	}
 
+	private static bool UsesUnsupportedLegacyBinaryDefaultValue(ParsedColumn parsedColumn, int dataValueType) {
+		if (parsedColumn.DefaultValueConfig != null
+			|| !EntitySchemaDesignerSupport.IsBinaryLikeDataValueType(dataValueType)) {
+			return false;
+		}
 		EntitySchemaColumnDefSource? defaultValueSource =
 			EntitySchemaDesignerSupport.ParseDefaultValueSource(parsedColumn.DefaultValueSource);
-		if (parsedColumn.DefaultValue == null && defaultValueSource != EntitySchemaColumnDefSource.Const) {
-			return;
-		}
-
-		throw new InvalidOperationException(
-			$"Column '{parsedColumn.Name}' of type '{EntitySchemaDesignerSupport.GetFriendlyTypeName(dataValueType)}' does not support default-value or default-value-source Const.");
+		return parsedColumn.DefaultValue != null || defaultValueSource == EntitySchemaColumnDefSource.Const;
 	}
 
 	private Dictionary<string, ManagerItemDto> GetReferenceSchemas(Guid packageUId, CreateEntitySchemaOptions options) {
@@ -290,7 +297,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			referenceSchemaName,
 			structuredColumn.Required,
 			structuredColumn.DefaultValueSource,
-			structuredColumn.DefaultValue);
+			structuredColumn.DefaultValue,
+			structuredColumn.DefaultValueConfig);
 	}
 
 	private static string GetLookupReferenceSchemaName(string[] parts) {
@@ -353,7 +361,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		string? referenceSchemaName = GetLookupReferenceSchemaName(parts);
 		ValidateLookupReferenceSchema(columnSpec, type, referenceSchemaName);
 
-		return new ParsedColumn(name, type, title, null, referenceSchemaName, null, null, null);
+		return new ParsedColumn(name, type, title, null, referenceSchemaName, null, null, null, null);
 	}
 
 	private static string ResolveTitle(StructuredColumnSpec column, string fallbackName) {

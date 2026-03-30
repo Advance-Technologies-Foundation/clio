@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using Clio.Command.McpServer.Tools;
@@ -6,20 +7,25 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Prompts;
 
 /// <summary>
-/// Prompt helpers for workspace-local skill management MCP tools.
+/// Prompt helpers for scope-aware skill management MCP tools.
 /// </summary>
-[McpServerPromptType, Description("Prompts for installing, updating, and deleting workspace-local skills")]
+[McpServerPromptType, Description("Prompts for installing, updating, and deleting managed skills in workspace or user scope")]
 public static class SkillManagementPrompt {
 	/// <summary>
-	/// Builds guidance for installing workspace-local skills through MCP.
+	/// Builds guidance for installing managed skills through MCP.
 	/// </summary>
-	[McpServerPrompt(Name = "install-skills-guidance"), Description("Prompt to install workspace-local skills")]
+	[McpServerPrompt(Name = "install-skills-guidance"), Description("Prompt to install managed skills")]
 	public static string InstallSkills(
-		[Required] [Description("Absolute local workspace path")] string workspacePath,
+		[Description("Skill target scope: workspace or user")] string scope = SkillScopeParser.Workspace,
+		[Description("Absolute local workspace path when scope is workspace")] string workspacePath = null,
 		[Description("Optional skill name")] string skillName = null,
 		[Description("Optional repository path or git URL")] string repo = null) =>
 		$"""
-		 Use clio MCP tool `{InstallSkillsTool.ToolName}` with `workspacePath` set to `{workspacePath}`.
+		 Use clio MCP tool `{InstallSkillsTool.ToolName}`.
+		 Pass `scope` as `{scope}`.
+		 {(string.Equals(scope, SkillScopeParser.User, StringComparison.OrdinalIgnoreCase)
+			 ? "Omit `workspacePath` when installing into user scope."
+			 : $"Pass `workspacePath` as `{workspacePath}` when installing into workspace scope.")}
 		 {(string.IsNullOrWhiteSpace(skillName)
 			 ? "Omit `skillName` to install all available skills."
 			 : $"Pass `skillName` as `{skillName}` to install a single skill.")}
@@ -30,15 +36,20 @@ public static class SkillManagementPrompt {
 		 """;
 
 	/// <summary>
-	/// Builds guidance for updating managed workspace-local skills through MCP.
+	/// Builds guidance for updating managed skills through MCP.
 	/// </summary>
-	[McpServerPrompt(Name = "update-skill-guidance"), Description("Prompt to update managed workspace-local skills")]
+	[McpServerPrompt(Name = "update-skill-guidance"), Description("Prompt to update managed skills")]
 	public static string UpdateSkill(
-		[Required] [Description("Absolute local workspace path")] string workspacePath,
+		[Description("Skill target scope: workspace or user")] string scope = SkillScopeParser.Workspace,
+		[Description("Absolute local workspace path when scope is workspace")] string workspacePath = null,
 		[Description("Optional managed skill name")] string skillName = null,
 		[Description("Optional repository path or git URL")] string repo = null) =>
 		$"""
-		 Use clio MCP tool `{UpdateSkillTool.ToolName}` with `workspacePath` set to `{workspacePath}`.
+		 Use clio MCP tool `{UpdateSkillTool.ToolName}`.
+		 Pass `scope` as `{scope}`.
+		 {(string.Equals(scope, SkillScopeParser.User, StringComparison.OrdinalIgnoreCase)
+			 ? "Omit `workspacePath` when updating user-scope skills."
+			 : $"Pass `workspacePath` as `{workspacePath}` when updating workspace-scope skills.")}
 		 {(string.IsNullOrWhiteSpace(skillName)
 			 ? "Omit `skillName` to update all managed skills registered for the selected repository."
 			 : $"Pass `skillName` as `{skillName}` to update one managed skill.")}
@@ -49,14 +60,19 @@ public static class SkillManagementPrompt {
 		 """;
 
 	/// <summary>
-	/// Builds guidance for deleting a managed workspace-local skill through MCP.
+	/// Builds guidance for deleting a managed skill through MCP.
 	/// </summary>
-	[McpServerPrompt(Name = "delete-skill-guidance"), Description("Prompt to delete a managed workspace-local skill")]
+	[McpServerPrompt(Name = "delete-skill-guidance"), Description("Prompt to delete a managed skill")]
 	public static string DeleteSkill(
-		[Required] [Description("Absolute local workspace path")] string workspacePath,
-		[Required] [Description("Managed skill name")] string skillName) =>
+		[Required] [Description("Managed skill name")] string skillName,
+		[Description("Skill target scope: workspace or user")] string scope = SkillScopeParser.Workspace,
+		[Description("Absolute local workspace path when scope is workspace")] string workspacePath = null) =>
 		$"""
-		 Use clio MCP tool `{DeleteSkillTool.ToolName}` with `workspacePath` set to `{workspacePath}` and `skillName` set to `{skillName}`.
+		 Use clio MCP tool `{DeleteSkillTool.ToolName}` with `skillName` set to `{skillName}`.
+		 Pass `scope` as `{scope}`.
+		 {(string.Equals(scope, SkillScopeParser.User, StringComparison.OrdinalIgnoreCase)
+			 ? "Omit `workspacePath` when deleting a user-scope managed skill."
+			 : $"Pass `workspacePath` as `{workspacePath}` when deleting a workspace-scope managed skill.")}
 		 Delete only managed skills recorded by clio.
 		 """;
 }

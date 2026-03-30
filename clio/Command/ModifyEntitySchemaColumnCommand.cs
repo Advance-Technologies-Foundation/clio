@@ -68,6 +68,11 @@ public class ModifyEntitySchemaColumnOptions : RemoteCommandOptions
 	[Option("default-value-source", Required = false, HelpText = "Default value source: Const or None")]
 	public string DefaultValueSource { get; set; }
 
+	/// <summary>
+	/// Gets or sets the structured default value metadata used by MCP mutation flows.
+	/// </summary>
+	public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; set; }
+
 	[Option("multiline-text", Required = false, HelpText = "Set multi-line text flag")]
 	public bool? MultilineText { get; set; }
 
@@ -165,6 +170,7 @@ public class ModifyEntitySchemaColumnCommand : Command<ModifyEntitySchemaColumnO
 			|| options.TrackChanges.HasValue
 			|| !string.IsNullOrWhiteSpace(options.DefaultValueSource)
 			|| options.DefaultValue != null
+			|| options.DefaultValueConfig != null
 			|| options.MultilineText.HasValue
 			|| options.LocalizableText.HasValue
 			|| options.AccentInsensitive.HasValue

@@ -59,7 +59,7 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 	/// </summary>
 	[McpServerTool(Name = ApplicationGetInfoToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Gets application information from Creatio through backend MCP. Returns application context with packages and entities.")]
+	[Description("Gets application information from Creatio through backend MCP. Returns installed application identity plus package and entity context.")]
 	public ApplicationContextResponse ApplicationGetInfo(
 		[Description("Parameters: environment-name (required), app-id or app-code (exactly one required)")]
 		[Required]
@@ -97,7 +97,7 @@ public sealed class ApplicationCreateTool(IApplicationCreateService applicationC
 	/// </summary>
 	[McpServerTool(Name = ApplicationCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Creates a new application in Creatio through backend MCP and returns the created application context.")]
+	[Description("Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context.")]
 	public ApplicationContextResponse ApplicationCreate(
 		[Description("Parameters: environment-name, name, code, template-code, icon-background (all required); description, icon-id, client-type-id (optional)")]
 		[Required]

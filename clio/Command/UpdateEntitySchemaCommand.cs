@@ -69,6 +69,9 @@ internal sealed record UpdateEntitySchemaOperationDefinition
 	[JsonPropertyName("default-value-source")]
 	public string DefaultValueSource { get; init; }
 
+	[JsonPropertyName("default-value-config")]
+	public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; init; }
+
 	[JsonPropertyName("multiline-text")]
 	public bool? MultilineText { get; init; }
 
@@ -161,6 +164,7 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 				TrackChanges = operation.TrackChanges,
 				DefaultValue = operation.DefaultValue,
 				DefaultValueSource = operation.DefaultValueSource,
+				DefaultValueConfig = operation.DefaultValueConfig,
 				MultilineText = operation.MultilineText,
 				LocalizableText = operation.LocalizableText,
 				AccentInsensitive = operation.AccentInsensitive,

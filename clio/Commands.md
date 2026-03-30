@@ -160,11 +160,15 @@ and `password`, depending on the tool contract.
 
 The MCP server exposes application, page, component-info, entity, schema-sync, page-sync,
 and data-binding tools. The local `component-info` helper does not require an environment.
+It also exposes MCP-owned guidance resources such as `docs://mcp/guides/app-modeling` and
+`docs://mcp/guides/existing-app-maintenance`.
 
 Notes:
 - Transport is stdio with JSON-RPC 2.0
 - The process stays running until stdin is closed or the process is terminated
 - Environment-sensitive tools accept either `environment-name` or explicit connection arguments such as `uri`, `login`, and `password`
+- Use `tool-contract-get` when the MCP client needs the authoritative clio MCP contract and preferred discovery or mutation flow
+- Preferred existing-app flow is `application-get-list` -> `application-get-info`, then page or schema inspection, then `page-update`, `modify-entity-schema-column`, or `schema-sync`
 
 
 # Package Management
@@ -1186,7 +1190,7 @@ Aliases: `gwu`
 ## page-list
 
 Lists Freedom UI page schemas from `SysSchema` and returns a JSON envelope with page names,
-schema UIds, and package names.
+schema UIds, package names, and parent schema names.
 
 ```bash
 clio page-list [--package-name <PACKAGE_NAME>] [--search-pattern <TEXT>] [--limit 50] -e <ENVIRONMENT_NAME>
@@ -1595,36 +1599,40 @@ OpenSolution.cmd
 
 ## install-skills
 
-Install workspace-local skills into `.agents/skills` in the current clio workspace.
+Install managed skills into workspace or user scope.
 
 ```bash
-clio install-skills [--skill <name>] [--repo <local-path-or-git-url>]
+clio install-skills [--skill <name>] [--repo <local-path-or-git-url>] [--scope <workspace|user>]
 ```
 
 - Installs all discovered skills when `--skill` is omitted
 - Uses the default bootstrap repository when `--repo` is omitted
-- Tracks managed installs in `.agents/skills/.clio-managed.json`
+- Uses `workspace` scope by default
+- Installs into `.agents/skills` for workspace scope or `<agent-home>/skills` for user scope
+- Tracks managed installs in the selected scope `.clio-managed.json` manifest
 
 ## update-skill
 
-Update managed workspace-local skills when the source repository HEAD commit hash changed.
+Update managed skills in workspace or user scope when the source repository HEAD commit hash changed.
 
 ```bash
-clio update-skill [--skill <name>] [--repo <local-path-or-git-url>]
+clio update-skill [--skill <name>] [--repo <local-path-or-git-url>] [--scope <workspace|user>]
 ```
 
 - Updates all managed skills for the selected repository when `--skill` is omitted
+- Uses `workspace` scope by default
 - Reports `already up to date` when the stored hash matches repository HEAD
 
 ## delete-skill
 
-Delete one managed workspace-local skill from the current clio workspace.
+Delete one managed skill from workspace or user scope.
 
 ```bash
-clio delete-skill --skill <name>
+clio delete-skill --skill <name> [--scope <workspace|user>]
 ```
 
-- Deletes only skills tracked in `.agents/skills/.clio-managed.json`
+- Uses `workspace` scope by default
+- Deletes only skills tracked in the selected scope `.clio-managed.json` manifest
 - Fails for unmanaged skill folders
 
 ## push-workspace
@@ -1770,14 +1778,14 @@ clio create-entity-schema --package <PACKAGE_NAME> --name <SCHEMA_NAME> --title 
 - `--title <TITLE>` (required): Entity schema title/caption
 - `--parent <SCHEMA_NAME>` (optional): Parent schema name
 - `--extend-parent` (optional): Create a replacement schema; requires `--parent`
-- `--column <COLUMN_SPEC>` (optional): Column spec in legacy `<name>:<type>[:<title>[:<refSchema>]]` format or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, `default-value-source`, `default-value`. Repeat the option for multiple columns
+- `--column <COLUMN_SPEC>` (optional): Column spec in legacy `<name>:<type>[:<title>[:<refSchema>]]` format or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, legacy `default-value-source` / `default-value`, or structured `default-value-config`. Repeat the option for multiple columns
 - `-e, --environment <ENVIRONMENT_NAME>` (required): Target environment
 
 **Supported types:**
 - `Guid`
 - `Text`, `ShortText`, `MediumText`, `LongText`, `MaxSizeText`
 - `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`
-- `Binary`, `Image`, `File` (`Blob` is accepted as an alias for `Binary`)
+- `Binary`, `Image`, `File`, `SecureText` (`Blob` is accepted as an alias for `Binary`; `Encrypted` and `Password` are accepted as aliases for `SecureText`)
 - `Integer`, `Float`
 - `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`
 - `Currency0`, `Currency1`, `Currency2`, `Currency3`
@@ -1793,10 +1801,14 @@ clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle
 
 # Create with structured column metadata
 clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" -e dev --column "{\"name\":\"Status\",\"type\":\"ShortText\",\"title\":\"Status\",\"required\":true,\"default-value-source\":\"Const\",\"default-value\":\"Draft\"}"
+
+# Create with structured default-value-config metadata
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" -e dev --column "{\"name\":\"UsrStartDate\",\"type\":\"DateTime\",\"title\":\"Start date\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
 ```
 
 **Notes:**
-- Current `clio` entity-schema tools are the supported ADAC integration surface; use current `clio` naming instead of frontend-only aliases like `entity.create`
+- Current `clio` entity-schema tools are part of the canonical `clio` MCP contract; use current `clio` naming instead of frontend-only aliases like `entity.create`
+- Prefer structured `default-value-config` for `Settings`, `SystemValue`, or `Sequence`; keep legacy `default-value-source` / `default-value` only for shorthand `Const` and `None`
 - `Binary`, `Image`, and `File` columns do not support `default-value` or `default-value-source Const`
 - Save succeeds only when the schema can be reloaded immediately after `SaveSchema`
 
@@ -1814,7 +1826,7 @@ clio modify-entity-schema-column --package <PACKAGE_NAME> --schema-name <SCHEMA_
 - `--action <add|modify|remove>` (required): Column mutation type
 - `--column-name <COLUMN_NAME>` (required): Target column name
 - `--new-name <COLUMN_NAME>` (optional): Rename the column
-- `--type <TYPE>` (optional for modify, required for add): Column type. Supports `Guid`, `Text`, `ShortText`, `MediumText`, `LongText`, `MaxSizeText`, `Binary`, `Image`, `File`, `Blob`, `Integer`, `Float`, `Boolean`, `Date`, `DateTime`, `Time`, `Lookup`, plus designer-native text and decimal variants
+- `--type <TYPE>` (optional for modify, required for add): Column type. Supports `Guid`, `Text`, `ShortText`, `MediumText`, `LongText`, `MaxSizeText`, `Binary`, `Image`, `File`, `Blob`, `SecureText`, `Encrypted`, `Password`, `Integer`, `Float`, `Boolean`, `Date`, `DateTime`, `Time`, `Lookup`, plus designer-native text and decimal variants
 - `--title <CAPTION>` (optional): Column caption
 - `--description <TEXT>` (optional): Column description
 - `--reference-schema <SCHEMA_NAME>` (optional): Reference schema for lookup columns
@@ -1855,6 +1867,7 @@ clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle --
 - v1 mutates own columns only; inherited columns are read-only
 - remove clears direct schema-level references to the removed column and validates required fallbacks locally
 - `--default-value-source None` clears the stored default value; `Const` requires `--default-value`
+- MCP callers can also send structured `default-value-config` with `source` set to `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`; the direct CLI flags remain shorthand for `Const` and `None`
 - `Binary`, `Image`, and `File` columns do not support `--default-value` or `--default-value-source Const`
 - Save succeeds only when the mutated column can be read back immediately after `SaveSchema`
 
@@ -1884,13 +1897,18 @@ clio update-entity-schema --package MyPackage --schema-name UsrVehicle -e dev ^
 clio update-entity-schema --package MyPackage --schema-name UsrVehicle -e dev ^
   --operation "{\"action\":\"modify\",\"column-name\":\"Owner\",\"new-name\":\"PrimaryOwner\",\"title\":\"Primary owner\"}" ^
   --operation "{\"action\":\"modify\",\"column-name\":\"Status\",\"default-value-source\":\"None\"}"
+
+# Set a system-value default in one batch
+clio update-entity-schema --package MyPackage --schema-name UsrVehicle -e dev ^
+  --operation "{\"action\":\"modify\",\"column-name\":\"UsrStartDate\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
 ```
 
 **Notes:**
 - each operation uses the same column-level contract as `modify-entity-schema-column`
+- operation JSON can also use structured `default-value-config`; legacy `default-value-source` / `default-value` remain shorthand for `Const` and `None`
 - operations run in order and stop on the first failure
 - this is the clio-native batch alternative to frontend-style `entity.update.operationsJson`
-- supported operation types include `Binary`, `Image`, `File`, and `Blob` as an alias for `Binary`
+- supported operation types include `Binary`, `Image`, `File`, `SecureText`, `Blob` as an alias for `Binary`, and `Encrypted` / `Password` as aliases for `SecureText`
 - `Binary`, `Image`, and `File` operations do not support `default-value` or `default-value-source Const`
 
 ## get-entity-schema-column-properties
@@ -1919,7 +1937,7 @@ clio get-entity-schema-column-properties --package MyPackage --schema-name UsrVe
 
 **Notes:**
 - own columns are searched first, then inherited columns
-- the readback includes `default-value-source` and `default-value`
+- the readback includes `default-value-source`, `default-value`, and structured `default-value-config`
 - the readback normalizes type names to readable values such as `Binary`, `Image`, `File`, and `ImageLookup`
 - this is the canonical verification path after `modify-entity-schema-column`
 

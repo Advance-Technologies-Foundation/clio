@@ -96,15 +96,19 @@ public class PageToolsTests {
 			because: "page-get prompt guidance should match the current MCP argument contract");
 		prompt.Should().Contain($"`{ComponentInfoTool.ToolName}`",
 			because: "page-get prompt guidance should direct callers to component-info for unfamiliar Freedom UI types");
+		prompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
+			because: "page-get prompt guidance should point callers to the MCP-owned existing-app maintenance guide");
 		prompt.Should().Contain("`resources`",
 			because: "page-get prompt guidance should tell callers how to preserve ResourceString macros during page-update");
 		prompt.Should().Contain("valid JSON object string",
 			because: "page-get prompt guidance should clarify that malformed resource payloads are rejected");
+		prompt.Should().Contain("discover -> inspect -> mutate -> verify",
+			because: "page-get prompt guidance should describe the canonical maintenance sequence for minimal page edits");
 		prompt.Should().NotContain("`schemaName`",
 			because: "page-get prompt guidance should no longer advertise removed camelCase request fields");
 		prompt.Should().NotContain("`environmentName`",
 			because: "page-get prompt guidance should no longer advertise removed camelCase request fields");
-		}
+	}
 
 	[Test]
 	[Description("Serializes page-update resource registration metadata in the command response.")]
@@ -212,8 +216,8 @@ public class PageToolsTests {
 		var dataServiceResponse = new JObject {
 			["success"] = true,
 			["rows"] = new JArray {
-				new JObject { ["Name"] = "TestPage1", ["UId"] = "uid-1", ["PackageName"] = "TestPkg" },
-				new JObject { ["Name"] = "TestPage2", ["UId"] = "uid-2", ["PackageName"] = "TestPkg" }
+				new JObject { ["Name"] = "TestPage1", ["UId"] = "uid-1", ["PackageName"] = "TestPkg", ["ParentSchemaName"] = "PageWithTabsFreedomTemplate" },
+				new JObject { ["Name"] = "TestPage2", ["UId"] = "uid-2", ["PackageName"] = "TestPkg", ["ParentSchemaName"] = "BasePage" }
 			}
 		};
 		applicationClient.ExecutePostRequest(
@@ -227,6 +231,38 @@ public class PageToolsTests {
 		response.Count.Should().Be(2, "because two rows were returned from the DataService");
 		response.Pages.Should().HaveCount(2, "because each row maps to a page item");
 		response.Pages[0].Name.Should().Be("TestPage1", "because the first row has Name=TestPage1");
+		response.Pages[0].ParentSchemaName.Should().Be("PageWithTabsFreedomTemplate",
+			"because page-list should now preserve direct parent schema context for target selection");
+	}
+
+	[Test]
+	[Description("TryListPages projects the direct parent schema name into the select query and response payload")]
+	public void TryListPages_Should_Project_Parent_Schema_Context() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataServiceResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "TestPage1", ["UId"] = "uid-1", ["PackageName"] = "TestPkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataServiceResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 50 };
+
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		result.Should().BeTrue("because the DataService returned a successful response");
+		response.Pages[0].ParentSchemaName.Should().Be("BasePage",
+			"because the response payload should keep the parent schema context returned by the query");
+		applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("[SysSchema:Id:Parent].Name") && body.Contains("ParentSchemaName")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]

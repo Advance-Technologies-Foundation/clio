@@ -14,8 +14,9 @@ DESCRIPTION
     This command is the clio-native batch mutation contract for entity schemas.
     Each operation uses the same column-level semantics as
     modify-entity-schema-column, but several mutations can be applied in one
-    request. Supported operation types include Binary, Image, and File, and
-    Blob is accepted as an alias for Binary.
+    request. Supported operation types include Binary, Image, File, and
+    SecureText. Blob is accepted as an alias for Binary. Encrypted and
+    Password are accepted as aliases for SecureText.
 
 OPTIONS
     --package              Target package name
@@ -36,10 +37,15 @@ EXAMPLES
     # Rename a column and clear its default in one batch
     clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"modify\",\"column-name\":\"Owner\",\"new-name\":\"PrimaryOwner\",\"title\":\"Primary owner\"}" --operation "{\"action\":\"modify\",\"column-name\":\"Status\",\"default-value-source\":\"None\"}"
 
+    # Set a system-value default in one batch
+    clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"modify\",\"column-name\":\"UsrStartDate\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
+
 NOTES
     - operations are applied in order
     - execution stops on the first failed operation
     - the batch is saved and materialized once after all operations are applied
+    - operation JSON can also use structured default-value-config; legacy
+      default-value-source/default-value remain shorthand for Const and None
     - this is the clio-native alternative to frontend-style entity.update.operationsJson
     - Binary, Image, and File operations do not support default-value or default-value-source Const
 

@@ -1,3 +1,4 @@
+using System;
 using Clio.Common;
 using Clio.Workspaces;
 using CommandLine;
@@ -15,7 +16,49 @@ public static class WorkspaceSkillDefaults {
 }
 
 /// <summary>
-/// Base options for commands that manage workspace-local skills.
+/// Supported install targets for managed skills.
+/// </summary>
+public enum SkillScope {
+	/// <summary>
+	/// Installs skills into the current clio workspace.
+	/// </summary>
+	Workspace,
+
+	/// <summary>
+	/// Installs skills into the user-level agent home.
+	/// </summary>
+	User
+}
+
+internal static class SkillScopeParser {
+	internal const string Workspace = "workspace";
+	internal const string User = "user";
+
+	internal static bool TryParse(string scopeValue, out SkillScope scope, out string errorMessage) {
+		string normalizedScope = scopeValue?.Trim();
+		if (string.IsNullOrWhiteSpace(normalizedScope) ||
+			string.Equals(normalizedScope, Workspace, StringComparison.OrdinalIgnoreCase)) {
+			scope = SkillScope.Workspace;
+			errorMessage = string.Empty;
+			return true;
+		}
+
+		if (string.Equals(normalizedScope, User, StringComparison.OrdinalIgnoreCase)) {
+			scope = SkillScope.User;
+			errorMessage = string.Empty;
+			return true;
+		}
+
+		scope = SkillScope.Workspace;
+		errorMessage = $"Unsupported scope '{scopeValue}'. Supported values: {Workspace}, {User}.";
+		return false;
+	}
+
+	internal static string ToOptionValue(SkillScope scope) => scope == SkillScope.User ? User : Workspace;
+}
+
+/// <summary>
+/// Base options for commands that manage clio-managed skills.
 /// </summary>
 public abstract class SkillCommandOptions {
 	/// <summary>
@@ -30,32 +73,44 @@ public abstract class SkillCommandOptions {
 	[Option("repo", Required = false,
 		HelpText = "Optional local repository path or git URL. Defaults to the bootstrap workspace skills repository.")]
 	public string Repo { get; set; }
+
+	/// <summary>
+	/// Skill target scope.
+	/// </summary>
+	[Option("scope", Required = false, HelpText = "Skill target scope: workspace or user. Defaults to workspace.")]
+	public string Scope { get; set; } = SkillScopeParser.Workspace;
 }
 
 /// <summary>
 /// Options for the <c>install-skills</c> command.
 /// </summary>
-[Verb("install-skills", HelpText = "Install workspace-local skills from a repository")]
+[Verb("install-skills", HelpText = "Install managed skills from a repository")]
 public class InstallSkillsOptions : SkillCommandOptions {
 }
 
 /// <summary>
 /// Options for the <c>update-skill</c> command.
 /// </summary>
-[Verb("update-skill", HelpText = "Update managed workspace-local skills from a repository")]
+[Verb("update-skill", HelpText = "Update managed skills from a repository")]
 public class UpdateSkillOptions : SkillCommandOptions {
 }
 
 /// <summary>
 /// Options for the <c>delete-skill</c> command.
 /// </summary>
-[Verb("delete-skill", HelpText = "Delete a managed workspace-local skill")]
+[Verb("delete-skill", HelpText = "Delete a managed skill")]
 public class DeleteSkillOptions {
 	/// <summary>
 	/// Skill name to delete from the current workspace.
 	/// </summary>
 	[Option("skill", Required = true, HelpText = "Managed skill name to delete")]
 	public string Skill { get; set; }
+
+	/// <summary>
+	/// Skill target scope.
+	/// </summary>
+	[Option("scope", Required = false, HelpText = "Skill target scope: workspace or user. Defaults to workspace.")]
+	public string Scope { get; set; } = SkillScopeParser.Workspace;
 }
 
 /// <summary>
@@ -69,8 +124,13 @@ public class InstallSkillsCommand(
 
 	/// <inheritdoc />
 	public override int Execute(InstallSkillsOptions options) {
+		if (!SkillScopeParser.TryParse(options.Scope, out SkillScope scope, out string errorMessage)) {
+			logger.WriteError(errorMessage);
+			return 1;
+		}
+
 		string workspacePath = workspacePathBuilder.RootPath;
-		if (!workspacePathBuilder.IsWorkspace) {
+		if (scope == SkillScope.Workspace && !workspacePathBuilder.IsWorkspace) {
 			logger.WriteError($"Current directory is not inside a clio workspace: {workspacePath}");
 			return 1;
 		}
@@ -78,7 +138,8 @@ public class InstallSkillsCommand(
 		SkillOperationResult result = skillManagementService.Install(new InstallSkillsRequest(
 			workspacePath,
 			options.Skill,
-			options.Repo));
+			options.Repo,
+			scope));
 		WriteResult(result);
 		return result.ExitCode;
 	}
@@ -105,8 +166,13 @@ public class UpdateSkillCommand(
 
 	/// <inheritdoc />
 	public override int Execute(UpdateSkillOptions options) {
+		if (!SkillScopeParser.TryParse(options.Scope, out SkillScope scope, out string errorMessage)) {
+			logger.WriteError(errorMessage);
+			return 1;
+		}
+
 		string workspacePath = workspacePathBuilder.RootPath;
-		if (!workspacePathBuilder.IsWorkspace) {
+		if (scope == SkillScope.Workspace && !workspacePathBuilder.IsWorkspace) {
 			logger.WriteError($"Current directory is not inside a clio workspace: {workspacePath}");
 			return 1;
 		}
@@ -114,7 +180,8 @@ public class UpdateSkillCommand(
 		SkillOperationResult result = skillManagementService.Update(new UpdateSkillsRequest(
 			workspacePath,
 			options.Skill,
-			options.Repo));
+			options.Repo,
+			scope));
 		WriteResult(result);
 		return result.ExitCode;
 	}
@@ -141,15 +208,21 @@ public class DeleteSkillCommand(
 
 	/// <inheritdoc />
 	public override int Execute(DeleteSkillOptions options) {
+		if (!SkillScopeParser.TryParse(options.Scope, out SkillScope scope, out string errorMessage)) {
+			logger.WriteError(errorMessage);
+			return 1;
+		}
+
 		string workspacePath = workspacePathBuilder.RootPath;
-		if (!workspacePathBuilder.IsWorkspace) {
+		if (scope == SkillScope.Workspace && !workspacePathBuilder.IsWorkspace) {
 			logger.WriteError($"Current directory is not inside a clio workspace: {workspacePath}");
 			return 1;
 		}
 
 		SkillOperationResult result = skillManagementService.Delete(new DeleteSkillRequest(
 			workspacePath,
-			options.Skill));
+			options.Skill,
+			scope));
 		WriteResult(result);
 		return result.ExitCode;
 	}

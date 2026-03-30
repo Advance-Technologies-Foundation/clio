@@ -88,7 +88,8 @@ public sealed class CreateEntitySchemaTool(
 				: column.ReferenceSchemaName.Trim(),
 			["required"] = column.Required,
 			["default-value-source"] = column.DefaultValueSource,
-			["default-value"] = column.DefaultValue
+			["default-value"] = column.DefaultValue,
+			["default-value-config"] = column.DefaultValueConfig
 		});
 	}
 }
@@ -244,6 +245,7 @@ public sealed class UpdateEntitySchemaTool(
 			["track-changes"] = operation.TrackChanges,
 			["default-value"] = operation.DefaultValue,
 			["default-value-source"] = operation.DefaultValueSource,
+			["default-value-config"] = operation.DefaultValueConfig,
 			["multiline-text"] = operation.MultilineText,
 			["localizable-text"] = operation.LocalizableText,
 			["accent-insensitive"] = operation.AccentInsensitive,
@@ -363,6 +365,7 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 				TrackChanges = args.TrackChanges,
 				DefaultValueSource = args.DefaultValueSource,
 				DefaultValue = args.DefaultValue,
+				DefaultValueConfig = args.DefaultValueConfig,
 				MultilineText = args.MultilineText,
 				LocalizableText = args.LocalizableText,
 				AccentInsensitive = args.AccentInsensitive,
@@ -493,7 +496,9 @@ public sealed record CreateEntitySchemaColumnArgs(
 						  Column type. Supported values:
 						  Guid, Text, ShortText, MediumText, LongText, MaxSizeText,
 						  Integer, Float, Boolean, Date, DateTime, Time, Lookup,
-						  Binary, Image, File. Blob is also accepted as an alias for Binary.
+						  Binary, Image, File, SecureText.
+						  Blob is also accepted as an alias for Binary.
+						  Encrypted and Password are accepted as aliases for SecureText.
 						  """)]
 	[property: Required]
 	string Type,
@@ -520,12 +525,19 @@ public sealed record CreateEntitySchemaColumnArgs(
 	public bool? Required { get; init; }
 
 	[property: JsonPropertyName("default-value-source")]
-	[property: Description("Optional default value source. Supported values: Const, None. Binary, Image, and File columns do not support Const.")]
+	[property: Description("Legacy default value source shorthand. Supported values: Const or None. Binary, Image, and File columns do not support Const. Use default-value-config for Settings, SystemValue, or Sequence.")]
 	public string? DefaultValueSource { get; init; }
 
 	[property: JsonPropertyName("default-value")]
-	[property: Description("Optional constant default value. Binary, Image, and File columns do not support constant defaults.")]
+	[property: Description("Legacy constant default value shorthand used together with default-value-source Const. Binary, Image, and File columns do not support constant defaults.")]
 	public string? DefaultValue { get; init; }
+
+	/// <summary>
+	/// Gets the structured default value metadata used for non-legacy default scenarios.
+	/// </summary>
+	[property: JsonPropertyName("default-value-config")]
+	[property: Description("Structured default value metadata. Use source None, Const, Settings, SystemValue, or Sequence for non-legacy scenarios.")]
+	public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; init; }
 }
 
 /// <summary>
@@ -551,10 +563,11 @@ public abstract record ColumnModificationArgsBase(
 						   Column type. Supported values:
 						   Guid, Integer, Float, Boolean, Date, DateTime, Time, Lookup,
 						   Text, ShortText, MediumText, LongText, MaxSizeText,
-						   Binary, Image, File, Blob,
+						   Binary, Image, File, Blob, SecureText,
 						   Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText, 
 						   Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
-						   Currency0, Currency1, Currency2, Currency3
+						   Currency0, Currency1, Currency2, Currency3.
+						   Encrypted and Password are accepted as aliases for SecureText.
 						   """)]
 	string? Type = null,
 
@@ -587,11 +600,11 @@ public abstract record ColumnModificationArgsBase(
 	bool? TrackChanges = null,
 
 	[property: JsonPropertyName("default-value")]
-	[property: Description("Set a constant default value. Binary, Image, and File columns do not support constant defaults.")]
+	[property: Description("Legacy constant default value shorthand used together with default-value-source Const. Binary, Image, and File columns do not support constant defaults.")]
 	string? DefaultValue = null,
 
 	[property: JsonPropertyName("default-value-source")]
-	[property: Description("Default value source: Const or None. Binary, Image, and File columns do not support Const.")]
+	[property: Description("Legacy default value source shorthand. Supported values: Const or None. Binary, Image, and File columns do not support Const. Use default-value-config for Settings, SystemValue, or Sequence.")]
 	string? DefaultValueSource = null,
 
 	[property: JsonPropertyName("multiline-text")]
@@ -637,6 +650,13 @@ public abstract record ColumnModificationArgsBase(
 	[property: JsonPropertyName("description")]
 	[property: Description("Legacy scalar description. Not accepted by MCP. Use description-localizations instead.")]
 	public string? LegacyDescription { get; init; }
+
+	/// <summary>
+	/// Gets the structured default value metadata used for non-legacy mutation scenarios.
+	/// </summary>
+	[property: JsonPropertyName("default-value-config")]
+	[property: Description("Structured default value metadata. Use source None, Const, Settings, SystemValue, or Sequence for non-legacy scenarios.")]
+	public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; init; }
 }
 
 /// <summary>
