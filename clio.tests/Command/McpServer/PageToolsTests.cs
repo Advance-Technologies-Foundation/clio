@@ -216,8 +216,8 @@ public class PageToolsTests {
 		var dataServiceResponse = new JObject {
 			["success"] = true,
 			["rows"] = new JArray {
-				new JObject { ["Name"] = "TestPage1", ["UId"] = "uid-1", ["PackageName"] = "TestPkg" },
-				new JObject { ["Name"] = "TestPage2", ["UId"] = "uid-2", ["PackageName"] = "TestPkg" }
+				new JObject { ["Name"] = "TestPage1", ["UId"] = "uid-1", ["PackageName"] = "TestPkg", ["ParentSchemaName"] = "PageWithTabsFreedomTemplate" },
+				new JObject { ["Name"] = "TestPage2", ["UId"] = "uid-2", ["PackageName"] = "TestPkg", ["ParentSchemaName"] = "BasePage" }
 			}
 		};
 		applicationClient.ExecutePostRequest(
@@ -231,6 +231,38 @@ public class PageToolsTests {
 		response.Count.Should().Be(2, "because two rows were returned from the DataService");
 		response.Pages.Should().HaveCount(2, "because each row maps to a page item");
 		response.Pages[0].Name.Should().Be("TestPage1", "because the first row has Name=TestPage1");
+		response.Pages[0].ParentSchemaName.Should().Be("PageWithTabsFreedomTemplate",
+			"because page-list should now preserve direct parent schema context for target selection");
+	}
+
+	[Test]
+	[Description("TryListPages projects the direct parent schema name into the select query and response payload")]
+	public void TryListPages_Should_Project_Parent_Schema_Context() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataServiceResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "TestPage1", ["UId"] = "uid-1", ["PackageName"] = "TestPkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataServiceResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 50 };
+
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		result.Should().BeTrue("because the DataService returned a successful response");
+		response.Pages[0].ParentSchemaName.Should().Be("BasePage",
+			"because the response payload should keep the parent schema context returned by the query");
+		applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("[SysSchema:Id:Parent].Name") && body.Contains("ParentSchemaName")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]

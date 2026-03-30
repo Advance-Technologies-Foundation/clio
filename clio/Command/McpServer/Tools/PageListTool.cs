@@ -17,7 +17,7 @@ public sealed class PageListTool(
 	internal const string ToolName = "page-list";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("List Freedom UI pages in Creatio")]
+	[Description("List Freedom UI pages in Creatio with package and parent schema context")]
 	public PageListResponse ListPages([Description("Parameters: package-name, search-pattern, limit, environment-name (all optional)")] [Required] PageListArgs args) {
 		PageListOptions options = new() {
 			PackageName = args.PackageName,

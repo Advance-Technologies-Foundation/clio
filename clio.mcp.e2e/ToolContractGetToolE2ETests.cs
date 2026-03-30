@@ -125,6 +125,39 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("tool-contract-get advertises installed application identity fields for application-get-info")]
+	public async Task ToolContractGet_Should_Advertise_Application_Info_Identity_Fields() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					ApplicationGetInfoTool.ApplicationGetInfoToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the application-get-info contract should be readable through the MCP server");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "application-id",
+			because: "the contract should advertise the installed application identifier");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "application-name",
+			because: "the contract should advertise the installed application display name");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "application-code",
+			because: "the contract should advertise the installed application code");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "application-version",
+			because: "the contract should advertise the installed application version");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("tool-contract-get returns structured unknown tool suggestions")]
 	public async Task ToolContractGet_Should_Return_Structured_Unknown_Tool_Suggestions() {
 		// Arrange

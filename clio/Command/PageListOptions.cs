@@ -99,6 +99,15 @@ namespace Clio.Command {
 								["orderDirection"] = 0,
 								["orderPosition"] = -1,
 								["isVisible"] = true
+							},
+							["ParentSchemaName"] = new JObject {
+								[ExpressionKey] = new JObject {
+									[ExpressionTypeKey] = 0,
+									[ColumnPathKey] = "[SysSchema:Id:Parent].Name"
+								},
+								["orderDirection"] = 0,
+								["orderPosition"] = -1,
+								["isVisible"] = true
 							}
 						}
 					},
@@ -118,7 +127,8 @@ namespace Clio.Command {
 					pages.Add(new PageListItem {
 						Name = row["Name"]?.ToString(),
 						UId = row["UId"]?.ToString(),
-						PackageName = row["PackageName"]?.ToString()
+						PackageName = row["PackageName"]?.ToString(),
+						ParentSchemaName = row["ParentSchemaName"]?.ToString()
 					});
 				}
 				response = new PageListResponse {

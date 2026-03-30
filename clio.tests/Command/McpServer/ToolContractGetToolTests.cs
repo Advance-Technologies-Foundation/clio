@@ -108,6 +108,32 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Advertises enriched application-get-info output fields for installed application identity.")]
+	public void ToolContractGet_Should_Advertise_Application_Info_Identity_Fields() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ApplicationGetInfoTool.ApplicationGetInfoToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the application-get-info contract should be available through tool-contract-get");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "application-id",
+			because: "the contract should advertise the installed application identifier");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "application-name",
+			because: "the contract should advertise the installed application display name");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "application-code",
+			because: "the contract should advertise the installed application code");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "application-version",
+			because: "the contract should advertise the installed application version");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns structured unknown tool suggestions when the requested tool name is misspelled.")]
 	public void ToolContractGet_Should_Return_Structured_Error_For_Unknown_Tool() {
 		// Arrange

@@ -133,7 +133,14 @@ public sealed class ApplicationInfoService(
 			.ThenBy(entity => entity.Name, StringComparer.OrdinalIgnoreCase)
 			.ToList();
 
-		return new ApplicationInfoResult(primaryPackage.UId, primaryPackage.Name, entities);
+		return new ApplicationInfoResult(
+			primaryPackage.UId,
+			primaryPackage.Name,
+			entities,
+			application.Id,
+			application.Name,
+			application.Code,
+			application.Version);
 	}
 
 	private static InstalledApplicationDto ResolveApplication(
@@ -730,10 +737,18 @@ public sealed class ApplicationInfoService(
 /// <param name="PackageUId">Primary package identifier.</param>
 /// <param name="PackageName">Primary package name.</param>
 /// <param name="Entities">Application entity details.</param>
+/// <param name="ApplicationId">Installed application identifier.</param>
+/// <param name="ApplicationName">Installed application display name.</param>
+/// <param name="ApplicationCode">Installed application code.</param>
+/// <param name="ApplicationVersion">Installed application version.</param>
 public sealed record ApplicationInfoResult(
 	string PackageUId,
 	string PackageName,
-	IReadOnlyList<ApplicationEntityInfoResult> Entities);
+	IReadOnlyList<ApplicationEntityInfoResult> Entities,
+	string? ApplicationId = null,
+	string? ApplicationName = null,
+	string? ApplicationCode = null,
+	string? ApplicationVersion = null);
 
 /// <summary>
 /// Structured entity information returned as part of application info results.

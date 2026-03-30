@@ -178,7 +178,11 @@ public sealed class ApplicationToolTests {
 								"Const",
 								"Default")
 						])
-				]));
+				],
+				ApplicationId: "app-id",
+				ApplicationName: "Vehicle App",
+				ApplicationCode: "UsrVehicleApp",
+				ApplicationVersion: "8.3.0"));
 		ApplicationGetInfoTool tool = new(applicationInfoService);
 
 		// Act
@@ -199,6 +203,14 @@ public sealed class ApplicationToolTests {
 			because: "the MCP tool should preserve the primary package name");
 		result.CanonicalMainEntityName.Should().Be("UsrVehicle",
 			because: "the MCP tool should expose the canonical main entity when it matches the primary package");
+		result.ApplicationId.Should().Be("app-id",
+			because: "the MCP tool should preserve the installed application identifier for follow-up discovery and navigation");
+		result.ApplicationName.Should().Be("Vehicle App",
+			because: "the MCP tool should preserve the installed application display name");
+		result.ApplicationCode.Should().Be("UsrVehicleApp",
+			because: "the MCP tool should preserve the installed application code");
+		result.ApplicationVersion.Should().Be("8.3.0",
+			because: "the MCP tool should preserve the installed application version");
 		result.Entities.Should().ContainSingle(
 			because: "the MCP tool should surface the entity metadata returned by the backend service");
 		result.Entities![0].Columns[0].DataValueType.Should().Be("Text",
@@ -304,7 +316,11 @@ public sealed class ApplicationToolTests {
 								"Const",
 								"Default")
 						])
-				]));
+				],
+				ApplicationId: "created-app-id",
+				ApplicationName: "Codex App",
+				ApplicationCode: "UsrCodexApp",
+				ApplicationVersion: "1.0.0"));
 		ApplicationCreateTool tool = new(applicationCreateService);
 
 		// Act
@@ -345,6 +361,10 @@ public sealed class ApplicationToolTests {
 			because: "the create MCP tool should preserve the primary package identifier from the backend service");
 		result.CanonicalMainEntityName.Should().Be("UsrCodexApp",
 			because: "the create MCP tool should expose the canonical main entity when the created app returns one");
+		result.ApplicationId.Should().Be("created-app-id",
+			because: "application-create should return the installed application identifier in the same envelope shape as application-get-info");
+		result.ApplicationCode.Should().Be("UsrCodexApp",
+			because: "application-create should return the created application code in the structured envelope");
 		result.Entities![0].Columns[0].DataValueType.Should().Be("Text",
 			because: "the create MCP tool should preserve Clio-style column metadata");
 	}
@@ -359,6 +379,10 @@ public sealed class ApplicationToolTests {
 			PackageUId: "pkg-uid",
 			PackageName: "Pkg",
 			CanonicalMainEntityName: "UsrEntity",
+			ApplicationId: "app-id",
+			ApplicationName: "Codex App",
+			ApplicationCode: "UsrCodexApp",
+			ApplicationVersion: "8.3.0",
 			Entities: [
 				new ApplicationEntityResult(
 					UId: "entity-uid",
@@ -383,6 +407,14 @@ public sealed class ApplicationToolTests {
 			because: "application context responses should keep Clio kebab-case payload fields");
 		json.Should().Contain("\"canonical-main-entity-name\":\"UsrEntity\"",
 			because: "application context responses should expose the canonical main entity when it is known");
+		json.Should().Contain("\"application-id\":\"app-id\"",
+			because: "application context responses should preserve the installed application identifier");
+		json.Should().Contain("\"application-name\":\"Codex App\"",
+			because: "application context responses should preserve the installed application display name");
+		json.Should().Contain("\"application-code\":\"UsrCodexApp\"",
+			because: "application context responses should preserve the installed application code");
+		json.Should().Contain("\"application-version\":\"8.3.0\"",
+			because: "application context responses should preserve the installed application version");
 		json.Should().Contain("\"u-id\":\"entity-uid\"",
 			because: "entity payloads should keep Clio kebab-case payload fields");
 		json.Should().Contain("\"data-value-type\":\"Text\"",

@@ -1190,7 +1190,7 @@ Aliases: `gwu`
 ## page-list
 
 Lists Freedom UI page schemas from `SysSchema` and returns a JSON envelope with page names,
-schema UIds, and package names.
+schema UIds, package names, and parent schema names.
 
 ```bash
 clio page-list [--package-name <PACKAGE_NAME>] [--search-pattern <TEXT>] [--limit 50] -e <ENVIRONMENT_NAME>

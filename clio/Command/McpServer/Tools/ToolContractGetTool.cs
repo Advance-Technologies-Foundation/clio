@@ -323,7 +323,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationCreate() {
 		return new ToolContractDefinition(
 			ApplicationCreateTool.ApplicationCreateToolName,
-			"Creates a Creatio application and returns the created application context envelope.",
+			"Creates a Creatio application and returns installed application identity plus the created application context envelope.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, "name", "code", TemplateCodeFieldName, IconBackgroundFieldName],
 				[
@@ -362,6 +362,10 @@ internal static class ToolContractCatalog {
 				Field("package-u-id", StringType, "Primary package identifier."),
 				Field(PackageNameFieldName, StringType, "Primary package name."),
 				Field("canonical-main-entity-name", StringType, "Canonical main entity name."),
+				Field("application-id", StringType, "Installed application identifier."),
+				Field("application-name", StringType, "Installed application display name."),
+				Field("application-code", StringType, "Installed application code."),
+				Field("application-version", StringType, "Installed application version."),
 				Field("entities", ArrayType, "Application entities."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
@@ -405,7 +409,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationGetInfo() {
 		return new ToolContractDefinition(
 			ApplicationGetInfoTool.ApplicationGetInfoToolName,
-			"Returns the current package and entity metadata for one installed application so callers can inspect the right app before mutating it.",
+			"Returns installed application identity plus current package and entity metadata so callers can inspect the right app before mutating it.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
@@ -426,6 +430,10 @@ internal static class ToolContractCatalog {
 				Field("package-u-id", StringType, "Primary package identifier."),
 				Field(PackageNameFieldName, StringType, "Primary package name."),
 				Field("canonical-main-entity-name", StringType, "Canonical main entity name."),
+				Field("application-id", StringType, "Installed application identifier."),
+				Field("application-name", StringType, "Installed application display name."),
+				Field("application-code", StringType, "Installed application code."),
+				Field("application-version", StringType, "Installed application version."),
 				Field("entities", ArrayType, "Application entities."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
@@ -619,7 +627,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageList() {
 		return new ToolContractDefinition(
 			PageListTool.ToolName,
-			"Lists Freedom UI pages for the requested package so the caller can discover candidate page schemas before inspection or mutation.",
+			"Lists Freedom UI pages for the requested package with package and parent schema context so the caller can discover candidate page schemas before inspection or mutation.",
 			new ToolInputSchemaContract(
 				[],
 				EnvironmentOrExplicitConnectionFields(
@@ -633,7 +641,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field(PagesFieldName, ArrayType, "Discovered pages."),
+				Field(PagesFieldName, ArrayType, "Discovered pages with schema, package, and parent schema context."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
