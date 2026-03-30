@@ -107,11 +107,12 @@ public sealed class SchemaSyncTool(
 					op.SchemaName,
 					EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context));
 			}
+			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
 			return new SchemaSyncOperationResult {
 				Operation = operationName, SchemaName = op.SchemaName,
 				Success = exitCode == 0,
-				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)],
-				Error = exitCode != 0 ? $"{operationName} failed with exit code {exitCode}" : null
+				Messages = messages,
+				Error = BuildOperationError(operationName, exitCode, messages)
 			};
 		} catch (Exception ex) {
 			return new SchemaSyncOperationResult {
@@ -139,11 +140,12 @@ public sealed class SchemaSyncTool(
 			};
 			UpdateEntitySchemaCommand command = commandResolver.Resolve<UpdateEntitySchemaCommand>(options);
 			int exitCode = command.Execute(options);
+			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
 			return new SchemaSyncOperationResult {
 				Operation = "update-entity", SchemaName = op.SchemaName,
 				Success = exitCode == 0,
-				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)],
-				Error = exitCode != 0 ? "update-entity failed with exit code " + exitCode : null
+				Messages = messages,
+				Error = BuildOperationError("update-entity", exitCode, messages)
 			};
 		} catch (Exception ex) {
 			return new SchemaSyncOperationResult {
@@ -166,11 +168,12 @@ public sealed class SchemaSyncTool(
 			};
 			CreateDataBindingDbCommand command = commandResolver.Resolve<CreateDataBindingDbCommand>(options);
 			int exitCode = command.Execute(options);
+			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
 			return new SchemaSyncOperationResult {
 				Operation = "seed-data", SchemaName = op.SchemaName,
 				Success = exitCode == 0,
-				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)],
-				Error = exitCode != 0 ? "seed-data failed with exit code " + exitCode : null
+				Messages = messages,
+				Error = BuildOperationError("seed-data", exitCode, messages)
 			};
 		} catch (Exception ex) {
 			return new SchemaSyncOperationResult {
@@ -180,6 +183,25 @@ public sealed class SchemaSyncTool(
 				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
 			};
 		}
+	}
+
+	private static string? BuildOperationError(string operationName, int exitCode, IReadOnlyList<LogMessage> messages) {
+		if (exitCode == 0) {
+			return null;
+		}
+
+		string fallback = $"{operationName} failed with exit code {exitCode}";
+		string? detailedError = messages
+			.LastOrDefault(message => message.LogDecoratorType == LogDecoratorType.Error)
+			?.Value
+			?.ToString()
+			?.Trim();
+
+		if (string.IsNullOrWhiteSpace(detailedError)) {
+			return fallback;
+		}
+
+		return $"{fallback}: {detailedError}";
 	}
 }
 
