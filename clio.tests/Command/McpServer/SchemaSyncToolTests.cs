@@ -241,6 +241,36 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Surfaces command error details in schema-sync operation error when available")]
+	public void SchemaSync_Should_Include_Detailed_Command_Error_When_Present() {
+		// Arrange
+		TestLogger logger = new();
+		var failingCommand = new FakeCreateEntitySchemaCommand(
+			logger,
+			exitCode: 1,
+			messages: ["Schema 'UsrFirst' already exists."]);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(failingCommand);
+		SchemaSyncTool tool = new(commandResolver, logger);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrFirst", Title: "First")]);
+
+		// Act
+		SchemaSyncResponse response = tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the underlying command returned a non-zero exit code");
+		response.Results.Should().HaveCount(1,
+			because: "processing should stop after the first failed operation");
+		response.Results[0].Error.Should().Contain("Schema 'UsrFirst' already exists.",
+			because: "the schema-sync error should include the command-level error details");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns error for unknown operation type without stopping")]
 	public void SchemaSync_Unknown_OperationType_Should_Return_Error() {
 		// Arrange
@@ -494,7 +524,11 @@ public sealed class SchemaSyncToolTests {
 		public override int Execute(CreateEntitySchemaOptions options) {
 			CapturedOptions = options;
 			foreach (string message in _messages) {
-				_logger.WriteInfo(message);
+				if (_exitCode == 0) {
+					_logger.WriteInfo(message);
+				} else {
+					_logger.WriteError(message);
+				}
 			}
 			return _exitCode;
 		}
