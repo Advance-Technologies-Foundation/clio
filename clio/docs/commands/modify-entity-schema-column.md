@@ -39,7 +39,7 @@ clio modify-entity-schema-column [options]
 | `--multiline-text` | Text-only flag | `--multiline-text true` |
 | `--localizable-text` | Text-only flag | `--localizable-text true` |
 | `--accent-insensitive` | Text-only flag | `--accent-insensitive true` |
-| `--masked` | Text-only flag | `--masked true` |
+| `--masked` | Text/SecureText flag | `--masked true` |
 | `--format-validated` | Text-only flag | `--format-validated true` |
 | `--use-seconds` | DateTime-only flag | `--use-seconds true` |
 | `--simple-lookup` | Lookup-only flag | `--simple-lookup true` |
@@ -109,6 +109,7 @@ clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicl
 - `--default-value-source None` clears the stored default value; `Const` requires `--default-value`.
 - MCP callers can also send structured `default-value-config` with `source` set to `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`; the direct CLI flags remain shorthand for `Const` and `None`.
 - `Binary`, `Image`, and `File` columns do not support `--default-value` or `--default-value-source Const`.
+- `--masked` is accepted for `Text` and `SecureText` columns and maps to schema-level `isValueMasked`.
 - After `SaveSchema`, the schema is reloaded immediately. The command treats save as failed if the mutated column cannot be read back.
 
 ## Related Commands

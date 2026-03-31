@@ -52,7 +52,7 @@ OPTIONS
     --multiline-text               Set multi-line text flag (Text only)
     --localizable-text             Set localizable text flag (Text only)
     --accent-insensitive           Set accent-insensitive flag (Text only)
-    --masked                       Set masked flag (Text only)
+    --masked                       Set masked flag (Text/SecureText only)
     --format-validated             Set format-validated flag (Text only)
     --use-seconds                  Set use-seconds flag (DateTime only)
     --simple-lookup                Set simple-lookup flag (Lookup only)

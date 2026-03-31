@@ -131,7 +131,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.MultiLineText,
 			column.LocalizableText,
 			column.AccentInsensitive,
-			column.Masked,
+			column.ValueMasked || column.Masked,
 			column.FormatValidated,
 			column.UseSeconds,
 			defaultValueConfig);
@@ -260,6 +260,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			LocalizableText = options.LocalizableText ?? false,
 			AccentInsensitive = options.AccentInsensitive ?? false,
 			Masked = options.Masked ?? false,
+			ValueMasked = options.Masked ?? false,
 			FormatValidated = options.FormatValidated ?? false,
 			UseSeconds = options.UseSeconds ?? false,
 			List = options.SimpleLookup ?? false,
@@ -343,6 +344,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 		if (options.Masked.HasValue) {
 			column.Masked = options.Masked.Value;
+			column.ValueMasked = options.Masked.Value;
 		}
 		if (options.FormatValidated.HasValue) {
 			column.FormatValidated = options.FormatValidated.Value;
@@ -416,6 +418,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		bool isLookup = dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"];
 		ValidateLookupOptions(options, isLookup, isAdd);
 		ValidateTextOptions(options, dataValueType);
+		ValidateMaskedOption(options, dataValueType);
 		ValidateDateTimeOptions(options, dataValueType);
 		ValidateDefaultValueOptions(options, dataValueType);
 	}
@@ -455,8 +458,20 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		return options.MultilineText.HasValue
 			|| options.LocalizableText.HasValue
 			|| options.AccentInsensitive.HasValue
-			|| options.Masked.HasValue
 			|| options.FormatValidated.HasValue;
+	}
+
+	private static void ValidateMaskedOption(ModifyEntitySchemaColumnOptions options, int dataValueType) {
+		if (!options.Masked.HasValue) {
+			return;
+		}
+
+		bool isTextLikeType = EntitySchemaDesignerSupport.IsTextLikeDataValueType(dataValueType);
+		bool isSecureTextType = dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["secureText"];
+		if (!isTextLikeType && !isSecureTextType) {
+			throw new EntitySchemaDesignerException(
+				"Masked option can be used only when the effective column type is Text or SecureText.");
+		}
 	}
 
 	private static void ValidateDateTimeOptions(ModifyEntitySchemaColumnOptions options, int dataValueType) {

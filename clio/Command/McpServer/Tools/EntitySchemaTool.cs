@@ -87,11 +87,12 @@ public sealed class CreateEntitySchemaTool(
 				? null
 				: column.ReferenceSchemaName.Trim(),
 			["required"] = column.Required,
-			["default-value-source"] = column.DefaultValueSource,
-			["default-value"] = column.DefaultValue,
-			["default-value-config"] = column.DefaultValueConfig
-		});
-	}
+		    ["default-value-source"] = column.DefaultValueSource,
+		    ["default-value"] = column.DefaultValue,
+			["default-value-config"] = column.DefaultValueConfig,
+			["masked"] = column.Masked
+	});
+}
 }
 
 /// <summary>
@@ -538,6 +539,10 @@ public sealed record CreateEntitySchemaColumnArgs(
 	[property: JsonPropertyName("default-value-config")]
 	[property: Description("Structured default value metadata. Use source None, Const, Settings, SystemValue, or Sequence for non-legacy scenarios.")]
 	public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; init; }
+
+	[property: JsonPropertyName("masked")]
+	[property: Description("Optional masked flag. Allowed for Text and SecureText columns.")]
+	public bool? Masked { get; init; }
 }
 
 /// <summary>
