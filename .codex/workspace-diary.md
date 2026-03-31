@@ -1468,3 +1468,17 @@ Decision: Added two focused unit tests in SchemaSyncToolTests for exception path
 Discovery: Before these tests, uncovered lines in SchemaSyncTool were exactly the update-entity/seed-data catch branches and seed-failure break path; after the update, targeted coverage reports line_rate=1 with uncovered_count=0 for SchemaSyncTool.
 Files: clio.tests/Command/McpServer/SchemaSyncToolTests.cs, .codex/workspace-diary.md
 Impact: Regression confidence is higher for error propagation and message-capture behavior when command execution throws during schema-sync operations.
+
+## 2026-03-31 14:35 – PR 497 performance review (BaseTool/SchemaSyncTool)
+Context: Requested performance-only review for PR #497 between b92a40b292fcc4ada17b0bf3a8e414a5bafe05e8 and acf105f093763565d9f10a9b062a6f417824bf25.
+Decision: Evaluated only runtime impact areas: hot path latency, message-capture allocations, lock hold behavior, and failure-path message scan complexity.
+Discovery: Removing BaseTool Thread.Sleep(500) eliminates fixed lock-held delay; FlushAndSnapshotMessages consolidates flush/snapshot/clear under one logger lock without introducing additional per-success complexity. New BuildOperationError adds linear scan only on non-zero exit codes.
+Files: clio/Command/McpServer/Tools/BaseTool.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio/Common/ConsoleLogger.cs, clio/Common/LoggerMessageCaptureExtensions.cs, .codex/workspace-diary.md
+Impact: Review result recorded for future MCP runtime tuning and lock-contention investigations.
+
+## 2026-03-31 14:45 – Address PR review gaps with BaseTool and schema-sync tests
+Context: User asked to fix review findings from PR #497 around regression risk and incomplete test coverage.
+Decision: Added dedicated BaseTool unit tests for deterministic log capture in success/exception paths, and expanded SchemaSyncToolTests with non-zero non-exception scenarios for update-entity and seed-data including detailed vs fallback error behavior.
+Discovery: The uncovered regression risk came from lacking direct BaseTool tests after replacing sleep-based capture with flush-based capture; adding targeted tests closed this gap and preserved behavior expectations under ConsoleLogger queue draining.
+Files: clio.tests/Command/McpServer/BaseToolTests.cs, clio.tests/Command/McpServer/SchemaSyncToolTests.cs, .codex/workspace-diary.md
+Impact: PR now has direct regression coverage for BaseTool logging semantics and broader schema-sync failure-path coverage, reducing merge risk for the optimization change.
