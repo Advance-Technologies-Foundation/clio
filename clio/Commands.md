@@ -83,6 +83,8 @@ To display command help use:
 clio <COMMAND_NAME> --help
 ```
 
+If you mistype a command name, clio shows up to three close matches and then points you back to `clio help` and `clio <COMMAND_NAME> --help`.
+
 ## ver
 
 Display version information for clio and related components.
