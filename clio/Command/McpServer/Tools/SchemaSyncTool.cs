@@ -107,20 +107,9 @@ public sealed class SchemaSyncTool(
 					op.SchemaName,
 					EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context));
 			}
-			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
-			return new SchemaSyncOperationResult {
-				Operation = operationName, SchemaName = op.SchemaName,
-				Success = exitCode == 0,
-				Messages = messages,
-				Error = BuildOperationError(operationName, exitCode, messages)
-			};
+			return BuildCommandResult(operationName, op.SchemaName, exitCode);
 		} catch (Exception ex) {
-			return new SchemaSyncOperationResult {
-				Operation = operationName, SchemaName = op.SchemaName,
-				Success = false,
-				Error = ex.Message,
-				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
-			};
+			return BuildExceptionResult(operationName, op.SchemaName, ex);
 		}
 	}
 
@@ -140,20 +129,9 @@ public sealed class SchemaSyncTool(
 			};
 			UpdateEntitySchemaCommand command = commandResolver.Resolve<UpdateEntitySchemaCommand>(options);
 			int exitCode = command.Execute(options);
-			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
-			return new SchemaSyncOperationResult {
-				Operation = "update-entity", SchemaName = op.SchemaName,
-				Success = exitCode == 0,
-				Messages = messages,
-				Error = BuildOperationError("update-entity", exitCode, messages)
-			};
+			return BuildCommandResult("update-entity", op.SchemaName, exitCode);
 		} catch (Exception ex) {
-			return new SchemaSyncOperationResult {
-				Operation = "update-entity", SchemaName = op.SchemaName,
-				Success = false,
-				Error = ex.Message,
-				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
-			};
+			return BuildExceptionResult("update-entity", op.SchemaName, ex);
 		}
 	}
 
@@ -168,21 +146,31 @@ public sealed class SchemaSyncTool(
 			};
 			CreateDataBindingDbCommand command = commandResolver.Resolve<CreateDataBindingDbCommand>(options);
 			int exitCode = command.Execute(options);
-			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
-			return new SchemaSyncOperationResult {
-				Operation = "seed-data", SchemaName = op.SchemaName,
-				Success = exitCode == 0,
-				Messages = messages,
-				Error = BuildOperationError("seed-data", exitCode, messages)
-			};
+			return BuildCommandResult("seed-data", op.SchemaName, exitCode);
 		} catch (Exception ex) {
-			return new SchemaSyncOperationResult {
-				Operation = "seed-data", SchemaName = op.SchemaName,
-				Success = false,
-				Error = ex.Message,
-				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
-			};
+			return BuildExceptionResult("seed-data", op.SchemaName, ex);
 		}
+	}
+
+	private SchemaSyncOperationResult BuildCommandResult(string operationName, string schemaName, int exitCode) {
+		IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
+		return new SchemaSyncOperationResult {
+			Operation = operationName,
+			SchemaName = schemaName,
+			Success = exitCode == 0,
+			Messages = messages,
+			Error = BuildOperationError(operationName, exitCode, messages)
+		};
+	}
+
+	private SchemaSyncOperationResult BuildExceptionResult(string operationName, string schemaName, Exception exception) {
+		return new SchemaSyncOperationResult {
+			Operation = operationName,
+			SchemaName = schemaName,
+			Success = false,
+			Error = exception.Message,
+			Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
+		};
 	}
 
 	private static string? BuildOperationError(string operationName, int exitCode, IReadOnlyList<LogMessage> messages) {
