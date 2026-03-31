@@ -199,6 +199,29 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	[Test]
+	[Description("Creates a schema through create-entity-schema with masked=true on a Text column and verifies masked is preserved in structured readback.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("Create entity schema applies masked argument for text columns")]
+	[AllureDescription("Uses the real MCP server to call create-entity-schema with a Text column that sets masked=true, then verifies the structured get-entity-schema-column-properties response preserves masked=true for that column.")]
+	public async Task CreateEntitySchema_Should_Apply_Masked_For_Text_Column_Through_Mcp() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string maskedColumnName = "UsrMaskedText";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaWithMaskedTextColumnAsync(arrangeContext, maskedColumnName);
+		EntitySchemaColumnPropertiesInfo columnProperties = await ActGetColumnPropertiesAsync(arrangeContext, maskedColumnName);
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"create-entity-schema should succeed when a Text column explicitly requests masked=true");
+		AssertIncludesInfoMessage(createResult,
+			"successful schema creation with masked columns should emit progress output");
+		AssertMaskedTextColumnProperties(columnProperties, arrangeContext.SchemaName, maskedColumnName, "Masked text");
+	}
+
+	[Test]
 	[Description("Rejects inherited BaseLookup columns before environment resolution when create-lookup tries to redefine Name.")]
 	[AllureTag(CreateLookupToolName)]
 	[AllureName("Create lookup rejects inherited BaseLookup columns")]
@@ -415,6 +438,27 @@ public sealed class EntitySchemaToolE2ETests {
 					["name"] = arrangeContext.InitialColumnName,
 					["type"] = "Text",
 					["title-localizations"] = BuildLocalizations("Vehicle name")
+				}
+			]);
+		return McpCommandExecutionParser.Extract(callResult);
+	}
+
+	[AllureStep("Act by invoking create-entity-schema through MCP with a masked text column")]
+	private static async Task<CommandExecutionEnvelope> ActCreateEntitySchemaWithMaskedTextColumnAsync(
+		EntitySchemaArrangeContext arrangeContext,
+		string columnName) {
+		CallToolResult callResult = await CallCreateEntitySchemaAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName,
+			arrangeContext.CancellationTokenSource.Token,
+			columns: [
+				new Dictionary<string, object?> {
+					["name"] = columnName,
+					["type"] = "Text",
+					["title-localizations"] = BuildLocalizations("Masked text"),
+					["masked"] = true
 				}
 			]);
 		return McpCommandExecutionParser.Extract(callResult);
@@ -860,6 +904,24 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the structured default value config should preserve the system value name");
 		properties.DefaultValueConfig.Value.Should().BeNull(
 			because: "system-value defaults should not project a constant payload");
+	}
+
+	[AllureStep("Assert structured masked text column properties")]
+	private static void AssertMaskedTextColumnProperties(
+		EntitySchemaColumnPropertiesInfo properties,
+		string schemaName,
+		string columnName,
+		string title) {
+		properties.SchemaName.Should().Be(schemaName,
+			because: "the structured result should identify the schema that contains the masked text column");
+		properties.ColumnName.Should().Be(columnName,
+			because: "the structured result should identify the masked column created through create-entity-schema");
+		properties.Type.Should().Be("Text",
+			because: "the structured result should preserve the requested Text type");
+		properties.Title.Should().Be(title,
+			because: "the structured result should preserve the masked column title");
+		properties.Masked.Should().BeTrue(
+			because: "create-entity-schema should forward masked=true through the MCP contract and persist it remotely");
 	}
 
 	[AllureStep("Assert schema properties include Binary, Image, and File columns")]
