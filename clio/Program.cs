@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Text;
 using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Clio.Command;
@@ -183,10 +185,16 @@ internal class Program {
 		
 		
 	];
+	private static readonly Lazy<IReadOnlyList<CommandSuggestionEntry>> CommandSuggestionsCatalog =
+		new(CreateCommandSuggestionsCatalog);
+	private const int CommandSuggestionLimit = 3;
 
 	internal static bool IsCfgOpenCommand;
 	internal static bool IsMcpServerMode { get; private set; }
 	public static IAppUpdater _appUpdater;
+
+	private sealed record CommandSuggestionEntry(string CanonicalName, IReadOnlyList<string> SearchTerms);
+	private sealed record CommandSuggestionScore(string CanonicalName, int TokenOverlap, int EditDistance);
 
 	private static string[] NormalizeCommandLineArgs(string[] args) {
 		if (args.Length >= 3 &&
@@ -638,6 +646,7 @@ internal class Program {
 	/// <param name="errs">Collection of parsing errors</param>
 	/// <returns>Exit code based on the type of errors encountered</returns>
 	private static int HandleParseError(IEnumerable<Error> errs){
+		Error[] errors = errs.ToArray();
 		int exitCode = 1;
 
 		List<ErrorType> notRealErrors = new() {
@@ -646,15 +655,185 @@ internal class Program {
 			ErrorType.HelpVerbRequestedError
 		};
 
-		bool isNotRealError = errs.Select(err => err.Tag)
+		bool isNotRealError = errors.Select(err => err.Tag)
 								.Intersect(notRealErrors)
 								.Any();
 
 		if (isNotRealError) {
 			exitCode = 0;
 		}
+		else {
+			BadVerbSelectedError badVerbError = errors.OfType<BadVerbSelectedError>().FirstOrDefault();
+			if (badVerbError != null) {
+				WriteUnknownCommandSuggestions(badVerbError.Token);
+			}
+		}
 
 		return exitCode;
+	}
+
+	private static void WriteUnknownCommandSuggestions(string requestedCommand) {
+		string[] suggestions = GetUnknownCommandSuggestions(requestedCommand);
+		TextWriter output = Console.Out;
+		output.WriteLine();
+		if (suggestions.Length > 0) {
+			output.WriteLine("Maybe you meant:");
+			foreach (string suggestion in suggestions) {
+				output.WriteLine($"  clio {suggestion}");
+			}
+			output.WriteLine();
+		}
+		output.WriteLine("See all commands: clio help");
+		output.WriteLine("See command help: clio <command> --help");
+	}
+
+	private static string[] GetUnknownCommandSuggestions(string requestedCommand) {
+		if (string.IsNullOrWhiteSpace(requestedCommand)) {
+			return [];
+		}
+		CommandSuggestionScore[] scores = CommandSuggestionsCatalog.Value
+			.Select(entry => BuildCommandSuggestionScore(requestedCommand, entry))
+			.OrderByDescending(score => score.TokenOverlap)
+			.ThenBy(score => score.EditDistance)
+			.ThenBy(score => score.CanonicalName, StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+		if (scores.Length == 0) {
+			return [];
+		}
+		string comparableRequestedCommand = NormalizeComparableCommandName(requestedCommand);
+		bool hasTokenOverlap = scores.Any(score => score.TokenOverlap > 0);
+		bool hasConfidentDistanceMatch = scores.Any(score =>
+			score.EditDistance <= GetSuggestionDistanceThreshold(comparableRequestedCommand.Length));
+		if (!hasTokenOverlap && !hasConfidentDistanceMatch) {
+			return [];
+		}
+		return scores
+			.Take(CommandSuggestionLimit)
+			.Select(score => score.CanonicalName)
+			.ToArray();
+	}
+
+	private static CommandSuggestionScore BuildCommandSuggestionScore(string requestedCommand,
+		CommandSuggestionEntry entry) {
+		string[] requestedTokens = TokenizeCommandName(requestedCommand);
+		string comparableRequestedCommand = NormalizeComparableCommandName(requestedCommand);
+		int bestTokenOverlap = 0;
+		int bestEditDistance = int.MaxValue;
+		foreach (string searchTerm in entry.SearchTerms) {
+			int tokenOverlap = CountTokenOverlap(requestedTokens, TokenizeCommandName(searchTerm));
+			int editDistance = ComputeDistance(comparableRequestedCommand, NormalizeComparableCommandName(searchTerm));
+			if (tokenOverlap > bestTokenOverlap || tokenOverlap == bestTokenOverlap && editDistance < bestEditDistance) {
+				bestTokenOverlap = tokenOverlap;
+				bestEditDistance = editDistance;
+			}
+		}
+		return new CommandSuggestionScore(entry.CanonicalName, bestTokenOverlap, bestEditDistance);
+	}
+
+	private static IReadOnlyList<CommandSuggestionEntry> CreateCommandSuggestionsCatalog() {
+		Dictionary<string, HashSet<string>> searchTermsByCanonicalName = new(StringComparer.OrdinalIgnoreCase);
+		foreach (Type optionType in CommandOption) {
+			VerbAttribute verbAttribute = optionType.GetCustomAttribute<VerbAttribute>();
+			if (verbAttribute == null || verbAttribute.Hidden || string.IsNullOrWhiteSpace(verbAttribute.Name)) {
+				continue;
+			}
+			if (!searchTermsByCanonicalName.TryGetValue(verbAttribute.Name, out HashSet<string> searchTerms)) {
+				searchTerms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+				searchTermsByCanonicalName[verbAttribute.Name] = searchTerms;
+			}
+			searchTerms.Add(verbAttribute.Name);
+			if (verbAttribute.Aliases == null) {
+				continue;
+			}
+			foreach (string alias in verbAttribute.Aliases.Where(alias => !string.IsNullOrWhiteSpace(alias))) {
+				searchTerms.Add(alias);
+			}
+		}
+		return searchTermsByCanonicalName
+			.OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+			.Select(entry => new CommandSuggestionEntry(entry.Key,
+				entry.Value.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray()))
+			.ToArray();
+	}
+
+	private static int CountTokenOverlap(IEnumerable<string> requestedTokens, IEnumerable<string> candidateTokens) {
+		HashSet<string> requested = requestedTokens.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		HashSet<string> candidate = candidateTokens.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		requested.IntersectWith(candidate);
+		return requested.Count;
+	}
+
+	private static string[] TokenizeCommandName(string commandName) {
+		if (string.IsNullOrWhiteSpace(commandName)) {
+			return [];
+		}
+		List<string> tokens = [];
+		StringBuilder currentToken = new();
+		for (int index = 0; index < commandName.Length; index++) {
+			char current = commandName[index];
+			if (!char.IsLetterOrDigit(current)) {
+				FlushToken(tokens, currentToken);
+				continue;
+			}
+			if (currentToken.Length > 0 && char.IsUpper(current) && char.IsLower(currentToken[currentToken.Length - 1])) {
+				FlushToken(tokens, currentToken);
+			}
+			currentToken.Append(char.ToLowerInvariant(current));
+		}
+		FlushToken(tokens, currentToken);
+		return tokens.ToArray();
+	}
+
+	private static void FlushToken(ICollection<string> tokens, StringBuilder currentToken) {
+		if (currentToken.Length == 0) {
+			return;
+		}
+		tokens.Add(currentToken.ToString());
+		currentToken.Clear();
+	}
+
+	private static string NormalizeComparableCommandName(string commandName) {
+		if (string.IsNullOrWhiteSpace(commandName)) {
+			return string.Empty;
+		}
+		StringBuilder normalized = new(commandName.Length);
+		foreach (char current in commandName) {
+			if (char.IsLetterOrDigit(current)) {
+				normalized.Append(char.ToLowerInvariant(current));
+			}
+		}
+		return normalized.ToString();
+	}
+
+	private static int GetSuggestionDistanceThreshold(int commandLength) {
+		return commandLength switch {
+			<= 2 => 0,
+			<= 6 => 1,
+			<= 10 => 2,
+			_ => 3
+		};
+	}
+
+	private static int ComputeDistance(string source, string target) {
+		if (string.Equals(source, target, StringComparison.OrdinalIgnoreCase)) {
+			return 0;
+		}
+		int[,] matrix = new int[source.Length + 1, target.Length + 1];
+		for (int row = 0; row <= source.Length; row++) {
+			matrix[row, 0] = row;
+		}
+		for (int column = 0; column <= target.Length; column++) {
+			matrix[0, column] = column;
+		}
+		for (int row = 1; row <= source.Length; row++) {
+			for (int column = 1; column <= target.Length; column++) {
+				int cost = source[row - 1] == target[column - 1] ? 0 : 1;
+				matrix[row, column] = Math.Min(
+					Math.Min(matrix[row - 1, column] + 1, matrix[row, column - 1] + 1),
+					matrix[row - 1, column - 1] + cost);
+			}
+		}
+		return matrix[source.Length, target.Length];
 	}
 
 	private static bool IsMcpCommand(string[] args) {
