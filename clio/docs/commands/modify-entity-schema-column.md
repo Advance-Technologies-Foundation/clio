@@ -66,7 +66,7 @@ clio modify-entity-schema-column [options]
 - `Time`
 - `Lookup`
 
-The command also accepts `Blob` as an alias for `Binary`, `Encrypted` and `Password` as aliases for `SecureText`, plus designer-native text and decimal variants such as `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`, `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`, `Currency0`, `Currency1`, `Currency2`, and `Currency3`.
+The command also accepts `Blob` as an alias for `Binary`, `Encrypted` and `Password` as aliases for `SecureText`, `EmailAddress` as an alias for `Email`, plus designer-native text and decimal variants such as `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`, `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`, `Currency0`, `Currency1`, `Currency2`, and `Currency3`.
 
 ## Examples
 

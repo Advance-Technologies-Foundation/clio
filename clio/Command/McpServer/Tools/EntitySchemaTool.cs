@@ -497,9 +497,10 @@ public sealed record CreateEntitySchemaColumnArgs(
 						  Column type. Supported values:
 						  Guid, Text, ShortText, MediumText, LongText, MaxSizeText,
 						  Integer, Float, Boolean, Date, DateTime, Time, Lookup,
-						  Binary, Image, File, SecureText.
+						  Binary, Image, File, SecureText, Email.
 						  Blob is also accepted as an alias for Binary.
 						  Encrypted and Password are accepted as aliases for SecureText.
+						  EmailAddress is accepted as an alias for Email.
 						  """)]
 	[property: Required]
 	string Type,
@@ -573,6 +574,7 @@ public abstract record ColumnModificationArgsBase(
 						   Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
 						   Currency0, Currency1, Currency2, Currency3.
 						   Encrypted and Password are accepted as aliases for SecureText.
+						   EmailAddress is accepted as an alias for Email.
 						   """)]
 	string? Type = null,
 

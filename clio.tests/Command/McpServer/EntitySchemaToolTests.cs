@@ -510,8 +510,8 @@ public sealed class EntitySchemaToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("MCP argument descriptions and prompts advertise Binary, Image, File, Blob alias support, and binary default restrictions.")]
-	public void EntitySchemaMcpContract_Should_Advertise_BinaryLike_Types_And_Default_Restrictions() {
+	[Description("MCP argument descriptions and prompts advertise Binary, Blob, SecureText, and Email aliases plus binary default restrictions.")]
+	public void EntitySchemaMcpContract_Should_Advertise_Type_Aliases_And_Default_Restrictions() {
 		// Arrange
 		string createTypeDescription = typeof(CreateEntitySchemaColumnArgs)
 			.GetProperty(nameof(CreateEntitySchemaColumnArgs.Type))!
@@ -552,6 +552,10 @@ public sealed class EntitySchemaToolTests {
 			because: "create MCP input descriptions should list supported file column types");
 		createTypeDescription.Should().Contain("Blob",
 			because: "create MCP input descriptions should advertise the Binary compatibility alias");
+		createTypeDescription.Should().Contain("Email",
+			because: "create MCP input descriptions should advertise the dedicated Email data type");
+		createTypeDescription.Should().Contain("EmailAddress",
+			because: "create MCP input descriptions should advertise the supported Email aliases");
 		createDefaultSourceDescription.Should().Contain("do not support Const",
 			because: "create MCP input descriptions should explain binary-like default restrictions");
 		createDefaultSourceDescription.Should().Contain("default-value-config",
@@ -560,16 +564,24 @@ public sealed class EntitySchemaToolTests {
 			because: "mutation MCP input descriptions should list supported binary-like column types");
 		modifyTypeDescription.Should().Contain("Blob",
 			because: "mutation MCP input descriptions should advertise the Binary compatibility alias");
+		modifyTypeDescription.Should().Contain("EmailAddress",
+			because: "mutation MCP input descriptions should advertise the supported Email aliases");
 		modifyDefaultDescription.Should().Contain("do not support constant defaults",
 			because: "mutation MCP input descriptions should explain binary-like default restrictions");
 		createPrompt.Should().Contain("Blob",
 			because: "create prompt guidance should advertise the Binary compatibility alias");
+		createPrompt.Should().Contain("Email",
+			because: "create prompt guidance should advertise the dedicated Email data type");
+		createPrompt.Should().Contain("EmailAddress",
+			because: "create prompt guidance should advertise the supported Email aliases");
 		createPrompt.Should().Contain("default-value-config",
 			because: "create prompt guidance should advertise the structured default value contract");
 		updatePrompt.Should().Contain("Binary",
 			because: "update prompt guidance should advertise binary-like column support");
 		updatePrompt.Should().Contain("default-value-config",
 			because: "update prompt guidance should advertise the structured default value contract");
+		updatePrompt.Should().Contain("EmailAddress",
+			because: "update prompt guidance should advertise the supported Email aliases");
 		updatePrompt.Should().Contain("default-value-source=Const",
 			because: "update prompt guidance should still explain unsupported legacy binary default usage");
 		updatePrompt.Should().Contain("schema-sync",
@@ -578,6 +590,8 @@ public sealed class EntitySchemaToolTests {
 			because: "modify prompt guidance should advertise file column support");
 		modifyPrompt.Should().Contain("default-value-config",
 			because: "modify prompt guidance should advertise the structured default value contract");
+		modifyPrompt.Should().Contain("EmailAddress",
+			because: "modify prompt guidance should advertise the supported Email aliases");
 	}
 
 	private sealed class FakeModifyEntitySchemaColumnCommand : ModifyEntitySchemaColumnCommand {

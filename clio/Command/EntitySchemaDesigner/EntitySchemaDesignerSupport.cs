@@ -56,6 +56,7 @@ internal static class EntitySchemaDesignerSupport
 			["mediumtext"] = "text250",
 			["longtext"] = "text500",
 			["maxsizetext"] = "textUnlimited",
+			["emailaddress"] = "email",
 			["blob"] = BinaryTypeName,
 			["float"] = "decimal2",
 			["date"] = DateTimeTypeName,
@@ -256,12 +257,19 @@ internal static class EntitySchemaDesignerSupport
 			return false;
 		}
 
-		string normalizedTypeName = typeName.Trim();
+		string normalizedTypeName = NormalizeDataValueTypeName(typeName);
 		if (SupportedDataValueTypeAliases.TryGetValue(normalizedTypeName, out string? aliasedTypeName)) {
 			normalizedTypeName = aliasedTypeName;
 		}
 
 		return SupportedDataValueTypes.TryGetValue(normalizedTypeName, out dataValueType);
+	}
+
+	private static string NormalizeDataValueTypeName(string typeName) {
+		return new string(typeName
+			.Trim()
+			.Where(char.IsLetterOrDigit)
+			.ToArray());
 	}
 
 	internal static bool IsLookupTypeName(string? typeName) {
@@ -292,6 +300,7 @@ internal static class EntitySchemaDesignerSupport
 			16 => "ImageLookup",
 			24 => "SecureText",
 			25 => "File",
+			45 => "Email",
 			27 => "ShortText",
 			28 => "MediumText",
 			30 => "LongText",

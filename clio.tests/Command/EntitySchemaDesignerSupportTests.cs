@@ -42,11 +42,28 @@ internal sealed class EntitySchemaDesignerSupportTests {
 			because: "SecureText type names should map to the expected runtime data value type 24");
 	}
 
+		[TestCase("Email", 45)]
+		[TestCase("email", 45)]
+		[TestCase("EmailAddress", 45)]
+		[Description("Resolves Email and EmailAddress aliases through the shared entity-schema type registry.")]
+		public void TryResolveDataValueType_Should_Resolve_Email_Type_Names(string typeName, int expectedValue) {
+		// Arrange
+
+		// Act
+		bool resolved = EntitySchemaDesignerSupport.TryResolveDataValueType(typeName, out int dataValueType);
+
+		// Assert
+			resolved.Should().BeTrue(because: "Email and EmailAddress aliases should resolve through the shared type registry");
+		dataValueType.Should().Be(expectedValue,
+			because: "Email type names should map to the expected runtime data value type 45");
+	}
+
 	[TestCase(13, "Binary")]
 	[TestCase(14, "Image")]
 	[TestCase(16, "ImageLookup")]
 	[TestCase(24, "SecureText")]
 	[TestCase(25, "File")]
+	[TestCase(45, "Email")]
 	[Description("Formats binary-like, image lookup, and SecureText runtime type ids into readable names for shared schema readback.")]
 	public void GetFriendlyTypeName_Should_Format_BinaryLike_Runtime_Types(int dataValueType, string expectedName) {
 		// Arrange
