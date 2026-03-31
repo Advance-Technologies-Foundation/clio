@@ -152,6 +152,12 @@ Each seed row must have a `values` key containing column name-value pairs:
 - Every localization map must include a non-empty `en-US` value.
 - Legacy scalar `title`, `caption`, and `description` fields are rejected by the MCP contract.
 
+## Masking Behavior
+
+- `update-operations` can include `masked` for `Text` and `SecureText` columns.
+- `masked` maps to schema-level `isValueMasked`.
+- `masked` controls schema-level masking metadata and does not change the storage type.
+
 ## Response
 
 ```json

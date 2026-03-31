@@ -28,7 +28,7 @@ clio create-entity-schema [options]
 |----------|-------------|---------|
 | `--parent` | Parent schema name | `--parent BaseEntity` |
 | `--extend-parent` | Create a replacement schema. Requires `--parent` | `--extend-parent` |
-| `--column` | Column definition in format `<name>:<type>[:<title>[:<refSchema>]]` or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, legacy `default-value-source` / `default-value`, or structured `default-value-config`. Repeat the option for multiple columns. | `--column "Name:Text:Name"` |
+| `--column` | Column definition in format `<name>:<type>[:<title>[:<refSchema>]]` or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, legacy `default-value-source` / `default-value`, , `masked` or structured `default-value-config`. Repeat the option for multiple columns. | `--column "Name:Text:Name"` |
 
 ### Environment Configuration
 
@@ -99,6 +99,13 @@ clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Veh
   --column "{\"name\":\"UsrStartDate\",\"type\":\"DateTime\",\"title\":\"Start date\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
 ```
 
+### Create a SecureText Password Column with Schema-Level Masking
+
+```bash
+clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" \
+  --column "{\"name\":\"UsrPassword\",\"type\":\"SecureText\",\"title\":\"Password\",\"masked\":true}"
+```
+
 ### Create a Schema with Inheritance
 
 ```bash
@@ -122,6 +129,7 @@ clio create-entity-schema -e dev --package Custom --name UsrAccount --title "Acc
 - If no primary display column is defined, the first text-like column is used.
 - `Binary`, `Image`, and `File` columns do not support `default-value` or `default-value-source: Const`.
 - Prefer `default-value-config` for `Settings`, `SystemValue`, or `Sequence`; keep `default-value-source` / `default-value` as shorthand only for `Const` and `None`.
+- `masked` is accepted for `Text` and `SecureText` columns and maps to schema-level `isValueMasked`.
 - The command accepts frontend-style aliases such as `ShortText`, `Float`, `Date`, and `Time`, and maps them to the closest supported designer types.
 - Repeat `--column` for multiple entries; semicolons inside JSON payloads are treated as content, not separators.
 - After `SaveSchema`, the schema is reloaded immediately. The command treats save as failed if the schema cannot be read back.
