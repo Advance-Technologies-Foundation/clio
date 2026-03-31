@@ -48,7 +48,7 @@ IsFsm
 -l, --Login <VALUE>
     User login (administrator permission required)
 -i, --IsNetCore
-    Use NetCore application)
+    Use NetCore application
 -e, --Environment <VALUE>
     Environment name
 -m, --Maintainer <VALUE>
