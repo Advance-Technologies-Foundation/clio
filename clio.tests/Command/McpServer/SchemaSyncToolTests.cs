@@ -356,6 +356,44 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns command exception details when update-entity execution throws")]
+	public void SchemaSync_UpdateEntity_Should_Return_Exception_Details_When_Command_Throws() {
+		// Arrange
+		TestLogger logger = new();
+		var failingUpdateCommand = new FakeUpdateEntitySchemaCommand(
+			logger,
+			messages: ["Update command started."],
+			executeException: new InvalidOperationException("Update failed unexpectedly."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(failingUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, logger);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrStatus",
+						Type: "Lookup", TitleLocalizations: Localizations("Status"), ReferenceSchemaName: "UsrTodoStatus")
+				])]);
+
+		// Act
+		SchemaSyncResponse response = tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "schema-sync should fail when update-entity command throws");
+		response.Results.Should().HaveCount(1,
+			because: "the failing update operation should stop batch execution");
+		response.Results[0].Operation.Should().Be("update-entity",
+			because: "the failure should be attributed to the update operation");
+		response.Results[0].Error.Should().Contain("Update failed unexpectedly.",
+			because: "the thrown command exception should be surfaced in the operation error");
+		GetMessageValues(response.Results[0]).Should().Contain("Update command started.",
+			because: "messages written before the exception should remain in the operation result");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects legacy scalar title fields in schema-sync create operations even when title-localizations are also provided.")]
 	public void SchemaSync_CreateLookup_Should_Reject_Legacy_Title_Field() {
 		// Arrange
@@ -418,6 +456,54 @@ public sealed class SchemaSyncToolTests {
 			because: "seed-data should be skipped when create fails");
 		fakeSeedCommand.CapturedOptions.Should().BeNull(
 			because: "seed-data should not be executed when the preceding create failed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Stops batch when seed-data execution throws and returns seed-data failure details")]
+	public void SchemaSync_SeedRows_Should_Return_Exception_Details_When_Seed_Command_Throws() {
+		// Arrange
+		TestLogger logger = new();
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand(logger, messages: ["Create succeeded."]);
+		var failingSeedCommand = new FakeCreateDataBindingDbCommand(
+			logger,
+			messages: ["Seed command started."],
+			executeException: new InvalidOperationException("Seed failed unexpectedly."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(failingSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, logger);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+				TitleLocalizations: Localizations("Todo Status"),
+				SeedRows: [new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+					["Name"] = ToJsonElement("New")
+				})])]);
+
+		// Act
+		SchemaSyncResponse response = tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "seed-data exception should fail the full schema-sync batch");
+		response.Results.Should().HaveCount(2,
+			because: "create-lookup result should be followed by the failing seed-data result");
+		response.Results[0].Success.Should().BeTrue(
+			because: "the create operation completes before seed-data starts");
+		response.Results[1].Operation.Should().Be("seed-data",
+			because: "the second result should describe the failing seed-data operation");
+		response.Results[1].Success.Should().BeFalse(
+			because: "seed-data threw an exception");
+		response.Results[1].Error.Should().Contain("Seed failed unexpectedly.",
+			because: "the thrown seed exception should be returned in operation error");
+		GetMessageValues(response.Results[1]).Should().Contain("Seed command started.",
+			because: "messages emitted before the seed failure should be preserved");
 	}
 
 	[Test]
@@ -621,16 +707,24 @@ public sealed class SchemaSyncToolTests {
 	private sealed class FakeUpdateEntitySchemaCommand : UpdateEntitySchemaCommand {
 		private readonly ILogger _logger;
 		private readonly IReadOnlyList<string> _messages;
+		private readonly Exception _executeException;
 		public UpdateEntitySchemaOptions CapturedOptions { get; private set; }
-		public FakeUpdateEntitySchemaCommand(ILogger logger = null, IReadOnlyList<string> messages = null)
+		public FakeUpdateEntitySchemaCommand(
+			ILogger logger = null,
+			IReadOnlyList<string> messages = null,
+			Exception executeException = null)
 			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), logger ?? Substitute.For<ILogger>()) {
 			_logger = logger ?? Substitute.For<ILogger>();
 			_messages = messages ?? [];
+			_executeException = executeException;
 		}
 		public override int Execute(UpdateEntitySchemaOptions options) {
 			CapturedOptions = options;
 			foreach (string message in _messages) {
 				_logger.WriteInfo(message);
+			}
+			if (_executeException is not null) {
+				throw _executeException;
 			}
 			return 0;
 		}
@@ -639,16 +733,24 @@ public sealed class SchemaSyncToolTests {
 	private sealed class FakeCreateDataBindingDbCommand : CreateDataBindingDbCommand {
 		private readonly ILogger _logger;
 		private readonly IReadOnlyList<string> _messages;
+		private readonly Exception _executeException;
 		public CreateDataBindingDbOptions CapturedOptions { get; private set; }
-		public FakeCreateDataBindingDbCommand(ILogger logger = null, IReadOnlyList<string> messages = null)
+		public FakeCreateDataBindingDbCommand(
+			ILogger logger = null,
+			IReadOnlyList<string> messages = null,
+			Exception executeException = null)
 			: base(Substitute.For<IDataBindingDbService>(), logger ?? Substitute.For<ILogger>()) {
 			_logger = logger ?? Substitute.For<ILogger>();
 			_messages = messages ?? [];
+			_executeException = executeException;
 		}
 		public override int Execute(CreateDataBindingDbOptions options) {
 			CapturedOptions = options;
 			foreach (string message in _messages) {
 				_logger.WriteInfo(message);
+			}
+			if (_executeException is not null) {
+				throw _executeException;
 			}
 			return 0;
 		}

@@ -1461,3 +1461,10 @@ Decision: Refactored repeated result-building blocks in ExecuteCreateSchema, Exe
 Discovery: The core repeated pattern was identical operation result assembly around FlushAndSnapshotMessages and exception fallback in three operation paths; extracting helpers keeps MCP output contract unchanged and removes repeated code.
 Files: clio/Command/McpServer/Tools/SchemaSyncTool.cs, .codex/workspace-diary.md
 Impact: Lower duplication in SchemaSyncTool with the same runtime behavior, reducing Sonar duplication risk on new code and making future changes in operation result formatting safer.
+
+## 2026-03-31 14:25 – Add exception-path coverage for SchemaSyncTool
+Context: User requested additional tests to reduce regression risk for the BaseTool/SchemaSyncTool optimization review comments.
+Decision: Added two focused unit tests in SchemaSyncToolTests for exception paths in update-entity and seed-data, and extended fake command stubs to support throwing execution exceptions.
+Discovery: Before these tests, uncovered lines in SchemaSyncTool were exactly the update-entity/seed-data catch branches and seed-failure break path; after the update, targeted coverage reports line_rate=1 with uncovered_count=0 for SchemaSyncTool.
+Files: clio.tests/Command/McpServer/SchemaSyncToolTests.cs, .codex/workspace-diary.md
+Impact: Regression confidence is higher for error propagation and message-capture behavior when command execution throws during schema-sync operations.
