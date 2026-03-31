@@ -819,10 +819,8 @@ internal class Program {
 			return string.Empty;
 		}
 		StringBuilder normalized = new(commandName.Length);
-		foreach (char current in commandName) {
-			if (char.IsLetterOrDigit(current)) {
-				normalized.Append(char.ToLowerInvariant(current));
-			}
+		foreach (char current in commandName.Where(char.IsLetterOrDigit)) {
+			normalized.Append(char.ToLowerInvariant(current));
 		}
 		return normalized.ToString();
 	}

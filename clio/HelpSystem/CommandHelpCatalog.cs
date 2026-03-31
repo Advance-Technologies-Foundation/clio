@@ -32,6 +32,14 @@ internal sealed record HelpCommandMetadata(
 	int SourceIndex);
 
 internal sealed class CommandHelpCatalog {
+	private const string CallService = "call-service";
+	private const string GetEntitySchemaColumnProperties = "get-entity-schema-column-properties";
+	private const string GetEntitySchemaProperties = "get-entity-schema-properties";
+	private const string LockPackage = "lock-package";
+	private const string UnlockPackage = "unlock-package";
+	private const string ModifyEntitySchemaColumn = "modify-entity-schema-column";
+	private const string PushWorkspace = "push-workspace";
+	private const string ClioGateRequirement = "cliogate must be installed on the target Creatio environment.";
 	private static readonly IReadOnlyList<HelpGroupMetadata> OrderedGroups = [
 		new(HelpGroupId.ApplicationManagement, "Application Management"),
 		new(HelpGroupId.PackageManagement, "Package Management"),
@@ -51,7 +59,7 @@ internal sealed class CommandHelpCatalog {
 			["add-user-task"] = "Create a user task schema in a workspace package",
 			["alm-deploy"] = "Deploy a package to Creatio",
 			["apply-manifest"] = "Apply an environment manifest",
-			["call-service"] = "Call a Creatio service endpoint",
+			[CallService] = "Call a Creatio service endpoint",
 			["compare-web-farm-node"] = "Compare file content across web farm nodes",
 			["CustomizeDataProtection"] = "Toggle CustomizeDataProtection in appsettings.json",
 			["dataservice"] = "Send a Creatio DataService request",
@@ -64,10 +72,10 @@ internal sealed class CommandHelpCatalog {
 			["externalLink"] = "Handle external deep links",
 			["get-app-list"] = "List installed applications",
 			["get-app-hash"] = "Calculate the hash of an application package",
-			["get-entity-schema-column-properties"] = "Get column properties from a remote Creatio entity schema",
-			["get-entity-schema-properties"] = "Get properties from a remote Creatio entity schema",
+			[GetEntitySchemaColumnProperties] = "Get column properties from a remote Creatio entity schema",
+			[GetEntitySchemaProperties] = "Get properties from a remote Creatio entity schema",
 			["info"] = "Show clio, cliogate, and .NET runtime versions",
-			["lock-package"] = "Lock a package in Creatio",
+			[LockPackage] = "Lock a package in Creatio",
 			["mcp-server"] = "Start the MCP server over stdio",
 			["mock-data"] = "Generate mock data for unit tests",
 			["modify-user-task-parameters"] = "Add or remove parameters in a user task schema",
@@ -117,7 +125,7 @@ internal sealed class CommandHelpCatalog {
 			["install-gate"] = "Install or update cliogate in Creatio",
 			["check-nuget-update"] = "Check NuGet for Creatio package updates",
 			["uninstall-app-remote"] = "Uninstall an application package from Creatio",
-			["unlock-package"] = "Unlock a package in Creatio",
+			[UnlockPackage] = "Unlock a package in Creatio",
 			["unreg-web-app"] = "Remove a registered Creatio environment",
 			["unregister"] = "Remove clio shell integrations",
 			["update-cli"] = "Update clio",
@@ -127,7 +135,7 @@ internal sealed class CommandHelpCatalog {
 
 	private static readonly IReadOnlyDictionary<string, string[]> LegacyNameOverrides =
 		new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase) {
-			["call-service"] = ["callservice"],
+			[CallService] = ["callservice"],
 			["cfg-worspace"] = ["configure-workspace"],
 			["download-application"] = ["download-app"],
 			["extract-pkg-zip"] = ["extract-package"],
@@ -145,27 +153,27 @@ internal sealed class CommandHelpCatalog {
 	private static readonly IReadOnlyDictionary<string, string[]> RelatedCommands =
 		new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase) {
 			["add-data-binding-row"] = ["create-data-binding", "remove-data-binding-row"],
-			["create-data-binding"] = ["add-data-binding-row", "remove-data-binding-row", "call-service"],
-			["create-entity-schema"] = ["get-entity-schema-properties", "modify-entity-schema-column"],
-			["get-entity-schema-column-properties"] = ["get-entity-schema-properties", "modify-entity-schema-column"],
-			["get-entity-schema-properties"] = ["get-entity-schema-column-properties", "modify-entity-schema-column"],
-			["lock-package"] = ["unlock-package", "push-workspace"],
-			["modify-entity-schema-column"] = ["get-entity-schema-column-properties", "get-entity-schema-properties"],
+			["create-data-binding"] = ["add-data-binding-row", "remove-data-binding-row", CallService],
+			["create-entity-schema"] = [GetEntitySchemaProperties, ModifyEntitySchemaColumn],
+			[GetEntitySchemaColumnProperties] = [GetEntitySchemaProperties, ModifyEntitySchemaColumn],
+			[GetEntitySchemaProperties] = [GetEntitySchemaColumnProperties, ModifyEntitySchemaColumn],
+			[LockPackage] = [UnlockPackage, PushWorkspace],
+			[ModifyEntitySchemaColumn] = [GetEntitySchemaColumnProperties, GetEntitySchemaProperties],
 			["modify-user-task-parameters"] = ["add-user-task", "delete-schema"],
 			["remove-data-binding-row"] = ["create-data-binding", "add-data-binding-row"],
-			["restore-workspace"] = ["create-workspace", "push-workspace", "install-gate"],
-			["unlock-package"] = ["lock-package", "push-workspace"],
-			["update-entity-schema"] = ["modify-entity-schema-column", "get-entity-schema-properties"]
+			["restore-workspace"] = ["create-workspace", PushWorkspace, "install-gate"],
+			[UnlockPackage] = [LockPackage, PushWorkspace],
+			["update-entity-schema"] = [ModifyEntitySchemaColumn, GetEntitySchemaProperties]
 		};
 
 	private static readonly IReadOnlyDictionary<string, string> RequirementOverrides =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			["add-item"] = "cliogate must be installed when generating models from a Creatio environment.",
-			["create-entity-schema"] = "cliogate must be installed on the target Creatio environment.",
-			["modify-entity-schema-column"] = "cliogate must be installed on the target Creatio environment.",
-			["update-entity-schema"] = "cliogate must be installed on the target Creatio environment.",
-			["get-entity-schema-column-properties"] = "cliogate must be installed on the target Creatio environment.",
-			["get-entity-schema-properties"] = "cliogate must be installed on the target Creatio environment."
+			["create-entity-schema"] = ClioGateRequirement,
+			[ModifyEntitySchemaColumn] = ClioGateRequirement,
+			["update-entity-schema"] = ClioGateRequirement,
+			[GetEntitySchemaColumnProperties] = ClioGateRequirement,
+			[GetEntitySchemaProperties] = ClioGateRequirement
 		};
 
 	private static readonly HashSet<string> DeploymentCommands =
@@ -329,15 +337,15 @@ internal sealed class CommandHelpCatalog {
 		_lookup = new Lazy<IReadOnlyDictionary<string, HelpCommandMetadata>>(BuildLookup);
 	}
 
-	public IReadOnlyList<HelpGroupMetadata> Groups => OrderedGroups;
+	public static IReadOnlyList<HelpGroupMetadata> Groups => OrderedGroups;
 
 	public IReadOnlyList<HelpCommandMetadata> Commands => _commands.Value;
 
-	public IReadOnlyList<HelpCommandMetadata> VisibleCommands =>
+	public IReadOnlyList<HelpCommandMetadata> GetVisibleCommands() =>
 		Commands.Where(command => !command.Hidden).ToArray();
 
 	public IReadOnlyList<HelpCommandMetadata> GetCommandsForGroup(HelpGroupId groupId) =>
-		VisibleCommands
+		GetVisibleCommands()
 			.Where(command => command.GroupId == groupId)
 			.OrderBy(command => command.CanonicalName, StringComparer.OrdinalIgnoreCase)
 			.ToArray();
@@ -345,7 +353,7 @@ internal sealed class CommandHelpCatalog {
 	public bool TryGetCommand(string name, out HelpCommandMetadata command) =>
 		_lookup.Value.TryGetValue(name, out command);
 
-	private IReadOnlyList<HelpCommandMetadata> BuildCommands() =>
+	private static IReadOnlyList<HelpCommandMetadata> BuildCommands() =>
 		Program.GetCommandOptionTypes()
 			.Select((type, index) => CreateCommand(type, index))
 			.ToArray();

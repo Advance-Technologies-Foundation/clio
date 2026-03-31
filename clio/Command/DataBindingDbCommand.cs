@@ -494,39 +494,11 @@ internal sealed class DataBindingDbService(
 			? FetchExistingBoundRecordIds(existingBindingUId.Value)
 			: [];
 
-		bool schemaHasNameColumn = schema.SchemaColumns
-			.Any(c => string.Equals(c.Name, "Name", StringComparison.OrdinalIgnoreCase));
-		bool hasNamedRows = rows?.Any(r => r.ContainsKey("Name")) ?? false;
-		Dictionary<string, string> existingNameToId = rows is { Count: > 0 } && hasNamedRows && schemaHasNameColumn
+		Dictionary<string, string> existingNameToId = ShouldFetchExistingNames(schema, rows)
 			? FetchExistingEntityNameToId(options.SchemaName)
 			: new(StringComparer.OrdinalIgnoreCase);
 
-		List<DataBindingCreatedRow> createdRows = [];
-		if (rows is { Count: > 0 }) {
-			foreach (Dictionary<string, JsonNode?> row in rows) {
-				string rowId = EnsureRowId(row);
-				string? rowName = row.TryGetValue("Name", out JsonNode? nameNode)
-					? nameNode?.ToString()
-					: null;
-				if (rowName is not null &&
-					existingNameToId.TryGetValue(rowName, out string? existingId)) {
-					if (!boundRecordIds.Contains(existingId, StringComparer.OrdinalIgnoreCase)) {
-						boundRecordIds.Add(existingId);
-					}
-				} else {
-					InsertEntityRow(options.SchemaName, row, schema.SchemaColumns);
-					if (rowName is not null) {
-						existingNameToId[rowName] = rowId;
-					}
-					if (!boundRecordIds.Contains(rowId, StringComparer.OrdinalIgnoreCase)) {
-						boundRecordIds.Add(rowId);
-					}
-					createdRows.Add(new DataBindingCreatedRow(
-						rowId,
-						row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString())));
-				}
-			}
-		}
+		List<DataBindingCreatedRow> createdRows = ProcessRows(options.SchemaName, rows, schema, existingNameToId, boundRecordIds);
 
 		string requestBody = BuildSaveSchemaDataRequest(
 			packageRef, bindingName, options.SchemaName, schema, boundRecordIds,
@@ -537,6 +509,50 @@ internal sealed class DataBindingDbService(
 		ThrowIfUnsuccessful(response, "SaveSchema");
 
 		return new DataBindingResult(bindingName, createdRows);
+	}
+
+	private static bool ShouldFetchExistingNames(DataBindingDbSchema schema, List<Dictionary<string, JsonNode?>>? rows) {
+		if (rows is not { Count: > 0 }) {
+			return false;
+		}
+		bool schemaHasNameColumn = schema.SchemaColumns
+			.Any(c => string.Equals(c.Name, "Name", StringComparison.OrdinalIgnoreCase));
+		bool hasNamedRows = rows.Any(r => r.ContainsKey("Name"));
+		return schemaHasNameColumn && hasNamedRows;
+	}
+
+	private List<DataBindingCreatedRow> ProcessRows(
+		string schemaName,
+		List<Dictionary<string, JsonNode?>>? rows,
+		DataBindingDbSchema schema,
+		Dictionary<string, string> existingNameToId,
+		List<string> boundRecordIds) {
+		List<DataBindingCreatedRow> createdRows = [];
+		if (rows is not { Count: > 0 }) {
+			return createdRows;
+		}
+		foreach (Dictionary<string, JsonNode?> row in rows) {
+			string rowId = EnsureRowId(row);
+			string? rowName = row.TryGetValue("Name", out JsonNode? nameNode) ? nameNode?.ToString() : null;
+			if (rowName is not null && existingNameToId.TryGetValue(rowName, out string? existingId)) {
+				AddToBoundIds(boundRecordIds, existingId);
+			} else {
+				InsertEntityRow(schemaName, row, schema.SchemaColumns);
+				if (rowName is not null) {
+					existingNameToId[rowName] = rowId;
+				}
+				AddToBoundIds(boundRecordIds, rowId);
+				createdRows.Add(new DataBindingCreatedRow(rowId,
+					row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString())));
+			}
+		}
+		return createdRows;
+	}
+
+	private static void AddToBoundIds(List<string> boundRecordIds, string id) {
+		if (!boundRecordIds.Contains(id, StringComparer.OrdinalIgnoreCase)) {
+			boundRecordIds.Add(id);
+		}
 	}
 
 	public void UpsertRow(UpsertDataBindingRowDbOptions options) {
@@ -1007,20 +1023,12 @@ internal sealed class DataBindingDbService(
 		return newId;
 	}
 
-	private List<string> FetchExistingBoundRecordIds(Guid bindingUId) {
-		List<Dictionary<string, JsonNode?>> boundRows = FetchBoundRows(bindingUId);
-		List<string> ids = [];
-		foreach (Dictionary<string, JsonNode?> row in boundRows) {
-			if (row.TryGetValue("Id", out JsonNode? idNode) && idNode is not null) {
-				string? id = idNode.GetValue<string>();
-				if (!string.IsNullOrWhiteSpace(id)) {
-					ids.Add(id);
-				}
-			}
-		}
-
-		return ids;
-	}
+	private List<string> FetchExistingBoundRecordIds(Guid bindingUId) =>
+		FetchBoundRows(bindingUId)
+			.Where(row => row.TryGetValue("Id", out JsonNode? idNode) && idNode is not null)
+			.Select(row => row["Id"]!.GetValue<string>())
+			.Where(id => !string.IsNullOrWhiteSpace(id))
+			.ToList();
 
 	private Dictionary<string, string> FetchExistingEntityNameToId(string schemaName) {
 		EntityNameSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<EntityNameSelectResponse>(

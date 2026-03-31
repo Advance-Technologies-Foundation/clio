@@ -7,17 +7,21 @@ using System.Text.RegularExpressions;
 
 public static class SchemaValidationService
 {
+	private const string SchemaViewConfigDiff = "SCHEMA_VIEW_CONFIG_DIFF";
+	private const string SchemaViewModelConfigDiff = "SCHEMA_VIEW_MODEL_CONFIG_DIFF";
+	private const string SchemaViewModelConfig = "SCHEMA_VIEW_MODEL_CONFIG";
+
 	public static readonly string[] RequiredMarkerNames = {
 		"SCHEMA_DEPS",
 		"SCHEMA_ARGS",
-		"SCHEMA_VIEW_CONFIG_DIFF",
+		SchemaViewConfigDiff,
 		"SCHEMA_HANDLERS",
 		"SCHEMA_CONVERTERS",
 		"SCHEMA_VALIDATORS"
 	};
 
 	public static readonly string[][] AlternateMarkerPairs = {
-		new[] { "SCHEMA_VIEW_MODEL_CONFIG_DIFF", "SCHEMA_VIEW_MODEL_CONFIG" },
+		new[] { SchemaViewModelConfigDiff, SchemaViewModelConfig },
 		new[] { "SCHEMA_MODEL_CONFIG_DIFF", "SCHEMA_MODEL_CONFIG" }
 	};
 
@@ -79,15 +83,15 @@ public static class SchemaValidationService
 	}
 
 	private static readonly string[] JsonArrayMarkers = {
-		"SCHEMA_VIEW_CONFIG_DIFF",
+		SchemaViewConfigDiff,
 		"SCHEMA_DIFF",
-		"SCHEMA_VIEW_MODEL_CONFIG_DIFF",
+		SchemaViewModelConfigDiff,
 		"SCHEMA_MODEL_CONFIG_DIFF",
 		"SCHEMA_DEPS"
 	};
 
 	private static readonly string[] JsonObjectMarkers = {
-		"SCHEMA_VIEW_MODEL_CONFIG",
+		SchemaViewModelConfig,
 		"SCHEMA_MODEL_CONFIG",
 		"SCHEMA_CONVERTERS",
 		"SCHEMA_VALIDATORS"
