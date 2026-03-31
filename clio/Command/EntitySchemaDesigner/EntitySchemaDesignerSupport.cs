@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using Clio.Package;
 using Terrasoft.Core.Entities;
 
@@ -15,6 +16,7 @@ internal static class EntitySchemaDesignerSupport
 	private const string DateTimeTypeName = "datetime";
 	private const string FileTypeName = "file";
 	private const string ImageTypeName = "image";
+	private const string SecureTextTypeName = "secureText";
 
 	internal static readonly Dictionary<string, int> SupportedDataValueTypes =
 		new(StringComparer.OrdinalIgnoreCase) {
@@ -31,6 +33,7 @@ internal static class EntitySchemaDesignerSupport
 			[BinaryTypeName] = 13,
 			[ImageTypeName] = 14,
 			[FileTypeName] = 25,
+			[SecureTextTypeName] = 24,
 			["integer"] = 4,
 			[DateTimeTypeName] = 7,
 			["lookup"] = 10,
@@ -56,7 +59,10 @@ internal static class EntitySchemaDesignerSupport
 			["blob"] = BinaryTypeName,
 			["float"] = "decimal2",
 			["date"] = DateTimeTypeName,
-			["time"] = DateTimeTypeName
+			["time"] = DateTimeTypeName,
+			["encrypted"] = SecureTextTypeName,
+			["securetext"] = SecureTextTypeName,
+			["password"] = SecureTextTypeName
 		};
 
 	private static readonly HashSet<int> TextDataValueTypes = [
@@ -95,6 +101,82 @@ internal static class EntitySchemaDesignerSupport
 		};
 	}
 
+	internal static IReadOnlyDictionary<string, string>? NormalizeLocalizationMap(
+		IReadOnlyDictionary<string, string>? values,
+		string fieldName) {
+		if (values == null) {
+			return null;
+		}
+
+		Dictionary<string, string> normalizedValues = new(StringComparer.OrdinalIgnoreCase);
+		foreach (KeyValuePair<string, string> value in values) {
+			string cultureName = value.Key?.Trim();
+			if (string.IsNullOrWhiteSpace(cultureName)) {
+				throw new EntitySchemaDesignerException($"{fieldName} must not contain empty culture names.");
+			}
+
+			if (string.IsNullOrWhiteSpace(value.Value)) {
+				throw new EntitySchemaDesignerException($"{fieldName} must not contain empty values.");
+			}
+
+			normalizedValues[cultureName] = value.Value.Trim();
+		}
+
+		if (normalizedValues.Count == 0) {
+			throw new EntitySchemaDesignerException($"{fieldName} must contain at least one localization.");
+		}
+
+		if (!normalizedValues.ContainsKey(DefaultCultureName)) {
+			throw new EntitySchemaDesignerException(
+				$"{fieldName} must contain a non-empty '{DefaultCultureName}' value.");
+		}
+
+		return normalizedValues;
+	}
+
+	internal static List<LocalizableStringDto> CreateLocalizableStrings(
+		IReadOnlyDictionary<string, string>? values,
+		string? fallbackValue) {
+		if (values != null) {
+			return BuildLocalizableStrings(NormalizeLocalizationMap(values, "localizations"));
+		}
+
+		if (string.IsNullOrWhiteSpace(fallbackValue)) {
+			return [];
+		}
+
+		return [CreateLocalizableString(fallbackValue)];
+	}
+
+	internal static List<LocalizableStringDto> CreateLocalizableStrings(
+		IReadOnlyDictionary<string, string> values) {
+		return BuildLocalizableStrings(NormalizeLocalizationMap(values, "localizations"));
+	}
+
+	internal static void ReplaceLocalizableValues(
+		ICollection<LocalizableStringDto> values,
+		IReadOnlyDictionary<string, string> localizations) {
+		ArgumentNullException.ThrowIfNull(values);
+		values.Clear();
+		foreach (LocalizableStringDto localizableValue in CreateLocalizableStrings(localizations)) {
+			values.Add(localizableValue);
+		}
+	}
+
+	internal static string GetRequiredLocalizationValue(
+		IReadOnlyDictionary<string, string> values,
+		string fieldName,
+		string cultureName = DefaultCultureName) {
+		IReadOnlyDictionary<string, string> normalizedValues = NormalizeLocalizationMap(values, fieldName)
+			?? throw new EntitySchemaDesignerException($"{fieldName} must contain at least one localization.");
+		if (!normalizedValues.TryGetValue(cultureName, out string? value) || string.IsNullOrWhiteSpace(value)) {
+			throw new EntitySchemaDesignerException(
+				$"{fieldName} must contain a non-empty '{cultureName}' value.");
+		}
+
+		return value;
+	}
+
 	internal static string GetLocalizableValue(IEnumerable<LocalizableStringDto> values, string cultureName = null) {
 		List<LocalizableStringDto> localizableValues = values?.ToList() ?? [];
 		if (localizableValues.Count == 0) {
@@ -128,6 +210,22 @@ internal static class EntitySchemaDesignerSupport
 		}
 
 		values?.Add(CreateLocalizableString(value, effectiveCultureName));
+	}
+
+	private static List<LocalizableStringDto> BuildLocalizableStrings(
+		IReadOnlyDictionary<string, string>? values) {
+		if (values == null) {
+			return [];
+		}
+
+		return values
+			.OrderBy(value => string.Equals(value.Key, DefaultCultureName, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+			.ThenBy(value => value.Key, StringComparer.OrdinalIgnoreCase)
+			.Select(value => new LocalizableStringDto {
+				CultureName = value.Key,
+				Value = value.Value
+			})
+			.ToList();
 	}
 
 	internal static bool IsLookupType(this EntitySchemaColumnDto column) {
@@ -192,6 +290,7 @@ internal static class EntitySchemaDesignerSupport
 			13 => "Binary",
 			14 => "Image",
 			16 => "ImageLookup",
+			24 => "SecureText",
 			25 => "File",
 			27 => "ShortText",
 			28 => "MediumText",
@@ -214,10 +313,13 @@ internal static class EntitySchemaDesignerSupport
 		}
 
 		return defaultValueSource.Trim().ToLowerInvariant() switch {
-			"const" => EntitySchemaColumnDefSource.Const,
 			"none" => EntitySchemaColumnDefSource.None,
+			"const" => EntitySchemaColumnDefSource.Const,
+			"settings" => EntitySchemaColumnDefSource.Settings,
+			"systemvalue" => EntitySchemaColumnDefSource.SystemValue,
+			"sequence" => EntitySchemaColumnDefSource.Sequence,
 			_ => throw new EntitySchemaDesignerException(
-				$"Unsupported default-value-source '{defaultValueSource}'. Supported values: Const, None.")
+				$"Unsupported default-value-source '{defaultValueSource}'. Supported values: None, Const, Settings, SystemValue, Sequence.")
 		};
 	}
 
@@ -227,9 +329,279 @@ internal static class EntitySchemaDesignerSupport
 		}
 
 		return defValue.ValueSourceType switch {
+			EntitySchemaColumnDefSource.Settings => "Settings",
+			EntitySchemaColumnDefSource.SystemValue => "SystemValue",
+			EntitySchemaColumnDefSource.Sequence => "Sequence",
 			EntitySchemaColumnDefSource.Const => "Const",
 			EntitySchemaColumnDefSource.None => "None",
 			_ => defValue.ValueSourceType.ToString()
 		};
+	}
+
+	internal static EntitySchemaDefaultValueConfig? ResolveDefaultValueConfig(
+		EntitySchemaDefaultValueConfig? defaultValueConfig,
+		string? legacyDefaultValueSource,
+		string? legacyDefaultValue,
+		string context) {
+		if (defaultValueConfig != null) {
+			if (!string.IsNullOrWhiteSpace(legacyDefaultValueSource) || legacyDefaultValue != null) {
+				throw new EntitySchemaDesignerException(
+					$"{context} cannot mix legacy default-value/default-value-source with default-value-config.");
+			}
+			return NormalizeDefaultValueConfig(defaultValueConfig, context);
+		}
+		if (string.IsNullOrWhiteSpace(legacyDefaultValueSource) && legacyDefaultValue == null) {
+			return null;
+		}
+		EntitySchemaColumnDefSource? legacySource = ParseLegacyDefaultValueSource(legacyDefaultValueSource);
+		if (legacySource == EntitySchemaColumnDefSource.None) {
+			if (legacyDefaultValue != null) {
+				throw new EntitySchemaDesignerException(
+					$"{context} cannot specify default-value when default-value-source is None.");
+			}
+			return new EntitySchemaDefaultValueConfig {
+				Source = GetFriendlyDefaultValueSource(EntitySchemaColumnDefSource.None)
+			};
+		}
+		if (legacyDefaultValue == null) {
+			throw new EntitySchemaDesignerException(
+				$"{context} requires default-value when legacy default-value-source is Const.");
+		}
+		return new EntitySchemaDefaultValueConfig {
+			Source = GetFriendlyDefaultValueSource(EntitySchemaColumnDefSource.Const),
+			Value = legacyDefaultValue
+		};
+	}
+
+	internal static EntitySchemaDefaultValueConfig? CreateDefaultValueConfig(EntitySchemaColumnDefValueDto? defValue) {
+		if (defValue == null) {
+			return null;
+		}
+		string source = GetFriendlyDefaultValueSource(defValue)
+			?? throw new EntitySchemaDesignerException("Default value source is missing.");
+		return defValue.ValueSourceType switch {
+			EntitySchemaColumnDefSource.Const => new EntitySchemaDefaultValueConfig {
+				Source = source,
+				Value = NormalizeScalarDefaultValue(defValue.Value, "designer default value")
+			},
+			EntitySchemaColumnDefSource.Settings => new EntitySchemaDefaultValueConfig {
+				Source = source,
+				ValueSource = NormalizeTextValue(defValue.ValueSource)
+			},
+			EntitySchemaColumnDefSource.SystemValue => new EntitySchemaDefaultValueConfig {
+				Source = source,
+				ValueSource = NormalizeTextValue(defValue.ValueSource)
+			},
+			EntitySchemaColumnDefSource.Sequence => new EntitySchemaDefaultValueConfig {
+				Source = source,
+				SequencePrefix = NormalizeTextValue(defValue.SequencePrefix, allowEmpty: true),
+				SequenceNumberOfChars = defValue.SequenceNumberOfChars > 0 ? defValue.SequenceNumberOfChars : null
+			},
+			EntitySchemaColumnDefSource.None => new EntitySchemaDefaultValueConfig {
+				Source = source
+			},
+			_ => new EntitySchemaDefaultValueConfig {
+				Source = source
+			}
+		};
+	}
+
+	internal static string? GetFriendlyDefaultValue(EntitySchemaColumnDefValueDto? defValue) {
+		EntitySchemaDefaultValueConfig? config = CreateDefaultValueConfig(defValue);
+		if (config == null) {
+			return null;
+		}
+		EntitySchemaColumnDefSource source = ParseDefaultValueSource(config.Source)
+			?? throw new EntitySchemaDesignerException("Default value source is missing.");
+		return source switch {
+			EntitySchemaColumnDefSource.Const => config.Value?.ToString(),
+			EntitySchemaColumnDefSource.Settings => config.ValueSource,
+			EntitySchemaColumnDefSource.SystemValue => config.ValueSource,
+			EntitySchemaColumnDefSource.Sequence => null,
+			EntitySchemaColumnDefSource.None => null,
+			_ => null
+		};
+	}
+
+	internal static EntitySchemaColumnDefValueDto CreateDefaultValueDto(
+		EntitySchemaDefaultValueConfig config,
+		string context) {
+		EntitySchemaColumnDefSource source = ParseDefaultValueSource(config.Source)
+			?? throw new EntitySchemaDesignerException($"{context} requires default-value-config.source.");
+		return source switch {
+			EntitySchemaColumnDefSource.Const => new EntitySchemaColumnDefValueDto {
+				ValueSourceType = source,
+				Value = NormalizeScalarDefaultValue(config.Value, $"{context} default-value-config.value")
+					?? throw new EntitySchemaDesignerException(
+						$"{context} requires default-value-config.value when source is Const.")
+			},
+			EntitySchemaColumnDefSource.Settings => new EntitySchemaColumnDefValueDto {
+				ValueSourceType = source,
+				ValueSource = RequireTextValue(
+					config.ValueSource,
+					$"{context} requires default-value-config.value-source when source is Settings.")
+			},
+			EntitySchemaColumnDefSource.SystemValue => new EntitySchemaColumnDefValueDto {
+				ValueSourceType = source,
+				ValueSource = RequireTextValue(
+					config.ValueSource,
+					$"{context} requires default-value-config.value-source when source is SystemValue.")
+			},
+			EntitySchemaColumnDefSource.Sequence => new EntitySchemaColumnDefValueDto {
+				ValueSourceType = source,
+				SequencePrefix = NormalizeTextValue(config.SequencePrefix, allowEmpty: true),
+				SequenceNumberOfChars = RequirePositiveNumber(
+					config.SequenceNumberOfChars,
+					$"{context} requires default-value-config.sequence-number-of-chars when source is Sequence.")
+			},
+			EntitySchemaColumnDefSource.None => throw new EntitySchemaDesignerException(
+				$"{context} must not create a default-value DTO when source is None."),
+			_ => throw new EntitySchemaDesignerException($"{context} has unsupported default-value source '{config.Source}'.")
+		};
+	}
+
+	internal static void ValidateDefaultValueConfig(
+		EntitySchemaDefaultValueConfig? config,
+		int dataValueType,
+		string context) {
+		if (config == null) {
+			return;
+		}
+		EntitySchemaColumnDefSource source = ParseDefaultValueSource(config.Source)
+			?? throw new EntitySchemaDesignerException($"{context} requires default-value-config.source.");
+		if (source == EntitySchemaColumnDefSource.Const
+			&& IsBinaryLikeDataValueType(dataValueType)) {
+			throw new EntitySchemaDesignerException(
+				$"{context} type '{GetFriendlyTypeName(dataValueType)}' does not support default-value-config source Const.");
+		}
+		if (source == EntitySchemaColumnDefSource.None) {
+			if (config.Value != null
+				|| NormalizeTextValue(config.ValueSource) != null
+				|| NormalizeTextValue(config.SequencePrefix) != null
+				|| config.SequenceNumberOfChars != null) {
+				throw new EntitySchemaDesignerException(
+					$"{context} cannot set value, value-source, or sequence fields when default-value-config source is None.");
+			}
+			return;
+		}
+		if (source == EntitySchemaColumnDefSource.Sequence
+			&& !IsTextLikeDataValueType(dataValueType)) {
+			throw new EntitySchemaDesignerException(
+				$"{context} type '{GetFriendlyTypeName(dataValueType)}' supports default-value-config source Sequence only for text columns.");
+		}
+		_ = CreateDefaultValueDto(config, context);
+	}
+
+	private static EntitySchemaColumnDefSource? ParseLegacyDefaultValueSource(string? defaultValueSource) {
+		if (string.IsNullOrWhiteSpace(defaultValueSource)) {
+			return null;
+		}
+		EntitySchemaColumnDefSource source = ParseDefaultValueSource(defaultValueSource)
+			?? throw new EntitySchemaDesignerException("Default value source is required.");
+		if (source is not EntitySchemaColumnDefSource.Const and not EntitySchemaColumnDefSource.None) {
+			throw new EntitySchemaDesignerException(
+				$"Legacy default-value-source supports only Const or None. Use default-value-config for '{GetFriendlyDefaultValueSource(source)}'.");
+		}
+		return source;
+	}
+
+	private static EntitySchemaDefaultValueConfig NormalizeDefaultValueConfig(
+		EntitySchemaDefaultValueConfig config,
+		string context) {
+		EntitySchemaColumnDefSource source = ParseDefaultValueSource(config.Source)
+			?? throw new EntitySchemaDesignerException($"{context} requires default-value-config.source.");
+		return source switch {
+			EntitySchemaColumnDefSource.Const => new EntitySchemaDefaultValueConfig {
+				Source = GetFriendlyDefaultValueSource(source),
+				Value = NormalizeScalarDefaultValue(config.Value, $"{context} default-value-config.value")
+			},
+			EntitySchemaColumnDefSource.Settings => new EntitySchemaDefaultValueConfig {
+				Source = GetFriendlyDefaultValueSource(source),
+				ValueSource = NormalizeTextValue(config.ValueSource)
+			},
+			EntitySchemaColumnDefSource.SystemValue => new EntitySchemaDefaultValueConfig {
+				Source = GetFriendlyDefaultValueSource(source),
+				ValueSource = NormalizeTextValue(config.ValueSource)
+			},
+			EntitySchemaColumnDefSource.Sequence => new EntitySchemaDefaultValueConfig {
+				Source = GetFriendlyDefaultValueSource(source),
+				SequencePrefix = NormalizeTextValue(config.SequencePrefix, allowEmpty: true),
+				SequenceNumberOfChars = config.SequenceNumberOfChars
+			},
+			EntitySchemaColumnDefSource.None => new EntitySchemaDefaultValueConfig {
+				Source = GetFriendlyDefaultValueSource(source)
+			},
+			_ => throw new EntitySchemaDesignerException($"{context} has unsupported default-value source '{config.Source}'.")
+		};
+	}
+
+	private static string GetFriendlyDefaultValueSource(EntitySchemaColumnDefSource source) {
+		return source switch {
+			EntitySchemaColumnDefSource.None => "None",
+			EntitySchemaColumnDefSource.Const => "Const",
+			EntitySchemaColumnDefSource.Settings => "Settings",
+			EntitySchemaColumnDefSource.SystemValue => "SystemValue",
+			EntitySchemaColumnDefSource.Sequence => "Sequence",
+			_ => source.ToString()
+		};
+	}
+
+	private static object? NormalizeScalarDefaultValue(object? value, string context) {
+		if (value == null) {
+			return null;
+		}
+		if (value is JsonElement jsonValue) {
+			return NormalizeJsonScalarValue(jsonValue, context);
+		}
+		return value;
+	}
+
+	private static object? NormalizeJsonScalarValue(JsonElement value, string context) {
+		return value.ValueKind switch {
+			JsonValueKind.Null => null,
+			JsonValueKind.Undefined => null,
+			JsonValueKind.String => value.GetString(),
+			JsonValueKind.True => true,
+			JsonValueKind.False => false,
+			JsonValueKind.Number => NormalizeJsonNumber(value),
+			_ => throw new EntitySchemaDesignerException(
+				$"{context} must be a scalar JSON value.")
+		};
+	}
+
+	private static object NormalizeJsonNumber(JsonElement value) {
+		if (value.TryGetInt32(out int intValue)) {
+			return intValue;
+		}
+		if (value.TryGetInt64(out long longValue)) {
+			return longValue;
+		}
+		if (value.TryGetDecimal(out decimal decimalValue)) {
+			return decimalValue;
+		}
+		return value.GetDouble();
+	}
+
+	private static string? NormalizeTextValue(string? value, bool allowEmpty = false) {
+		if (value == null) {
+			return null;
+		}
+		string trimmedValue = value.Trim();
+		if (trimmedValue.Length == 0) {
+			return allowEmpty ? string.Empty : null;
+		}
+		return trimmedValue;
+	}
+
+	private static string RequireTextValue(string? value, string errorMessage) {
+		string? normalizedValue = NormalizeTextValue(value);
+		return normalizedValue ?? throw new EntitySchemaDesignerException(errorMessage);
+	}
+
+	private static int RequirePositiveNumber(int? value, string errorMessage) {
+		if (value is > 0) {
+			return value.Value;
+		}
+		throw new EntitySchemaDesignerException(errorMessage);
 	}
 }

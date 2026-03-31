@@ -160,11 +160,15 @@ and `password`, depending on the tool contract.
 
 The MCP server exposes application, page, component-info, entity, schema-sync, page-sync,
 and data-binding tools. The local `component-info` helper does not require an environment.
+It also exposes MCP-owned guidance resources such as `docs://mcp/guides/app-modeling` and
+`docs://mcp/guides/existing-app-maintenance`.
 
 Notes:
 - Transport is stdio with JSON-RPC 2.0
 - The process stays running until stdin is closed or the process is terminated
 - Environment-sensitive tools accept either `environment-name` or explicit connection arguments such as `uri`, `login`, and `password`
+- Use `tool-contract-get` when the MCP client needs the authoritative clio MCP contract and preferred discovery or mutation flow
+- Preferred existing-app flow is `application-get-list` -> `application-get-info`, then page or schema inspection, then `page-update`, `modify-entity-schema-column`, or `schema-sync`
 
 
 # Package Management
@@ -1186,7 +1190,7 @@ Aliases: `gwu`
 ## page-list
 
 Lists Freedom UI page schemas from `SysSchema` and returns a JSON envelope with page names,
-schema UIds, and package names.
+schema UIds, package names, and parent schema names.
 
 ```bash
 clio page-list [--package-name <PACKAGE_NAME>] [--search-pattern <TEXT>] [--limit 50] -e <ENVIRONMENT_NAME>
@@ -1538,6 +1542,9 @@ clio cdp false -e <ENVIRONMENT_NAME>
 # Workspaces
 - [Create workspace](#create-workspace)
 - [Restore workspace](#restore-workspace)
+- [Install skills](#install-skills)
+- [Update skill](#update-skill)
+- [Delete skill](#delete-skill)
 - [Push code to an environment](#push-workspace)
 - [Build workspace](#build-workspace)
 - [Configure workspace](#configure-workspace)
@@ -1589,6 +1596,44 @@ in a professional IDE of your choice. To open solution execute command
 ```powershell
 OpenSolution.cmd
 ```
+
+## install-skills
+
+Install managed skills into workspace or user scope.
+
+```bash
+clio install-skills [--skill <name>] [--repo <local-path-or-git-url>] [--scope <workspace|user>]
+```
+
+- Installs all discovered skills when `--skill` is omitted
+- Uses the default bootstrap repository when `--repo` is omitted
+- Uses `workspace` scope by default
+- Installs into `.agents/skills` for workspace scope or `<agent-home>/skills` for user scope
+- Tracks managed installs in the selected scope `.clio-managed.json` manifest
+
+## update-skill
+
+Update managed skills in workspace or user scope when the source repository HEAD commit hash changed.
+
+```bash
+clio update-skill [--skill <name>] [--repo <local-path-or-git-url>] [--scope <workspace|user>]
+```
+
+- Updates all managed skills for the selected repository when `--skill` is omitted
+- Uses `workspace` scope by default
+- Reports `already up to date` when the stored hash matches repository HEAD
+
+## delete-skill
+
+Delete one managed skill from workspace or user scope.
+
+```bash
+clio delete-skill --skill <name> [--scope <workspace|user>]
+```
+
+- Uses `workspace` scope by default
+- Deletes only skills tracked in the selected scope `.clio-managed.json` manifest
+- Fails for unmanaged skill folders
 
 ## push-workspace
 
@@ -1733,14 +1778,14 @@ clio create-entity-schema --package <PACKAGE_NAME> --name <SCHEMA_NAME> --title 
 - `--title <TITLE>` (required): Entity schema title/caption
 - `--parent <SCHEMA_NAME>` (optional): Parent schema name
 - `--extend-parent` (optional): Create a replacement schema; requires `--parent`
-- `--column <COLUMN_SPEC>` (optional): Column spec in legacy `<name>:<type>[:<title>[:<refSchema>]]` format or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, `default-value-source`, `default-value`. Repeat the option for multiple columns
+- `--column <COLUMN_SPEC>` (optional): Column spec in legacy `<name>:<type>[:<title>[:<refSchema>]]` format or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, legacy `default-value-source` / `default-value`, or structured `default-value-config`. Repeat the option for multiple columns
 - `-e, --environment <ENVIRONMENT_NAME>` (required): Target environment
 
 **Supported types:**
 - `Guid`
 - `Text`, `ShortText`, `MediumText`, `LongText`, `MaxSizeText`
 - `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`
-- `Binary`, `Image`, `File` (`Blob` is accepted as an alias for `Binary`)
+- `Binary`, `Image`, `File`, `SecureText` (`Blob` is accepted as an alias for `Binary`; `Encrypted` and `Password` are accepted as aliases for `SecureText`)
 - `Integer`, `Float`
 - `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`
 - `Currency0`, `Currency1`, `Currency2`, `Currency3`
@@ -1756,10 +1801,14 @@ clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle
 
 # Create with structured column metadata
 clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" -e dev --column "{\"name\":\"Status\",\"type\":\"ShortText\",\"title\":\"Status\",\"required\":true,\"default-value-source\":\"Const\",\"default-value\":\"Draft\"}"
+
+# Create with structured default-value-config metadata
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" -e dev --column "{\"name\":\"UsrStartDate\",\"type\":\"DateTime\",\"title\":\"Start date\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
 ```
 
 **Notes:**
-- Current `clio` entity-schema tools are the supported ADAC integration surface; use current `clio` naming instead of frontend-only aliases like `entity.create`
+- Current `clio` entity-schema tools are part of the canonical `clio` MCP contract; use current `clio` naming instead of frontend-only aliases like `entity.create`
+- Prefer structured `default-value-config` for `Settings`, `SystemValue`, or `Sequence`; keep legacy `default-value-source` / `default-value` only for shorthand `Const` and `None`
 - `Binary`, `Image`, and `File` columns do not support `default-value` or `default-value-source Const`
 - Save succeeds only when the schema can be reloaded immediately after `SaveSchema`
 
@@ -1777,7 +1826,7 @@ clio modify-entity-schema-column --package <PACKAGE_NAME> --schema-name <SCHEMA_
 - `--action <add|modify|remove>` (required): Column mutation type
 - `--column-name <COLUMN_NAME>` (required): Target column name
 - `--new-name <COLUMN_NAME>` (optional): Rename the column
-- `--type <TYPE>` (optional for modify, required for add): Column type. Supports `Guid`, `Text`, `ShortText`, `MediumText`, `LongText`, `MaxSizeText`, `Binary`, `Image`, `File`, `Blob`, `Integer`, `Float`, `Boolean`, `Date`, `DateTime`, `Time`, `Lookup`, plus designer-native text and decimal variants
+- `--type <TYPE>` (optional for modify, required for add): Column type. Supports `Guid`, `Text`, `ShortText`, `MediumText`, `LongText`, `MaxSizeText`, `Binary`, `Image`, `File`, `Blob`, `SecureText`, `Encrypted`, `Password`, `Integer`, `Float`, `Boolean`, `Date`, `DateTime`, `Time`, `Lookup`, plus designer-native text and decimal variants
 - `--title <CAPTION>` (optional): Column caption
 - `--description <TEXT>` (optional): Column description
 - `--reference-schema <SCHEMA_NAME>` (optional): Reference schema for lookup columns
@@ -1818,6 +1867,7 @@ clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle --
 - v1 mutates own columns only; inherited columns are read-only
 - remove clears direct schema-level references to the removed column and validates required fallbacks locally
 - `--default-value-source None` clears the stored default value; `Const` requires `--default-value`
+- MCP callers can also send structured `default-value-config` with `source` set to `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`; the direct CLI flags remain shorthand for `Const` and `None`
 - `Binary`, `Image`, and `File` columns do not support `--default-value` or `--default-value-source Const`
 - Save succeeds only when the mutated column can be read back immediately after `SaveSchema`
 
@@ -1847,13 +1897,18 @@ clio update-entity-schema --package MyPackage --schema-name UsrVehicle -e dev ^
 clio update-entity-schema --package MyPackage --schema-name UsrVehicle -e dev ^
   --operation "{\"action\":\"modify\",\"column-name\":\"Owner\",\"new-name\":\"PrimaryOwner\",\"title\":\"Primary owner\"}" ^
   --operation "{\"action\":\"modify\",\"column-name\":\"Status\",\"default-value-source\":\"None\"}"
+
+# Set a system-value default in one batch
+clio update-entity-schema --package MyPackage --schema-name UsrVehicle -e dev ^
+  --operation "{\"action\":\"modify\",\"column-name\":\"UsrStartDate\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
 ```
 
 **Notes:**
 - each operation uses the same column-level contract as `modify-entity-schema-column`
+- operation JSON can also use structured `default-value-config`; legacy `default-value-source` / `default-value` remain shorthand for `Const` and `None`
 - operations run in order and stop on the first failure
 - this is the clio-native batch alternative to frontend-style `entity.update.operationsJson`
-- supported operation types include `Binary`, `Image`, `File`, and `Blob` as an alias for `Binary`
+- supported operation types include `Binary`, `Image`, `File`, `SecureText`, `Blob` as an alias for `Binary`, and `Encrypted` / `Password` as aliases for `SecureText`
 - `Binary`, `Image`, and `File` operations do not support `default-value` or `default-value-source Const`
 
 ## get-entity-schema-column-properties
@@ -1882,7 +1937,7 @@ clio get-entity-schema-column-properties --package MyPackage --schema-name UsrVe
 
 **Notes:**
 - own columns are searched first, then inherited columns
-- the readback includes `default-value-source` and `default-value`
+- the readback includes `default-value-source`, `default-value`, and structured `default-value-config`
 - the readback normalizes type names to readable values such as `Binary`, `Image`, `File`, and `ImageLookup`
 - this is the canonical verification path after `modify-entity-schema-column`
 
@@ -3340,10 +3395,11 @@ clio check-windows-features
 **Example output**:
 ```
 [INF] Check started:
-[INF] OK : NET-Framework-Core
-[INF] Not installed : NET-Framework-45-Core
+[INF] .NET Framework 4.7.2 or higher: ✓ Installed (Detected: 4.8)
+[INF] OK : Static Content
+[INF] Not installed : HTTP Activation
 [ERR] Windows has missed components:
-[INF] Not installed : NET-Framework-45-Core
+[INF] Not installed : HTTP Activation
 ```
 
 ---
@@ -3353,6 +3409,7 @@ clio check-windows-features
 Manage Windows features required for Creatio installation. Install, uninstall, or check the status of required Windows features.
 
 **Note**: This command is only available on Windows operating system. Administrator rights are required for install and uninstall operations. When executed on macOS or Linux, it will return an error message with exit code 1.
+Starting with Windows 11 26H1 (build 28000), clio does not check or install `.NET Framework 3.5` Feature on Demand components because Windows no longer exposes them through Windows Features.
 
 **Description**: This command allows you to manage Windows features in three modes:
 
@@ -4069,43 +4126,78 @@ You may need _**Administrator**_ privileges.
 
 ## build-docker-image
 
-Build a Docker image for a Creatio `.NET 8+` distribution from either a ZIP archive or an extracted application directory.
+Build a Docker image for a Creatio `.NET 8+` distribution, a bundled database-backup payload, or the bundled standalone `base` template.
 
-`.NET Framework` distributions are not supported by this command.
+`.NET Framework` distributions are not supported for templates that package Creatio files. Bundled `db` expects a `db` directory in the source payload instead.
 
 ```bash
-clio build-docker-image --from <zip-or-folder> --template <name-or-path> [options]
+clio build-docker-image --template <name-or-path> [options]
 ```
 
 ### Options
 
-- `--from <Path>` - Required. Path to a Creatio ZIP archive or extracted application directory
-- `--template <NameOrPath>` - Required. Bundled template name (`dev`, `prod`) or custom template directory path
+- `--from <Path>` - Required except for `base`. Path to a Creatio ZIP archive or extracted application directory. Every non-`base` template currently requires it. Bundled `db` expects a `db` folder in that source
+- `--template <NameOrPath>` - Required. Bundled template name (`base`, `dev`, `prod`, `db`) or custom template directory path
 - `--output-path <Path>` - Optional. Save the built image to a tar file with `docker save`
-- `--registry <Prefix>` - Optional. Tag and push the image to `<Prefix>/creatio-<template>:<tag>`
-- `--use-docker` - Optional. Force `docker` for this invocation
-- `--use-nerdctl` - Optional. Force `nerdctl` for this invocation; clio adds `--namespace k8s.io`
+- `--vscode-version <Version>` - Optional. Bundled `dev` only. Cache and stage the requested code-server version locally; default `4.112.0`
+- `--base-image <ImageRef>` - Optional. For `base`, the image reference to build. For bundled `dev` and `prod`, the local base image reference clio uses as the parent image. Default `creatio-base:8.0-v1`
+- `--registry <Prefix>` - Optional. Tag and push the image to `<Prefix>/creatio-<template>:<tag>`. If template `base` already uses a fully qualified `--base-image`, that fully qualified image remains the effective push target. Clio runs a registry preflight probe before the expensive image build starts
+- `--use-docker` - Optional. Force `docker` for this invocation and bypass runtime CLI auto-detection
+- `--use-nerdctl` - Optional. Force `nerdctl` for this invocation and bypass runtime CLI auto-detection; clio adds `--namespace k8s.io`
 
 ### Behavior
 
-- Accepts only `.NET 8+` Creatio payloads
-- Rejects `.NET Framework` distributions before Docker execution
-- Uses appsettings.json key `container-image-cli` to choose `docker` or `nerdctl` by default
-- Lets CLI flags override the configured container image CLI per invocation
+- Accepts only `.NET 8+` Creatio payloads for `dev`, `prod`, and custom Creatio templates
+- Rejects `.NET Framework` distributions before Docker execution for those templates
+- Bundled `db` instead requires a `db` directory in the source ZIP or directory and packages only that payload
+- Otherwise probes `docker info` first and `nerdctl info` second to choose the runtime CLI
+- Lets CLI flags override runtime CLI auto-detection per invocation
 - Copies bundled templates to the local clio settings folder under `docker-templates`
+- For `dev`, `prod`, and custom Creatio templates, excludes `db` directories from extracted payloads and the staged Docker context, and writes `.dockerignore` rules for `db` and `source/db`
+- For bundled `db`, stages only the resolved `db/` payload into the build context
 - Creates a temporary Docker build context and cleans it up after execution
-- Adds OCI label `org.creatio.database-source` with the original source payload name
+- Normalizes staged `*.sh` files to Unix LF line endings for Linux container compatibility
+- Runs image build with `--pull=false` so locally cached base images are reused instead of forcing a refresh
+- Bundled `dev` stages a cached `code-server-<version>-linux-amd64.tar.gz` archive into the Docker context instead of downloading it during `docker build`
+- Successful bundled `base` builds are cached as local image archives under the clio settings folder, and bundled `dev`/`prod` can restore that cache automatically when the local base image is missing
+- When `nerdctl` is used, clio accepts required bundled base/source images from either `k8s.io` or `buildkit`
+- If a required bundled image exists only in `k8s.io`, clio also syncs it into `buildkit` so BuildKit can resolve `FROM <base-image>` without a registry lookup
+- Local reusable files live under `%LOCALAPPDATA%\\creatio\\clio` on Windows or `~/.local/creatio/clio` on macOS/Linux:
+  `docker-templates` can be regenerated, `docker-assets\\code-server` can be re-downloaded, and `docker-image-cache` can be deleted if you accept losing auto-restore for the cached bundled base image
+- When `--registry` is set, clio probes the registry before building and fails early if `GET /v2/` or upload initiation for the target repository is rejected
+- Registry credentials are not passed through `build-docker-image`; authenticate first with `docker login <registry-host>` or `nerdctl login <registry-host>`
+- Clio now logs explicit `Tagging Docker image for registry push: ...` and `Pushing Docker image to registry: ...` lines before the registry operations start
+- Adds OCI label `org.creatio.database-source` for `dev`, `prod`, and custom Creatio templates
+- Adds OCI labels `org.creatio.capability.db=true` and `org.creatio.capability.db-source=<source-name>` for bundled `db`
 - Can build, save, and push in a single run
 
 ### Bundled templates
 
-- `dev` includes supervisor, SSH, and code-server for development workflows
-- `prod` supervises only the app process and is based on `.NET SDK 8.0` so Creatio can still invoke `dotnet build` inside the container
+- `base` builds the shared base image. Default output image ref is `creatio-base:8.0-v1`
+- `dev` includes supervisor, SSH, and code-server for development workflows and consumes a local base image
+- `prod` supervises only the app process, keeps `.NET SDK 8.0` available, and consumes a local base image
+- `db` packages only the source `db/` payload into a `busybox:1.36.1` image for backup distribution or restore sidecars
+
+Use `--base-image` to point bundled `dev` or `prod` at a different local base image. `clio` does not auto-build the base image anymore; build it explicitly with `--template base`.
+
+For bundled `dev`, clio caches the requested code-server archive locally and copies it into the Docker build context. Use `--vscode-version` to pick a specific version; the default is `4.112.0`.
 
 ### Examples
 
 ```bash
+clio build-docker-image --template base
+```
+
+```bash
+clio build-docker-image --template base --base-image "ghcr.io/acme/creatio-base:dotnet10-vpn"
+```
+
+```bash
 clio build-docker-image --from "C:\Creatio\8.3.3_StudioNet8.zip" --template dev
+```
+
+```bash
+clio build-docker-image --from "C:\Creatio\8.3.4_StudioNet8.zip" --template db
 ```
 
 ```bash
@@ -4118,6 +4210,10 @@ clio build-docker-image \
 
 ```bash
 clio build-docker-image --from "/opt/builds/creatio-net8" --template prod --use-nerdctl
+```
+
+```bash
+clio build-docker-image --from "/opt/builds/creatio-net8" --template dev --base-image "ghcr.io/acme/creatio-base:dotnet10-vpn"
 ```
 
 ## deploy-creatio

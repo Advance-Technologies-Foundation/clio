@@ -66,7 +66,7 @@ public sealed class DownloadConfigurationToolTests {
 				because: "the resolved command should receive the forwarded dconf options");
 			resolvedCommand.CapturedOptions!.Environment.Should().Be("dev",
 				because: "the requested environment name must be preserved");
-			resolvedCommand.CapturedWorkingDirectory.Should().Be(workspacePath,
+			NormalizeTempPathAlias(resolvedCommand.CapturedWorkingDirectory).Should().Be(NormalizeTempPathAlias(workspacePath),
 				because: "the tool should execute from the requested workspace so dconf writes into the correct `.application` folder");
 			Directory.GetCurrentDirectory().Should().Be(originalDirectory,
 				because: "the MCP tool should restore the original working directory after execution");
@@ -104,7 +104,7 @@ public sealed class DownloadConfigurationToolTests {
 				because: "the build-based dconf tool should execute the injected command directly");
 			defaultCommand.CapturedOptions!.BuildZipPath.Should().Be(buildPath,
 				because: "the requested build path must be preserved");
-			defaultCommand.CapturedWorkingDirectory.Should().Be(workspacePath,
+			NormalizeTempPathAlias(defaultCommand.CapturedWorkingDirectory).Should().Be(NormalizeTempPathAlias(workspacePath),
 				because: "the tool should execute from the requested workspace so the downloaded configuration lands in that workspace");
 			Directory.GetCurrentDirectory().Should().Be(originalDirectory,
 				because: "the MCP tool should restore the original working directory after execution");
@@ -275,5 +275,15 @@ public sealed class DownloadConfigurationToolTests {
 			CapturedWorkingDirectory = Directory.GetCurrentDirectory();
 			return 0;
 		}
+	}
+
+	private static string? NormalizeTempPathAlias(string? path) {
+		if (path is null) {
+			return null;
+		}
+
+		return path.StartsWith("/private/var/", StringComparison.Ordinal)
+			? path.Substring("/private".Length)
+			: path;
 	}
 }

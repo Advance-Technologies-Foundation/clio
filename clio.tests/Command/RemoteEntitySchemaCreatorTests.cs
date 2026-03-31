@@ -327,6 +327,56 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		runtimeVerifyCalled.Should().BeTrue();
 	}
 
+	[Test]
+	[Description("Creates structured default-value-config metadata for create-column payloads that use system values.")]
+	public void Create_CreatesSchema_WithStructuredSystemValueDefault() {
+		// Arrange
+		string saveBody = null;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+		string structuredColumn = JsonSerializer.Serialize(new {
+			name = "UsrStartDate",
+			type = "DateTime",
+			title = "Start date",
+			default_value_config = new {
+				source = "SystemValue",
+				value_source = "CurrentDateTime"
+			}
+		}).Replace("default_value_config", "default-value-config").Replace("value_source", "value-source");
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = [structuredColumn]
+		});
+
+		// Assert
+		JToken savedColumn = JObject.Parse(saveBody)["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrStartDate");
+		savedColumn["defValue"]!["valueSourceType"]!.Value<int>().Should().Be((int)Terrasoft.Core.Entities.EntitySchemaColumnDefSource.SystemValue,
+			because: "structured default-value-config should preserve non-legacy default sources");
+		savedColumn["defValue"]!["valueSource"]!.Value<string>().Should().Be("CurrentDateTime",
+			because: "structured default-value-config should preserve the requested system value name");
+	}
+
 	[TestCase("Binary", 13)]
 	[TestCase("Blob", 13)]
 	[TestCase("Image", 14)]

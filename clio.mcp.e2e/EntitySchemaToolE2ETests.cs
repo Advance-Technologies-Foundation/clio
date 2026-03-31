@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -97,6 +99,7 @@ public sealed class EntitySchemaToolE2ETests {
 			arrangeContext.EnvironmentName,
 			arrangeContext.PackageName,
 			arrangeContext.SchemaName);
+		string lookupColumnName = arrangeContext.LookupColumnName;
 
 		// Assert
 		AssertCommandSucceeded(createResult,
@@ -111,6 +114,11 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "lookup schema readback should expose nested columns for structured inspection");
 		schemaProperties.Columns!.Should().Contain(column => column.Source == "inherited",
 			because: "BaseLookup-derived schemas should expose inherited base columns in the schema read model");
+		schemaProperties.Columns!.Should().Contain(column =>
+				column.Name == lookupColumnName
+				&& column.Source == "own"
+				&& column.Type == "Integer",
+			because: "create-lookup should still allow explicit custom columns beyond the inherited BaseLookup fields");
 		registrationSnapshot.LookupRowCount.Should().Be(1,
 			because: "create-lookup should register the schema exactly once in the Lookup entity");
 		registrationSnapshot.LookupRowTitle.Should().Be("Order status",
@@ -159,6 +167,77 @@ public sealed class EntitySchemaToolE2ETests {
 		AssertBinaryLikeColumnProperties(binaryColumnProperties, binaryColumnName, "Binary");
 		AssertBinaryLikeColumnProperties(imageColumnProperties, imageColumnName, "Image");
 		AssertBinaryLikeColumnProperties(fileColumnProperties, fileColumnName, "File");
+	}
+
+	[Test]
+	[Description("Applies a structured system-value default through modify-entity-schema-column and verifies both legacy summary fields and structured readback metadata.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(ModifyToolName)]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("Modify entity schema column applies structured system-value defaults")]
+	[AllureDescription("Creates a sandbox entity schema through the real MCP server, adds a DateTime column with default-value-config source SystemValue, and verifies the real remote side effect plus structured readback metadata.")]
+	public async Task ModifyEntitySchemaColumn_Should_Apply_Structured_DefaultValueConfig_And_Read_Back_Metadata() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string startDateColumnName = "UsrStartDate";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope addResult = await ActAddDateTimeColumnWithStructuredDefaultAsync(arrangeContext, startDateColumnName);
+		EntitySchemaColumnPropertiesInfo columnProperties = await ActGetColumnPropertiesAsync(arrangeContext, startDateColumnName);
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"the schema must exist before structured default-value-config mutations can add the new DateTime column");
+		AssertIncludesInfoMessage(createResult,
+			"successful schema creation should emit progress output before the structured default mutation");
+		AssertCommandSucceeded(addResult,
+			"modify-entity-schema-column should succeed when adding a DateTime column with a system-value default");
+		AssertIncludesInfoMessage(addResult,
+			"successful structured default mutations should emit progress output");
+		AssertStructuredSystemValueColumnProperties(columnProperties, arrangeContext.SchemaName, startDateColumnName, "Start date");
+	}
+
+	[Test]
+	[Description("Rejects inherited BaseLookup columns before environment resolution when create-lookup tries to redefine Name.")]
+	[AllureTag(CreateLookupToolName)]
+	[AllureName("Create lookup rejects inherited BaseLookup columns")]
+	[AllureDescription("Uses the real MCP server to call create-lookup with a Name column and verifies the tool returns a structured validation failure before any environment lookup is needed.")]
+	public async Task CreateLookup_Should_Reject_Inherited_BaseLookup_Columns() {
+		// Arrange
+		await using InvalidEnvironmentArrangeContext arrangeContext = await ArrangeInvalidEnvironmentAsync();
+
+		// Act
+		CallToolResult callResult = await CallCreateLookupAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			"UsrPkg",
+			"UsrInvalidLookup",
+			arrangeContext.CancellationTokenSource.Token,
+			columns: [
+				new Dictionary<string, object?> {
+					["name"] = "Name",
+					["type"] = "Text",
+					["title-localizations"] = BuildLocalizations("Lookup name")
+				}
+			]);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		string environmentName = arrangeContext.EnvironmentName;
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "create-lookup should surface inherited-column validation as a structured command failure");
+		execution.ExitCode.Should().Be(1,
+			because: "create-lookup should fail when callers try to redefine inherited BaseLookup columns");
+		execution.Output.Should().Contain(message =>
+				message.Value != null && message.Value.Contains("BaseLookup", StringComparison.Ordinal),
+			because: "the failure should explain that Name already comes from BaseLookup");
+		execution.Output.Should().Contain(message =>
+				message.Value != null && message.Value.Contains("Name", StringComparison.Ordinal),
+			because: "the failure should identify the rejected inherited column");
+		execution.Output.Should().NotContain(message =>
+				message.Value != null && message.Value.Contains(environmentName, StringComparison.Ordinal),
+			because: "validation should happen before environment resolution");
 	}
 
 	[Test]
@@ -233,7 +312,8 @@ public sealed class EntitySchemaToolE2ETests {
 			"add",
 			"Name",
 			arrangeContext.CancellationTokenSource.Token,
-			type: "Text");
+			type: "Text",
+			titleLocalizations: BuildLocalizations("Name"));
 
 		// Assert
 		AssertTopLevelFailure(callResult, arrangeContext.EnvironmentName,
@@ -279,6 +359,7 @@ public sealed class EntitySchemaToolE2ETests {
 		string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
 		string schemaName = $"Usr{Guid.NewGuid():N}".Substring(0, 22);
 		string initialColumnName = "Name";
+		string lookupColumnName = "UsrSortOrder";
 		string addedColumnName = "Code";
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(8));
 
@@ -298,13 +379,12 @@ public sealed class EntitySchemaToolE2ETests {
 
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new EntitySchemaArrangeContext(
-			settings,
 			rootDirectory,
-			workspacePath,
 			settings.Sandbox.EnvironmentName!,
 			packageName,
 			schemaName,
 			initialColumnName,
+			lookupColumnName,
 			addedColumnName,
 			session,
 			cancellationTokenSource);
@@ -334,7 +414,7 @@ public sealed class EntitySchemaToolE2ETests {
 				new Dictionary<string, object?> {
 					["name"] = arrangeContext.InitialColumnName,
 					["type"] = "Text",
-					["title"] = "Vehicle name"
+					["title-localizations"] = BuildLocalizations("Vehicle name")
 				}
 			]);
 		return McpCommandExecutionParser.Extract(callResult);
@@ -364,7 +444,7 @@ public sealed class EntitySchemaToolE2ETests {
 			arrangeContext.AddedColumnName,
 			arrangeContext.CancellationTokenSource.Token,
 			type: "ShortText",
-			title: "Vehicle code",
+			titleLocalizations: BuildLocalizations("Vehicle code"),
 			indexed: true,
 			defaultValueSource: "Const",
 			defaultValue: "Draft");
@@ -381,9 +461,9 @@ public sealed class EntitySchemaToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token,
 			columns: [
 				new Dictionary<string, object?> {
-					["name"] = arrangeContext.InitialColumnName,
-					["type"] = "Text",
-					["title"] = "Lookup name"
+					["name"] = arrangeContext.LookupColumnName,
+					["type"] = "Integer",
+					["title-localizations"] = BuildLocalizations("Sort order")
 				}
 			]);
 		return McpCommandExecutionParser.Extract(callResult);
@@ -400,7 +480,7 @@ public sealed class EntitySchemaToolE2ETests {
 			"modify",
 			arrangeContext.AddedColumnName,
 			arrangeContext.CancellationTokenSource.Token,
-			title: "Vehicle code updated",
+			titleLocalizations: BuildLocalizations("Vehicle code updated"),
 			defaultValueSource: "None");
 		return McpCommandExecutionParser.Extract(callResult);
 	}
@@ -416,6 +496,24 @@ public sealed class EntitySchemaToolE2ETests {
 			"remove",
 			arrangeContext.AddedColumnName,
 			arrangeContext.CancellationTokenSource.Token);
+		return McpCommandExecutionParser.Extract(callResult);
+	}
+
+	[AllureStep("Act by invoking modify-entity-schema-column through MCP for a structured system-value default")]
+	private static async Task<CommandExecutionEnvelope> ActAddDateTimeColumnWithStructuredDefaultAsync(
+		EntitySchemaArrangeContext arrangeContext,
+		string columnName) {
+		CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName,
+			"add",
+			columnName,
+			arrangeContext.CancellationTokenSource.Token,
+			type: "DateTime",
+			titleLocalizations: BuildLocalizations("Start date"),
+			defaultValueConfig: BuildSystemValueDefaultValueConfig("CurrentDateTime"));
 		return McpCommandExecutionParser.Extract(callResult);
 	}
 
@@ -450,19 +548,19 @@ public sealed class EntitySchemaToolE2ETests {
 					["action"] = "add",
 					["column-name"] = binaryColumnName,
 					["type"] = "Binary",
-					["title"] = "Payload"
+					["title-localizations"] = BuildLocalizations("Payload")
 				},
 				new Dictionary<string, object?> {
 					["action"] = "add",
 					["column-name"] = imageColumnName,
 					["type"] = "Image",
-					["title"] = "Preview"
+					["title-localizations"] = BuildLocalizations("Preview")
 				},
 				new Dictionary<string, object?> {
 					["action"] = "add",
 					["column-name"] = fileColumnName,
 					["type"] = "File",
-					["title"] = "Document"
+					["title-localizations"] = BuildLocalizations("Document")
 				}
 			]);
 		return McpCommandExecutionParser.Extract(callResult);
@@ -486,7 +584,7 @@ public sealed class EntitySchemaToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["schema-name"] = schemaName,
-					["title"] = "Vehicle",
+					["title-localizations"] = BuildLocalizations("Vehicle"),
 					["columns"] = columns
 				}
 			},
@@ -511,7 +609,7 @@ public sealed class EntitySchemaToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["schema-name"] = schemaName,
-					["title"] = "Order status",
+					["title-localizations"] = BuildLocalizations("Order status"),
 					["columns"] = columns
 				}
 			},
@@ -573,10 +671,11 @@ public sealed class EntitySchemaToolE2ETests {
 		string columnName,
 		CancellationToken cancellationToken,
 		string? type = null,
-		string? title = null,
+		Dictionary<string, string>? titleLocalizations = null,
 		bool? indexed = null,
 		string? defaultValueSource = null,
-		string? defaultValue = null) {
+		string? defaultValue = null,
+		Dictionary<string, object?>? defaultValueConfig = null) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(ModifyToolName,
 			because: "the modify-entity-schema-column MCP tool must be advertised before the end-to-end call can be executed");
@@ -591,8 +690,8 @@ public sealed class EntitySchemaToolE2ETests {
 		if (!string.IsNullOrWhiteSpace(type)) {
 			args["type"] = type;
 		}
-		if (!string.IsNullOrWhiteSpace(title)) {
-			args["title"] = title;
+		if (titleLocalizations?.Count > 0) {
+			args["title-localizations"] = titleLocalizations;
 		}
 		if (indexed.HasValue) {
 			args["indexed"] = indexed.Value;
@@ -602,6 +701,9 @@ public sealed class EntitySchemaToolE2ETests {
 		}
 		if (defaultValue is not null) {
 			args["default-value"] = defaultValue;
+		}
+		if (defaultValueConfig?.Count > 0) {
+			args["default-value-config"] = defaultValueConfig;
 		}
 
 		return await session.CallToolAsync(
@@ -730,6 +832,36 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "clearing a default should remove the stored value from the structured result");
 	}
 
+	[AllureStep("Assert structured system-value column properties")]
+	private static void AssertStructuredSystemValueColumnProperties(
+		EntitySchemaColumnPropertiesInfo properties,
+		string schemaName,
+		string columnName,
+		string title) {
+		properties.SchemaName.Should().Be(schemaName,
+			because: "the structured result should identify the schema that received the system-value default");
+		properties.ColumnName.Should().Be(columnName,
+			because: "the structured result should identify the DateTime column that received the structured default");
+		properties.Source.Should().Be("own",
+			because: "columns added through modify-entity-schema-column should be reported as own columns");
+		properties.Type.Should().Be("DateTime",
+			because: "the structured result should preserve the requested DateTime column type");
+		properties.Title.Should().Be(title,
+			because: "the structured result should preserve the added DateTime column title");
+		properties.DefaultValueSource.Should().Be("SystemValue",
+			because: "legacy summary fields should still surface the resolved system-value source");
+		properties.DefaultValue.Should().Be("CurrentDateTime",
+			because: "legacy summary fields should expose the resolved system value name");
+		properties.DefaultValueConfig.Should().NotBeNull(
+			because: "structured column readback should expose default-value-config metadata for system-value defaults");
+		properties.DefaultValueConfig!.Source.Should().Be("SystemValue",
+			because: "the structured default value config should preserve the resolved system-value source");
+		properties.DefaultValueConfig.ValueSource.Should().Be("CurrentDateTime",
+			because: "the structured default value config should preserve the system value name");
+		properties.DefaultValueConfig.Value.Should().BeNull(
+			because: "system-value defaults should not project a constant payload");
+	}
+
 	[AllureStep("Assert schema properties include Binary, Image, and File columns")]
 	private static void AssertSchemaPropertiesIncludeBinaryLikeColumns(
 		EntitySchemaPropertiesInfo properties,
@@ -818,14 +950,30 @@ public sealed class EntitySchemaToolE2ETests {
 			cancellationToken: cancellationToken);
 	}
 
+	private static Dictionary<string, string> BuildLocalizations(string enUs, string? ukUa = null) {
+		Dictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase) {
+			["en-US"] = enUs
+		};
+		if (!string.IsNullOrWhiteSpace(ukUa)) {
+			result["uk-UA"] = ukUa;
+		}
+		return result;
+	}
+
+	private static Dictionary<string, object?> BuildSystemValueDefaultValueConfig(string valueSource) {
+		return new Dictionary<string, object?> {
+			["source"] = "SystemValue",
+			["value-source"] = valueSource
+		};
+	}
+
 	private sealed record EntitySchemaArrangeContext(
-		McpE2ESettings Settings,
 		string RootDirectory,
-		string WorkspacePath,
 		string EnvironmentName,
 		string PackageName,
 		string SchemaName,
 		string InitialColumnName,
+		string LookupColumnName,
 		string AddedColumnName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {

@@ -1,8 +1,10 @@
 using System;
+using System.IO;
 using Clio.Command;
 using Clio.Common;
 using Clio.ModelBuilder;
 using Clio.Project;
+using Clio.Tests.Infrastructure;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -31,7 +33,7 @@ internal class AddItemCommandTests : BaseCommandTests<AddItemOptions>{
 	[Category("Unit")]
 	public void Execute_ModelSingle_CallsUnderlyingServicesAndProject() {
 		// Arrange
-
+		string modelsPath = TestFileSystem.GetRootedPath("Models");
 
 		AddItemOptions options = new() {
 			ItemType = "model",
@@ -39,7 +41,7 @@ internal class AddItemCommandTests : BaseCommandTests<AddItemOptions>{
 			ItemName = "Contact",
 			Fields = "Name,Email",
 			Namespace = "Codex",
-			DestinationPath = @"C:\Models"
+			DestinationPath = modelsPath
 		};
 		const string expectedUrl = "http://localhost/rest/CreatioApiGateway/GetEntitySchemaModels/Contact/Name,Email";
 		_serviceUrlBuilder.Build("/rest/CreatioApiGateway/GetEntitySchemaModels/Contact/Name,Email")
@@ -53,7 +55,7 @@ internal class AddItemCommandTests : BaseCommandTests<AddItemOptions>{
 		result.Should().Be(0);
 		_serviceUrlBuilder.Received(1).Build("/rest/CreatioApiGateway/GetEntitySchemaModels/Contact/Name,Email");
 		_applicationClient.Received(1).ExecuteGetRequest(expectedUrl);
-		_vsProjectFactory.Received(1).Create(@"C:\Models", "Codex");
+		_vsProjectFactory.Received(1).Create(modelsPath, "Codex");
 		_vsProject.Received(1).AddFile("Contact", "class Contact {}");
 		_vsProject.Received(1).Reload();
 		_logger.Received(1).WriteInfo("Done");
@@ -84,14 +86,18 @@ internal class AddItemCommandTests : BaseCommandTests<AddItemOptions>{
 	[Category("Unit")]
 	public void Execute_TemplateItem_CallsUnderlyingProjectWithTemplateBody() {
 		// Arrange
-		_fileSystem.AddDirectory(@"C:\work\tpl");
-		_fileSystem.AddFile(@"C:\work\tpl\service-template.tpl", new MockFileData("public class <Name> {}"));
-		_fileSystem.Directory.SetCurrentDirectory(@"C:\work");
+		string workPath = TestFileSystem.GetRootedPath("work");
+		string tplDirectoryPath = Path.Combine(workPath, "tpl");
+		string templatePath = Path.Combine(tplDirectoryPath, "service-template.tpl");
+		string modelsPath = TestFileSystem.GetRootedPath("Models");
+		_fileSystem.AddDirectory(tplDirectoryPath);
+		_fileSystem.AddFile(templatePath, new MockFileData("public class <Name> {}"));
+		_fileSystem.Directory.SetCurrentDirectory(workPath);
 		AddItemOptions options = new() {
 			ItemType = "service",
 			ItemName = "MyService",
 			Namespace = "Codex",
-			DestinationPath = @"C:\Models"
+			DestinationPath = modelsPath
 		};
 
 		// Act
@@ -99,7 +105,7 @@ internal class AddItemCommandTests : BaseCommandTests<AddItemOptions>{
 
 		// Assert
 		result.Should().Be(0);
-		_vsProjectFactory.Received(1).Create(@"C:\Models", "Codex");
+		_vsProjectFactory.Received(1).Create(modelsPath, "Codex");
 		_vsProject.Received(1).AddFile("MyService", "public class MyService {}");
 		_vsProject.Received(1).Reload();
 	}

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -46,13 +47,13 @@ public class CreateEntitySchemaToolTests {
 		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
 			"MyPackage",
 			"UsrVehicle",
-			"Vehicle",
+			Localizations("Vehicle"),
 			"docker_fix2",
 			"BaseEntity",
 			false,
 			new List<CreateEntitySchemaColumnArgs> {
-				new("Name", "Text", "Vehicle name"),
-				new("Owner", "Lookup", "Owner", "Contact")
+				new("Name", "Text", Localizations("Vehicle name")),
+				new("Owner", "Lookup", Localizations("Owner"), "Contact")
 			}));
 
 		// Assert
@@ -67,10 +68,15 @@ public class CreateEntitySchemaToolTests {
 			"because the environment-aware tool should use the resolved command");
 		resolvedCommand.CapturedOptions.Should().NotBeNull(
 			"because the resolved command should receive the mapped entity schema options");
-		resolvedCommand.CapturedOptions.Columns.Should().BeEquivalentTo(new[] {
-			"Name:Text:Vehicle name",
-			"Owner:Lookup:Owner:Contact"
-		}, "because MCP structured columns should map to the command column format");
+		string[] serializedColumns = resolvedCommand.CapturedOptions.Columns!.ToArray();
+		using (JsonDocument firstColumn = JsonDocument.Parse(serializedColumns[0]))
+		using (JsonDocument secondColumn = JsonDocument.Parse(serializedColumns[1])) {
+			firstColumn.RootElement.GetProperty("title-localizations").GetProperty("en-US").GetString()
+				.Should().Be("Vehicle name");
+			secondColumn.RootElement.GetProperty("reference-schema-name").GetString().Should().Be("Contact");
+			secondColumn.RootElement.GetProperty("title-localizations").GetProperty("en-US").GetString()
+				.Should().Be("Owner");
+		}
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -95,9 +101,9 @@ public class CreateEntitySchemaToolTests {
 	}
 
 	[Test]
-	[Description("Preserves the lookup reference position when a lookup column omits an explicit title.")]
+	[Description("Rejects create-entity-schema column payloads that omit the required title-localizations field.")]
 	[Category("Unit")]
-	public void CreateEntitySchema_Should_Preserve_Empty_Title_Slot_For_Lookup_Columns() {
+	public void CreateEntitySchema_Should_Reject_Columns_Without_Title_Localizations() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
@@ -111,19 +117,21 @@ public class CreateEntitySchemaToolTests {
 		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
 			"MyPackage",
 			"UsrVehicle",
-			"Vehicle",
+			Localizations("Vehicle"),
 			"docker_fix2",
 			Columns: new[] {
-				new CreateEntitySchemaColumnArgs("Owner", "Lookup", ReferenceSchemaName: "Contact")
+				new CreateEntitySchemaColumnArgs("Owner", "Lookup", Localizations("Owner"), "Contact") {
+					LegacyTitle = "Owner"
+				}
 			}));
 
 		// Assert
-		result.ExitCode.Should().Be(0, "because the serialized lookup column should remain valid");
-		resolvedCommand.CapturedOptions.Should().NotBeNull(
-			"because the resolved command should receive the mapped entity schema options");
-		resolvedCommand.CapturedOptions.Columns.Should().BeEquivalentTo(new[] {
-			"Owner:Lookup::Contact"
-		}, "because the command parser expects an empty title slot before the lookup reference");
+		result.ExitCode.Should().Be(1, "because MCP create-column payloads must use title-localizations");
+		result.Output.Should().Contain(message =>
+				message.Value != null && message.Value.ToString().Contains("legacy 'title'", StringComparison.Ordinal),
+			"because the validation error should point callers to title-localizations");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			"because invalid MCP payloads should be rejected before command execution");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -144,10 +152,10 @@ public class CreateEntitySchemaToolTests {
 		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
 			"MyPackage",
 			"UsrVehicle",
-			"Vehicle",
+			Localizations("Vehicle", "Транспорт"),
 			"docker_fix2",
 			Columns: [
-				new CreateEntitySchemaColumnArgs("Status", "ShortText", "Status") {
+				new CreateEntitySchemaColumnArgs("Status", "ShortText", Localizations("Status", "Статус")) {
 					Required = true,
 					DefaultValueSource = "Const",
 					DefaultValue = "Draft"
@@ -164,12 +172,123 @@ public class CreateEntitySchemaToolTests {
 			because: "structured serialization should preserve the column name");
 		document.RootElement.GetProperty("type").GetString().Should().Be("ShortText",
 			because: "structured serialization should preserve frontend-style type aliases");
+		document.RootElement.GetProperty("title-localizations").GetProperty("en-US").GetString().Should().Be("Status",
+			because: "structured serialization should preserve explicit title localizations");
+		document.RootElement.GetProperty("title-localizations").GetProperty("uk-UA").GetString().Should().Be("Статус",
+			because: "structured serialization should preserve secondary localizations");
 		document.RootElement.GetProperty("required").GetBoolean().Should().BeTrue(
 			because: "structured serialization should preserve required metadata");
 		document.RootElement.GetProperty("default-value-source").GetString().Should().Be("Const",
 			because: "structured serialization should preserve the requested default source");
 		document.RootElement.GetProperty("default-value").GetString().Should().Be("Draft",
 			because: "structured serialization should preserve the default value");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Serializes structured default-value-config metadata when the MCP caller supplies non-legacy default settings.")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Serialize_DefaultValueConfig_As_Json() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateEntitySchemaCommand defaultCommand = new();
+		FakeCreateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+			"MyPackage",
+			"UsrVehicle",
+			Localizations("Vehicle"),
+			"docker_fix2",
+			Columns: [
+				new CreateEntitySchemaColumnArgs("UsrStartDate", "DateTime", Localizations("Start date")) {
+					DefaultValueConfig = new EntitySchemaDefaultValueConfig {
+						Source = "SystemValue",
+						ValueSource = "CurrentDateTime"
+					}
+				}
+			]));
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "structured default-value-config should be a valid MCP create-column payload");
+		string serializedColumn = resolvedCommand.CapturedOptions!.Columns!.Single();
+		using JsonDocument document = JsonDocument.Parse(serializedColumn);
+		document.RootElement.GetProperty("default-value-config").GetProperty("source").GetString().Should().Be("SystemValue",
+			because: "structured serialization should preserve the default source name");
+		document.RootElement.GetProperty("default-value-config").GetProperty("value-source").GetString().Should().Be("CurrentDateTime",
+			because: "structured serialization should preserve the system value source");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Rejects schema title-localizations payloads that omit the required en-US value.")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Reject_Title_Localizations_Without_EnUs() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateEntitySchemaCommand defaultCommand = new();
+		FakeCreateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+			"MyPackage",
+			"UsrVehicle",
+			new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["uk-UA"] = "Транспорт"
+			},
+			"docker_fix2"));
+
+		// Assert
+		result.ExitCode.Should().Be(1);
+		result.Output.Should().Contain(message =>
+				message.Value != null && message.Value.ToString().Contains("en-US", StringComparison.Ordinal),
+			because: "the validation error should explain the required base localization");
+		resolvedCommand.CapturedOptions.Should().BeNull();
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Rejects create-column localization maps that contain empty values.")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Reject_Column_Title_Localizations_With_Empty_Value() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateEntitySchemaCommand defaultCommand = new();
+		FakeCreateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+			"MyPackage",
+			"UsrVehicle",
+			Localizations("Vehicle"),
+			"docker_fix2",
+			Columns: [
+				new CreateEntitySchemaColumnArgs(
+					"Name",
+					"Text",
+					new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+						["en-US"] = string.Empty
+					})
+			]));
+
+		// Assert
+		result.ExitCode.Should().Be(1);
+		result.Output.Should().Contain(message =>
+				message.Value != null && message.Value.ToString().Contains("empty values", StringComparison.Ordinal),
+			because: "the validation error should reject blank localization values");
+		resolvedCommand.CapturedOptions.Should().BeNull();
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -182,15 +301,17 @@ public class CreateEntitySchemaToolTests {
 	public void CreateEntitySchema_Should_Preserve_BinaryLike_Type_Names_In_Column_Serialization(string typeName) {
 		// Arrange
 		var columns = new[] {
-			new CreateEntitySchemaColumnArgs("Payload", typeName, "Payload")
+			new CreateEntitySchemaColumnArgs("Payload", typeName, Localizations("Payload"))
 		};
 
 		// Act
-		string serializedColumn = CreateEntitySchemaTool.SerializeColumns(columns)!.Single();
+		string serializedColumn = CreateEntitySchemaTool.SerializeColumns(columns, "Schema 'UsrVehicle'")!.Single();
 
 		// Assert
-		serializedColumn.Should().Be($"Payload:{typeName}:Payload",
+		using JsonDocument document = JsonDocument.Parse(serializedColumn);
+		document.RootElement.GetProperty("type").GetString().Should().Be(typeName,
 			because: "the MCP adapter should pass supported binary-like type names through without rewriting them");
+		document.RootElement.GetProperty("title-localizations").GetProperty("en-US").GetString().Should().Be("Payload");
 	}
 
 	[Test]
@@ -213,10 +334,10 @@ public class CreateEntitySchemaToolTests {
 		CommandExecutionResult result = tool.CreateLookup(new CreateLookupArgs(
 			"MyPackage",
 			"UsrOrderStatus",
-			"Order status",
+			Localizations("Order status", "Статус замовлення"),
 			"docker_fix2",
 			new List<CreateEntitySchemaColumnArgs> {
-				new("Name", "Text", "Name")
+				new("UsrSortOrder", "Integer", Localizations("Sort order"))
 			}));
 
 		// Assert
@@ -233,10 +354,57 @@ public class CreateEntitySchemaToolTests {
 			because: "the environment-aware tool should use the resolved command");
 		resolvedCommand.CapturedOptions.Should().NotBeNull(
 			because: "the resolved command should receive the mapped lookup creation options");
-		resolvedCommand.CapturedOptions!.Columns.Should().BeEquivalentTo(new[] {
-			"Name:Text:Name"
-		}, because: "create-lookup should reuse the existing create-entity-schema column serialization");
+		using (JsonDocument document = JsonDocument.Parse(resolvedCommand.CapturedOptions!.Columns!.Single())) {
+			document.RootElement.GetProperty("title-localizations").GetProperty("en-US").GetString().Should().Be("Sort order");
+		}
 		registrationService.Received(1).EnsureLookupRegistration("MyPackage", "UsrOrderStatus", "Order status");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Rejects inherited BaseLookup columns when create-lookup callers try to redefine Name or Description.")]
+	[Category("Unit")]
+	public void CreateLookup_Should_Reject_Inherited_BaseLookup_Columns() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateEntitySchemaCommand defaultCommand = new();
+		FakeCreateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateLookup(new CreateLookupArgs(
+			"MyPackage",
+			"UsrOrderStatus",
+			Localizations("Order status"),
+			"docker_fix2",
+			[
+				new CreateEntitySchemaColumnArgs("Name", "Text", Localizations("Name")),
+				new CreateEntitySchemaColumnArgs("Description", "Text", Localizations("Description"))
+			]));
+		string[] outputValues = result.Output
+			.Select(message => message.Value?.ToString() ?? string.Empty)
+			.ToArray();
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "create-lookup should reject attempts to redefine inherited BaseLookup columns");
+		outputValues.Should().Contain(value => value.Contains("BaseLookup", StringComparison.Ordinal),
+			because: "the MCP caller should receive a readable explanation of the inherited-column guardrail");
+		outputValues.Should().Contain(value =>
+				value.Contains("Name", StringComparison.Ordinal)
+				&& value.Contains("Description", StringComparison.Ordinal),
+			because: "the validation error should identify the rejected inherited columns");
+		defaultCommand.CapturedOptions.Should().BeNull(
+			because: "the default injected command should not be executed when validation fails");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "the resolved command should not be executed when validation fails");
+		registrationService.DidNotReceiveWithAnyArgs().EnsureLookupRegistration(default!, default!, default!);
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -260,7 +428,7 @@ public class CreateEntitySchemaToolTests {
 		CommandExecutionResult result = tool.CreateLookup(new CreateLookupArgs(
 			"MyPackage",
 			"UsrOrderStatus",
-			"Order status",
+			Localizations("Order status"),
 			"docker_fix2"));
 
 		// Assert
@@ -298,10 +466,10 @@ public class CreateEntitySchemaToolTests {
 		CommandExecutionResult result = tool.CreateLookup(new CreateLookupArgs(
 			"MyPackage",
 			"UsrOrderStatus",
-			"Order status",
+			Localizations("Order status"),
 			"docker_fix2",
 			[
-				new CreateEntitySchemaColumnArgs("Status", "ShortText", "Status") {
+				new CreateEntitySchemaColumnArgs("Status", "ShortText", Localizations("Status", "Статус")) {
 					Required = true,
 					DefaultValueSource = "Const",
 					DefaultValue = "Draft"
@@ -319,6 +487,8 @@ public class CreateEntitySchemaToolTests {
 			because: "structured serialization should preserve the column name");
 		document.RootElement.GetProperty("type").GetString().Should().Be("ShortText",
 			because: "structured serialization should preserve the requested type alias");
+		document.RootElement.GetProperty("title-localizations").GetProperty("en-US").GetString().Should().Be("Status");
+		document.RootElement.GetProperty("title-localizations").GetProperty("uk-UA").GetString().Should().Be("Статус");
 		document.RootElement.GetProperty("required").GetBoolean().Should().BeTrue(
 			because: "structured serialization should preserve required metadata");
 		document.RootElement.GetProperty("default-value-source").GetString().Should().Be("Const",
@@ -352,7 +522,7 @@ public class CreateEntitySchemaToolTests {
 		CommandExecutionResult result = tool.CreateLookup(new CreateLookupArgs(
 			"MyPackage",
 			"UsrOrderStatus",
-			"Order status",
+			Localizations("Order status"),
 			"docker_fix2"));
 		bool hasRegistrationFailure = result.Output.Any(message =>
 			message.Value != null &&
@@ -379,5 +549,15 @@ public class CreateEntitySchemaToolTests {
 			CapturedOptions = options;
 			return 0;
 		}
+	}
+
+	private static Dictionary<string, string> Localizations(string enUs, string? ukUa = null) {
+		Dictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase) {
+			["en-US"] = enUs
+		};
+		if (!string.IsNullOrWhiteSpace(ukUa)) {
+			result["uk-UA"] = ukUa;
+		}
+		return result;
 	}
 }

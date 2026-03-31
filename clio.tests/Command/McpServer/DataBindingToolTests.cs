@@ -96,7 +96,7 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 	}
 
 	protected override MockFileSystem CreateFs() {
-		_mockFileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), @"C:\");
+		_mockFileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), Path.Combine(Path.GetTempPath(), $"clio-data-binding-tool-fs-{Guid.NewGuid():N}"));
 		return _mockFileSystem;
 	}
 
@@ -239,7 +239,10 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 			_packageName,
 			"SysModule",
 			_workspaceRoot,
-			ValuesJson: """{"Code":"UsrImageModule","Image16":"assets\\icon.png"}"""));
+			ValuesJson: JsonSerializer.Serialize(new Dictionary<string, string> {
+				["Code"] = "UsrImageModule",
+				["Image16"] = Path.Combine("assets", "icon.png")
+			})));
 
 		// Assert
 		result.ExitCode.Should().Be(0,

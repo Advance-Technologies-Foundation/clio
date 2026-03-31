@@ -21,6 +21,7 @@ public sealed class SchemaSyncTool(
 	ILogger logger) {
 
 	internal const string ToolName = "schema-sync";
+	private const string CreateLookupOperationName = "create-lookup";
 
 	/// <summary>
 	/// Executes a batch of schema operations in a single MCP call.
@@ -68,7 +69,7 @@ public sealed class SchemaSyncTool(
 
 	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args) {
 		return op.Type switch {
-			"create-lookup" => ExecuteCreateSchema(op, args, "BaseLookup", false, "create-lookup"),
+			CreateLookupOperationName => ExecuteCreateSchema(op, args, "BaseLookup", false, CreateLookupOperationName),
 			"create-entity" => ExecuteCreateSchema(op, args, op.ParentSchemaName, op.ExtendParent, "create-entity"),
 			"update-entity" => ExecuteUpdateEntity(op, args),
 			_ => new SchemaSyncOperationResult {
@@ -82,21 +83,29 @@ public sealed class SchemaSyncTool(
 		SchemaSyncOperation op, SchemaSyncArgs args,
 		string parentSchemaName, bool extendParent, string operationName) {
 		try {
+			string context = $"{operationName} operation for schema '{op.SchemaName}'";
+			IReadOnlyDictionary<string, string> titleLocalizations = EntitySchemaLocalizationContract.RequireTitleLocalizations(
+				op.TitleLocalizations,
+				op.LegacyTitle,
+				context);
+			if (string.Equals(operationName, CreateLookupOperationName, StringComparison.Ordinal)) {
+				ModelingGuardrails.EnsureLookupColumnsDoNotShadowInheritedBaseLookupColumns(op.Columns);
+			}
 			CreateEntitySchemaOptions options = CreateEntitySchemaTool.CreateOptions(
 				new CreateLookupArgs(
 					args.PackageName, op.SchemaName,
-					op.Title ?? op.SchemaName, args.EnvironmentName,
+					new Dictionary<string, string>(titleLocalizations, StringComparer.OrdinalIgnoreCase), args.EnvironmentName,
 					op.Columns),
 				parentSchemaName, extendParent);
 			CreateEntitySchemaCommand command = commandResolver.Resolve<CreateEntitySchemaCommand>(options);
 			int exitCode = command.Execute(options);
-			if (exitCode == 0 && string.Equals(operationName, "create-lookup", StringComparison.Ordinal)) {
+			if (exitCode == 0 && string.Equals(operationName, CreateLookupOperationName, StringComparison.Ordinal)) {
 				ILookupRegistrationService registrationService =
 					commandResolver.Resolve<ILookupRegistrationService>(options);
 				registrationService.EnsureLookupRegistration(
 					args.PackageName,
 					op.SchemaName,
-					op.Title ?? op.SchemaName);
+					EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context));
 			}
 			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
 			return new SchemaSyncOperationResult {
@@ -127,9 +136,7 @@ public sealed class SchemaSyncTool(
 				Environment = args.EnvironmentName,
 				Package = args.PackageName,
 				SchemaName = op.SchemaName,
-				Operations = op.UpdateOperations
-					.Select(o => JsonSerializer.Serialize(o))
-					.ToList()
+				Operations = UpdateEntitySchemaTool.SerializeOperations(op.UpdateOperations, op.SchemaName)
 			};
 			UpdateEntitySchemaCommand command = commandResolver.Resolve<UpdateEntitySchemaCommand>(options);
 			int exitCode = command.Execute(options);
@@ -232,9 +239,9 @@ public sealed record SchemaSyncOperation(
 	[property: Required]
 	string SchemaName,
 
-	[property: JsonPropertyName("title")]
-	[property: Description("Schema title or caption (for create operations)")]
-	string? Title = null,
+	[property: JsonPropertyName("title-localizations")]
+	[property: Description("Schema title/caption localizations for create operations. Must include en-US.")]
+	Dictionary<string, string>? TitleLocalizations = null,
 
 	[property: JsonPropertyName("parent-schema-name")]
 	[property: Description("Parent schema name (for create-entity)")]
@@ -255,7 +262,11 @@ public sealed record SchemaSyncOperation(
 	[property: JsonPropertyName("seed-rows")]
 	[property: Description("Rows to seed after creating the schema. Each object must have a 'values' key.")]
 	IEnumerable<SchemaSyncSeedRow>? SeedRows = null
-);
+) {
+	[property: JsonPropertyName("title")]
+	[property: Description("Legacy scalar title. Not accepted by MCP. Use title-localizations instead.")]
+	public string? LegacyTitle { get; init; }
+}
 
 /// <summary>
 /// A seed row for the <c>schema-sync</c> tool.

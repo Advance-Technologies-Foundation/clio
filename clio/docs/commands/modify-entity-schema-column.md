@@ -4,7 +4,7 @@
 
 Adds, modifies, or removes one own column in a remote Creatio entity schema by loading the current design item, mutating it locally, and saving it back through `EntitySchemaDesignerService`.
 
-This command is the supported ADAC-compatible mutation surface in `clio`. Batch-style frontend update plans should be decomposed into repeated `modify-entity-schema-column` calls rather than translated into a different `clio` tool name.
+This command is part of the canonical `clio` MCP mutation surface for explicit single-column edits. Batch-style frontend update plans should be decomposed into repeated `modify-entity-schema-column` calls or moved into `schema-sync` rather than translated into a different `clio` tool name.
 
 ## Usage
 
@@ -57,6 +57,7 @@ clio modify-entity-schema-column [options]
 - `Binary`
 - `Image`
 - `File`
+- `SecureText`
 - `Integer`
 - `Float`
 - `Boolean`
@@ -65,7 +66,7 @@ clio modify-entity-schema-column [options]
 - `Time`
 - `Lookup`
 
-The command also accepts `Blob` as an alias for `Binary`, plus designer-native text and decimal variants such as `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`, `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`, `Currency0`, `Currency1`, `Currency2`, and `Currency3`.
+The command also accepts `Blob` as an alias for `Binary`, `Encrypted` and `Password` as aliases for `SecureText`, plus designer-native text and decimal variants such as `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`, `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`, `Currency0`, `Currency1`, `Currency2`, and `Currency3`.
 
 ## Examples
 
@@ -106,6 +107,7 @@ clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicl
 - inherited columns are readable but not mutable in v1.
 - frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time` are accepted and mapped to the closest supported designer types.
 - `--default-value-source None` clears the stored default value; `Const` requires `--default-value`.
+- MCP callers can also send structured `default-value-config` with `source` set to `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`; the direct CLI flags remain shorthand for `Const` and `None`.
 - `Binary`, `Image`, and `File` columns do not support `--default-value` or `--default-value-source Const`.
 - After `SaveSchema`, the schema is reloaded immediately. The command treats save as failed if the mutated column cannot be read back.
 

@@ -1,9 +1,13 @@
+using System.Collections.Generic;
+
 namespace Clio.Mcp.E2E.Support.Configuration;
 
 internal sealed class McpE2ESettings {
 	public bool AllowDestructiveMcpTests { get; set; }
 
 	public string? ClioProcessPath { get; set; }
+
+	public Dictionary<string, string?> ProcessEnvironmentVariables { get; set; } = new();
 
 	public SandboxSettings Sandbox { get; set; } = new();
 }

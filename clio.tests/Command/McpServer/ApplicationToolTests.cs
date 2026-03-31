@@ -163,11 +163,11 @@ public sealed class ApplicationToolTests {
 		applicationInfoService.GetApplicationInfo("sandbox", "app-id", null).Returns(
 			new ApplicationInfoResult(
 				"pkg-uid",
-				"Pkg",
+				"UsrVehicle",
 				[
 					new ApplicationEntityInfoResult(
 						"entity-uid",
-						"UsrEntity",
+						"UsrVehicle",
 						"Entity",
 						[
 							new ApplicationColumnInfoResult(
@@ -178,7 +178,11 @@ public sealed class ApplicationToolTests {
 								"Const",
 								"Default")
 						])
-				]));
+				],
+				ApplicationId: "app-id",
+				ApplicationName: "Vehicle App",
+				ApplicationCode: "UsrVehicleApp",
+				ApplicationVersion: "8.3.0"));
 		ApplicationGetInfoTool tool = new(applicationInfoService);
 
 		// Act
@@ -195,8 +199,18 @@ public sealed class ApplicationToolTests {
 			because: "successful info calls should not include an error payload");
 		result.PackageUId.Should().Be("pkg-uid",
 			because: "the MCP tool should preserve the primary package identifier");
-		result.PackageName.Should().Be("Pkg",
+		result.PackageName.Should().Be("UsrVehicle",
 			because: "the MCP tool should preserve the primary package name");
+		result.CanonicalMainEntityName.Should().Be("UsrVehicle",
+			because: "the MCP tool should expose the canonical main entity when it matches the primary package");
+		result.ApplicationId.Should().Be("app-id",
+			because: "the MCP tool should preserve the installed application identifier for follow-up discovery and navigation");
+		result.ApplicationName.Should().Be("Vehicle App",
+			because: "the MCP tool should preserve the installed application display name");
+		result.ApplicationCode.Should().Be("UsrVehicleApp",
+			because: "the MCP tool should preserve the installed application code");
+		result.ApplicationVersion.Should().Be("8.3.0",
+			because: "the MCP tool should preserve the installed application version");
 		result.Entities.Should().ContainSingle(
 			because: "the MCP tool should surface the entity metadata returned by the backend service");
 		result.Entities![0].Columns[0].DataValueType.Should().Be("Text",
@@ -287,11 +301,11 @@ public sealed class ApplicationToolTests {
 				Arg.Any<ApplicationCreateRequest>())
 			.Returns(new ApplicationInfoResult(
 				"pkg-uid",
-				"Pkg",
+				"UsrCodexApp",
 				[
 					new ApplicationEntityInfoResult(
 						"entity-uid",
-						"UsrEntity",
+						"UsrCodexApp",
 						"Entity",
 						[
 							new ApplicationColumnInfoResult(
@@ -302,7 +316,11 @@ public sealed class ApplicationToolTests {
 								"Const",
 								"Default")
 						])
-				]));
+				],
+				ApplicationId: "created-app-id",
+				ApplicationName: "Codex App",
+				ApplicationCode: "UsrCodexApp",
+				ApplicationVersion: "1.0.0"));
 		ApplicationCreateTool tool = new(applicationCreateService);
 
 		// Act
@@ -341,6 +359,12 @@ public sealed class ApplicationToolTests {
 			because: "successful create calls should not include an error payload");
 		result.PackageUId.Should().Be("pkg-uid",
 			because: "the create MCP tool should preserve the primary package identifier from the backend service");
+		result.CanonicalMainEntityName.Should().Be("UsrCodexApp",
+			because: "the create MCP tool should expose the canonical main entity when the created app returns one");
+		result.ApplicationId.Should().Be("created-app-id",
+			because: "application-create should return the installed application identifier in the same envelope shape as application-get-info");
+		result.ApplicationCode.Should().Be("UsrCodexApp",
+			because: "application-create should return the created application code in the structured envelope");
 		result.Entities![0].Columns[0].DataValueType.Should().Be("Text",
 			because: "the create MCP tool should preserve Clio-style column metadata");
 	}
@@ -354,6 +378,11 @@ public sealed class ApplicationToolTests {
 			Success: true,
 			PackageUId: "pkg-uid",
 			PackageName: "Pkg",
+			CanonicalMainEntityName: "UsrEntity",
+			ApplicationId: "app-id",
+			ApplicationName: "Codex App",
+			ApplicationCode: "UsrCodexApp",
+			ApplicationVersion: "8.3.0",
 			Entities: [
 				new ApplicationEntityResult(
 					UId: "entity-uid",
@@ -376,6 +405,16 @@ public sealed class ApplicationToolTests {
 			because: "application context responses should keep Clio kebab-case payload fields");
 		json.Should().Contain("\"package-name\":\"Pkg\"",
 			because: "application context responses should keep Clio kebab-case payload fields");
+		json.Should().Contain("\"canonical-main-entity-name\":\"UsrEntity\"",
+			because: "application context responses should expose the canonical main entity when it is known");
+		json.Should().Contain("\"application-id\":\"app-id\"",
+			because: "application context responses should preserve the installed application identifier");
+		json.Should().Contain("\"application-name\":\"Codex App\"",
+			because: "application context responses should preserve the installed application display name");
+		json.Should().Contain("\"application-code\":\"UsrCodexApp\"",
+			because: "application context responses should preserve the installed application code");
+		json.Should().Contain("\"application-version\":\"8.3.0\"",
+			because: "application context responses should preserve the installed application version");
 		json.Should().Contain("\"u-id\":\"entity-uid\"",
 			because: "entity payloads should keep Clio kebab-case payload fields");
 		json.Should().Contain("\"data-value-type\":\"Text\"",
@@ -744,17 +783,33 @@ public sealed class ApplicationToolTests {
 			because: "the list prompt should no longer advertise application filters");
 		listPrompt.Should().NotContain("`app-code`",
 			because: "the list prompt should no longer advertise application filters");
+		listPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
+			because: "the list prompt should point existing-app flows to the dedicated MCP maintenance guide");
+		listPrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
+			because: "the list prompt should direct callers to the canonical follow-up application inspection step");
 		infoPrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
 			because: "the info prompt should reference the exact production tool name");
 		infoPrompt.Should().Contain("`environment-name`",
 			because: "the info prompt should keep the normalized environment argument visible");
 		infoPrompt.Should().Contain("exactly one identifier",
 			because: "the info prompt should require the core-aligned identifier rule");
+		infoPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
+			because: "the info prompt should point callers to the dedicated MCP maintenance guide for discover and inspect flows");
 		createPrompt.Should().Contain(ApplicationCreateTool.ApplicationCreateToolName,
 			because: "the create prompt should reference the exact production tool name");
 		createPrompt.Should().Contain("Provide `name`, `code`, `template-code`, and `icon-background`",
 			because: "the create prompt should explain the new required input contract");
 		createPrompt.Should().Contain("`optional-template-data-json`",
 			because: "the create prompt should mention the JSON string template-data field");
+		createPrompt.Should().Contain("docs://mcp/guides/app-modeling",
+			because: "the create prompt should point callers to the MCP-owned modeling guidance instead of relying only on consumer AGENTS instructions");
+		createPrompt.Should().Contain("canonical main entity",
+			because: "the create prompt should explain how callers should treat the template-created primary entity");
+		createPrompt.Should().Contain("scalar app-shell tool",
+			because: "the create prompt should state that application-create keeps app shell fields as plain strings");
+		createPrompt.Should().Contain("Do not send `title-localizations`",
+			because: "the create prompt should prevent callers from mixing application-create with entity-schema localization maps");
+		createPrompt.Should().Contain("follow-up entity-schema tools",
+			because: "the create prompt should direct callers to schema tools when localized captions are needed");
 	}
 }

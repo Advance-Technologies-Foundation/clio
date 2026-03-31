@@ -34,6 +34,14 @@ public sealed class PageListItem {
 	[JsonProperty("packageName")]
 	[JsonPropertyName("packageName")]
 	public string PackageName { get; set; }
+
+	/// <summary>
+	/// Gets or sets the direct parent schema name.
+	/// </summary>
+	[DataMember(Name = "parentSchemaName")]
+	[JsonProperty("parentSchemaName")]
+	[JsonPropertyName("parentSchemaName")]
+	public string ParentSchemaName { get; set; }
 }
 
 /// <summary>

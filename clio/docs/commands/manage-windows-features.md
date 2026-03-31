@@ -1,7 +1,7 @@
 ﻿# manage-windows-features
 
 ## Purpose
-The `manage-windows-features` command manages Windows features (IIS components, .NET Framework features, and WCF services) required for Creatio installation and operation on Windows Server or Windows desktop operating systems.
+The `manage-windows-features` command manages Windows features (IIS components, .NET Framework 4.x features, and WCF activation services) required for Creatio installation and operation on Windows Server or Windows desktop operating systems.
 
 This command helps system administrators prepare Windows environments for Creatio by:
 - Checking the installation status of required Windows features
@@ -9,6 +9,8 @@ This command helps system administrators prepare Windows environments for Creati
 - Uninstalling Windows features when needed
 
 **Platform Requirements**: This command is only available on Windows operating system. Administrator rights are required for install and uninstall operations.
+
+**Windows 11 26H1+ note**: Starting with Windows 11 26H1 (build 28000), clio no longer checks or installs `.NET Framework 3.5` Feature on Demand components such as `WCF-HTTP-Activation` and `WCF-NonHTTP-Activation`, because Windows no longer exposes them through Windows Features.
 
 ## Usage
 ```bash
@@ -74,8 +76,6 @@ The command manages the following Windows features required by Creatio:
 
 ### WCF Services
 - WCF services
-- WCF-HTTP-Activation
-- WCF-NonHTTP-Activation
 - HTTP Activation
 - Message Queuing (MSMQ) Activation
 - Named Pipe Activation

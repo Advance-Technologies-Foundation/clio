@@ -1,5 +1,6 @@
 using Clio.Command;
 using Clio.Common;
+using Clio.Tests.Infrastructure;
 using Clio.UserEnvironment;
 using Clio.Workspace;
 using Clio.Workspaces;
@@ -37,10 +38,12 @@ public class CreateWorkspaceCommandTests
 		var settingsRepository = Substitute.For<ISettingsRepository>();
 		var workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		var workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		workingDirectoriesProvider.CurrentDirectory.Returns(@"C:\temp\root");
-		settingsRepository.GetWorkspacesRoot().Returns(@"C:\temp\root");
-		fileSystem.ExistsDirectory(@"C:\temp\root").Returns(true);
-		fileSystem.ExistsDirectory(@"C:\temp\root\my-workspace").Returns(false);
+		string rootPath = GetRootedPath("temp", "root");
+		string workspacePath = Path.Combine(rootPath, "my-workspace");
+		workingDirectoriesProvider.CurrentDirectory.Returns(rootPath);
+		settingsRepository.GetWorkspacesRoot().Returns(rootPath);
+		fileSystem.ExistsDirectory(rootPath).Returns(true);
+		fileSystem.ExistsDirectory(workspacePath).Returns(false);
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem, settingsRepository, workspacePathBuilder, workingDirectoriesProvider);
 		var options = new CreateWorkspaceCommandOptions {
 			WorkspaceName = "my-workspace",
@@ -56,7 +59,7 @@ public class CreateWorkspaceCommandTests
 		workspacePathBuilder.Received(1).RootPath = Arg.Any<string>();
 		workspace.Received(1).Create(null, false, false);
 		installedApplication.DidNotReceiveWithAnyArgs().GetInstalledAppInfo(default);
-		logger.Received(1).WriteInfo(@"Workspace created at: C:\temp\root\my-workspace");
+		logger.Received(1).WriteInfo($"Workspace created at: {workspacePath}");
 	}
 
 	[Test]
@@ -77,7 +80,8 @@ public class CreateWorkspaceCommandTests
 		var settingsRepository = Substitute.For<ISettingsRepository>();
 		var workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		var workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		workingDirectoriesProvider.CurrentDirectory.Returns(@"C:\temp\new-workspace");
+		string currentDirectory = GetRootedPath("temp", "new-workspace");
+		workingDirectoriesProvider.CurrentDirectory.Returns(currentDirectory);
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem, settingsRepository, workspacePathBuilder, workingDirectoriesProvider);
 		var options = new CreateWorkspaceCommandOptions {
 			Environment = "dev",
@@ -90,10 +94,10 @@ public class CreateWorkspaceCommandTests
 
 		// Assert
 		result.Should().Be(0, because: "online create-workspace should preserve the existing environment-backed behavior");
-		workspacePathBuilder.Received(1).RootPath = @"C:\temp\new-workspace";
+		workspacePathBuilder.Received(1).RootPath = currentDirectory;
 		workspace.Received(1).Create("dev", true, false);
 		workspace.Received(1).Restore(options);
-		logger.Received(1).WriteInfo(@"Workspace created at: C:\temp\new-workspace");
+		logger.Received(1).WriteInfo($"Workspace created at: {currentDirectory}");
 	}
 
 	[Test]
@@ -109,7 +113,7 @@ public class CreateWorkspaceCommandTests
 		var settingsRepository = Substitute.For<ISettingsRepository>();
 		var workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		var workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		workingDirectoriesProvider.CurrentDirectory.Returns(@"C:\temp\root");
+		workingDirectoriesProvider.CurrentDirectory.Returns(GetRootedPath("temp", "root"));
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem, settingsRepository, workspacePathBuilder, workingDirectoriesProvider);
 		var options = new CreateWorkspaceCommandOptions {
 			WorkspaceName = "my-workspace",
@@ -146,8 +150,9 @@ public class CreateWorkspaceCommandTests
 		var settingsRepository = Substitute.For<ISettingsRepository>();
 		var workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		var workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		workingDirectoriesProvider.CurrentDirectory.Returns(@"C:\temp\root");
-		settingsRepository.GetWorkspacesRoot().Returns(@"C:\temp\root");
+		string rootPath = GetRootedPath("temp", "root");
+		settingsRepository.GetWorkspacesRoot().Returns(rootPath);
+		workingDirectoriesProvider.CurrentDirectory.Returns(rootPath);
 		fileSystem.ExistsDirectory(Arg.Any<string>()).Returns(true);
 		fileSystem.IsEmptyDirectory(Arg.Any<string>()).Returns(false);
 
@@ -182,14 +187,16 @@ public class CreateWorkspaceCommandTests
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		fileSystem.ExistsDirectory(@"C:\workspaces").Returns(true);
-		fileSystem.ExistsDirectory(@"C:\workspaces\my-workspace").Returns(false);
+		string baseDirectory = GetRootedPath("workspaces");
+		string workspacePath = Path.Combine(baseDirectory, "my-workspace");
+		fileSystem.ExistsDirectory(baseDirectory).Returns(true);
+		fileSystem.ExistsDirectory(workspacePath).Returns(false);
 		CreateWorkspaceCommand command = new (workspace, logger, installedApplication, fileSystem,
 			settingsRepository, workspacePathBuilder, workingDirectoriesProvider);
 		CreateWorkspaceCommandOptions options = new () {
 			WorkspaceName = "my-workspace",
 			Empty = true,
-			Directory = @"C:\workspaces"
+			Directory = baseDirectory
 		};
 
 		// Act
@@ -197,9 +204,9 @@ public class CreateWorkspaceCommandTests
 
 		// Assert
 		result.Should().Be(0, because: "an explicit absolute directory should override the global workspaces root");
-		workspacePathBuilder.Received(1).RootPath = @"C:\workspaces\my-workspace";
+		workspacePathBuilder.Received(1).RootPath = workspacePath;
 		settingsRepository.DidNotReceive().GetWorkspacesRoot();
-		logger.Received(1).WriteInfo(@"Workspace created at: C:\workspaces\my-workspace");
+		logger.Received(1).WriteInfo($"Workspace created at: {workspacePath}");
 	}
 
 	[Test]
@@ -217,9 +224,11 @@ public class CreateWorkspaceCommandTests
 		var settingsRepository = Substitute.For<ISettingsRepository>();
 		var workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		var workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		settingsRepository.GetWorkspacesRoot().Returns(@"C:\global-workspaces");
-		fileSystem.ExistsDirectory(@"C:\global-workspaces").Returns(true);
-		fileSystem.ExistsDirectory(@"C:\global-workspaces\my-workspace").Returns(false);
+		string globalRoot = GetRootedPath("global-workspaces");
+		string workspacePath = Path.Combine(globalRoot, "my-workspace");
+		settingsRepository.GetWorkspacesRoot().Returns(globalRoot);
+		fileSystem.ExistsDirectory(globalRoot).Returns(true);
+		fileSystem.ExistsDirectory(workspacePath).Returns(false);
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem,
 			settingsRepository, workspacePathBuilder, workingDirectoriesProvider);
 		var options = new CreateWorkspaceCommandOptions {
@@ -233,8 +242,8 @@ public class CreateWorkspaceCommandTests
 		// Assert
 		result.Should().Be(0, because: "create-workspace --empty should use the configured global workspaces root when no explicit directory is provided");
 		settingsRepository.Received(1).GetWorkspacesRoot();
-		workspacePathBuilder.Received(1).RootPath = @"C:\global-workspaces\my-workspace";
-		logger.Received(1).WriteInfo(@"Workspace created at: C:\global-workspaces\my-workspace");
+		workspacePathBuilder.Received(1).RootPath = workspacePath;
+		logger.Received(1).WriteInfo($"Workspace created at: {workspacePath}");
 	}
 
 	[Test]
@@ -277,8 +286,9 @@ public class CreateWorkspaceCommandTests
 		var settingsRepository = Substitute.For<ISettingsRepository>();
 		var workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		var workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		settingsRepository.GetWorkspacesRoot().Returns(@"C:\missing-root");
-		fileSystem.ExistsDirectory(@"C:\missing-root").Returns(false);
+		string missingRoot = GetRootedPath("missing-root");
+		settingsRepository.GetWorkspacesRoot().Returns(missingRoot);
+		fileSystem.ExistsDirectory(missingRoot).Returns(false);
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem,
 			settingsRepository, workspacePathBuilder, workingDirectoriesProvider);
 		var options = new CreateWorkspaceCommandOptions {
@@ -337,7 +347,7 @@ public class CreateWorkspaceCommandTests
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem,
 			settingsRepository, workspacePathBuilder, workingDirectoriesProvider);
 		var options = new CreateWorkspaceCommandOptions {
-			Directory = @"C:\workspaces",
+			Directory = GetRootedPath("workspaces"),
 			Empty = false
 		};
 
@@ -357,5 +367,9 @@ public class CreateWorkspaceCommandTests
 		fileSystem.Combine(Arg.Any<string[]>())
 			.Returns(callInfo => Path.Combine(callInfo.Arg<string[]>()));
 		fileSystem.DirectorySeparatorChar.Returns(Path.DirectorySeparatorChar);
+	}
+
+	private static string GetRootedPath(params string[] segments) {
+		return TestFileSystem.GetRootedPath(segments);
 	}
 }

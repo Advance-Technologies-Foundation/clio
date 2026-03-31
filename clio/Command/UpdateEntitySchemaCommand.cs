@@ -39,8 +39,14 @@ internal sealed record UpdateEntitySchemaOperationDefinition
 	[JsonPropertyName("title")]
 	public string Title { get; init; }
 
+	[JsonPropertyName("title-localizations")]
+	public Dictionary<string, string>? TitleLocalizations { get; init; }
+
 	[JsonPropertyName("description")]
 	public string Description { get; init; }
+
+	[JsonPropertyName("description-localizations")]
+	public Dictionary<string, string>? DescriptionLocalizations { get; init; }
 
 	[JsonPropertyName("reference-schema-name")]
 	public string ReferenceSchemaName { get; init; }
@@ -62,6 +68,9 @@ internal sealed record UpdateEntitySchemaOperationDefinition
 
 	[JsonPropertyName("default-value-source")]
 	public string DefaultValueSource { get; init; }
+
+	[JsonPropertyName("default-value-config")]
+	public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; init; }
 
 	[JsonPropertyName("multiline-text")]
 	public bool? MultilineText { get; init; }
@@ -145,7 +154,9 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 				NewName = operation.NewName,
 				Type = operation.Type,
 				Title = NormalizeTitle(operation.Title),
+				TitleLocalizations = operation.TitleLocalizations,
 				Description = operation.Description,
+				DescriptionLocalizations = operation.DescriptionLocalizations,
 				ReferenceSchemaName = operation.ReferenceSchemaName,
 				Required = operation.Required,
 				Indexed = operation.Indexed,
@@ -153,6 +164,7 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 				TrackChanges = operation.TrackChanges,
 				DefaultValue = operation.DefaultValue,
 				DefaultValueSource = operation.DefaultValueSource,
+				DefaultValueConfig = operation.DefaultValueConfig,
 				MultilineText = operation.MultilineText,
 				LocalizableText = operation.LocalizableText,
 				AccentInsensitive = operation.AccentInsensitive,

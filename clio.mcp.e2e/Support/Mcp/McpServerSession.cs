@@ -21,6 +21,7 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			Command = process.Command,
 			Arguments = [.. process.Arguments],
 			WorkingDirectory = process.WorkingDirectory,
+			EnvironmentVariables = settings.ProcessEnvironmentVariables,
 			Name = "clio-mcp-e2e",
 			ShutdownTimeout = TimeSpan.FromSeconds(10)
 		}, NullLoggerFactory.Instance);
@@ -41,6 +42,12 @@ internal sealed class McpServerSession : IAsyncDisposable {
 
 	public async Task<IList<McpClientTool>> ListToolsAsync(CancellationToken cancellationToken) =>
 		await Client.ListToolsAsync(cancellationToken: cancellationToken);
+
+	public async Task<IList<McpClientResource>> ListResourcesAsync(CancellationToken cancellationToken) =>
+		await Client.ListResourcesAsync(cancellationToken: cancellationToken);
+
+	public async Task<ReadResourceResult> ReadResourceAsync(string uri, CancellationToken cancellationToken) =>
+		await Client.ReadResourceAsync(uri, cancellationToken: cancellationToken);
 
 	public async Task<CallToolResult> CallToolAsync(
 		string toolName,

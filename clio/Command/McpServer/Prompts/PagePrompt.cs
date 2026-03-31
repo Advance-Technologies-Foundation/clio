@@ -18,6 +18,7 @@ public static class PagePrompt {
 		[Required] [Description("Freedom UI page schema name")] string schemaName,
 		[Description("Optional Creatio environment name")] string? environmentName = null) =>
 		$"""
+		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
 		 Use `page-list` first when you need to discover candidate page schemas.
 		 Use `{PageGetTool.ToolName}` with `schema-name` `{schemaName}` and `environment-name` `{environmentName ?? "<default or explicit connection args>"}` to inspect the effective merged page structure.
 		 Read layout and container hierarchy from `bundle.viewConfig`.
@@ -25,6 +26,7 @@ public static class PagePrompt {
 		 Read page metadata from `page`.
 		 When you need to edit the page, take the JavaScript payload from `raw.body`, modify that raw body, and send it to `{PageUpdateTool.ToolName}`.
 		 Pass `resources` to `{PageUpdateTool.ToolName}` as a valid JSON object string when the edited body contains `#ResourceString(key)#` macros that need child-schema localizable strings.
+		 Prefer discover -> inspect -> mutate -> verify for minimal edits.
 		 Use `page-sync` only when you need to save multiple pages in one workflow.
 		 """;
 }

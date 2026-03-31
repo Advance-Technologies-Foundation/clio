@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using CommandLine;
@@ -39,8 +40,12 @@ public class ModifyEntitySchemaColumnOptions : RemoteCommandOptions
 	[Option("title", Required = false, HelpText = "Column title/caption")]
 	public string Title { get; set; }
 
+	public IReadOnlyDictionary<string, string>? TitleLocalizations { get; set; }
+
 	[Option("description", Required = false, HelpText = "Column description")]
 	public string Description { get; set; }
+
+	public IReadOnlyDictionary<string, string>? DescriptionLocalizations { get; set; }
 
 	[Option("reference-schema", Required = false, HelpText = "Lookup reference schema name")]
 	public string ReferenceSchemaName { get; set; }
@@ -62,6 +67,11 @@ public class ModifyEntitySchemaColumnOptions : RemoteCommandOptions
 
 	[Option("default-value-source", Required = false, HelpText = "Default value source: Const or None")]
 	public string DefaultValueSource { get; set; }
+
+	/// <summary>
+	/// Gets or sets the structured default value metadata used by MCP mutation flows.
+	/// </summary>
+	public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; set; }
 
 	[Option("multiline-text", Required = false, HelpText = "Set multi-line text flag")]
 	public bool? MultilineText { get; set; }
@@ -150,7 +160,9 @@ public class ModifyEntitySchemaColumnCommand : Command<ModifyEntitySchemaColumnO
 		return !string.IsNullOrWhiteSpace(options.NewName)
 			|| !string.IsNullOrWhiteSpace(options.Type)
 			|| !string.IsNullOrWhiteSpace(options.Title)
+			|| options.TitleLocalizations?.Count > 0
 			|| !string.IsNullOrWhiteSpace(options.Description)
+			|| options.DescriptionLocalizations?.Count > 0
 			|| !string.IsNullOrWhiteSpace(options.ReferenceSchemaName)
 			|| options.Required.HasValue
 			|| options.Indexed.HasValue
@@ -158,6 +170,7 @@ public class ModifyEntitySchemaColumnCommand : Command<ModifyEntitySchemaColumnO
 			|| options.TrackChanges.HasValue
 			|| !string.IsNullOrWhiteSpace(options.DefaultValueSource)
 			|| options.DefaultValue != null
+			|| options.DefaultValueConfig != null
 			|| options.MultilineText.HasValue
 			|| options.LocalizableText.HasValue
 			|| options.AccentInsensitive.HasValue

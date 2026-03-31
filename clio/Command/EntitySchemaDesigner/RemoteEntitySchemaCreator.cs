@@ -33,17 +33,22 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		string Name,
 		string Type,
 		string Title,
+		IReadOnlyDictionary<string, string>? TitleLocalizations,
 		string? ReferenceSchemaName,
 		bool? Required,
 		string? DefaultValueSource,
-		string? DefaultValue){
+		string? DefaultValue,
+		EntitySchemaDefaultValueConfig? DefaultValueConfig){
 		public bool IsLookup => EntitySchemaDesignerSupport.IsLookupTypeName(Type);
 	}
 
 	private sealed record StructuredColumnSpec(
 		[property: JsonPropertyName("name")] string Name,
 		[property: JsonPropertyName("type")] string Type,
-		[property: JsonPropertyName("title")] string? Title = null) {
+		[property: JsonPropertyName("title-localizations")] Dictionary<string, string>? TitleLocalizations = null) {
+		[property: JsonPropertyName("title")]
+		public string? Title { get; init; }
+
 		[property: JsonPropertyName("caption")]
 		public string? Caption { get; init; }
 
@@ -58,6 +63,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 		[property: JsonPropertyName("default-value")]
 		public string? DefaultValue { get; init; }
+
+		[property: JsonPropertyName("default-value-config")]
+		public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; init; }
 	}
 
 	#endregion
@@ -84,12 +92,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		PackageInfo package) {
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
 		schema.Name = options.SchemaName;
-		schema.Caption = [
-			new LocalizableStringDto {
-				CultureName = cultureName,
-				Value = options.Title
-			}
-		];
+		schema.Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(options.TitleLocalizations, options.Title);
 		EntitySchemaDesignerSupport.EnsurePackageAssigned(schema, package);
 		schema.Columns ??= [];
 		schema.Indexes ??= [];
@@ -105,7 +108,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 		if (!schema.ParentSchema.HasValue() && columns.All(column => !column.IsGuidType())) {
 			columns.Insert(0, CreateColumn(
-				new ParsedColumn("Id", "guid", "Id", null, null, null, null),
+				new ParsedColumn("Id", "guid", "Id", null, null, null, null, null, null),
 				referenceSchemas,
 				cultureName));
 		}
@@ -144,30 +147,24 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	}
 
 	private static void ApplyDefaultValue(EntitySchemaColumnDto column, ParsedColumn parsedColumn) {
-		EntitySchemaColumnDefSource? defaultValueSource = EntitySchemaDesignerSupport.ParseDefaultValueSource(
-			parsedColumn.DefaultValueSource);
-		if (defaultValueSource == null && parsedColumn.DefaultValue == null) {
+		EntitySchemaDefaultValueConfig? defaultValueConfig = EntitySchemaDesignerSupport.ResolveDefaultValueConfig(
+			parsedColumn.DefaultValueConfig,
+			parsedColumn.DefaultValueSource,
+			parsedColumn.DefaultValue,
+			$"Column '{parsedColumn.Name}'");
+		if (defaultValueConfig == null) {
 			return;
 		}
-
+		EntitySchemaColumnDefSource defaultValueSource = EntitySchemaDesignerSupport.ParseDefaultValueSource(
+			defaultValueConfig.Source)
+			?? throw new InvalidOperationException(
+				$"Column '{parsedColumn.Name}' requires default-value-config.source.");
 		if (defaultValueSource == EntitySchemaColumnDefSource.None) {
-			if (parsedColumn.DefaultValue != null) {
-				throw new InvalidOperationException(
-					$"Column '{parsedColumn.Name}' cannot specify default-value when default-value-source is None.");
-			}
 			column.DefValue = null;
 			return;
 		}
-
-		if (parsedColumn.DefaultValue == null) {
-			throw new InvalidOperationException(
-				$"Column '{parsedColumn.Name}' requires default-value when default-value-source is Const.");
-		}
-
-		column.DefValue = new EntitySchemaColumnDefValueDto {
-			ValueSourceType = defaultValueSource ?? EntitySchemaColumnDefSource.Const,
-			Value = parsedColumn.DefaultValue
-		};
+		column.DefValue = EntitySchemaDesignerSupport.CreateDefaultValueDto(defaultValueConfig,
+			$"Column '{parsedColumn.Name}'");
 	}
 
 	private bool CheckUniqueSchemaName(string schemaName, Guid excludeUId, CreateEntitySchemaOptions options) {
@@ -193,12 +190,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			UId = Guid.NewGuid(),
 			Name = parsedColumn.Name,
 			DataValueType = dataValueType,
-			Caption = [
-				new LocalizableStringDto {
-					CultureName = cultureName,
-					Value = parsedColumn.Title
-				}
-			],
+			Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(
+				parsedColumn.TitleLocalizations,
+				parsedColumn.Title),
 			RequirementType = parsedColumn.Required == true
 				? (int)EntitySchemaColumnRequirementType.ApplicationLevel
 				: (int)EntitySchemaColumnRequirementType.None
@@ -226,18 +220,27 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	}
 
 	private static void ValidateDefaultValue(ParsedColumn parsedColumn, int dataValueType) {
-		if (!EntitySchemaDesignerSupport.IsBinaryLikeDataValueType(dataValueType)) {
-			return;
+		if (UsesUnsupportedLegacyBinaryDefaultValue(parsedColumn, dataValueType)) {
+			throw new InvalidOperationException(
+				$"Column '{parsedColumn.Name}' of type '{EntitySchemaDesignerSupport.GetFriendlyTypeName(dataValueType)}' does not support default-value or default-value-source Const.");
 		}
+		EntitySchemaDefaultValueConfig? defaultValueConfig = EntitySchemaDesignerSupport.ResolveDefaultValueConfig(
+			parsedColumn.DefaultValueConfig,
+			parsedColumn.DefaultValueSource,
+			parsedColumn.DefaultValue,
+			$"Column '{parsedColumn.Name}'");
+		EntitySchemaDesignerSupport.ValidateDefaultValueConfig(defaultValueConfig, dataValueType,
+			$"Column '{parsedColumn.Name}'");
+	}
 
+	private static bool UsesUnsupportedLegacyBinaryDefaultValue(ParsedColumn parsedColumn, int dataValueType) {
+		if (parsedColumn.DefaultValueConfig != null
+			|| !EntitySchemaDesignerSupport.IsBinaryLikeDataValueType(dataValueType)) {
+			return false;
+		}
 		EntitySchemaColumnDefSource? defaultValueSource =
 			EntitySchemaDesignerSupport.ParseDefaultValueSource(parsedColumn.DefaultValueSource);
-		if (parsedColumn.DefaultValue == null && defaultValueSource != EntitySchemaColumnDefSource.Const) {
-			return;
-		}
-
-		throw new InvalidOperationException(
-			$"Column '{parsedColumn.Name}' of type '{EntitySchemaDesignerSupport.GetFriendlyTypeName(dataValueType)}' does not support default-value or default-value-source Const.");
+		return parsedColumn.DefaultValue != null || defaultValueSource == EntitySchemaColumnDefSource.Const;
 	}
 
 	private Dictionary<string, ManagerItemDto> GetReferenceSchemas(Guid packageUId, CreateEntitySchemaOptions options) {
@@ -274,6 +277,11 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		string name = structuredColumn.Name?.Trim();
 		string type = structuredColumn.Type?.Trim();
 		ValidateSupportedColumnValues(columnSpec, name, type);
+		IReadOnlyDictionary<string, string>? titleLocalizations = structuredColumn.TitleLocalizations == null
+			? null
+			: EntitySchemaDesignerSupport.NormalizeLocalizationMap(
+				structuredColumn.TitleLocalizations,
+				"title-localizations");
 		string title = ResolveTitle(structuredColumn, name);
 		string? referenceSchemaName = string.IsNullOrWhiteSpace(structuredColumn.ReferenceSchemaName)
 			? null
@@ -285,10 +293,12 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			name,
 			type,
 			title,
+			titleLocalizations,
 			referenceSchemaName,
 			structuredColumn.Required,
 			structuredColumn.DefaultValueSource,
-			structuredColumn.DefaultValue);
+			structuredColumn.DefaultValue,
+			structuredColumn.DefaultValueConfig);
 	}
 
 	private static string GetLookupReferenceSchemaName(string[] parts) {
@@ -351,10 +361,15 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		string? referenceSchemaName = GetLookupReferenceSchemaName(parts);
 		ValidateLookupReferenceSchema(columnSpec, type, referenceSchemaName);
 
-		return new ParsedColumn(name, type, title, referenceSchemaName, null, null, null);
+		return new ParsedColumn(name, type, title, null, referenceSchemaName, null, null, null, null);
 	}
 
 	private static string ResolveTitle(StructuredColumnSpec column, string fallbackName) {
+		if (column.TitleLocalizations?.Count > 0) {
+			return EntitySchemaDesignerSupport.GetRequiredLocalizationValue(
+				column.TitleLocalizations,
+				"title-localizations");
+		}
 		if (!string.IsNullOrWhiteSpace(column.Title)) {
 			return column.Title.Trim();
 		}

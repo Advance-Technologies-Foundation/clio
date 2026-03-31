@@ -182,13 +182,13 @@ public sealed class EntitySchemaToolTests {
 					"add",
 					"UsrStatus",
 					Type: "Lookup",
-					Title: "Status",
+					TitleLocalizations: Localizations("Status"),
 					ReferenceSchemaName: "UsrVehicleStatus",
 					IsRequired: true),
 				new UpdateEntitySchemaOperationArgs(
 					"modify",
 					"UsrDueDate",
-					Title: "Due date",
+					TitleLocalizations: Localizations("Due date"),
 					DefaultValueSource: "None")
 			]));
 
@@ -203,8 +203,8 @@ public sealed class EntitySchemaToolTests {
 		resolvedCommand.CapturedOptions.Package.Should().Be("UsrPkg");
 		resolvedCommand.CapturedOptions.SchemaName.Should().Be("UsrVehicle");
 		resolvedCommand.CapturedOptions.Operations.Should().HaveCount(2);
-		resolvedCommand.CapturedOptions.Operations!.First().Should().Contain("\"action\":\"add\"");
-		resolvedCommand.CapturedOptions.Operations!.First().Should().Contain("\"column-name\":\"UsrStatus\"");
+		resolvedCommand.CapturedOptions.Operations!.First().Should().Contain("\"title-localizations\"");
+		resolvedCommand.CapturedOptions.Operations!.First().Should().Contain("\"en-US\":\"Status\"");
 		resolvedCommand.CapturedOptions.Operations!.Last().Should().Contain("\"default-value-source\":\"None\"");
 	}
 
@@ -229,8 +229,8 @@ public sealed class EntitySchemaToolTests {
 			"Name",
 			NewName: "DisplayName",
 			Type: "Text",
-			Title: "Vehicle name",
-			Description: "Readable vehicle name",
+			TitleLocalizations: Localizations("Vehicle name", "Назва транспорту"),
+			DescriptionLocalizations: Localizations("Readable vehicle name"),
 			ReferenceSchemaName: "Contact",
 			IsRequired: true,
 			Indexed: true,
@@ -267,6 +267,8 @@ public sealed class EntitySchemaToolTests {
 			because: "the target column name must be preserved");
 		resolvedCommand.CapturedOptions.NewName.Should().Be("DisplayName",
 			because: "rename options should be mapped");
+		resolvedCommand.CapturedOptions.TitleLocalizations.Should().BeEquivalentTo(Localizations("Vehicle name", "Назва транспорту"));
+		resolvedCommand.CapturedOptions.DescriptionLocalizations.Should().BeEquivalentTo(Localizations("Readable vehicle name"));
 		resolvedCommand.CapturedOptions.ReferenceSchemaName.Should().Be("Contact",
 			because: "lookup reference changes should be mapped");
 		resolvedCommand.CapturedOptions.Required.Should().BeTrue(
@@ -275,6 +277,136 @@ public sealed class EntitySchemaToolTests {
 			because: "default-value-source should be mapped for mutation flows that need explicit clearing or const defaults");
 		resolvedCommand.CapturedOptions.LocalizableText.Should().BeTrue(
 			because: "text-specific options should be mapped");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps structured default-value-config MCP mutation arguments into modify-entity-schema-column command options.")]
+	public void ModifyEntitySchemaColumn_Should_Map_DefaultValueConfig() {
+		// Arrange
+		FakeModifyEntitySchemaColumnCommand defaultCommand = new();
+		FakeModifyEntitySchemaColumnCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
+			.Returns(resolvedCommand);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			"modify",
+			"UsrStartDate") {
+			DefaultValueConfig = new EntitySchemaDefaultValueConfig {
+				Source = "SystemValue",
+				ValueSource = "CurrentDateTime"
+			}
+		});
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "structured default-value-config should be a valid MCP mutation payload");
+		resolvedCommand.CapturedOptions!.DefaultValueConfig.Should().NotBeNull(
+			because: "the resolved command should receive the structured default value config");
+		resolvedCommand.CapturedOptions.DefaultValueConfig!.Source.Should().Be("SystemValue",
+			because: "the source should be preserved through tool mapping");
+		resolvedCommand.CapturedOptions.DefaultValueConfig.ValueSource.Should().Be("CurrentDateTime",
+			because: "the value-source should be preserved through tool mapping");
+		resolvedCommand.CapturedOptions.DefaultValueSource.Should().BeNull(
+			because: "structured default configs should not be flattened into legacy shorthand fields");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects legacy scalar title and description fields on the MCP mutation surface.")]
+	public void ModifyEntitySchemaColumn_Should_Reject_Legacy_Localization_Fields() {
+		// Arrange
+		FakeModifyEntitySchemaColumnCommand defaultCommand = new();
+		FakeModifyEntitySchemaColumnCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
+			.Returns(resolvedCommand);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			"modify",
+			"Name",
+			TitleLocalizations: Localizations("Vehicle name"),
+			DescriptionLocalizations: Localizations("Readable vehicle name")) {
+			LegacyTitle = "Vehicle name",
+			LegacyDescription = "Readable vehicle name"
+		});
+
+		// Assert
+		result.ExitCode.Should().Be(1);
+		result.Output.Should().Contain(message =>
+				message.Value != null && message.Value.ToString().Contains("legacy 'title'", System.StringComparison.Ordinal),
+			because: "the tool should force callers onto the explicit localization contract");
+		resolvedCommand.CapturedOptions.Should().BeNull();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects localization maps on remove actions because remove must not carry property updates.")]
+	public void ModifyEntitySchemaColumn_Should_Reject_Remove_With_Localization_Fields() {
+		// Arrange
+		FakeModifyEntitySchemaColumnCommand defaultCommand = new();
+		FakeModifyEntitySchemaColumnCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
+			.Returns(resolvedCommand);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			"remove",
+			"Name",
+			TitleLocalizations: Localizations("Vehicle name")));
+
+		// Assert
+		result.ExitCode.Should().Be(1);
+		result.Output.Should().Contain(message =>
+				message.Value != null && message.Value.ToString().Contains("action is 'remove'", System.StringComparison.Ordinal),
+			because: "remove must reject localization-map fields");
+		resolvedCommand.CapturedOptions.Should().BeNull();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects description-localizations payloads that omit en-US.")]
+	public void ModifyEntitySchemaColumn_Should_Reject_Description_Localizations_Without_EnUs() {
+		// Arrange
+		FakeModifyEntitySchemaColumnCommand defaultCommand = new();
+		FakeModifyEntitySchemaColumnCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
+			.Returns(resolvedCommand);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			"modify",
+			"Name",
+			DescriptionLocalizations: new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase) {
+				["uk-UA"] = "Опис"
+			}));
+
+		// Assert
+		result.ExitCode.Should().Be(1);
+		result.Output.Should().Contain(message =>
+				message.Value != null && message.Value.ToString().Contains("en-US", System.StringComparison.Ordinal),
+			because: "optional localization maps still require the canonical en-US value");
+		resolvedCommand.CapturedOptions.Should().BeNull();
 	}
 
 	[Test]
@@ -326,22 +458,54 @@ public sealed class EntitySchemaToolTests {
 		// Assert
 		createPrompt.Should().Contain(CreateEntitySchemaTool.CreateEntitySchemaToolName,
 			because: "create prompt guidance should reference the exact production tool name");
+		createPrompt.Should().Contain("canonical clio MCP",
+			because: "create prompt guidance should position the tool inside the neutral clio MCP contract instead of ADAC framing");
+		createPrompt.Should().NotContain("ADAC",
+			because: "create prompt guidance should no longer describe the entity-schema surface as ADAC-specific");
 		lookupPrompt.Should().Contain(CreateLookupTool.CreateLookupToolName,
 			because: "lookup prompt guidance should reference the exact production tool name");
 		lookupPrompt.Should().Contain("Lookups",
 			because: "lookup prompt guidance should mention automatic registration in the standard Lookups section");
 		lookupPrompt.Should().Contain(GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 			because: "lookup prompt guidance should direct callers to the canonical post-create verification path");
+		lookupPrompt.Should().Contain("`Name`",
+			because: "lookup prompt guidance should explain the inherited display-field contract for BaseLookup");
+		lookupPrompt.Should().Contain("docs://mcp/guides/app-modeling",
+			because: "lookup prompt guidance should point callers to the MCP-owned modeling guide");
 		updatePrompt.Should().Contain(UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
 			because: "batch update prompt guidance should reference the exact production tool name");
+		updatePrompt.Should().Contain("title-localizations",
+			because: "batch update prompt guidance should instruct callers to use localization maps");
+		updatePrompt.Should().Contain("schema default",
+			because: "batch update prompt guidance should explain that seed rows do not define defaults");
+		updatePrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
+			because: "batch update prompt guidance should point callers to the dedicated maintenance guide for existing-app edits");
+		updatePrompt.Should().Contain("get-entity-schema-properties",
+			because: "batch update prompt guidance should tell callers to inspect the current schema before mutating it");
+		updatePrompt.Should().Contain("modify-entity-schema-column",
+			because: "batch update prompt guidance should distinguish single-column edits from batch schema updates");
 		schemaPrompt.Should().Contain(GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 			because: "schema-read prompt guidance should reference the exact production tool name");
+		schemaPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
+			because: "schema-read prompt guidance should point callers to the existing-app maintenance guide");
+		schemaPrompt.Should().Contain("read step before `modify-entity-schema-column` or `schema-sync`",
+			because: "schema-read prompt guidance should describe the canonical inspect step before mutation");
 		columnPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 			because: "column-read prompt guidance should reference the exact production tool name");
+		columnPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
+			because: "column-read prompt guidance should point callers to the existing-app maintenance guide");
+		columnPrompt.Should().Contain("before and after `modify-entity-schema-column`",
+			because: "column-read prompt guidance should describe the canonical verification pattern for single-column edits");
 		modifyPrompt.Should().Contain(ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
 			because: "modify prompt guidance should reference the exact production tool name");
+		modifyPrompt.Should().Contain("description-localizations",
+			because: "modify prompt guidance should instruct callers to use localization maps");
 		modifyPrompt.Should().Contain("type",
 			because: "mutation prompt guidance should remind callers about action-specific options");
+		modifyPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
+			because: "modify prompt guidance should point callers to the existing-app maintenance guide");
+		modifyPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
+			because: "modify prompt guidance should tell callers to inspect current column metadata before mutating it");
 	}
 
 	[Test]
@@ -390,6 +554,8 @@ public sealed class EntitySchemaToolTests {
 			because: "create MCP input descriptions should advertise the Binary compatibility alias");
 		createDefaultSourceDescription.Should().Contain("do not support Const",
 			because: "create MCP input descriptions should explain binary-like default restrictions");
+		createDefaultSourceDescription.Should().Contain("default-value-config",
+			because: "create MCP input descriptions should direct callers to the structured default value contract");
 		modifyTypeDescription.Should().Contain("Binary",
 			because: "mutation MCP input descriptions should list supported binary-like column types");
 		modifyTypeDescription.Should().Contain("Blob",
@@ -398,12 +564,20 @@ public sealed class EntitySchemaToolTests {
 			because: "mutation MCP input descriptions should explain binary-like default restrictions");
 		createPrompt.Should().Contain("Blob",
 			because: "create prompt guidance should advertise the Binary compatibility alias");
+		createPrompt.Should().Contain("default-value-config",
+			because: "create prompt guidance should advertise the structured default value contract");
 		updatePrompt.Should().Contain("Binary",
 			because: "update prompt guidance should advertise binary-like column support");
+		updatePrompt.Should().Contain("default-value-config",
+			because: "update prompt guidance should advertise the structured default value contract");
 		updatePrompt.Should().Contain("default-value-source=Const",
-			because: "update prompt guidance should explain unsupported binary default usage");
+			because: "update prompt guidance should still explain unsupported legacy binary default usage");
+		updatePrompt.Should().Contain("schema-sync",
+			because: "update prompt guidance should steer multi-step schema workflows toward the composite MCP tool");
 		modifyPrompt.Should().Contain("File",
 			because: "modify prompt guidance should advertise file column support");
+		modifyPrompt.Should().Contain("default-value-config",
+			because: "modify prompt guidance should advertise the structured default value contract");
 	}
 
 	private sealed class FakeModifyEntitySchemaColumnCommand : ModifyEntitySchemaColumnCommand {
@@ -430,5 +604,15 @@ public sealed class EntitySchemaToolTests {
 			CapturedOptions = options;
 			return 0;
 		}
+	}
+
+	private static Dictionary<string, string> Localizations(string enUs, string? ukUa = null) {
+		Dictionary<string, string> result = new(System.StringComparer.OrdinalIgnoreCase) {
+			["en-US"] = enUs
+		};
+		if (!string.IsNullOrWhiteSpace(ukUa)) {
+			result["uk-UA"] = ukUa;
+		}
+		return result;
 	}
 }

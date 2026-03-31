@@ -55,7 +55,7 @@ if ($null -ne $testFilterExpression) {
 }
 
 Remove-Item -Path .\allure-report\* -Recurse -Force -ErrorAction SilentlyContinue;
-Remove-Item -Path .\bin\Debug\net10.0\* -Recurse -Force -ErrorAction SilentlyContinue;
+Remove-Item -Path .\bin\Debug\net8.0\* -Recurse -Force -ErrorAction SilentlyContinue;
 dotnet test @testArguments;
 allure generate;
 allure serve

@@ -71,6 +71,8 @@ public sealed class PageGetToolE2ETests {
 		if (!pageListResponse.Success || pageListResponse.Pages is null || pageListResponse.Pages.Count == 0) {
 			Assert.Ignore($"page-get success E2E requires at least one discoverable Freedom UI form page in '{environmentName}'.");
 		}
+		pageListResponse.Pages.Should().Contain(page => !string.IsNullOrWhiteSpace(page.ParentSchemaName),
+			because: "page-list should now expose parent schema context so callers can choose a page before page-get");
 
 		PageGetSuccessCandidate? candidate = await FindCandidateWithBundleAsync(
 			arrangeContext.Session,

@@ -36,16 +36,25 @@ public static class EntitySchemaPrompt {
 		$"""
 		 Use clio mcp server `{CreateEntitySchemaTool.CreateEntitySchemaToolName}` to create entity schema
 		 `{schemaName}` in package `{packageName}` for environment `{environmentName}` with title `{title}`.
+		 Send schema captions only through `title-localizations`, for example
+		 `title-localizations.en-US = <title>`. Do not send legacy scalar `title`.
 		 Set `parent-schema-name` only when inheritance or replacement behavior was explicitly requested.
 		 Set `extend-parent` to `true` only when the request is specifically for a replacement schema, and only
 		 together with `parent-schema-name`.
-		 Include `columns` only when the request explicitly describes initial fields. Supported column types include
-		 `Binary`, `Image`, and `File`, and `Blob` can be used as an alias for `Binary`. For `Lookup` columns,
-		 provide `reference-schema-name`. Current clio entity-schema tools are the supported ADAC integration
+		 Include `columns` only when the request explicitly describes initial fields. Every column must provide
+		 `title-localizations` with at least `en-US`. Supported column types include
+		 `Binary`, `Image`, `File`, and `SecureText`. `Blob` can be used as an alias for `Binary`, and
+		 `Encrypted` / `Password` can be used as aliases for `SecureText`. For `Lookup` columns,
+		 provide `reference-schema-name`. Current clio entity-schema tools are part of the canonical clio MCP
 		 contract, so keep using `create-entity-schema` instead of frontend-only names like `entity.create`.
+		 For broader app-modeling guardrails, read `docs://mcp/guides/app-modeling`.
 		 When the caller needs richer metadata, each `columns` item can also include `required`,
-		 `default-value-source`, `default-value`, and frontend-style type aliases such as `ShortText` or `Date`.
-		 Do not send `default-value` or `default-value-source=Const` for `Binary`, `Image`, or `File` columns.
+		 `default-value-config`, legacy shorthand `default-value-source` / `default-value`, and frontend-style
+		 type aliases such as `ShortText` or `Date`. Prefer `default-value-config` with `source` set to
+		 `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`. Keep legacy `default-value-source` and
+		 `default-value` only for shorthand `Const` and `None`. Do not send `default-value` or
+		 `default-value-source=Const` for `Binary`, `Image`, or `File` columns, and use
+		 `default-value-config` source `Sequence` only for text columns.
 		 Current parent request: `{parentSchemaName ?? "<not provided>"}`. Current replacement request:
 		 `{extendParent}`.
 		 """;
@@ -53,7 +62,7 @@ public static class EntitySchemaPrompt {
 	/// <summary>
 	/// Builds a prompt that directs the agent to create a remote lookup schema through MCP.
 	/// </summary>
-	[McpServerPrompt(Name = CreateLookupTool.CreateLookupToolName),
+[McpServerPrompt(Name = CreateLookupTool.CreateLookupToolName),
 		Description("Prompt to create a remote lookup schema")]
 	public static string CreateLookup(
 		[Required]
@@ -71,13 +80,17 @@ public static class EntitySchemaPrompt {
 		$"""
 		 Use clio mcp server `{CreateLookupTool.CreateLookupToolName}` to create lookup schema
 		 `{schemaName}` in package `{packageName}` for environment `{environmentName}` with title `{title}`.
+		 Send schema captions only through `title-localizations`, for example
+		 `title-localizations.en-US = <title>`. Do not send legacy scalar `title`.
 		 Use this tool when the caller explicitly requested a lookup entity. The tool always creates the schema
 		 with parent `BaseLookup`, so do not pass parent override arguments. Successful execution also registers
 		 the lookup in the standard `Lookups` section, so treat the tool result as failed when the schema exists
-		 but the lookup is not available in `Lookups`. Include `columns` only when the request explicitly
+		 but the lookup is not available in `Lookups`. `BaseLookup` already provides `Name` and `Description`;
+		 keep `Name` as the display field and do not add duplicate title-like columns just to mirror the lookup
+		 caption. Include `columns` only when the request explicitly
 		 describes initial fields. After creation, verify the result with
 		 `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` as the canonical post-create read
-		 path.
+		 path. For broader app-modeling guardrails, read `docs://mcp/guides/app-modeling`.
 		 """;
 
 	/// <summary>
@@ -100,10 +113,20 @@ public static class EntitySchemaPrompt {
 		 mutations to entity schema `{schemaName}` in package `{packageName}` on environment `{environmentName}`.
 		 Pass `package-name`, `schema-name`, and `environment-name` exactly as provided. Encode all column
 		 changes in the ordered `operations` array. Each operation uses clio-native fields such as `action`,
-		 `column-name`, `type`, `title`, `reference-schema-name`, and `default-value-source`; do not translate
-		 them into frontend `entity.update.operationsJson`. Supported types include `Binary`, `Image`, and `File`,
-		 and `Blob` can be used as an alias for `Binary`. Do not send `default-value` or
-		 `default-value-source=Const` for `Binary`, `Image`, or `File` operations.
+		 `column-name`, `type`, `title-localizations`, `description-localizations`,
+		 `reference-schema-name`, and `default-value-config`; keep legacy `default-value-source` and
+		 `default-value` only for shorthand `Const` and `None`. Do not send legacy scalar `title` or
+		 `description`, and do not translate the payload into frontend `entity.update.operationsJson`.
+		 `add` operations must provide `title-localizations` with at least `en-US`. Supported types include
+		 `Binary`, `Image`, `File`, and `SecureText`. `Blob` can be used as an alias for `Binary`, and
+		 `Encrypted` / `Password` can be used as aliases for `SecureText`. Prefer `default-value-config`
+		 sources `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`. Do not send `default-value` or
+		 `default-value-source=Const` for `Binary`, `Image`, or `File` operations, and use
+		 `default-value-config` source `Sequence` only for text columns. For create + seed + update workflows,
+		 prefer `schema-sync`. Seed rows create data only; model default requirements separately as
+		 `schema default` or `ui default`. For existing-app maintenance guidance, read
+		 `docs://mcp/guides/existing-app-maintenance`.
+		 Inspect current schema metadata with `get-entity-schema-properties` first. For one-column changes, prefer `modify-entity-schema-column`.
 		 """;
 
 	/// <summary>
@@ -127,6 +150,8 @@ public static class EntitySchemaPrompt {
 		 `{environmentName}`. The result is a schema summary object with a nested `columns` list for
 		 machine-readable column inspection.
 		 Pass `package-name`, `schema-name`, and `environment-name` exactly as provided.
+		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 Use this read step before `modify-entity-schema-column` or `schema-sync`, and read the schema again after mutation when explicit verification is needed.
 		 """;
 
 	/// <summary>
@@ -152,6 +177,8 @@ public static class EntitySchemaPrompt {
 		 structured properties for column `{columnName}` in entity schema `{schemaName}` from package
 		 `{packageName}` on environment `{environmentName}`.
 		 Pass `package-name`, `schema-name`, `column-name`, and `environment-name` exactly as provided.
+		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 Use this read step before and after `modify-entity-schema-column` when the requested change is scoped to one column.
 		 """;
 
 	/// <summary>
@@ -179,13 +206,19 @@ public static class EntitySchemaPrompt {
 		 Use clio mcp server `{ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName}` to perform action
 		 `{action}` on column `{columnName}` in entity schema `{schemaName}` from package `{packageName}` on
 		 environment `{environmentName}`.
-		 Pass only the option fields required for the requested action. For `add`, supply `type`; for `Lookup`,
-		 also supply `reference-schema-name`. For `modify`, include only the fields that should change. For
-		 `remove`, do not pass property-change options. Use this tool for a single-column mutation. For ordered
+		 Pass only the option fields required for the requested action. For `add`, supply `type` and
+		 `title-localizations` with at least `en-US`; for `Lookup`, also supply `reference-schema-name`. For
+		 `modify`, include only the fields that should change, using `title-localizations` and
+		 `description-localizations` instead of legacy scalar `title` or `description`. For `remove`, do not pass property-change options. Use this tool for a single-column mutation. For ordered
 		 multi-column updates, prefer `{UpdateEntitySchemaTool.UpdateEntitySchemaToolName}`. The tool accepts
-		 frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time`, plus explicit
-		 `default-value-source` values `Const` or `None`. Supported types include `Binary`, `Image`, and `File`,
-		 and `Blob` can be used as an alias for `Binary`. Do not send `default-value` or
-		 `default-value-source=Const` for `Binary`, `Image`, or `File`.
+		 frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time`. For default values,
+		 prefer `default-value-config` with `source` set to `None`, `Const`, `Settings`, `SystemValue`, or
+		 `Sequence`. Keep legacy `default-value-source` and `default-value` only for shorthand `Const` and
+		 `None`. Supported types include `Binary`, `Image`, `File`, and `SecureText`. `Blob` can be used as
+		 an alias for `Binary`, and `Encrypted` / `Password` can be used as aliases for `SecureText`. Do not
+		 send `default-value` or `default-value-source=Const` for `Binary`, `Image`, or `File`, and use
+		 `default-value-config` source `Sequence` only for text columns.
+		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 Prefer reading current metadata with `{GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName}` first and reading it back after the mutation when explicit verification is needed.
 		 """;
 }

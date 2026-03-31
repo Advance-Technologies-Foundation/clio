@@ -81,6 +81,8 @@ public class BindingsModule {
 		services.AddSingleton<ILogger>(ConsoleLogger.Instance);
 		services.AddSingleton<IDbOperationLogContextAccessor, DbOperationLogContextAccessor>();
 		services.AddSingleton<IDbOperationLogSessionFactory, DbOperationLogSessionFactory>();
+		services.AddTransient<IContainerRegistryCredentialProvider, ContainerRegistryCredentialProvider>();
+		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
 		
 		// Register SettingsRepository for environment resolution
 		services.AddSingleton<ISettingsRepository>(new SettingsRepository(_fileSystem));
@@ -143,6 +145,7 @@ public class BindingsModule {
 		services.AddTransient<InstallerCommand>();
 		services.AddTransient<IDockerTemplatePathProvider, DockerTemplatePathProvider>();
 		services.AddTransient<IBuildDockerImageService, BuildDockerImageService>();
+		services.AddHttpClient<ICodeServerArchiveCache, CodeServerArchiveCache>();
 
 		if (_fileSystem is not null) {
 			services.AddSingleton(_fileSystem);
@@ -171,6 +174,9 @@ public class BindingsModule {
 		services.AddTransient<SysSettingsCommand>();
 		services.AddTransient<BuildInfoCommand>();
 		services.AddTransient<BuildDockerImageCommand>();
+		services.AddTransient<InstallSkillsCommand>();
+		services.AddTransient<UpdateSkillCommand>();
+		services.AddTransient<DeleteSkillCommand>();
 		services.AddTransient<PushPackageCommand>();
 		services.AddTransient<InstallApplicationCommand>();
 		services.AddTransient<PageListCommand>();

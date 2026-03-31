@@ -29,6 +29,10 @@ internal static class ClioCliCommandRunner {
 			startInfo.ArgumentList.Add(argument);
 		}
 
+		foreach ((string key, string? value) in settings.ProcessEnvironmentVariables) {
+			startInfo.Environment[key] = value ?? string.Empty;
+		}
+
 		using Process process = new() { StartInfo = startInfo };
 		process.Start();
 		Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);

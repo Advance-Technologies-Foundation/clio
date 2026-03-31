@@ -108,6 +108,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, options);
 		(EntitySchemaColumnDto column, string source) = FindColumnForRead(schema, options.ColumnName);
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
+		EntitySchemaDefaultValueConfig? defaultValueConfig = EntitySchemaDesignerSupport.CreateDefaultValueConfig(
+			column.DefValue);
 		return new EntitySchemaColumnPropertiesInfo(
 			schema.Name,
 			schema.Package?.Name ?? options.Package,
@@ -121,7 +123,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.IsValueCloneable,
 			column.IsTrackChangesInDB,
 			EntitySchemaDesignerSupport.GetFriendlyDefaultValueSource(column.DefValue),
-			column.DefValue?.Value?.ToString(),
+			EntitySchemaDesignerSupport.GetFriendlyDefaultValue(column.DefValue),
 			column.ReferenceSchema?.Name,
 			column.List,
 			column.CascadeConnection,
@@ -131,7 +133,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.AccentInsensitive,
 			column.Masked,
 			column.FormatValidated,
-			column.UseSeconds);
+			column.UseSeconds,
+			defaultValueConfig);
 	}
 
 	public void PrintColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
@@ -230,15 +233,25 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EnsureNameIsUnique(schema, options.ColumnName, null);
 		int dataValueType = ParseSupportedType(options.Type, "add");
 		ValidateOptionsForType(options, dataValueType, isAdd: true);
+		IReadOnlyDictionary<string, string>? titleLocalizations = options.TitleLocalizations == null
+			? null
+			: EntitySchemaDesignerSupport.NormalizeLocalizationMap(
+				options.TitleLocalizations,
+				"title-localizations");
+		IReadOnlyDictionary<string, string>? descriptionLocalizations = options.DescriptionLocalizations == null
+			? null
+			: EntitySchemaDesignerSupport.NormalizeLocalizationMap(
+				options.DescriptionLocalizations,
+				"description-localizations");
 		string effectiveTitle = ResolveEffectiveTitle(options.Title, options.ColumnName);
 		EntitySchemaColumnDto column = new() {
 			UId = Guid.NewGuid(),
 			Name = options.ColumnName,
 			DataValueType = dataValueType,
-			Caption = [EntitySchemaDesignerSupport.CreateLocalizableString(effectiveTitle)],
-			Description = string.IsNullOrWhiteSpace(options.Description)
-				? []
-				: [EntitySchemaDesignerSupport.CreateLocalizableString(options.Description)],
+			Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(titleLocalizations, effectiveTitle),
+			Description = EntitySchemaDesignerSupport.CreateLocalizableStrings(
+				descriptionLocalizations,
+				options.Description),
 			RequirementType = MapRequirementType(options.Required),
 			Indexed = options.Indexed ?? false,
 			IsValueCloneable = options.Cloneable ?? false,
@@ -286,10 +299,22 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 		List<LocalizableStringDto> caption = column.Caption?.ToList() ?? [];
 		List<LocalizableStringDto> description = column.Description?.ToList() ?? [];
-		if (!string.IsNullOrWhiteSpace(options.Title)) {
+		if (options.TitleLocalizations != null) {
+			EntitySchemaDesignerSupport.ReplaceLocalizableValues(
+				caption,
+				EntitySchemaDesignerSupport.NormalizeLocalizationMap(
+					options.TitleLocalizations,
+					"title-localizations")!);
+		} else if (!string.IsNullOrWhiteSpace(options.Title)) {
 			EntitySchemaDesignerSupport.SetLocalizableValue(caption, options.Title.Trim());
 		}
-		if (!string.IsNullOrWhiteSpace(options.Description)) {
+		if (options.DescriptionLocalizations != null) {
+			EntitySchemaDesignerSupport.ReplaceLocalizableValues(
+				description,
+				EntitySchemaDesignerSupport.NormalizeLocalizationMap(
+					options.DescriptionLocalizations,
+					"description-localizations")!);
+		} else if (!string.IsNullOrWhiteSpace(options.Description)) {
 			EntitySchemaDesignerSupport.SetLocalizableValue(description, options.Description);
 		}
 		column.Caption = caption;
@@ -442,29 +467,29 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	}
 
 	private static void ValidateDefaultValueOptions(ModifyEntitySchemaColumnOptions options, int dataValueType) {
-		EntitySchemaColumnDefSource? defaultValueSource =
-			EntitySchemaDesignerSupport.ParseDefaultValueSource(options.DefaultValueSource);
-		if (UsesUnsupportedBinaryDefaultValue(options, defaultValueSource, dataValueType)) {
+		if (UsesUnsupportedLegacyBinaryDefaultValue(options, dataValueType)) {
 			throw new EntitySchemaDesignerException(
 				$"Type '{EntitySchemaDesignerSupport.GetFriendlyTypeName(dataValueType)}' does not support --default-value or --default-value-source Const.");
 		}
-		if (defaultValueSource == EntitySchemaColumnDefSource.None && options.DefaultValue != null) {
-			throw new EntitySchemaDesignerException(
-				"--default-value cannot be used when --default-value-source is None.");
-		}
-
-		if (defaultValueSource == EntitySchemaColumnDefSource.Const && options.DefaultValue == null) {
-			throw new EntitySchemaDesignerException(
-				"--default-value is required when --default-value-source is Const.");
-		}
+		EntitySchemaDefaultValueConfig? defaultValueConfig = EntitySchemaDesignerSupport.ResolveDefaultValueConfig(
+			options.DefaultValueConfig,
+			options.DefaultValueSource,
+			options.DefaultValue,
+			$"Column '{options.ColumnName}'");
+		EntitySchemaDesignerSupport.ValidateDefaultValueConfig(defaultValueConfig, dataValueType,
+			$"Column '{options.ColumnName}'");
 	}
 
-	private static bool UsesUnsupportedBinaryDefaultValue(
+	private static bool UsesUnsupportedLegacyBinaryDefaultValue(
 		ModifyEntitySchemaColumnOptions options,
-		EntitySchemaColumnDefSource? defaultValueSource,
 		int dataValueType) {
-		return EntitySchemaDesignerSupport.IsBinaryLikeDataValueType(dataValueType)
-			&& (options.DefaultValue != null || defaultValueSource == EntitySchemaColumnDefSource.Const);
+		if (options.DefaultValueConfig != null
+			|| !EntitySchemaDesignerSupport.IsBinaryLikeDataValueType(dataValueType)) {
+			return false;
+		}
+		EntitySchemaColumnDefSource? defaultValueSource =
+			EntitySchemaDesignerSupport.ParseDefaultValueSource(options.DefaultValueSource);
+		return options.DefaultValue != null || defaultValueSource == EntitySchemaColumnDefSource.Const;
 	}
 
 	private EntitySchemaColumnDto FindOwnColumnForMutation(EntityDesignSchemaDto schema, string columnName) {
@@ -616,24 +641,27 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EntitySchemaColumnDto column,
 		ModifyEntitySchemaColumnOptions options,
 		bool preserveWhenUnspecified) {
-		EntitySchemaColumnDefSource? defaultValueSource =
-			EntitySchemaDesignerSupport.ParseDefaultValueSource(options.DefaultValueSource);
-		if (defaultValueSource == null && options.DefaultValue == null) {
+		EntitySchemaDefaultValueConfig? defaultValueConfig = EntitySchemaDesignerSupport.ResolveDefaultValueConfig(
+			options.DefaultValueConfig,
+			options.DefaultValueSource,
+			options.DefaultValue,
+			$"Column '{options.ColumnName}'");
+		if (defaultValueConfig == null) {
 			if (!preserveWhenUnspecified) {
 				column.DefValue = null;
 			}
 			return;
 		}
-
+		EntitySchemaColumnDefSource defaultValueSource = EntitySchemaDesignerSupport.ParseDefaultValueSource(
+			defaultValueConfig.Source)
+			?? throw new EntitySchemaDesignerException(
+				$"Column '{options.ColumnName}' requires default-value-config.source.");
 		if (defaultValueSource == EntitySchemaColumnDefSource.None) {
 			column.DefValue = null;
 			return;
 		}
-
-		column.DefValue = new EntitySchemaColumnDefValueDto {
-			ValueSourceType = defaultValueSource ?? EntitySchemaColumnDefSource.Const,
-			Value = options.DefaultValue
-		};
+		column.DefValue = EntitySchemaDesignerSupport.CreateDefaultValueDto(defaultValueConfig,
+			$"Column '{options.ColumnName}'");
 	}
 
 	private void ApplyColumnMutation(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options) {
