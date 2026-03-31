@@ -1042,10 +1042,8 @@ internal sealed class DataBindingDbService(
 				],
 				[]));
 		Dictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase);
-		foreach (EntityNameRowDto row in response.Rows) {
-			if (!string.IsNullOrWhiteSpace(row.Name) && !string.IsNullOrWhiteSpace(row.Id)) {
-				result.TryAdd(row.Name, row.Id);
-			}
+		foreach (EntityNameRowDto row in response.Rows.Where(r => !string.IsNullOrWhiteSpace(r.Name) && !string.IsNullOrWhiteSpace(r.Id))) {
+			result.TryAdd(row.Name, row.Id);
 		}
 		return result;
 	}
