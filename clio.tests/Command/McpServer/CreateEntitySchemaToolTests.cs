@@ -158,7 +158,8 @@ public class CreateEntitySchemaToolTests {
 				new CreateEntitySchemaColumnArgs("Status", "ShortText", Localizations("Status", "Статус")) {
 					Required = true,
 					DefaultValueSource = "Const",
-					DefaultValue = "Draft"
+					DefaultValue = "Draft",
+					Masked = true
 				}
 			]));
 
@@ -182,6 +183,8 @@ public class CreateEntitySchemaToolTests {
 			because: "structured serialization should preserve the requested default source");
 		document.RootElement.GetProperty("default-value").GetString().Should().Be("Draft",
 			because: "structured serialization should preserve the default value");
+		document.RootElement.GetProperty("masked").GetBoolean().Should().BeTrue(
+			because: "structured serialization should preserve the optional masked flag");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -472,7 +475,8 @@ public class CreateEntitySchemaToolTests {
 				new CreateEntitySchemaColumnArgs("Status", "ShortText", Localizations("Status", "Статус")) {
 					Required = true,
 					DefaultValueSource = "Const",
-					DefaultValue = "Draft"
+					DefaultValue = "Draft",
+					Masked = true
 				}
 			]));
 
@@ -495,6 +499,8 @@ public class CreateEntitySchemaToolTests {
 			because: "structured serialization should preserve the requested default source");
 		document.RootElement.GetProperty("default-value").GetString().Should().Be("Draft",
 			because: "structured serialization should preserve the default value");
+		document.RootElement.GetProperty("masked").GetBoolean().Should().BeTrue(
+			because: "structured serialization should preserve the optional masked flag");
 		registrationService.Received(1).EnsureLookupRegistration("MyPackage", "UsrOrderStatus", "Order status");
 		ConsoleLogger.Instance.ClearMessages();
 	}

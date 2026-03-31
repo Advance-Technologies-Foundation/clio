@@ -29,6 +29,7 @@ Each operation uses fields such as:
 - `required`
 - `default-value-source`
 - `default-value`
+- `masked`
 
 ## Examples
 
@@ -44,6 +45,11 @@ clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle \
   --operation "{\"action\":\"modify\",\"column-name\":\"Status\",\"default-value-source\":\"None\"}"
 ```
 
+```bash
+clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle \
+  --operation "{\"action\":\"add\",\"column-name\":\"UsrPassword\",\"type\":\"SecureText\",\"title\":\"Password\",\"masked\":true}"
+```
+
 ## Notes
 
 - operations are applied in order
@@ -52,3 +58,4 @@ clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle \
 - use this command when the caller already knows a full batch of entity column mutations
 - use `modify-entity-schema-column` for one-off single-column changes
 - `Binary`, `Image`, and `File` operations do not support `default-value` or `default-value-source: Const`
+- `masked` is accepted for `Text` and `SecureText` columns and maps to schema-level `isValueMasked`
