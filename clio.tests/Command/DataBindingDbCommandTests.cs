@@ -30,7 +30,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	private IApplicationPackageListProvider _packageListProvider = null!;
 	private string _bindingLookupResponseJson = string.Empty;
 	private string _boundSchemaDataItemsJson = "[]";
-	private string _existingEntityNamesJson = """{"rows":[]}""";
+	private string _existingEntityNamesJson = """{"rows":[],"success":true}""";
 
 	public override void Setup() {
 		base.Setup();
@@ -253,7 +253,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	public void CreateDataBindingDb_Should_Skip_Insert_And_Reuse_Existing_Id_When_Name_Already_Exists() {
 		// Arrange - "New" already in entity table with a known Id
 		const string existingNewId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-		_existingEntityNamesJson = $$"""{"rows":[{"Name":"New","Id":"{{existingNewId}}"}]}""";
+		_existingEntityNamesJson = $$"""{"rows":[{"Name":"New","Id":"{{existingNewId}}"}],"success":true}""";
 		CreateDataBindingDbOptions options = new() {
 			Environment = "dev",
 			PackageName = PackageName,
