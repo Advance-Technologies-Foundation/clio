@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Clio.Command;
 using Clio.Common;
@@ -208,6 +209,93 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	}
 
 	[Test]
+	[Description("Prints up to three suggestions and help hints for an unknown top-level command.")]
+	public void ExecuteCommands_WithUnknownVerb_ShouldPrintSuggestionsAndKeepExitCodeOne() {
+		StringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["get-list"];
+
+		int exitCode = Program.ExecuteCommands(args);
+		string[] outputLines = consoleOutput.ToString()
+			.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+		string[] suggestionLines = outputLines
+			.Where(line => line.StartsWith("  clio ", StringComparison.Ordinal))
+			.ToArray();
+
+		exitCode.Should().Be(1, because: "an unknown command must still fail the invocation");
+		outputLines.Should().Contain("Maybe you meant:",
+			because: "the parse-error flow should append recovery suggestions for unknown verbs");
+		suggestionLines.Should().HaveCount(3,
+			because: "the compact unknown-command UX should show at most three command suggestions");
+		suggestionLines.Should().Contain("  clio get-app-list",
+			because: "the closest visible list command should be suggested");
+		suggestionLines.Should().Contain("  clio get-pkg-list",
+			because: "commands sharing the same get/list intent should be suggested");
+		outputLines.Should().Contain("See all commands: clio help",
+			because: "the user should get a generic recovery path after an unknown command");
+		outputLines.Should().Contain("See command help: clio <command> --help",
+			because: "the output should point the user to command-level help after suggestions");
+	}
+
+	[Test]
+	[Description("Uses aliases for ranking but prints the canonical command name in suggestions.")]
+	public void ExecuteCommands_WithAliasLikeInput_ShouldSuggestCanonicalCommandName() {
+		StringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["envss"];
+
+		Program.ExecuteCommands(args);
+		string[] outputLines = consoleOutput.ToString()
+			.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+		string firstSuggestion = outputLines.First(line => line.StartsWith("  clio ", StringComparison.Ordinal));
+
+		firstSuggestion.Should().Be("  clio show-web-app-list",
+			because: "alias similarity should rank the environment listing command first while output stays canonical");
+		outputLines.Should().NotContain("  clio envs",
+			because: "the CLI should display canonical command names instead of aliases in suggestion output");
+	}
+
+	[Test]
+	[Description("Excludes hidden commands from the unknown-command suggestions.")]
+	public void ExecuteCommands_WithHiddenCommandAlias_ShouldNotSuggestHiddenCommand() {
+		StringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["execc"];
+
+		Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		output.Should().NotContain("execute-assembly-code",
+			because: "hidden commands must stay undiscoverable in the suggestion output");
+		output.Should().NotContain("Maybe you meant:",
+			because: "an exact match to a hidden alias should not produce visible suggestions");
+		output.Should().Contain("See all commands: clio help",
+			because: "generic recovery hints should still be shown when no suggestion is safe to display");
+	}
+
+	[Test]
+	[Description("Falls back to generic help when the input is too dissimilar to any visible command.")]
+	public void ExecuteCommands_WithLowConfidenceUnknownVerb_ShouldShowOnlyHelpHints() {
+		StringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["zzzzzz"];
+
+		Program.ExecuteCommands(args);
+		string output = consoleOutput.ToString();
+
+		output.Should().NotContain("Maybe you meant:",
+			because: "low-confidence input should not produce misleading command suggestions");
+		output.Should().Contain("See all commands: clio help",
+			because: "the CLI should still offer a generic way to recover from a bad command");
+		output.Should().Contain("See command help: clio <command> --help",
+			because: "generic recovery guidance should remain available without specific suggestions");
+	}
+
+	[Test]
 	public void ReadEnvironmentOptionsFromManifestFile() {
 		FileSystem.MockExamplesFolder("deployments-manifest");
 		string manifestFileName = "full-creatio-config.yaml";
@@ -237,4 +325,3 @@ internal class CommonProgramTest : BaseClioModuleTests{
 
 	#endregion
 }
-
