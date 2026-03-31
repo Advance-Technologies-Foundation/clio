@@ -1572,3 +1572,38 @@ Decision: Updated `UnregAppCommand` to resolve the target from positional name, 
 Discovery: `unreg-web-app` has no MCP surface to sync, so MCP review concluded no update is required for this CLI-only interactive change; the command docs also needed explicit notes because the shared `EnvironmentOptions` base exposes many inherited flags that do not affect this command.
 Files: clio/Command/UnregAppCommand.cs, clio.tests/Command/UnregAppCommand.Tests.cs, clio/help/en/unreg-web-app.txt, clio/docs/commands/unreg-web-app.md, .codex/workspace-diary.md
 Impact: Users can now remove a registered environment interactively from the CLI, while tests lock in the new no-arg flow, `--silent` behavior, and doc/help alignment.
+
+## 2026-03-31 22:43 – Surface command aliases in top-level help
+Context: User reported that `clio reg` works but `reg` was not discoverable from `clio help`, because the root help listed only canonical command names.
+Decision: Kept canonical commands as the only top-level entries, but added inline alias previews to the root help and `Commands.md`, capped previews to two aliases plus a remainder count, and filtered out aliases that duplicated the canonical command name.
+Discovery: Some commands, including `check-windows-features`, declared the canonical name again in `Aliases`, which was previously hidden by the canonical-only root help but became noisy once alias previews were shown.
+Files: clio/HelpSystem/CommandHelpCatalog.cs, clio/HelpSystem/CommandHelpRenderer.cs, clio.tests/CommandHelpRendererTests.cs, clio/help/en/help.txt, clio/help/en/check-windows-features.txt, clio/docs/commands/check-windows-features.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: `clio help` now makes shorthand commands like `reg` discoverable without duplicating aliases as separate commands, and generated help/docs stay aligned with the runtime output.
+
+## 2026-03-31 22:48 – Move aliases directly beside command names in help
+Context: User preferred aliases to appear through commas right next to their commands instead of as a description suffix in `clio help`.
+Decision: Changed root help labels to render `canonical, alias1, alias2` in the command column and updated `Commands.md` to use the same comma-separated style beside the canonical markdown link.
+Discovery: Widening the root help command column to fit the combined label kept the output readable for long alias groups like `show-web-app-list, env, envs, show-web-app` without reintroducing duplicate top-level alias entries.
+Files: clio/HelpSystem/CommandHelpRenderer.cs, clio.tests/CommandHelpRendererTests.cs, clio/help/en/help.txt, clio/Commands.md, .codex/workspace-diary.md
+Impact: Help output now matches user expectation more closely, and alias discovery is immediate at a glance in both terminal help and the repository command index.
+
+## 2026-03-31 23:01 – Reduce root help alias noise with second-line layout
+Context: User was unhappy with the visual density of `clio help` after aliases were moved onto the main command line.
+Decision: Kept the flat A-Z root help, restored the primary row to canonical command plus description only, and rendered aliases on a wrapped secondary `aliases:` line under each command; mirrored the same lower-weight pattern in `Commands.md`.
+Discovery: Filtering canonical-name duplicates in `CommandHelpCatalog` remained necessary, and the second-line layout made long alias groups like `show-web-app-list` and `check-windows-features` readable again without reintroducing grouped terminal sections.
+Files: clio/HelpSystem/CommandHelpRenderer.cs, clio/HelpSystem/CommandHelpCatalog.cs, clio.tests/CommandHelpRendererTests.cs, clio/help/en/help.txt, clio/help/en/check-windows-features.txt, clio/docs/commands/check-windows-features.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: `clio help` now stays scannable while still exposing all aliases, and the generated command index/docs follow the same hierarchy of visual emphasis.
+
+## 2026-03-31 23:21 – Split runtime and export root help alias styling
+Context: User wanted aliases to stay beside their commands but with lower visual weight, and preferred color in terminal output over extra alias rows.
+Decision: Added explicit runtime/export root-help rendering modes so runtime help can append aliases as a subdued description suffix while exported `help.txt` and `Commands.md` stay plain and same-line. Kept alias filtering in the catalog unchanged and preserved flat A-Z ordering.
+Discovery: Runtime verification inside automation does not reliably show ANSI styling because the capture environment may suppress terminal color, so renderer tests now explicitly cover ANSI-enabled and ANSI-disabled runtime paths.
+Files: clio/HelpSystem/CommandHelpRenderer.cs, clio/Program.cs, clio/HelpSystem/HelpArtifactExporter.cs, clio.tests/CommandHelpRendererTests.cs, clio/help/en/help.txt, clio/Commands.md, .codex/workspace-diary.md
+Impact: `clio help` can visually de-emphasize aliases in real terminals without polluting exported help artifacts with labels or ANSI codes, and tests now lock the runtime/export contract separately.
+
+## 2026-03-31 23:42 – Keep root help command descriptions on one physical line
+Context: User wanted `clio help` to avoid manual multiline wrapping inside command descriptions after aliases were moved into the description column.
+Decision: Removed root-help-specific description wrapping and rendered each command entry as a single physical line, while keeping runtime alias dimming and export same-line alias tails unchanged.
+Discovery: The previous wrapping mainly affected long alias groups like `compare-web-farm-node` and `publish-app`; `Commands.md` already used one source line per entry and needed no renderer-format change.
+Files: clio/HelpSystem/CommandHelpRenderer.cs, clio.tests/CommandHelpRendererTests.cs, clio/help/en/help.txt, .codex/workspace-diary.md
+Impact: Root help is easier to scan because every command now occupies one line in generated output, and tests explicitly guard against reintroducing manual line breaks.

@@ -22,7 +22,7 @@ internal sealed class HelpArtifactExporter {
 		string docsDirectory = _fileSystem.Path.Combine(repositoryRoot, "clio", "docs", "commands");
 		string wikiAnchorPath = _fileSystem.Path.Combine(repositoryRoot, "clio", "Wiki", "WikiAnchors.txt");
 		string commandsPath = _fileSystem.Path.Combine(repositoryRoot, "clio", "Commands.md");
-		WriteFile(_fileSystem.Path.Combine(helpDirectory, "help.txt"), _renderer.RenderRootHelp());
+		WriteFile(_fileSystem.Path.Combine(helpDirectory, "help.txt"), _renderer.RenderRootHelp(RootHelpRenderMode.Export));
 		HashSet<string> commandNames = _catalog.Commands.Select(command => command.CanonicalName).ToHashSet(StringComparer.OrdinalIgnoreCase);
 		foreach (HelpCommandMetadata command in _catalog.VisibleCommands) {
 			WriteFile(_fileSystem.Path.Combine(helpDirectory, $"{command.CanonicalName}.txt"), _renderer.TryRenderCommandHelp(command.CanonicalName));

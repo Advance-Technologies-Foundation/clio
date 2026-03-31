@@ -368,7 +368,9 @@ internal sealed class CommandHelpCatalog {
 		VerbAttribute verb = optionsType.GetCustomAttribute<VerbAttribute>();
 		string canonicalName = verb?.Name ?? optionsType.Name;
 		IReadOnlyList<string> aliases = verb?.Aliases?
-			.Where(alias => !string.IsNullOrWhiteSpace(alias) && !alias.Any(char.IsWhiteSpace))
+			.Where(alias => !string.IsNullOrWhiteSpace(alias)
+				&& !alias.Any(char.IsWhiteSpace)
+				&& !string.Equals(alias, canonicalName, StringComparison.OrdinalIgnoreCase))
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.OrderBy(alias => alias, StringComparer.OrdinalIgnoreCase)
 			.ToArray() ?? [];

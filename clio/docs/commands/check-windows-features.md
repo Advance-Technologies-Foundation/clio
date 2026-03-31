@@ -14,7 +14,7 @@ Check windows for the required components.
 
 ## Aliases
 
-`cf`, `check-windows-features`, `checkf`, `checks`, `checkw`
+`cf`, `checkf`, `checks`, `checkw`
 
 ## Examples
 

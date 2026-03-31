@@ -1075,7 +1075,7 @@ internal class Program {
 		string[] normalizedArgs = NormalizeCommandLineArgs(args);
 		if (normalizedArgs.Length == 0
 			|| normalizedArgs.Length == 1 && IsRootHelpToken(normalizedArgs[0])) {
-			Console.Out.Write(renderer.RenderRootHelp());
+			Console.Out.Write(renderer.RenderRootHelp(RootHelpRenderMode.Runtime));
 			exitCode = 0;
 			return true;
 		}
@@ -1085,7 +1085,7 @@ internal class Program {
 				exitCode = 0;
 				return true;
 			}
-			Console.Out.Write(renderer.RenderRootHelp());
+			Console.Out.Write(renderer.RenderRootHelp(RootHelpRenderMode.Runtime));
 			exitCode = 0;
 			return true;
 		}

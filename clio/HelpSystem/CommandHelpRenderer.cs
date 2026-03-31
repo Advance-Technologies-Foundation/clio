@@ -11,6 +11,11 @@ using CommandLine.Text;
 
 namespace Clio.Help;
 
+internal enum RootHelpRenderMode {
+	Runtime,
+	Export
+}
+
 internal sealed record HelpFileSections(
 	IReadOnlyDictionary<string, IReadOnlyList<string>> Sections,
 	bool IsAliasShim);
@@ -19,14 +24,20 @@ internal sealed class CommandHelpRenderer {
 	private static readonly Regex SectionHeadingRegex = new("^[A-Z][A-Z0-9 /&-]+:?$", RegexOptions.Compiled);
 	private readonly IFileSystem _fileSystem;
 	private readonly CommandHelpCatalog _catalog;
+	private readonly Func<bool> _supportsAnsi;
 
-	public CommandHelpRenderer(IFileSystem fileSystem, CommandHelpCatalog catalog) {
-		_fileSystem = fileSystem;
-		_catalog = catalog;
+	public CommandHelpRenderer(IFileSystem fileSystem, CommandHelpCatalog catalog)
+		: this(fileSystem, catalog, SupportsAnsiEscapeCodes) {
 	}
 
-	public string RenderRootHelp() {
-		int leftWidth = Math.Min(42, Math.Max(32, _catalog.VisibleCommands.Max(command => command.CanonicalName.Length) + 2));
+	internal CommandHelpRenderer(IFileSystem fileSystem, CommandHelpCatalog catalog, Func<bool> supportsAnsi) {
+		_fileSystem = fileSystem;
+		_catalog = catalog;
+		_supportsAnsi = supportsAnsi;
+	}
+
+	public string RenderRootHelp(RootHelpRenderMode mode) {
+		int leftWidth = Math.Max(32, _catalog.VisibleCommands.Max(command => command.CanonicalName.Length) + 2);
 		StringBuilder builder = new();
 		builder.AppendLine("clio - Creatio CLI");
 		builder.AppendLine();
@@ -35,7 +46,7 @@ internal sealed class CommandHelpRenderer {
 		builder.AppendLine();
 		builder.AppendLine("Commands:");
 		foreach (HelpCommandMetadata command in _catalog.VisibleCommands.OrderBy(command => command.CanonicalName, StringComparer.OrdinalIgnoreCase)) {
-			AppendTwoColumn(builder, command.CanonicalName, command.ShortDescription, leftWidth, 124);
+			AppendRootHelpEntry(builder, command, leftWidth, mode, mode == RootHelpRenderMode.Runtime && _supportsAnsi());
 		}
 		builder.AppendLine();
 		builder.AppendLine("Run `clio <command> --help` for command details.");
@@ -133,7 +144,7 @@ internal sealed class CommandHelpRenderer {
 		StringBuilder builder = new();
 		builder.AppendLine("# Clio Command Reference");
 		builder.AppendLine();
-		builder.AppendLine("Use `clio help` for the grouped terminal overview and `clio <command> --help` for command details.");
+		builder.AppendLine("Use `clio help` for the terminal overview and `clio <command> --help` for command details.");
 		foreach (HelpGroupMetadata group in _catalog.Groups) {
 			IReadOnlyList<HelpCommandMetadata> commands = _catalog.GetCommandsForGroup(group.Id);
 			if (commands.Count == 0) {
@@ -150,7 +161,7 @@ internal sealed class CommandHelpRenderer {
 					.Distinct(StringComparer.OrdinalIgnoreCase)) {
 					builder.AppendLine($"<a id=\"{anchor}\"></a>");
 				}
-				builder.AppendLine($"- [`{command.CanonicalName}`](docs/commands/{command.CanonicalName}.md) - {command.ShortDescription}");
+				builder.AppendLine($"- [`{command.CanonicalName}`](docs/commands/{command.CanonicalName}.md) - {BuildExportDescription(command, alias => $"`{alias}`")}");
 			}
 		}
 		return builder.ToString();
@@ -231,6 +242,45 @@ internal sealed class CommandHelpRenderer {
 			builder.AppendLine(line);
 		}
 	}
+
+	private static string BuildExportDescription(HelpCommandMetadata command, Func<string, string> aliasFormatter) {
+		if (command.Aliases.Count == 0) {
+			return command.ShortDescription;
+		}
+		return $"{command.ShortDescription}, {string.Join(", ", command.Aliases.Select(aliasFormatter))}";
+	}
+
+	private static void AppendRootHelpEntry(StringBuilder builder, HelpCommandMetadata command, int leftWidth, RootHelpRenderMode mode, bool colorizeAliases) {
+		string description = BuildRootDescription(command, mode, colorizeAliases);
+		builder.Append("  ");
+		builder.Append(command.CanonicalName.PadRight(leftWidth));
+		builder.Append(description);
+		builder.AppendLine();
+	}
+
+	private static string BuildRootDescription(HelpCommandMetadata command, RootHelpRenderMode mode, bool colorizeAliases) {
+		string separator = mode == RootHelpRenderMode.Runtime && colorizeAliases ? " · " : ", ";
+		string description = NormalizeWhitespace(command.ShortDescription);
+		if (command.Aliases.Count == 0) {
+			return description;
+		}
+		string aliasSuffix = $"{separator}{string.Join(", ", command.Aliases)}";
+		if (!colorizeAliases) {
+			return description + aliasSuffix;
+		}
+		return description + WrapDim(aliasSuffix);
+	}
+
+	private static string WrapDim(string value) =>
+		string.IsNullOrEmpty(value) ? value : $"\x1b[90m{value}\x1b[0m";
+
+	private static string NormalizeWhitespace(string text) =>
+		string.Join(" ", text.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries));
+
+	private static bool SupportsAnsiEscapeCodes() =>
+		!Console.IsOutputRedirected &&
+		Environment.GetEnvironmentVariable("NO_COLOR") == null &&
+		Environment.GetEnvironmentVariable("TERM") != null;
 
 	private static IEnumerable<string> Wrap(string text, int width) {
 		if (string.IsNullOrWhiteSpace(text)) {
