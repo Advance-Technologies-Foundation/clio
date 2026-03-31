@@ -494,17 +494,37 @@ internal sealed class DataBindingDbService(
 			? FetchExistingBoundRecordIds(existingBindingUId.Value)
 			: [];
 
+		bool schemaHasNameColumn = schema.SchemaColumns
+			.Any(c => string.Equals(c.Name, "Name", StringComparison.OrdinalIgnoreCase));
+		bool hasNamedRows = rows?.Any(r => r.ContainsKey("Name")) ?? false;
+		Dictionary<string, string> existingNameToId = rows is { Count: > 0 } && hasNamedRows && schemaHasNameColumn
+			? FetchExistingEntityNameToId(options.SchemaName)
+			: new(StringComparer.OrdinalIgnoreCase);
+
 		List<DataBindingCreatedRow> createdRows = [];
 		if (rows is { Count: > 0 }) {
 			foreach (Dictionary<string, JsonNode?> row in rows) {
 				string rowId = EnsureRowId(row);
-				InsertEntityRow(options.SchemaName, row, schema.SchemaColumns);
-				if (!boundRecordIds.Contains(rowId, StringComparer.OrdinalIgnoreCase)) {
-					boundRecordIds.Add(rowId);
+				string? rowName = row.TryGetValue("Name", out JsonNode? nameNode)
+					? nameNode?.ToString()
+					: null;
+				if (rowName is not null &&
+					existingNameToId.TryGetValue(rowName, out string? existingId)) {
+					if (!boundRecordIds.Contains(existingId, StringComparer.OrdinalIgnoreCase)) {
+						boundRecordIds.Add(existingId);
+					}
+				} else {
+					InsertEntityRow(options.SchemaName, row, schema.SchemaColumns);
+					if (rowName is not null) {
+						existingNameToId[rowName] = rowId;
+					}
+					if (!boundRecordIds.Contains(rowId, StringComparer.OrdinalIgnoreCase)) {
+						boundRecordIds.Add(rowId);
+					}
+					createdRows.Add(new DataBindingCreatedRow(
+						rowId,
+						row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString())));
 				}
-				createdRows.Add(new DataBindingCreatedRow(
-					rowId,
-					row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString())));
 			}
 		}
 
@@ -1002,6 +1022,26 @@ internal sealed class DataBindingDbService(
 		return ids;
 	}
 
+	private Dictionary<string, string> FetchExistingEntityNameToId(string schemaName) {
+		EntityNameSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<EntityNameSelectResponse>(
+			applicationClient,
+			serviceUrlBuilder,
+			SelectQueryHelper.BuildSelectQuery(
+				schemaName,
+				[
+					new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
+					new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")
+				],
+				[]));
+		Dictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase);
+		foreach (EntityNameRowDto row in response.Rows) {
+			if (!string.IsNullOrWhiteSpace(row.Name) && !string.IsNullOrWhiteSpace(row.Id)) {
+				result.TryAdd(row.Name, row.Id);
+			}
+		}
+		return result;
+	}
+
 	private void DeletePackageSchemaData(Guid packageUId, string bindingName) {
 		string response = applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeletePackageSchemaData),
@@ -1084,6 +1124,19 @@ internal sealed class DataBindingDbService(
 		}
 
 		return jsonObject.ToDictionary(kv => kv.Key, kv => kv.Value);
+	}
+
+	private sealed class EntityNameSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[JsonPropertyName("rows")]
+		public List<EntityNameRowDto> Rows { get; init; } = [];
+	}
+
+	private sealed class EntityNameRowDto {
+		[JsonPropertyName("Name")]
+		public string? Name { get; init; }
+
+		[JsonPropertyName("Id")]
+		public string? Id { get; init; }
 	}
 }
 

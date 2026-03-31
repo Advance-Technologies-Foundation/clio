@@ -36,6 +36,23 @@ public sealed class SchemaSyncTool(
 		[Description("Parameters: environment-name, package-name (required); operations array (required)")]
 		[Required] SchemaSyncArgs args) {
 		var results = new List<SchemaSyncOperationResult>();
+		// Pre-validate seed-rows format before touching any environment resource
+		foreach (SchemaSyncOperation op in args.Operations) {
+			if (op.SeedRows?.Any() != true) {
+				continue;
+			}
+			int invalidCount = op.SeedRows.Count(r => r.Values is null || r.Values.Count == 0);
+			if (invalidCount > 0) {
+				results.Add(new SchemaSyncOperationResult {
+					Operation = "seed-data", SchemaName = op.SchemaName,
+					Success = false,
+					Error = $"seed-rows for '{op.SchemaName}' contain {invalidCount} entr{(invalidCount == 1 ? "y" : "ies")} with a missing or empty 'values' map. " +
+					        "Each seed-row must follow the shape: {{\"values\": {{\"Name\": \"...\"}}}}. " +
+					        "Flat objects such as {{\"Name\": \"...\"}} without the 'values' wrapper are not supported."
+				});
+				return new SchemaSyncResponse { Success = false, Results = results };
+			}
+		}
 		lock (McpToolExecutionLock.SyncRoot) {
 			bool previousPreserveMessages = logger.PreserveMessages;
 			logger.PreserveMessages = true;
