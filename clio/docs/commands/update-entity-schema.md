@@ -8,8 +8,9 @@ clio update-entity-schema [options]
 
 This command is the clio-native batch mutation surface for entity schemas. It applies an ordered list of
 column operations and reuses the same validation and DB-first save flow as `modify-entity-schema-column`.
-Supported operation types include `Binary`, `Image`, `File`, and `SecureText`. `Blob` is accepted as an alias
-for `Binary`, and `Encrypted` and `Password` are accepted as aliases for `SecureText`.
+Supported operation types include `Binary`, `Image`, `File`, `SecureText`, and `Email`. `Blob` is accepted
+as an alias for `Binary`, `Encrypted` and `Password` are accepted as aliases for `SecureText`, and
+`EmailAddress` is accepted as an alias for `Email`.
 
 ## Options
 

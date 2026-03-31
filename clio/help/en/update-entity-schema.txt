@@ -14,9 +14,10 @@ DESCRIPTION
     This command is the clio-native batch mutation contract for entity schemas.
     Each operation uses the same column-level semantics as
     modify-entity-schema-column, but several mutations can be applied in one
-    request. Supported operation types include Binary, Image, File, and
-    SecureText. Blob is accepted as an alias for Binary. Encrypted and
-    Password are accepted as aliases for SecureText.
+    request. Supported operation types include Binary, Image, File,
+    SecureText, and Email. Blob is accepted as an alias for Binary.
+    Encrypted and Password are accepted as aliases for SecureText.
+    EmailAddress is accepted as aliases for Email.
 
 OPTIONS
     --package              Target package name
