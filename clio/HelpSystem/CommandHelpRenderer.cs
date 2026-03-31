@@ -21,8 +21,9 @@ internal sealed record HelpFileSections(
 	bool IsAliasShim);
 
 internal sealed class CommandHelpRenderer {
-	private static readonly Regex SectionHeadingRegex = new("^[A-Z][A-Z0-9 /&-]+:?$", RegexOptions.Compiled);
-	private static readonly Regex DotQualifiedNameRegex = new(@"^[A-Za-z]+(\.[A-Za-z]+)+$", RegexOptions.Compiled);
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
+	private static readonly Regex SectionHeadingRegex = new("^[A-Z][A-Z0-9 /&-]+:?$", RegexOptions.Compiled, RegexTimeout);
+	private static readonly Regex DotQualifiedNameRegex = new(@"^[A-Za-z]+(\.[A-Za-z]+)+$", RegexOptions.Compiled, RegexTimeout);
 
 	private const string SecUsage = "USAGE";
 	private const string SecDescription = "DESCRIPTION";
@@ -574,12 +575,14 @@ internal sealed class CommandHelpRenderer {
 				result,
 				$@"(?<!\S)clio\s+{Regex.Escape(name)}(?=\s|$)",
 				$"clio {command.CanonicalName}",
-				RegexOptions.IgnoreCase);
+				RegexOptions.IgnoreCase,
+				RegexTimeout);
 			result = Regex.Replace(
 				result,
 				$@"^(\s*){Regex.Escape(name)}(?=\s|$)",
 				$"$1{command.CanonicalName}",
-				RegexOptions.IgnoreCase);
+				RegexOptions.IgnoreCase,
+				RegexTimeout);
 		}
 		return result;
 	}
