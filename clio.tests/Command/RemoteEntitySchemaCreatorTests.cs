@@ -324,7 +324,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			because: "structured create-column specs should preserve the explicit default source");
 		savedColumn["defValue"]!["value"]!.Value<string>().Should().Be("Draft",
 			because: "structured create-column specs should preserve the requested default value");
-		savedColumn["masked"]!.Value<bool>().Should().BeTrue(
+		savedColumn["isMasked"]!.Value<bool>().Should().BeTrue(
 			because: "structured create-column specs should preserve the optional masked flag");
 		(savedColumn["isValueMasked"] ?? savedColumn["valueMasked"])!.Value<bool>().Should().BeTrue(
 			because: "structured create-column specs should preserve schema-level value masking");
@@ -425,7 +425,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		JToken savedColumn = JObject.Parse(saveBody)["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrPassword");
 		savedColumn["type"]!.Value<int>().Should().Be(24,
 			because: "SecureText create columns should map to runtime data value type 24");
-		savedColumn["masked"]!.Value<bool>().Should().BeTrue(
+		savedColumn["isMasked"]!.Value<bool>().Should().BeTrue(
 			because: "strict schema-level masking requires masked=true for password columns");
 		(savedColumn["isValueMasked"] ?? savedColumn["valueMasked"])!.Value<bool>().Should().BeTrue(
 			because: "strict schema-level masking requires isValueMasked=true for password columns");
@@ -471,7 +471,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 
 		// Assert
 		JToken savedColumn = JObject.Parse(saveBody)["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrPassword");
-		savedColumn["masked"]!.Value<bool>().Should().BeFalse(
+		savedColumn["isMasked"]!.Value<bool>().Should().BeFalse(
 			because: "secure text create columns should not force schema-level masking unless explicitly requested");
 		(savedColumn["isValueMasked"] ?? savedColumn["valueMasked"])!.Value<bool>().Should().BeFalse(
 			because: "value masking should stay disabled when masked is omitted");

@@ -220,6 +220,7 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 
 	private static string BindingLookupResponseJson => $$"""
 		{
+		  "success": true,
 		  "rows": [
 		    {
 		      "Id": "{{Guid.NewGuid()}}",
