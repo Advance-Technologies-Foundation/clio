@@ -295,7 +295,7 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncTool tool = new(commandResolver, logger);
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
-			[new SchemaSyncOperation("create-lookup", "UsrFirst", Title: "First")]);
+			[new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First"))]);
 
 		// Act
 		SchemaSyncResponse response = tool.SchemaSync(args);
