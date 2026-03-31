@@ -1447,3 +1447,38 @@ Decision: Added destructive E2E scenarios for `modify-entity-schema-column` and 
 Discovery: The new E2E coverage compiles and is discoverable, but the local destructive sandbox `d2` currently skips during arrange because `cliogate` verification fails with `Misconfigured Url, check settings and try again (Parameter 'Uri')`; the blocker is environment configuration, not the new MCP contract path.
 Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs, .codex/workspace-diary.md
 Impact: The repository now has real end-to-end scenarios ready for structured entity defaults as soon as the sandbox environment is repaired or reconfigured.
+
+## 2026-03-31 10:38 – Re-sync PR 497 and fix schema-sync test contract
+Context: User requested to validate review remarks on PR #497 and execute a fix plan to restore build health after branch drift from master.
+Decision: Merged latest origin/master into copilot/mcp-tool-updates-2026-03-30 and updated the remaining outdated SchemaSyncOperation(..., Title: ...) test usage to TitleLocalizations to match the current MCP contract.
+Discovery: PR build failure was reproducible as CS1739 in SchemaSyncToolTests; after the contract fix, targeted SchemaSyncToolTests pass locally. Full local suite remains noisy in this environment due pre-existing 	esthost/schema.json setup dependency and intermittent clio.exe lock processes. GitHub created a new PR run in ction_required state with no jobs started.
+Files: clio.tests/Command/McpServer/SchemaSyncToolTests.cs, .codex/workspace-diary.md
+Impact: PR branch is now synced with master and no longer carries the confirmed SchemaSyncOperation compile-regression; next validation step is unblocking/rerunning GitHub checks to confirm Build + Sonar status.
+
+## 2026-03-31 10:55 – Reduce SchemaSyncTool duplication without behavior change
+Context: User asked to fix the duplication source specifically in SchemaSyncTool after PR #497 Sonar duplication concern.
+Decision: Refactored repeated result-building blocks in ExecuteCreateSchema, ExecuteUpdateEntity, and ExecuteSeedData into shared helpers BuildCommandResult and BuildExceptionResult while preserving existing error/message semantics.
+Discovery: The core repeated pattern was identical operation result assembly around FlushAndSnapshotMessages and exception fallback in three operation paths; extracting helpers keeps MCP output contract unchanged and removes repeated code.
+Files: clio/Command/McpServer/Tools/SchemaSyncTool.cs, .codex/workspace-diary.md
+Impact: Lower duplication in SchemaSyncTool with the same runtime behavior, reducing Sonar duplication risk on new code and making future changes in operation result formatting safer.
+
+## 2026-03-31 14:25 – Add exception-path coverage for SchemaSyncTool
+Context: User requested additional tests to reduce regression risk for the BaseTool/SchemaSyncTool optimization review comments.
+Decision: Added two focused unit tests in SchemaSyncToolTests for exception paths in update-entity and seed-data, and extended fake command stubs to support throwing execution exceptions.
+Discovery: Before these tests, uncovered lines in SchemaSyncTool were exactly the update-entity/seed-data catch branches and seed-failure break path; after the update, targeted coverage reports line_rate=1 with uncovered_count=0 for SchemaSyncTool.
+Files: clio.tests/Command/McpServer/SchemaSyncToolTests.cs, .codex/workspace-diary.md
+Impact: Regression confidence is higher for error propagation and message-capture behavior when command execution throws during schema-sync operations.
+
+## 2026-03-31 14:35 – PR 497 performance review (BaseTool/SchemaSyncTool)
+Context: Requested performance-only review for PR #497 between b92a40b292fcc4ada17b0bf3a8e414a5bafe05e8 and acf105f093763565d9f10a9b062a6f417824bf25.
+Decision: Evaluated only runtime impact areas: hot path latency, message-capture allocations, lock hold behavior, and failure-path message scan complexity.
+Discovery: Removing BaseTool Thread.Sleep(500) eliminates fixed lock-held delay; FlushAndSnapshotMessages consolidates flush/snapshot/clear under one logger lock without introducing additional per-success complexity. New BuildOperationError adds linear scan only on non-zero exit codes.
+Files: clio/Command/McpServer/Tools/BaseTool.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio/Common/ConsoleLogger.cs, clio/Common/LoggerMessageCaptureExtensions.cs, .codex/workspace-diary.md
+Impact: Review result recorded for future MCP runtime tuning and lock-contention investigations.
+
+## 2026-03-31 14:45 – Address PR review gaps with BaseTool and schema-sync tests
+Context: User asked to fix review findings from PR #497 around regression risk and incomplete test coverage.
+Decision: Added dedicated BaseTool unit tests for deterministic log capture in success/exception paths, and expanded SchemaSyncToolTests with non-zero non-exception scenarios for update-entity and seed-data including detailed vs fallback error behavior.
+Discovery: The uncovered regression risk came from lacking direct BaseTool tests after replacing sleep-based capture with flush-based capture; adding targeted tests closed this gap and preserved behavior expectations under ConsoleLogger queue draining.
+Files: clio.tests/Command/McpServer/BaseToolTests.cs, clio.tests/Command/McpServer/SchemaSyncToolTests.cs, .codex/workspace-diary.md
+Impact: PR now has direct regression coverage for BaseTool logging semantics and broader schema-sync failure-path coverage, reducing merge risk for the optimization change.
