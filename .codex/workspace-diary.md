@@ -1447,3 +1447,10 @@ Decision: Added destructive E2E scenarios for `modify-entity-schema-column` and 
 Discovery: The new E2E coverage compiles and is discoverable, but the local destructive sandbox `d2` currently skips during arrange because `cliogate` verification fails with `Misconfigured Url, check settings and try again (Parameter 'Uri')`; the blocker is environment configuration, not the new MCP contract path.
 Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs, .codex/workspace-diary.md
 Impact: The repository now has real end-to-end scenarios ready for structured entity defaults as soon as the sandbox environment is repaired or reconfigured.
+
+## 2026-03-31 10:38 – Re-sync PR 497 and fix schema-sync test contract
+Context: User requested to validate review remarks on PR #497 and execute a fix plan to restore build health after branch drift from master.
+Decision: Merged latest origin/master into copilot/mcp-tool-updates-2026-03-30 and updated the remaining outdated SchemaSyncOperation(..., Title: ...) test usage to TitleLocalizations to match the current MCP contract.
+Discovery: PR build failure was reproducible as CS1739 in SchemaSyncToolTests; after the contract fix, targeted SchemaSyncToolTests pass locally. Full local suite remains noisy in this environment due pre-existing 	esthost/schema.json setup dependency and intermittent clio.exe lock processes. GitHub created a new PR run in ction_required state with no jobs started.
+Files: clio.tests/Command/McpServer/SchemaSyncToolTests.cs, .codex/workspace-diary.md
+Impact: PR branch is now synced with master and no longer carries the confirmed SchemaSyncOperation compile-regression; next validation step is unblocking/rerunning GitHub checks to confirm Build + Sonar status.
