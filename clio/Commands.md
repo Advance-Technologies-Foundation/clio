@@ -1839,7 +1839,7 @@ clio modify-entity-schema-column --package <PACKAGE_NAME> --schema-name <SCHEMA_
 - `--multiline-text <true|false>` (optional): Text-only flag
 - `--localizable-text <true|false>` (optional): Text-only flag
 - `--accent-insensitive <true|false>` (optional): Text-only flag
-- `--masked <true|false>` (optional): Text-only flag
+- `--masked <true|false>` (optional): Text/SecureText-only flag
 - `--format-validated <true|false>` (optional): Text-only flag
 - `--use-seconds <true|false>` (optional): DateTime-only flag
 - `--simple-lookup <true|false>` (optional): Lookup-only flag

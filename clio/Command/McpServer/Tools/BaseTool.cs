@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -66,21 +65,18 @@ public abstract class BaseTool<T>(
 			logger.PreserveMessages = true;
 			try {
 				result = command.Execute(options);
-				Thread.Sleep(500);
 				CommandExecutionResult returnResult = new(
 					result,
-					[.. logger.LogMessages.ToList()],
+					[.. logger.FlushAndSnapshotMessages(clearMessages: true)],
 					dbOperationLogContextAccessor?.LastCompletedPath);
-				logger.ClearMessages();
 				return returnResult;
 			}
 			catch (Exception e) {
-				List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(e.Message)];
+				List<LogMessage> logMessages = [.. logger.FlushAndSnapshotMessages(clearMessages: true), new ErrorMessage(e.Message)];
 				CommandExecutionResult returnResult = new(
 					result,
 					logMessages,
 					dbOperationLogContextAccessor?.LastCompletedPath);
-				logger.ClearMessages();
 				return returnResult;
 			}
 			finally {

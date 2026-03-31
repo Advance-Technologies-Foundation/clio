@@ -302,6 +302,9 @@ internal sealed class EntitySchemaColumnDto
 	[JsonProperty("isMasked")]
 	public bool Masked { get; set; }
 
+	[JsonProperty("isValueMasked")]
+	public bool ValueMasked { get; set; }
+
 	[JsonProperty("isFormatValidated")]
 	public bool FormatValidated { get; set; }
 
