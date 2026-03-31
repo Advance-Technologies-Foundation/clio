@@ -23,7 +23,7 @@ internal class HelpArtifactConsistencyTests {
 		string commandsContent = File.ReadAllText(CommandsPath);
 		string[] wikiAnchors = File.ReadAllLines(WikiAnchorsPath);
 
-		foreach (HelpCommandMetadata command in catalog.VisibleCommands) {
+		foreach (HelpCommandMetadata command in catalog.GetVisibleCommands()) {
 			File.Exists(Path.Combine(HelpDirectory, $"{command.CanonicalName}.txt")).Should().BeTrue(
 				because: "every visible command should have a canonical CLI help file");
 			File.Exists(Path.Combine(DocsDirectory, $"{command.CanonicalName}.md")).Should().BeTrue(
