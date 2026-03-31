@@ -1558,3 +1558,17 @@ Decision: Increased the unknown-command suggestion cap from 3 to 10, kept the ex
 Discovery: Rebuilding before manual verification matters here because running the previously built `clio.dll` still showed the old 3-item output until the new `Program.cs` change was compiled.
 Files: clio/Program.cs, clio.tests/CommonProgramTest.cs, clio/Commands.md, .codex/workspace-diary.md
 Impact: Unknown command output is now broader and easier to scan, while still avoiding noisy fallback suggestions for low-confidence input.
+
+## 2026-03-31 21:07 – Filter weak unknown-command suggestions for skill-like input
+Context: User reported that `clio skill` still showed unrelated commands because short aliases and weak edit-distance matches filled the expanded top-10 suggestion list.
+Decision: Downweighted short aliases for longer unknown input, normalized command tokens for simple singular/plural overlap, and filtered the rendered suggestion set to per-candidate confident matches only. Added a regression test that keeps `install-skills` visible and rejects noisy fallback entries like `build-workspace`.
+Discovery: A single global confidence gate was not enough once the list size increased to ten, because low-confidence tail candidates still leaked into the final alphabetical output even after the top matches were correct.
+Files: clio/Program.cs, clio.tests/CommonProgramTest.cs, .codex/workspace-diary.md
+Impact: `clio skill` now resolves to the three actual skill-management commands, while other unknown-command flows still keep broader suggestion coverage when they have genuinely relevant matches.
+
+## 2026-03-31 21:04 – Add interactive target selection to unreg-web-app
+Context: User wanted `clio unreg-web-app` to work without arguments by showing registered environments for selection instead of failing on an empty name.
+Decision: Updated `UnregAppCommand` to resolve the target from positional name, shared `-e/--Environment`, or a one-shot interactive numbered list, with `--all` precedence and `--silent` fast-fail when no explicit target is provided.
+Discovery: `unreg-web-app` has no MCP surface to sync, so MCP review concluded no update is required for this CLI-only interactive change; the command docs also needed explicit notes because the shared `EnvironmentOptions` base exposes many inherited flags that do not affect this command.
+Files: clio/Command/UnregAppCommand.cs, clio.tests/Command/UnregAppCommand.Tests.cs, clio/help/en/unreg-web-app.txt, clio/docs/commands/unreg-web-app.md, .codex/workspace-diary.md
+Impact: Users can now remove a registered environment interactively from the CLI, while tests lock in the new no-arg flow, `--silent` behavior, and doc/help alignment.
