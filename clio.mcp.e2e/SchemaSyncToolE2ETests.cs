@@ -651,6 +651,57 @@ public sealed class SchemaSyncToolE2ETests {
 		];
 	}
 
+	[Test]
+	[Description("Rejects flat seed-rows (missing 'values' wrapper) without requiring a reachable environment.")]
+	[AllureTag(ToolName)]
+	[AllureName("schema-sync rejects flat seed-rows format before environment resolution")]
+	[AllureDescription("Starts the real MCP server without a reachable environment, invokes schema-sync with create-lookup using flat seed-rows (missing 'values' wrapper), and verifies the tool returns a structured failure on the seed-data step with a clear error about the missing 'values' map.")]
+	public async Task SchemaSyncTool_Should_Reject_Flat_SeedRows_Before_Environment_Resolution() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string missingEnv = $"missing-schema-sync-env-{Guid.NewGuid():N}";
+		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
+		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+			because: "schema-sync must be advertised before the flat seed-rows validation scenario can be invoked");
+
+		// Act - seed-rows use the flat {"Name":"New"} format (missing "values" wrapper)
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = missingEnv,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							["schema-name"] = "UsrTodoStatus",
+							["title-localizations"] = BuildLocalizations("Todo Status"),
+							["seed-rows"] = new object?[] {
+								new Dictionary<string, object?> { ["Name"] = "New" },
+								new Dictionary<string, object?> { ["Name"] = "Done" }
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement[] results = response.GetProperty("results").EnumerateArray().ToArray();
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "schema-sync should return a structured failure payload, not an MCP error envelope");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "flat seed-rows without the 'values' wrapper must cause the batch to fail");
+		JsonElement seedResult = results.Single(r =>
+			string.Equals(r.GetProperty("operation").GetString(), "seed-data", StringComparison.Ordinal));
+		seedResult.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "the seed-data step must report failure when rows have a null values map");
+		string seedError = seedResult.GetProperty("error").GetString()!;
+		seedError.Should().Contain("values",
+			because: "the error must name the missing 'values' wrapper so the caller can correct the format");
+	}
+
 	private static Dictionary<string, string> BuildLocalizations(string enUs, string? ukUa = null) {
 		Dictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase) {
 			["en-US"] = enUs

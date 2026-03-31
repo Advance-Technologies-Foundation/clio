@@ -746,6 +746,48 @@ public sealed class SchemaSyncToolTests {
 			.ToArray() ?? [];
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Returns failure before any environment call when any seed-row has a null or empty values map (flat JSON format silently used by mistake)")]
+	public void SchemaSync_SeedRows_Should_Fail_When_Values_Map_Is_Null() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(fakeSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		// Simulate the flat {"Name": "New"} JSON shape: Values deserializes to null
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+				TitleLocalizations: Localizations("Todo Status"),
+				SeedRows: [new SchemaSyncSeedRow(null)])]);
+
+		// Act
+		SchemaSyncResponse response = tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a seed-row with null values must not silently insert nothing");
+		response.Results.Should().HaveCount(1,
+			because: "pre-validation fires before any environment call so only the seed-data failure result is emitted");
+		response.Results[0].Operation.Should().Be("seed-data",
+			because: "the failure is reported on the seed-data step");
+		response.Results[0].Success.Should().BeFalse();
+		response.Results[0].Error.Should().Contain("values",
+			because: "the error message must mention the missing 'values' key");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "create-lookup must not be invoked when seed-rows pre-validation fails");
+		fakeSeedCommand.CapturedOptions.Should().BeNull(
+			because: "CreateDataBindingDbCommand must not be invoked when rows are invalid");
+	}
+
 	private static Dictionary<string, string> Localizations(string enUs, string? ukUa = null) {
 		Dictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase) {
 			["en-US"] = enUs
