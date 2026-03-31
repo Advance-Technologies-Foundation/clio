@@ -1,31 +1,87 @@
 # restore-configuration
 
-Restore configuration from the latest backup.
+Restore the configuration from the last backup.
 
-## Synopsis
+## Usage
 
 ```bash
-clio restore-configuration [OPTIONS]
+clio restore-configuration [options]
 ```
 
 ## Description
 
-`restore-configuration` restores Creatio configuration from backup data created during package operations.
+Restore the configuration from the last backup.
 
-## Common options
+## Aliases
 
-- `-d` - Restore without rollback data
-- `-f` - Restore without SQL backward compatibility check
-- `-e`, `--Environment` - Target environment
+`rc`, `restore`
 
 ## Examples
 
 ```bash
 clio restore-configuration -e dev
-clio restore-configuration -d -f -e dev
 ```
 
-## See also
+## Options
 
-- [restore-db](./restore-db.md)
-- [Commands.md](../../Commands.md#restore-configuration)
+```bash
+--timeout <NUMBER>
+    Request timeout in milliseconds. Default: 100000.
+-d, --skip-rollback-data
+    Skip rollback data
+-f, --force
+    Restore configuration without sql backward compatibility check
+```
+
+## Environment Options
+
+```bash
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application)
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
+```
+
+- [Clio Command Reference](../../Commands.md#restore-configuration)

@@ -1,22 +1,14 @@
 NAME
-    open-k8-files - Open folder K8 files for deployment
+    open-k8-files - Open the Kubernetes manifests folder
+
+USAGE
+    clio open-k8-files [options]
 
 DESCRIPTION
-    Opens the generated Kubernetes deployment files folder for inspection or editing.
+    Open the Kubernetes manifests folder.
 
-SYNOPSIS
-    clio open-k8-files [OPTIONS]
-
-OPTIONS
-    Supports the canonical open-k8-files command options.
+ALIASES
+    cfg-k8, cfg-k8f, cfg-k8s
 
 EXAMPLES
-    clio open-k8-files
-        Open the generated Kubernetes files folder
-
-SEE ALSO
-    create-k8-files - Generate Kubernetes files
-    deploy-infrastructure - Deploy infrastructure resources
-
-REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/clio
+    clio open-k8-files [options]

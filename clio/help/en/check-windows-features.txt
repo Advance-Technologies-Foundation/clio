@@ -1,0 +1,14 @@
+NAME
+    check-windows-features - Check windows for the required components
+
+USAGE
+    clio check-windows-features [options]
+
+DESCRIPTION
+    Check windows for the required components.
+
+ALIASES
+    cf, check-windows-features, checkf, checks, checkw
+
+EXAMPLES
+    clio check-windows-features [options]

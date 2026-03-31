@@ -2,15 +2,19 @@
 
 List installed applications.
 
-## Synopsis
+## Usage
 
 ```bash
-clio get-app-list [OPTIONS]
+clio get-app-list [options]
 ```
 
 ## Description
 
-Displays the list of applications installed in the selected environment.
+List installed applications.
+
+## Aliases
+
+`app-list`, `apps`, `apps-list`, `lia`, `list-apps`
 
 ## Examples
 
@@ -18,7 +22,62 @@ Displays the list of applications installed in the selected environment.
 clio get-app-list -e dev
 ```
 
-## See also
+## Options
 
-- [install-application](./install-application.md)
-- [Commands.md](../../Commands.md#get-app-list)
+```bash
+--json
+    Use json format for output
+```
+
+## Environment Options
+
+```bash
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application)
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
+```
+
+- [Clio Command Reference](../../Commands.md#get-app-list)

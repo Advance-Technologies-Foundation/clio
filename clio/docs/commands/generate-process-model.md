@@ -1,67 +1,95 @@
 # generate-process-model
 
-## Purpose
-Generates a strongly typed C# process model for ATF.Repository from a Creatio process schema.
+Generate process model for ATF.Repository.
 
 ## Usage
+
+```bash
+clio generate-process-model <Code> [options]
+```
+
+## Description
+
+Generate process model for ATF.Repository.
+
+## Aliases
+
+`gpm`
+
+## Examples
+
 ```bash
 clio generate-process-model <Code> [options]
 ```
 
 ## Arguments
 
-| Argument | Position | Required | Description | Example |
-|----------|----------|----------|-------------|---------|
-| `Code` | 0 | Yes | Process code as it appears in the Creatio process designer | `UsrStartOrder` |
+```bash
+Code
+    Process code as it appears in the process designer. Required.
+```
 
 ## Options
 
-| Argument | Short | Default | Description |
-|----------|-------|---------|-------------|
-| `--DestinationPath` | `-d` | `.` | Destination folder or explicit `.cs` file path |
-| `--Namespace` | `-n` | `AtfTIDE.ProcessModels` | Namespace for the generated process model class |
-| `--Culture` | `-x` | `en-US` | Culture used to resolve localized captions and descriptions |
-
-## Inherited Environment Arguments
-
-| Argument | Short | Description |
-|----------|-------|-------------|
-| `--Environment` | `-e` | Registered environment name |
-| `--uri` |  | Application URI |
-| `--Login` | `-l` | User login |
-| `--Password` | `-p` | User password |
-| `--clientId` |  | OAuth client ID |
-| `--clientSecret` |  | OAuth client secret |
-| `--authAppUri` |  | OAuth authentication app URI |
-
-## Output Behavior
-
-When `DestinationPath` points to a folder, the command writes `<Code>.cs` into that folder.
-
-When `DestinationPath` points to an explicit `.cs` file path, the command writes the generated model to that exact file.
-
-## Examples
-
-Generate into the current directory:
-
 ```bash
-clio generate-process-model UsrStartOrder -e dev
+-d, --DestinationPath <VALUE>
+    Destination folder or explicit .cs file path for the generated process model.
+    Default: ..
+-n, --Namespace <VALUE>
+    Namespace for generated process model classes. Default: AtfTIDE.ProcessModels.
+-x, --Culture <VALUE>
+    Description culture. Default: en-US.
 ```
 
-Generate into a folder:
+## Environment Options
 
 ```bash
-clio generate-process-model UsrStartOrder -e dev -d C:\Models
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application)
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
 ```
 
-Generate into an explicit file:
-
-```bash
-clio generate-process-model UsrStartOrder -e dev -d C:\Models\OrderStart.cs
-```
-
-Generate with a custom namespace and culture:
-
-```bash
-clio generate-process-model UsrStartOrder -e dev -n Contoso.ProcessModels -x uk-UA
-```
+- [Clio Command Reference](../../Commands.md#generate-process-model)

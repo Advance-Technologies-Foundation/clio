@@ -1,10 +1,6 @@
 # modify-entity-schema-column
 
-## Purpose
-
-Adds, modifies, or removes one own column in a remote Creatio entity schema by loading the current design item, mutating it locally, and saving it back through `EntitySchemaDesignerService`.
-
-This command is part of the canonical `clio` MCP mutation surface for explicit single-column edits. Batch-style frontend update plans should be decomposed into repeated `modify-entity-schema-column` calls or moved into `schema-sync` rather than translated into a different `clio` tool name.
+Add, modify, or remove a column in a remote Creatio entity schema.
 
 ## Usage
 
@@ -12,108 +8,138 @@ This command is part of the canonical `clio` MCP mutation surface for explicit s
 clio modify-entity-schema-column [options]
 ```
 
-## Required Arguments
+## Description
 
-| Argument | Description | Example |
-|----------|-------------|---------|
-| `--package` | Target package name | `--package Custom` |
-| `--schema-name` | Entity schema name | `--schema-name UsrVehicle` |
-| `--action` | Column action: `add`, `modify`, `remove` | `--action modify` |
-| `--column-name` | Target column name | `--column-name Name` |
-
-## Optional Arguments
-
-| Argument | Description | Example |
-|----------|-------------|---------|
-| `--new-name` | Rename the column | `--new-name PrimaryOwner` |
-| `--type` | Column type for add/modify | `--type Lookup` |
-| `--title` | Column title/caption | `--title "Vehicle name"` |
-| `--description` | Column description | `--description "Displayed in lists"` |
-| `--reference-schema` | Lookup reference schema name | `--reference-schema Contact` |
-| `--required` | Set required flag | `--required true` |
-| `--indexed` | Set indexed flag | `--indexed true` |
-| `--cloneable` | Set cloneable flag | `--cloneable true` |
-| `--track-changes` | Set track changes flag | `--track-changes true` |
-| `--default-value-source` | Default value source: `Const` or `None` | `--default-value-source Const` |
-| `--default-value` | Set a constant default value | `--default-value "New"` |
-| `--multiline-text` | Text-only flag | `--multiline-text true` |
-| `--localizable-text` | Text-only flag | `--localizable-text true` |
-| `--accent-insensitive` | Text-only flag | `--accent-insensitive true` |
-| `--masked` | Text/SecureText flag | `--masked true` |
-| `--format-validated` | Text-only flag | `--format-validated true` |
-| `--use-seconds` | DateTime-only flag | `--use-seconds true` |
-| `--simple-lookup` | Lookup-only flag | `--simple-lookup true` |
-| `--cascade` | Lookup-only flag | `--cascade true` |
-| `--do-not-control-integrity` | Lookup-only flag | `--do-not-control-integrity true` |
-
-## Supported Types
-
-- `Guid`
-- `Text`
-- `ShortText`
-- `MediumText`
-- `LongText`
-- `MaxSizeText`
-- `Binary`
-- `Image`
-- `File`
-- `SecureText`
-- `Integer`
-- `Float`
-- `Boolean`
-- `Date`
-- `DateTime`
-- `Time`
-- `Lookup`
-
-The command also accepts `Blob` as an alias for `Binary`, `Encrypted` and `Password` as aliases for `SecureText`, `EmailAddress` as an alias for `Email`, plus designer-native text and decimal variants such as `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`, `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`, `Currency0`, `Currency1`, `Currency2`, and `Currency3`.
+Add, modify, or remove a column in a remote Creatio entity schema.
 
 ## Examples
 
-### Add a Text Column
-
 ```bash
-clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action add --column-name Name --type Text --title "Vehicle name"
+clio modify-entity-schema-column -e dev
 ```
 
-### Add a Lookup Column
+## Options
 
 ```bash
-clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action add --column-name Owner --type Lookup --reference-schema Contact --title "Owner"
+--package <VALUE>
+    Target package name. Required.
+--schema-name <VALUE>
+    Entity schema name. Required.
+--action <VALUE>
+    Column action: add, modify, or remove. Required.
+--column-name <VALUE>
+    Target column name. Required.
+--new-name <VALUE>
+    New column name for rename operations
+--type <VALUE>
+    Column type. Supported values:
+Guid, Integer, Float, Boolean, Date, DateTime,
+    Time, Lookup,
+Text, ShortText, MediumText, LongText, MaxSizeText,
+Text50,
+    Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText,
+    
+Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
+Currency0,
+    Currency1, Currency2, Currency3
+--title <VALUE>
+    Column title/caption
+--description <VALUE>
+    Column description
+--reference-schema <VALUE>
+    Lookup reference schema name
+--required
+    Set required flag
+--indexed
+    Set indexed flag
+--cloneable
+    Set make-copy flag
+--track-changes
+    Set update-change-log flag
+--default-value <VALUE>
+    Set a constant default value
+--default-value-source <VALUE>
+    Default value source: Const or None
+--multiline-text
+    Set multi-line text flag
+--localizable-text
+    Set localizable text flag
+--accent-insensitive
+    Set accent-insensitive flag
+--masked
+    Set masked flag
+--format-validated
+    Set format-validated flag
+--use-seconds
+    Set use-seconds flag
+--simple-lookup
+    Set simple-lookup flag
+--cascade
+    Set cascade-connection flag
+--do-not-control-integrity
+    Set do-not-control-integrity flag
+--timeout <NUMBER>
+    Request timeout in milliseconds. Default: 100000.
 ```
 
-### Modify a Column
+## Environment Options
 
 ```bash
-clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action modify --column-name Owner --new-name PrimaryOwner --title "Primary owner" --reference-schema Contact
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application)
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
 ```
 
-### Clear a Default Value
+## Requirements
 
-```bash
-clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action modify --column-name Status --default-value-source None
-```
+- cliogate must be installed on the target Creatio environment.
 
-### Remove a Column
+## See also
 
-```bash
-clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action remove --column-name LegacyCode
-```
+- `get-entity-schema-column-properties`
+- `get-entity-schema-properties`
 
-## Behavior Notes
-
-- `modify` updates only explicitly supplied options and preserves the rest of the column payload.
-- `remove` works for own columns only and clears direct schema-level references to the removed column.
-- inherited columns are readable but not mutable in v1.
-- frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time` are accepted and mapped to the closest supported designer types.
-- `--default-value-source None` clears the stored default value; `Const` requires `--default-value`.
-- MCP callers can also send structured `default-value-config` with `source` set to `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`; the direct CLI flags remain shorthand for `Const` and `None`.
-- `Binary`, `Image`, and `File` columns do not support `--default-value` or `--default-value-source Const`.
-- `--masked` is accepted for `Text` and `SecureText` columns and maps to schema-level `isValueMasked`.
-- After `SaveSchema`, the schema is reloaded immediately. The command treats save as failed if the mutated column cannot be read back.
-
-## Related Commands
-
-- [`get-entity-schema-column-properties`](../../Commands.md#get-entity-schema-column-properties)
-- [`get-entity-schema-properties`](../../Commands.md#get-entity-schema-properties)
-- [`create-entity-schema`](../../Commands.md#create-entity-schema)
+- [Clio Command Reference](../../Commands.md#modify-entity-schema-column)

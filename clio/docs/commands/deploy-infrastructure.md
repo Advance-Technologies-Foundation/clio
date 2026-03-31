@@ -1,18 +1,34 @@
 # deploy-infrastructure
 
-Deploy Kubernetes infrastructure for Creatio.
+Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin).
 
-## Synopsis
+## Usage
 
 ```bash
-clio deploy-infrastructure [OPTIONS]
+clio deploy-infrastructure [options]
 ```
 
 ## Description
 
-Creates infrastructure resources required to run Creatio in Kubernetes.
+Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin).
 
-## See also
+## Aliases
 
-- [open-k8-files](./open-k8-files.md)
-- [delete-infrastructure](./delete-infrastructure.md)
+`di`
+
+## Examples
+
+```bash
+clio deploy-infrastructure [options]
+```
+
+## Options
+
+```bash
+-p, --path <VALUE>
+    Path to infrastructure files (default: auto-detected from clio settings)
+--no-verify
+    Skip connection verification after deployment
+```
+
+- [Clio Command Reference](../../Commands.md#deploy-infrastructure)

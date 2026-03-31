@@ -1,28 +1,72 @@
 NAME
-    set-webservice-url - Set base url for web service
+    set-webservice-url - Set a base URL for a registered web service
+
+USAGE
+    clio set-webservice-url <WebServiceName> <baseurl> [options]
 
 DESCRIPTION
-    Stores or updates the base URL assigned to a configured web service.
+    Set a base URL for a registered web service.
 
-SYNOPSIS
-    clio set-webservice-url <SERVICE_NAME> <URL> [OPTIONS]
-
-OPTIONS
-    <SERVICE_NAME>
-        Web service name to update
-
-    <URL>
-        New base URL for the service
-
-    -e, --Environment <ENVIRONMENT_NAME>
-        Target environment name
+ALIASES
+    swu, webservice
 
 EXAMPLES
-    clio set-webservice-url CustomerApi https://api.example.com -e dev
-        Set a service URL in the dev environment
+    clio set-webservice-url <WebServiceName> <baseurl> [options]
 
-SEE ALSO
-    get-webservice-url - Read configured service URLs
+ARGUMENTS
+    WebServiceName
+        Web service name. Required.
+    baseurl
+        Base url of a web service. Required.
 
-REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/clio
+OPTIONS
+    --timeout <NUMBER>
+        Request timeout in milliseconds. Default: 100000.
+
+ENVIRONMENT OPTIONS
+    -u, --uri <VALUE>
+        Application uri
+    -p, --Password <VALUE>
+        User password
+    -l, --Login <VALUE>
+        User login (administrator permission required)
+    -i, --IsNetCore
+        Use NetCore application)
+    -e, --Environment <VALUE>
+        Environment name
+    -m, --Maintainer <VALUE>
+        Maintainer name
+    -c, --dev <VALUE>
+        Developer mode state for environment
+    --WorkspacePathes <VALUE>
+        Workspace path
+    -s, --Safe <VALUE>
+        Safe action in this environment
+    --clientId <VALUE>
+        OAuth client id
+    --clientSecret <VALUE>
+        OAuth client secret
+    --authAppUri <VALUE>
+        OAuth app URI
+    --silent
+        Use default behavior without user interaction
+    --restartEnvironment
+        Restart environment after execute command
+    --db-server-uri <VALUE>
+        Db server uri
+    --db-user <VALUE>
+        Database user
+    --db-password <VALUE>
+        Database password
+    --backup-file <VALUE>
+        Full path to backup file
+    --db-working-folder <VALUE>
+        Folder visible to db server
+    --db-name <VALUE>
+        Desired database name
+    --force
+        Force restore
+    --callback-process <VALUE>
+        Callback process name
+    --ep <VALUE>
+        Path to the application root folder

@@ -1,32 +1,92 @@
 # add-package
 
-Add a package to a workspace or local folder.
+Add package to workspace or local folder.
 
-## Synopsis
+## Usage
 
 ```bash
-clio add-package <PACKAGE_NAME> [OPTIONS]
+clio add-package <Name> [options]
 ```
 
 ## Description
 
-Use `add-package` to add one or more packages to the current workspace structure.
-This command can also participate in application descriptor and configuration download flows.
+Add package to workspace or local folder.
 
-## Common options
+## Aliases
 
-- `<PACKAGE_NAME>` - Package name to add
-- `-a` - Enable or disable app descriptor update/creation
-- `-e`, `--Environment` - Optional environment list for related configuration scenarios
+`ap`
 
 ## Examples
 
 ```bash
-clio add-package MyPackage -a true
-clio add-package MyPackage -a true -e env_nf,env_n8
+clio add-package <Name> [options]
 ```
 
-## See also
+## Arguments
 
-- [download-configuration](./download-configuration.md)
-- [Commands.md](../../Commands.md#add-package)
+```bash
+Name
+    Package name. Required.
+```
+
+## Options
+
+```bash
+-a, --asApp
+    Create application in package
+-b, --build <VALUE>
+    Path to Creatio zip file or extracted directory to get configuration from
+```
+
+## Environment Options
+
+```bash
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application)
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
+```
+
+- [Clio Command Reference](../../Commands.md#add-package)

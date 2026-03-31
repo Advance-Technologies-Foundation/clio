@@ -1,64 +1,101 @@
 # create-workspace
 
-`create-workspace` (`createw`) creates a local clio workspace.
+Create a local workspace.
 
-## Empty workspace mode
-
-Use `--empty` to create a new workspace folder without connecting to any Creatio environment.
+## Usage
 
 ```bash
-clio create-workspace my-workspace --empty
+clio create-workspace [<WorkspaceName>] [options]
 ```
 
-In empty mode, clio resolves the base directory in this order:
+## Description
 
-1. `--directory`
-2. appsettings.json property `workspaces-root`
+Create a local workspace.
 
-If neither source is available, or the resolved base directory does not exist, the command fails.
+## Aliases
 
-`workspace-name` must stay a relative folder name. `--directory` must be an absolute path.
+`createw`
 
-On success, clio reports the final workspace directory using `Workspace created at: <full-path>`.
-
-Create the workspace under an explicit directory:
+## Examples
 
 ```bash
-clio create-workspace my-workspace --empty --directory C:\Workspaces
+clio create-workspace [<WorkspaceName>] [options]
 ```
 
-Allow creation when the destination folder already exists and is not empty:
+## Arguments
 
 ```bash
-clio create-workspace my-workspace --empty --directory C:\Workspaces --force
+WorkspaceName
+    Workspace folder name (used with --empty)
 ```
 
-## Environment-backed mode
-
-Without `--empty`, `create-workspace` keeps the existing behavior and works in the current directory.
-
-Create a workspace and download editable packages from a configured environment:
+## Options
 
 ```bash
-clio create-workspace -e dev
+--empty
+    Create workspace in a new subfolder without connecting to any environment
+--directory <VALUE>
+    Absolute base directory for --empty workspace creation. Falls back to
+    appsettings 'workspaces-root' when omitted
+--IsNugetRestore
+    True if you need to restore nugget package SDK. Default: True.
+--IsCreateSolution
+    True if you need to create the Solution. Default: True.
+-a, --AppCode <VALUE>
+    Application code
+--AddBuildProps
+    Add build props for dll paths in the project file. Default: True.
 ```
 
-Create a workspace with package loading based on application code:
+## Environment Options
 
 ```bash
-clio create-workspace --AppCode <APP_CODE>
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application)
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
 ```
 
-In environment-backed mode, the reported path is the current working directory where the workspace was created.
-
-## Settings
-
-Global empty-workspace root can be stored in appsettings.json:
-
-```json
-{
-  "workspaces-root": "C:\\Workspaces"
-}
-```
-
-This setting is global to clio and is separate from per-environment `WorkspacePathes`.
+- [Clio Command Reference](../../Commands.md#create-workspace)

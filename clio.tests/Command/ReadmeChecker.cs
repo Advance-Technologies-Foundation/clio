@@ -2,9 +2,8 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Castle.Core.Internal;
+using System.Reflection;
 using CommandLine;
-using Terrasoft.Common;
 
 namespace Clio.Tests.Command;
 
@@ -13,18 +12,10 @@ public class ReadmeChecker
 
 	private static readonly string ReadmeFilePath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "clio", "Commands.md");
 	private static readonly string WikiAnchorsFilePath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "clio", "Wiki", "WikiAnchors.txt");
+	private static readonly string HelpDirectoryPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "clio", "help", "en");
+	private static readonly string DocsDirectoryPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "clio", "docs", "commands");
 	private readonly string _readmeContent = File.ReadAllText(ReadmeFilePath);
-	private readonly IEnumerable<string> _wikiAnchorsContent = File.ReadAllLines(WikiAnchorsFilePath);
-
-	private readonly Func<string, string> _convertCommandNameToSection = (commandName) => {
-		List<string> commandWords = commandName
-			.Replace("-", " ")
-			.Split(' ')
-			.ToList();
-		string expectedSectionName = "## " + string.Join(' ', commandWords);
-		return expectedSectionName;
-	};
-	private readonly IList<string> _namesToCheck = new List<string>();
+	private readonly IReadOnlyList<string> _wikiAnchorsContent = File.ReadAllLines(WikiAnchorsFilePath);
 
 	
 	/// <summary>
@@ -47,47 +38,29 @@ public class ReadmeChecker
 	/// </code>
 	/// </example>
 	public bool IsInReadme(Type commandOptionType){
-		// Check if the type has the VerbAttribute and is hidden
-		bool isCommandHidden = commandOptionType
-			.GetCustomAttributes(typeof(VerbAttribute), true)
-			.OfType<VerbAttribute>()
-			.Any(attr => attr.Hidden);
-		
-		if(isCommandHidden) {
+		VerbAttribute verbAttribute = commandOptionType.GetCustomAttribute<VerbAttribute>(true);
+		if (verbAttribute?.Hidden == true) {
 			return true;
 		}
-		
-		PopulateListToCheck(commandOptionType);
-		
-		// Check if names are present in readme content
-		return _namesToCheck.Any(name => _readmeContent
-			.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0);
-		
+		if (verbAttribute == null || string.IsNullOrWhiteSpace(verbAttribute.Name)) {
+			return false;
+		}
+		string canonicalName = verbAttribute.Name;
+		return HasCommandIndexEntry(canonicalName)
+			&& HasCanonicalHelpFile(canonicalName)
+			&& HasCanonicalMarkdownDoc(canonicalName)
+			&& HasWikiAnchor(canonicalName);
 	}
 
-	private void PopulateListToCheck(Type T){
-		string commandVerbName = T.GetAttribute<VerbAttribute>().Name;
-		List<string> aliases = T.GetAttribute<VerbAttribute>().Aliases?.ToList()  ?? [];
-		aliases.Add(commandVerbName);
-		//Add Verb
-		foreach(string alias in aliases) {
-			_namesToCheck.Add(_convertCommandNameToSection(alias));
-		}
-		_namesToCheck.AddIfNotExists(commandVerbName);
-		foreach (string anchorLine in _wikiAnchorsContent) {
-			string[] commandName = anchorLine.Split(':');
-			if (commandName[0] == commandVerbName) {
-				string[] possibleSectionNames = commandName[1].Split(',');
-				foreach (string possibleSectionName in possibleSectionNames) {
-					if (!_namesToCheck.Contains(possibleSectionName)) {
-						_namesToCheck.Add(possibleSectionName);
-					}
-					string mayBeSectionNae = _convertCommandNameToSection(possibleSectionName);
-					if (!_namesToCheck.Contains(mayBeSectionNae)) {
-						_namesToCheck.Add(mayBeSectionNae);
-					}
-				}
-			}
-		}
-	}
+	private bool HasCanonicalHelpFile(string canonicalName) =>
+		File.Exists(Path.Combine(HelpDirectoryPath, $"{canonicalName}.txt"));
+
+	private bool HasCanonicalMarkdownDoc(string canonicalName) =>
+		File.Exists(Path.Combine(DocsDirectoryPath, $"{canonicalName}.md"));
+
+	private bool HasCommandIndexEntry(string canonicalName) =>
+		_readmeContent.Contains($"(docs/commands/{canonicalName}.md)", StringComparison.OrdinalIgnoreCase);
+
+	private bool HasWikiAnchor(string canonicalName) =>
+		_wikiAnchorsContent.Any(line => line.StartsWith($"{canonicalName}:", StringComparison.OrdinalIgnoreCase));
 }

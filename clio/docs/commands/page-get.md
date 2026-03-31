@@ -1,91 +1,79 @@
 # page-get
 
-## Purpose
-`page-get` reads a Freedom UI page as a merged bundle plus raw schema body.
-
-This command upgrades the old raw-body-only read model. The response now contains:
-
-- nested page metadata
-- a merged effective bundle built from the full designer hierarchy
-- `raw.body` for round-tripping into `page-update`
+Get a Freedom UI page bundle and raw schema body.
 
 ## Usage
+
 ```bash
-clio page-get --schema-name <SCHEMA_NAME> [options]
+clio page-get [options]
+```
+
+## Description
+
+Get a Freedom UI page bundle and raw schema body.
+
+## Examples
+
+```bash
+clio page-get -e dev
 ```
 
 ## Options
 
-| Option | Short | Required | Description |
-|--------|-------|----------|-------------|
-| `--schema-name` |  | Yes | Freedom UI page schema name |
-| `--Environment` | `-e` | No | Registered clio environment name |
-| `--uri` | `-u` | No | Creatio application URL |
-| `--Login` | `-l` | No | Creatio user login |
-| `--Password` | `-p` | No | Creatio user password |
-| `--Maintainer` | `-m` | No | Maintainer name |
-
-## Output
-
-`page-get` returns a JSON envelope like this:
-
-```json
-{
-  "success": true,
-  "page": {
-    "schemaName": "UsrTodo_FormPage",
-    "schemaUId": "guid",
-    "packageName": "UsrApp",
-    "packageUId": "guid",
-    "parentSchemaName": "PageWithTabsFreedomTemplate"
-  },
-  "bundle": {
-    "name": "UsrTodo_FormPage",
-    "viewConfig": [],
-    "viewModelConfig": {},
-    "modelConfig": {},
-    "resources": {
-      "strings": {}
-    },
-    "handlers": "[]",
-    "converters": "{}",
-    "validators": "{}",
-    "parameters": [],
-    "deps": "[]",
-    "args": "()",
-    "optionalProperties": []
-  },
-  "raw": {
-    "body": "define(...)"
-  },
-  "error": null
-}
-```
-
-## How to Use the Response
-
-- Inspect `page` to confirm the current schema and package.
-- Inspect `bundle.viewConfig` to understand the effective layout and containers.
-- Inspect `bundle.viewModelConfig` and `bundle.modelConfig` to understand the effective data model.
-- Edit `raw.body` when you need to save changes with `page-update`.
-
-## Examples
-
-Read a page from a registered environment:
 ```bash
-clio page-get --schema-name UsrTodo_FormPage -e dev
+--schema-name <VALUE>
+    Schema name to fetch. Required.
 ```
 
-Read a page using direct connection arguments:
+## Environment Options
+
 ```bash
-clio page-get --schema-name UsrTodo_FormPage -u https://my-creatio -l Supervisor -p Supervisor
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application)
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
 ```
 
-## Recommended Workflow
-
-1. Use `page-list` to discover the schema name.
-2. Call `page-get` to inspect the merged bundle and current raw body.
-3. Modify `raw.body`.
-4. Save the edited raw body with `page-update`.
-
-Use `page-sync` only when you need to save multiple page bodies in one MCP workflow.
+- [Clio Command Reference](../../Commands.md#page-get)

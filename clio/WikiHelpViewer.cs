@@ -4,55 +4,34 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Clio.Common;
+using Clio.Help;
 using Clio.Utilities;
 using CommandLine;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio;
 
-internal class LocalHelpViewer(IFileSystem fileSystem, WikiHelpViewer wikiHelpViewer) : CustomHelpViewer{
-	#region Fields: Private
-
-	private string _helpFile = string.Empty;
-	private bool _localHelpFileExists;
-
-	#endregion
-
-	#region Methods: Public
+internal class LocalHelpViewer(CommandHelpRenderer commandHelpRenderer, WikiHelpViewer wikiHelpViewer) : CustomHelpViewer{
+	private string _helpText = string.Empty;
+	private bool _hasLocalHelp;
 
 	public bool CheckHelp(string commandName) {
-		string helpDir = Parser.Default.Settings.HelpDirectory;
-
-		if (!fileSystem.Directory.Exists(helpDir)) {
-			_localHelpFileExists = false;
-			return wikiHelpViewer.CheckHelp(commandName);
+		_helpText = commandHelpRenderer.TryRenderCommandHelp(commandName) ?? string.Empty;
+		_hasLocalHelp = !string.IsNullOrWhiteSpace(_helpText);
+		if (_hasLocalHelp) {
+			return true;
 		}
-
-		List<string> files = fileSystem.Directory
-									   .EnumerateFiles(helpDir, $"{commandName}.txt", SearchOption.AllDirectories)
-									   .ToList();
-		_localHelpFileExists = files.Count != 0;
-
-		if (!_localHelpFileExists) {
-			return wikiHelpViewer.CheckHelp(commandName);
-		}
-
-		_helpFile = files.First();
-		return true;
+		return wikiHelpViewer.CheckHelp(commandName);
 	}
 
 	public void ViewHelp(string commandName) {
-		if (!_localHelpFileExists) {
+		if (!_hasLocalHelp) {
 			wikiHelpViewer.ViewHelp(commandName);
+			return;
 		}
-		else {
-			Console.OutputEncoding = Encoding.UTF8;
-			string content = fileSystem.File.ReadAllText(_helpFile);
-			Console.Out.WriteLine(content);
-		}
+		Console.OutputEncoding = Encoding.UTF8;
+		Console.Out.Write(_helpText);
 	}
-
-	#endregion
 }
 
 internal class WikiHelpViewer : CustomHelpViewer{

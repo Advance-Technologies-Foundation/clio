@@ -1,21 +1,66 @@
 NAME
-    switch-nuget-to-dll-reference - Switch NuGet references to DLL references in csproj files
+    switch-nuget-to-dll-reference - Switches nuget references to dll references in csproj files
+
+USAGE
+    clio switch-nuget-to-dll-reference <PackageName> [options]
 
 DESCRIPTION
-    Rewrites project references from NuGet packages to direct DLL references.
+    Switches nuget references to dll references in csproj files.
 
-SYNOPSIS
-    clio switch-nuget-to-dll-reference [OPTIONS]
-
-OPTIONS
-    Supports the canonical switch-nuget-to-dll-reference command options.
+ALIASES
+    nuget2dll
 
 EXAMPLES
-    clio switch-nuget-to-dll-reference --help
-        Display canonical options and usage examples
+    clio switch-nuget-to-dll-reference <PackageName> [options]
 
-SEE ALSO
-    ref-to - Update project core reference paths
+ARGUMENTS
+    PackageName
+        Package name to convert. Required.
 
-REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/clio
+ENVIRONMENT OPTIONS
+    -u, --uri <VALUE>
+        Application uri
+    -p, --Password <VALUE>
+        User password
+    -l, --Login <VALUE>
+        User login (administrator permission required)
+    -i, --IsNetCore
+        Use NetCore application)
+    -e, --Environment <VALUE>
+        Environment name
+    -m, --Maintainer <VALUE>
+        Maintainer name
+    -c, --dev <VALUE>
+        Developer mode state for environment
+    --WorkspacePathes <VALUE>
+        Workspace path
+    -s, --Safe <VALUE>
+        Safe action in this environment
+    --clientId <VALUE>
+        OAuth client id
+    --clientSecret <VALUE>
+        OAuth client secret
+    --authAppUri <VALUE>
+        OAuth app URI
+    --silent
+        Use default behavior without user interaction
+    --restartEnvironment
+        Restart environment after execute command
+    --db-server-uri <VALUE>
+        Db server uri
+    --db-user <VALUE>
+        Database user
+    --db-password <VALUE>
+        Database password
+    --backup-file <VALUE>
+        Full path to backup file
+    --db-working-folder <VALUE>
+        Folder visible to db server
+    --db-name <VALUE>
+        Desired database name
+    --force
+        Force restore
+    --callback-process <VALUE>
+        Callback process name
+    --ep <VALUE>
+        Path to the application root folder

@@ -1,0 +1,22 @@
+NAME
+    compare-web-farm-node - Compare file content across web farm nodes
+
+USAGE
+    clio compare-web-farm-node <Paths> [options]
+
+DESCRIPTION
+    Compare file content across web farm nodes.
+
+ALIASES
+    check-farm, check-web-farm-node, cwf, farm-check
+
+EXAMPLES
+    clio compare-web-farm-node <Paths> [options]
+
+ARGUMENTS
+    Paths
+        Folder Paths. Required.
+
+OPTIONS
+    -d, --detail
+        Short information

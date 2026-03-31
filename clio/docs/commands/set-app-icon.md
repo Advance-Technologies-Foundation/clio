@@ -1,24 +1,36 @@
 # set-app-icon
 
-Set application icon metadata.
+Set application icon.
 
-## Synopsis
+## Usage
 
 ```bash
-clio set-app-icon [OPTIONS]
+clio set-app-icon [options]
 ```
 
 ## Description
 
-Use `set-app-icon` to update the icon associated with an application package.
+Set application icon.
+
+## Aliases
+
+`ai`, `appicon`, `set-icon`
 
 ## Examples
 
 ```bash
-clio set-app-icon --help
+clio set-app-icon [options]
 ```
 
-## See also
+## Options
 
-- [set-application-icon](./set-application-icon.md)
-- [Commands.md](../../Commands.md#set-app-icon)
+```bash
+-p, --app-name <VALUE>
+    App name
+-i, --app-icon <VALUE>
+    Application icon path. Required.
+-f, --app-path <VALUE>
+    Path to application package folder or archive. Required.
+```
+
+- [Clio Command Reference](../../Commands.md#set-app-icon)

@@ -1,59 +1,92 @@
 # install-application
 
-## Purpose
-`install-application` installs an application package into a Creatio environment.
-
-Use this command when you need to deploy an application package from Application Hub or a local package archive to a registered environment or a directly specified Creatio URL.
+Install an application package into Creatio.
 
 ## Usage
+
 ```bash
-clio install-application <NAME> [options]
+clio install-application [<Name>] [options]
 ```
 
-**Aliases**: `push-app`, `install-app`
+## Description
 
-## Arguments
+Install an application package into Creatio.
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `NAME` | Yes | Application package path or name accepted by the installer |
+## Aliases
 
-## Options
-
-| Option | Short | Required | Description |
-|--------|-------|----------|-------------|
-| `--ReportPath` | `-r` | No | Optional path to the installation log file |
-| `--check-compilation-errors` |  | No | Stops installation when compilation errors are detected |
-| `--Environment` | `-e` | No | Registered clio environment name |
-| `--uri` | `-u` | No | Creatio application URL |
-| `--Login` | `-l` | No | Creatio user login |
-| `--Password` | `-p` | No | Creatio user password |
-| `--Maintainer` | `-m` | No | Maintainer name |
+`install-app`, `push-app`
 
 ## Examples
 
-Install an application package into a registered environment:
 ```bash
-clio install-application C:\Packages\application.gz -e dev
+clio install-application [<Name>] [options]
 ```
 
-Use an alias and stop on compilation errors:
+## Arguments
+
 ```bash
-clio push-app C:\Packages\application.gz --check-compilation-errors true -e dev
+Name
+    Package name
 ```
 
-Write the installation report to a file:
+## Options
+
 ```bash
-clio install-app C:\Packages\application.gz -r install.log -e dev
+-r, --ReportPath <VALUE>
+    Log file path
+--check-compilation-errors
+    Check compilation errors
 ```
 
-Connect directly without a registered environment:
+## Environment Options
+
 ```bash
-clio install-application C:\Packages\application.gz -u https://my-creatio -l Supervisor -p Supervisor
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application)
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
 ```
 
-## Output
-
-On success the command reports `Done` and returns exit code `0`.
-
-On failure the command returns exit code `1` and writes an error message. When `--ReportPath` is provided, the installer also writes its report to the requested file path.
+- [Clio Command Reference](../../Commands.md#install-application)

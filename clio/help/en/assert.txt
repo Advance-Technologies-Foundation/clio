@@ -1,384 +1,56 @@
-COMMAND TYPE
-    Infrastructure validation commands
-
 NAME
     assert - Validates infrastructure and filesystem resources
 
-DESCRIPTION
-    Provides deterministic assertion mechanism for validating Kubernetes 
-    local infrastructure and filesystem resources. Returns structured JSON output with precise 
-    failure attribution and exit codes.
-
-    The assert command ensures that clio can discover and connect to the 
-    required infrastructure components (Kubernetes resources, local databases, local Redis, filesystem paths, 
-    and permissions) using the same discovery logic that clio uses during 
-    normal operations. This validates that:
-    
-    1. StatefulSets/Deployments exist with correct labels
-    2. Services are discoverable and have correct labels (app=clio-*)
-    3. Pods are running and ready
-    4. Network connectivity works (TCP connection tests)
-    5. Services are functional (database version queries, Redis PING)
-    6. Filesystem paths exist and are accessible
-    7. Windows ACL permissions are correctly configured
-    
-    The command uses label-based discovery matching clio's k8Commands 
-    implementation, ensuring that if assert passes, clio operations will 
-    succeed in finding the same resources.
-
-    Exit codes:
-        0 - Assertion passed
-        1 - Assertion failed
-        2 - Invalid invocation
-
-SYNOPSIS
+USAGE
     clio assert <scope> [options]
 
-SCOPES
-    k8          Kubernetes resource assertions
-    local       Local database and local Redis assertions
-    fs          Filesystem path and permission assertions
+DESCRIPTION
+    Validates infrastructure and filesystem resources.
 
-COMMON OPTIONS
-    --all                           Run full validation checks applicable to selected scope
-                                    Cannot be combined with explicit scope assertion options
+EXAMPLES
+    clio assert <scope> [options]
 
-KUBERNETES OPTIONS
+ARGUMENTS
+    scope
+        Assertion scope: k8 (Kubernetes), local (Local infrastructure), or fs
+        (Filesystem). Required.
 
-    Context Validation:
-    --context                       Expected Kubernetes context name (exact match)
-    --context-regex                 Regex pattern for context name
-    --cluster                       Expected Kubernetes cluster name
-    --namespace                     Expected Kubernetes namespace
-
-    Database Assertions:
-    --db                            Database engines to assert (comma-separated)
-                                    Supported: postgres, mssql
-    --db-min                        Minimum number of database engines required
-                                    Default: 1
-    --db-connect                    Validate database connectivity via TCP
-    --db-check                      Database capability check
-                                    Supported: version
-
-    Redis Assertions:
-    --redis                         Assert Redis presence
-    --redis-connect                 Validate Redis connectivity via TCP
-    --redis-ping                    Execute Redis PING command
-
-LOCAL OPTIONS
-
-    Database Assertions:
-    --db                            Database engines to assert (comma-separated)
-                                    Supported: postgres, mssql
-                                    Required for local database assertions
-    --db-server-name                Local database server configuration key from appsettings.json
-                                    Optional; when omitted, local DB servers are discovered from config
-    --db-min                        Minimum number of database engines required
-                                    Default: 1
-    --db-connect                    Validate database connectivity
-    --db-check                      Database capability check
-                                    Supported: version
-                                    PostgreSQL major version 16+ is always enforced
-                                    for discovered postgres servers in k8/local scopes;
-                                    --db-check version additionally returns version in output
-
-    Redis Assertions:
-    --redis                         Assert local Redis presence
-                                    Resolution order:
-                                    1) --redis-server-name (explicit)
-                                    2) defaultRedis from appsettings.json
-                                    3) single enabled redis server from appsettings.json
-                                    4) localhost:6379 fallback when redis section is absent
-    --redis-server-name             Local Redis server configuration key from appsettings.json
-                                    Optional; requires --redis
-    --redis-connect                 Validate Redis connectivity via TCP
-    --redis-ping                    Execute Redis PING command
-                                    Strict policy: when Redis credentials are configured in appsettings,
-                                    assert also verifies anonymous access is blocked
-
-    Unsupported in local scope:
-    --context, --context-regex, --cluster, --namespace, --path, --user, --perm
-
-FILESYSTEM OPTIONS
-    --path                          Filesystem path to validate (required)
-                                    Can be an absolute path or a setting key
-                                    Setting keys: iis-clio-root-path
-    
-    --user                          Windows user/group identity to validate
-                                    Format: "BUILTIN\IIS_IUSRS" or "IIS APPPOOL\AppName"
-                                    Requires --perm (Windows only)
-    
-    --perm                          Required permission level (Windows only)
-                                    Valid values:
-                                      read          - Read permissions
-                                      write         - Write permissions
-                                      modify        - Modify permissions (read+write+delete)
-                                      full-control  - Full control permissions
-                                      full          - Alias for full-control
-                                    Requires --user
-
-KUBERNETES EXAMPLES
-
-    Basic context validation:
-        clio assert k8
-
-    Context with specific name:
-        clio assert k8 --context rancher-desktop
-
-    Context with regex pattern:
-        clio assert k8 --context-regex "^rancher-.*"
-
-    Database presence check:
-        clio assert k8 --db postgres
-
-    Multiple databases:
-        clio assert k8 --db postgres,mssql --db-min 2
-
-    Database with connectivity:
-        clio assert k8 --db postgres --db-connect
-
-    Database with version check:
-        clio assert k8 --db postgres --db-connect --db-check version
-
-    Redis presence:
-        clio assert k8 --redis
-
-    Redis with connectivity and ping:
-        clio assert k8 --redis --redis-connect --redis-ping
-
-    Combined checks:
-        clio assert k8 --db postgres --db-connect --redis --redis-ping
-
-    Full validation:
-        clio assert k8 \
-            --context dev-cluster \
-            --db postgres,mssql --db-min 2 --db-connect --db-check version \
-            --redis --redis-connect --redis-ping
-
-    Full scope validation preset:
-        clio assert k8 --all
-
-FILESYSTEM EXAMPLES
-
-    Path validation (absolute path):
-        clio assert fs --path "C:\inetpub\wwwroot\clio\s_n8\"
-
-    Path validation (using setting key):
-        clio assert fs --path iis-clio-root-path
-
-    Path with user permissions (setting key):
-        clio assert fs --path iis-clio-root-path --user "BUILTIN\IIS_IUSRS" --perm full-control
-
-    Path with user permissions (absolute path):
-        clio assert fs --path "C:\inetpub\wwwroot\clio\s_n8\" --user "BUILTIN\IIS_IUSRS" --perm full-control
-
-    Path with modify permissions:
-        clio assert fs --path iis-clio-root-path --user "BUILTIN\IIS_IUSRS" --perm modify
-
-    Path with read permissions:
-        clio assert fs --path "C:\data" --user "BUILTIN\Users" --perm read
-
-LOCAL EXAMPLES
-
-    Local Redis presence:
-        clio assert local --redis
-
-    Local Redis with explicit server:
-        clio assert local --redis --redis-server-name redis-dev
-
-    Local Redis with connectivity and ping:
-        clio assert local --redis --redis-connect --redis-ping
-
-    Local database presence:
-        clio assert local --db postgres
-
-    Local database with connectivity and version:
-        clio assert local --db postgres,mssql --db-min 2 --db-connect --db-check version
-
-    Combined local checks:
-        clio assert local --db postgres --db-connect --redis --redis-ping
-
-    Full scope validation preset:
-        clio assert local --all
-
-    Full filesystem validation preset:
-        clio assert fs --all
-OUTPUT FORMAT
-
-    Kubernetes success example:
-    {
-      "status": "pass",
-      "context": {
-        "name": "dev-cluster",
-        "cluster": "dev",
-        "server": "https://10.0.0.1",
-        "namespace": "default"
-      },
-      "resolved": {
-        "databases": [
-          {
-            "engine": "postgres",
-            "name": "clio-postgres-0",
-            "host": "clio-postgres-lb",
-            "port": 5432,
-            "version": "PostgreSQL 16.5"
-          }
-        ],
-        "redis": {
-          "name": "clio-redis",
-          "host": "clio-redis-lb",
-          "port": 6379,
-          "firstAvailableDb": 3
-        }
-      }
-    }
-
-    Filesystem success example:
-    {
-      "status": "pass",
-      "scope": "Fs",
-      "resolved": {
-        "path": "C:\\inetpub\\wwwroot\\clio",
-        "userIdentity": "BUILTIN\\IIS_IUSRS",
-        "permission": "full-control"
-      },
-      "details": {
-        "requestedPath": "iis-clio-root-path"
-      }
-    }
-
-    Kubernetes failure example:
-    {
-      "status": "fail",
-      "scope": "K8",
-      "failedAt": "DbConnect",
-      "reason": "Cannot connect to postgres database at clio-postgres-lb:5432",
-      "details": {
-        "engine": "postgres",
-        "host": "clio-postgres-lb",
-        "port": 5432
-      }
-    }
-
-    Filesystem failure example:
-    {
-      "status": "fail",
-      "scope": "Fs",
-      "failedAt": "FsPerm",
-      "reason": "User 'BUILTIN\\IIS_IUSRS' does not have 'full-control' permission on path 'C:\\inetpub\\wwwroot\\clio'",
-      "details": {
-        "requestedPath": "iis-clio-root-path",
-        "resolvedPath": "C:\\inetpub\\wwwroot\\clio",
-        "userIdentity": "BUILTIN\\IIS_IUSRS",
-        "requiredPermission": "full-control"
-      }
-    }
-
-    Local Redis success example:
-    {
-      "status": "pass",
-      "scope": "Local",
-      "resolved": {
-        "redis": {
-          "name": "local-redis",
-          "host": "localhost",
-          "port": 6379,
-          "firstAvailableDb": 3
-        }
-      }
-    }
-
-DESIGN PRINCIPLES
-
-    - All checks are explicit via CLI flags (no hidden validation)
-    - Deterministic behavior (same input produces same output)
-    - Phase 0 context validation is mandatory for all K8 assertions
-    - All checks are scoped to 'clio-infrastructure' namespace
-    - Dynamic service/port resolution (no hardcoded values)
-    - Read-only operations (no mutations)
-    - Time-bounded operations with configurable timeouts
-
-KUBERNETES DETECTION RULES
-
-    Discovery Method:
-    The assert command uses the same discovery logic as clio's k8Commands 
-    class to ensure consistency. Resources are found by:
-    
-    1. Checking StatefulSet/Deployment spec.selector.matchLabels
-    2. Finding Services by label selector (app=clio-*)
-    3. Validating at least one Pod is Running and Ready
-    4. Dynamically resolving ports from Service.spec.ports
-    
-    This ensures that if assert passes, clio's normal operations (database 
-    restore, connection string generation, etc.) will successfully find 
-    and use the same resources.
-
-    Databases:
-    - Detection via authoritative labels and workload kind
-    - Namespace: clio-infrastructure
-    - Workload kind: StatefulSet
-    - StatefulSet selector must have matchLabels:
-        Postgres: app=clio-postgres
-        MSSQL: app=clio-mssql
-    - Services must have labels:
-        Postgres: app=clio-postgres
-        MSSQL: app=clio-mssql
-    - At least one pod must be ready and not permanently failed
-
-    Redis:
-    - Namespace: clio-infrastructure
-    - Workload kind: Deployment
-    - Deployment selector must have matchLabels: app=clio-redis
-    - Service must have label: app=clio-redis
-    - At least one pod must be ready and not permanently failed
-
-    Service Port Resolution:
-    - Ports are discovered dynamically from Service.spec.ports
-    - Uses 'port' (not 'targetPort')
-    - If multiple ports exist, uses the first port
-    - Outside cluster: Prefers LoadBalancer services
-    - Inside cluster: Prefers ClusterIP services
-    
-    Service Naming:
-    Services can have any name (e.g., postgres-service-lb, 
-    mssql-service-internal) as long as they have the correct labels. 
-    The assert command finds services by label, not by name pattern.
-
-NOTES
-
-    - Kubernetes assertions require kubectl configured with access to target cluster
-    - Local scope Redis checks use appsettings redis configuration when present, with localhost:6379 fallback when redis section is absent
-    - When local Redis Username/Password are configured, assertion fails if Redis still allows anonymous access
-    - Redis success payload includes firstAvailableDb for both k8 and local scopes
-    - firstAvailableDb is discovered via empty-database selection logic (first empty DB index)
-    - Local database checks can target a specific config via --db-server-name, or all enabled local DB servers when omitted
-    - Local DB server configurations support 'enabled' flag in appsettings.json (default: true)
-    - assert local --all fails when no enabled local DB servers are configured
-    - --all cannot be combined with explicit scope assertion options
-    - fs --all validates iis-clio-root-path and, on Windows, checks IIS_IUSRS full-control ACL
-    - fs --all Windows identity resolution prefers BUILTIN\IIS_IUSRS and falls back to IIS_IUSRS
-    - Database version checks require valid credentials
-    - PostgreSQL major version 16+ is required for discovered postgres servers in k8/local scopes (enforced even without --db-check version)
-    - Filesystem path validation works on all platforms
-    - Filesystem permission checks are Windows-only (use ACLs)
-    - Setting key 'iis-clio-root-path' resolves from appsettings.json
-    - All I/O operations have configurable timeouts
-
-USE CASES
-
-    Pre-deployment validation:
-        clio assert k8 --db postgres --redis
-        clio assert fs --path iis-clio-root-path
-
-    IIS setup validation:
-        clio assert fs --path iis-clio-root-path --user "BUILTIN\IIS_IUSRS" --perm full-control
-
-    Application directory permissions:
-        clio assert fs --path "C:\inetpub\wwwroot\myapp" --user "IIS APPPOOL\MyAppPool" --perm modify
-
-    CI/CD pipeline checks:
-        clio assert k8 --db postgres --db-connect --redis --redis-ping
-        clio assert fs --path iis-clio-root-path
-
-REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/clio
+OPTIONS
+    ----fail-on-error
+        Return fail code on errors
+    ----fail-on-warning
+        Return fail code on warnings
+    --all
+        Run full validation checks applicable to selected scope
+    --db <VALUE>
+        Database engines to assert (comma-separated): postgres, mssql
+    --db-min <NUMBER>
+        Minimum number of database engines required. Default: 1.
+    --db-connect
+        Validate database connectivity
+    --db-check <VALUE>
+        Database capability check (e.g., 'version')
+    --db-server-name <VALUE>
+        Name of local database server configuration from appsettings.json
+    --redis
+        Assert Redis presence
+    --redis-connect
+        Validate Redis connectivity
+    --redis-ping
+        Execute Redis PING command
+    --redis-server-name <VALUE>
+        Name of local Redis server configuration from appsettings.json
+    --context <VALUE>
+        Expected Kubernetes context name
+    --context-regex <VALUE>
+        Regex pattern for Kubernetes context name
+    --cluster <VALUE>
+        Expected Kubernetes cluster name
+    --namespace <VALUE>
+        Expected Kubernetes namespace
+    --path <VALUE>
+        Filesystem path to validate
+    --user <VALUE>
+        Windows user identity to validate
+    --perm <VALUE>
+        Required permission level: read, write, modify, full

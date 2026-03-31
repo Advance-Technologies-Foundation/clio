@@ -1,0 +1,96 @@
+# execute-sql-script
+
+Execute a SQL script in Creatio.
+
+## Usage
+
+```bash
+clio execute-sql-script [<Script>] [options]
+```
+
+## Description
+
+Execute a SQL script in Creatio.
+
+## Aliases
+
+`sql`
+
+## Examples
+
+```bash
+clio execute-sql-script [<Script>] [options]
+```
+
+## Arguments
+
+```bash
+Script
+    Sql script
+```
+
+## Options
+
+```bash
+--timeout <NUMBER>
+    Request timeout in milliseconds. Default: 100000.
+-f, --File <VALUE>
+    Path to the sql script file
+-v, --View <VALUE>
+    View type. Default: table.
+-d, --DestinationPath <VALUE>
+    Path to results file
+--silent
+    Use default behavior without user interaction
+```
+
+## Environment Options
+
+```bash
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application)
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
+```
+
+- [Clio Command Reference](../../Commands.md#execute-sql-script)

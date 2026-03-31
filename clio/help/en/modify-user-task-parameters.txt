@@ -1,115 +1,89 @@
-COMMAND TYPE
-    Development commands
-
 NAME
-    modify-user-task-parameters - add or remove parameters on an existing workspace user task
+    modify-user-task-parameters - Add or remove parameters in a user task schema
+
+USAGE
+    clio modify-user-task-parameters <UserTaskName> [options]
 
 DESCRIPTION
-    modify-user-task-parameters updates parameters on an existing ProcessUserTask
-    schema that belongs to one of the packages in the current workspace.
+    Add or remove parameters in a user task schema.
 
-    The command first resolves the user task through Workspace Explorer,
-    then loads the schema through ProcessUserTaskSchemaDesignerService.svc/GetSchema,
-    applies requested parameter additions, removals, and direction updates,
-    saves the schema, and builds the owning package.
+EXAMPLES
+    clio modify-user-task-parameters <UserTaskName> [options]
 
-    Child items can be added to parameters of type Serializable list of
-    composite values with --add-parameter-item. Separate multiple item
-    definitions with |.
-
-    Supported parameter types include Guid and its designer label
-    Unique identifier.
-
-    When parameter direction is added or changed, clio persists it through the
-    workspace file design mode flow because the current Creatio SaveSchema
-    route does not persist parameter direction:
-    1. Save the schema through the designer service
-    2. Build the package so updated schema files appear in the workspace
-    3. Patch Schemas/<SchemaName>/metadata.json and set parameter L12
-    4. Load workspace packages to the database
-    5. Build the package again
-
-    This command must be executed from a workspace directory.
-
-SYNOPSIS
-    clio modify-user-task-parameters <USER_TASK_NAME>
-        [--add-parameter <definition>[|<definition>...]]
-        [--add-parameter-item <definition>[|<definition>...]]
-        [--remove-parameter <name>[|<name>...]]
-        [--set-direction <name>=<direction>[|<name>=<direction>...]]
-        [--culture <CULTURE>]
-        -e <ENVIRONMENT_NAME>
+ARGUMENTS
+    UserTaskName
+        Existing user task schema name. Required.
 
 OPTIONS
-    UserTaskName (pos. 0)      Existing user task schema name
+    --add-parameter <VALUE>
+        Parameter definition in
+        'code=<name>;title=<caption>;type=<type>[;lookup=<schemaName|schemaUId>][;direction=<In|Out|Variable|0|1|2>][;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true]'
+        format. Use lookup only when type=Lookup. Separate multiple values with '|'
+    --add-parameter-item <VALUE>
+        Composite list item definition in
+        'parent=<listParameterName>;code=<name>;title=<caption>;type=<type>[;lookup=<schemaName|schemaUId>][;required=true][;resulting=true][;serializable=true][;copyValue=true][;lazyLoad=true][;containsPerformerId=true]'
+        format. The parent parameter must be type=Serializable list of composite
+        values. Separate multiple values with '|'
+    --remove-parameter <VALUE>
+        Parameter name to remove. Separate multiple values with '|'
+    --set-direction <VALUE>
+        Set direction for an existing parameter in '<name>=<In|Out|Variable|0|1|2>'
+        format. Separate multiple values with '|'
+    --culture <VALUE>
+        Culture for added parameter titles. Default: en-US.
+    --workspace-path <VALUE>
+        Workspace path override. Intended for MCP usage
+    --timeout <NUMBER>
+        Request timeout in milliseconds. Default: 100000.
 
-    --add-parameter            Parameter definition in
-                               code=<name>;title=<caption>;type=<type>
-                               format with optional lookup, direction, and
-                               boolean flags: lookup, direction, required,
-                               resulting, serializable, copyValue, lazyLoad,
-                               containsPerformerId. Use lookup only when
-                               type=Lookup. Separate multiple parameter
-                               definitions with |
+ENVIRONMENT OPTIONS
+    -u, --uri <VALUE>
+        Application uri
+    -p, --Password <VALUE>
+        User password
+    -l, --Login <VALUE>
+        User login (administrator permission required)
+    -i, --IsNetCore
+        Use NetCore application)
+    -e, --Environment <VALUE>
+        Environment name
+    -m, --Maintainer <VALUE>
+        Maintainer name
+    -c, --dev <VALUE>
+        Developer mode state for environment
+    --WorkspacePathes <VALUE>
+        Workspace path
+    -s, --Safe <VALUE>
+        Safe action in this environment
+    --clientId <VALUE>
+        OAuth client id
+    --clientSecret <VALUE>
+        OAuth client secret
+    --authAppUri <VALUE>
+        OAuth app URI
+    --silent
+        Use default behavior without user interaction
+    --restartEnvironment
+        Restart environment after execute command
+    --db-server-uri <VALUE>
+        Db server uri
+    --db-user <VALUE>
+        Database user
+    --db-password <VALUE>
+        Database password
+    --backup-file <VALUE>
+        Full path to backup file
+    --db-working-folder <VALUE>
+        Folder visible to db server
+    --db-name <VALUE>
+        Desired database name
+    --force
+        Force restore
+    --callback-process <VALUE>
+        Callback process name
+    --ep <VALUE>
+        Path to the application root folder
 
-    --add-parameter-item       Composite list item definition in
-                               parent=<listParameterName>;code=<name>;
-                               title=<caption>;type=<type> format with
-                               optional lookup and boolean flags: lookup,
-                               direction, required, resulting, serializable,
-                               copyValue, lazyLoad, containsPerformerId.
-                               The parent parameter must be type=Serializable
-                               list of composite values. Use Unique identifier
-                               for designer-aligned Guid items. Separate
-                               multiple item definitions with |
-
-    --remove-parameter         Existing parameter name to remove. Separate
-                               multiple names with |
-
-    --set-direction            Update direction on an existing parameter using
-                               <name>=<In|Out|Variable|0|1|2> format.
-                               Separate multiple values with |
-
-    --culture                  Culture for added parameter titles.
-                               Default: en-US
-
-    --Environment         -e   Environment name
-
-    --uri                 -u   Application uri
-
-    --Password            -p   User password
-
-    --Login               -l   User login
-
-    --timeout                  Request timeout in milliseconds
-
-EXAMPLE
-    clio modify-user-task-parameters UsrSendInvoice
-        --add-parameter "code=IsError;title=Is error;type=Boolean;direction=In"
-        -e docker_fix2
-        add one parameter to an existing workspace user task
-
-    clio modify-user-task-parameters UsrSendInvoice
-        --add-parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account"
-        -e docker_fix2
-        add a lookup parameter by resolving the Account entity schema in Creatio
-
-    clio modify-user-task-parameters UsrSendInvoice
-        --add-parameter-item "parent=MyList;code=Bool1;title=Bool1;type=Boolean|parent=MyList;code=Text1;title=Text1;type=Text"
-        -e docker_fix2
-        add child items to an existing composite serializable list parameter
-
-    clio modify-user-task-parameters UsrSendInvoice
-        --set-direction "IsError=Out|ResultMessage=Variable"
-        -e docker_fix2
-        update direction on existing parameters by patching metadata.json,
-        loading packages to the database, and rebuilding the package
-
-    clio modify-user-task-parameters UsrSendInvoice
-        --add-parameter "code=IsError;title=Is error;type=Boolean;direction=In|code=ResultMessage;title=Result message;type=Text;direction=Out"
-        --remove-parameter "ObsoleteFlag|LegacyResult"
-        -e docker_fix2
-        add two parameters, remove two parameters, and rebuild the owning package
-
-REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/clio
+SEE ALSO
+    add-user-task
+    delete-schema

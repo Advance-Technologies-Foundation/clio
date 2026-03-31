@@ -1,63 +1,92 @@
 # turn-fsm
 
-## Purpose
-`turn-fsm` toggles Creatio file system mode (FSM) for a local environment.
-
-Use this command when you need the full FSM workflow, not just config edits:
-
-- Turning FSM `on` updates config values, restarts NET8 environments when needed, and loads packages to the file system.
-- Turning FSM `off` loads packages to the database and then updates the config values.
+Turn file system mode on or off for an environment.
 
 ## Usage
+
 ```bash
-clio turn-fsm <IsFsm> [options]
+clio turn-fsm [<EnvironmentName>] <IsFsm> [options]
 ```
 
-**Aliases**: `tfsm`, `fsm`
+## Description
 
-## Arguments
+Turn file system mode on or off for an environment.
 
-| Argument | Position | Required | Description |
-|----------|----------|----------|-------------|
-| `IsFsm` | 0 | Yes | Target FSM mode value: `on` or `off` |
+## Aliases
 
-## Options
-
-| Option | Short | Required | Description |
-|--------|-------|----------|-------------|
-| `--physicalPath` |  | No | Path to the local Creatio application root |
-| `--Environment` | `-e` | No | Registered clio environment name |
-| `--uri` | `-u` | No | Creatio application URI |
-| `--Login` | `-l` | No | Creatio user login |
-| `--Password` | `-p` | No | Creatio user password |
-| `--IsNetCore` | `-i` | No | Registered environment runtime hint when resolving settings |
-
-Provide either `--physicalPath` or `-e/--Environment`.
-
-## Platform Notes
-
-- Windows supports local IIS and local NET8 layouts.
-- macOS and Linux support NET8 environments and use the registered `EnvironmentPath` or the supplied `--physicalPath` to find the local config file.
+`fsm`, `tfsm`
 
 ## Examples
 
-Turn FSM on for a registered environment:
 ```bash
-clio turn-fsm on -e dev
+clio turn-fsm [<EnvironmentName>] <IsFsm> [options]
 ```
 
-Turn FSM off for a registered environment:
+## Arguments
+
 ```bash
-clio turn-fsm off -e dev
+EnvironmentName
+    Application name
+IsFsm
+    on or off. Required.
 ```
 
-Turn FSM on for a local folder directly:
+## Options
+
 ```bash
-clio turn-fsm on --physicalPath /opt/creatio
+--physicalPath <VALUE>
+    Path to applications
 ```
 
-## Output
+## Environment Options
 
-On success the command returns exit code `0` and prints the config changes plus output from the package load step.
+```bash
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application)
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
+```
 
-On failure the command returns exit code `1` and writes a diagnostic message.
+- [Clio Command Reference](../../Commands.md#turn-fsm)

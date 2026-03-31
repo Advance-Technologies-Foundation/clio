@@ -1,29 +1,72 @@
 NAME
     push-workspace - Push workspace to selected environment
 
+USAGE
+    clio push-workspace [options]
+
 DESCRIPTION
-    Packs the current workspace and installs it into the target environment.
+    Push workspace to selected environment.
 
-SYNOPSIS
-    clio push-workspace [OPTIONS]
-
-OPTIONS
-    -e, --Environment <ENVIRONMENT_NAME>
-        Target environment name
-
-    --skip-backup <true|false>
-        Skip backup creation only when explicitly set to true
+ALIASES
+    pushw
 
 EXAMPLES
     clio push-workspace -e dev
-        Push the current workspace to the dev environment
 
-    clio push-workspace -e dev --skip-backup true
-        Push the workspace without creating a backup package first
+OPTIONS
+    --skip-backup
+        Skip package backup before install when explicitly set to true
+    --unlock
+        Unlock workspace package after install workspace to the environment
+    --TideRepositoryId <VALUE>
+        Update TIde repository by id
+    --use-application-installer
+        Use ApplicationInstaller instead of PackageInstaller for installation
 
-SEE ALSO
-    create-workspace - Create a workspace
-    restore-workspace - Restore a workspace from an environment
-
-REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/clio
+ENVIRONMENT OPTIONS
+    -u, --uri <VALUE>
+        Application uri
+    -p, --Password <VALUE>
+        User password
+    -l, --Login <VALUE>
+        User login (administrator permission required)
+    -i, --IsNetCore
+        Use NetCore application)
+    -e, --Environment <VALUE>
+        Environment name
+    -m, --Maintainer <VALUE>
+        Maintainer name
+    -c, --dev <VALUE>
+        Developer mode state for environment
+    --WorkspacePathes <VALUE>
+        Workspace path
+    -s, --Safe <VALUE>
+        Safe action in this environment
+    --clientId <VALUE>
+        OAuth client id
+    --clientSecret <VALUE>
+        OAuth client secret
+    --authAppUri <VALUE>
+        OAuth app URI
+    --silent
+        Use default behavior without user interaction
+    --restartEnvironment
+        Restart environment after execute command
+    --db-server-uri <VALUE>
+        Db server uri
+    --db-user <VALUE>
+        Database user
+    --db-password <VALUE>
+        Database password
+    --backup-file <VALUE>
+        Full path to backup file
+    --db-working-folder <VALUE>
+        Folder visible to db server
+    --db-name <VALUE>
+        Desired database name
+    --force
+        Force restore
+    --callback-process <VALUE>
+        Callback process name
+    --ep <VALUE>
+        Path to the application root folder

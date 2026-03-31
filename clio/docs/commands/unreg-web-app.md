@@ -11,7 +11,6 @@ clio unreg-web-app [<Name>] [options]
 ## Description
 
 Remove a registered Creatio environment.
-When `<Name>` and `-e/--Environment` are omitted, the command shows the registered environments and asks you to choose one.
 
 ## Aliases
 
@@ -20,10 +19,7 @@ When `<Name>` and `-e/--Environment` are omitted, the command shows the register
 ## Examples
 
 ```bash
-clio unreg-web-app dev
-clio unreg-web-app -e dev
-clio unreg-web-app
-clio unreg-web-app --all
+clio unreg-web-app [<Name>] [options]
 ```
 
 ## Arguments
@@ -38,15 +34,6 @@ Name
 ```bash
 --all
     Remove all registered environments
-```
-
-## Notes
-
-```text
-In --silent mode, pass <Name>, -e/--Environment, or --all because interactive
-selection is disabled.
-Only -e/--Environment and --silent from the shared environment options affect
-this command.
 ```
 
 ## Environment Options

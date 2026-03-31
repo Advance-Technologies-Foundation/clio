@@ -15,6 +15,7 @@ using Clio.Command.SqlScriptCommand;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
 using Clio.Common;
+using Clio.Help;
 using Clio.Package;
 using Clio.Project;
 using Clio.Query;
@@ -34,15 +35,11 @@ internal class Program {
 
 	private static bool useCreatioLogStreamer;
 
-	// Note: order of types in this array affets how the commands are listed in the 'clio help' output.
-	// Group commands by their purpose.
 	private static readonly Type[] CommandOption = [
-		// Application management
 		typeof(RegAppOptions),
 		typeof(UnregAppOptions),
 		typeof(AppListOptions),
 		typeof(ExecuteAssemblyOptions),
-		// Package management
 		typeof(CompressAppOptions),
 		typeof(GeneratePkgZipOptions),
 		typeof(UnzipPkgOptions),
@@ -74,7 +71,6 @@ internal class Program {
 		typeof(GetPackageVersionOptions),
 		typeof(CheckNugetUpdateOptions),
 		typeof(UpdateCliOptions),
-		// Workspace management
 		typeof(CreateWorkspaceCommandOptions),
 		typeof(RestoreWorkspaceOptions),
 		typeof(PushWorkspaceCommandOptions),
@@ -94,7 +90,6 @@ internal class Program {
 		typeof(DeactivatePkgOptions),
 		typeof(CompilePackageOptions),
 		typeof(CompileConfigurationOptions),
-		// Development
 		typeof(DataServiceQueryOptions),
 		typeof(CallServiceCommandOptions),
 		typeof(RestoreFromPackageBackupOptions),
@@ -161,7 +156,6 @@ internal class Program {
 		typeof(DeleteSchemaOptions),
 		typeof(SetApplicationVersionOption),
 		typeof(SetApplicationIconOption),
-		// Creatio instance management
 		typeof(RestartOptions),
 		typeof(StartOptions),
 		typeof(StopOptions),
@@ -169,7 +163,6 @@ internal class Program {
 		typeof(ClearRedisOptions),
 		typeof(LastCompilationLogOptions),
 		typeof(UploadLicenseCommandOptions),
-		// General operations
 		typeof(RegisterOptions),
 		typeof(UnregisterOptions),
 		typeof(InstallTideCommandOptions),
@@ -187,7 +180,7 @@ internal class Program {
 	];
 	private static readonly Lazy<IReadOnlyList<CommandSuggestionEntry>> CommandSuggestionsCatalog =
 		new(CreateCommandSuggestionsCatalog);
-	private const int CommandSuggestionLimit = 3;
+	private const int CommandSuggestionLimit = 10;
 
 	internal static bool IsCfgOpenCommand;
 	internal static bool IsMcpServerMode { get; private set; }
@@ -195,6 +188,8 @@ internal class Program {
 
 	private sealed record CommandSuggestionEntry(string CanonicalName, IReadOnlyList<string> SearchTerms);
 	private sealed record CommandSuggestionScore(string CanonicalName, int TokenOverlap, int EditDistance);
+
+	internal static IReadOnlyList<Type> GetCommandOptionTypes() => CommandOption;
 
 	private static string[] NormalizeCommandLineArgs(string[] args) {
 		if (args.Length >= 3 &&
@@ -215,10 +210,8 @@ internal class Program {
 	public static Func<object, int> ExecuteCommandWithOption = instance => {
 		return instance switch {
 					ExecuteAssemblyOptions opts => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
-					//RestartOptions opts => CreateRemoteCommand<RestartCommand>(opts).Execute(opts),
 					RestartOptions opts => Resolve<RestartCommand>(opts).Execute(opts),
 					StartOptions opts => Resolve<StartCommand>(opts).Execute(opts),
-					//ClearRedisOptions opts => CreateRemoteCommand<RedisCommand>(opts).Execute(opts),
 					ClearRedisOptions opts => Resolve<RedisCommand>(opts).Execute(opts),
 					UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 					RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
@@ -701,15 +694,17 @@ internal class Program {
 			return [];
 		}
 		string comparableRequestedCommand = NormalizeComparableCommandName(requestedCommand);
-		bool hasTokenOverlap = scores.Any(score => score.TokenOverlap > 0);
-		bool hasConfidentDistanceMatch = scores.Any(score =>
-			score.EditDistance <= GetSuggestionDistanceThreshold(comparableRequestedCommand.Length));
-		if (!hasTokenOverlap && !hasConfidentDistanceMatch) {
+		int suggestionDistanceThreshold = GetSuggestionDistanceThreshold(comparableRequestedCommand.Length);
+		CommandSuggestionScore[] relevantScores = scores
+			.Where(score => score.TokenOverlap > 0 || score.EditDistance <= suggestionDistanceThreshold)
+			.ToArray();
+		if (relevantScores.Length == 0) {
 			return [];
 		}
-		return scores
+		return relevantScores
 			.Take(CommandSuggestionLimit)
 			.Select(score => score.CanonicalName)
+			.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
 			.ToArray();
 	}
 
@@ -720,14 +715,28 @@ internal class Program {
 		int bestTokenOverlap = 0;
 		int bestEditDistance = int.MaxValue;
 		foreach (string searchTerm in entry.SearchTerms) {
+			string normalizedSearchTerm = NormalizeComparableCommandName(searchTerm);
 			int tokenOverlap = CountTokenOverlap(requestedTokens, TokenizeCommandName(searchTerm));
-			int editDistance = ComputeDistance(comparableRequestedCommand, NormalizeComparableCommandName(searchTerm));
+			int editDistance = ComputeDistance(comparableRequestedCommand, normalizedSearchTerm);
+			editDistance = GetEffectiveEditDistance(comparableRequestedCommand, entry.CanonicalName, searchTerm,
+				normalizedSearchTerm, tokenOverlap, editDistance);
 			if (tokenOverlap > bestTokenOverlap || tokenOverlap == bestTokenOverlap && editDistance < bestEditDistance) {
 				bestTokenOverlap = tokenOverlap;
 				bestEditDistance = editDistance;
 			}
 		}
 		return new CommandSuggestionScore(entry.CanonicalName, bestTokenOverlap, bestEditDistance);
+	}
+
+	private static int GetEffectiveEditDistance(string comparableRequestedCommand, string canonicalName, string searchTerm,
+		string normalizedSearchTerm, int tokenOverlap, int editDistance) {
+		if (tokenOverlap > 0 || editDistance <= 1 || string.Equals(searchTerm, canonicalName, StringComparison.OrdinalIgnoreCase)) {
+			return editDistance;
+		}
+		if (comparableRequestedCommand.Length < 5 || normalizedSearchTerm.Length > 4) {
+			return editDistance;
+		}
+		return editDistance + comparableRequestedCommand.Length;
 	}
 
 	private static IReadOnlyList<CommandSuggestionEntry> CreateCommandSuggestionsCatalog() {
@@ -745,7 +754,7 @@ internal class Program {
 			if (verbAttribute.Aliases == null) {
 				continue;
 			}
-			foreach (string alias in verbAttribute.Aliases.Where(alias => !string.IsNullOrWhiteSpace(alias))) {
+			foreach (string alias in verbAttribute.Aliases.Where(alias => !string.IsNullOrWhiteSpace(alias) && !alias.Any(char.IsWhiteSpace))) {
 				searchTerms.Add(alias);
 			}
 		}
@@ -788,8 +797,21 @@ internal class Program {
 		if (currentToken.Length == 0) {
 			return;
 		}
-		tokens.Add(currentToken.ToString());
+		tokens.Add(NormalizeCommandToken(currentToken.ToString()));
 		currentToken.Clear();
+	}
+
+	private static string NormalizeCommandToken(string token) {
+		if (string.IsNullOrWhiteSpace(token) || token.Length <= 3) {
+			return token;
+		}
+		if (token.EndsWith("ies", StringComparison.OrdinalIgnoreCase) && token.Length > 4) {
+			return string.Concat(token.AsSpan(0, token.Length - 3), "y");
+		}
+		if (token.EndsWith('s') && !token.EndsWith("ss", StringComparison.OrdinalIgnoreCase)) {
+			return token[..^1];
+		}
+		return token;
 	}
 
 	private static string NormalizeComparableCommandName(string commandName) {
@@ -848,6 +870,7 @@ internal class Program {
 	/// <param name="args">Command line arguments</param>
 	/// <returns>Exit code indicating success (0) or failure (non-zero)</returns>
 	public static int Main(string[] args){
+		bool loggerStarted = false;
 		try {
 			string logTarget = string.Empty;
 			bool isLog = args.Contains("--log");
@@ -858,6 +881,9 @@ internal class Program {
 			}
 
 			string[] clearArgs = args.Where(x => x.ToLower() != "--debug" && x.ToLower() != "--ts").ToArray();
+			if (clearArgs.Length > 0 && string.Equals(clearArgs[0], "__generate-help-artifacts", StringComparison.OrdinalIgnoreCase)) {
+				return ExportHelpArtifacts();
+			}
 			bool isMcp = IsMcpCommand(clearArgs);
 			IsMcpServerMode = isMcp;
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
@@ -871,23 +897,27 @@ internal class Program {
 				ConsoleLogger.Instance.PreserveMessages = true;
 			}
 			
-			if (logTarget.ToLower() == "creatio") {
-				useCreatioLogStreamer = true;
-				ConsoleLogger.Instance.StartWithStream();
-			}  
-			else {
-				ConsoleLogger.Instance.Start(logTarget);
-			}
-			return ExecuteCommands(clearArgs);
+				if (logTarget.ToLower() == "creatio") {
+					useCreatioLogStreamer = true;
+					ConsoleLogger.Instance.StartWithStream();
+					loggerStarted = true;
+				}  
+				else {
+					ConsoleLogger.Instance.Start(logTarget);
+					loggerStarted = true;
+				}
+				return ExecuteCommands(clearArgs);
 		}
 		catch (Exception e) {
 			ConsoleLogger.Instance.WriteError(e.GetReadableMessageException(IsDebugMode));
 			return 1;
+			}
+			finally {
+				if (loggerStarted) {
+					ConsoleLogger.Instance.Stop();
+				}
+			}
 		}
-		finally {
-			ConsoleLogger.Instance.Stop();
-		}
-	}
 
 	/// <summary>
 	/// Displays a colored message to the console.
@@ -1019,15 +1049,16 @@ internal class Program {
 		const string helpFolderName = "help";
 		string envPath = creatioEnv.GetAssemblyFolderPath();
 		string helpDirectoryPath = Path.Combine(envPath ?? string.Empty, helpFolderName);
+		IServiceProvider bm = new BindingsModule().Register();
 		Parser.Default.Settings.ShowHeader = false;
 		Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
-		// Default: console help via LocalHelpViewer; use --WEB / -W to open browser
+		if (TryHandleBuiltInHelp(args, bm, out int helpExitCode)) {
+			return helpExitCode;
+		}
 		if(args.Length >= 2 && (args[1] == "--WEB" || args[1] == "-W")) {
-			IServiceProvider bm = new BindingsModule().Register();
 			Parser.Default.Settings.CustomHelpViewer = bm.GetRequiredService<WikiHelpViewer>();
 		}
 		else {
-			IServiceProvider bm = new BindingsModule().Register();
 			Parser.Default.Settings.CustomHelpViewer = bm.GetRequiredService<LocalHelpViewer>();
 		}
 		
@@ -1037,6 +1068,60 @@ internal class Program {
 			return ExecuteCommandWithOption(parsed.Value);
 		}
 		return HandleParseError(((NotParsed<object>)parserResult).Errors);
+	}
+
+	private static bool TryHandleBuiltInHelp(string[] args, IServiceProvider serviceProvider, out int exitCode) {
+		CommandHelpRenderer renderer = serviceProvider.GetRequiredService<CommandHelpRenderer>();
+		string[] normalizedArgs = NormalizeCommandLineArgs(args);
+		if (normalizedArgs.Length == 0
+			|| normalizedArgs.Length == 1 && IsRootHelpToken(normalizedArgs[0])) {
+			Console.Out.Write(renderer.RenderRootHelp());
+			exitCode = 0;
+			return true;
+		}
+		if (normalizedArgs.Length >= 2 && string.Equals(normalizedArgs[0], "help", StringComparison.OrdinalIgnoreCase)) {
+			if (renderer.TryRenderCommandHelp(normalizedArgs[1]) is string commandHelp) {
+				Console.Out.Write(commandHelp);
+				exitCode = 0;
+				return true;
+			}
+			Console.Out.Write(renderer.RenderRootHelp());
+			exitCode = 0;
+			return true;
+		}
+		exitCode = 1;
+		return false;
+	}
+
+	private static bool IsRootHelpToken(string value) =>
+		string.Equals(value, "help", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(value, "--help", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(value, "-h", StringComparison.OrdinalIgnoreCase);
+
+	private static int ExportHelpArtifacts() {
+		BindingsModule bindingsModule = new();
+		IServiceProvider serviceProvider = bindingsModule.Register();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = serviceProvider.GetRequiredService<IWorkingDirectoriesProvider>();
+		string repositoryRoot = FindRepositoryRoot(workingDirectoriesProvider.ExecutingDirectory);
+		HelpArtifactExporter exporter = serviceProvider.GetRequiredService<HelpArtifactExporter>();
+		return exporter.Export(repositoryRoot);
+	}
+
+	private static string FindRepositoryRoot(string startDirectory) {
+		string currentDirectory = Path.GetFullPath(startDirectory);
+		while (!string.IsNullOrWhiteSpace(currentDirectory)) {
+			if (Directory.Exists(Path.Combine(currentDirectory, "clio"))
+				&& Directory.Exists(Path.Combine(currentDirectory, "clio.tests"))
+				&& File.Exists(Path.Combine(currentDirectory, "clio", "Commands.md"))) {
+				return currentDirectory;
+			}
+			string parentDirectory = Path.GetDirectoryName(currentDirectory);
+			if (string.IsNullOrWhiteSpace(parentDirectory) || string.Equals(parentDirectory, currentDirectory, StringComparison.Ordinal)) {
+				break;
+			}
+			currentDirectory = parentDirectory;
+		}
+		return Path.GetFullPath(startDirectory);
 	}
 
 	/// <summary>

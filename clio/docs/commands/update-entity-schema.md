@@ -1,62 +1,94 @@
 # update-entity-schema
 
-Apply a batch of structured column operations to a remote entity schema.
+Apply batch column operations to a remote Creatio entity schema.
+
+## Usage
 
 ```bash
 clio update-entity-schema [options]
 ```
 
-This command is the clio-native batch mutation surface for entity schemas. It applies an ordered list of
-column operations and reuses the same validation and DB-first save flow as `modify-entity-schema-column`.
-Supported operation types include `Binary`, `Image`, `File`, `SecureText`, and `Email`. `Blob` is accepted
-as an alias for `Binary`, `Encrypted` and `Password` are accepted as aliases for `SecureText`, and
-`EmailAddress` is accepted as an alias for `Email`.
+## Description
 
-## Options
-
-- `--package` (required): Target package name
-- `--schema-name` (required): Entity schema name
-- `--operation` (required, repeatable): Structured operation JSON. Repeat the option for each payload.
-- `-e, --environment` (required): Target environment
-
-Each operation uses fields such as:
-- `action`
-- `column-name`
-- `new-name`
-- `type`
-- `title`
-- `description`
-- `reference-schema-name`
-- `required`
-- `default-value-source`
-- `default-value`
-- `masked`
+Apply batch column operations to a remote Creatio entity schema.
 
 ## Examples
 
 ```bash
-clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle \
-  --operation "{\"action\":\"add\",\"column-name\":\"UsrStatus\",\"type\":\"Lookup\",\"title\":\"Status\",\"reference-schema-name\":\"UsrVehicleStatus\",\"required\":true}" \
-  --operation "{\"action\":\"add\",\"column-name\":\"UsrDueDate\",\"type\":\"Date\",\"title\":\"Due date\"}"
+clio update-entity-schema -e dev
 ```
+
+## Options
 
 ```bash
-clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle \
-  --operation "{\"action\":\"modify\",\"column-name\":\"Owner\",\"new-name\":\"PrimaryOwner\",\"title\":\"Primary owner\"}" \
-  --operation "{\"action\":\"modify\",\"column-name\":\"Status\",\"default-value-source\":\"None\"}"
+--timeout <NUMBER>
+    Request timeout in milliseconds. Default: 100000.
+--package <VALUE>
+    Target package name. Required.
+--schema-name <VALUE>
+    Entity schema name. Required.
+--operation <VALUE>
+    Structured operation JSON. Repeat the option for multiple values. Required.
 ```
+
+## Environment Options
 
 ```bash
-clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle \
-  --operation "{\"action\":\"add\",\"column-name\":\"UsrPassword\",\"type\":\"SecureText\",\"title\":\"Password\",\"masked\":true}"
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application)
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
 ```
 
-## Notes
+## Requirements
 
-- operations are applied in order
-- execution stops on the first failed operation
-- the batch is saved and materialized once after all operations are applied
-- use this command when the caller already knows a full batch of entity column mutations
-- use `modify-entity-schema-column` for one-off single-column changes
-- `Binary`, `Image`, and `File` operations do not support `default-value` or `default-value-source: Const`
-- `masked` is accepted for `Text` and `SecureText` columns and maps to schema-level `isValueMasked`
+- cliogate must be installed on the target Creatio environment.
+
+## See also
+
+- `modify-entity-schema-column`
+- `get-entity-schema-properties`
+
+- [Clio Command Reference](../../Commands.md#update-entity-schema)
