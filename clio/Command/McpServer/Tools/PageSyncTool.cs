@@ -74,7 +74,7 @@ public sealed class PageSyncTool(
 		try {
 			PageSyncValidationResult validationResult = null;
 			if (validate) {
-				validationResult = ValidateBody(page.Body);
+				validationResult = ValidateBody(page.Body, page.Resources);
 				if (!validationResult.MarkersOk || !validationResult.JsSyntaxOk || !validationResult.ContentOk) {
 					return new PageSyncPageResult {
 						SchemaName = page.SchemaName,
@@ -129,11 +129,20 @@ public sealed class PageSyncTool(
 		}
 	}
 
-	private static PageSyncValidationResult ValidateBody(string body) {
+	private static PageSyncValidationResult ValidateBody(string body, string? resources) {
 		SchemaValidationResult markerResult = SchemaValidationService.ValidateMarkerIntegrity(body);
 		SchemaValidationResult syntaxResult = SchemaValidationService.ValidateJsSyntax(body);
 		SchemaValidationResult contentResult = markerResult.IsValid
 			? SchemaValidationService.ValidateMarkerContent(body)
+			: new SchemaValidationResult { IsValid = true };
+		Dictionary<string, string>? explicitResources = null;
+		if (contentResult.IsValid &&
+		    !SchemaValidationService.TryParseResources(resources, out explicitResources, out _)) {
+			contentResult.IsValid = false;
+			contentResult.Errors.Add("resources must be a valid JSON object string");
+		}
+		SchemaValidationResult fieldResult = contentResult.IsValid
+			? SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources)
 			: new SchemaValidationResult { IsValid = true };
 		SchemaValidationResult bindingResult = contentResult.IsValid
 			? SchemaValidationService.ValidateColumnBindings(body)
@@ -149,13 +158,19 @@ public sealed class PageSyncTool(
 		if (!contentResult.IsValid) {
 			errors.AddRange(contentResult.Errors);
 		}
+		if (!fieldResult.IsValid) {
+			errors.AddRange(fieldResult.Errors);
+		}
+		if (fieldResult.Warnings.Count > 0) {
+			warnings.AddRange(fieldResult.Warnings);
+		}
 		if (!bindingResult.IsValid) {
 			warnings.AddRange(bindingResult.Errors);
 		}
 		return new PageSyncValidationResult {
 			MarkersOk = markerResult.IsValid,
 			JsSyntaxOk = syntaxResult.IsValid,
-			ContentOk = contentResult.IsValid,
+			ContentOk = contentResult.IsValid && fieldResult.IsValid,
 			Errors = errors.Count > 0 ? errors : null,
 			Warnings = warnings.Count > 0 ? warnings : null
 		};

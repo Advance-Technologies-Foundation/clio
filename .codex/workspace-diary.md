@@ -1510,3 +1510,51 @@ Decision: Extended Program parse-error handling for BadVerbSelectedError to appe
 Discovery: A pure edit-distance threshold was too noisy for inputs like `execc`; reducing the no-token-overlap threshold to 0/1/2/3 by command length kept `envss` -> `show-web-app-list` useful while suppressing random visible-command suggestions near hidden aliases.
 Files: clio/Program.cs, clio.tests/CommonProgramTest.cs, clio/Commands.md, .codex/workspace-diary.md
 Impact: Unknown command UX is now more recoverable without changing command contracts, and focused tests lock in canonical-name output, hidden-command exclusion, low-confidence fallback, and exit-code behavior.
+## 2026-03-31 18:00 – Normalize Email Address entity-schema aliases
+Context: Email columns created through the app-generation flow were landing as `Text(50 characters)` because the downstream `clio` entity-schema type resolver only matched `EmailAddress` without separators, while upstream contexts could emit `Email Address` or `Email-Address`.
+Decision: Normalized entity-schema type names by stripping non-alphanumeric separators before alias lookup, then updated MCP descriptions/prompts plus CLI help/docs to advertise `EmailAddress`, `Email Address`, and `Email-Address` as aliases for `Email`.
+Discovery: `ai-driven-app-creation` already canonicalized separator variants through `_normalize_hint_token`; the missing runtime fix was in `EntitySchemaDesignerSupport.TryResolveDataValueType`, so the upstream repo only needed an added regression test for the spaced alias.
+Files: clio/Command/EntitySchemaDesigner/EntitySchemaDesignerSupport.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, clio.tests/Command/EntitySchemaDesignerSupportTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio/help/en/create-entity-schema.txt, clio/help/en/modify-entity-schema-column.txt, clio/help/en/update-entity-schema.txt, clio/docs/commands/create-entity-schema.md, clio/docs/commands/modify-entity-schema-column.md, clio/docs/commands/update-entity-schema.md, clio/Commands.md, ../ai-driven-app-creation/tests/test_mcp_schema_sync.py, .codex/workspace-diary.md
+Impact: Email columns now resolve to the dedicated `Email` data type even when the request uses spaced or hyphenated aliases, and the CLI/MCP docs match the supported contract.
+
+## 2026-03-31 19:01 – Canonicalize clio help and command docs
+Context: User asked to implement the help modernization plan so `clio help`, per-command help, and repository docs all follow one canonical grouped contract.
+Decision: Added a shared help metadata/catalog and renderer, routed built-in help through that renderer, introduced canonical grouped root help and alias-to-canonical command help, added an exporter for canonical `help/en`, `Commands.md`, `docs/commands`, and `WikiAnchors.txt`, and replaced legacy help tests with renderer/runtime consistency coverage.
+Discovery: `IWorkingDirectoriesProvider.ExecutingDirectory` resolves under `bin/Debug` during `dotnet run`, so artifact export needed an upward repo-root search; exporter-generated docs also needed explicit artifact-name filtering to drop whitespace aliases from anchors.
+Files: clio/HelpSystem/CommandHelpCatalog.cs, clio/HelpSystem/CommandHelpRenderer.cs, clio/HelpSystem/HelpArtifactExporter.cs, clio/Program.cs, clio/BindingsModule.cs, clio/WikiHelpViewer.cs, clio/Commands.md, clio/Wiki/WikiAnchors.txt, clio/help/en, clio/docs/commands, clio.tests/CommonProgramTest.cs, clio.tests/Command/ReadmeChecker.cs, clio.tests/CommandHelpRendererTests.cs, clio.tests/HelpArtifactConsistencyTests.cs, .codex/workspace-diary.md
+Impact: Help surfaces now use canonical command names, grouped A-Z root help, normalized alias handling, and generated repo artifacts with regression tests that catch future drift between runtime help and checked-in docs.
+
+## 2026-03-31 19:05 – Stabilize renderer indentation for canonical help
+Context: Final verification of the new help renderer showed that `clio <alias> --help` was re-reading generated help files and carrying source indentation back into runtime output.
+Decision: Normalized leading whitespace for renderer-managed text sections before re-rendering and regenerated checked-in help artifacts from the updated dll.
+Discovery: The duplicated left padding appeared only on section content that originated from parsed help files (`USAGE`, `DESCRIPTION`, `EXAMPLES`, `REQUIREMENTS`, `NOTES`), while reflected options remained stable.
+Files: clio/HelpSystem/CommandHelpRenderer.cs, clio/help/en, .codex/workspace-diary.md
+Impact: Runtime command help and exported `help/en` files now stay visually stable across repeated artifact generation and alias-based help requests.
+
+## 2026-03-31 20:04 – Flatten top-level help and widen descriptions
+Context: User asked to make `clio help` and `clio --help` easier to scan by sorting the command list alphabetically and giving descriptions more horizontal space.
+Decision: Reworked `RenderRootHelp()` to output one flat `Commands:` list sorted A-Z across all visible commands and widened the rendering width so long descriptions wrap less aggressively.
+Discovery: The checked-in `clio/help/en/help.txt` follows the same renderer path as runtime top-level help, so regenerating artifacts was enough to keep the repository copy aligned once the renderer changed.
+Files: clio/HelpSystem/CommandHelpRenderer.cs, clio.tests/CommonProgramTest.cs, clio.tests/CommandHelpRendererTests.cs, clio/help/en/help.txt, .codex/workspace-diary.md
+Impact: Top-level help is now faster to scan in wide terminals, with alphabetical lookup and fewer wrapped descriptions.
+
+## 2026-03-31 20:14 – Prefer local clio wrapper ahead of global tool
+Context: User needed `clio` to resolve to the locally built repository binary from any shell context, including tmux, and fall back to the global .NET tool only when no local build exists.
+Decision: Moved `$HOME/bin` back to the front of `PATH` at the end of zsh startup files and extended the `~/bin/clio` wrapper to prefer local apphost builds first, then local `clio.dll` builds via `dotnet`, and only then `~/.dotnet/tools/clio`.
+Discovery: The tmux session had `~/.dotnet/tools` ahead of `~/bin`, which made `clio` bypass the wrapper entirely; new tmux windows picked up the corrected order immediately after the zsh config change.
+Files: /Users/a.kravchuk/.zshrc, /Users/a.kravchuk/.zprofile, /Users/a.kravchuk/bin/clio, .codex/workspace-diary.md
+Impact: Local repo builds now win consistently in fresh zsh and tmux shells, while the global tool remains a safe fallback when the repository build is missing.
+
+## 2026-03-31 20:24 – Add page field-binding guardrails for clio MCP
+Context: User asked to prevent a repeated Freedom UI regression where `page-sync` accepted standard field proxy bindings like `$UsrStatus -> PDS.UsrStatus` plus implicit `Usr*_label` resource shortcuts that later rendered broken captions at runtime.
+Decision: Added shared semantic validation in `SchemaValidationService` for standard field components, wired it into `PageUpdateCommand` and `PageSyncTool`, and updated MCP page guidance to require direct `$Name` or `$PDS_*` bindings plus datasource captions for data-bound form fields.
+Discovery: Existing client-side validation already had enough normalized marker content to inspect field inserts and view-model paths without touching `ResourceStringHelper`; the cleanest prevention path was to hard-fail the exact proxy/implicit-resource patterns while surfacing explicit-resource caption shortcuts as warnings.
+Files: clio/Command/SchemaValidationService.cs, clio/Command/PageUpdateOptions.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: `page-update` and `page-sync` now block the known broken field-binding pattern before save, guidance steers agents toward datasource-backed form bindings, and tests cover both hard failures and warning-only caption mismatches.
+
+## 2026-03-31 20:22 – Expand unknown-command suggestions to ten alphabetical entries
+Context: User feedback on the new unknown-command UX noted that `clio skill` exposed only three suggestions even though the command catalog had many more relevant candidates.
+Decision: Increased the unknown-command suggestion cap from 3 to 10, kept the existing score/confidence gate for candidate selection, and alphabetized the rendered subset before printing it. Updated the focused parser tests and the top-level command reference note to match.
+Discovery: Rebuilding before manual verification matters here because running the previously built `clio.dll` still showed the old 3-item output until the new `Program.cs` change was compiled.
+Files: clio/Program.cs, clio.tests/CommonProgramTest.cs, clio/Commands.md, .codex/workspace-diary.md
+Impact: Unknown command output is now broader and easier to scan, while still avoiding noisy fallback suggestions for low-confidence input.

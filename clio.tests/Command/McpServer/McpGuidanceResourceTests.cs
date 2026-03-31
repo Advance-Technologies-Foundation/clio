@@ -72,6 +72,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should explain how callers inspect raw page bodies before editing");
 		article.Text.Should().Contain("component-info",
 			because: "the guide should explain how callers inspect unfamiliar Freedom UI components");
+		article.Text.Should().Contain("$PDS_*",
+			because: "the guide should steer standard form fields toward direct datasource-backed bindings");
+		article.Text.Should().Contain("$UsrStatus",
+			because: "the guide should call out proxy field bindings that are now rejected");
+		article.Text.Should().Contain("Usr*_label",
+			because: "the guide should reserve custom Usr label resources for standalone UI only");
 		article.Text.Should().Contain("get-entity-schema-properties",
 			because: "the guide should include schema-level inspection before mutation");
 		article.Text.Should().Contain("get-entity-schema-column-properties",

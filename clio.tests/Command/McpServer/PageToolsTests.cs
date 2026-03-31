@@ -102,6 +102,12 @@ public class PageToolsTests {
 			because: "page-get prompt guidance should tell callers how to preserve ResourceString macros during page-update");
 		prompt.Should().Contain("valid JSON object string",
 			because: "page-get prompt guidance should clarify that malformed resource payloads are rejected");
+		prompt.Should().Contain("$PDS_*",
+			because: "page guidance should steer standard fields toward direct datasource-backed bindings");
+		prompt.Should().Contain("$UsrStatus -> PDS.UsrStatus",
+			because: "page guidance should call out the proxy binding pattern that page-update now rejects");
+		prompt.Should().Contain("Usr*_label",
+			because: "page guidance should reserve custom Usr label resources for standalone UI only");
 		prompt.Should().Contain("discover -> inspect -> mutate -> verify",
 			because: "page-get prompt guidance should describe the canonical maintenance sequence for minimal page edits");
 		prompt.Should().NotContain("`schemaName`",
@@ -1010,6 +1016,35 @@ public class PageToolsTests {
 			because: "the command should surface the validation failure");
 		response.Error.Should().Be("resources must be a valid JSON object string",
 			because: "the validation error should explain how the resources payload must be formatted");
+		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
+			because: "validation should fail before the command builds any service URLs");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "validation should fail before the command sends any remote requests");
+	}
+
+	[Test]
+	[Description("TryUpdatePage dry-run rejects proxy field bindings before any remote calls are made.")]
+	public void TryUpdatePage_WhenFieldBindingUsesRejectedProxy_ReturnsValidationError() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrProxyBinding_FormPage",
+			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
+			DryRun = true
+		};
+
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		result.Should().BeFalse(
+			because: "page-update should fail fast on standard fields that proxy a direct PDS path through a custom attribute");
+		response.Success.Should().BeFalse(
+			because: "the validation failure should be surfaced in the response envelope");
+		response.Error.Should().Contain("invalid form field bindings")
+			.And.Contain("$UsrStatus")
+			.And.Contain("$PDS_UsrStatus",
+				because: "the response should explain both the rejected proxy binding and the expected datasource binding");
 		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
 			because: "validation should fail before the command builds any service URLs");
 		applicationClient.ReceivedCalls().Should().BeEmpty(

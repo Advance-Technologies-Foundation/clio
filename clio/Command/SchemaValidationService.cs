@@ -22,6 +22,30 @@ public static class SchemaValidationService
 	};
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
+	private static readonly Regex ResourceStringPattern = new(
+		@"^#ResourceString\(([^)]+)\)#$",
+		RegexOptions.Compiled,
+		RegexTimeout);
+	private static readonly Regex CustomFieldResourcePattern = new(
+		@"^Usr[A-Za-z0-9_]*_(label|caption)$",
+		RegexOptions.Compiled | RegexOptions.IgnoreCase,
+		RegexTimeout);
+	private static readonly HashSet<string> StandardFieldComponentTypes = new(StringComparer.OrdinalIgnoreCase) {
+		"crt.Input",
+		"crt.NumberInput",
+		"crt.Checkbox",
+		"crt.DateTimePicker",
+		"crt.ComboBox",
+		"crt.RichTextEditor",
+		"crt.PhoneInput",
+		"crt.EmailInput",
+		"crt.WebInput",
+		"crt.ColorPicker",
+		"crt.ImageInput",
+		"crt.FileInput",
+		"crt.EncryptedInput",
+		"crt.Slider"
+	};
 
 	public static string BuildMarkerPattern(string markerName) {
 		return @"/\*\*" + Regex.Escape(markerName) + @"\*/(.*?)/\*\*" + Regex.Escape(markerName) + @"\*/";
@@ -68,6 +92,37 @@ public static class SchemaValidationService
 		"SCHEMA_CONVERTERS",
 		"SCHEMA_VALIDATORS"
 	};
+
+	public static bool TryParseResources(
+		string? resources,
+		out Dictionary<string, string> parsedResources,
+		out string errorMessage) {
+		parsedResources = null!;
+		errorMessage = string.Empty;
+		if (string.IsNullOrWhiteSpace(resources)) {
+			parsedResources = null!;
+			return true;
+		}
+		if (!TryParseJsonDocument(resources, out JsonDocument document, out errorMessage)) {
+			return false;
+		}
+		using (document) {
+			if (document.RootElement.ValueKind != JsonValueKind.Object) {
+				errorMessage = "resources must be a valid JSON object string";
+				return false;
+			}
+			var result = new Dictionary<string, string>(StringComparer.Ordinal);
+			foreach (JsonProperty property in document.RootElement.EnumerateObject()) {
+				if (property.Value.ValueKind != JsonValueKind.String) {
+					errorMessage = "resources must be a valid JSON object string";
+					return false;
+				}
+				result[property.Name] = property.Value.GetString() ?? string.Empty;
+			}
+			parsedResources = result;
+			return true;
+		}
+	}
 
 	public static SchemaValidationResult ValidateMarkerContent(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
@@ -140,6 +195,29 @@ public static class SchemaValidationService
 		return result;
 	}
 
+	public static SchemaValidationResult ValidateStandardFieldBindings(
+		string jsBody,
+		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string viewConfigContent, "SCHEMA_VIEW_CONFIG_DIFF", "SCHEMA_DIFF")) {
+			return result;
+		}
+		if (!TryParseJsonDocument(viewConfigContent, out JsonDocument viewConfigDocument, out _)) {
+			return result;
+		}
+		Dictionary<string, string> modelPaths = CollectViewModelPaths(jsBody);
+		using (viewConfigDocument) {
+			ValidateFieldComponents(viewConfigDocument.RootElement, modelPaths, explicitResources, result);
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
 	private static List<string> ExtractDataTableColumnCodes(string vcdContent) {
 		if (!TryParseJsonDocument(vcdContent, out JsonDocument document, out _)) {
 			return [];
@@ -165,6 +243,240 @@ public static class SchemaValidationService
 		using (document) {
 			CollectPathsFromElement(document.RootElement, paths);
 		}
+	}
+
+	private static Dictionary<string, string> CollectViewModelPaths(string jsBody) {
+		var modelPaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		CollectViewModelPathsFromMarker(jsBody, modelPaths, "SCHEMA_VIEW_MODEL_CONFIG_DIFF");
+		CollectViewModelPathsFromMarker(jsBody, modelPaths, "SCHEMA_VIEW_MODEL_CONFIG");
+		return modelPaths;
+	}
+
+	private static void CollectViewModelPathsFromMarker(
+		string jsBody,
+		Dictionary<string, string> modelPaths,
+		string markerName) {
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string markerContent, markerName)) {
+			return;
+		}
+		if (!TryParseJsonDocument(markerContent, out JsonDocument document, out _)) {
+			return;
+		}
+		using (document) {
+			CollectNamedModelPaths(document.RootElement, modelPaths);
+		}
+	}
+
+	private static void CollectNamedModelPaths(JsonElement element, Dictionary<string, string> modelPaths) {
+		if (element.ValueKind == JsonValueKind.Object) {
+			foreach (JsonProperty property in element.EnumerateObject()) {
+				if (property.Value.ValueKind == JsonValueKind.Object &&
+				    property.Value.TryGetProperty("modelConfig", out JsonElement modelConfig) &&
+				    modelConfig.TryGetProperty("path", out JsonElement pathElement) &&
+				    pathElement.ValueKind == JsonValueKind.String) {
+					string? path = pathElement.GetString();
+					if (!string.IsNullOrWhiteSpace(path)) {
+						modelPaths[property.Name] = path;
+					}
+				}
+				CollectNamedModelPaths(property.Value, modelPaths);
+			}
+		} else if (element.ValueKind == JsonValueKind.Array) {
+			foreach (JsonElement item in element.EnumerateArray()) {
+				CollectNamedModelPaths(item, modelPaths);
+			}
+		}
+	}
+
+	private static void ValidateFieldComponents(
+		JsonElement element,
+		IReadOnlyDictionary<string, string> modelPaths,
+		IReadOnlyDictionary<string, string>? explicitResources,
+		SchemaValidationResult result,
+		bool checkSelf = true) {
+		if (element.ValueKind == JsonValueKind.Object) {
+			bool wrappedValues = false;
+			if (checkSelf && TryResolveFieldComponent(element, out JsonElement componentValues, out string fieldName, out string componentType, out wrappedValues)) {
+				ValidateFieldComponent(componentValues, fieldName, componentType, modelPaths, explicitResources, result);
+			}
+			foreach (JsonProperty property in element.EnumerateObject()) {
+				bool childCheckSelf = !(wrappedValues && property.NameEquals("values"));
+				ValidateFieldComponents(property.Value, modelPaths, explicitResources, result, childCheckSelf);
+			}
+		} else if (element.ValueKind == JsonValueKind.Array) {
+			foreach (JsonElement item in element.EnumerateArray()) {
+				ValidateFieldComponents(item, modelPaths, explicitResources, result);
+			}
+		}
+	}
+
+	private static bool TryResolveFieldComponent(
+		JsonElement element,
+		out JsonElement componentValues,
+		out string fieldName,
+		out string componentType,
+		out bool wrappedValues) {
+		componentValues = default;
+		fieldName = string.Empty;
+		componentType = string.Empty;
+		wrappedValues = false;
+		if (element.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		if (element.TryGetProperty("values", out JsonElement valuesElement) &&
+		    valuesElement.ValueKind == JsonValueKind.Object &&
+		    TryGetFieldType(valuesElement, out componentType)) {
+			componentValues = valuesElement;
+			fieldName = GetFieldName(element, valuesElement);
+			wrappedValues = true;
+			return true;
+		}
+		if (TryGetFieldType(element, out componentType)) {
+			componentValues = element;
+			fieldName = GetFieldName(element, element);
+			return true;
+		}
+		return false;
+	}
+
+	private static string GetFieldName(JsonElement wrapperElement, JsonElement valuesElement) {
+		if (wrapperElement.TryGetProperty("name", out JsonElement wrapperName) &&
+		    wrapperName.ValueKind == JsonValueKind.String &&
+		    !string.IsNullOrWhiteSpace(wrapperName.GetString())) {
+			return wrapperName.GetString()!;
+		}
+		if (valuesElement.TryGetProperty("name", out JsonElement valuesName) &&
+		    valuesName.ValueKind == JsonValueKind.String &&
+		    !string.IsNullOrWhiteSpace(valuesName.GetString())) {
+			return valuesName.GetString()!;
+		}
+		return string.Empty;
+	}
+
+	private static bool TryGetFieldType(JsonElement element, out string componentType) {
+		componentType = string.Empty;
+		if (!element.TryGetProperty("type", out JsonElement typeElement) || typeElement.ValueKind != JsonValueKind.String) {
+			return false;
+		}
+		string? type = typeElement.GetString();
+		if (string.IsNullOrWhiteSpace(type) || !StandardFieldComponentTypes.Contains(type)) {
+			return false;
+		}
+		componentType = type;
+		return true;
+	}
+
+	private static void ValidateFieldComponent(
+		JsonElement componentValues,
+		string fieldName,
+		string componentType,
+		IReadOnlyDictionary<string, string> modelPaths,
+		IReadOnlyDictionary<string, string>? explicitResources,
+		SchemaValidationResult result) {
+		string fieldDisplayName = !string.IsNullOrWhiteSpace(fieldName) ? fieldName : componentType;
+		if (TryGetBindingAttribute(componentValues, out string bindingProperty, out string bindingExpression, out string bindingAttribute) &&
+		    !IsAllowedDirectFieldBinding(bindingAttribute) &&
+		    modelPaths.TryGetValue(bindingAttribute, out string modelPath) &&
+		    modelPath.StartsWith("PDS.", StringComparison.OrdinalIgnoreCase)) {
+			result.Errors.Add(
+				$"Standard field '{fieldDisplayName}' uses proxy binding '{bindingExpression}' via '{bindingProperty}' for datasource path '{modelPath}'. Use '{BuildExpectedBinding(modelPath)}' instead.");
+		}
+		if (!TryGetCaptionExpression(componentValues, out string captionExpression) ||
+		    !TryGetResourceStringKey(captionExpression, out string resourceKey) ||
+		    !CustomFieldResourcePattern.IsMatch(resourceKey)) {
+			return;
+		}
+		string preferredCaption = TryResolvePreferredCaption(modelPaths, bindingAttribute, out string preferredCaptionBinding)
+			? preferredCaptionBinding
+			: "$Resources.Strings.<datasource-caption>";
+		if (explicitResources == null || !explicitResources.TryGetValue(resourceKey, out string explicitValue) || string.IsNullOrWhiteSpace(explicitValue)) {
+			result.Errors.Add(
+				$"Standard field '{fieldDisplayName}' uses '{captionExpression}' without an explicit resources entry. Prefer datasource caption '{preferredCaption}' for data-bound fields.");
+			return;
+		}
+		result.Warnings.Add(
+			$"Standard field '{fieldDisplayName}' uses custom resource key '{resourceKey}'. Prefer datasource caption '{preferredCaption}' for data-bound fields.");
+	}
+
+	private static bool TryResolvePreferredCaption(
+		IReadOnlyDictionary<string, string> modelPaths,
+		string bindingAttribute,
+		out string preferredCaptionBinding) {
+		preferredCaptionBinding = string.Empty;
+		if (!string.IsNullOrWhiteSpace(bindingAttribute) && bindingAttribute.StartsWith("PDS_", StringComparison.OrdinalIgnoreCase)) {
+			preferredCaptionBinding = $"$Resources.Strings.{bindingAttribute}";
+			return true;
+		}
+		if (!string.IsNullOrWhiteSpace(bindingAttribute) &&
+		    modelPaths.TryGetValue(bindingAttribute, out string modelPath) &&
+		    modelPath.StartsWith("PDS.", StringComparison.OrdinalIgnoreCase)) {
+			preferredCaptionBinding = $"$Resources.Strings.{modelPath.Replace(".", "_", StringComparison.Ordinal)}";
+			return true;
+		}
+		return false;
+	}
+
+	private static bool TryGetBindingAttribute(
+		JsonElement componentValues,
+		out string bindingProperty,
+		out string bindingExpression,
+		out string bindingAttribute) {
+		bindingProperty = string.Empty;
+		bindingExpression = string.Empty;
+		bindingAttribute = string.Empty;
+		if (TryGetStringProperty(componentValues, "control", out bindingExpression)) {
+			bindingProperty = "control";
+		} else if (TryGetStringProperty(componentValues, "value", out bindingExpression)) {
+			bindingProperty = "value";
+		} else {
+			return false;
+		}
+		if (!bindingExpression.StartsWith("$", StringComparison.Ordinal) || bindingExpression.Length == 1) {
+			return false;
+		}
+		bindingAttribute = bindingExpression[1..];
+		return true;
+	}
+
+	private static bool TryGetCaptionExpression(JsonElement componentValues, out string captionExpression) {
+		return TryGetStringProperty(componentValues, "label", out captionExpression)
+			|| TryGetStringProperty(componentValues, "caption", out captionExpression);
+	}
+
+	private static bool TryGetStringProperty(JsonElement element, string propertyName, out string value) {
+		value = string.Empty;
+		if (!element.TryGetProperty(propertyName, out JsonElement propertyValue) ||
+		    propertyValue.ValueKind != JsonValueKind.String) {
+			return false;
+		}
+		string? candidate = propertyValue.GetString();
+		if (string.IsNullOrWhiteSpace(candidate)) {
+			return false;
+		}
+		value = candidate;
+		return true;
+	}
+
+	private static bool TryGetResourceStringKey(string expression, out string resourceKey) {
+		resourceKey = string.Empty;
+		Match match = ResourceStringPattern.Match(expression);
+		if (!match.Success) {
+			return false;
+		}
+		resourceKey = match.Groups[1].Value;
+		return true;
+	}
+
+	private static bool IsAllowedDirectFieldBinding(string bindingAttribute) {
+		return string.Equals(bindingAttribute, "Name", StringComparison.OrdinalIgnoreCase)
+			|| bindingAttribute.StartsWith("PDS_", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static string BuildExpectedBinding(string modelPath) {
+		if (string.Equals(modelPath, "PDS.Name", StringComparison.OrdinalIgnoreCase)) {
+			return "$Name";
+		}
+		return "$" + modelPath.Replace(".", "_", StringComparison.Ordinal);
 	}
 
 	private static bool TryGetDataTableColumns(JsonElement item, out JsonElement columns) {
@@ -375,4 +687,5 @@ public class SchemaValidationResult
 {
 	public bool IsValid { get; set; }
 	public List<string> Errors { get; set; } = new List<string>();
+	public List<string> Warnings { get; set; } = new List<string>();
 }

@@ -226,6 +226,72 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Client-side validation rejects proxy standard field bindings before save")]
+	public void SyncPages_Should_Reject_Proxy_Field_Bindings_When_Validation_Is_Enabled() {
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageSyncTool tool = new(commandResolver);
+		string bodyWithProxyBinding = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithProxyBinding)],
+			Validate: true);
+
+		PageSyncResponse response = tool.SyncPages(args);
+
+		response.Success.Should().BeFalse(
+			because: "page-sync should block the known broken proxy field pattern before save");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail semantic validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "page-sync should return validation details for blocked field bindings");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "semantic field validation contributes to the content-ok decision");
+		response.Pages[0].Error.Should().Contain("$UsrStatus")
+			.And.Contain("$PDS_UsrStatus",
+				because: "the failure should explain both the rejected proxy binding and the expected datasource binding");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Client-side validation surfaces warnings for explicit custom field caption resources")]
+	public void SyncPages_Should_Surface_FieldCaptionWarnings_When_ExplicitResources_Are_Provided() {
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver);
+		string bodyWithExplicitFieldCaption = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_caption)#\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithExplicitFieldCaption, "{\"UsrStatus_caption\":\"Status\"}")],
+			Validate: true);
+
+		PageSyncResponse response = tool.SyncPages(args);
+
+		response.Success.Should().BeTrue(
+			because: "explicit resources keep the custom field caption pattern non-blocking");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should still be returned on successful guarded saves");
+		response.Pages[0].Validation!.Warnings.Should().ContainSingle(warning => warning.Contains("UsrStatus_caption"),
+			because: "page-sync should surface the softer caption guidance as a warning");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Passes page resources through page-sync and returns the registered resource count from page-update.")]
 	public void SyncPages_Should_Surface_Registered_Resources() {
 		// Arrange
