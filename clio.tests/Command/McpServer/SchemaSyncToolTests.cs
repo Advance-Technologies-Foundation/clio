@@ -394,6 +394,40 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Includes detailed error text for update-entity non-zero exits when command writes Error messages")]
+	public void SchemaSync_UpdateEntity_Should_Include_Detailed_Error_On_NonZero_Exit() {
+		// Arrange
+		TestLogger logger = new();
+		var failingUpdateCommand = new FakeUpdateEntitySchemaCommand(
+			logger,
+			exitCode: 5,
+			messages: ["Update failed at DB layer."]);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(failingUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, logger);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrStatus",
+						Type: "Lookup", TitleLocalizations: Localizations("Status"), ReferenceSchemaName: "UsrTodoStatus")
+				])]);
+
+		// Act
+		SchemaSyncResponse response = tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "non-zero update command exit code should fail schema-sync operation");
+		response.Results.Should().HaveCount(1,
+			because: "batch should contain the single failing update operation");
+		response.Results[0].Error.Should().Be("update-entity failed with exit code 5: Update failed at DB layer.",
+			because: "BuildOperationError should append the last Error log message for non-zero exits");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects legacy scalar title fields in schema-sync create operations even when title-localizations are also provided.")]
 	public void SchemaSync_CreateLookup_Should_Reject_Legacy_Title_Field() {
 		// Arrange
@@ -504,6 +538,48 @@ public sealed class SchemaSyncToolTests {
 			because: "the thrown seed exception should be returned in operation error");
 		GetMessageValues(response.Results[1]).Should().Contain("Seed command started.",
 			because: "messages emitted before the seed failure should be preserved");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Uses fallback error text for seed-data non-zero exits without Error log messages")]
+	public void SchemaSync_SeedRows_Should_Use_Fallback_Error_On_NonZero_Exit_Without_Error_Logs() {
+		// Arrange
+		TestLogger logger = new();
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand(logger, messages: ["Create succeeded."]);
+		var failingSeedCommand = new FakeCreateDataBindingDbCommand(
+			logger,
+			exitCode: 7,
+			messages: ["Seed finished with warnings only."]);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(failingSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, logger);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+				TitleLocalizations: Localizations("Todo Status"),
+				SeedRows: [new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+					["Name"] = ToJsonElement("New")
+				})])]);
+
+		// Act
+		SchemaSyncResponse response = tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "seed-data non-zero exit code should fail the full batch");
+		response.Results.Should().HaveCount(2,
+			because: "create operation succeeds before seed operation fails");
+		response.Results[1].Operation.Should().Be("seed-data",
+			because: "second result corresponds to seed-data execution");
+		response.Results[1].Error.Should().Be("seed-data failed with exit code 7",
+			because: "BuildOperationError should keep fallback text when no Error-level logs are present");
 	}
 
 	[Test]
@@ -708,25 +784,32 @@ public sealed class SchemaSyncToolTests {
 		private readonly ILogger _logger;
 		private readonly IReadOnlyList<string> _messages;
 		private readonly Exception _executeException;
+		private readonly int _exitCode;
 		public UpdateEntitySchemaOptions CapturedOptions { get; private set; }
 		public FakeUpdateEntitySchemaCommand(
 			ILogger logger = null,
 			IReadOnlyList<string> messages = null,
-			Exception executeException = null)
+			Exception executeException = null,
+			int exitCode = 0)
 			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), logger ?? Substitute.For<ILogger>()) {
 			_logger = logger ?? Substitute.For<ILogger>();
 			_messages = messages ?? [];
 			_executeException = executeException;
+			_exitCode = exitCode;
 		}
 		public override int Execute(UpdateEntitySchemaOptions options) {
 			CapturedOptions = options;
 			foreach (string message in _messages) {
-				_logger.WriteInfo(message);
+				if (_exitCode == 0) {
+					_logger.WriteInfo(message);
+				} else {
+					_logger.WriteError(message);
+				}
 			}
 			if (_executeException is not null) {
 				throw _executeException;
 			}
-			return 0;
+			return _exitCode;
 		}
 	}
 
@@ -734,25 +817,32 @@ public sealed class SchemaSyncToolTests {
 		private readonly ILogger _logger;
 		private readonly IReadOnlyList<string> _messages;
 		private readonly Exception _executeException;
+		private readonly int _exitCode;
 		public CreateDataBindingDbOptions CapturedOptions { get; private set; }
 		public FakeCreateDataBindingDbCommand(
 			ILogger logger = null,
 			IReadOnlyList<string> messages = null,
-			Exception executeException = null)
+			Exception executeException = null,
+			int exitCode = 0)
 			: base(Substitute.For<IDataBindingDbService>(), logger ?? Substitute.For<ILogger>()) {
 			_logger = logger ?? Substitute.For<ILogger>();
 			_messages = messages ?? [];
 			_executeException = executeException;
+			_exitCode = exitCode;
 		}
 		public override int Execute(CreateDataBindingDbOptions options) {
 			CapturedOptions = options;
 			foreach (string message in _messages) {
-				_logger.WriteInfo(message);
+				if (_exitCode == 0) {
+					_logger.WriteInfo(message);
+				} else {
+					_logger.WriteWarning(message);
+				}
 			}
 			if (_executeException is not null) {
 				throw _executeException;
 			}
-			return 0;
+			return _exitCode;
 		}
 	}
 
