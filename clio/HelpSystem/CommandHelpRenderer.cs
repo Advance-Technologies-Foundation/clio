@@ -477,9 +477,12 @@ internal sealed class CommandHelpRenderer {
 		}
 		return examples
 			.Select(example => example?.ToString())
-			.Where(example => !string.IsNullOrWhiteSpace(example))
+			.Where(example => !string.IsNullOrWhiteSpace(example) && LooksLikeCommandLine(example))
 			.ToArray();
 	}
+
+	private static bool LooksLikeCommandLine(string text) =>
+		!Regex.IsMatch(text.Trim(), @"^[A-Za-z]+(\.[A-Za-z]+)+$");
 
 	private static IReadOnlyList<string> BuildPositionalArguments(Type optionsType) =>
 		GetPositionalArgumentDescriptors(optionsType)

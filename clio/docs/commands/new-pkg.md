@@ -19,8 +19,7 @@ Create a new package project.
 ## Examples
 
 ```bash
-CommandLine.Text.Example
-CommandLine.Text.Example
+clio new-pkg <Name> [options]
 ```
 
 ## Arguments

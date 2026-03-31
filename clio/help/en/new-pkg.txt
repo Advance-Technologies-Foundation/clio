@@ -11,8 +11,7 @@ ALIASES
     init
 
 EXAMPLES
-    CommandLine.Text.Example
-    CommandLine.Text.Example
+    clio new-pkg <Name> [options]
 
 ARGUMENTS
     Name
