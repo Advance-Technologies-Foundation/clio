@@ -93,6 +93,13 @@ public class CreateDataBindingDbCommand(IDataBindingDbService dataBindingDbServi
 						.Select(kv => $"{kv.Key}={kv.Value}"));
 				logger.WriteInfo($"Created row: {row.Id} ({valuesPreview})");
 			}
+			foreach (DataBindingCreatedRow row in result.SkippedRows) {
+				string valuesPreview = string.Join(", ",
+					row.Values
+						.Where(kv => !string.Equals(kv.Key, "Id", StringComparison.OrdinalIgnoreCase))
+						.Select(kv => $"{kv.Key}={kv.Value}"));
+				logger.WriteInfo($"Skipped existing row: {row.Id} ({valuesPreview})");
+			}
 			logger.WriteInfo("Done");
 			return 0;
 		}
@@ -498,7 +505,36 @@ internal sealed class DataBindingDbService(
 			? FetchExistingEntityNameToId(options.SchemaName)
 			: new(StringComparer.OrdinalIgnoreCase);
 
-		List<DataBindingCreatedRow> createdRows = ProcessRows(options.SchemaName, rows, schema, existingNameToId, boundRecordIds);
+		List<DataBindingCreatedRow> createdRows = [];
+		List<DataBindingCreatedRow> skippedRows = [];
+		if (rows is { Count: > 0 }) {
+			foreach (Dictionary<string, JsonNode?> row in rows) {
+				string rowId = EnsureRowId(row);
+				string? rowName = row.TryGetValue("Name", out JsonNode? nameNode)
+					? nameNode?.ToString()
+					: null;
+				if (rowName is not null &&
+					existingNameToId.TryGetValue(rowName, out string? existingId)) {
+					if (!boundRecordIds.Contains(existingId, StringComparer.OrdinalIgnoreCase)) {
+						boundRecordIds.Add(existingId);
+					}
+					skippedRows.Add(new DataBindingCreatedRow(
+						existingId,
+						row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString())));
+				} else {
+					InsertEntityRow(options.SchemaName, row, schema.SchemaColumns);
+					if (rowName is not null) {
+						existingNameToId[rowName] = rowId;
+					}
+					if (!boundRecordIds.Contains(rowId, StringComparer.OrdinalIgnoreCase)) {
+						boundRecordIds.Add(rowId);
+					}
+					createdRows.Add(new DataBindingCreatedRow(
+						rowId,
+						row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString())));
+				}
+			}
+		}
 
 		string requestBody = BuildSaveSchemaDataRequest(
 			packageRef, bindingName, options.SchemaName, schema, boundRecordIds,
@@ -508,7 +544,7 @@ internal sealed class DataBindingDbService(
 			requestBody);
 		ThrowIfUnsuccessful(response, "SaveSchema");
 
-		return new DataBindingResult(bindingName, createdRows);
+		return new DataBindingResult(bindingName, createdRows, skippedRows);
 	}
 
 	private static bool ShouldFetchExistingNames(DataBindingDbSchema schema, List<Dictionary<string, JsonNode?>>? rows) {
@@ -1165,7 +1201,8 @@ internal sealed record PackageRef(Guid UId, string Name);
 /// </summary>
 public sealed record DataBindingResult(
 	string BindingName,
-	IReadOnlyList<DataBindingCreatedRow> CreatedRows);
+	IReadOnlyList<DataBindingCreatedRow> CreatedRows,
+	IReadOnlyList<DataBindingCreatedRow> SkippedRows);
 
 /// <summary>
 /// Represents a single row created by <see cref="DataBindingDbService.CreateBinding"/>.
