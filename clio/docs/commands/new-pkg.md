@@ -30,6 +30,13 @@ core assembly with using creatio file design mode with command in
 Pkg directory
 ```
 
+## Arguments
+
+```bash
+Name
+    Name of the created instance. Required.
+```
+
 ## Options
 
 ```bash
@@ -45,6 +52,10 @@ Package name (pos. 0)	Name of package to create
 
 --Maintainer            -m          Maintainer name
 ```
+
+## Command Type
+
+    Development
 
 ## Reporting Bugs
 

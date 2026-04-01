@@ -64,6 +64,10 @@ Removing from configuration...
 --force         -f          Skip confirmation prompt and delete immediately
 ```
 
+## Command Type
+
+    Maintenance commands
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio

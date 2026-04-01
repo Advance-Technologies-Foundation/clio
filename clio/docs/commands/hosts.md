@@ -105,6 +105,10 @@ Use 'clio reg-web-app' to register environments with paths.
 - On Windows, sites are "Running" only when both site AND app pool started
 - Set CLIO_DEBUG_IIS=true for detailed IIS detection diagnostics
 
+## Command Type
+
+    Monitoring and Management commands
+
 ## Output
 
     The command displays a table with the following columns:

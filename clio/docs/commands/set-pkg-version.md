@@ -23,6 +23,24 @@ Set specified package version into descriptor.json by specified package path.
 clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
 ```
 
+## Arguments
+
+```bash
+PackagePath
+    Package path. Required.
+```
+
+## Options
+
+```bash
+-v, --PackageVersion <VALUE>
+Package version. Required.
+```
+
+## Command Type
+
+    Service commands
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio

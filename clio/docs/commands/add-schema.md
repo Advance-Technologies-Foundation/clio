@@ -20,6 +20,13 @@ clio add-schema --help
 Display canonical options and usage examples
 ```
 
+## Arguments
+
+```bash
+SchemaName
+    Schema Name. Required.
+```
+
 ## Options
 
 ```bash

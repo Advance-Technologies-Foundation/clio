@@ -142,6 +142,10 @@ Optional. Force nerdctl for this invocation and bypass runtime CLI auto-detectio
 clio always adds `--namespace k8s.io` when nerdctl is used.
 ```
 
+## Command Type
+
+    Installation and Deployment commands
+
 ## Registry Authentication
 
     `build-docker-image` does not currently accept registry username/password

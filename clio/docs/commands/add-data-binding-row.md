@@ -65,6 +65,10 @@ an object with value and displayValue
 - Unknown columns in --values or --localizations are rejected
 - Existing rows with the same primary key are replaced instead of duplicated
 
+## Command Type
+
+    Development commands
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio

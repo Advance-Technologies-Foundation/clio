@@ -40,6 +40,13 @@ generate-pkg-zip more than one packages to single .gz file if command run from
 packages containing directory
 ```
 
+## Arguments
+
+```bash
+Name
+    Name of the compressed package
+```
+
 ## Options
 
 ```bash
@@ -47,6 +54,10 @@ Package name (pos. 0)    Name/path of package folder
 
 --DestinationPath       -d  Destionation path for result gz file (Optional)
 ```
+
+## Command Type
+
+    CI/CD commands
 
 ## Reporting Bugs
 

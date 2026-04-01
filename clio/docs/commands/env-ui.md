@@ -57,6 +57,10 @@ None - This command is fully interactive and takes no command-line options.
 - Password masking provides visual security but does not encrypt storage
 - Changes are persistent and affect all clio commands
 
+## Command Type
+
+    Configuration Management
+
 ## Features
 
     Main Menu Operations:

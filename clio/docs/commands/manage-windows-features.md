@@ -89,6 +89,10 @@ Not installed : HTTP Activation
 (requires administrator rights)
 ```
 
+## Command Type
+
+    Installation and Setup commands
+
 ## Exit Codes
 
     0               Operation completed successfully

@@ -28,6 +28,13 @@ clio extract-pkg-zip c:\MyPackage.gz -f c:\App\Pkg
 extract-pkg-zip MyPackage.gz file to c:\App\MyPackage folder
 ```
 
+## Arguments
+
+```bash
+Name
+    Name of the compressed package
+```
+
 ## Options
 
 ```bash
@@ -35,6 +42,10 @@ Package name (pos. 0)    Name/path of package acrhive file
 
 --DestinationPath       -d  Destionation path for extract package (Optional)
 ```
+
+## Command Type
+
+    CI/CD commands
 
 ## Reporting Bugs
 

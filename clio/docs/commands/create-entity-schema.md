@@ -95,6 +95,10 @@ Path to the application root folder
 
 cliogate must be installed on the target Creatio environment.
 
+## Command Type
+
+    Package Management commands
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio

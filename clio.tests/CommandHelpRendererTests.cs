@@ -37,8 +37,8 @@ internal class CommandHelpRendererTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Returns the canonical manual help file unchanged when help is requested through an alias.")]
-	public void TryRenderCommandHelp_WhenAliasTargetsManualHelp_ReturnsCanonicalManualFile() {
+	[Description("Preserves manual custom sections when help is requested through an alias.")]
+	public void TryRenderCommandHelp_WhenAliasTargetsManualHelp_PreservesManualSections() {
 		FileSystem.AddDirectory(_helpDirectory);
 		FileSystem.AddFile(
 			System.IO.Path.Combine(_helpDirectory, "ping-app.txt"),
@@ -55,7 +55,41 @@ DETAIL COLLECTIONS
 		output.Should().Contain("ping-app - Manual ping help",
 			because: "alias lookups should resolve to the canonical manual help file");
 		output.Should().Contain("DETAIL COLLECTIONS",
-			because: "manual custom sections should be returned unchanged for runtime help");
+			because: "manual custom sections should remain visible in runtime help");
+	}
+
+	[Test]
+	[Description("Appends generated syntax sections when a manual help file omits arguments and options.")]
+	public void TryRenderCommandHelp_WhenManualHelpOmitsSyntaxSections_AppendsGeneratedFallback() {
+		FileSystem.AddDirectory(_helpDirectory);
+		FileSystem.AddFile(
+			System.IO.Path.Combine(_helpDirectory, "set-pkg-version.txt"),
+			new MockFileData("""
+COMMAND TYPE
+    Service commands
+
+NAME
+    set-pkg-version - set package version
+
+DESCRIPTION
+    Set specified package version into descriptor.json by specified package path.
+
+EXAMPLE
+    clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
+"""));
+
+		string output = _exportRenderer.TryRenderCommandHelp("set-pkg-version");
+
+		output.Should().Contain("COMMAND TYPE",
+			because: "manual sections should still be preserved for runtime help");
+		output.Should().Contain("ARGUMENTS",
+			because: "missing syntax sections should be filled from command metadata");
+		output.Should().Contain("PackagePath",
+			because: "required positional arguments should be reflected when the manual file does not define them");
+		output.Should().Contain("OPTIONS",
+			because: "missing options should be appended from the option attributes");
+		output.Should().Contain("-v, --PackageVersion <VALUE>",
+			because: "reflected option metadata should surface the required package version switch");
 	}
 
 	[Test]
@@ -176,6 +210,41 @@ MODEL VALIDATION
 		output.IndexOf("## Detail Collections", StringComparison.Ordinal).Should().BeLessThan(
 			output.IndexOf("## Model Validation", StringComparison.Ordinal),
 			because: "custom sections should keep the same order as the manual help file");
+	}
+
+	[Test]
+	[Description("Falls back to reflected arguments and options in markdown docs when manual sections are absent.")]
+	public void RenderMarkdownDoc_WhenManualHelpOmitsSyntaxSections_UsesGeneratedFallback() {
+		FileSystem.AddDirectory(_helpDirectory);
+		FileSystem.AddFile(
+			System.IO.Path.Combine(_helpDirectory, "set-pkg-version.txt"),
+			new MockFileData("""
+COMMAND TYPE
+    Service commands
+
+NAME
+    set-pkg-version - set package version
+
+DESCRIPTION
+    Set specified package version into descriptor.json by specified package path.
+
+EXAMPLE
+    clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
+"""));
+		CommandHelpCatalog catalog = new();
+		catalog.TryGetCommand("set-pkg-version", out HelpCommandMetadata command).Should().BeTrue(
+			because: "the set-pkg-version command should exist in the canonical help catalog");
+
+		string output = _exportRenderer.RenderMarkdownDoc(command);
+
+		output.Should().Contain("## Arguments",
+			because: "markdown docs should still describe reflected positional arguments when manual help omits them");
+		output.Should().Contain("PackagePath",
+			because: "the positional package path argument should remain documented");
+		output.Should().Contain("## Options",
+			because: "markdown docs should still include reflected options when the manual section is missing");
+		output.Should().Contain("-v, --PackageVersion <VALUE>",
+			because: "the required package version switch should remain documented in markdown output");
 	}
 
 	private CommandHelpRenderer CreateRenderer(Func<bool> supportsAnsi) =>

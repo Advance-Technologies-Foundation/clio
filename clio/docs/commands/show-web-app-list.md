@@ -57,6 +57,13 @@ clio show-web-app-list production                 # Show specific environment
 clio show-web-app-list -s                # Short format
 ```
 
+## Arguments
+
+```bash
+App name
+    Name of application
+```
+
 ## Options
 
 ```bash
@@ -79,6 +86,10 @@ Default: json
 - Settings file location displayed with --short format
 - Cross-platform compatible (Windows, macOS, Linux)
 - Output includes all fields to support AI assistants and scripting
+
+## Command Type
+
+    Configuration Management
 
 ## Output Formats
 

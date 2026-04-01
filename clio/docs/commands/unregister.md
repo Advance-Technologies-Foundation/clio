@@ -59,6 +59,10 @@ the unregister process)
 - Icon files in %APPDATA%\clio\ are not removed
 - Command returns non-zero when any registry delete command exits with a non-zero code
 
+## Command Type
+
+    System configuration
+
 ## Registry Keys Deleted
 
     - HKEY_CLASSES_ROOT\Folder\shell\clio  (folder context menu)

@@ -80,6 +80,13 @@ Path: C:\Creatio\Development
 Check the new terminal window for application logs.
 ```
 
+## Arguments
+
+```bash
+EnvironmentName
+    Application name
+```
+
 ## Options
 
 ```bash
@@ -89,6 +96,57 @@ Environment name to start. Uses default environment if not specified.
 -w, --terminal
 Start in a new terminal window with visible logs (.NET Core only).
 Default is background service mode. Ignored for IIS deployments.
+```
+
+## Environment Options
+
+```bash
+-u, --uri <VALUE>
+Application uri
+-p, --Password <VALUE>
+User password
+-l, --Login <VALUE>
+User login (administrator permission required)
+-i, --IsNetCore
+Use NetCore application
+-e, --Environment <VALUE>
+Environment name
+-m, --Maintainer <VALUE>
+Maintainer name
+-c, --dev <VALUE>
+Developer mode state for environment
+--WorkspacePathes <VALUE>
+Workspace path
+-s, --Safe <VALUE>
+Safe action in this environment
+--clientId <VALUE>
+OAuth client id
+--clientSecret <VALUE>
+OAuth client secret
+--authAppUri <VALUE>
+OAuth app URI
+--silent
+Use default behavior without user interaction
+--restartEnvironment
+Restart environment after execute command
+--db-server-uri <VALUE>
+Db server uri
+--db-user <VALUE>
+Database user
+--db-password <VALUE>
+Database password
+--backup-file <VALUE>
+Full path to backup file
+--db-working-folder <VALUE>
+Folder visible to db server
+--db-name <VALUE>
+Desired database name
+--force
+Force restore
+--callback-process <VALUE>
+Callback process name
+--ep <VALUE>
+Path to the application root folder
 ```
 
 ## Requirements
@@ -121,6 +179,10 @@ Appropriate file system permissions required
 - After starting, site is pinged at {Uri}/ping to verify accessibility
 - Ping failure logs warning but does not prevent command success
 - Administrator privileges may be required on Windows for IIS operations
+
+## Command Type
+
+    Application Management commands
 
 ## Exit Codes
 

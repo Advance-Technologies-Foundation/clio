@@ -47,6 +47,13 @@ clio get-pkg-list -e MyEnvironment -f Custom -j
 clio get-pkg-list -e MyEnvironment
 ```
 
+## Arguments
+
+```bash
+EnvironmentName
+    Application name
+```
+
 ## Options
 
 ```bash
@@ -66,6 +73,57 @@ Standard environment options are also available:
 -p, --Password         User password
 ```
 
+## Environment Options
+
+```bash
+-u, --uri <VALUE>
+Application uri
+-p, --Password <VALUE>
+User password
+-l, --Login <VALUE>
+User login (administrator permission required)
+-i, --IsNetCore
+Use NetCore application
+-e, --Environment <VALUE>
+Environment name
+-m, --Maintainer <VALUE>
+Maintainer name
+-c, --dev <VALUE>
+Developer mode state for environment
+--WorkspacePathes <VALUE>
+Workspace path
+-s, --Safe <VALUE>
+Safe action in this environment
+--clientId <VALUE>
+OAuth client id
+--clientSecret <VALUE>
+OAuth client secret
+--authAppUri <VALUE>
+OAuth app URI
+--silent
+Use default behavior without user interaction
+--restartEnvironment
+Restart environment after execute command
+--db-server-uri <VALUE>
+Db server uri
+--db-user <VALUE>
+Database user
+--db-password <VALUE>
+Database password
+--backup-file <VALUE>
+Full path to backup file
+--db-working-folder <VALUE>
+Folder visible to db server
+--db-name <VALUE>
+Desired database name
+--force
+Force restore
+--callback-process <VALUE>
+Callback process name
+--ep <VALUE>
+Path to the application root folder
+```
+
 ## Notes
 
 Table format (default):
@@ -76,6 +134,10 @@ PackageName2        2.1.3          Developer
 
 JSON format (-j flag):
 Returns an array of package objects with detailed information
+
+## Command Type
+
+    Package Management commands
 
 ## Reporting Bugs
 

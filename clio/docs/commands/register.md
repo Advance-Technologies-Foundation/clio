@@ -61,6 +61,10 @@ and registry configuration files.
 - Icons are stored in: %APPDATA%\clio\
 - To remove context menu entries, use the 'unregister' command
 
+## Command Type
+
+    System configuration
+
 ## Registry Files Used
 
     - reg\unreg_clio_context_menu_win.reg  (removes existing entries)

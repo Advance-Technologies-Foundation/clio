@@ -73,4 +73,8 @@ When omitted, clio uses the default bootstrap skills repository.
 Defaults to workspace.
 ```
 
+## Command Type
+
+    Workspace commands
+
 - [Clio Command Reference](../../Commands.md#install-skills)

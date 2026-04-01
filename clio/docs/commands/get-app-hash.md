@@ -20,6 +20,13 @@ clio get-app-hash --help
 Display canonical options and usage examples
 ```
 
+## Arguments
+
+```bash
+Directory
+    Directory to calculate hash for
+```
+
 ## Options
 
 ```bash

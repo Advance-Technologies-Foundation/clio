@@ -390,6 +390,29 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	}
 
 	[Test]
+	[Description("Appends generated syntax sections when a manual help file omits them at runtime.")]
+	public void ExecuteCommands_WithSparseManualHelp_ShouldAppendGeneratedSyntaxSections() {
+		StringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+
+		int exitCode = Program.ExecuteCommands(["set-pkg-version", "--help"]);
+		string output = consoleOutput.ToString();
+
+		exitCode.Should().Be(0, because: "the parser-driven help path should succeed for known commands");
+		output.Should().Contain("COMMAND TYPE",
+			because: "existing manual sections should remain visible in runtime help");
+		output.Should().Contain("ARGUMENTS",
+			because: "runtime help should append generated positional syntax when the manual file omits it");
+		output.Should().Contain("PackagePath",
+			because: "the required package path argument should stay discoverable");
+		output.Should().Contain("OPTIONS",
+			because: "runtime help should append generated options when the manual file omits them");
+		output.Should().Contain("-v, --PackageVersion <VALUE>",
+			because: "the required package version switch should remain documented");
+	}
+
+	[Test]
 	[Description("Excludes hidden commands from the unknown-command suggestions.")]
 	public void ExecuteCommands_WithHiddenCommandAlias_ShouldNotSuggestHiddenCommand() {
 		StringWriter consoleOutput = new();

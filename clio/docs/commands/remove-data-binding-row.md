@@ -42,6 +42,10 @@ clio remove-data-binding-row --package Custom --binding-name SysSettings --works
 - The command fails if the supplied key does not exist
 - Localization rows that share the same primary key are removed together
 
+## Command Type
+
+    Development commands
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio

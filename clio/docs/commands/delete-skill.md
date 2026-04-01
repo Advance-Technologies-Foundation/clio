@@ -45,4 +45,8 @@ Required.
 Defaults to workspace.
 ```
 
+## Command Type
+
+    Workspace commands
+
 - [Clio Command Reference](../../Commands.md#delete-skill)

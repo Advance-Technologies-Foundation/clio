@@ -53,6 +53,15 @@ CLIO_CMD="clio" python3 scripts/mcp_client.py component-info '{"component-type":
 Inspect a Freedom UI component contract from the shipped local registry.
 ```
 
+## Options
+
+```bash
+----fail-on-error
+Return fail code on errors
+----fail-on-warning
+Return fail code on warnings
+```
+
 ## Requirements
 
 - clio version 8.0.2.35 or higher
@@ -68,6 +77,10 @@ Inspect a Freedom UI component contract from the shipped local registry.
 - Preferred existing-app flow is application-get-list -> application-get-info, then page or schema inspection, then page-update / modify-entity-schema-column / schema-sync as needed
 - Boolean parameters must be JSON booleans (true/false), not strings
 - Entity tools work DB-first: schemas are created directly in PostgreSQL
+
+## Command Type
+
+    AI integration commands
 
 ## Return Values
 

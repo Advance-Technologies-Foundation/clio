@@ -110,6 +110,10 @@ Default: 1
 - Write permissions to user settings directory
 - Understanding of Kubernetes resource management
 
+## Command Type
+
+    Installation and Deployment commands
+
 ## Resource Format
 
     Memory Sizes:

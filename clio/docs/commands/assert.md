@@ -70,6 +70,10 @@ Windows user identity to validate
 Required permission level: read, write, modify, full
 ```
 
+## Command Type
+
+    Infrastructure validation commands
+
 ## Scopes
 
     k8          Kubernetes resource assertions

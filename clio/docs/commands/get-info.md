@@ -80,6 +80,57 @@ Additional options:
 --timeout               Request timeout in milliseconds (default: 100000)
 ```
 
+## Environment Options
+
+```bash
+-u, --uri <VALUE>
+Application uri
+-p, --Password <VALUE>
+User password
+-l, --Login <VALUE>
+User login (administrator permission required)
+-i, --IsNetCore
+Use NetCore application
+-e, --Environment <VALUE>
+Environment name
+-m, --Maintainer <VALUE>
+Maintainer name
+-c, --dev <VALUE>
+Developer mode state for environment
+--WorkspacePathes <VALUE>
+Workspace path
+-s, --Safe <VALUE>
+Safe action in this environment
+--clientId <VALUE>
+OAuth client id
+--clientSecret <VALUE>
+OAuth client secret
+--authAppUri <VALUE>
+OAuth app URI
+--silent
+Use default behavior without user interaction
+--restartEnvironment
+Restart environment after execute command
+--db-server-uri <VALUE>
+Db server uri
+--db-user <VALUE>
+Database user
+--db-password <VALUE>
+Database password
+--backup-file <VALUE>
+Full path to backup file
+--db-working-folder <VALUE>
+Folder visible to db server
+--db-name <VALUE>
+Desired database name
+--force
+Force restore
+--callback-process <VALUE>
+Callback process name
+--ep <VALUE>
+Path to the application root folder
+```
+
 ## Notes
 
 - This command requires cliogate extension to be installed on Creatio
@@ -87,6 +138,10 @@ Additional options:
 installation instructions
 - The command uses GET HTTP method for the API call
 - Response is returned as formatted JSON with system details
+
+## Command Type
+
+    Information commands
 
 ## Exit Codes
 
