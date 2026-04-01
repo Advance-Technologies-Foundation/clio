@@ -323,7 +323,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 	#region Fields: Public
 
 
-	public record App(string PhysicalPath, Uri Url);
+	public record App(string PhysicalPath, Uri Url, SiteType SiteType);
 	
 	/// <summary>
 	///  Gets IIS Sites that are physically located in **/Terrasoft.WebApp folder from remote host
@@ -352,7 +352,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 					// For NetFramework apps, the environment path should be the parent of Terrasoft.WebApp
 					// webApp.PhysicalPath points to "C:\...\Terrasoft.WebApp", we need its parent
 					string environmentPath = Directory.GetParent(webApp.PhysicalPath)?.FullName ?? webApp.PhysicalPath;
-					result.Add(rootSite.Name + newPath, new App(environmentPath, value));
+					result.Add(rootSite.Name + newPath, new App(environmentPath, value, SiteType.NetFramework));
 				}
 			});
 
@@ -360,7 +360,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 		sites.Where(site => !result.ContainsKey(site.Name) && DetectSiteType(site.PhysicalPath) != SiteType.NotCreatioSite)
 			.ToList()
 			.ForEach(site => {
-				result.Add(site.Name, new App(site.PhysicalPath, site.Uris.FirstOrDefault()));
+				result.Add(site.Name, new App(site.PhysicalPath, site.Uris.FirstOrDefault(), DetectSiteType(site.PhysicalPath)));
 			});
 		
 		return result;

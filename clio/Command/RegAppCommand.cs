@@ -40,17 +40,23 @@ public class RegAppCommand : Command<RegAppOptions> {
 	private readonly IApplicationClientFactory _applicationClientFactory;
 	private readonly IPowerShellFactory _powerShellFactory;
 	private readonly ILogger _logger;
+	private readonly IEnvironmentRuntimeDetectionService _environmentRuntimeDetectionService;
+	private readonly IIisEnvironmentDiscoveryService _iisEnvironmentDiscoveryService;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public RegAppCommand(ISettingsRepository settingsRepository, IApplicationClientFactory applicationClientFactory,
-		IPowerShellFactory powerShellFactory, ILogger logger){
+		IPowerShellFactory powerShellFactory, ILogger logger,
+		IEnvironmentRuntimeDetectionService environmentRuntimeDetectionService = null,
+		IIisEnvironmentDiscoveryService iisEnvironmentDiscoveryService = null){
 		_settingsRepository = settingsRepository;
 		_applicationClientFactory = applicationClientFactory;
 		_powerShellFactory = powerShellFactory;
 		_logger = logger;
+		_environmentRuntimeDetectionService = environmentRuntimeDetectionService;
+		_iisEnvironmentDiscoveryService = iisEnvironmentDiscoveryService;
 	}
 
 	#endregion
@@ -60,22 +66,19 @@ public class RegAppCommand : Command<RegAppOptions> {
 	public override int Execute(RegAppOptions options){
 		try {
 			if (options.FromIis) {
-				_powerShellFactory.Initialize(options.Login, options.Password, options.Host);
-				Dictionary<string, IISScannerHandler.App> sites = IISScannerHandler.GetSites(_powerShellFactory);
-
-				sites.ToList().ForEach(site => {
+				DiscoverIisEnvironments(options).ToList().ForEach(site => {
 					EnvironmentSettings settings = new() {
 						Login = "Supervisor",
 						Password = "Supervisor",
-						Uri = site.Value.Url.ToString().TrimEnd('/'),
+						Uri = site.Uri,
 						Maintainer = "Customer",
 						Safe = false,
-						IsNetCore = false,
+						IsNetCore = site.IsNetCore,
 						DeveloperModeEnabled = true,
-						EnvironmentPath = site.Value.PhysicalPath
+						EnvironmentPath = site.PhysicalPath
 					};
-					_settingsRepository.ConfigureEnvironment(site.Key, settings);
-					_logger.WriteInfo($"Environment {site.Key} was added from {options.Host ?? "localhost"}");
+					_settingsRepository.ConfigureEnvironment(site.Name, settings);
+					_logger.WriteInfo($"Environment {site.Name} was added from {options.Host ?? "localhost"}");
 				});
 				return 0;
 			}
@@ -84,22 +87,6 @@ public class RegAppCommand : Command<RegAppOptions> {
 				_settingsRepository.OpenFile();
 				return 0;
 			}
-			
-			EnvironmentSettings environment = new() {
-				Login = options.Login,
-				Password = options.Password,
-				Uri = options.Uri?.TrimEnd('/'),
-				Maintainer = options.Maintainer,
-				Safe = options.SafeValue ?? false,
-				IsNetCore = options.IsNetCore ?? false,
-				DeveloperModeEnabled = options.DeveloperModeEnabled,
-				ClientId = options.ClientId,
-				ClientSecret = options.ClientSecret,
-				AuthAppUri = options.AuthAppUri,
-				WorkspacePathes = options.WorkspacePathes, 
-				EnvironmentPath = options.EnvironmentPath
-			};
-			
 			if (!string.IsNullOrWhiteSpace(options.ActiveEnvironment)) {
 				if (_settingsRepository.IsEnvironmentExists(options.ActiveEnvironment)) {
 					_settingsRepository.SetActiveEnvironment(options.ActiveEnvironment);
@@ -108,6 +95,24 @@ public class RegAppCommand : Command<RegAppOptions> {
 				}
 				throw new Exception($"Not found environment {options.ActiveEnvironment} in settings");
 			}
+			EnvironmentSettings? existingEnvironment = string.IsNullOrWhiteSpace(options.EnvironmentName)
+				? null
+				: _settingsRepository.FindEnvironment(options.EnvironmentName);
+			bool resolvedIsNetCore = ResolveIsNetCore(options, existingEnvironment);
+			EnvironmentSettings environment = new() {
+				Login = options.Login,
+				Password = options.Password,
+				Uri = options.Uri?.TrimEnd('/'),
+				Maintainer = options.Maintainer,
+				Safe = options.SafeValue ?? false,
+				IsNetCore = resolvedIsNetCore,
+				DeveloperModeEnabled = options.DeveloperModeEnabled,
+				ClientId = options.ClientId,
+				ClientSecret = options.ClientSecret,
+				AuthAppUri = options.AuthAppUri,
+				WorkspacePathes = options.WorkspacePathes, 
+				EnvironmentPath = options.EnvironmentPath
+			};
 			_settingsRepository.ConfigureEnvironment(options.EnvironmentName, environment);
 			_logger.WriteInfo($"Environment {options.EnvironmentName} was configured...");
 			environment = _settingsRepository.GetEnvironment(options);
@@ -131,6 +136,56 @@ public class RegAppCommand : Command<RegAppOptions> {
 			return 1;
 		}
 	}
+
+	#endregion
+
+	#region Methods: Private
+
+	private IEnumerable<IisEnvironmentDescriptor> DiscoverIisEnvironments(RegAppOptions options) {
+		if (_iisEnvironmentDiscoveryService != null) {
+			return _iisEnvironmentDiscoveryService.Discover(options.Login, options.Password, options.Host);
+		}
+
+		_powerShellFactory.Initialize(options.Login, options.Password, options.Host);
+		return IISScannerHandler.GetSites(_powerShellFactory)
+			.Select(site => new IisEnvironmentDescriptor(
+				site.Key,
+				site.Value.PhysicalPath,
+				site.Value.Url.ToString().TrimEnd('/'),
+				site.Value.SiteType == IISScannerHandler.SiteType.Core));
+	}
+
+	private bool ResolveIsNetCore(RegAppOptions options, EnvironmentSettings? existingEnvironment) {
+		if (options.IsNetCore.HasValue) {
+			return options.IsNetCore.Value;
+		}
+
+		if (string.IsNullOrWhiteSpace(options.Uri)) {
+			return existingEnvironment?.IsNetCore ?? false;
+		}
+
+		if (_environmentRuntimeDetectionService == null) {
+			throw new InvalidOperationException(
+				"Runtime auto-detection is not available. Rerun reg-web-app with --IsNetCore true or --IsNetCore false.");
+		}
+
+		EnvironmentSettings detectionEnvironment = BuildDetectionEnvironment(options, existingEnvironment);
+		bool isNetCore = _environmentRuntimeDetectionService.Detect(detectionEnvironment);
+		_logger.WriteInfo($"Auto-detected runtime: {(isNetCore ? ".NET Core / NET8" : ".NET Framework")}");
+		return isNetCore;
+	}
+
+	private static EnvironmentSettings BuildDetectionEnvironment(
+		RegAppOptions options,
+		EnvironmentSettings? existingEnvironment) =>
+		new() {
+			Uri = options.Uri?.TrimEnd('/') ?? existingEnvironment?.Uri,
+			Login = options.Login ?? existingEnvironment?.Login,
+			Password = options.Password ?? existingEnvironment?.Password,
+			ClientId = options.ClientId ?? existingEnvironment?.ClientId,
+			ClientSecret = options.ClientSecret ?? existingEnvironment?.ClientSecret,
+			AuthAppUri = options.AuthAppUri ?? existingEnvironment?.AuthAppUri
+		};
 
 	#endregion
 
