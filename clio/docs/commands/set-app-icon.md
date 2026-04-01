@@ -34,8 +34,4 @@ Application icon path. Required.
 Path to application package folder or archive. Required.
 ```
 
-## Reporting Bugs
-
-    https://github.com/Advance-Technologies-Foundation/clio
-
 - [Clio Command Reference](../../Commands.md#set-app-icon)

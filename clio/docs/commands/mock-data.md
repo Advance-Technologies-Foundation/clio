@@ -1,13 +1,12 @@
 # mock-data
 
-Generate mock data for unit tests.
+## Command Type
 
+    Testing commands
 
-## Usage
+## Name
 
-```bash
-clio mock-data [options]
-```
+mock-data - generates mock data for unit tests from Creatio OData models
 
 ## Description
 
@@ -25,9 +24,9 @@ This is useful for creating test fixtures with real data from Creatio.
 
 ## Aliases
 
-`data-mock`
+data-mock
 
-## Examples
+## Example
 
 ```bash
 clio mock-data -m D:\Projects\MyProject\Models -d D:\Projects\MyProject\Tests\TestsData -e MyDevCreatio
@@ -55,58 +54,7 @@ Pattern to exclude models from data extraction (optional, default: "VwSys")
 Models containing this pattern in their name will be skipped
 ```
 
-## Environment Options
-
-```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
-```
-
-## Requirements
+## Prerequisites
 
 - Creatio instance must be accessible
 - Valid credentials for the target environment
@@ -119,10 +67,6 @@ Path to the application root folder
 - If data extraction fails for a model, a warning is logged but execution continues
 - Extracted data is saved as <SchemaName>.json files
 - System views (VwSys*) are excluded by default
-
-## Command Type
-
-    Testing commands
 
 ## Related Commands
 

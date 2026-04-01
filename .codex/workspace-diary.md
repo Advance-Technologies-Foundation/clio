@@ -1628,3 +1628,24 @@ Decision: Changed runtime command help to merge manual sections with generated f
 Discovery: The GitHub PR failure was confined to `ReadmeChecker` assumptions, while a full local macOS run still shows unrelated `StopCommand` test failures that did not appear in the PR's Windows CI run; the focused help/doc suite remains the relevant regression signal for this change.
 Files: clio/HelpSystem/CommandHelpRenderer.cs, clio.tests/CommandHelpRendererTests.cs, clio.tests/CommonProgramTest.cs, clio.tests/Command/ReadmeChecker.cs, clio/docs/commands, .codex/workspace-diary.md
 Impact: Sparse manual help keeps its rich prose and custom sections without losing discoverable syntax, generated markdown docs regain missing argument/option blocks, and PR CI no longer fails solely because fallback-help commands lack manual txt files.
+
+## 2026-04-01 12:21 – Audit merged help implementation against plan
+Context: User asked for a post-merge review of the help changes and a comparison between the agreed plan and what is actually implemented.
+Decision: Reviewed `origin/master` instead of local `master` because the local checkout is three commits behind the merged help fixes.
+Discovery: The merged implementation matches the later flat A-Z root-help direction and the manual-help-first artifact flow, but it still duplicates requirement content for commands like `add-item` and does not preserve absolute custom-section positions once standard sections are re-rendered.
+Files: clio/HelpSystem/CommandHelpRenderer.cs, clio/HelpSystem/HelpArtifactExporter.cs, clio/help/en/add-item.txt, clio/docs/commands/add-item.md, .codex/workspace-diary.md
+Impact: Future help cleanup should target de-duplicating merged requirement text and making custom-section ordering fully lossless if manual txt structure must remain authoritative.
+
+## 2026-04-01 12:36 – Help merge over-reports inherited environment options
+Context: Followed up on reviewer feedback that `clio add-item --help` now shows unrelated `ENVIRONMENT OPTIONS` such as restart and DB restore parameters.
+Decision: Confirmed the issue is architectural in the renderer: it treats every property declared on `EnvironmentOptions` as a valid environment option for every derived command.
+Discovery: `AddItemOptions` inherits `EnvironmentOptions`, and help generation appends all base-class options when the manual file lacks an `ENVIRONMENT OPTIONS` section, even though `add-item` only meaningfully uses connection/auth settings and model-generation arguments.
+Files: clio/Command/AddItemCommand.cs, clio/Command/CommandLineOptions.cs, clio/HelpSystem/CommandHelpRenderer.cs, .codex/workspace-diary.md
+Impact: A follow-up fix should separate “shared parseable base options” from “documented supported options”, otherwise command help will keep leaking unrelated inherited flags.
+
+## 2026-04-01 14:11 – Manual help wins without generated markdown merge
+Context: User asked to stop merging generated syntax blocks into command help when a manual `help/en/<command>.txt` file already exists.
+Decision: Switched command rendering to a strict two-mode model where manual help is rendered on its own for both CLI and markdown, and generated sections are used only when manual help is missing; then synced regenerated markdown docs from a clean worktree because the active branch contains unrelated compile-breaking edits.
+Discovery: The clean worktree regeneration touched a broad set of markdown docs because previous exports had synthesized `Arguments`, `Options`, `Environment Options`, `Requirements`, and alias sections into many manual command pages; syncing from the verified clean tree avoided contaminating the help fix with unrelated MCP/page-list changes in the active worktree.
+Files: clio/HelpSystem/CommandHelpRenderer.cs, clio.tests/CommandHelpRendererTests.cs, clio.tests/CommonProgramTest.cs, clio/docs/commands, .codex/workspace-diary.md
+Impact: `clio add-item --help` no longer shows unrelated inherited environment/requirement blocks, sparse manuals such as `set-pkg-version` stay manual-only by design, and GitHub markdown docs now match the same manual-first contract as runtime help.

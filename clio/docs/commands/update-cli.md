@@ -1,9 +1,14 @@
 # update-cli
 
-Update clio.
+## Command Type
 
+    Application management
 
-## Usage
+## Name
+
+update-cli - Update clio to the latest available version
+
+## Synopsis
 
 ```bash
 update-cli [OPTIONS]
@@ -20,9 +25,14 @@ Use the --prompt option if you want to review the changes before updating.
 
 Recommended to use the latest version of clio for bug fixes and new features.
 
-## Aliases
+## Options
 
-`update`
+```bash
+-g, --global            Install clio globally (default: true)
+
+-y, --no-prompt         Proceed with update automatically without confirmation
+(default behavior)
+```
 
 ## Examples
 
@@ -34,69 +44,14 @@ update-cli
 update-cli
 ```
 
-## Options
+## Behavior
 
-```bash
--g, --global            Install clio globally (default: true)
-
--y, --no-prompt         Proceed with update automatically without confirmation
-(default behavior)
-```
-
-## Environment Options
-
-```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
-```
-
-## Command Type
-
-    Application management
+- Checks current installed version and latest version on NuGet.org
+- If already on latest version, displays confirmation message and exits
+- If update available, automatically proceeds with update (unless overridden)
+- Runs: dotnet tool update clio -g
+- Verifies the new version is installed correctly
+- Reports success or failure with appropriate exit codes
 
 ## Exit Codes
 

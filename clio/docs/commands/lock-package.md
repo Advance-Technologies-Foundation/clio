@@ -1,9 +1,10 @@
 # lock-package
 
-Lock a package in Creatio.
+## Description
 
+lock-package - Lock packages in Creatio environment
 
-## Usage
+## Synopsis
 
 ```bash
 clio lock-package [package-names] [options]
@@ -12,42 +13,17 @@ clio lock-package [package-names] [options]
 
 ## Description
 
-lock-package - Lock packages in Creatio environment
-
-## Aliases
-
-`lp`
-
-## Examples
-
-```bash
-Lock a single package:
-clio lock-package MyPackage -e dev
-clio lock-package MyPackage -e dev
-
-Lock multiple packages:
-clio lock-package Package1,Package2,Package3 -e dev
-
-Lock all packages:
-clio lock-package -e dev
-
-Complete development cycle:
-clio unlock-package MyPackage -e dev
-# Make changes...
-clio push-workspace -e dev
-clio lock-package MyPackage -e dev
-
-Using direct authentication:
-clio lock-package MyPackage --uri https://myapp.com -l admin -p pass
-```
+Locks one or more packages in a Creatio environment to prevent
+modifications and unintended changes. Use this command to protect
+packages after completing development work, ensuring system stability.
 
 ## Arguments
 
 ```bash
-    package-names
-        Comma-separated list of package names to lock. If omitted, locks
-        all packages in the environment.
-        Example: MyPackage,AnotherPackage,ThirdPackage
+package-names
+Comma-separated list of package names to lock. If omitted, locks
+all packages in the environment.
+Example: MyPackage,AnotherPackage,ThirdPackage
 ```
 
 ## Options
@@ -75,55 +51,27 @@ OAuth Client Secret (alternative authentication)
 OAuth Authentication App URI (alternative authentication)
 ```
 
-## Environment Options
+## Examples
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+Lock a single package:
+clio lock-package MyPackage -e dev
+clio lock-package MyPackage -e dev
+
+Lock multiple packages:
+clio lock-package Package1,Package2,Package3 -e dev
+
+Lock all packages:
+clio lock-package -e dev
+
+Complete development cycle:
+clio unlock-package MyPackage -e dev
+# Make changes...
+clio push-workspace -e dev
+clio lock-package MyPackage -e dev
+
+Using direct authentication:
+clio lock-package MyPackage --uri https://myapp.com -l admin -p pass
 ```
 
 ## Requirements
@@ -145,11 +93,11 @@ clio get-info -e <ENVIRONMENT_NAME>
 - Administrator permissions required on target environment
 - Include package locking as final step in deployment pipelines
 
-## See also
+## See Also
 
-- `set-dev-mode`
-- `push-pkg`
-- `push-pkg`
-- `get`
+unlock-package    Unlock packages to enable modifications
+install-gate      Install or update cliogate package
+push-workspace    Push workspace changes to environment
+get-info          Check environment and cliogate information
 
 - [Clio Command Reference](../../Commands.md#lock-package)

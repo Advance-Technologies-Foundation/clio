@@ -1,19 +1,12 @@
 # add-user-task
 
-Create a user task schema in a workspace package.
+## Command Type
 
+    Development commands
 
-## Usage
+## Name
 
-```bash
-clio add-user-task <CODE> --package <WORKSPACE_PACKAGE_NAME> --title <TITLE>
-[--description <DESCRIPTION>] [--culture <CULTURE>]
-[--title-localization <culture=value>[;<culture=value>...]]
-[--description-localization <culture=value>[;<culture=value>...]]
-[--parameter <definition>[|<definition>...]]
-[--parameter-item <definition>[|<definition>...]]
--e <ENVIRONMENT_NAME>
-```
+add-user-task - create a process user task schema from the current workspace
 
 ## Description
 
@@ -43,43 +36,16 @@ route does not persist parameter direction:
 4. Load workspace packages to the database
 5. Build the package again
 
-## Examples
+## Synopsis
 
 ```bash
-clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
---description "Creates and sends invoice" -e docker_fix2
-create a user task without parameters in workspace package MyPackage
-
-clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
---parameter
-"code=IsError;title=Is error;type=Boolean;direction=Out|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false"
--e docker_fix2
-create a user task with two parameters and build MyPackage
-
-clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
---parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account"
--e docker_fix2
-create a user task with a lookup parameter resolved through Creatio
-
-clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
---parameter "code=MyList;title=My list;type=Serializable list of composite values"
---parameter-item "parent=MyList;code=Bool1;title=Bool1;type=Boolean|parent=MyList;code=Text1;title=Text1;type=Text"
--e docker_fix2
-create a user task with a composite serializable list parameter and
-two child items
-
-clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
---parameter "code=IsError;title=Is error;type=Boolean;direction=Out"
--e docker_fix2
-create a user task, patch parameter direction in metadata.json, load
-the workspace package to the database, and rebuild MyPackage
-```
-
-## Arguments
-
-```bash
-Code
-    User task code (schema/class name). Must start with Usr. Required.
+clio add-user-task <CODE> --package <WORKSPACE_PACKAGE_NAME> --title <TITLE>
+[--description <DESCRIPTION>] [--culture <CULTURE>]
+[--title-localization <culture=value>[;<culture=value>...]]
+[--description-localization <culture=value>[;<culture=value>...]]
+[--parameter <definition>[|<definition>...]]
+[--parameter-item <definition>[|<definition>...]]
+-e <ENVIRONMENT_NAME>
 ```
 
 ## Options
@@ -134,60 +100,37 @@ multiple item definitions with |
 --timeout                  Request timeout in milliseconds
 ```
 
-## Environment Options
+## Example
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
+--description "Creates and sends invoice" -e docker_fix2
+create a user task without parameters in workspace package MyPackage
+
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
+--parameter
+"code=IsError;title=Is error;type=Boolean;direction=Out|code=ResultMessage;title=Result message;type=Text;required=true;resulting=false;serializable=false"
+-e docker_fix2
+create a user task with two parameters and build MyPackage
+
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
+--parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account"
+-e docker_fix2
+create a user task with a lookup parameter resolved through Creatio
+
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
+--parameter "code=MyList;title=My list;type=Serializable list of composite values"
+--parameter-item "parent=MyList;code=Bool1;title=Bool1;type=Boolean|parent=MyList;code=Text1;title=Text1;type=Text"
+-e docker_fix2
+create a user task with a composite serializable list parameter and
+two child items
+
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice"
+--parameter "code=IsError;title=Is error;type=Boolean;direction=Out"
+-e docker_fix2
+create a user task, patch parameter direction in metadata.json, load
+the workspace package to the database, and rebuild MyPackage
 ```
-
-## Command Type
-
-    Development commands
 
 ## Reporting Bugs
 

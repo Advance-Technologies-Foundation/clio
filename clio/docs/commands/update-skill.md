@@ -1,13 +1,12 @@
 # update-skill
 
-Update managed skills from a repository.
+## Command Type
 
+    Workspace commands
 
-## Usage
+## Name
 
-```bash
-clio update-skill [options]
-```
+update-skill - Update managed skills from a repository
 
 ## Description
 
@@ -33,6 +32,25 @@ selected repository. With --skill, clio updates only that managed skill.
 If the current repository HEAD hash matches the stored hash, clio reports
 that the skill is already up to date and leaves files unchanged.
 
+## Synopsis
+
+```bash
+clio update-skill [options]
+```
+
+## Options
+
+```bash
+--skill                             Optional managed skill name to update.
+When omitted, all managed skills for the selected repository are updated.
+
+--repo                              Optional local repository path or git URL.
+When omitted, clio uses the default bootstrap skills repository.
+
+--scope                             Skill target scope: workspace or user.
+Defaults to workspace.
+```
+
 ## Examples
 
 ```bash
@@ -51,22 +69,5 @@ clio update-skill --repo C:\Repos\bootstrap-composable-app-starter-kit
 Update one managed skill in user scope from a local repository checkout:
 clio update-skill --scope user --repo C:\Repos\bootstrap-composable-app-starter-kit --skill my-skill
 ```
-
-## Options
-
-```bash
---skill                             Optional managed skill name to update.
-When omitted, all managed skills for the selected repository are updated.
-
---repo                              Optional local repository path or git URL.
-When omitted, clio uses the default bootstrap skills repository.
-
---scope                             Skill target scope: workspace or user.
-Defaults to workspace.
-```
-
-## Command Type
-
-    Workspace commands
 
 - [Clio Command Reference](../../Commands.md#update-skill)

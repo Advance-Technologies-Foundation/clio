@@ -1,34 +1,17 @@
 # restore-nuget-pkg
 
-Restore NuGet package to a folder.
+## Name
 
-
-## Usage
-
-```bash
-clio restore-nuget-pkg [OPTIONS]
-```
+restore-nuget-pkg - Restore NuGet package to a folder
 
 ## Description
 
 Downloads and restores the requested NuGet package contents to a local folder.
 
-## Aliases
-
-`restore-nuget`, `rn`
-
-## Examples
+## Synopsis
 
 ```bash
-clio restore-nuget-pkg --help
-Display canonical options and usage examples
-```
-
-## Arguments
-
-```bash
-Name
-    Package name. Required.
+clio restore-nuget-pkg [OPTIONS]
 ```
 
 ## Options
@@ -37,63 +20,19 @@ Name
 Supports the canonical restore-nuget-pkg command options.
 ```
 
-## Environment Options
+## Examples
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+clio restore-nuget-pkg --help
+Display canonical options and usage examples
 ```
+
+## See Also
+
+install-nuget-pkg - Install a NuGet package to an environment
 
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `push-pkg`
 
 - [Clio Command Reference](../../Commands.md#restore-nuget-pkg)

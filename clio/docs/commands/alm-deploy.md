@@ -1,14 +1,12 @@
 # alm-deploy
 
-Deploy a package to Creatio.
+## Command Type
 
+    Application Lifecycle Management commands
 
-## Usage
+## Name
 
-```bash
-clio alm-deploy <FILE_PATH> --site <SITE_NAME> [OPTIONS]
-clio alm-deploy <FILE_PATH> --site <SITE_NAME> [OPTIONS]
-```
+alm-deploy - Deploy and install package to Creatio environment via ALM
 
 ## Description
 
@@ -20,35 +18,17 @@ sites/environments managed by ALM.
 The command performs chunked file upload for reliability with large packages
 and returns an operation ID for tracking the deployment progress.
 
-## Aliases
-
-`deploy`
-
-## Examples
+## Synopsis
 
 ```bash
-alm-deploy package using registered environment:
-clio alm-deploy MyPackage.gz --site Production -e prod-env
-
-alm-deploy package with direct credentials:
-clio alm-deploy MyPackage.gz --site Production -u https://myapp.creatio.com -l admin -p pass
-
-alm-deploy using OAuth authentication:
-clio alm-deploy MyPackage.gz --site Production -u https://myapp.creatio.com --clientId abc123 --clientSecret xyz789 --authAppUri https://auth.app.com
-
-alm-deploy using non-SSP user:
-clio alm-deploy MyPackage.gz --site Production -e prod-env --general
-
-alm-deploy with custom timeout:
-clio alm-deploy MyPackage.gz --site Production -e prod-env --timeout 60000
+clio alm-deploy <FILE_PATH> --site <SITE_NAME> [OPTIONS]
+clio alm-deploy <FILE_PATH> --site <SITE_NAME> [OPTIONS]
 ```
 
-## Arguments
+## Required Arguments
 
-```bash
-File
-    Package file path. Required.
-```
+    FILE_PATH (pos. 0)
+        Path to the package file to deploy (typically .gz format)
 
 ## Options
 
@@ -74,81 +54,6 @@ File
 --timeout                       Request timeout in milliseconds (default: 100000)
 ```
 
-## Environment Options
-
-```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
-```
-
-## Requirements
-
-- Creatio environment with ALM installed
-- Valid package file (.gz format)
-- Administrator or appropriate credentials
-- Target site/environment must exist in ALM
-
-## Notes
-
-- Package files are uploaded in chunks for reliability
-- Operation ID can be used to track deployment status in Creatio
-- Use --general flag to select non-SSP service endpoint
-- Environment-based auth requires pre-registration with 'clio register'
-- File path can be absolute or relative
-
-## Command Type
-
-    Application Lifecycle Management commands
-
-## Required Arguments
-
-    FILE_PATH (pos. 0)
-        Path to the package file to deploy (typically .gz format)
-
 ## Authentication
 
     Three authentication methods are supported:
@@ -161,6 +66,25 @@ Path to the application root folder
 
     3. OAuth:
        Provide --uri, --clientId, --clientSecret, and --authAppUri
+
+## Examples
+
+```bash
+alm-deploy package using registered environment:
+clio alm-deploy MyPackage.gz --site Production -e prod-env
+
+alm-deploy package with direct credentials:
+clio alm-deploy MyPackage.gz --site Production -u https://myapp.creatio.com -l admin -p pass
+
+alm-deploy using OAuth authentication:
+clio alm-deploy MyPackage.gz --site Production -u https://myapp.creatio.com --clientId abc123 --clientSecret xyz789 --authAppUri https://auth.app.com
+
+alm-deploy using non-SSP user:
+clio alm-deploy MyPackage.gz --site Production -e prod-env --general
+
+alm-deploy with custom timeout:
+clio alm-deploy MyPackage.gz --site Production -e prod-env --timeout 60000
+```
 
 ## Deployment Process
 
@@ -195,14 +119,29 @@ Path to the application root folder
     0   Package deployed successfully
     1   Deployment failed (upload or operation start failed)
 
+## Prerequisites
+
+- Creatio environment with ALM installed
+- Valid package file (.gz format)
+- Administrator or appropriate credentials
+- Target site/environment must exist in ALM
+
+## Notes
+
+- Package files are uploaded in chunks for reliability
+- Operation ID can be used to track deployment status in Creatio
+- Use --general flag to select non-SSP service endpoint
+- Environment-based auth requires pre-registration with 'clio register'
+- File path can be absolute or relative
+
+## See Also
+
+push-pkg            Push package without ALM
+install-gate        Install cliogate service
+reg-web-app         Register Creatio environment
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `push-pkg`
-- `push-pkg`
-- `reg-web-app`
 
 - [Clio Command Reference](../../Commands.md#alm-deploy)

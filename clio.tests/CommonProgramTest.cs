@@ -368,6 +368,10 @@ internal class CommonProgramTest : BaseClioModuleTests{
 			because: "rich manual sections from add-item.txt should survive the runtime help flow");
 		output.Should().Contain("MODEL VALIDATION",
 			because: "manual explanatory sections should remain visible in command help");
+		output.Should().NotContain("ENVIRONMENT OPTIONS",
+			because: "manual add-item help should no longer be merged with inherited environment options");
+		output.Should().NotContain("REQUIREMENTS",
+			because: "manual add-item help should not get a duplicated generated requirements section");
 	}
 
 	[Test]
@@ -387,11 +391,15 @@ internal class CommonProgramTest : BaseClioModuleTests{
 			because: "manual custom sections should remain visible in parser-driven help");
 		output.Should().Contain("MODEL VALIDATION",
 			because: "manual validation guidance should remain visible in parser-driven help");
+		output.Should().NotContain("ENVIRONMENT OPTIONS",
+			because: "parser-driven manual help should not append inherited environment options");
+		output.Should().NotContain("REQUIREMENTS",
+			because: "parser-driven manual help should not append a generated requirements section");
 	}
 
 	[Test]
-	[Description("Appends generated syntax sections when a manual help file omits them at runtime.")]
-	public void ExecuteCommands_WithSparseManualHelp_ShouldAppendGeneratedSyntaxSections() {
+	[Description("Keeps sparse manual help unchanged instead of appending generated syntax sections at runtime.")]
+	public void ExecuteCommands_WithSparseManualHelp_ShouldPreferManualHelpOnly() {
 		StringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
@@ -402,14 +410,10 @@ internal class CommonProgramTest : BaseClioModuleTests{
 		exitCode.Should().Be(0, because: "the parser-driven help path should succeed for known commands");
 		output.Should().Contain("COMMAND TYPE",
 			because: "existing manual sections should remain visible in runtime help");
-		output.Should().Contain("ARGUMENTS",
-			because: "runtime help should append generated positional syntax when the manual file omits it");
-		output.Should().Contain("PackagePath",
-			because: "the required package path argument should stay discoverable");
-		output.Should().Contain("OPTIONS",
-			because: "runtime help should append generated options when the manual file omits them");
-		output.Should().Contain("-v, --PackageVersion <VALUE>",
-			because: "the required package version switch should remain documented");
+		output.Should().NotContain("ARGUMENTS",
+			because: "manual help should stay authoritative even when it is sparse");
+		output.Should().NotContain("OPTIONS",
+			because: "manual help should no longer be merged with generated options");
 	}
 
 	[Test]

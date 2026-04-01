@@ -1,24 +1,27 @@
 # generate-pkg-zip
 
-Prepare an archive of creatio package.
+## Command Type
 
+    CI/CD commands
 
-## Usage
+## Name
 
-```bash
-clio generate-pkg-zip [<Name>] [options]
-```
+generate-pkg-zip
 
 ## Description
 
 generate-pkg-zip command compress package into *.gz archive for directory
 that contain package folder
 
-## Aliases
+## Options
 
-`comp-pkg`, `compress`
+```bash
+Package name (pos. 0)    Name/path of package folder
 
-## Examples
+--DestinationPath       -d  Destionation path for result gz file (Optional)
+```
+
+## Example
 
 ```bash
 clio generate-pkg-zip
@@ -39,25 +42,6 @@ clio generate-pkg-zip <PACKAGE_NAME_1>,<PACKAGE_NAME_2>,<PACKAGE_NAME_3>
 generate-pkg-zip more than one packages to single .gz file if command run from
 packages containing directory
 ```
-
-## Arguments
-
-```bash
-Name
-    Name of the compressed package
-```
-
-## Options
-
-```bash
-Package name (pos. 0)    Name/path of package folder
-
---DestinationPath       -d  Destionation path for result gz file (Optional)
-```
-
-## Command Type
-
-    CI/CD commands
 
 ## Reporting Bugs
 

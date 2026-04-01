@@ -1,9 +1,10 @@
 # unlock-package
 
-Unlock a package in Creatio.
+## Description
 
+unlock-package - Unlock packages in Creatio environment
 
-## Usage
+## Synopsis
 
 ```bash
 clio unlock-package [package-names] [options]
@@ -12,42 +13,17 @@ clio unlock-package [package-names] [options]
 
 ## Description
 
-unlock-package - Unlock packages in Creatio environment
-
-## Aliases
-
-`up`
-
-## Examples
-
-```bash
-Unlock a single package:
-clio unlock-package MyPackage -e dev
-clio unlock-package MyPackage -e dev
-
-Unlock multiple packages:
-clio unlock-package Package1,Package2,Package3 -e dev
-
-Unlock all packages:
-clio unlock-package -m Creatio -e dev
-
-Output:
-Setting Maintainer sys setting to 'Creatio'.
-Setting SchemaNamePrefix sys setting to an empty value.
-Unlocking all packages in environment 'dev' for maintainer 'Creatio'.
-Done
-
-Using direct authentication:
-clio unlock-package MyPackage --uri https://myapp.com -l admin -p pass
-```
+Unlocks one or more packages in a Creatio environment to enable editing
+and modifications. Use this command when you need to make changes to
+packages that are currently locked in the system.
 
 ## Arguments
 
 ```bash
-    package-names
-        Comma-separated list of package names to unlock. If omitted, unlocks
-        all packages in the environment.
-        Example: MyPackage,AnotherPackage,ThirdPackage
+package-names
+Comma-separated list of package names to unlock. If omitted, unlocks
+all packages in the environment.
+Example: MyPackage,AnotherPackage,ThirdPackage
 ```
 
 ## Options
@@ -80,55 +56,27 @@ OAuth Client Secret (alternative authentication)
 OAuth Authentication App URI (alternative authentication)
 ```
 
-## Environment Options
+## Examples
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+Unlock a single package:
+clio unlock-package MyPackage -e dev
+clio unlock-package MyPackage -e dev
+
+Unlock multiple packages:
+clio unlock-package Package1,Package2,Package3 -e dev
+
+Unlock all packages:
+clio unlock-package -m Creatio -e dev
+
+Output:
+Setting Maintainer sys setting to 'Creatio'.
+Setting SchemaNamePrefix sys setting to an empty value.
+Unlocking all packages in environment 'dev' for maintainer 'Creatio'.
+Done
+
+Using direct authentication:
+clio unlock-package MyPackage --uri https://myapp.com -l admin -p pass
 ```
 
 ## Requirements
@@ -149,11 +97,11 @@ clio get-info -e <ENVIRONMENT_NAME>
 - Remember to lock packages after completing changes
 - Administrator permissions required on target environment
 
-## See also
+## See Also
 
-- `lock`
-- `push-pkg`
-- `push-pkg`
-- `get`
+lock-package      Lock packages to prevent modifications
+install-gate      Install or update cliogate package
+push-workspace    Push workspace changes to environment
+get-info          Check environment and cliogate information
 
 - [Clio Command Reference](../../Commands.md#unlock-package)

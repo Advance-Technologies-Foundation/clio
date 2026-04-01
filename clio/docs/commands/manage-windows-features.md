@@ -1,13 +1,12 @@
 # manage-windows-features
 
-Install windows features required for Creatio.
+## Command Type
 
+    Installation and Setup commands
 
-## Usage
+## Name
 
-```bash
-manage-windows-features [options]
-```
+manage-windows-features - manage Windows features required for Creatio
 
 ## Description
 
@@ -38,11 +37,25 @@ administrator privileges.
 For detailed information about required Windows components, visit:
 https://academy.creatio.com/docs/user/on_site_deployment/application_server_on_windows/check_required_components/enable_required_windows_components
 
-## Aliases
+## Synopsis
 
-`mng-win-features`, `mwf`
+```bash
+manage-windows-features [options]
+```
 
-## Examples
+## Options
+
+```bash
+--Check         -c          Check status of required Windows features
+
+--Install       -i          Install all missing required features
+(requires administrator rights)
+
+--Uninstall     -u          Uninstall all required features
+(requires administrator rights)
+```
+
+## Example
 
 ```bash
 clio manage-windows-features -c
@@ -77,28 +90,16 @@ Not installed : ASP.NET 4.8
 Not installed : HTTP Activation
 ```
 
-## Options
-
-```bash
---Check         -c          Check status of required Windows features
-
---Install       -i          Install all missing required features
-(requires administrator rights)
-
---Uninstall     -u          Uninstall all required features
-(requires administrator rights)
-```
-
-## Command Type
-
-    Installation and Setup commands
-
 ## Exit Codes
 
     0               Operation completed successfully
     1               Operation failed (missing features detected in check mode,
                     command run on non-Windows OS, or error during
                     install/uninstall)
+
+## Aliases
+
+mwf, mng-win-features
 
 ## Reporting Bugs
 

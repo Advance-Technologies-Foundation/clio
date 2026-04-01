@@ -1,13 +1,16 @@
 # compile-configuration
 
-Compile the full configuration in Creatio.
+## Command Type
 
+    Development commands
 
-## Usage
+## Name
 
-```bash
-compile-configuration [options]
-```
+compile-configuration - compile Creatio configuration with real-time progress monitoring
+
+## Aliases
+
+cc, compile-remote
 
 ## Description
 
@@ -27,27 +30,10 @@ Special attention is given to key projects:
 - Terrasoft.Configuration.ODataEntities.csproj
 - Terrasoft.Configuration.Dev.csproj
 
-## Aliases
-
-`cc`, `compile-remote`
-
-## Examples
+## Synopsis
 
 ```bash
-clio compile-configuration -e development
-Compiles configuration for the development environment with progress tracking
-
-clio compile-configuration -e production
-Compiles configuration using the short alias
-
-clio compile-configuration --all -e staging
-Performs a full rebuild of all configurations
-
-clio compile-configuration -u "https://myapp.creatio.com" -l "admin" -p "password"
-Compiles using direct connection parameters
-
-clio compile-configuration -e dev --timeout 300000
-Compiles with a custom 5-minute timeout (though default is infinite)
+compile-configuration [options]
 ```
 
 ## Options
@@ -76,76 +62,24 @@ Default: Infinite (compilation can take time)
 --authAppUri                        OAuth app URI
 ```
 
-## Environment Options
+## Examples
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+clio compile-configuration -e development
+Compiles configuration for the development environment with progress tracking
+
+clio compile-configuration -e production
+Compiles configuration using the short alias
+
+clio compile-configuration --all -e staging
+Performs a full rebuild of all configurations
+
+clio compile-configuration -u "https://myapp.creatio.com" -l "admin" -p "password"
+Compiles using direct connection parameters
+
+clio compile-configuration -e dev --timeout 300000
+Compiles with a custom 5-minute timeout (though default is infinite)
 ```
-
-## Requirements
-
-- Valid Creatio environment with accessible web services
-- Appropriate credentials (admin permission)
-- Network connectivity to the target Creatio instance
-- cliogate must be installed on the target environment
-
-## Notes
-
-- The command uses an infinite timeout by default as compilation can take
-significant time depending on configuration size
-- Real-time progress is tracked by monitoring the CompilationHistory table
-- Compilation errors include detailed information: error code, file name,
-line number, and error description
-- The command distinguishes between warnings (yellow) and errors (red)
-
-## Command Type
-
-    Development commands
 
 ## Output
 
@@ -160,6 +94,22 @@ line number, and error description
     - Errors and warnings with file locations and line numbers
     - Total compilation time
     - Final success/failure status
+
+## Prerequisites
+
+- Valid Creatio environment with accessible web services
+- Appropriate credentials (admin permission)
+- Network connectivity to the target Creatio instance
+- cliogate must be installed on the target environment
+
+## Notes
+
+- The command uses an infinite timeout by default as compilation can take
+significant time depending on configuration size
+- Real-time progress is tracked by monitoring the CompilationHistory table
+- Compilation errors include detailed information: error code, file name,
+line number, and error description
+- The command distinguishes between warnings (yellow) and errors (red)
 
 ## Return Values
 

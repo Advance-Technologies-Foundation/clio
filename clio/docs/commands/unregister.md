@@ -1,9 +1,14 @@
 # unregister
 
-Remove clio shell integrations.
+## Command Type
 
+    System configuration
 
-## Usage
+## Name
+
+unregister - Unregister clio commands from Windows context menu
+
+## Synopsis
 
 ```bash
 unregister [OPTIONS]
@@ -27,6 +32,18 @@ REQUIREMENTS:
 - Administrator privileges required
 - Windows Registry access
 
+## Options
+
+```bash
+-t, --Target            Target environment location for registry entries.
+Values: 'u' for user location (default)
+'m' for machine location
+Default: u
+
+-p, --Path              Path where clio is stored. (Currently not used in
+the unregister process)
+```
+
 ## Examples
 
 ```bash
@@ -40,28 +57,14 @@ unregister --Target u
 unregister --Target m
 ```
 
-## Options
+## Behavior
 
-```bash
--t, --Target            Target environment location for registry entries.
-Values: 'u' for user location (default)
-'m' for machine location
-Default: u
-
--p, --Path              Path where clio is stored. (Currently not used in
-the unregister process)
-```
-
-## Notes
-
-- This command only works on Windows operating systems
-- Administrator privileges are recommended for reliable operation
-- Icon files in %APPDATA%\clio\ are not removed
-- Command returns non-zero when any registry delete command exits with a non-zero code
-
-## Command Type
-
-    System configuration
+1. Executes registry delete command for folder context menu entries
+HKEY_CLASSES_ROOT\Folder\shell\clio
+2. Executes registry delete command for file context menu entries
+HKEY_CLASSES_ROOT\*\shell\clio
+3. Uses /f flag to force deletion without confirmation
+4. Displays success or error message
 
 ## Registry Keys Deleted
 
@@ -72,6 +75,13 @@ the unregister process)
 
     0   Successfully unregistered context menu
     1   Failed to unregister (registry delete command failed or other error occurred)
+
+## Notes
+
+- This command only works on Windows operating systems
+- Administrator privileges are recommended for reliable operation
+- Icon files in %APPDATA%\clio\ are not removed
+- Command returns non-zero when any registry delete command exits with a non-zero code
 
 ## Manual Cleanup
 
@@ -87,12 +97,12 @@ the unregister process)
     - Manually verify registry keys using regedit.exe
     - Ensure no other process is accessing the registry keys
 
+## See Also
+
+register - Add clio to context menu
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `register`
 
 - [Clio Command Reference](../../Commands.md#unregister)

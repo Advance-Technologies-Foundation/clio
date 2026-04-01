@@ -1,24 +1,14 @@
 # remove-data-binding-row-db
 
-Remove a row from a DB-first package data binding.
+## Description
 
+Removes a row from a DB-first package data binding. Deletes the binding schema data record when no rows remain.
 
 ## Usage
 
 ```bash
 clio remove-data-binding-row-db -e <ENVIRONMENT_NAME> --package <PACKAGE_NAME>
 --binding-name <BINDING_NAME> --key-value <PRIMARY_KEY_VALUE>
-```
-
-## Description
-
-Removes a row from a DB-first package data binding. Deletes the binding schema data record when no rows remain.
-
-## Examples
-
-```bash
-clio remove-data-binding-row-db -e dev --package Custom --binding-name SysSettings \
---key-value 4f41bcc2-7ed0-45e8-a1fd-474918966d15
 ```
 
 ## Options
@@ -32,55 +22,18 @@ clio remove-data-binding-row-db -e dev --package Custom --binding-name SysSettin
 -H, --help                 Show this help
 ```
 
-## Environment Options
+## Behavior
+
+Looks up the entity schema name from the remote SysPackageSchemaData table.
+Fetches bound rows via GetBoundSchemaData to locate the target row.
+Deletes the entity record via DeleteQuery.
+When no rows remain, deletes the binding schema data record via DeletePackageSchemaDataRequest.
+
+## Example
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+clio remove-data-binding-row-db -e dev --package Custom --binding-name SysSettings \
+--key-value 4f41bcc2-7ed0-45e8-a1fd-474918966d15
 ```
 
 - [Clio Command Reference](../../Commands.md#remove-data-binding-row-db)

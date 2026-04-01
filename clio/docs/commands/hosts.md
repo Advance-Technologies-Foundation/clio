@@ -1,13 +1,12 @@
 # hosts
 
-List all Creatio hosts and their status.
+## Command Type
 
+    Monitoring and Management commands
 
-## Usage
+## Name
 
-```bash
-hosts [options]
-```
+hosts - list all registered Creatio hosts and their running status
 
 ## Description
 
@@ -37,11 +36,21 @@ by scanning running processes and matching against environment paths.
 
 The command scans all environments in parallel for optimal performance.
 
-## Aliases
+## Synopsis
 
-`list-hosts`
+```bash
+hosts [options]
+```
 
-## Examples
+## Options
+
+```bash
+--fail-on-error         Return non-zero exit code on errors
+
+--fail-on-warning       Return non-zero exit code on warnings
+```
+
+## Example
 
 ```bash
 clio hosts
@@ -73,42 +82,6 @@ staging        CreatioStaging       Stopped (IIS)   -      C:\Apps\...
 development    creatio-dev          Running (Process) 12456 C:\Dev\...
 ```
 
-## Options
-
-```bash
---fail-on-error         Return non-zero exit code on errors
-
---fail-on-warning       Return non-zero exit code on warnings
-```
-
-## Requirements
-
-Windows (IIS hosting):
-- IIS must be installed and configured
-- Administrator privileges recommended for full PID detection
-- PowerShell available for enhanced PID detection
-
-macOS/Linux:
-- systemd (Linux) or launchd (macOS) for service detection
-- Read permissions on process information
-
-Environment Configuration:
-Environments must be registered with EnvironmentPath specified.
-Use 'clio reg-web-app' to register environments with paths.
-
-## Notes
-
-- Scans all environments concurrently for better performance
-- Paths longer than 50 characters are truncated in display
-- Shows current state at execution time (not cached)
-- No environment selection needed (auto-discovers all)
-- On Windows, sites are "Running" only when both site AND app pool started
-- Set CLIO_DEBUG_IIS=true for detailed IIS detection diagnostics
-
-## Command Type
-
-    Monitoring and Management commands
-
 ## Output
 
     The command displays a table with the following columns:
@@ -138,6 +111,21 @@ Use 'clio reg-web-app' to register environments with paths.
 
     Progress messages show real-time scan status for each environment,
     including IIS site detection, PID retrieval, and service status checks.
+
+## Prerequisites
+
+Windows (IIS hosting):
+- IIS must be installed and configured
+- Administrator privileges recommended for full PID detection
+- PowerShell available for enhanced PID detection
+
+macOS/Linux:
+- systemd (Linux) or launchd (macOS) for service detection
+- Read permissions on process information
+
+Environment Configuration:
+Environments must be registered with EnvironmentPath specified.
+Use 'clio reg-web-app' to register environments with paths.
 
 ## Exit Codes
 
@@ -211,6 +199,19 @@ Use 'clio reg-web-app' to register environments with paths.
     show-web-app-list   List all registered environments
     restart-web-app     Restart a Creatio environment
     healthcheck         Check Creatio application health
+
+## Aliases
+
+list-hosts
+
+## Notes
+
+- Scans all environments concurrently for better performance
+- Paths longer than 50 characters are truncated in display
+- Shows current state at execution time (not cached)
+- No environment selection needed (auto-discovers all)
+- On Windows, sites are "Running" only when both site AND app pool started
+- Set CLIO_DEBUG_IIS=true for detailed IIS detection diagnostics
 
 ## Reporting Bugs
 

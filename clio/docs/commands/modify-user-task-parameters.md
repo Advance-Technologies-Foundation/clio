@@ -1,19 +1,12 @@
 # modify-user-task-parameters
 
-Add or remove parameters in a user task schema.
+## Command Type
 
+    Development commands
 
-## Usage
+## Name
 
-```bash
-clio modify-user-task-parameters <USER_TASK_NAME>
-[--add-parameter <definition>[|<definition>...]]
-[--add-parameter-item <definition>[|<definition>...]]
-[--remove-parameter <name>[|<name>...]]
-[--set-direction <name>=<direction>[|<name>=<direction>...]]
-[--culture <CULTURE>]
--e <ENVIRONMENT_NAME>
-```
+modify-user-task-parameters - add or remove parameters on an existing workspace user task
 
 ## Description
 
@@ -43,42 +36,16 @@ route does not persist parameter direction:
 
 This command must be executed from a workspace directory.
 
-## Examples
+## Synopsis
 
 ```bash
-clio modify-user-task-parameters UsrSendInvoice
---add-parameter "code=IsError;title=Is error;type=Boolean;direction=In"
--e docker_fix2
-add one parameter to an existing workspace user task
-
-clio modify-user-task-parameters UsrSendInvoice
---add-parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account"
--e docker_fix2
-add a lookup parameter by resolving the Account entity schema in Creatio
-
-clio modify-user-task-parameters UsrSendInvoice
---add-parameter-item "parent=MyList;code=Bool1;title=Bool1;type=Boolean|parent=MyList;code=Text1;title=Text1;type=Text"
--e docker_fix2
-add child items to an existing composite serializable list parameter
-
-clio modify-user-task-parameters UsrSendInvoice
---set-direction "IsError=Out|ResultMessage=Variable"
--e docker_fix2
-update direction on existing parameters by patching metadata.json,
-loading packages to the database, and rebuilding the package
-
-clio modify-user-task-parameters UsrSendInvoice
---add-parameter "code=IsError;title=Is error;type=Boolean;direction=In|code=ResultMessage;title=Result message;type=Text;direction=Out"
---remove-parameter "ObsoleteFlag|LegacyResult"
--e docker_fix2
-add two parameters, remove two parameters, and rebuild the owning package
-```
-
-## Arguments
-
-```bash
-UserTaskName
-    Existing user task schema name. Required.
+clio modify-user-task-parameters <USER_TASK_NAME>
+[--add-parameter <definition>[|<definition>...]]
+[--add-parameter-item <definition>[|<definition>...]]
+[--remove-parameter <name>[|<name>...]]
+[--set-direction <name>=<direction>[|<name>=<direction>...]]
+[--culture <CULTURE>]
+-e <ENVIRONMENT_NAME>
 ```
 
 ## Options
@@ -127,68 +94,39 @@ Default: en-US
 --timeout                  Request timeout in milliseconds
 ```
 
-## Environment Options
+## Example
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+clio modify-user-task-parameters UsrSendInvoice
+--add-parameter "code=IsError;title=Is error;type=Boolean;direction=In"
+-e docker_fix2
+add one parameter to an existing workspace user task
+
+clio modify-user-task-parameters UsrSendInvoice
+--add-parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account"
+-e docker_fix2
+add a lookup parameter by resolving the Account entity schema in Creatio
+
+clio modify-user-task-parameters UsrSendInvoice
+--add-parameter-item "parent=MyList;code=Bool1;title=Bool1;type=Boolean|parent=MyList;code=Text1;title=Text1;type=Text"
+-e docker_fix2
+add child items to an existing composite serializable list parameter
+
+clio modify-user-task-parameters UsrSendInvoice
+--set-direction "IsError=Out|ResultMessage=Variable"
+-e docker_fix2
+update direction on existing parameters by patching metadata.json,
+loading packages to the database, and rebuilding the package
+
+clio modify-user-task-parameters UsrSendInvoice
+--add-parameter "code=IsError;title=Is error;type=Boolean;direction=In|code=ResultMessage;title=Result message;type=Text;direction=Out"
+--remove-parameter "ObsoleteFlag|LegacyResult"
+-e docker_fix2
+add two parameters, remove two parameters, and rebuild the owning package
 ```
-
-## Command Type
-
-    Development commands
 
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `add-user-task`
-- `delete-schema`
 
 - [Clio Command Reference](../../Commands.md#modify-user-task-parameters)

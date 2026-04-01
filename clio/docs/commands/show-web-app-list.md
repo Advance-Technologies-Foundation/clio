@@ -1,13 +1,22 @@
 # show-web-app-list
 
-List registered Creatio environments.
+## Command Type
 
+    Configuration Management
 
-## Usage
+## Name
+
+show-web-app-list - Display registered Creatio environment configurations
+
+## Synopsis
 
 ```bash
 show-web-app-list [NAME] [OPTIONS]
 ```
+
+## Aliases
+
+env, envs, show-web-app
 
 ## Description
 
@@ -25,45 +34,6 @@ WARNING: When displaying all environments with default format, passwords
 and secrets are shown in plain text. Use specific environment query with
 --format option for masked output.
 
-## Aliases
-
-`env`, `envs`, `show-web-app`
-
-## Examples
-
-```bash
-# List all registered environments (JSON format)
-clio show-web-app-list
-
-# List all environments in short table format
-clio show-web-app-list --short
-clio show-web-app-list -s
-
-# Show specific environment details
-clio show-web-app-list production
-clio show-web-app-list --env production
-
-# Show all environments in table format
-clio show-web-app-list --format table
-clio show-web-app-list -f table
-
-# Show environment in raw text format
-clio show-web-app-list production --format raw
-clio show-web-app-list production --raw
-
-# Using command aliases
-clio show-web-app-list                           # List all environments
-clio show-web-app-list production                 # Show specific environment
-clio show-web-app-list -s                # Short format
-```
-
-## Arguments
-
-```bash
-App name
-    Name of application
-```
-
 ## Options
 
 ```bash
@@ -77,19 +47,6 @@ Default: json
 --raw                       Raw output (shorthand for --format raw)
 -s, --short                 Show abbreviated list format (table view)
 ```
-
-## Notes
-
-- This is a local-only command requiring no network access
-- Does not verify if Creatio instances are accessible or running
-- Shows stored configuration, not live environment state
-- Settings file location displayed with --short format
-- Cross-platform compatible (Windows, macOS, Linux)
-- Output includes all fields to support AI assistants and scripting
-
-## Command Type
-
-    Configuration Management
 
 ## Output Formats
 
@@ -130,10 +87,67 @@ Default: json
         - login              - Database username
         - password           - Database password (masking varies)
 
+## Examples
+
+```bash
+# List all registered environments (JSON format)
+clio show-web-app-list
+
+# List all environments in short table format
+clio show-web-app-list --short
+clio show-web-app-list -s
+
+# Show specific environment details
+clio show-web-app-list production
+clio show-web-app-list --env production
+
+# Show all environments in table format
+clio show-web-app-list --format table
+clio show-web-app-list -f table
+
+# Show environment in raw text format
+clio show-web-app-list production --format raw
+clio show-web-app-list production --raw
+
+# Using command aliases
+clio show-web-app-list                           # List all environments
+clio show-web-app-list production                 # Show specific environment
+clio show-web-app-list -s                # Short format
+```
+
+## Behavior
+
+When NAME is not specified:
+- Default JSON format shows passwords in PLAIN TEXT
+- --short flag shows table view (no passwords displayed)
+- --format table shows table without sensitive data
+- --format raw shows all data with masking
+
+When NAME is specified:
+- Shows details for the specified environment only
+- JSON and raw formats mask sensitive fields (*****)
+- Returns error if environment not found
+
+Security Considerations:
+- Default output (all environments, JSON) shows PLAIN TEXT passwords
+- Use specific environment query for masked output
+- Use --short or --format table to avoid displaying passwords
+- Be cautious when sharing terminal output or logs
+- Safe for display in logs and terminal history
+
 ## Exit Codes
 
     0   Successfully displayed environment information
     1   Error occurred (environment not found, invalid format, etc.)
+
+## Notes
+
+- This is a local-only command requiring no network access
+- Does not verify if Creatio instances are accessible or running
+- Shows stored configuration, not live environment state
+- Settings file location displayed with --short format
+- Cross-platform compatible (Windows, macOS, Linux)
+- Output includes all fields to support AI assistants and scripting
 
 ## Workflow Integration
 
@@ -164,16 +178,16 @@ Default: json
         - Valid formats are: json, table, raw
         - Check for typos in format name
 
+## See Also
+
+reg-web-app        - Register new environment configuration
+unreg-web-app      - Unregister environment configuration
+show-local-envs    - Display local environment health status
+get-info           - Get live system information from Creatio instance
+ping               - Check if Creatio application is responding
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `reg-web-app`
-- `unreg-web-app`
-- `show`
-- `get`
-- `ping-app`
 
 - [Clio Command Reference](../../Commands.md#show-web-app-list)

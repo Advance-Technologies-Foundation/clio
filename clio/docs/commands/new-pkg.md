@@ -1,40 +1,22 @@
 # new-pkg
 
-Create a new package project.
+## Command Type
 
+    Development
 
-## Usage
+## Name
 
-```bash
-clio new-pkg <PACKAGE_NAME>
-```
+new-pkg - create new package in a web application
 
 ## Description
 
 new-pkg command can be used in development when you need to create
 new creatio package
 
-## Aliases
-
-`init`
-
-## Examples
+## Synopsis
 
 ```bash
 clio new-pkg <PACKAGE_NAME>
-create new package in current folder
-
-clio new-pkg <PACKAGE_NAME> -r bin
-create new package in current folder and set reference on local
-core assembly with using creatio file design mode with command in
-Pkg directory
-```
-
-## Arguments
-
-```bash
-Name
-    Name of the created instance. Required.
 ```
 
 ## Options
@@ -53,9 +35,17 @@ Package name (pos. 0)	Name of package to create
 --Maintainer            -m          Maintainer name
 ```
 
-## Command Type
+## Example
 
-    Development
+```bash
+clio new-pkg <PACKAGE_NAME>
+create new package in current folder
+
+clio new-pkg <PACKAGE_NAME> -r bin
+create new package in current folder and set reference on local
+core assembly with using creatio file design mode with command in
+Pkg directory
+```
 
 ## Reporting Bugs
 

@@ -1,27 +1,17 @@
 # link-to-repository
 
-Link environment package(s) to repository.
+## Name
 
-
-## Usage
-
-```bash
-clio link-to-repository [OPTIONS]
-```
+link-to-repository - Link environment package(s) to repository
 
 ## Description
 
 Links packages from an environment package directory into a repository location.
 
-## Aliases
-
-`l2r`, `link2repo`
-
-## Examples
+## Synopsis
 
 ```bash
-clio link-to-repository --help
-Display canonical options and usage examples
+clio link-to-repository [OPTIONS]
 ```
 
 ## Options
@@ -30,12 +20,19 @@ Display canonical options and usage examples
 Supports the canonical link-to-repository command options.
 ```
 
+## Examples
+
+```bash
+clio link-to-repository --help
+Display canonical options and usage examples
+```
+
+## See Also
+
+link-from-repository - Link packages from repository to environment
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `externalLink`
 
 - [Clio Command Reference](../../Commands.md#link-to-repository)
