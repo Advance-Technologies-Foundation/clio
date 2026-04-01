@@ -10,9 +10,9 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for the <c>create-workspace</c> command.
 /// </summary>
 public class CreateWorkspaceTool(
-	CreateWorkspaceCommand command,
-	ILogger logger)
-	: BaseTool<CreateWorkspaceCommandOptions>(command, logger) {
+	ILogger logger,
+	IToolCommandResolver commandResolver)
+	: BaseTool<CreateWorkspaceCommandOptions>(null, logger, commandResolver) {
 
 	internal const string CreateWorkspaceToolName = "create-workspace";
 
@@ -30,12 +30,15 @@ public class CreateWorkspaceTool(
 	public CommandExecutionResult CreateWorkspace(
 		[Description("Workspace creation parameters")] [Required] CreateWorkspaceArgs args
 	) {
+		if (args is null) {
+			return new CommandExecutionResult(1, [new ErrorMessage("Workspace creation parameters are required.")], null);
+		}
 		CreateWorkspaceCommandOptions options = new() {
 			WorkspaceName = args.WorkspaceName,
 			Directory = args.Directory,
 			Empty = true
 		};
-		return InternalExecute(options);
+		return InternalExecute<CreateWorkspaceCommand>(options);
 	}
 }
 
@@ -50,6 +53,5 @@ public sealed record CreateWorkspaceArgs(
 
 	[property: JsonPropertyName("directory")]
 	[property: Description("Optional absolute directory where the new workspace folder should be created")]
-	[property: Required]
 	string Directory = null
 );

@@ -43,13 +43,40 @@ public sealed class ToolContractGetToolTests {
 		result.Tools.Should().NotBeNull(
 			because: "the bootstrap response should include the canonical contract set");
 		result.Tools!.Select(contract => contract.Name).Should().Contain([
+				SettingsHealthTool.ToolName,
 				ApplicationGetListTool.ApplicationGetListToolName,
 				PageUpdateTool.ToolName,
 				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
 			],
-			because: "the canonical contract set should include the key existing-app discovery and minimal mutation tools");
+			because: "the canonical contract set should include bootstrap diagnostics plus the key existing-app discovery and minimal mutation tools");
 		result.Tools!.Select(contract => contract.Name).Should().NotContain(ToolContractGetTool.ToolName,
 			because: "tool-contract-get should not include itself in the default returned contract set");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises the structured settings-health output contract for bootstrap diagnostics.")]
+	public void ToolContractGet_Should_Advertise_Settings_Health_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			SettingsHealthTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the settings-health contract should be available through tool-contract-get");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "status",
+			because: "bootstrap diagnostics should advertise their high-level health state");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "settings-file-path",
+			because: "bootstrap diagnostics should expose the appsettings.json file path");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "repairs-applied",
+			because: "bootstrap diagnostics should expose automatic repairs in structured form");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "can-execute-env-tools",
+			because: "bootstrap diagnostics should tell callers whether named-environment tools can run");
 	}
 
 	[Test]

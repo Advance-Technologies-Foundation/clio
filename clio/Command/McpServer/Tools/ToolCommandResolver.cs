@@ -28,7 +28,9 @@ public interface IToolCommandResolver {
 /// <see cref="IApplicationClient"/> (and its authenticated HTTP session) is reused
 /// across successive tool calls targeting the same Creatio instance.
 /// </summary>
-public class ToolCommandResolver(ISettingsRepository settingsRepository) : IToolCommandResolver {
+public class ToolCommandResolver(
+	ISettingsRepository settingsRepository,
+	ISettingsBootstrapService settingsBootstrapService) : IToolCommandResolver {
 
 	private static readonly ConcurrentDictionary<string, IServiceProvider> ContainerCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -40,8 +42,13 @@ public class ToolCommandResolver(ISettingsRepository settingsRepository) : ITool
 	/// <returns>A command instance configured for the requested target.</returns>
 	public TCommand Resolve<TCommand>(EnvironmentOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
+		SettingsBootstrapReport bootstrapReport = settingsBootstrapService.GetReport();
 		EnvironmentSettings settings;
 		if (!string.IsNullOrWhiteSpace(options.Environment)) {
+			if (!bootstrapReport.CanExecuteEnvTools) {
+				throw new InvalidOperationException(
+					$"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath} or use explicit uri/login/password.");
+			}
 			if (!settingsRepository.IsEnvironmentExists(options.Environment)) {
 				throw new InvalidOperationException(
 					$"Environment with key '{options.Environment}' not found. Check your clio configuration.");
@@ -54,6 +61,10 @@ public class ToolCommandResolver(ISettingsRepository settingsRepository) : ITool
 		else {
 			settings = new EnvironmentSettings().Fill(options);
 			if (string.IsNullOrWhiteSpace(settings.Uri)) {
+				if (!bootstrapReport.CanExecuteEnvTools) {
+					throw new InvalidOperationException(
+						$"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath} or provide explicit uri/login/password.");
+				}
 				throw new InvalidOperationException(
 					"Either a configured environment name or an explicit URI is required for MCP command execution.");
 			}
@@ -66,7 +77,11 @@ public class ToolCommandResolver(ISettingsRepository settingsRepository) : ITool
 
 	public TCommand ResolveWithoutEnvironment<TCommand>(EnvironmentOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
-		EnvironmentSettings settings = new EnvironmentSettings().Fill(options);
+		EnvironmentSettings settings = settingsRepository.FindEnvironment(options.Environment)
+			?? new EnvironmentSettings {
+				Login = "default"
+			};
+		settings = settings.Fill(options);
 		IServiceProvider container = new BindingsModule().Register(settings);
 		return container.GetRequiredService<TCommand>();
 	}

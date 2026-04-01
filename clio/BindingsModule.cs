@@ -54,11 +54,18 @@ using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio;
 
+public enum BindingsModuleRegistrationProfile {
+	Bootstrap,
+	EnvironmentScoped
+}
+
 public class BindingsModule {
 
 	#region Fields: Private
 
 	public static string k8sDns = "127.0.0.1";
+	private static readonly object BootstrapDiagnosticsSyncRoot = new();
+	private static bool _bootstrapDiagnosticsLogged;
 	private readonly IFileSystem _fileSystem;
 
 	#endregion
@@ -74,7 +81,11 @@ public class BindingsModule {
 	#region Methods: Public
 
 	public IServiceProvider Register(EnvironmentSettings settings = null,
-		Action<IServiceCollection> additionalRegistrations = null){
+		Action<IServiceCollection> additionalRegistrations = null,
+		BindingsModuleRegistrationProfile? profile = null,
+		bool applyBootstrapRepairs = true){
+		BindingsModuleRegistrationProfile registrationProfile = profile
+			?? (settings is null ? BindingsModuleRegistrationProfile.Bootstrap : BindingsModuleRegistrationProfile.EnvironmentScoped);
 		IServiceCollection services = new ServiceCollection();
 		RegisterAssemblyInterfaceTypes(services);
 		services.AddSingleton<IWorkspacePathBuilder, WorkspacePathBuilder>();
@@ -85,15 +96,14 @@ public class BindingsModule {
 		services.AddTransient<IContainerRegistryCredentialProvider, ContainerRegistryCredentialProvider>();
 		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
 		
-		// Register SettingsRepository for environment resolution
-		services.AddSingleton<ISettingsRepository>(new SettingsRepository(_fileSystem));
+		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
+		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
+		SettingsRepository settingsRepository = new(_fileSystem, settingsBootstrapService);
+		services.AddSingleton<ISettingsBootstrapService>(settingsBootstrapService);
+		services.AddSingleton<ISettingsRepository>(settingsRepository);
+		LogBootstrapDiagnostics(registrationProfile, bootstrapResult.Report);
 
-		EnvironmentSettings activeSettings = settings;
-		if (activeSettings is null) {
-			SettingsRepository settingsRepository = new(_fileSystem);
-			string envName = settingsRepository.GetDefaultEnvironmentName();
-			activeSettings = settingsRepository.FindEnvironment(envName);
-		}
+		EnvironmentSettings activeSettings = ResolveActiveSettings(settings, registrationProfile, bootstrapResult);
 
 		if (activeSettings is not null) {
 			services.AddSingleton(activeSettings);
@@ -262,6 +272,8 @@ public class BindingsModule {
 		services.AddTransient<ExtractPackageCommand>();
 		services.AddTransient<ExternalLinkCommand>();
 		services.AddTransient<PowerShellFactory>();
+		services.AddTransient<IEnvironmentRuntimeDetectionService, EnvironmentRuntimeDetectionService>();
+		services.AddTransient<IIisEnvironmentDiscoveryService, IisEnvironmentDiscoveryService>();
 		services.AddTransient<RegAppCommand>();
 		services.AddTransient<UnregAppCommand>();
 		services.AddTransient<RestartCommand>();
@@ -413,6 +425,54 @@ public class BindingsModule {
 			ValidateOnBuild = true,
 			ValidateScopes = true
 		});
+	}
+
+	private static EnvironmentSettings ResolveActiveSettings(
+		EnvironmentSettings settings,
+		BindingsModuleRegistrationProfile profile,
+		SettingsBootstrapResult bootstrapResult) {
+		if (settings is not null) {
+			return settings;
+		}
+		if (profile == BindingsModuleRegistrationProfile.EnvironmentScoped) {
+			return bootstrapResult.ResolvedEnvironment ?? CreateBootstrapPlaceholderEnvironment();
+		}
+		return bootstrapResult.ResolvedEnvironment ?? CreateBootstrapPlaceholderEnvironment();
+	}
+
+	private static EnvironmentSettings CreateBootstrapPlaceholderEnvironment() {
+		return new EnvironmentSettings {
+			Uri = "http://localhost",
+			Login = string.Empty,
+			Password = string.Empty
+		};
+	}
+
+	private static void LogBootstrapDiagnostics(
+		BindingsModuleRegistrationProfile profile,
+		SettingsBootstrapReport report) {
+		if (profile != BindingsModuleRegistrationProfile.Bootstrap) {
+			return;
+		}
+		lock (BootstrapDiagnosticsSyncRoot) {
+			if (_bootstrapDiagnosticsLogged) {
+				return;
+			}
+			if (report.RepairsApplied.Count > 0) {
+				string repairs = string.Join("; ", report.RepairsApplied.Select(repair => repair.Message));
+				ConsoleLogger.Instance.WriteWarning(
+					$"clio settings bootstrap repaired {repairs}. Active environment: {report.ResolvedActiveEnvironmentKey ?? "<none>"}.");
+				_bootstrapDiagnosticsLogged = true;
+				return;
+			}
+			if (string.Equals(report.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
+				string issue = report.Issues.FirstOrDefault()?.Message
+					?? "appsettings.json is unreadable.";
+				ConsoleLogger.Instance.WriteWarning(
+					$"clio settings bootstrap is degraded. {issue} File path: {report.SettingsFilePath}");
+				_bootstrapDiagnosticsLogged = true;
+			}
+		}
 	}
 	
 	

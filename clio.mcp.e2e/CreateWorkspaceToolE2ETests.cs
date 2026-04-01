@@ -66,6 +66,32 @@ public sealed class CreateWorkspaceToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolName)]
+	[AllureDescription("Starts the real clio MCP server with a stale ActiveEnvironmentKey, invokes create-workspace with an explicit absolute directory, and verifies that the bootstrap repair still allows the local workspace flow to succeed.")]
+	[AllureName("Create Workspace Tool succeeds after bootstrap repairs an invalid active environment key")]
+	public async Task CreateWorkspace_Should_Create_Empty_Workspace_When_Active_Environment_Key_Is_Invalid() {
+		// Arrange
+		await using CreateWorkspaceArrangeContext arrangeContext = await ArrangeAsync(
+			createMissingDirectory: false,
+			settingsOverrideFactory: () => TemporaryClioSettingsOverride.SetWrongActiveEnvironmentKey(
+				TestConfiguration.ResolveFreshClioProcessPath(),
+				new Dictionary<string, string?> {
+					["HOME"] = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+				}));
+
+		// Act
+		CreateWorkspaceActResult actResult = await ActAsync(arrangeContext);
+
+		// Assert
+		AssertToolCallSucceeded(actResult);
+		AssertCommandExitCode(actResult);
+		AssertSuccessIncludesInfoMessage(actResult);
+		AssertSuccessReportsCreatedWorkspacePath(actResult, arrangeContext.WorkspacePath);
+		AssertWorkspaceFolderWasCreated(arrangeContext);
+		AssertWorkspaceMetadataFolderWasCreated(arrangeContext);
+	}
+
+	[Test]
+	[AllureTag(ToolName)]
 	[AllureDescription("Starts the real clio MCP server, invokes create-workspace with a non-existent absolute directory, and verifies that the MCP result reports a failure without creating local files.")]
 	[AllureName("Create Workspace Tool reports invalid directory failures")]
 	public async Task CreateWorkspace_Should_Report_Failure_When_Directory_Does_Not_Exist() {
@@ -86,7 +112,11 @@ public sealed class CreateWorkspaceToolE2ETests {
 	[AllureDescription("Arrange by creating an isolated temporary directory, choosing the requested workspace path, and starting a real clio MCP server session")]
 	private static async Task<CreateWorkspaceArrangeContext> ArrangeAsync(
 		bool createMissingDirectory,
-		bool configureWorkspacesRoot = false) {
+		bool configureWorkspacesRoot = false,
+		Func<TemporaryClioSettingsOverride>? settingsOverrideFactory = null) {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		settings.ProcessEnvironmentVariables["HOME"] = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-create-workspace-e2e-{Guid.NewGuid():N}");
 		if (!createMissingDirectory) {
 			Directory.CreateDirectory(rootDirectory);
@@ -95,9 +125,11 @@ public sealed class CreateWorkspaceToolE2ETests {
 		string workspaceName = $"workspace-{Guid.NewGuid():N}";
 		string workspacePath = Path.Combine(rootDirectory, workspaceName);
 		TemporaryClioSettingsOverride? settingsOverride = configureWorkspacesRoot
-			? TemporaryClioSettingsOverride.SetWorkspacesRoot(rootDirectory)
-			: null;
-		McpE2ESettings settings = TestConfiguration.Load();
+			? TemporaryClioSettingsOverride.SetWorkspacesRoot(
+				rootDirectory,
+				settings.ClioProcessPath,
+				settings.ProcessEnvironmentVariables)
+			: settingsOverrideFactory?.Invoke();
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new CreateWorkspaceArrangeContext(rootDirectory, workspaceName, workspacePath, session, cancellationTokenSource, settingsOverride);
@@ -113,8 +145,10 @@ public sealed class CreateWorkspaceToolE2ETests {
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["workspaceName"] = arrangeContext.WorkspaceName,
-				["directory"] = arrangeContext.RootDirectory
+				["args"] = new Dictionary<string, object?> {
+					["workspaceName"] = arrangeContext.WorkspaceName,
+					["directory"] = arrangeContext.RootDirectory
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 
@@ -132,7 +166,9 @@ public sealed class CreateWorkspaceToolE2ETests {
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["workspaceName"] = arrangeContext.WorkspaceName
+				["args"] = new Dictionary<string, object?> {
+					["workspaceName"] = arrangeContext.WorkspaceName
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 
