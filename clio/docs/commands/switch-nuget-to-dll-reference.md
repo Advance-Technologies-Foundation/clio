@@ -1,18 +1,83 @@
 # switch-nuget-to-dll-reference
 
-Switch NuGet references to DLL references in project files.
+Switches nuget references to dll references in csproj files.
 
-## Synopsis
+## Usage
 
 ```bash
-clio switch-nuget-to-dll-reference [OPTIONS]
+clio switch-nuget-to-dll-reference <PackageName> [options]
 ```
 
 ## Description
 
-Rewrites project references from package-based dependencies to direct DLL references.
+Switches nuget references to dll references in csproj files.
 
-## See also
+## Aliases
 
-- [ref-to](./ref-to.md)
-- [Commands.md](../../Commands.md#switch-nuget-to-dll-reference)
+`nuget2dll`
+
+## Examples
+
+```bash
+clio switch-nuget-to-dll-reference <PackageName> [options]
+```
+
+## Arguments
+
+```bash
+PackageName
+    Package name to convert. Required.
+```
+
+## Environment Options
+
+```bash
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
+```
+
+- [Clio Command Reference](../../Commands.md#switch-nuget-to-dll-reference)

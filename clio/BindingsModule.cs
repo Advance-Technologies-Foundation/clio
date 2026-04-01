@@ -28,6 +28,7 @@ using Clio.Common.Kubernetes;
 using Clio.Common.Database;
 using Clio.Common.ScenarioHandlers;
 using Clio.ComposableApplication;
+using Clio.Help;
 using Clio.Package;
 using Clio.Package.NuGet;
 using Clio.Project;
@@ -393,6 +394,9 @@ public class BindingsModule {
 		services.AddTransient<CompileConfigurationCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
+		services.AddSingleton<CommandHelpCatalog>();
+		services.AddTransient<CommandHelpRenderer>();
+		services.AddTransient<HelpArtifactExporter>();
 		services.AddTransient<LocalHelpViewer>();
 		services.AddTransient<WikiHelpViewer>();
 		

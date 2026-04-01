@@ -26,6 +26,9 @@ public static class PagePrompt {
 		 Read page metadata from `page`.
 		 When you need to edit the page, take the JavaScript payload from `raw.body`, modify that raw body, and send it to `{PageUpdateTool.ToolName}`.
 		 Pass `resources` to `{PageUpdateTool.ToolName}` as a valid JSON object string when the edited body contains `#ResourceString(key)#` macros that need child-schema localizable strings.
+		 For standard data-bound form fields, bind `control` or `value` directly to `$Name` or `$PDS_*` attributes and prefer datasource captions like `$Resources.Strings.PDS_UsrStatus`.
+		 Do not use proxy bindings like `$UsrStatus -> PDS.UsrStatus` for standard fields, and do not rely on `#ResourceString(Usr*_label)#` shortcuts for data-bound field captions.
+		 Reserve `Usr*_label` and `Usr*_caption` resource keys for custom standalone UI that carries explicit `resources` entries.
 		 Prefer discover -> inspect -> mutate -> verify for minimal edits.
 		 Use `page-sync` only when you need to save multiple pages in one workflow.
 		 """;

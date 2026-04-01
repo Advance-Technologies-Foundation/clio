@@ -1,33 +1,76 @@
-COMMAND TYPE
-    CI/CD commands
-
 NAME
-    reg-web-app - create/update a web application (website)
+    reg-web-app - Register a Creatio environment
+
+USAGE
+    clio reg-web-app [<EnvironmentName>] [options]
 
 DESCRIPTION
-    Register a new web application settings or update existing
+    Register a Creatio environment.
 
-SYNOPSIS
-    clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.creatio.com -l administrator -p password
+ALIASES
+    cfg, reg
+
+EXAMPLES
+    clio reg-web-app [<EnvironmentName>] [options]
+
+ARGUMENTS
+    EnvironmentName
+        Application name
 
 OPTIONS
-    Name (pos. 0)	Environment(web application) name
-    
-    --ActiveEnvironment     -a          Set a web application by default
-    
-    --Safe                  -s          Safe action in this environment
+    -a, --ActiveEnvironment <VALUE>
+        Set as default web application
+    --checkLogin
+        Try login after registration
+    --add-from-iis
+        Register all Creatios from IIS
+    --host <VALUE>
+        Computer name where IIS is hosted
 
-    --uri                   -u          Application uri
-
-    --Password              -p          User password
-
-    --Login                 -l          User login (administrator permission required)
-
-    --Maintainer            -m          Maintainer name
-
-EXAMPLE
-    clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.creatio.com -l administrator -p password
-        creates new environment, named <ENVIRONMENT_NAME> or updates existing environment settings
-
-REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/clio
+ENVIRONMENT OPTIONS
+    -u, --uri <VALUE>
+        Application uri
+    -p, --Password <VALUE>
+        User password
+    -l, --Login <VALUE>
+        User login (administrator permission required)
+    -i, --IsNetCore
+        Use NetCore application
+    -e, --Environment <VALUE>
+        Environment name
+    -m, --Maintainer <VALUE>
+        Maintainer name
+    -c, --dev <VALUE>
+        Developer mode state for environment
+    --WorkspacePathes <VALUE>
+        Workspace path
+    -s, --Safe <VALUE>
+        Safe action in this environment
+    --clientId <VALUE>
+        OAuth client id
+    --clientSecret <VALUE>
+        OAuth client secret
+    --authAppUri <VALUE>
+        OAuth app URI
+    --silent
+        Use default behavior without user interaction
+    --restartEnvironment
+        Restart environment after execute command
+    --db-server-uri <VALUE>
+        Db server uri
+    --db-user <VALUE>
+        Database user
+    --db-password <VALUE>
+        Database password
+    --backup-file <VALUE>
+        Full path to backup file
+    --db-working-folder <VALUE>
+        Folder visible to db server
+    --db-name <VALUE>
+        Desired database name
+    --force
+        Force restore
+    --callback-process <VALUE>
+        Callback process name
+    --ep <VALUE>
+        Path to the application root folder

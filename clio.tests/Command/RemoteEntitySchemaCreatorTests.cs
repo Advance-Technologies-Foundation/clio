@@ -301,7 +301,8 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			title = "Status",
 			required = true,
 			default_value_source = "Const",
-			default_value = "Draft"
+			default_value = "Draft",
+			masked = true
 		}).Replace("default_value_source", "default-value-source").Replace("default_value", "default-value");
 
 		// Act
@@ -323,6 +324,10 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			because: "structured create-column specs should preserve the explicit default source");
 		savedColumn["defValue"]!["value"]!.Value<string>().Should().Be("Draft",
 			because: "structured create-column specs should preserve the requested default value");
+		savedColumn["isMasked"]!.Value<bool>().Should().BeTrue(
+			because: "structured create-column specs should preserve the optional masked flag");
+		(savedColumn["isValueMasked"] ?? savedColumn["valueMasked"])!.Value<bool>().Should().BeTrue(
+			because: "structured create-column specs should preserve schema-level value masking");
 		saveDbStructureCalled.Should().BeTrue();
 		runtimeVerifyCalled.Should().BeTrue();
 	}
@@ -375,6 +380,141 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			because: "structured default-value-config should preserve non-legacy default sources");
 		savedColumn["defValue"]!["valueSource"]!.Value<string>().Should().Be("CurrentDateTime",
 			because: "structured default-value-config should preserve the requested system value name");
+	}
+
+	[Test]
+	[Description("Creates SecureText columns from structured JSON payloads and preserves masked=true for schema-level masking.")]
+	public void Create_CreatesSchema_WithSecureTextMaskedColumn() {
+		// Arrange
+		string saveBody = null;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+		string structuredColumn = JsonSerializer.Serialize(new {
+			name = "UsrPassword",
+			type = "SecureText",
+			title = "Password",
+			masked = true
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = [structuredColumn]
+		});
+
+		// Assert
+		JToken savedColumn = JObject.Parse(saveBody)["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrPassword");
+		savedColumn["type"]!.Value<int>().Should().Be(24,
+			because: "SecureText create columns should map to runtime data value type 24");
+		savedColumn["isMasked"]!.Value<bool>().Should().BeTrue(
+			because: "strict schema-level masking requires masked=true for password columns");
+		(savedColumn["isValueMasked"] ?? savedColumn["valueMasked"])!.Value<bool>().Should().BeTrue(
+			because: "strict schema-level masking requires isValueMasked=true for password columns");
+	}
+
+	[Test]
+	[Description("Creates SecureText columns from structured JSON payloads and keeps masked=false when omitted.")]
+	public void Create_CreatesSchema_WithSecureTextMaskedFalseByDefault() {
+		// Arrange
+		string saveBody = null;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+		string structuredColumn = JsonSerializer.Serialize(new {
+			name = "UsrPassword",
+			type = "SecureText",
+			title = "Password"
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = [structuredColumn]
+		});
+
+		// Assert
+		JToken savedColumn = JObject.Parse(saveBody)["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrPassword");
+		savedColumn["isMasked"]!.Value<bool>().Should().BeFalse(
+			because: "secure text create columns should not force schema-level masking unless explicitly requested");
+		(savedColumn["isValueMasked"] ?? savedColumn["valueMasked"])!.Value<bool>().Should().BeFalse(
+			because: "value masking should stay disabled when masked is omitted");
+	}
+
+	[Test]
+	[Description("Rejects masked=true when create-column payload uses non Text and non SecureText types.")]
+	public void Create_StopsBeforeSave_WhenMaskedUsedOnUnsupportedColumnType() {
+		// Arrange
+		SetupApplicationClient((url, _) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+		string structuredColumn = JsonSerializer.Serialize(new {
+			name = "UsrCode",
+			type = "Integer",
+			title = "Code",
+			masked = true
+		});
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = [structuredColumn]
+		});
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*can use masked only for Text or SecureText types*",
+				because: "masked flag should stay constrained to supported column types");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SaveSchema", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
 	}
 
 	[TestCase("Binary", 13)]

@@ -1,68 +1,92 @@
 # set-fsm-config
 
-## Purpose
-`set-fsm-config` updates local Creatio configuration values that control file system mode (FSM).
-
-Use this command when you only need to switch the configuration flags in the app config file without loading packages to the file system or database.
+Set file system mode properties in config file.
 
 ## Usage
+
 ```bash
-clio set-fsm-config <IsFsm> [options]
+clio set-fsm-config [<EnvironmentName>] <IsFsm> [options]
 ```
 
-**Aliases**: `fsmc`, `sfsmc`
+## Description
 
-## Arguments
+Set file system mode properties in config file.
 
-| Argument | Position | Required | Description |
-|----------|----------|----------|-------------|
-| `IsFsm` | 0 | Yes | Target FSM mode value: `on` or `off` |
+## Aliases
 
-## Options
-
-| Option | Short | Required | Description |
-|--------|-------|----------|-------------|
-| `--physicalPath` |  | No | Path to the local Creatio application root |
-| `--Environment` | `-e` | No | Registered clio environment name |
-| `--uri` | `-u` | No | Creatio application URI |
-| `--Login` | `-l` | No | Creatio user login |
-| `--Password` | `-p` | No | Creatio user password |
-| `--IsNetCore` | `-i` | No | Registered environment runtime hint when resolving settings |
-
-Provide either `--physicalPath` or `-e/--Environment`.
-
-## Behavior
-
-The command updates:
-
-- `terrasoft/fileDesignMode@enabled`
-- `appSettings/add[@key='UseStaticFileContent']@value`
-
-Config file resolution:
-
-- On Windows, the command checks `Web.config` first and then `Terrasoft.WebHost.dll.config`.
-- For registered environments with `IsNetCore=true`, it prefers `Terrasoft.WebHost.dll.config`.
-- On macOS and Linux, the command supports NET8 environments and resolves the config path from the registered `EnvironmentPath` or the supplied `--physicalPath`.
+`fsmc`, `sfsmc`
 
 ## Examples
 
-Update a registered environment:
 ```bash
-clio set-fsm-config on -e dev
+clio set-fsm-config [<EnvironmentName>] <IsFsm> [options]
 ```
 
-Update a local app folder directly:
+## Arguments
+
 ```bash
-clio set-fsm-config off --physicalPath /opt/creatio
+EnvironmentName
+    Application name
+IsFsm
+    on or off. Required.
 ```
 
-Update a Windows installation directly:
+## Options
+
 ```bash
-clio set-fsm-config on --physicalPath C:\Creatio\dev
+--physicalPath <VALUE>
+    Path to applications
 ```
 
-## Output
+## Environment Options
 
-On success the command prints a table with the old and new values and returns exit code `0`.
+```bash
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
+```
 
-On failure the command returns exit code `1` and writes validation or config-path diagnostics.
+- [Clio Command Reference](../../Commands.md#set-fsm-config)

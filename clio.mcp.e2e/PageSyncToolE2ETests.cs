@@ -201,6 +201,65 @@ public sealed class PageSyncToolE2ETests {
 			because: "handler blocks may contain JavaScript and should not be parsed as JSON");
 	}
 
+	[Test]
+	[Description("Rejects proxy standard field bindings through the real MCP server before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("page-sync rejects proxy field bindings during semantic validation")]
+	[AllureDescription("Uses a reachable sandbox environment, sends a page body with a standard field bound through a proxy Usr attribute, and verifies that semantic validation blocks the save with a structured response.")]
+	public async Task PageSyncTool_Should_Reject_Proxy_Field_Bindings_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run page-sync semantic validation E2E.");
+		}
+		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
+			Assert.Ignore($"page-sync semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		}
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithProxyBinding = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrProxyValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithProxyBinding
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "semantic validation failures should stay in the structured tool response");
+		response.Success.Should().BeFalse(
+			because: "the broken proxy binding should be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail semantic validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "semantic field validation contributes to the content-ok decision");
+		response.Pages[0].Error.Should().Contain("$UsrStatus")
+			.And.Contain("$PDS_UsrStatus",
+				because: "the failure should explain both the rejected proxy binding and the expected datasource binding");
+	}
+
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
 		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
 			settings,

@@ -154,20 +154,6 @@ namespace Clio.Command {
 			return registered.Count > 0 ? registered : null;
 		}
 
-		private static bool TryParseResources(string resources, out Dictionary<string, string> parsedResources) {
-			parsedResources = null;
-			if (string.IsNullOrWhiteSpace(resources)) {
-				return true;
-			}
-			try {
-				parsedResources = JsonConvert.DeserializeObject<Dictionary<string, string>>(resources);
-				return parsedResources != null;
-			}
-			catch (JsonException) {
-				return false;
-			}
-		}
-
 		private bool TrySaveSchema(JObject schemaToSave, out PageUpdateResponse response) {
 			string saveUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
 			string saveJson = _applicationClient.ExecutePostRequest(saveUrl, schemaToSave.ToString(Formatting.None));
@@ -239,10 +225,17 @@ namespace Clio.Command {
 					Error = $"Body contains invalid JavaScript syntax: {string.Join("; ", syntaxResult.Errors)}"
 				};
 			}
-			if (!TryParseResources(options.Resources, out explicitResources)) {
+			if (!SchemaValidationService.TryParseResources(options.Resources, out explicitResources, out _)) {
 				return new PageUpdateResponse {
 					Success = false,
 					Error = "resources must be a valid JSON object string"
+				};
+			}
+			var semanticResult = SchemaValidationService.ValidateStandardFieldBindings(options.Body, explicitResources);
+			if (!semanticResult.IsValid) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = $"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}"
 				};
 			}
 			return null;

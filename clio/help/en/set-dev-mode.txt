@@ -1,19 +1,66 @@
-﻿COMMAND TYPE
-    Development commands
-
 NAME
-    set-dev-mode - Setup develepment mode for selected web application(website)
+    set-dev-mode - Toggle developer mode for a Creatio environment
+
+USAGE
+    clio set-dev-mode [<EnvironmentName>] [options]
 
 DESCRIPTION
-    System settings Maintainer will be updated by Maintainer value from 
-    environment setting.
-    All package for this maintainer will be unlocked on application. After this 
-    application will be automaitaly restarted.
+    Toggle developer mode for a Creatio environment.
 
-EXAMPLE
-    clio set-dev-mode
+ALIASES
+    dev, unlock
 
-    clio set-dev-mode -e <ENVIRONMENT NAME>
+EXAMPLES
+    clio set-dev-mode [<EnvironmentName>] [options]
 
-REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/clio
+ARGUMENTS
+    EnvironmentName
+        Application name
+
+ENVIRONMENT OPTIONS
+    -u, --uri <VALUE>
+        Application uri
+    -p, --Password <VALUE>
+        User password
+    -l, --Login <VALUE>
+        User login (administrator permission required)
+    -i, --IsNetCore
+        Use NetCore application
+    -e, --Environment <VALUE>
+        Environment name
+    -m, --Maintainer <VALUE>
+        Maintainer name
+    -c, --dev <VALUE>
+        Developer mode state for environment
+    --WorkspacePathes <VALUE>
+        Workspace path
+    -s, --Safe <VALUE>
+        Safe action in this environment
+    --clientId <VALUE>
+        OAuth client id
+    --clientSecret <VALUE>
+        OAuth client secret
+    --authAppUri <VALUE>
+        OAuth app URI
+    --silent
+        Use default behavior without user interaction
+    --restartEnvironment
+        Restart environment after execute command
+    --db-server-uri <VALUE>
+        Db server uri
+    --db-user <VALUE>
+        Database user
+    --db-password <VALUE>
+        Database password
+    --backup-file <VALUE>
+        Full path to backup file
+    --db-working-folder <VALUE>
+        Folder visible to db server
+    --db-name <VALUE>
+        Desired database name
+    --force
+        Force restore
+    --callback-process <VALUE>
+        Callback process name
+    --ep <VALUE>
+        Path to the application root folder

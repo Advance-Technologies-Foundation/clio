@@ -1,14 +1,22 @@
-﻿COMMAND TYPE
-    Service commands
-
 NAME
-    set-pkg-version - set package version
+    set-pkg-version - Set package version
+
+USAGE
+    clio set-pkg-version <PackagePath> [options]
 
 DESCRIPTION
-    Set specified package version into descriptor.json by specified package path.
+    Set package version.
 
-EXAMPLE
-    clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
+ALIASES
+    spv
 
-REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/clio
+EXAMPLES
+    clio set-pkg-version <PackagePath> [options]
+
+ARGUMENTS
+    PackagePath
+        Package path. Required.
+
+OPTIONS
+    -v, --PackageVersion <VALUE>
+        Package version. Required.

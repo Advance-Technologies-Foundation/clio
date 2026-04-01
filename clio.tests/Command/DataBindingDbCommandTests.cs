@@ -30,6 +30,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	private IApplicationPackageListProvider _packageListProvider = null!;
 	private string _bindingLookupResponseJson = string.Empty;
 	private string _boundSchemaDataItemsJson = "[]";
+	private string _existingEntityNamesJson = """{"rows":[],"success":true}""";
 
 	public override void Setup() {
 		base.Setup();
@@ -247,6 +248,41 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			Arg.Any<int>());
 	}
 
+	[Test]
+	[Description("Skips InsertQuery when a row with the same Name already exists, reuses the existing row Id in the binding, and does not report a created row for the duplicate.")]
+	public void CreateDataBindingDb_Should_Skip_Insert_And_Reuse_Existing_Id_When_Name_Already_Exists() {
+		// Arrange - "New" already in entity table with a known Id
+		const string existingNewId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+		_existingEntityNamesJson = $$"""{"rows":[{"Name":"New","Id":"{{existingNewId}}"}],"success":true}""";
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			RowsJson = """[{"values":{"Name":"New"}},{"values":{"Name":"Done"}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "create-data-binding-db should succeed even when some rows already exist");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Is<string>(body => body.Contains("\"Done\"")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Is<string>(body => body.Contains("\"New\"")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Is<string>(body => body.Contains(existingNewId)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_logger.DidNotReceive().WriteInfo(
+			Arg.Is<string>(msg => msg.Contains("Created row") && msg.Contains("New")));
+	}
+
 	private string BuildApplicationClientResponse(string url, string requestBody) {
 		if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 			return SchemaResponseJson;
@@ -255,6 +291,11 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		if (url.Contains("SelectQuery", StringComparison.Ordinal) &&
 			requestBody.Contains("\"rootSchemaName\":\"SysPackageSchemaData\"", StringComparison.Ordinal)) {
 			return _bindingLookupResponseJson;
+		}
+
+		if (url.Contains("SelectQuery", StringComparison.Ordinal) &&
+			!requestBody.Contains("\"rootSchemaName\":\"SysPackageSchemaData\"", StringComparison.Ordinal)) {
+			return _existingEntityNamesJson;
 		}
 
 		if (url.Contains("GetBoundSchemaData", StringComparison.Ordinal)) {

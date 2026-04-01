@@ -37,6 +37,9 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Use `page-list` to discover candidate Freedom UI page schemas in the target package.
 			       - Use `page-get` to inspect the merged page bundle and retrieve the raw editable page body.
 			       - Use `component-info` when `page-get` shows unfamiliar `crt.*` component types before editing nested config or child collections.
+			       - For standard data-bound form fields, bind `control` or `value` directly to `$Name` or `$PDS_*` attributes and prefer datasource captions such as `$Resources.Strings.PDS_UsrStatus`.
+			       - Do not route standard field bindings through proxy attributes like `$UsrStatus` when the view model path is `PDS.UsrStatus`.
+			       - Reserve `Usr*_label` and `Usr*_caption` resource keys for custom standalone UI with explicit `resources`; do not use those shortcuts as datasource field captions.
 
 			       Inspect schema before editing
 			       - Use `get-entity-schema-properties` for machine-readable schema inspection before planning a schema mutation.

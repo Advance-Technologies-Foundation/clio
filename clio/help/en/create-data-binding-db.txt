@@ -1,28 +1,71 @@
-Creates a DB-first package data binding by persisting row data directly to the remote Creatio database.
+NAME
+    create-data-binding-db - Create a DB-first package data binding by saving data directly to the remote Creatio database
 
-USAGE:
-  clio create-data-binding-db -e <ENVIRONMENT_NAME> --package <PACKAGE_NAME> --schema <SCHEMA_NAME>
-        [--binding-name <BINDING_NAME>] [--rows <JSON_ARRAY>]
+USAGE
+    clio create-data-binding-db [options]
 
-OPTIONS:
-  -e, --environment          Creatio environment name (required when --uri is omitted)
-  --uri                      Creatio application URI (alternative to --environment)
-  --package                  Target package name (required)
-  --schema                   Entity schema name (required)
-  --binding-name             Binding folder name (defaults to <schema>)
-  --rows                     JSON array of row objects, each with a 'values' key:
-                             [{"values":{"Col":"Value"}}]
-  -H, --help                 Show this help
+DESCRIPTION
+    Create a DB-first package data binding by saving data directly to the remote Creatio database.
 
-BEHAVIOR:
-  Resolves the package UId from the remote environment, fetches the entity schema column
-  list from Creatio, and calls SchemaDataDesignerService.svc/SaveSchema to create or
-  update the binding schema data record in the DB.
-  To sync the result to a local workspace, use restore-workspace separately.
+EXAMPLES
+    clio create-data-binding-db -e dev
 
-EXAMPLES:
-  clio create-data-binding-db -e dev --package Custom --schema SysSettings
+OPTIONS
+    --environment <VALUE>
+        Environment name
+    --package <VALUE>
+        Target package name. Required.
+    --schema <VALUE>
+        Entity schema name. Required.
+    --binding-name <VALUE>
+        Binding folder name; defaults to <schema>
+    --rows <VALUE>
+        JSON array of row objects, each with a 'values' key containing column values
 
-  clio create-data-binding-db -e dev --package Custom --schema SysSettings \
-    --binding-name UsrMyBinding \
-    --rows "[{\"values\":{\"Name\":\"Row\",\"Code\":\"UsrRow\"}}]"
+ENVIRONMENT OPTIONS
+    -u, --uri <VALUE>
+        Application uri
+    -p, --Password <VALUE>
+        User password
+    -l, --Login <VALUE>
+        User login (administrator permission required)
+    -i, --IsNetCore
+        Use NetCore application
+    -e, --Environment <VALUE>
+        Environment name
+    -m, --Maintainer <VALUE>
+        Maintainer name
+    -c, --dev <VALUE>
+        Developer mode state for environment
+    --WorkspacePathes <VALUE>
+        Workspace path
+    -s, --Safe <VALUE>
+        Safe action in this environment
+    --clientId <VALUE>
+        OAuth client id
+    --clientSecret <VALUE>
+        OAuth client secret
+    --authAppUri <VALUE>
+        OAuth app URI
+    --silent
+        Use default behavior without user interaction
+    --restartEnvironment
+        Restart environment after execute command
+    --db-server-uri <VALUE>
+        Db server uri
+    --db-user <VALUE>
+        Database user
+    --db-password <VALUE>
+        Database password
+    --backup-file <VALUE>
+        Full path to backup file
+    --db-working-folder <VALUE>
+        Folder visible to db server
+    --db-name <VALUE>
+        Desired database name
+    --force
+        Force restore
+    --callback-process <VALUE>
+        Callback process name
+    --ep <VALUE>
+        Path to the application root folder

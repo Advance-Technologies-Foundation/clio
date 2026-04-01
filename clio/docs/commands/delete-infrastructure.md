@@ -1,17 +1,32 @@
 # delete-infrastructure
 
-Delete Kubernetes infrastructure for Creatio.
+Delete Kubernetes infrastructure for Creatio (removes namespace and all resources).
 
-## Synopsis
+## Usage
 
 ```bash
-clio delete-infrastructure [OPTIONS]
+clio delete-infrastructure [options]
 ```
 
 ## Description
 
-Removes infrastructure resources previously created for a Creatio deployment in Kubernetes.
+Delete Kubernetes infrastructure for Creatio (removes namespace and all resources).
 
-## See also
+## Aliases
 
-- [deploy-infrastructure](./deploy-infrastructure.md)
+`di-delete`, `remove-infrastructure`
+
+## Examples
+
+```bash
+clio delete-infrastructure [options]
+```
+
+## Options
+
+```bash
+--force
+    Skip confirmation and delete immediately
+```
+
+- [Clio Command Reference](../../Commands.md#delete-infrastructure)

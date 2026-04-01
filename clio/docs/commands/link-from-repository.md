@@ -1,59 +1,88 @@
 # link-from-repository
 
-## Purpose
-`link-from-repository` links workspace package content into a local Creatio environment package directory.
-
-Use this command when you want a local environment to point package folders at repository content instead of keeping separate copies.
+Link repository package(s) to environment.
 
 ## Usage
+
 ```bash
 clio link-from-repository [options]
 ```
 
-**Aliases**: `l4r`, `link4repo`
+## Description
 
-## Options
+Link repository package(s) to environment.
 
-| Option | Short | Required | Description |
-|--------|-------|----------|-------------|
-| `--Environment` | `-e` | No | Registered clio environment name |
-| `--envPkgPath` |  | No | Direct path to the target environment package folder |
-| `--repoPath` | `-r` | Yes | Path to the package repository folder |
-| `--packages` | `-p` | No | Package selector. Use `*` for all packages or a comma-separated package list |
+## Aliases
 
-Provide either `-e/--Environment` or `--envPkgPath`.
-
-## Environment Resolution
-
-- On Windows, `-e/--Environment` first tries the registered local `EnvironmentPath` and then falls back to IIS/URL discovery for older registrations.
-- On macOS and Linux, `-e/--Environment` works when the registered environment has `EnvironmentPath` configured and the local package folder exists under it.
-- `--envPkgPath` works on all platforms and bypasses environment-name resolution.
-- `--envPkgPath` may be absolute or relative to the current working directory.
-
-Expected package-folder layouts under `EnvironmentPath`:
-
-- NET8: `Terrasoft.Configuration/Pkg`
-- Classic: `Terrasoft.WebApp/Terrasoft.Configuration/Pkg`
+`l4r`, `link4repo`
 
 ## Examples
 
-Link all repository packages into a registered environment:
 ```bash
-clio link-from-repository -e dev --repoPath ./packages --packages "*"
+clio link-from-repository -e dev
 ```
 
-Link selected packages into a registered environment:
+## Options
+
 ```bash
-clio l4r -e dev --repoPath ./packages --packages "PkgA,PkgB"
+--envPkgPath <VALUE>
+    Path to environment package folder
+    ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\Terrasoft.Configuration\Pkg)
+--packages <VALUE>
+    Package(s)
+--repoPath <VALUE>
+    Path to package repository folder. Required.
 ```
 
-Link by direct package path:
+## Environment Options
+
 ```bash
-clio link-from-repository --envPkgPath /opt/creatio/Terrasoft.Configuration/Pkg --repoPath ./packages --packages "*"
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
 ```
 
-## Output
-
-On success the command returns exit code `0` and reports the target package folder and repository path.
-
-On failure the command returns exit code `1` and writes a validation or environment-resolution error.
+- [Clio Command Reference](../../Commands.md#link-from-repository)

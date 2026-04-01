@@ -1,795 +1,125 @@
-# Deploy Creatio
+# deploy-creatio
 
-## Purpose
-
-Deploys Creatio application from a zip file to either a Kubernetes cluster or a local database server. This command handles the complete deployment process, including extracting files, restoring databases, configuring connection strings, and starting the application. Supports both Windows (IIS or dotnet) and macOS/Linux (dotnet) deployment strategies.
-
-For PostgreSQL running in Docker, use `--db-server-name` with a `db` entry that points to the published host/port. In that mode clio runs `pg_restore` on the machine running clio, connects through the configured host/port, and keeps the `.backup` file on the local filesystem. It does not `docker exec` into the container.
-
-Every `deploy-creatio` invocation also creates a temp database-operation log file for the database restore stage. The CLI prints the absolute path in a final `Database operation log:` line, and the MCP tool returns the same path in `log-file-path`.
+Install Creatio from a distribution package.
 
 ## Usage
 
 ```bash
-clio deploy-creatio [options]
+clio deploy-creatio [<EnvironmentName>] [options]
 ```
+
+## Description
+
+Install Creatio from a distribution package.
 
 ## Aliases
 
-- `dc`
-- `ic`
-- `install-creatio`
-
-## Arguments
-
-### Required Arguments
-
-| Argument | Short | Description | Example |
-|-----------|-------|------------------------------------------------------|----------------------------------|
-| --ZipFile |       | Path to Creatio zip file or already extracted directory | `--ZipFile "C:\Creatio\app.zip"` |
-
-### Optional Arguments - Deployment Configuration
-
-| Argument | Short | Default | Description | Example |
-|-------------------|-------|------------------|-----------------------------------------------|-----------------------------|
-| -e, --Environment | -e | | Environment name (positional argument 0) | `-e MyCreatio` |
-| --SiteName | | | Website/application name | `--SiteName MyApp` |
-| --SitePort | | 80 | HTTP port for the application | `--SitePort 8080` |
-| --deployment | | auto | Deployment method: auto, iis, or dotnet | `--deployment dotnet` |
-| --no-iis | | false | Don't use IIS on Windows (use dotnet) | `--no-iis` |
-| --app-path | | Platform default | Custom application installation path | `--app-path "/opt/creatio"` |
-| --auto-run | | true | Automatically launch browser after deployment | `--auto-run false` |
-
-### Optional Arguments - Database Configuration
-
-| Argument | Short | Default | Description | Example |
-|------------------|-------|---------|----------------------------------------------|--------------------------------|
-| --db | | pg | Database type: pg or mssql | `--db mssql` |
-| --db-server-name | | | Local DB server config from appsettings.json | `--db-server-name my-postgres` |
-| --drop-if-exists | | false | Auto-drop existing database without prompt | `--drop-if-exists` |
-| --disable-reset-password | | true | Hidden option. Disable post-restore password-reset script | `--disable-reset-password false` |
-
-**Important:** If kubectl is not detected (no Kubernetes cluster available), then `--db-server-name` is **REQUIRED**. The command will fail with an error if neither kubectl configuration nor `--db-server-name` is provided.
-
-**Docker PostgreSQL note:** When `--db-server-name` points to a PostgreSQL container exposed through a host port such as `localhost:5433`, clio uses the local restore flow. `pg_restore` still runs on the machine running clio, and the `.backup` file stays on the local filesystem.
-
-**Password reset script behavior (Creatio >= 8.3.3):**
-- The script is eligible only when package filename version is parsed and is `>= 8.3.3`
-- The script runs only if `--disable-reset-password` is `true`
-- Corporate eligibility is required:
-  - Windows `whoami` must resolve to `tscrm\...`
-  - OR `ping tscrm.com` must succeed
-- The script applies to both Kubernetes and local database deployments
-- If script execution fails, deployment continues and a warning is logged
-
-### Optional Arguments - Platform Configuration
-
-| Argument | Short | Default | Description | Example |
-|------------|-------|---------|----------------------------------------|---------------------------|
-| --platform | | net8 | Runtime platform: net8 or netframework | `--platform netframework` |
-| --product | | | Product name (optional) | `--product Studio` |
-
-### Optional Arguments - HTTPS Configuration
-
-| Argument | Short | Default | Description | Example |
-|-----------------|-------|---------|----------------------------------------|----------------------------------|
-| --use-https | | false | Enable HTTPS for the application | `--use-https` |
-| --cert-path | | | Path to SSL certificate (.pem or .pfx) | `--cert-path "C:\certs\app.pem"` |
-| --cert-password | | | Password for SSL certificate | `--cert-password "secret"` |
-
-### Optional Arguments - Redis Configuration
-
-| Argument | Short | Default | Description | Example |
-|------------|-------|-----------|-------------------------------------------------------|----------------|
-| --redis-db | | -1 (auto) | Redis database number (auto-detects if not specified) | `--redis-db 5` |
-| --redis-server-name | | | Local Redis server config key from appsettings.json (local mode) | `--redis-server-name redis-dev` |
-
-**Redis Auto-Detection Behavior:**
-- **Default (-1)**: Automatically scans Redis for an empty database starting from database 1
-- **Scan Algorithm**: Checks each database size to find unused databases
-- **Custom Configurations**: Supports Redis instances with more than 16 databases
-- **Both Modes**: Works for Kubernetes cluster and local deployments
-- **Error Handling**: Provides detailed error messages with recovery suggestions if all databases are occupied or Redis is unreachable
-
-**Local Redis Server Resolution (local database mode):**
-- `--redis-server-name` (explicit server key)
-- `defaultRedis` from appsettings.json
-- single enabled server from appsettings.json `redis` section
-- `localhost:6379` fallback only when `redis` section is absent
-- if multiple enabled servers exist and no default is configured, deployment fails with a clear message
-
-**Manual Override:**
-- Specify a specific database number (0-15 or higher depending on Redis configuration)
-- Use when auto-detection fails or when you need a deterministic database selection
-- Example: `--redis-db 5` uses database 5 explicitly
-
-### Optional Arguments - Authentication (inherited from EnvironmentOptions)
-
-| Argument | Short | Default | Description | Example |
-|----------------|-------|---------|------------------------------|-------------------------------------|
-| --uri | -u | | Application URI | `-u http://myapp.com` |
-| --Login | -l | | User login | `-l supervisor` |
-| --Password | -p | | User password | `-p password123` |
-| --clientId | | | OAuth client ID | `--clientId abc123` |
-| --clientSecret | | | OAuth client secret | `--clientSecret xyz789` |
-| --authAppUri | | | OAuth authentication app URI | `--authAppUri https://auth.app.com` |
-| --silent | | false | Run without user interaction | `--silent` |
+`dc`, `ic`, `install-creatio`
 
 ## Examples
 
-### Basic Usage
-
-#### 1. Simple deployment to Kubernetes cluster (default)
 ```bash
-clio deploy-creatio -e "dev" --ZipFile "C:\creatio-app.zip" --SitePort 40001 --SiteName "MyApp"
+clio deploy-creatio [<EnvironmentName>] [options]
 ```
 
-#### 2. Deploy to a local PostgreSQL server
-```bash
-clio deploy-creatio -e "dev" \
-  --ZipFile "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip" \
-  --db-server-name my-local-postgres --SitePort 8080 --SiteName "MyApp" --silent
-```
-
-#### 3. Deploy to PostgreSQL running in Docker via published host port
-```bash
-clio deploy-creatio -e "docker-dev" \
-  --ZipFile "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip" \
-  --db-server-name docker-postgres --SitePort 8080 --SiteName "MyApp" --silent
-```
-
-#### 4. Deploy to local MSSQL server with database drop
-```bash
-clio deploy-creatio -e "QA" \
-  --ZipFile "C:\Creatio\8.3.3.1343_Studio_MSSQL_ENU.zip" \
-  --db mssql \
-  --db-server-name my-local-mssql \
-  --drop-if-exists \
-  --SitePort 8080 --SiteName "MyApp"
-```
-
-### Advanced Usage
-
-#### 5. Deploy with HTTPS on Windows using dotnet (no IIS)
-```bash
-clio deploy-creatio -e "SecureApp" \
-  --ZipFile "C:\creatio-app.zip" \
-  --no-iis \
-  --use-https \
-  --cert-path "C:\certs\app.pem" \
-  --SitePort 443 --SiteName "MyApp"
-```
-
-#### 6. Deploy to custom path on macOS
-```bash
-clio deploy-creatio -e "CreatioApp" \
-  --ZipFile "/Users/downloads/creatio-app.zip" \
-  --app-path "/var/creatio" \
-  --SitePort 8080
-```
-
-#### 7. Deploy on Linux with systemd service
-```bash
-clio deploy-creatio -e "LinuxApp" \
-  --ZipFile "/home/admin/creatio-app.zip" \
-  --deployment dotnet \
-  --app-path "/opt/creatio-prod" \
-  --SitePort 8080
-```
-
-#### 8. Silent deployment without browser launch
-```bash
-clio deploy-creatio -e "AutoDeploy" \
-  --ZipFile "C:\creatio-app.zip" \
-  --db mssql \
-  --db-server-name my-local-mssql \
-  --SitePort 8080 --SiteName "MyApp" \
-  --auto-run false \
-  --silent
-```
-
-#### 9. Deploy with specific Redis database
-```bash
-clio deploy-creatio -e "RedisApp" \
-  --ZipFile "C:\creatio-app.zip" \
-  --redis-db 5 \
-  --SitePort 8080
-```
-
-#### 10. Deploy with long filename (PostgreSQL template reuse)
-```bash
-# First deployment: Creates template from backup (slower)
-clio deploy-creatio -e "Dev" \
-  --ZipFile "C:\Creatio\8.3.3.5678_Studio_Enterprise_Marketing_PostgreSQL_ENU.zip" \
-  --db-server-name my-local-postgres --SitePort 8080 --SiteName "MyApp" --silent
-
-# Subsequent deployments: Reuses template (faster)
-clio deploy-creatio -e "Dev2" \
-  --ZipFile "C:\Creatio\8.3.3.5678_Studio_Enterprise_Marketing_PostgreSQL_ENU.zip" \
-  --db-server-name my-local-postgres --SitePort 8080 --SiteName "MyApp" --silent
-```
-
-#### 11. Complete production deployment
-```bash
-clio deploy-creatio -e "Production" \
-  --ZipFile "/path/to/creatio-app.zip" \
-  --db mssql \
-  --db-server-name prod-mssql \
-  --platform net8 \
-  --SitePort 8443 \
-  --SiteName "MyApp" \
-  --use-https \
-  --cert-path "/certs/server.pfx" \
-  --cert-password "certpass" \
-  --redis-db 3 \
-  --drop-if-exists \
-  --silent
-```
-
-## Deployment Modes
-
-### 1. Kubernetes Cluster Database (Default)
-
-When `--db-server-name` is **NOT** specified, the command deploys the database to a Kubernetes cluster:
-
-- Automatically detects PostgreSQL or MSSQL pods in the `clio-infrastructure` namespace
-- Copies backup files to the appropriate pod
-- Restores a database using Kubernetes-based scripts
-- Configures connection strings to point to the cluster
-
-**Example:**
-```bash
-clio deploy-creatio -e "K8sApp" --ZipFile "C:\creatio-app.zip"
-```
-
-### 2. Local Database Server
-
-When `--db-server-name` **IS** specified, the command deploys to a local database server configured in `appsettings.json`:
-
-- Reads enabled database configuration from appsettings.json
-- Tests connection before proceeding
-- Restores database using local tools (pg_restore for PostgreSQL, SQL Server for MSSQL)
-- Uses template-based restoration for PostgreSQL (see below)
-- Configures connection strings to point to the local server
-- Writes both normal clio output and native PostgreSQL/MSSQL restore output into the temp database-operation log artifact
-
-For PostgreSQL running in Docker, this same local mode is used. The configured database server entry must point to the published host endpoint, and clio keeps the backup file on the host while `pg_restore` connects over host/port.
-
-**Example:**
-```bash
-clio deploy-creatio -e "LocalApp" \
-  --ZipFile "C:\creatio-app.zip" \
-  --db-server-name my-local-postgres
-```
-
-## Database Operation Log
-
-- Check the final `Database operation log:` line for the temp artifact path.
-- The artifact includes normal clio output and native restore-engine messages from `pg_restore` or SQL Server restore progress when available.
-- When `deploy-creatio` is invoked through MCP, the same path is returned as `log-file-path`.
-
-### 3. Corporate-Gated Password Reset Script
-
-For package versions `>= 8.3.3`, clio can automatically disable the immediate Supervisor password-change requirement in the restored database.
-
-- Default behavior: enabled (`--disable-reset-password true`)
-- Disable explicitly:
+## Arguments
 
 ```bash
-clio deploy-creatio -e "DevNoScript" \
-  --ZipFile "C:\Creatio\8.3.4.425_Studio_Softkey_PostgreSQL_ENU.zip" \
-  --disable-reset-password false
+EnvironmentName
+    Application name
 ```
 
-- Script is skipped when:
-  - package version cannot be parsed from filename
-  - machine is not corporate-eligible (`tscrm` domain OR `tscrm.com` ping)
-  - option is set to `false`
+## Options
 
-## PostgreSQL Template-Based Restoration
-
-For PostgreSQL databases, clio uses an efficient template-based restoration approach that significantly speeds up subsequent deployments.
-
-### How It Works
-
-**First Deployment:**
-1. Creates a template database with GUID-based name (e.g., `template_abc123def456...`)
-2. Restores backup into the template database using `pg_restore`
-3. Marks database as a template in PostgreSQL
-4. Stores original zip filename in database comment metadata
-5. Creates target database from the template
-
-**Subsequent Deployments:**
-1. Searches for existing template by zip filename in metadata
-2. If found, creates new database directly from template (fast operation - seconds)
-3. If not found, creates new template from backup file (first-time restore)
-
-### Benefits
-
-- **Faster deployments**: After first restore, creating databases from template is nearly instant
-- **Handles long filenames**: PostgreSQL has a 63-character limit for database names; templates use GUID-based names (max 41 chars)
-- **Automatic discovery**: No manual template management required
-- **Version coexistence**: Multiple templates can exist for different Creatio versions
-
-### Template Management
-
-- **Naming convention**: `template_<32-character-guid>` (total 41 characters)
-- **Metadata storage**: Original zip filename stored in PostgreSQL database comment
-- **Template persistence**: Templates remain in database for reuse across deployments
-- **Automatic cleanup**: Not performed automatically; manual cleanup can be done if needed
-
-**Example with template reuse:**
 ```bash
-# First deployment (creates template)
-clio deploy-creatio -e "Dev1" \
-  --ZipFile "VeryLongCreatioFileName_8.3.3.5678_Studio_Full.zip" \
-  --db-server-name local-pg
-
-# Second deployment (reuses template - much faster)
-clio deploy-creatio -e "Dev2" \
-  --ZipFile "VeryLongCreatioFileName_8.3.3.5678_Studio_Full.zip" \
-  --db-server-name local-pg
+--disable-reset-password
+    Disables reset password after installation. Default: True.
+--db <VALUE>
+    DB type: pg|mssql
+--platform <VALUE>
+    Runtime platform: net6|netframework
+--product <VALUE>
+    Product name
+--SiteName <VALUE>
+    SiteName
+--SitePort <NUMBER>
+    Site port. Default: 0.
+--ZipFile <VALUE>
+    Sets Zip File path
+--deployment <VALUE>
+    Deployment method: auto|iis|dotnet. Default: auto.
+--no-iis
+    Don't use IIS on Windows (use dotnet run instead)
+--app-path <VALUE>
+    Application installation path
+--use-https
+    Use HTTPS (requires certificate for dotnet)
+--cert-path <VALUE>
+    Path to SSL certificate file (.pem or .pfx)
+--cert-password <VALUE>
+    Password for SSL certificate
+--auto-run
+    Automatically run application after deployment. Default: True.
+--redis-db <NUMBER>
+    Redis database number (optional, auto-detect if not specified). Default: -1.
+--redis-server-name <VALUE>
+    Name of Redis server configuration from appsettings.json for local deployment
+--db-server-name <VALUE>
+    Name of database server configuration from appsettings.json for local database
+    restore
+--drop-if-exists
+    Automatically drop existing database if present without prompting
 ```
 
-## Redis Database Auto-Detection
+## Environment Options
 
-Clio automatically finds an empty Redis database for your deployment, eliminating the need to manually track which databases are in use.
-
-### How It Works
-
-**Auto-Detection Process:**
-1. Connects to Redis server (localhost for local, cluster DNS for Kubernetes)
-2. Queries total number of available databases (`server.DatabaseCount`)
-3. Scans each database starting from database 1 (skips database 0)
-4. Checks each database size using `DatabaseSize(i)`
-5. Returns the first database with size = 0 (no keys)
-
-**Manual Override:**
-- Specify `--redis-db <number>` to use a specific database
-- Bypasses auto-detection entirely
-- Useful for production environments or troubleshooting
-
-### Behavior by Deployment Mode
-
-**Kubernetes Deployment:**
-- Connects to Redis in `clio-infrastructure` namespace
-- Scans all available databases for empty slot
-- Fails with error if all databases are occupied
-- Logs selected database number
-
-**Local Deployment:**
-- Connects to Redis from appsettings (`redis` section + `defaultRedis`) or falls back to localhost:6379 when redis config is absent
-- Scans all available databases for empty slot
-- Logs selected database number
-- Falls back to error if Redis unreachable
-
-### Error Handling
-
-**All Databases Occupied:**
-```
-[Redis Configuration Error] Could not find an empty Redis database.
-All 15 available databases (1-15) at localhost:6379 are in use.
-Please either:
-1) Clear some Redis databases
-2) Increase the number of Redis databases
-3) Manually specify a database number using the --redis-db option
-```
-
-**Redis Unreachable:**
-```
-[Redis Connection Error] Could not connect to Redis at localhost:6379.
-Error: Connection timeout.
-Make sure Redis is running and accessible.
-You can also manually specify a database number using the --redis-db option
-```
-
-### Custom Redis Configurations
-
-The auto-detection automatically adapts to custom Redis configurations:
-
-- **Default Redis**: 16 databases (0-15), scans 1-15
-- **Custom Redis**: 32 databases (0-31), scans 1-31
-- **Large Redis**: 100 databases (0-99), scans 1-99
-
-No configuration needed - clio queries `server.DatabaseCount` dynamically.
-
-### Best Practices
-
-**Development:**
-- Use auto-detection (default behavior)
-- Allows multiple deployments without conflicts
-
-**Production:**
-- Use explicit `--redis-db` for deterministic behavior
-- Document which database is used
-- Example: `--redis-db 5`
-
-**Troubleshooting:**
-- If auto-detection fails, manually specify database
-- Check Redis connectivity with: `redis-cli ping`
-- List databases in use: `redis-cli INFO keyspace`
-
-### Examples
-
-**Auto-Detection (Default):**
 ```bash
-clio deploy-creatio -e "Dev1" --ZipFile "app.zip"
-# Output: [Redis Configuration] - Auto-detected empty database: 3
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
 ```
 
-**Manual Override:**
-```bash
-clio deploy-creatio -e "Prod1" --ZipFile "app.zip" --redis-db 5
-# Output: [Redis Configuration] - Using user-specified database: 5
-```
-
-**Handling Full Redis:**
-```bash
-# Clear a database first
-redis-cli -n 3 FLUSHDB
-
-# Then deploy
-clio deploy-creatio -e "Dev2" --ZipFile "app.zip"
-```
-
-## Local Database Server Configuration
-
-To deploy to a local database server, add a `db` section to your `appsettings.json`:
-
-**Location:** `$HOME/.clio/appsettings.json` (Windows: `%USERPROFILE%\.clio\appsettings.json`)
-
-```json
-{
-  "db": {
-    "my-local-postgres": {
-      "dbType": "postgres",
-      "hostname": "localhost",
-      "port": 5432,
-      "username": "postgres",
-      "password": "your_password",
-      "enabled": true,
-      "pgToolsPath": "C:\\Program Files\\PostgreSQL\\16\\bin",
-      "description": "Local PostgreSQL Server"
-    },
-    "docker-postgres": {
-      "dbType": "postgres",
-      "hostname": "localhost",
-      "port": 5433,
-      "username": "postgres",
-      "password": "your_password",
-      "enabled": true,
-      "pgToolsPath": "C:\\Program Files\\PostgreSQL\\16\\bin",
-      "description": "PostgreSQL container published to localhost:5433"
-    },
-    "my-local-mssql": {
-      "dbType": "mssql",
-      "hostname": "localhost",
-      "port": 1433,
-      "username": "sa",
-      "password": "your_password",
-      "enabled": true,
-      "description": "Local MSSQL Server"
-    },
-    "my-local-mssql-windows-auth": {
-      "dbType": "mssql",
-      "hostname": "localhost",
-      "port": 0,
-      "enabled": true,
-      "useWindowsAuth": true,
-      "description": "Local MSSQL Server with Windows Authentication"
-    }
-  }
-}
-```
-
-### Configuration Fields
-
-- **dbType** (required): Database type - `postgres` or `mssql`
-- **hostname** (required): Database server hostname or IP address. For MSSQL named instances, use format `hostname\instance` (e.g., `localhost\SQLEXPRESS`). For Docker PostgreSQL, use the host-visible endpoint such as `localhost` or `host.docker.internal`
-- **port** (required): Database server port (5432 for PostgreSQL, 1433 for MSSQL). Use `0` for MSSQL named instances with Windows Authentication. For Docker PostgreSQL, use the published host port such as `5433`
-- **enabled** (optional): When `false`, this server is ignored by clio commands. Default is `true`
-- **username** (required for SQL Authentication): Database username with create/drop database permissions. Not required when using Windows Authentication
-- **password** (required for SQL Authentication): Database password. Not required when using Windows Authentication
-- **useWindowsAuth** (optional, MSSQL only): Set to `true` to use Windows Authentication instead of SQL Server Authentication. Default is `false`
-- **pgToolsPath** (optional, PostgreSQL only): Path to PostgreSQL client tools directory if not in PATH
-- **description** (optional): Human-readable description
-
-**Note on Windows Authentication:**
-- When `useWindowsAuth` is `true`, clio will connect using the Windows identity of the current user
-- The Windows user must have appropriate SQL Server permissions (create database, drop database, etc.)
-- Username and password fields are ignored when Windows Authentication is enabled
-
-## Deployment Behavior
-
-### Windows (Default - IIS)
-
-- Creates IIS Application Pool
-- Creates IIS Website with HTTP/HTTPS bindings
-- Configures application pool identity and recycling
-- Returns application URL in format: `http(s)://FQDN:port`
-
-**Prerequisites:**
-- IIS must be installed and enabled
-- Administrator privileges required
-
-### Windows (dotnet runtime)
-
-- Deploys application files to custom or default path
-- Can create Windows service (optional)
-- Runs application via dotnet executable
-- Returns application URL in format: `http(s)://localhost:port`
-
-### macOS
-
-- Deploys application files to `~/creatio` or custom path
-- Creates launchd service for auto-start
-- Manages service via `launchctl`
-- Returns application URL with configured port
-
-### Linux
-
-- Deploys application files to `/opt/creatio` or custom path
-- Creates systemd service unit file
-- Manages service via `systemctl`
-- Returns application URL with configured port
-
-## Redis Configuration
-
-### Kubernetes Deployment
-
-By default, clio automatically finds an empty Redis database starting from index 1. The command checks databases 1-15 and uses the first empty one.
-
-If auto-detection fails or you want to use a specific database:
-```bash
-clio deploy-creatio --ZipFile "app.zip" --redis-db 5
-```
-
-### Local Deployment
-
-Redis connection is resolved from appsettings when available (supports ACL username/password), then falls back to `localhost:6379` when `redis` section is absent.
-Specify a different database if needed:
-```bash
-clio deploy-creatio --ZipFile "app.zip" \
-  --db-server-name my-local-postgres \
-  --redis-server-name redis-dev \
-  --redis-db 2
-```
-
-Local Redis appsettings example:
-```json
-{
-  "defaultRedis": "redis-dev",
-  "redis": {
-    "redis-dev": {
-      "Hostname": "localhost",
-      "Port": 6379,
-      "Username": "default",
-      "Password": "your_password",
-      "Enabled": true
-    }
-  }
-}
-```
-
-When credentials are configured, redis connection string is generated as:
-`host={hostname};db={db_number};port={port_number};user={username};password={password}`
-
-## Output
-
-### Console Output
-
-The command provides detailed progress information:
-
-1. **File Extraction**
-   ```
-   [Extracting zip file] - Started
-   [Extracting zip file] - Completed
-   ```
-
-2. **Database Restoration**
-   ```
-   [Starting Database restore] - 10:30:15
-   Testing connection to postgres server at localhost:5432...
-   Connection test successful
-   Template 'template_abc123...' does not exist, creating it...
-   Starting restore from backup...
-   [Completed Database restore] - 10:35:20
-   [Database created] - MyCreatioApp
-   ```
-
-3. **Application Deployment**
-   ```
-   [Application deployed successfully] - URL: http://localhost:8080
-   ```
-
-4. **Browser Launch** (if auto-run enabled)
-   ```
-   [Auto-launching application]
-   ```
-
-### Files Created
-
-- **Application Files**: Deployed to specified or default application path
-- **IIS Configuration** (Windows): Application pool and website configurations
-- **Service Files** (macOS/Linux): launchd plist or systemd unit files
-- **Clio Registration**: Environment registered in clio settings for future management
-
-### Side Effects
-
-- Database created or replaced on target server
-- Application files deployed to file system
-- Web server/service configured and started
-- Environment registered in clio for management
-
-## Error Handling
-
-### Common Errors
-
-**"Could not detect kubectl config, and db server name (db-server-name) is not specified"**
-- **Cause**: Kubernetes cluster is not available and no enabled local database server is configured
-- **Solutions**:
-  1. Install and configure kubectl for Kubernetes deployment
-  2. Add `--db-server-name` parameter with a configured local database server
-  3. Configure database server in appsettings.json (see "Local Database Server Configuration" section)
-- **Example**: `clio deploy-creatio --ZipFile "app.zip" --db-server-name my-local-postgres`
-
-**"Database server configuration was not found or is disabled in appsettings.json"**
-- Verify the database server name matches configuration in appsettings.json
-- Verify selected server has `"enabled": true`
-- Use `clio cfg open` to edit configuration
-
-**"Connection test failed"**
-- Verify database server is running and accessible
-- Check hostname, port, username, and password in configuration
-- Ensure network firewall allows connection
-
-**"pg_restore not found"**
-- Install PostgreSQL client tools
-- Add PostgreSQL bin directory to PATH, or specify `pgToolsPath` in configuration
-- Download from: https://www.postgresql.org/download/
-- For Docker PostgreSQL, note that `pg_restore` must still exist on the machine running clio
-
-**"Database already exists"**
-- Use `--drop-if-exists` flag to automatically drop and recreate
-- Manually drop the database before deployment
-- Choose a different database name
-
-**"Redis Configuration Error - Could not find an empty Redis database"**
-- **Cause**: All available Redis databases (1 through max) contain data
-- **Solutions**:
-  1. Clear existing Redis databases: `clio clear-redis-db -e <environment>`
-  2. Manually specify an available database: `--redis-db <number>`
-  3. Increase Redis `databases` setting in redis.conf
-- **Note**: Auto-detection scans all databases starting from 1 and checks their size
-
-**"Redis Connection Error - Could not connect to Redis"**
-- **Cause**: Redis server is not running or not accessible at specified host:port
-- **Solutions**:
-  1. Verify Redis is running: `redis-cli ping` (should return PONG)
-  2. Check Redis host and port configuration
-  3. For Kubernetes: Ensure Redis pod is running (`kubectl get pods -n clio-infrastructure`)
-  4. For local: Start Redis service
-  5. Manually specify database to skip connection check: `--redis-db 0`
-
-**"Port already in use"**
-- Choose a different port with `--SitePort`
-- Stop the application using the port
-- Check with: `netstat -ano | findstr :<port>` (Windows) or `lsof -i :<port>` (macOS/Linux)
-
-**"PostgreSQL database name too long"**
-- This is handled automatically using GUID-based template names
-- Original filename stored in database metadata
-- No user action required
-
-**"Template already exists" or "Template not found" warnings**
-- Normal informational messages during PostgreSQL template management
-- First deployment creates template, subsequent deployments reuse it
-- Can be safely ignored
-
-## Notes
-
-- **Administrator Privileges**: Required on Windows when using IIS deployment
-- **Network Drives**: Automatically detected and copied to local folder for better performance
-- **Zip File Reuse**: If zip already extracted, extraction step is skipped
-- **Template Reuse**: PostgreSQL templates persist across deployments for performance
-- **Connection String**: Automatically configured based on target database
-- **Service Management**: Application automatically started after deployment (unless `--auto-run false`)
-- **Environment Registration**: Deployed environment is registered in clio for easy management with other commands
-
-## Related Commands
-
-- [`restore-db`](../../Commands.md#restore-db) - Restore database from backup without full deployment
-- [`restart`](./RestartCommand.md) - Restart deployed Creatio application
-- [`unreg`](./UnregAppCommand.md) - Unregister deployed environment
-- [`healthcheck`](./HealthCheckCommand.md) - Check health of deployed application
-
-## Technical Details
-
-### Zip File Handling
-
-Clio automatically determines if the zip file is stored remotely. If not on local machine, it copies to the predefined local working folder (configurable in appsettings.json under `creatio-products` property).
-
-Use `clio cfg open` to view/edit appsettings.json.
-
-### IIS Deployment (Windows)
-
-Ensure the IIS working directory (defined in appsettings.json as `iis-clio-root-path`) has "Full Control" permissions for `IIS_IUSRS` group.
-
-### Database Restoration Workflow
-
-1. **Kubernetes Mode**:
-   - Backup file copied to database pod
-   - Restored using pod-local tools
-   - Scripts handle both MSSQL and PostgreSQL
-
-2. **Local Mode**:
-   - Connection tested before proceeding
-   - Backup file used by local database tools
-   - Template-based restoration for PostgreSQL
-   - Direct restore for MSSQL
-   - For Docker-hosted PostgreSQL, the same host-based local restore path is used through the published host/port
-
-### Connection String Construction
-
-Generated based on target database configuration. For local deployment, uses hostname, port, and credentials from appsettings.json. For Kubernetes, uses cluster service names and ports.
-
-## Troubleshooting
-
-### IIS Issues (Windows)
-
-**"The type or namespace name could not be found"**
-- Ensure IIS is installed and all required features are enabled
-- Run: `clio install-windows-feature` to install prerequisites
-
-**"Application pool fails to start"**
-- Check IIS Application Pool identity has necessary permissions
-- Review Event Viewer for detailed error messages
-
-### dotnet Runtime Issues
-
-**"dotnet not found"**
-- Install .NET SDK from: https://dotnet.microsoft.com/download
-- Ensure dotnet is in PATH
-
-**"Application deployed but inaccessible"**
-- Check firewall rules for the specified port
-- Verify port is not already in use
-- Check application logs for startup errors
-
-### Certificate Issues
-
-**"Certificate path not found"**
-- Use absolute path to certificate file
-- Verify file extension (.pem or .pfx)
-- Check file permissions
-
-**"Certificate password incorrect"**
-- Verify password with certificate provider
-- Ensure special characters are properly escaped
-
-### Service Issues (macOS/Linux)
-
-**"Service not starting"**
-- Check logs: `/var/log/system.log` (macOS) or `journalctl -u creatio-*` (Linux)
-- Verify file permissions on application directory
-- Ensure dotnet runtime is installed
-
-### Docker PostgreSQL Issues
-
-**"Connection test failed"**
-- Run `docker ps`
-- Verify the PostgreSQL container is running
-- Verify the PostgreSQL port is published to the host
-- Use the published host endpoint in `appsettings.json`
-
-**"pg_restore not found"**
-- Install PostgreSQL client tools on the machine running clio
-- Add the PostgreSQL `bin` directory to `PATH`
-- Or set `pgToolsPath` in configuration
-- Clio does not use `docker exec` for PostgreSQL restore
-
-## See Also
-
-- [Creatio Installation Guide](../../DeployCreatioMacOS.md)
-- [Commands Overview](../../Commands.md)
-- [Configuration Guide](../../../README.md)
+- [Clio Command Reference](../../Commands.md#deploy-creatio)

@@ -1,18 +1,92 @@
 # save-state
 
-Save the state of a Creatio instance to a file.
+Save state of Creatio instance to file.
 
-## Synopsis
+## Usage
 
 ```bash
-clio save-state [OPTIONS]
+clio save-state [<EnvironmentName>] <ManifestName> [options]
 ```
 
 ## Description
 
-Creates a manifest-like snapshot of the current environment state for reuse or comparison.
+Save state of Creatio instance to file.
 
-## See also
+## Aliases
 
-- [apply-manifest](./apply-manifest.md)
-- [show-diff](./show-diff.md)
+`save-manifest`, `state`
+
+## Examples
+
+```bash
+clio save-state [<EnvironmentName>] <ManifestName> [options]
+```
+
+## Arguments
+
+```bash
+EnvironmentName
+    Application name
+ManifestName
+    Path to Manifest file. Required.
+```
+
+## Options
+
+```bash
+--overwrite
+    Overwrite manifest file if exists. Default: True.
+```
+
+## Environment Options
+
+```bash
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
+```
+
+- [Clio Command Reference](../../Commands.md#save-state)

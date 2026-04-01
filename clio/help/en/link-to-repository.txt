@@ -1,21 +1,21 @@
 NAME
     link-to-repository - Link environment package(s) to repository
 
+USAGE
+    clio link-to-repository [options]
+
 DESCRIPTION
-    Links packages from an environment package directory into a repository location.
+    Link environment package(s) to repository.
 
-SYNOPSIS
-    clio link-to-repository [OPTIONS]
-
-OPTIONS
-    Supports the canonical link-to-repository command options.
+ALIASES
+    l2r, link2repo
 
 EXAMPLES
-    clio link-to-repository --help
-        Display canonical options and usage examples
+    clio link-to-repository [options]
 
-SEE ALSO
-    link-from-repository - Link packages from repository to environment
-
-REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/clio
+OPTIONS
+    -r, --repoPath <VALUE>
+        Path to package repository folder. Required.
+    -e, --envPkgPath <VALUE>
+        Path to environment package folder
+        ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\Terrasoft.Configuration\Pkg). Required.

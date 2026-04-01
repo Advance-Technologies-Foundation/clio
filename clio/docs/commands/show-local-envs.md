@@ -1,18 +1,25 @@
 # show-local-envs
 
-Show local environments with filesystem and authentication status.
+Show local environments with filesystem and auth status.
 
-## Synopsis
+## Usage
 
 ```bash
-clio show-local-envs [OPTIONS]
+clio show-local-envs [options]
 ```
 
 ## Description
 
-Displays local environments discovered by clio together with their filesystem and auth status.
+Show local environments with filesystem and auth status.
 
-## See also
+## Aliases
 
-- [ShowLocalEnvsCommand.md](./ShowLocalEnvsCommand.md)
-- [Commands.md](../../Commands.md#show-local-envs)
+`localenvs`
+
+## Examples
+
+```bash
+clio show-local-envs [options]
+```
+
+- [Clio Command Reference](../../Commands.md#show-local-envs)

@@ -38,7 +38,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		bool? Required,
 		string? DefaultValueSource,
 		string? DefaultValue,
-		EntitySchemaDefaultValueConfig? DefaultValueConfig){
+		EntitySchemaDefaultValueConfig? DefaultValueConfig,
+		bool? Masked){
 		public bool IsLookup => EntitySchemaDesignerSupport.IsLookupTypeName(Type);
 	}
 
@@ -66,6 +67,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 		[property: JsonPropertyName("default-value-config")]
 		public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; init; }
+
+		[property: JsonPropertyName("masked")]
+		public bool? Masked { get; init; }
 	}
 
 	#endregion
@@ -108,7 +112,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 		if (!schema.ParentSchema.HasValue() && columns.All(column => !column.IsGuidType())) {
 			columns.Insert(0, CreateColumn(
-				new ParsedColumn("Id", "guid", "Id", null, null, null, null, null, null),
+				new ParsedColumn("Id", "guid", "Id", null, null, null, null, null, null, null),
 				referenceSchemas,
 				cultureName));
 		}
@@ -185,6 +189,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 				$"Column type '{parsedColumn.Type}' is not supported. Supported types: {GetSupportedTypesList()}.");
 		}
 		ValidateDefaultValue(parsedColumn, dataValueType);
+		ValidateMaskedOption(parsedColumn, dataValueType);
 
 		EntitySchemaColumnDto column = new() {
 			UId = Guid.NewGuid(),
@@ -195,7 +200,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 				parsedColumn.Title),
 			RequirementType = parsedColumn.Required == true
 				? (int)EntitySchemaColumnRequirementType.ApplicationLevel
-				: (int)EntitySchemaColumnRequirementType.None
+				: (int)EntitySchemaColumnRequirementType.None,
+			Masked = parsedColumn.Masked ?? false,
+			ValueMasked = parsedColumn.Masked ?? false
 		};
 		ApplyDefaultValue(column, parsedColumn);
 		if (parsedColumn.IsLookup) {
@@ -238,9 +245,21 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			|| !EntitySchemaDesignerSupport.IsBinaryLikeDataValueType(dataValueType)) {
 			return false;
 		}
-		EntitySchemaColumnDefSource? defaultValueSource =
-			EntitySchemaDesignerSupport.ParseDefaultValueSource(parsedColumn.DefaultValueSource);
+		EntitySchemaColumnDefSource? defaultValueSource = EntitySchemaDesignerSupport.ParseDefaultValueSource(parsedColumn.DefaultValueSource);
 		return parsedColumn.DefaultValue != null || defaultValueSource == EntitySchemaColumnDefSource.Const;
+	}
+
+	private static void ValidateMaskedOption(ParsedColumn parsedColumn, int dataValueType) {
+		if (!parsedColumn.Masked.HasValue) {
+			return;
+		}
+
+		bool isTextLikeType = EntitySchemaDesignerSupport.IsTextLikeDataValueType(dataValueType);
+		bool isSecureTextType = dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["secureText"];
+		if (!isTextLikeType && !isSecureTextType) {
+			throw new InvalidOperationException(
+				$"Column '{parsedColumn.Name}' can use masked only for Text or SecureText types.");
+		}
 	}
 
 	private Dictionary<string, ManagerItemDto> GetReferenceSchemas(Guid packageUId, CreateEntitySchemaOptions options) {
@@ -298,7 +317,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			structuredColumn.Required,
 			structuredColumn.DefaultValueSource,
 			structuredColumn.DefaultValue,
-			structuredColumn.DefaultValueConfig);
+			structuredColumn.DefaultValueConfig,
+			structuredColumn.Masked);
 	}
 
 	private static string GetLookupReferenceSchemaName(string[] parts) {
@@ -361,7 +381,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		string? referenceSchemaName = GetLookupReferenceSchemaName(parts);
 		ValidateLookupReferenceSchema(columnSpec, type, referenceSchemaName);
 
-		return new ParsedColumn(name, type, title, null, referenceSchemaName, null, null, null, null);
+		return new ParsedColumn(name, type, title, null, referenceSchemaName, null, null, null, null, null);
 	}
 
 	private static string ResolveTitle(StructuredColumnSpec column, string fallbackName) {

@@ -1,0 +1,24 @@
+NAME
+    compressApp - Archive an application directory into ZIP
+
+USAGE
+    clio compressApp [options]
+
+DESCRIPTION
+    Archive an application directory into ZIP.
+
+ALIASES
+    comp-app
+
+EXAMPLES
+    clio compressApp [options]
+
+OPTIONS
+    -s, --SourcePath <VALUE>
+        Folder path to package repository. Required.
+    -p, --Packages <VALUE>
+        Required.
+    -d, --DestinationPath <VALUE>
+        Destination folder path for gz files. Required.
+    --SkipPdb
+        Default: True.

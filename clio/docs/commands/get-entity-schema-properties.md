@@ -1,8 +1,6 @@
 # get-entity-schema-properties
 
-## Purpose
-
-Prints a human-readable summary of a remote Creatio entity schema and lists its own and inherited columns.
+Get properties from a remote Creatio entity schema.
 
 ## Usage
 
@@ -10,28 +8,85 @@ Prints a human-readable summary of a remote Creatio entity schema and lists its 
 clio get-entity-schema-properties [options]
 ```
 
-## Required Arguments
+## Description
 
-| Argument | Description | Example |
-|----------|-------------|---------|
-| `--package` | Target package name | `--package Custom` |
-| `--schema-name` | Entity schema name | `--schema-name UsrVehicle` |
+Get properties from a remote Creatio entity schema.
 
-## Example
+## Examples
 
 ```bash
-clio get-entity-schema-properties -e dev --package Custom --schema-name UsrVehicle
+clio get-entity-schema-properties -e dev
 ```
 
-## Behavior Notes
+## Options
 
-- CLI output is human-readable text and includes column counts, indexes, key schema flags, and grouped own/inherited column listings
-- the summary includes primary and primary display columns when they are defined
-- structured and MCP consumers should read the nested `data.columns` collection from the schema summary object
-- nested column entries expose normalized type names such as `Binary`, `Image`, `File`, and `ImageLookup`
-- this command is the canonical readback path after `create-entity-schema`
+```bash
+--package <VALUE>
+    Target package name. Required.
+--schema-name <VALUE>
+    Entity schema name. Required.
+--timeout <NUMBER>
+    Request timeout in milliseconds. Default: 100000.
+```
 
-## Related Commands
+## Environment Options
 
-- [`get-entity-schema-column-properties`](../../Commands.md#get-entity-schema-column-properties)
-- [`modify-entity-schema-column`](../../Commands.md#modify-entity-schema-column)
+```bash
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
+```
+
+## Requirements
+
+- cliogate must be installed on the target Creatio environment.
+
+## See also
+
+- `get-entity-schema-column-properties`
+- `modify-entity-schema-column`
+
+- [Clio Command Reference](../../Commands.md#get-entity-schema-properties)

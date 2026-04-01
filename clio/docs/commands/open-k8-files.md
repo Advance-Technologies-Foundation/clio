@@ -1,18 +1,25 @@
 # open-k8-files
 
-Open the Kubernetes files folder.
+Open the Kubernetes manifests folder.
 
-## Synopsis
+## Usage
 
 ```bash
-clio open-k8-files [OPTIONS]
+clio open-k8-files [options]
 ```
 
 ## Description
 
-Opens the generated Kubernetes deployment files folder for inspection or editing.
+Open the Kubernetes manifests folder.
 
-## See also
+## Aliases
 
-- [CreateK8FilesCommand.md](./CreateK8FilesCommand.md)
-- [deploy-infrastructure](./deploy-infrastructure.md)
+`cfg-k8`, `cfg-k8f`, `cfg-k8s`
+
+## Examples
+
+```bash
+clio open-k8-files [options]
+```
+
+- [Clio Command Reference](../../Commands.md#open-k8-files)

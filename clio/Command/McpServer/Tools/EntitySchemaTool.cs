@@ -87,11 +87,12 @@ public sealed class CreateEntitySchemaTool(
 				? null
 				: column.ReferenceSchemaName.Trim(),
 			["required"] = column.Required,
-			["default-value-source"] = column.DefaultValueSource,
-			["default-value"] = column.DefaultValue,
-			["default-value-config"] = column.DefaultValueConfig
-		});
-	}
+		    ["default-value-source"] = column.DefaultValueSource,
+		    ["default-value"] = column.DefaultValue,
+			["default-value-config"] = column.DefaultValueConfig,
+			["masked"] = column.Masked
+	});
+}
 }
 
 /// <summary>
@@ -496,9 +497,10 @@ public sealed record CreateEntitySchemaColumnArgs(
 						  Column type. Supported values:
 						  Guid, Text, ShortText, MediumText, LongText, MaxSizeText,
 						  Integer, Float, Boolean, Date, DateTime, Time, Lookup,
-						  Binary, Image, File, SecureText.
+						  Binary, Image, File, SecureText, Email.
 						  Blob is also accepted as an alias for Binary.
 						  Encrypted and Password are accepted as aliases for SecureText.
+						  EmailAddress is accepted as an alias for Email.
 						  """)]
 	[property: Required]
 	string Type,
@@ -538,6 +540,10 @@ public sealed record CreateEntitySchemaColumnArgs(
 	[property: JsonPropertyName("default-value-config")]
 	[property: Description("Structured default value metadata. Use source None, Const, Settings, SystemValue, or Sequence for non-legacy scenarios.")]
 	public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; init; }
+
+	[property: JsonPropertyName("masked")]
+	[property: Description("Optional masked flag. Allowed for Text and SecureText columns.")]
+	public bool? Masked { get; init; }
 }
 
 /// <summary>
@@ -568,6 +574,7 @@ public abstract record ColumnModificationArgsBase(
 						   Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
 						   Currency0, Currency1, Currency2, Currency3.
 						   Encrypted and Password are accepted as aliases for SecureText.
+						   EmailAddress is accepted as an alias for Email.
 						   """)]
 	string? Type = null,
 

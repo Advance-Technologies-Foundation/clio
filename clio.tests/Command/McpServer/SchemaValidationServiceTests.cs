@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Clio.Command;
 using FluentAssertions;
 using NUnit.Framework;
@@ -289,5 +290,92 @@ public class SchemaValidationServiceTests {
 		var result = SchemaValidationService.ValidateColumnBindings(ValidFormPageBody);
 		result.IsValid.Should().BeTrue("because FormPage without DataTable should pass");
 		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Standard field proxy bindings to direct PDS paths are rejected")]
+	public void ValidateStandardFieldBindings_ProxyBindingToPdsPath_ReturnsInvalid() {
+		string body = BuildDiffBackedPageBody(
+			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]",
+			"[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
+
+		result.IsValid.Should().BeFalse("because data-bound fields must bind directly to datasource-backed attributes");
+		result.Errors.Should().ContainSingle(error => error.Contains("$UsrStatus") && error.Contains("$PDS_UsrStatus"),
+			"because the validation should explain the rejected proxy binding and the expected datasource binding");
+	}
+
+	[Test]
+	[Description("Standard field Usr label shortcuts without explicit resources are rejected")]
+	public void ValidateStandardFieldBindings_UsrLabelShortcutWithoutResources_ReturnsInvalid() {
+		string body = BuildDiffBackedPageBody(
+			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_label)#\",\"control\":\"$PDS_UsrStatus\"}}]",
+			"[]");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
+
+		result.IsValid.Should().BeFalse("because data-bound field captions should not rely on implicit Usr label resources");
+		result.Errors.Should().ContainSingle(error => error.Contains("UsrStatus_label"),
+			"because the missing explicit resource entry should be called out");
+	}
+
+	[Test]
+	[Description("Standard field direct PDS binding with datasource caption passes semantic validation")]
+	public void ValidateStandardFieldBindings_DirectPdsBindingWithDatasourceCaption_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$PDS_UsrStatus\"}}]",
+			"[]");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
+
+		result.IsValid.Should().BeTrue("because the field uses direct datasource binding and datasource captioning");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Explicit custom resources on standard field shortcuts surface warnings instead of hard failures")]
+	public void ValidateStandardFieldBindings_UsrLabelShortcutWithExplicitResources_ReturnsWarning() {
+		string body = BuildDiffBackedPageBody(
+			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_caption)#\",\"control\":\"$PDS_UsrStatus\"}}]",
+			"[]");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(
+			body,
+			new Dictionary<string, string> { ["UsrStatus_caption"] = "Status" });
+
+		result.IsValid.Should().BeTrue("because the explicit resource makes the pattern suspicious but not conclusively broken");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().ContainSingle(warning => warning.Contains("UsrStatus_caption"),
+			"because the validator should steer callers toward datasource captions");
+	}
+
+	[Test]
+	[Description("Custom non-field UI elements may use explicit Usr caption resources")]
+	public void ValidateStandardFieldBindings_CustomStandaloneCaptionWithExplicitResources_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"[{\"operation\":\"insert\",\"name\":\"UsrStandaloneLabel\",\"values\":{\"type\":\"crt.Label\",\"caption\":\"#ResourceString(UsrStatus_caption)#\"}}]",
+			"[]");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(
+			body,
+			new Dictionary<string, string> { ["UsrStatus_caption"] = "Status" });
+
+		result.IsValid.Should().BeTrue("because non-field standalone UI captions are outside the standard field guardrail");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().BeEmpty();
+	}
+
+	private static string BuildDiffBackedPageBody(string viewConfigDiff, string viewModelConfigDiff) {
+		return
+			"define(\"TestPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
+			$"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/{viewConfigDiff}/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			$"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{viewModelConfigDiff}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 	}
 }

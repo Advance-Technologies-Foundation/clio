@@ -104,6 +104,46 @@ public sealed class DataBindingDbToolE2ETests {
 			"create-data-binding-db must reject empty environment-name with exit code 1");
 	}
 
+	[Test]
+	[Description("Re-running create-data-binding-db with the same row Name skips the insert and does not emit 'Created row' for the duplicate, but still succeeds and includes the existing row Id in the binding.")]
+	[AllureTag(CreateDbToolName)]
+	[AllureName("create-data-binding-db skips insert for existing Name on re-run")]
+	[AllureDescription("Uses the real clio MCP server to invoke create-data-binding-db twice with the same row Name against a reachable Creatio sandbox. Verifies the second call exits with code 0, does not emit a 'Created row' message for the duplicate, and succeeds without creating a phantom binding reference.")]
+	public async Task CreateDataBindingDb_Should_Skip_Duplicate_Name_On_Rerun() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		const string rowName = "E2E Dedup Row";
+		const string rowsJson = """[{"values":{"Name":"E2E Dedup Row","Code":"UsrDedupRow"}}]""";
+		var firstCallArgs = new Dictionary<string, object?> {
+			["environment-name"] = arrangeContext.EnvironmentName,
+			["package-name"] = arrangeContext.PackageName,
+			["schema-name"] = "SysSettings",
+			["binding-name"] = $"UsrDedupE2E{arrangeContext.PackageName}",
+			["rows"] = rowsJson
+		};
+
+		// Act - first call inserts the row
+		CommandExecutionActResult firstResult = await ActCommandAsync(arrangeContext, CreateDbToolName, firstCallArgs);
+
+		// Act - second call with the same Name must skip the insert
+		CommandExecutionActResult secondResult = await ActCommandAsync(arrangeContext, CreateDbToolName, firstCallArgs);
+
+		// Assert
+		AssertToolCallSucceeded(firstResult);
+		AssertCommandExitCode(firstResult, 0, "first create-data-binding-db should succeed and insert the row");
+		AssertIncludesInfoMessage(firstResult, "first call should emit at least one info message");
+
+		AssertToolCallSucceeded(secondResult);
+		AssertCommandExitCode(secondResult, 0, "second create-data-binding-db should succeed even when the row Name already exists");
+		secondResult.Execution.Output.Should().NotBeNull();
+		secondResult.Execution.Output!
+			.Where(m => m.MessageType == LogDecoratorType.Info)
+			.Select(m => m.Value?.ToString() ?? string.Empty)
+			.Should().NotContain(
+				msg => msg.Contains("Created row") && msg.Contains(rowName),
+				because: "duplicate Name must not produce a second INSERT and must not appear in the 'Created row' output");
+	}
+
 	private static async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();

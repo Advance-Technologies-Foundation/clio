@@ -1,26 +1,80 @@
 NAME
-    clone-env - Clone environment settings
+    clone-env - Clone one environment to another
+
+USAGE
+    clio clone-env [<EnvironmentName>] [options]
 
 DESCRIPTION
-    Creates a copy of an existing environment definition in clio settings.
+    Clone one environment to another.
 
-SYNOPSIS
-    clio clone-env <SOURCE_ENVIRONMENT> <TARGET_ENVIRONMENT>
-
-OPTIONS
-    <SOURCE_ENVIRONMENT>
-        Existing registered environment to copy
-
-    <TARGET_ENVIRONMENT>
-        New environment name to create
+ALIASES
+    clone, clone-environment
 
 EXAMPLES
-    clio clone-env dev test
-        Clone the dev environment configuration into test
+    clio clone-env [<EnvironmentName>] [options]
 
-SEE ALSO
-    reg-web-app - Register a new environment
-    unreg-web-app - Remove an environment registration
+ARGUMENTS
+    EnvironmentName
+        Application name
 
-REPORTING BUGS
-    https://github.com/Advance-Technologies-Foundation/clio
+OPTIONS
+    --source <VALUE>
+        Source environment name. Required.
+    --target <VALUE>
+        Target environment name. Required.
+    --file <VALUE>
+        Diff file name
+    --overwrite
+        Overwrite existing file. Default: True.
+    --working-directory <VALUE>
+        Working directory
+    --exclude-maintainer <VALUE>
+        Exclude maintainer
+
+ENVIRONMENT OPTIONS
+    -u, --uri <VALUE>
+        Application uri
+    -p, --Password <VALUE>
+        User password
+    -l, --Login <VALUE>
+        User login (administrator permission required)
+    -i, --IsNetCore
+        Use NetCore application
+    -e, --Environment <VALUE>
+        Environment name
+    -m, --Maintainer <VALUE>
+        Maintainer name
+    -c, --dev <VALUE>
+        Developer mode state for environment
+    --WorkspacePathes <VALUE>
+        Workspace path
+    -s, --Safe <VALUE>
+        Safe action in this environment
+    --clientId <VALUE>
+        OAuth client id
+    --clientSecret <VALUE>
+        OAuth client secret
+    --authAppUri <VALUE>
+        OAuth app URI
+    --silent
+        Use default behavior without user interaction
+    --restartEnvironment
+        Restart environment after execute command
+    --db-server-uri <VALUE>
+        Db server uri
+    --db-user <VALUE>
+        Database user
+    --db-password <VALUE>
+        Database password
+    --backup-file <VALUE>
+        Full path to backup file
+    --db-working-folder <VALUE>
+        Folder visible to db server
+    --db-name <VALUE>
+        Desired database name
+    --force
+        Force restore
+    --callback-process <VALUE>
+        Callback process name
+    --ep <VALUE>
+        Path to the application root folder

@@ -1,10 +1,6 @@
 # create-entity-schema
 
-## Purpose
-
-Creates a remote entity schema inside an existing Creatio package by calling `EntitySchemaDesignerService`. This command is intended for environment-side schema creation from `clio`, not for generating local package files.
-
-Current `clio` entity-schema commands are part of the canonical `clio` MCP contract. Keep using `create-entity-schema` and `modify-entity-schema-column`; frontend-only aliases such as `entity.create` or `entity.update` are conceptual only and are not the direct `clio` API.
+Create an entity schema in a remote Creatio package.
 
 ## Usage
 
@@ -12,144 +8,95 @@ Current `clio` entity-schema commands are part of the canonical `clio` MCP contr
 clio create-entity-schema [options]
 ```
 
-## Arguments
+## Description
 
-### Required Arguments
-
-| Argument | Description | Example |
-|----------|-------------|---------|
-| `--package` | Target package name | `--package Custom` |
-| `--name` | Entity schema name, maximum 22 characters | `--name UsrVehicle` |
-| `--title` | Entity schema title/caption | `--title "Vehicle"` |
-
-### Optional Arguments
-
-| Argument | Description | Example |
-|----------|-------------|---------|
-| `--parent` | Parent schema name | `--parent BaseEntity` |
-| `--extend-parent` | Create a replacement schema. Requires `--parent` | `--extend-parent` |
-| `--column` | Column definition in format `<name>:<type>[:<title>[:<refSchema>]]` or JSON with `name`, `type`, `title`/`caption`, `reference-schema-name`, `required`, legacy `default-value-source` / `default-value`, or structured `default-value-config`. Repeat the option for multiple columns. | `--column "Name:Text:Name"` |
-
-### Environment Configuration
-
-| Argument | Short | Description | Example |
-|----------|-------|-------------|---------|
-| `--environment` | `-e` | Environment name from configuration | `-e dev` |
-| `--uri` | `-u` | Creatio application URI | `--uri http://localhost:8083` |
-| `--login` | `-l` | Username for authentication | `--login Supervisor` |
-| `--password` | `-p` | Password for authentication | `--password Supervisor` |
-
-## Supported Column Types
-
-- `Guid`
-- `Text`
-- `ShortText`
-- `MediumText`
-- `LongText`
-- `MaxSizeText`
-- `Binary`
-- `Image`
-- `File`
-- `SecureText`
-- `Integer`
-- `Float`
-- `Boolean`
-- `Date`
-- `DateTime`
-- `Time`
-- `Lookup` with required reference schema name
-
-The command also accepts `Blob` as an alias for `Binary`, `Encrypted` and `Password` as aliases for `SecureText`, plus designer-native text and decimal variants such as `Text50`, `Text250`, `Text500`, `TextUnlimited`, `PhoneNumber`, `WebLink`, `Email`, `RichText`, `Decimal0`, `Decimal1`, `Decimal2`, `Decimal3`, `Decimal4`, `Decimal8`, `Currency0`, `Currency1`, `Currency2`, and `Currency3`.
+Create an entity schema in a remote Creatio package.
 
 ## Examples
 
-### Create a Bare Entity Schema
+```bash
+clio create-entity-schema -e dev
+```
+
+## Options
 
 ```bash
-clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle"
+--package <VALUE>
+    Target package name. Required.
+--name <VALUE>
+    Schema name. Required.
+--title <VALUE>
+    Schema title. Required.
+--parent <VALUE>
+    Parent schema name
+--extend-parent
+    Create replacement schema
+--column <VALUE>
+    Column spec <name>:<type>[:<title>[:<refSchema>]] or JSON with
+    name/type/title/reference-schema-name/required/default-value-source/default-value.
+    Repeat the option for multiple columns
+--timeout <NUMBER>
+    Request timeout in milliseconds. Default: 100000.
 ```
 
-### Create an Entity Schema with Initial Columns
+## Environment Options
 
 ```bash
-clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" \
-  --column "Name:Text:Name" \
-  --column "CreatedOn:DateTime:Created on" \
-  --column "IsActive:Boolean:Active"
-```
-
-### Create a Lookup Column
-
-```bash
-clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" \
-  --column "Owner:Lookup:Owner:Contact"
-```
-
-### Create a Column from Structured JSON Metadata
-
-```bash
-clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" \
-  --column "{\"name\":\"Status\",\"type\":\"ShortText\",\"title\":\"Status\",\"required\":true,\"default-value-source\":\"Const\",\"default-value\":\"Draft\"}"
-```
-
-### Create a Column with Structured Default Value Config
-
-```bash
-clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" \
-  --column "{\"name\":\"UsrStartDate\",\"type\":\"DateTime\",\"title\":\"Start date\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
-```
-
-### Create a Schema with Inheritance
-
-```bash
-clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --parent BaseEntity
-```
-
-### Create a Replacement Schema
-
-```bash
-clio create-entity-schema -e dev --package Custom --name UsrAccount --title "Account" --parent Account --extend-parent
-```
-
-## Behavior Notes
-
-- The command uses the server-side entity designer flow:
-  1. `CreateNewSchema`
-  2. optional `AssignParentSchema`
-  3. `SaveSchema`
-- Package resolution relies on the package list API, so `cliogate` must be installed on the target environment.
-- For schemas without a parent, `Id:Guid` is created automatically if no Guid column is supplied.
-- If no primary display column is defined, the first text-like column is used.
-- `Binary`, `Image`, and `File` columns do not support `default-value` or `default-value-source: Const`.
-- Prefer `default-value-config` for `Settings`, `SystemValue`, or `Sequence`; keep `default-value-source` / `default-value` as shorthand only for `Const` and `None`.
-- The command accepts frontend-style aliases such as `ShortText`, `Float`, `Date`, and `Time`, and maps them to the closest supported designer types.
-- Repeat `--column` for multiple entries; semicolons inside JSON payloads are treated as content, not separators.
-- After `SaveSchema`, the schema is reloaded immediately. The command treats save as failed if the schema cannot be read back.
-- Schema names longer than 22 characters are rejected locally before the server call.
-
-## Output
-
-### Success
-
-```text
-[INF] - Entity schema 'UsrVehicle' created in package 'Custom'.
-[INF] - Done
-```
-
-### Example Validation Error
-
-```text
-[ERR] - Schema name must not exceed 22 characters.
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
 ```
 
 ## Requirements
 
-- Target environment must be reachable by `clio`
-- `cliogate` must be installed for package lookup
-- User must have permission to modify the target package and create schemas
+- cliogate must be installed on the target Creatio environment.
 
-## Related Commands
+## See also
 
-- [`install-gate`](../../Commands.md#install-gate) - Install cliogate on the target environment
-- [`get-pkg-list`](../../Commands.md#get-pkg-list) - List available packages
-- [`add-schema`](../../Commands.md#add-schema) - Generate local schema files in a package
+- `get-entity-schema-properties`
+- `modify-entity-schema-column`
+
+- [Clio Command Reference](../../Commands.md#create-entity-schema)

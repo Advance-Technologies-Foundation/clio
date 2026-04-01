@@ -656,6 +656,87 @@ internal class RemoteEntitySchemaColumnManagerTests
 			Arg.Any<Clio.Command.RemoteCommandOptions>());
 	}
 
+	[Test]
+	[Description("Allows masked flag for Password alias and maps the column to SecureText runtime type.")]
+	public void ModifyColumn_AddsPasswordColumn_WithMaskedFlag() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrPassword",
+			Type = "Password",
+			Title = "Password",
+			Masked = true
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrPassword");
+		addedColumn.DataValueType.Should().Be(24,
+			because: "Password alias should resolve to SecureText runtime type");
+		addedColumn.Masked.Should().BeTrue(
+			because: "masked flag should be accepted for SecureText password columns");
+		addedColumn.ValueMasked.Should().BeTrue(
+			because: "masked flag should also set schema-level value masking");
+	}
+
+	[Test]
+	[Description("Keeps masked and value-masked false when adding SecureText without explicit masked flag.")]
+	public void ModifyColumn_AddsSecureTextColumn_MaskedFalseByDefault() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrPassword",
+			Type = "SecureText",
+			Title = "Password"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrPassword");
+		addedColumn.DataValueType.Should().Be(24,
+			because: "SecureText should map to runtime data value type 24");
+		addedColumn.Masked.Should().BeFalse(
+			because: "SecureText add should not force masked=true when no explicit flag is provided");
+		addedColumn.ValueMasked.Should().BeFalse(
+			because: "SecureText add should keep value masking disabled unless explicitly requested");
+	}
+
+	[Test]
+	[Description("Rejects masked flag for non-text and non-secure text effective types.")]
+	public void ModifyColumn_Throws_WhenMaskedUsedOnUnsupportedType() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrCode",
+			Type = "Integer",
+			Masked = true
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*Masked option can be used only when the effective column type is Text or SecureText*",
+				because: "masked should stay restricted to compatible field types");
+	}
+
 	[TestCase(13, "Binary")]
 	[TestCase(14, "Image")]
 	[TestCase(16, "ImageLookup")]

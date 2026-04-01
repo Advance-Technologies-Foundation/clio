@@ -1,74 +1,83 @@
 # page-list
 
-## Purpose
-`page-list` lists Freedom UI page schemas available in a Creatio environment.
-
-Use this command to discover candidate schema names before calling `page-get`.
-The response also includes package ownership and direct parent schema names so AI clients can choose the right page before opening it.
+List Freedom UI pages.
 
 ## Usage
+
 ```bash
 clio page-list [options]
 ```
 
-## Options
+## Description
 
-| Option | Short | Required | Default | Description |
-|--------|-------|----------|---------|-------------|
-| `--package-name` |  | No |  | Filter pages by package name |
-| `--search-pattern` |  | No |  | Filter pages by schema name using a contains match |
-| `--limit` |  | No | `50` | Maximum number of results |
-| `--Environment` | `-e` | No |  | Registered clio environment name |
-| `--uri` | `-u` | No |  | Creatio application URL |
-| `--Login` | `-l` | No |  | Creatio user login |
-| `--Password` | `-p` | No |  | Creatio user password |
-| `--Maintainer` | `-m` | No |  | Maintainer name |
-
-## Output
-
-`page-list` returns a JSON envelope:
-
-```json
-{
-  "success": true,
-  "count": 2,
-  "pages": [
-    {
-      "name": "UsrTodo_FormPage",
-      "uId": "guid",
-      "packageName": "UsrApp",
-      "parentSchemaName": "PageWithTabsFreedomTemplate"
-    }
-  ],
-  "error": null
-}
-```
+List Freedom UI pages.
 
 ## Examples
 
-List Freedom UI pages from a registered environment:
 ```bash
 clio page-list -e dev
 ```
 
-Find form pages by schema name:
+## Options
+
 ```bash
-clio page-list --search-pattern FormPage --limit 20 -e dev
+--package-name <VALUE>
+    Filter by package name
+--search-pattern <VALUE>
+    Filter by schema name (contains)
+--limit <NUMBER>
+    Maximum number of results. Default: 50.
 ```
 
-Limit results to one package:
+## Environment Options
+
 ```bash
-clio page-list --package-name UsrApp -e dev
+-u, --uri <VALUE>
+    Application uri
+-p, --Password <VALUE>
+    User password
+-l, --Login <VALUE>
+    User login (administrator permission required)
+-i, --IsNetCore
+    Use NetCore application
+-e, --Environment <VALUE>
+    Environment name
+-m, --Maintainer <VALUE>
+    Maintainer name
+-c, --dev <VALUE>
+    Developer mode state for environment
+--WorkspacePathes <VALUE>
+    Workspace path
+-s, --Safe <VALUE>
+    Safe action in this environment
+--clientId <VALUE>
+    OAuth client id
+--clientSecret <VALUE>
+    OAuth client secret
+--authAppUri <VALUE>
+    OAuth app URI
+--silent
+    Use default behavior without user interaction
+--restartEnvironment
+    Restart environment after execute command
+--db-server-uri <VALUE>
+    Db server uri
+--db-user <VALUE>
+    Database user
+--db-password <VALUE>
+    Database password
+--backup-file <VALUE>
+    Full path to backup file
+--db-working-folder <VALUE>
+    Folder visible to db server
+--db-name <VALUE>
+    Desired database name
+--force
+    Force restore
+--callback-process <VALUE>
+    Callback process name
+--ep <VALUE>
+    Path to the application root folder
 ```
 
-Connect directly without a registered environment:
-```bash
-clio page-list --search-pattern ListPage -u https://my-creatio -l Supervisor -p Supervisor
-```
-
-## Recommended Workflow
-
-1. Use `page-list` to find the schema name you need.
-2. Call `page-get` with that schema name.
-3. Edit `raw.body` from `page-get`.
-4. Save the edited body with `page-update`.
+- [Clio Command Reference](../../Commands.md#page-list)
