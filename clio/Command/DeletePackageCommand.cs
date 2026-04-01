@@ -72,8 +72,8 @@
 
 		private bool VerifyPackageRemoval(string packageName) {
 			if (_packageListProvider == null) {
-				// Cannot verify - assume server response is correct
-				return true;
+				// Cannot verify - assume package was removed (trust server response)
+				return false;
 			}
 
 			try {
