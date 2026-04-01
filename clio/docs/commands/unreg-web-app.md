@@ -2,6 +2,7 @@
 
 Remove a registered Creatio environment.
 
+
 ## Usage
 
 ```bash
@@ -11,6 +12,8 @@ clio unreg-web-app [<Name>] [options]
 ## Description
 
 Remove a registered Creatio environment.
+When <Name> and -e/--Environment are omitted, the command shows the registered
+environments and asks you to choose one.
 
 ## Aliases
 
@@ -19,72 +22,82 @@ Remove a registered Creatio environment.
 ## Examples
 
 ```bash
-clio unreg-web-app [<Name>] [options]
+clio unreg-web-app dev
+clio unreg-web-app -e dev
+clio unreg-web-app
+clio unreg-web-app --all
 ```
 
 ## Arguments
 
 ```bash
-Name
-    Application name
+    Name
+        Application name
 ```
 
 ## Options
 
 ```bash
 --all
-    Remove all registered environments
+Remove all registered environments
 ```
 
 ## Environment Options
 
 ```bash
 -u, --uri <VALUE>
-    Application uri
+Application uri
 -p, --Password <VALUE>
-    User password
+User password
 -l, --Login <VALUE>
-    User login (administrator permission required)
+User login (administrator permission required)
 -i, --IsNetCore
-    Use NetCore application
+Use NetCore application)
 -e, --Environment <VALUE>
-    Environment name
+Environment name
 -m, --Maintainer <VALUE>
-    Maintainer name
+Maintainer name
 -c, --dev <VALUE>
-    Developer mode state for environment
+Developer mode state for environment
 --WorkspacePathes <VALUE>
-    Workspace path
+Workspace path
 -s, --Safe <VALUE>
-    Safe action in this environment
+Safe action in this environment
 --clientId <VALUE>
-    OAuth client id
+OAuth client id
 --clientSecret <VALUE>
-    OAuth client secret
+OAuth client secret
 --authAppUri <VALUE>
-    OAuth app URI
+OAuth app URI
 --silent
-    Use default behavior without user interaction
+Use default behavior without user interaction
 --restartEnvironment
-    Restart environment after execute command
+Restart environment after execute command
 --db-server-uri <VALUE>
-    Db server uri
+Db server uri
 --db-user <VALUE>
-    Database user
+Database user
 --db-password <VALUE>
-    Database password
+Database password
 --backup-file <VALUE>
-    Full path to backup file
+Full path to backup file
 --db-working-folder <VALUE>
-    Folder visible to db server
+Folder visible to db server
 --db-name <VALUE>
-    Desired database name
+Desired database name
 --force
-    Force restore
+Force restore
 --callback-process <VALUE>
-    Callback process name
+Callback process name
 --ep <VALUE>
-    Path to the application root folder
+Path to the application root folder
 ```
+
+## Notes
+
+In --silent mode, pass <Name>, -e/--Environment, or --all because interactive
+selection is disabled.
+Only -e/--Environment and --silent from the shared environment options affect
+this command.
 
 - [Clio Command Reference](../../Commands.md#unreg-web-app)

@@ -2,6 +2,7 @@
 
 Set application icon.
 
+
 ## Usage
 
 ```bash
@@ -26,11 +27,15 @@ clio set-app-icon [options]
 
 ```bash
 -p, --app-name <VALUE>
-    App name
+App name
 -i, --app-icon <VALUE>
-    Application icon path. Required.
+Application icon path. Required.
 -f, --app-path <VALUE>
-    Path to application package folder or archive. Required.
+Path to application package folder or archive. Required.
 ```
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
 
 - [Clio Command Reference](../../Commands.md#set-app-icon)

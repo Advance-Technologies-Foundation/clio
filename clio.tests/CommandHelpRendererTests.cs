@@ -37,27 +37,25 @@ internal class CommandHelpRendererTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Rewrites legacy help examples and usage lines to the canonical command name.")]
-	public void TryRenderCommandHelp_WhenLegacyHelpUsesOldName_RewritesExamplesToCanonicalName() {
+	[Description("Returns the canonical manual help file unchanged when help is requested through an alias.")]
+	public void TryRenderCommandHelp_WhenAliasTargetsManualHelp_ReturnsCanonicalManualFile() {
 		FileSystem.AddDirectory(_helpDirectory);
 		FileSystem.AddFile(
-			System.IO.Path.Combine(_helpDirectory, "callservice.txt"),
+			System.IO.Path.Combine(_helpDirectory, "ping-app.txt"),
 			new MockFileData("""
-USAGE
-clio callservice [options]
+NAME
+    ping-app - Manual ping help
 
-EXAMPLES
-clio callservice -e dev
+DETAIL COLLECTIONS
+    This line proves the raw manual file is returned.
 """));
 
-		string output = _exportRenderer.TryRenderCommandHelp("call-service");
+		string output = _exportRenderer.TryRenderCommandHelp("ping");
 
-		output.Should().Contain("clio call-service [options]",
-			because: "legacy help files should be normalized to the canonical command name");
-		output.Should().Contain("clio call-service -e dev",
-			because: "examples should be normalized to the canonical command name");
-		output.Should().NotContain("clio callservice",
-			because: "legacy file names should not leak into the rendered help contract");
+		output.Should().Contain("ping-app - Manual ping help",
+			because: "alias lookups should resolve to the canonical manual help file");
+		output.Should().Contain("DETAIL COLLECTIONS",
+			because: "manual custom sections should be returned unchanged for runtime help");
 	}
 
 	[Test]
@@ -141,6 +139,43 @@ clio callservice -e dev
 			because: "the markdown index should no longer render alias continuation lines");
 		output.Should().NotContain("(docs/commands/ping.md)",
 			because: "alias-only markdown files should no longer be referenced");
+	}
+
+	[Test]
+	[Description("Preserves manual custom headings in markdown docs instead of dropping them during parsing.")]
+	public void RenderMarkdownDoc_WhenManualHelpContainsCustomSections_PreservesThemInOrder() {
+		FileSystem.AddDirectory(_helpDirectory);
+		FileSystem.AddFile(
+			System.IO.Path.Combine(_helpDirectory, "add-item.txt"),
+			new MockFileData("""
+NAME
+    add-item - Generate package item models from Creatio metadata
+
+USAGE
+    clio add-item model [options]
+
+DESCRIPTION
+    Manual description.
+
+DETAIL COLLECTIONS
+    Custom section line.
+
+MODEL VALIDATION
+    Another custom section line.
+"""));
+		CommandHelpCatalog catalog = new();
+		catalog.TryGetCommand("add-item", out HelpCommandMetadata command).Should().BeTrue(
+			because: "the add-item command should exist in the canonical help catalog");
+
+		string output = _exportRenderer.RenderMarkdownDoc(command);
+
+		output.Should().Contain("## Detail Collections",
+			because: "custom manual headings should be emitted as markdown sections");
+		output.Should().Contain("Custom section line.",
+			because: "custom manual section content should survive markdown generation");
+		output.IndexOf("## Detail Collections", StringComparison.Ordinal).Should().BeLessThan(
+			output.IndexOf("## Model Validation", StringComparison.Ordinal),
+			because: "custom sections should keep the same order as the manual help file");
 	}
 
 	private CommandHelpRenderer CreateRenderer(Func<bool> supportsAnsi) =>

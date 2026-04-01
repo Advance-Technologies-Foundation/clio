@@ -6,12 +6,17 @@ USAGE
 
 DESCRIPTION
     Remove a registered Creatio environment.
+    When <Name> and -e/--Environment are omitted, the command shows the registered
+    environments and asks you to choose one.
 
 ALIASES
     unreg
 
 EXAMPLES
-    clio unreg-web-app [<Name>] [options]
+    clio unreg-web-app dev
+    clio unreg-web-app -e dev
+    clio unreg-web-app
+    clio unreg-web-app --all
 
 ARGUMENTS
     Name
@@ -21,6 +26,12 @@ OPTIONS
     --all
         Remove all registered environments
 
+NOTES
+    In --silent mode, pass <Name>, -e/--Environment, or --all because interactive
+    selection is disabled.
+    Only -e/--Environment and --silent from the shared environment options affect
+    this command.
+
 ENVIRONMENT OPTIONS
     -u, --uri <VALUE>
         Application uri
@@ -29,7 +40,7 @@ ENVIRONMENT OPTIONS
     -l, --Login <VALUE>
         User login (administrator permission required)
     -i, --IsNetCore
-        Use NetCore application
+        Use NetCore application)
     -e, --Environment <VALUE>
         Environment name
     -m, --Maintainer <VALUE>

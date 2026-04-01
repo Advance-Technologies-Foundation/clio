@@ -2,6 +2,7 @@
 
 Prepare an archive of creatio package.
 
+
 ## Usage
 
 ```bash
@@ -10,7 +11,8 @@ clio generate-pkg-zip [<Name>] [options]
 
 ## Description
 
-Prepare an archive of creatio package.
+generate-pkg-zip command compress package into *.gz archive for directory
+that contain package folder
 
 ## Aliases
 
@@ -19,23 +21,35 @@ Prepare an archive of creatio package.
 ## Examples
 
 ```bash
-clio generate-pkg-zip [<Name>] [options]
-```
+clio generate-pkg-zip
+generate-pkg-zip package to .gz file if command run from package directory
 
-## Arguments
+clio generate-pkg-zip <PACKAGE_NAME>
+generate-pkg-zip package to .gz file if command run from package containing
+directory
 
-```bash
-Name
-    Name of the compressed package
+clio generate-pkg-zip <PACKAGE_NAME> -d "C:\STORE\<PACKAGE>.gz"
+generate-pkg-zip package to specified .gz file if command run from package
+containing directory
+
+clio generate-pkg-zip "C:\DEV\PKG\<PACKAG_NAME>" -d "C:\STORE\<PACKAGE>.gz"
+generate-pkg-zip package from specify directory to specify .gz file
+
+clio generate-pkg-zip <PACKAGE_NAME_1>,<PACKAGE_NAME_2>,<PACKAGE_NAME_3>
+generate-pkg-zip more than one packages to single .gz file if command run from
+packages containing directory
 ```
 
 ## Options
 
 ```bash
--d, --DestinationPath <VALUE>
-    Full destination path for gz file
--p, --Packages <VALUE>
--s, --SkipPdb
+Package name (pos. 0)    Name/path of package folder
+
+--DestinationPath       -d  Destionation path for result gz file (Optional)
 ```
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
 
 - [Clio Command Reference](../../Commands.md#generate-pkg-zip)

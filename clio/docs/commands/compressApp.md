@@ -2,6 +2,7 @@
 
 Archive an application directory into ZIP.
 
+
 ## Usage
 
 ```bash
@@ -26,13 +27,13 @@ clio compressApp [options]
 
 ```bash
 -s, --SourcePath <VALUE>
-    Folder path to package repository. Required.
+Folder path to package repository. Required.
 -p, --Packages <VALUE>
-    Required.
+Required.
 -d, --DestinationPath <VALUE>
-    Destination folder path for gz files. Required.
+Destination folder path for gz files. Required.
 --SkipPdb
-    Default: True.
+Default: True.
 ```
 
 - [Clio Command Reference](../../Commands.md#compressApp)

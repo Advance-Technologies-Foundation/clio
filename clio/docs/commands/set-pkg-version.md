@@ -2,6 +2,7 @@
 
 Set package version.
 
+
 ## Usage
 
 ```bash
@@ -10,7 +11,7 @@ clio set-pkg-version <PackagePath> [options]
 
 ## Description
 
-Set package version.
+Set specified package version into descriptor.json by specified package path.
 
 ## Aliases
 
@@ -19,21 +20,11 @@ Set package version.
 ## Examples
 
 ```bash
-clio set-pkg-version <PackagePath> [options]
+clio set-pkg-version <PACKAGE PATH> -v <PACKAGE VERSION>
 ```
 
-## Arguments
+## Reporting Bugs
 
-```bash
-PackagePath
-    Package path. Required.
-```
-
-## Options
-
-```bash
--v, --PackageVersion <VALUE>
-    Package version. Required.
-```
+    https://github.com/Advance-Technologies-Foundation/clio
 
 - [Clio Command Reference](../../Commands.md#set-pkg-version)

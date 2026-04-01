@@ -352,6 +352,44 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	}
 
 	[Test]
+	[Description("Renders the rich manual add-item help when command help is requested through the built-in help command.")]
+	public void ExecuteCommands_WithBuiltInAddItemHelp_ShouldRenderManualHelpText() {
+		StringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+
+		int exitCode = Program.ExecuteCommands(["help", "add-item"]);
+		string output = consoleOutput.ToString();
+
+		exitCode.Should().Be(0, because: "the built-in help flow should succeed for known commands");
+		output.Should().Contain("COMMAND TYPE",
+			because: "manual command help should be shown instead of the generated fallback contract");
+		output.Should().Contain("DETAIL COLLECTIONS",
+			because: "rich manual sections from add-item.txt should survive the runtime help flow");
+		output.Should().Contain("MODEL VALIDATION",
+			because: "manual explanatory sections should remain visible in command help");
+	}
+
+	[Test]
+	[Description("Renders the rich manual add-item help when help is requested through the command parser path.")]
+	public void ExecuteCommands_WithAddItemHelpSwitch_ShouldRenderManualHelpText() {
+		StringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+
+		int exitCode = Program.ExecuteCommands(["add-item", "--help"]);
+		string output = consoleOutput.ToString();
+
+		exitCode.Should().Be(0, because: "the parser-driven help path should succeed for known commands");
+		output.Should().Contain("COMMAND TYPE",
+			because: "parser-driven help should read the manual txt file when it exists");
+		output.Should().Contain("DETAIL COLLECTIONS",
+			because: "manual custom sections should remain visible in parser-driven help");
+		output.Should().Contain("MODEL VALIDATION",
+			because: "manual validation guidance should remain visible in parser-driven help");
+	}
+
+	[Test]
 	[Description("Excludes hidden commands from the unknown-command suggestions.")]
 	public void ExecuteCommands_WithHiddenCommandAlias_ShouldNotSuggestHiddenCommand() {
 		StringWriter consoleOutput = new();

@@ -1,72 +1,63 @@
-NAME
-    mock-data - Generate mock data for unit tests
+﻿COMMAND TYPE
+    Testing commands
 
-USAGE
-    clio mock-data [options]
+NAME
+    mock-data - generates mock data for unit tests from Creatio OData models
 
 DESCRIPTION
-    Generate mock data for unit tests.
+    Extracts schema names from model classes and downloads corresponding data
+    from a Creatio instance via OData endpoints. The data is saved as JSON files
+    that can be used for unit testing with ATF.Repository.
+    
+    The command:
+    1. Scans model files in the specified directory for [Schema("")] attributes
+    2. Extracts schema names from the model classes
+    3. Downloads data from Creatio OData endpoints for each schema
+    4. Saves the data as JSON files in the specified data folder
+    
+    This is useful for creating test fixtures with real data from Creatio.
 
 ALIASES
     data-mock
 
-EXAMPLES
-    clio mock-data -e dev
+EXAMPLE
+    clio mock-data -m D:\Projects\MyProject\Models -d D:\Projects\MyProject\Tests\TestsData -e MyDevCreatio
+
+    clio data-mock --models C:\Dev\Models --data C:\Dev\Tests\Data -e prod
+
+    # Exclude system models
+    clio mock-data -m .\Models -d .\Tests\Data -e dev --exclude-models VwSys
 
 OPTIONS
-    -d, --data <VALUE>
-        path to save data. Required.
-    -m, --model <VALUE>
-        Models folder path. Required.
-    -x, --exclude-models <VALUE>
-        Exclude models pattern. Default: VwSys.
-    --timeout <NUMBER>
-        Request timeout in milliseconds. Default: 100000.
+    -m, --models <PATH>
+        Path to the folder containing model classes (required)
 
-ENVIRONMENT OPTIONS
-    -u, --uri <VALUE>
-        Application uri
-    -p, --Password <VALUE>
-        User password
-    -l, --Login <VALUE>
-        User login (administrator permission required)
-    -i, --IsNetCore
-        Use NetCore application
-    -e, --Environment <VALUE>
-        Environment name
-    -m, --Maintainer <VALUE>
-        Maintainer name
-    -c, --dev <VALUE>
-        Developer mode state for environment
-    --WorkspacePathes <VALUE>
-        Workspace path
-    -s, --Safe <VALUE>
-        Safe action in this environment
-    --clientId <VALUE>
-        OAuth client id
-    --clientSecret <VALUE>
-        OAuth client secret
-    --authAppUri <VALUE>
-        OAuth app URI
-    --silent
-        Use default behavior without user interaction
-    --restartEnvironment
-        Restart environment after execute command
-    --db-server-uri <VALUE>
-        Db server uri
-    --db-user <VALUE>
-        Database user
-    --db-password <VALUE>
-        Database password
-    --backup-file <VALUE>
-        Full path to backup file
-    --db-working-folder <VALUE>
-        Folder visible to db server
-    --db-name <VALUE>
-        Desired database name
-    --force
-        Force restore
-    --callback-process <VALUE>
-        Callback process name
-    --ep <VALUE>
-        Path to the application root folder
+    -d, --data <PATH>
+        Path where the JSON data files will be saved (required)
+
+    -e, --environment <ENVIRONMENT_NAME>
+        Target Creatio environment name (required)
+
+    -x, --exclude-models <PATTERN>
+        Pattern to exclude models from data extraction (optional, default: "VwSys")
+        Models containing this pattern in their name will be skipped
+
+PREREQUISITES
+    - Creatio instance must be accessible
+    - Valid credentials for the target environment
+    - Model classes with [Schema("")] attributes
+    - ATF.Repository for unit testing (recommended)
+
+NOTES
+    - The command processes up to 8 models in parallel for performance
+    - If data extraction fails for a model, a warning is logged but execution continues
+    - Extracted data is saved as <SchemaName>.json files
+    - System views (VwSys*) are excluded by default
+
+RELATED COMMANDS
+    execute-assembly-code - execute code against Creatio
+    assert - run unit tests
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+

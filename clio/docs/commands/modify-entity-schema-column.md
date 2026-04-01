@@ -2,6 +2,7 @@
 
 Add, modify, or remove a column in a remote Creatio entity schema.
 
+
 ## Usage
 
 ```bash
@@ -22,120 +23,123 @@ clio modify-entity-schema-column -e dev
 
 ```bash
 --package <VALUE>
-    Target package name. Required.
+Target package name. Required.
 --schema-name <VALUE>
-    Entity schema name. Required.
+Entity schema name. Required.
 --action <VALUE>
-    Column action: add, modify, or remove. Required.
+Column action: add, modify, or remove. Required.
 --column-name <VALUE>
-    Target column name. Required.
+Target column name. Required.
 --new-name <VALUE>
-    New column name for rename operations
+New column name for rename operations
 --type <VALUE>
-    Column type. Supported values:
+Column type. Supported values:
 Guid, Integer, Float, Boolean, Date, DateTime,
-    Time, Lookup,
+Time, Lookup,
 Text, ShortText, MediumText, LongText, MaxSizeText,
 Text50,
-    Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText,
-    
+Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText,
 Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
 Currency0,
-    Currency1, Currency2, Currency3
+Currency1, Currency2, Currency3
 --title <VALUE>
-    Column title/caption
+Column title/caption
 --description <VALUE>
-    Column description
+Column description
 --reference-schema <VALUE>
-    Lookup reference schema name
+Lookup reference schema name
 --required
-    Set required flag
+Set required flag
 --indexed
-    Set indexed flag
+Set indexed flag
 --cloneable
-    Set make-copy flag
+Set make-copy flag
 --track-changes
-    Set update-change-log flag
+Set update-change-log flag
 --default-value <VALUE>
-    Set a constant default value
+Set a constant default value
 --default-value-source <VALUE>
-    Default value source: Const or None
+Default value source: Const or None
 --multiline-text
-    Set multi-line text flag
+Set multi-line text flag
 --localizable-text
-    Set localizable text flag
+Set localizable text flag
 --accent-insensitive
-    Set accent-insensitive flag
+Set accent-insensitive flag
 --masked
-    Set masked flag
+Set masked flag
 --format-validated
-    Set format-validated flag
+Set format-validated flag
 --use-seconds
-    Set use-seconds flag
+Set use-seconds flag
 --simple-lookup
-    Set simple-lookup flag
+Set simple-lookup flag
 --cascade
-    Set cascade-connection flag
+Set cascade-connection flag
 --do-not-control-integrity
-    Set do-not-control-integrity flag
+Set do-not-control-integrity flag
 --timeout <NUMBER>
-    Request timeout in milliseconds. Default: 100000.
+Request timeout in milliseconds. Default: 100000.
 ```
 
 ## Environment Options
 
 ```bash
 -u, --uri <VALUE>
-    Application uri
+Application uri
 -p, --Password <VALUE>
-    User password
+User password
 -l, --Login <VALUE>
-    User login (administrator permission required)
+User login (administrator permission required)
 -i, --IsNetCore
-    Use NetCore application
+Use NetCore application
 -e, --Environment <VALUE>
-    Environment name
+Environment name
 -m, --Maintainer <VALUE>
-    Maintainer name
+Maintainer name
 -c, --dev <VALUE>
-    Developer mode state for environment
+Developer mode state for environment
 --WorkspacePathes <VALUE>
-    Workspace path
+Workspace path
 -s, --Safe <VALUE>
-    Safe action in this environment
+Safe action in this environment
 --clientId <VALUE>
-    OAuth client id
+OAuth client id
 --clientSecret <VALUE>
-    OAuth client secret
+OAuth client secret
 --authAppUri <VALUE>
-    OAuth app URI
+OAuth app URI
 --silent
-    Use default behavior without user interaction
+Use default behavior without user interaction
 --restartEnvironment
-    Restart environment after execute command
+Restart environment after execute command
 --db-server-uri <VALUE>
-    Db server uri
+Db server uri
 --db-user <VALUE>
-    Database user
+Database user
 --db-password <VALUE>
-    Database password
+Database password
 --backup-file <VALUE>
-    Full path to backup file
+Full path to backup file
 --db-working-folder <VALUE>
-    Folder visible to db server
+Folder visible to db server
 --db-name <VALUE>
-    Desired database name
+Desired database name
 --force
-    Force restore
+Force restore
 --callback-process <VALUE>
-    Callback process name
+Callback process name
 --ep <VALUE>
-    Path to the application root folder
+Path to the application root folder
 ```
 
 ## Requirements
 
-- cliogate must be installed on the target Creatio environment.
+cliogate must be installed on the target Creatio environment.
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
 
 ## See also
 

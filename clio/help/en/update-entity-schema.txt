@@ -1,76 +1,57 @@
+COMMAND TYPE
+    Package Management commands
+
 NAME
     update-entity-schema - Apply batch column operations to a remote Creatio entity schema
 
-USAGE
-    clio update-entity-schema [options]
+SYNOPSIS
+    clio update-entity-schema [OPTIONS]
 
 DESCRIPTION
-    Apply batch column operations to a remote Creatio entity schema.
+    Applies an ordered batch of structured column operations to an existing remote
+    entity schema.
 
-EXAMPLES
-    clio update-entity-schema -e dev
+    This command is the clio-native batch mutation contract for entity schemas.
+    Each operation uses the same column-level semantics as
+    modify-entity-schema-column, but several mutations can be applied in one
+    request. Supported operation types include Binary, Image, File,
+    SecureText, and Email. Blob is accepted as an alias for Binary.
+    Encrypted and Password are accepted as aliases for SecureText.
+    EmailAddress is accepted as aliases for Email.
 
 OPTIONS
-    --timeout <NUMBER>
-        Request timeout in milliseconds. Default: 100000.
-    --package <VALUE>
-        Target package name. Required.
-    --schema-name <VALUE>
-        Entity schema name. Required.
-    --operation <VALUE>
-        Structured operation JSON. Repeat the option for multiple values. Required.
+    --package              Target package name
+    --schema-name          Entity schema name
+    --operation            Structured operation JSON. Repeat the option for
+                           multiple values
 
-ENVIRONMENT OPTIONS
-    -u, --uri <VALUE>
-        Application uri
-    -p, --Password <VALUE>
-        User password
-    -l, --Login <VALUE>
-        User login (administrator permission required)
-    -i, --IsNetCore
-        Use NetCore application
-    -e, --Environment <VALUE>
-        Environment name
-    -m, --Maintainer <VALUE>
-        Maintainer name
-    -c, --dev <VALUE>
-        Developer mode state for environment
-    --WorkspacePathes <VALUE>
-        Workspace path
-    -s, --Safe <VALUE>
-        Safe action in this environment
-    --clientId <VALUE>
-        OAuth client id
-    --clientSecret <VALUE>
-        OAuth client secret
-    --authAppUri <VALUE>
-        OAuth app URI
-    --silent
-        Use default behavior without user interaction
-    --restartEnvironment
-        Restart environment after execute command
-    --db-server-uri <VALUE>
-        Db server uri
-    --db-user <VALUE>
-        Database user
-    --db-password <VALUE>
-        Database password
-    --backup-file <VALUE>
-        Full path to backup file
-    --db-working-folder <VALUE>
-        Folder visible to db server
-    --db-name <VALUE>
-        Desired database name
-    --force
-        Force restore
-    --callback-process <VALUE>
-        Callback process name
-    --ep <VALUE>
-        Path to the application root folder
+    Environment options are also available:
+    -e, --Environment      Environment name from the registered configuration
+    -u, --uri              Application URI
+    -l, --Login            User login
+    -p, --Password         User password
 
-REQUIREMENTS
-    cliogate must be installed on the target Creatio environment.
+EXAMPLES
+    # Add two columns in one batch
+    clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"add\",\"column-name\":\"UsrStatus\",\"type\":\"Lookup\",\"title\":\"Status\",\"reference-schema-name\":\"UsrVehicleStatus\",\"required\":true}" --operation "{\"action\":\"add\",\"column-name\":\"UsrDueDate\",\"type\":\"Date\",\"title\":\"Due date\"}"
+
+    # Rename a column and clear its default in one batch
+    clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"modify\",\"column-name\":\"Owner\",\"new-name\":\"PrimaryOwner\",\"title\":\"Primary owner\"}" --operation "{\"action\":\"modify\",\"column-name\":\"Status\",\"default-value-source\":\"None\"}"
+
+    # Set a system-value default in one batch
+    clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"modify\",\"column-name\":\"UsrStartDate\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
+
+NOTES
+    - operations are applied in order
+    - execution stops on the first failed operation
+    - the batch is saved and materialized once after all operations are applied
+    - operation JSON can also use structured default-value-config; legacy
+      default-value-source/default-value remain shorthand for Const and None
+    - this is the clio-native alternative to frontend-style entity.update.operationsJson
+    - Binary, Image, and File operations do not support default-value or default-value-source Const
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
 
 SEE ALSO
-    modify-entity-schema-column
-    get-entity-schema-properties
+    modify-entity-schema-column, get-entity-schema-properties

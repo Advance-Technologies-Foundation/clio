@@ -2,86 +2,39 @@
 
 Create a DB-first package data binding by saving data directly to the remote Creatio database.
 
+
 ## Usage
 
 ```bash
-clio create-data-binding-db [options]
+clio create-data-binding-db -e <ENVIRONMENT_NAME> --package <PACKAGE_NAME> --schema <SCHEMA_NAME>
+[--binding-name <BINDING_NAME>] [--rows <JSON_ARRAY>]
 ```
 
 ## Description
 
-Create a DB-first package data binding by saving data directly to the remote Creatio database.
+Creates a DB-first package data binding by persisting row data directly to the remote Creatio database.
 
 ## Examples
 
 ```bash
-clio create-data-binding-db -e dev
+clio create-data-binding-db -e dev --package Custom --schema SysSettings
+
+clio create-data-binding-db -e dev --package Custom --schema SysSettings \
+--binding-name UsrMyBinding \
+--rows "[{\"values\":{\"Name\":\"Row\",\"Code\":\"UsrRow\"}}]"
 ```
 
 ## Options
 
 ```bash
---environment <VALUE>
-    Environment name
---package <VALUE>
-    Target package name. Required.
---schema <VALUE>
-    Entity schema name. Required.
---binding-name <VALUE>
-    Binding folder name; defaults to <schema>
---rows <VALUE>
-    JSON array of row objects, each with a 'values' key containing column values
-```
-
-## Environment Options
-
-```bash
--u, --uri <VALUE>
-    Application uri
--p, --Password <VALUE>
-    User password
--l, --Login <VALUE>
-    User login (administrator permission required)
--i, --IsNetCore
-    Use NetCore application
--e, --Environment <VALUE>
-    Environment name
--m, --Maintainer <VALUE>
-    Maintainer name
--c, --dev <VALUE>
-    Developer mode state for environment
---WorkspacePathes <VALUE>
-    Workspace path
--s, --Safe <VALUE>
-    Safe action in this environment
---clientId <VALUE>
-    OAuth client id
---clientSecret <VALUE>
-    OAuth client secret
---authAppUri <VALUE>
-    OAuth app URI
---silent
-    Use default behavior without user interaction
---restartEnvironment
-    Restart environment after execute command
---db-server-uri <VALUE>
-    Db server uri
---db-user <VALUE>
-    Database user
---db-password <VALUE>
-    Database password
---backup-file <VALUE>
-    Full path to backup file
---db-working-folder <VALUE>
-    Folder visible to db server
---db-name <VALUE>
-    Desired database name
---force
-    Force restore
---callback-process <VALUE>
-    Callback process name
---ep <VALUE>
-    Path to the application root folder
+-e, --environment          Creatio environment name (required when --uri is omitted)
+--uri                      Creatio application URI (alternative to --environment)
+--package                  Target package name (required)
+--schema                   Entity schema name (required)
+--binding-name             Binding folder name (defaults to <schema>)
+--rows                     JSON array of row objects, each with a 'values' key:
+[{"values":{"Col":"Value"}}]
+-H, --help                 Show this help
 ```
 
 - [Clio Command Reference](../../Commands.md#create-data-binding-db)

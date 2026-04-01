@@ -2,15 +2,16 @@
 
 Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin).
 
+
 ## Usage
 
 ```bash
-clio deploy-infrastructure [options]
+clio deploy-infrastructure [OPTIONS]
 ```
 
 ## Description
 
-Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin).
+Creates infrastructure resources required to run Creatio in Kubernetes.
 
 ## Aliases
 
@@ -19,16 +20,23 @@ Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgre
 ## Examples
 
 ```bash
-clio deploy-infrastructure [options]
+clio deploy-infrastructure --help
+Display canonical options and usage examples
 ```
 
 ## Options
 
 ```bash
--p, --path <VALUE>
-    Path to infrastructure files (default: auto-detected from clio settings)
---no-verify
-    Skip connection verification after deployment
+Supports the canonical deploy-infrastructure command options.
 ```
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
+
+## See also
+
+- `add-item`
+- `delete-pkg-remote`
 
 - [Clio Command Reference](../../Commands.md#deploy-infrastructure)

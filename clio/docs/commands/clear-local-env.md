@@ -2,15 +2,29 @@
 
 Clear deleted local environments.
 
+
 ## Usage
 
 ```bash
-clio clear-local-env [options]
+clear-local-env [options]
 ```
 
 ## Description
 
-Clear deleted local environments.
+clear-local-env command identifies and removes local Creatio environments
+that have been deleted from disk but are still registered in clio
+configuration. It also detects and removes orphaned Windows services that
+point to non-existent Terrasoft.WebHost.dll files.
+
+The command performs three main cleanup operations:
+1. Identifies environments where the installation directory no longer exists
+or contains only log files
+2. Removes associated Windows services (creatio-{envname})
+3. Removes environment configuration from clio settings
+
+By default, the command displays what will be deleted and prompts for
+confirmation. Use the --force flag to skip confirmation in automated
+scenarios.
 
 ## Aliases
 
@@ -19,14 +33,39 @@ Clear deleted local environments.
 ## Examples
 
 ```bash
-clio clear-local-env [options]
+clio clear-local-env
+displays deleted environments and prompts for confirmation before cleanup
+
+clio clear-local-env --force
+performs cleanup without confirmation prompt (useful for automation)
+
+Example output:
+Found 2 deleted environment(s):
+- old-app-1
+- old-app-2
+Found 1 orphaned service(s):
+- creatio-legacy-service
+
+Delete these environments? (Y/n): y
+
+Processing 'old-app-1'...
+Checking for registered services...
+✓ Service 'creatio-old-app-1' deleted successfully
+Deleting directory 'C:\Apps\old-app-1'...
+✓ Directory deleted
+Removing from configuration...
+✓ Environment removed from settings
+✓ old-app-1 cleaned up successfully
 ```
 
 ## Options
 
 ```bash
--f, --force
-    Skip confirmation prompt and delete immediately
+--force         -f          Skip confirmation prompt and delete immediately
 ```
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
 
 - [Clio Command Reference](../../Commands.md#clear-local-env)
