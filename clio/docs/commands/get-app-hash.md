@@ -1,30 +1,17 @@
 # get-app-hash
 
-Calculate the hash of an application package.
+## Name
 
-
-## Usage
-
-```bash
-clio get-app-hash [OPTIONS]
-```
+get-app-hash - Calculate hash for the app
 
 ## Description
 
 Calculates a hash value for the application artifacts in the selected context.
 
-## Examples
+## Synopsis
 
 ```bash
-clio get-app-hash --help
-Display canonical options and usage examples
-```
-
-## Arguments
-
-```bash
-Directory
-    Directory to calculate hash for
+clio get-app-hash [OPTIONS]
 ```
 
 ## Options
@@ -33,12 +20,19 @@ Directory
 Supports the canonical get-app-hash command options.
 ```
 
+## Examples
+
+```bash
+clio get-app-hash --help
+Display canonical options and usage examples
+```
+
+## See Also
+
+publish-workspace - Produce application artifacts for distribution
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `publish`
 
 - [Clio Command Reference](../../Commands.md#get-app-hash)

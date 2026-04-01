@@ -1,13 +1,13 @@
 # restore-db
 
-Restore a database backup.
+## Command Type
 
+    Database commands
 
-## Usage
+## Name
 
-```bash
-clio restore-db [OPTIONS]
-```
+restore-db (rdb) - Restores a database from backup or creates a PostgreSQL
+template from backup
 
 ## Description
 
@@ -27,133 +27,13 @@ The command supports three main modes:
 ZIP files are now supported for PostgreSQL restore/template flows even
 when --dbServerName is omitted.
 
-## Aliases
-
-`rdb`
-
-## Examples
-
-```bash
-Restore PostgreSQL from ZIP without dbServerName:
-clio restore-db --backupPath C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip
---dbName creatiodev --drop-if-exists
-
-Create or refresh only a PostgreSQL template from ZIP:
-clio restore-db --backupPath C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip
---as-template --drop-if-exists
-
-Restore PostgreSQL to local server:
-clio restore-db --dbServerName my-local-postgres --dbName creatiodev
---backupPath database.backup
-
-Restore PostgreSQL ZIP to local server:
-clio restore-db --dbServerName my-local-postgres --dbName creatiodev
---backupPath C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip
-
-Create or refresh only the local PostgreSQL template:
-clio restore-db --dbServerName my-local-postgres
---backupPath database.backup --as-template --drop-if-exists
-
-Restore MSSQL to local server:
-clio restore-db --dbServerName my-local-mssql --dbName creatiodev
---backupPath database.bak
-```
-
-## Options
-
-```bash
---dbName
-Database name to create/restore.
-Required unless --as-template is specified.
-
---backupPath
-Path to backup file or ZIP archive.
-Supported inputs:
-- .backup extension for PostgreSQL backups
-- .bak extension for MSSQL backups
-- .zip archive containing db/*.backup or db/*.bak
-
---dbServerName
-Name of database server configuration from appsettings.json.
-If specified, restore runs against the configured local server.
-If omitted, PostgreSQL .backup and ZIP flows can still run directly.
-
---drop-if-exists
-Drops the existing database before restore.
-In --as-template mode, drops the existing matching PostgreSQL template
-before recreating it.
-
---as-template
-Create or refresh only the PostgreSQL template and do not create a
-target database.
-Supported only for PostgreSQL .backup or ZIP sources.
-
---disable-reset-password
-Hidden advanced option, default: true
-Reuses the same post-restore password-reset disabling behavior as
-deploy-creatio. Set to false to skip that step.
-```
-
-## Environment Options
-
-```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
-```
-
-## Requirements
+## Prerequisites
 
 For PostgreSQL local restore, PostgreSQL client tools must be installed:
 
 Windows: Download from https://www.postgresql.org/download/windows/
 Linux:   Install via package manager (e.g., apt-get install postgresql-client)
 macOS:   Install via Homebrew (brew install postgresql)
-
-## Command Type
-
-    Database commands
 
 ## Configuration
 
@@ -194,6 +74,75 @@ macOS:   Install via Homebrew (brew install postgresql)
     - description (optional): Description for documentation
     - pgToolsPath (optional, PostgreSQL only): Path to PostgreSQL client tools
                                                 directory if not in PATH
+
+## Synopsis
+
+```bash
+clio restore-db [OPTIONS]
+```
+
+## Options
+
+```bash
+--dbName
+Database name to create/restore.
+Required unless --as-template is specified.
+
+--backupPath
+Path to backup file or ZIP archive.
+Supported inputs:
+- .backup extension for PostgreSQL backups
+- .bak extension for MSSQL backups
+- .zip archive containing db/*.backup or db/*.bak
+
+--dbServerName
+Name of database server configuration from appsettings.json.
+If specified, restore runs against the configured local server.
+If omitted, PostgreSQL .backup and ZIP flows can still run directly.
+
+--drop-if-exists
+Drops the existing database before restore.
+In --as-template mode, drops the existing matching PostgreSQL template
+before recreating it.
+
+--as-template
+Create or refresh only the PostgreSQL template and do not create a
+target database.
+Supported only for PostgreSQL .backup or ZIP sources.
+
+--disable-reset-password
+Hidden advanced option, default: true
+Reuses the same post-restore password-reset disabling behavior as
+deploy-creatio. Set to false to skip that step.
+```
+
+## Example
+
+```bash
+Restore PostgreSQL from ZIP without dbServerName:
+clio restore-db --backupPath C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip
+--dbName creatiodev --drop-if-exists
+
+Create or refresh only a PostgreSQL template from ZIP:
+clio restore-db --backupPath C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip
+--as-template --drop-if-exists
+
+Restore PostgreSQL to local server:
+clio restore-db --dbServerName my-local-postgres --dbName creatiodev
+--backupPath database.backup
+
+Restore PostgreSQL ZIP to local server:
+clio restore-db --dbServerName my-local-postgres --dbName creatiodev
+--backupPath C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip
+
+Create or refresh only the local PostgreSQL template:
+clio restore-db --dbServerName my-local-postgres
+--backupPath database.backup --as-template --drop-if-exists
+
+Restore MSSQL to local server:
+clio restore-db --dbServerName my-local-mssql --dbName creatiodev
+--backupPath database.bak
+```
 
 ## Features
 

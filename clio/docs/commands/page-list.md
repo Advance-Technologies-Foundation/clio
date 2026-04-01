@@ -1,13 +1,12 @@
 # page-list
 
-List Freedom UI pages.
+## Command Type
 
+    Development commands
 
-## Usage
+## Name
 
-```bash
-clio page-list [options]
-```
+page-list - List Freedom UI page schemas in a Creatio environment
 
 ## Description
 
@@ -16,17 +15,10 @@ returns a JSON envelope with the matching page names, schema UIds,
 package names, and parent schema names. Use this command to discover
 candidate schema names before calling page-get.
 
-## Examples
+## Synopsis
 
 ```bash
-clio page-list -e dev
-list Freedom UI pages from the registered dev environment
-
-clio page-list --search-pattern FormPage --limit 20 -e dev
-list up to 20 Freedom UI pages whose schema names contain FormPage
-
-clio page-list --package-name UsrApp -u https://my-creatio -l Supervisor -p Supervisor
-list Freedom UI pages from the UsrApp package using direct connection arguments
+clio page-list [options]
 ```
 
 ## Options
@@ -49,60 +41,18 @@ list Freedom UI pages from the UsrApp package using direct connection arguments
 --Maintainer             -m       Maintainer name
 ```
 
-## Environment Options
+## Example
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+clio page-list -e dev
+list Freedom UI pages from the registered dev environment
+
+clio page-list --search-pattern FormPage --limit 20 -e dev
+list up to 20 Freedom UI pages whose schema names contain FormPage
+
+clio page-list --package-name UsrApp -u https://my-creatio -l Supervisor -p Supervisor
+list Freedom UI pages from the UsrApp package using direct connection arguments
 ```
-
-## Command Type
-
-    Development commands
 
 ## Reporting Bugs
 

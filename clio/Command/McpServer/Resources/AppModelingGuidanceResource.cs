@@ -49,7 +49,8 @@ public sealed class AppModelingGuidanceResource {
 
 			       Page editing guardrails
 			       - Preferred page flow: `page-list` -> `page-get` -> `component-info` when needed -> `page-update` or `page-sync`.
-			       - Use the raw page body returned by `page-get` as the editable source of truth.
+			       - `page-list` identifies page candidates by `schema-name`.
+			       - Use the raw page body returned by `page-get`, specifically `raw.body`, as the editable source of truth.
 			       - Pass `resources` when edited bodies introduce `#ResourceString(key)#` macros.
 			       """
 		};

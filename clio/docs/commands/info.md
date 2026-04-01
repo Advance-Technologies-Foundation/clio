@@ -1,9 +1,10 @@
 # info
 
-Show clio, cliogate, and .NET runtime versions.
+## Name
 
+info - Display version information for clio and related components
 
-## Usage
+## Synopsis
 
 ```bash
 clio info [OPTIONS]
@@ -20,29 +21,6 @@ and the path to the settings file.
 
 This command is useful for troubleshooting, verifying installations, and
 checking component versions for compatibility.
-
-## Aliases
-
-`get-version`, `i`, `ver`
-
-## Examples
-
-```bash
-Display all versions (default):
-clio info
-
-Display only clio version:
-clio info --clio
-
-Display cliogate version:
-clio info --gate
-
-Display .NET runtime version:
-clio info --runtime
-
-Display settings file path:
-clio info -s
-```
 
 ## Options
 
@@ -65,7 +43,26 @@ Display only the .NET runtime version
 Display the full path to the clio settings file
 ```
 
-## Notes
+## Examples
+
+```bash
+Display all versions (default):
+clio info
+
+Display only clio version:
+clio info --clio
+
+Display cliogate version:
+clio info --gate
+
+Display .NET runtime version:
+clio info --runtime
+
+Display settings file path:
+clio info -s
+```
+
+## Output Format
 
 Default output (all versions):
 clio:   8.0.1.97
@@ -76,9 +73,17 @@ settings file path: C:\Users\username\.clio\appsettings.json
 Individual component output:
 clio:   8.0.1.97
 
-## See also
+## Notes
 
-- `get`
-- `update-cli`
+- The cliogate version shown is the version included with current clio
+installation
+- This may differ from the version installed on a specific Creatio instance
+- Use 'get-info' command to check the actual cliogate version on an
+environment
+
+## See Also
+
+get-info - Get information about a Creatio instance
+update-cli - Update clio to the latest version
 
 - [Clio Command Reference](../../Commands.md#info)

@@ -1,6 +1,7 @@
 namespace Clio.Command {
 	using System;
 	using System.Collections.Generic;
+	using System.Linq;
 	using Clio.Common;
 	using CommandLine;
 	using Newtonsoft.Json;
@@ -10,6 +11,9 @@ namespace Clio.Command {
 	public class PageListOptions : EnvironmentOptions {
 		[Option("package-name", Required = false, HelpText = "Filter by package name")]
 		public string PackageName { get; set; }
+
+		[Option("app-code", Required = false, HelpText = "Filter by installed application code using its primary package")]
+		public string AppCode { get; set; }
 
 		[Option("search-pattern", Required = false, HelpText = "Filter by schema name (contains)")]
 		public string SearchPattern { get; set; }
@@ -40,32 +44,28 @@ namespace Clio.Command {
 
 		public bool TryListPages(PageListOptions options, out PageListResponse response) {
 			try {
+				if (!string.IsNullOrWhiteSpace(options.PackageName) && !string.IsNullOrWhiteSpace(options.AppCode)) {
+					response = new PageListResponse {
+						Success = false,
+						Error = "Provide either package-name or app-code, not both."
+					};
+					return false;
+				}
+				string packageName = options.PackageName;
+				if (string.IsNullOrWhiteSpace(packageName) && !string.IsNullOrWhiteSpace(options.AppCode)) {
+					packageName = ResolvePrimaryPackageName(options.AppCode);
+				}
 				var filters = new JObject {
 					[FilterTypeKey] = 6,
 					[ItemsKey] = new JObject {
-						["ManagerName"] = new JObject {
-							[FilterTypeKey] = 1,
-							["comparisonType"] = 3,
-							["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "ManagerName"},
-							["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = "ClientUnitSchemaManager"}}
-						}
+						["ManagerName"] = BuildComparisonFilter("ManagerName", "ClientUnitSchemaManager", 1, 3)
 					}
 				};
-				if (!string.IsNullOrWhiteSpace(options.PackageName)) {
-					filters[ItemsKey]["PackageName"] = new JObject {
-						[FilterTypeKey] = 1,
-						["comparisonType"] = 3,
-						["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "SysPackage.Name"},
-						["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.PackageName}}
-					};
+				if (!string.IsNullOrWhiteSpace(packageName)) {
+					filters[ItemsKey]["PackageName"] = BuildComparisonFilter("SysPackage.Name", packageName, 1, 3);
 				}
 				if (!string.IsNullOrWhiteSpace(options.SearchPattern)) {
-					filters[ItemsKey]["Name"] = new JObject {
-						[FilterTypeKey] = 1,
-						["comparisonType"] = 11,
-						["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "Name"},
-						["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = options.SearchPattern}}
-					};
+					filters[ItemsKey]["Name"] = BuildComparisonFilter("Name", options.SearchPattern, 1, 11);
 				}
 				var selectQuery = new JObject {
 					["rootSchemaName"] = "SysSchema",
@@ -125,7 +125,7 @@ namespace Clio.Command {
 				var pages = new List<PageListItem>();
 				foreach (var row in rows) {
 					pages.Add(new PageListItem {
-						Name = row["Name"]?.ToString(),
+						SchemaName = row["Name"]?.ToString(),
 						UId = row["UId"]?.ToString(),
 						PackageName = row["PackageName"]?.ToString(),
 						ParentSchemaName = row["ParentSchemaName"]?.ToString()
@@ -142,6 +142,76 @@ namespace Clio.Command {
 				response = new PageListResponse { Success = false, Error = ex.Message };
 				return false;
 			}
+		}
+
+		private string ResolvePrimaryPackageName(string appCode) {
+			string selectUrl = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
+			string applicationResponseJson = _applicationClient.ExecutePostRequest(
+				selectUrl,
+				BuildInstalledApplicationQuery(appCode).ToString(Formatting.None));
+			var applicationResponse = JObject.Parse(applicationResponseJson);
+			if (!(applicationResponse["success"]?.Value<bool>() ?? false)) {
+				throw new InvalidOperationException("Application lookup failed.");
+			}
+			var applicationRow = (applicationResponse["rows"] as JArray)?.FirstOrDefault() as JObject;
+			if (applicationRow is null) {
+				throw new InvalidOperationException($"Application '{appCode}' not found.");
+			}
+			string applicationId = applicationRow["Id"]?.ToString();
+			if (string.IsNullOrWhiteSpace(applicationId)) {
+				throw new InvalidOperationException($"Application '{appCode}' did not return an id.");
+			}
+			string packagesResponseJson = _applicationClient.ExecutePostRequest(
+				_serviceUrlBuilder.Build("ServiceModel/ApplicationPackagesService.svc/GetApplicationPackages"),
+				JsonConvert.SerializeObject(applicationId));
+			var packagesResponse = JObject.Parse(packagesResponseJson);
+			if (!(packagesResponse["success"]?.Value<bool>() ?? false)) {
+				throw new InvalidOperationException(packagesResponse["errorInfo"]?["message"]?.ToString() ?? "Failed to load application packages.");
+			}
+			var primaryPackage = (packagesResponse["packages"] as JArray)?
+				.OfType<JObject>()
+				.FirstOrDefault(package => package["isApplicationPrimaryPackage"]?.Value<bool>() == true);
+			string packageName = primaryPackage?["name"]?.ToString();
+			if (string.IsNullOrWhiteSpace(packageName)) {
+				throw new InvalidOperationException($"Primary package was not found for application '{appCode}'.");
+			}
+			return packageName;
+		}
+
+		private static JObject BuildInstalledApplicationQuery(string appCode) {
+			return new JObject {
+				["rootSchemaName"] = "SysInstalledApp",
+				["operationType"] = 0,
+				["filters"] = new JObject {
+					[FilterTypeKey] = 6,
+					[ItemsKey] = new JObject {
+						["Code"] = BuildComparisonFilter("Code", appCode, 1, 3)
+					}
+				},
+				["columns"] = new JObject {
+					[ItemsKey] = new JObject {
+						["Id"] = new JObject {
+							[ExpressionKey] = new JObject {
+								[ExpressionTypeKey] = 0,
+								[ColumnPathKey] = "Id"
+							},
+							["orderDirection"] = 0,
+							["orderPosition"] = -1,
+							["isVisible"] = true
+						}
+					}
+				},
+				["rowCount"] = 1
+			};
+		}
+
+		private static JObject BuildComparisonFilter(string columnPath, string value, int dataValueType, int comparisonType) {
+			return new JObject {
+				[FilterTypeKey] = 1,
+				["comparisonType"] = comparisonType,
+				["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = columnPath},
+				["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = dataValueType, ["value"] = value}}
+			};
 		}
 
 		public override int Execute(PageListOptions options) {

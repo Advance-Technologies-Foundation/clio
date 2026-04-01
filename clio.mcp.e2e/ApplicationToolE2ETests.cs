@@ -106,6 +106,10 @@ public sealed class ApplicationToolE2ETests {
 			because: "the application info response should include the primary package name");
 		actResult.Result.Entities.Should().NotBeNull(
 			because: "the application info response should include the application entity collection");
+		actResult.Result.Pages.Should().NotBeNull(
+			because: "the application info response should include the primary-package page collection");
+		actResult.Result.Pages.Should().OnlyContain(page => !string.IsNullOrWhiteSpace(page.SchemaName),
+			because: "application page items should identify each page through schema-name");
 		actResult.Result.Error.Should().BeNullOrWhiteSpace(
 			because: "successful info calls should not include an error payload");
 	}
@@ -253,6 +257,8 @@ public sealed class ApplicationToolE2ETests {
 			because: "application-create should return the created installed application display name");
 		actResult.Result.ApplicationId.Should().NotBeNullOrWhiteSpace(
 			because: "application-create should return the created installed application identifier");
+		actResult.Result.Pages.Should().NotBeNull(
+			because: "application-create should return the primary-package page summaries together with entity context");
 		ApplicationEntityEnvelope? canonicalMainEntity = actResult.Result.Entities?
 			.FirstOrDefault(entity => string.Equals(entity.Name, applicationCode, StringComparison.OrdinalIgnoreCase));
 		canonicalMainEntity.Should().NotBeNull(

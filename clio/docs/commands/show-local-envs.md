@@ -1,27 +1,17 @@
 # show-local-envs
 
-Show local environments with filesystem and auth status.
+## Name
 
-
-## Usage
-
-```bash
-clio show-local-envs [OPTIONS]
-```
+show-local-envs - Show local environments with filesystem and auth status
 
 ## Description
 
 Displays local environments discovered by clio together with filesystem and authentication status.
 
-## Aliases
-
-`localenvs`
-
-## Examples
+## Synopsis
 
 ```bash
-clio show-local-envs
-List local environments and their status
+clio show-local-envs [OPTIONS]
 ```
 
 ## Options
@@ -30,13 +20,20 @@ List local environments and their status
 No command-specific options.
 ```
 
+## Examples
+
+```bash
+clio show-local-envs
+List local environments and their status
+```
+
+## See Also
+
+show-web-app-list - List registered remote environments
+clear-local-env - Remove deleted local environment registrations
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `show`
-- `clear`
 
 - [Clio Command Reference](../../Commands.md#show-local-envs)

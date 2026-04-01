@@ -58,6 +58,10 @@ public sealed class ApplicationInfoServiceTests {
 			because: "default-value source metadata should be preserved for constant defaults");
 		result.Entities[1].Columns[0].DefaultValue.Should().Be("Default text",
 			because: "constant default values should be preserved in the final payload");
+		result.Pages.Should().ContainSingle(
+			because: "application info should now surface primary-package page metadata");
+		result.Pages[0].SchemaName.Should().Be("UsrAlpha_FormPage",
+			because: "page metadata should use schema-name semantics consistently");
 	}
 
 	[Test]
@@ -76,6 +80,8 @@ public sealed class ApplicationInfoServiceTests {
 			Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
 			Arg.Is<string>(body => body.Contains("\"columnPath\":\"Id\"", StringComparison.Ordinal) &&
 				body.Contains("\"value\":\"app-uid\"", StringComparison.Ordinal)));
+		result.Pages.Should().ContainSingle(
+			because: "app-id lookups should still include primary-package page metadata");
 	}
 
 	[Test]
@@ -102,6 +108,10 @@ public sealed class ApplicationInfoServiceTests {
 				Arg.Is<string>(url => url.EndsWith("GetSchemaDesignItem", StringComparison.Ordinal)),
 				Arg.Is<string>(body => body.Contains("\"name\":\"UsrAlpha\"", StringComparison.Ordinal)))
 			.Returns("""{"success":true,"schema":{"caption":[{"cultureName":"en-US","value":"Alpha from designer"}],"columns":[{"name":"UsrEmail","caption":[{"cultureName":"en-US","value":"Email from designer"}]}]}}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
 
 		// Act
 		ApplicationInfoResult result = _sut.GetApplicationInfo("sandbox", null, "APP");
@@ -141,6 +151,10 @@ public sealed class ApplicationInfoServiceTests {
 				Arg.Is<string>(url => url.EndsWith("GetSchemaDesignItem", StringComparison.Ordinal)),
 				Arg.Is<string>(body => body.Contains("\"name\":\"UsrTodo\"", StringComparison.Ordinal)))
 			.Returns("""{"success":true,"schema":{"caption":[{"cultureName":"en-US","value":"Todo"}],"columns":[]}}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
 
 		// Act
 		ApplicationInfoResult result = _sut.GetApplicationInfo("sandbox", null, "APP");
@@ -252,5 +266,9 @@ public sealed class ApplicationInfoServiceTests {
 				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
 				Arg.Is<string>(body => body.Contains("\"uId\":\"entity-b\"", StringComparison.Ordinal)))
 			.Returns("""{"success":true,"schema":{"uId":"entity-b","name":"UsrBeta","caption":{"en-US":"Beta caption"},"columns":{"Items":{"lookup":{"name":"Owner","caption":{"en-US":"Owner"},"dataValueType":10,"isInherited":false,"referenceSchemaName":"Contact","defValue":{"valueSourceType":1,"value":"Default text"}}}}}}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Name":"UsrAlpha_FormPage","UId":"page-uid","PackageName":"PrimaryPkg","ParentSchemaName":"BasePage"}]}""");
 	}
 }

@@ -1,13 +1,22 @@
 # env-ui
 
-Interactive console UI for environment management.
+## Command Type
 
+    Configuration Management
 
-## Usage
+## Name
+
+env-ui - Interactive console UI for environment management
+
+## Synopsis
 
 ```bash
 clio env-ui
 ```
+
+## Aliases
+
+gui, far
 
 ## Description
 
@@ -23,43 +32,11 @@ feedback and validation.
 
 This command requires no arguments - all interaction happens within the UI.
 
-## Aliases
-
-`far`, `gui`
-
-## Examples
-
-```bash
-# Launch interactive UI
-clio env-ui
-
-# Using shorter alias
-clio env-ui
-
-# Using FAR commander inspired alias
-clio env-ui
-```
-
 ## Options
 
 ```bash
 None - This command is fully interactive and takes no command-line options.
 ```
-
-## Notes
-
-- All operations modify the local clio configuration file
-- No network access required (operates on local settings only)
-- Configuration changes take effect immediately
-- Settings file location shown in UI header
-- Cross-platform compatible with modern terminals
-- Supports both .NET Core and .NET Framework platforms
-- Password masking provides visual security but does not encrypt storage
-- Changes are persistent and affect all clio commands
-
-## Command Type
-
-    Configuration Management
 
 ## Features
 
@@ -199,6 +176,19 @@ None - This command is fully interactive and takes no command-line options.
     All output uses ANSI colors and Unicode box-drawing characters for
     visual clarity (requires modern terminal with UTF-8 support).
 
+## Examples
+
+```bash
+# Launch interactive UI
+clio env-ui
+
+# Using shorter alias
+clio env-ui
+
+# Using FAR commander inspired alias
+clio env-ui
+```
+
 ## Exit Codes
 
     0   Success - normal exit via Exit menu option
@@ -309,6 +299,17 @@ None - This command is fully interactive and takes no command-line options.
         Problem: Created environment doesn't appear
         Solution: Press "Refresh List" or restart UI, verify appsettings.json
 
+## Notes
+
+- All operations modify the local clio configuration file
+- No network access required (operates on local settings only)
+- Configuration changes take effect immediately
+- Settings file location shown in UI header
+- Cross-platform compatible with modern terminals
+- Supports both .NET Core and .NET Framework platforms
+- Password masking provides visual security but does not encrypt storage
+- Changes are persistent and affect all clio commands
+
 ## Security Considerations
 
     - Passwords and secrets displayed as **** in UI
@@ -329,17 +330,19 @@ None - This command is fully interactive and takes no command-line options.
         get-info            Get system information from environment
         show-local-envs     Display local environment health status
 
+## See Also
+
+Full documentation:
+clio/docs/commands/EnvManageUiCommand.md
+
+Environment configuration guide:
+clio/Environment.md
+
+Configuration file format:
+clio/ConfigurationFormat.md
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `Full documentation:`
-- `clio/docs/commands/EnvManageUiCommand.md`
-- `Environment configuration guide:`
-- `clio/Environment.md`
-- `Configuration file format:`
-- `clio/ConfigurationFormat.md`
 
 - [Clio Command Reference](../../Commands.md#env-ui)

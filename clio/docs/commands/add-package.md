@@ -1,38 +1,18 @@
 # add-package
 
-Add package to workspace or local folder.
+## Name
 
-
-## Usage
-
-```bash
-clio add-package <PACKAGE_NAME> [OPTIONS]
-```
+add-package - Add package to workspace or local folder
 
 ## Description
 
 Adds a package to the current workspace or local application structure.
 Refer to Commands.md for detailed scenarios and examples.
 
-## Aliases
-
-`ap`
-
-## Examples
+## Synopsis
 
 ```bash
-clio add-package MyPackage -a true
-Add a package and update app descriptor metadata
-
-clio add-package MyPackage -a true -e env_nf,env_n8
-Add a package and download configuration from multiple environments
-```
-
-## Arguments
-
-```bash
-Name
-    Package name. Required.
+clio add-package <PACKAGE_NAME> [OPTIONS]
 ```
 
 ## Options
@@ -48,64 +28,23 @@ Controls whether an app-descriptor should be created or updated
 Optional environment list used for download-configuration scenarios
 ```
 
-## Environment Options
+## Examples
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+clio add-package MyPackage -a true
+Add a package and update app descriptor metadata
+
+clio add-package MyPackage -a true -e env_nf,env_n8
+Add a package and download configuration from multiple environments
 ```
+
+## See Also
+
+new-pkg - Create a package skeleton
+download-configuration - Download configuration binaries for workspace use
 
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `new`
-- `pull-pkg`
 
 - [Clio Command Reference](../../Commands.md#add-package)

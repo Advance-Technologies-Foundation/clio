@@ -1,9 +1,10 @@
 # install-gate
 
-Install or update cliogate in Creatio.
+## Name
 
+install-gate - Install clio API gateway package to Creatio environment
 
-## Usage
+## Synopsis
 
 ```bash
 clio install-gate [OPTIONS]
@@ -27,33 +28,6 @@ The cliogate package is required for:
 The command automatically restarts the Creatio application after
 installation to apply the changes.
 
-## Aliases
-
-`gate`, `installgate`, `update-gate`
-
-## Examples
-
-```bash
-Install cliogate using configured environment:
-clio install-gate -e dev
-
-Install cliogate with direct credentials:
-clio install-gate -u https://myapp.creatio.com -l administrator -p password
-
-Update existing cliogate installation:
-clio install-gate -e production
-
-Using shortest alias:
-clio install-gate -e demo
-```
-
-## Arguments
-
-```bash
-EnvironmentName
-    Application name
-```
-
 ## Options
 
 ```bash
@@ -71,55 +45,20 @@ User login (administrator permission required)
 User password
 ```
 
-## Environment Options
+## Examples
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+Install cliogate using configured environment:
+clio install-gate -e dev
+
+Install cliogate with direct credentials:
+clio install-gate -u https://myapp.creatio.com -l administrator -p password
+
+Update existing cliogate installation:
+clio install-gate -e production
+
+Using shortest alias:
+clio install-gate -e demo
 ```
 
 ## Notes
@@ -131,15 +70,15 @@ clio installation
 - Use 'clio info --gate' to check the cliogate version included with clio
 - Use 'clio get-info -e <ENV>' to verify the installed cliogate version
 
+## See Also
+
+install-tide - Install T.I.D.E. extension
+push-workspace - Push workspace to environment
+get-info - Get information about a Creatio instance
+info - Display clio version information
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `push-pkg`
-- `push-pkg`
-- `get`
-- `info`
 
 - [Clio Command Reference](../../Commands.md#install-gate)

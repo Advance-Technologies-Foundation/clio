@@ -1,13 +1,16 @@
 # deploy-creatio
 
-Install Creatio from a distribution package.
+## Command Type
 
+    Installation and Deployment commands
 
-## Usage
+## Name
 
-```bash
-clio deploy-creatio [OPTIONS]
-```
+deploy-creatio (dc, ic, install-creatio) - Deploy Creatio from a zip file
+to IIS (Windows) or dotnet runner
+(macOS/Linux), with database restore
+to Kubernetes or a configured local
+database server
 
 ## Description
 
@@ -30,92 +33,17 @@ clio runs pg_restore on the machine running clio, connects through the
 configured host/port, and keeps the .backup file on the local filesystem.
 Clio does not docker exec into the container.
 
-## Aliases
+## Prerequisites
 
-`dc`, `ic`, `install-creatio`
+For PostgreSQL local restore, pg_restore must be installed on the machine
+running clio and available in PATH or via db.pgToolsPath.
 
-## Examples
+If Kubernetes is not available, --db-server-name is required.
 
-```bash
-1. Basic deployment with default settings (PostgreSQL, port 40001, auto-run):
-clio deploy-creatio -e "Default" --ZipFile "C:\creatio-app.zip" --SitePort 40001 --silent
-
-2. Deploy with MS SQL and custom port:
-clio deploy-creatio -e "Production" --db mssql --SitePort 8080 \\
---ZipFile "/path/to/creatio-app.zip"
-
-3. Deploy with .NET Framework (Windows):
-clio deploy-creatio -e "LegacyApp" --platform netframework \\
---ZipFile "C:\creatio-framework.zip"
-
-4. Deploy with HTTPS on Windows using dotnet (no IIS):
-clio deploy-creatio -e "SecureApp" --no-iis --use-https \\
---cert-path "C:\certs\app.pem" --ZipFile "C:\creatio-app.zip"
-
-5. Deploy to custom path on macOS:
-clio deploy-creatio -e "CreatioApp" --app-path "/var/creatio" \\
---ZipFile "/Users/downloads/creatio-app.zip"
-
-6. Deploy on Linux with systemd service management:
-clio deploy-creatio -e "LinuxApp" --deployment dotnet \\
---app-path "/opt/creatio-prod" --ZipFile "/home/admin/creatio-app.zip"
-
-7. Deploy without auto-launching browser:
-clio deploy-creatio -e "BackgroundApp" --auto-run false \\
---ZipFile "C:\creatio-app.zip"
-
-8. Silent deployment with all parameters:
-clio deploy-creatio -e "AutoDeploy" --db pg --platform net6 \\
---SiteName "AutoCreatio" --SitePort 8443 --use-https \\
---cert-path "/certs/server.pem" --ZipFile "/app/creatio.zip" --silent
-
-9. Deploy with specific Redis database (when auto-detection fails):
-clio deploy-creatio -e "RedisApp" --ZipFile "C:\creatio-app.zip" --redis-db 5
-
-10. Deploy in production with manual Redis DB to avoid conflicts:
-clio deploy-creatio -e "Production" --db mssql --SitePort 8080 \\
---redis-db 3 --ZipFile "/path/to/creatio-app.zip"
-
-11. Deploy to local database server (automatic database restore):
-# Configure database server in appsettings.json first (see DATABASE RESTORATION)
-# Single command deploys everything: extract -> restore DB -> deploy app -> configure
-clio deploy-creatio -e "LocalDev" --db mssql --SitePort 40001 \\
---db-server-name my-local-mssql \\
---ZipFile "C:\Creatio\8.3.3.1343_Studio_MSSQL_ENU.zip"
-
-12. Deploy PostgreSQL to local server with automatic DB drop:
-clio deploy-creatio -e "QA" --db pg --SitePort 8080 \\
---db-server-name my-local-postgres --drop-if-exists \\
---ZipFile "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip"
-
-13. Deploy PostgreSQL running in Docker via published host port:
-clio deploy-creatio -e "DockerDev" --db pg --SitePort 8080 \\
---db-server-name docker-postgres --drop-if-exists \\
---ZipFile "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip"
-
-14. Silent deployment to local database without browser launch:
-clio deploy-creatio -e "AutoDeploy" --db mssql --SitePort 8443 \\
---db-server-name my-local-mssql --drop-if-exists \\
---auto-run=false --silent \\
---ZipFile "C:\Creatio\app.zip"
-
-15. Deploy PostgreSQL with long filename (template reuse):
-# First deployment: Creates template from backup (slower)
-clio deploy-creatio -e "Dev" --db pg --SitePort 8080 \\
---db-server-name my-local-postgres \\
---ZipFile "C:\Creatio\8.3.3.5678_Studio_Enterprise_Marketing_PostgreSQL_ENU.zip"
-
-# Subsequent deployments: Reuses template (faster)
-clio deploy-creatio -e "Dev2" --db pg --SitePort 8081 \\
---db-server-name my-local-postgres \\
---ZipFile "C:\Creatio\8.3.3.5678_Studio_Enterprise_Marketing_PostgreSQL_ENU.zip"
-```
-
-## Arguments
+## Synopsis
 
 ```bash
-EnvironmentName
-    Application name
+clio deploy-creatio [OPTIONS]
 ```
 
 ## Options
@@ -253,67 +181,125 @@ Run in silent mode without interactive prompts
 Default: false
 ```
 
-## Environment Options
+## Examples
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+1. Basic deployment with default settings (PostgreSQL, port 40001, auto-run):
+clio deploy-creatio -e "Default" --ZipFile "C:\creatio-app.zip" --SitePort 40001 --silent
+
+2. Deploy with MS SQL and custom port:
+clio deploy-creatio -e "Production" --db mssql --SitePort 8080 \\
+--ZipFile "/path/to/creatio-app.zip"
+
+3. Deploy with .NET Framework (Windows):
+clio deploy-creatio -e "LegacyApp" --platform netframework \\
+--ZipFile "C:\creatio-framework.zip"
+
+4. Deploy with HTTPS on Windows using dotnet (no IIS):
+clio deploy-creatio -e "SecureApp" --no-iis --use-https \\
+--cert-path "C:\certs\app.pem" --ZipFile "C:\creatio-app.zip"
+
+5. Deploy to custom path on macOS:
+clio deploy-creatio -e "CreatioApp" --app-path "/var/creatio" \\
+--ZipFile "/Users/downloads/creatio-app.zip"
+
+6. Deploy on Linux with systemd service management:
+clio deploy-creatio -e "LinuxApp" --deployment dotnet \\
+--app-path "/opt/creatio-prod" --ZipFile "/home/admin/creatio-app.zip"
+
+7. Deploy without auto-launching browser:
+clio deploy-creatio -e "BackgroundApp" --auto-run false \\
+--ZipFile "C:\creatio-app.zip"
+
+8. Silent deployment with all parameters:
+clio deploy-creatio -e "AutoDeploy" --db pg --platform net6 \\
+--SiteName "AutoCreatio" --SitePort 8443 --use-https \\
+--cert-path "/certs/server.pem" --ZipFile "/app/creatio.zip" --silent
+
+9. Deploy with specific Redis database (when auto-detection fails):
+clio deploy-creatio -e "RedisApp" --ZipFile "C:\creatio-app.zip" --redis-db 5
+
+10. Deploy in production with manual Redis DB to avoid conflicts:
+clio deploy-creatio -e "Production" --db mssql --SitePort 8080 \\
+--redis-db 3 --ZipFile "/path/to/creatio-app.zip"
+
+11. Deploy to local database server (automatic database restore):
+# Configure database server in appsettings.json first (see DATABASE RESTORATION)
+# Single command deploys everything: extract -> restore DB -> deploy app -> configure
+clio deploy-creatio -e "LocalDev" --db mssql --SitePort 40001 \\
+--db-server-name my-local-mssql \\
+--ZipFile "C:\Creatio\8.3.3.1343_Studio_MSSQL_ENU.zip"
+
+12. Deploy PostgreSQL to local server with automatic DB drop:
+clio deploy-creatio -e "QA" --db pg --SitePort 8080 \\
+--db-server-name my-local-postgres --drop-if-exists \\
+--ZipFile "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip"
+
+13. Deploy PostgreSQL running in Docker via published host port:
+clio deploy-creatio -e "DockerDev" --db pg --SitePort 8080 \\
+--db-server-name docker-postgres --drop-if-exists \\
+--ZipFile "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip"
+
+14. Silent deployment to local database without browser launch:
+clio deploy-creatio -e "AutoDeploy" --db mssql --SitePort 8443 \\
+--db-server-name my-local-mssql --drop-if-exists \\
+--auto-run=false --silent \\
+--ZipFile "C:\Creatio\app.zip"
+
+15. Deploy PostgreSQL with long filename (template reuse):
+# First deployment: Creates template from backup (slower)
+clio deploy-creatio -e "Dev" --db pg --SitePort 8080 \\
+--db-server-name my-local-postgres \\
+--ZipFile "C:\Creatio\8.3.3.5678_Studio_Enterprise_Marketing_PostgreSQL_ENU.zip"
+
+# Subsequent deployments: Reuses template (faster)
+clio deploy-creatio -e "Dev2" --db pg --SitePort 8081 \\
+--db-server-name my-local-postgres \\
+--ZipFile "C:\Creatio\8.3.3.5678_Studio_Enterprise_Marketing_PostgreSQL_ENU.zip"
 ```
 
-## Requirements
+## Behavior
 
-For PostgreSQL local restore, pg_restore must be installed on the machine
-running clio and available in PATH or via db.pgToolsPath.
+Database Restoration (Automatic):
+- WITHOUT --db-server-name: Restores database to Kubernetes cluster
+- WITH --db-server-name: Restores database to local server from appsettings.json
+- Database is extracted from db/*.bak (MSSQL) or db/*.backup (PostgreSQL) in zip
+- Connection strings are automatically updated to point to target database
+- PostgreSQL/MSSQL native restore output is written into the temp database
+operation log artifact
 
-If Kubernetes is not available, --db-server-name is required.
+Password Reset Script (Creatio >= 8.3.3):
+- Applies SQL script that sets Supervisor ForceChangePassword to false
+- Runs only when --disable-reset-password is true (default)
+- Runs only for corporate-eligible machines:
+- tscrm domain member (Windows)
+- OR tscrm.com reachable via ping
+- Works for both Kubernetes and local database modes
+- Script errors do not block deployment (warning only)
 
-## Command Type
+Windows (Default - IIS):
+- Creates IIS Application Pool
+- Creates IIS Website with HTTP/HTTPS bindings
+- Configures application pool identity and recycling
+- Returns application URL in format: http(s)://FQDN:port
 
-    Installation and Deployment commands
+Windows (dotnet runtime):
+- Deploys application files to custom or default path
+- Creates Windows service (if applicable)
+- Runs application via dotnet executable
+- Returns application URL in format: http(s)://FQDN:port
+
+macOS:
+- Deploys application files to ~/creatio or custom path
+- Creates launchd service for auto-start
+- Manages service via launchctl
+- Returns application URL with configured port
+
+Linux:
+- Deploys application files to /opt/creatio or custom path
+- Creates systemd service unit file
+- Manages service via systemctl
+- Returns application URL with configured port
 
 ## Database Setup
 

@@ -1,36 +1,17 @@
 # save-state
 
-Save state of Creatio instance to file.
+## Name
 
-
-## Usage
-
-```bash
-clio save-state [OPTIONS]
-```
+save-state - Save state of Creatio instance to file
 
 ## Description
 
 Saves the current environment state to a manifest file for later reuse or comparison.
 
-## Aliases
-
-`save-manifest`, `state`
-
-## Examples
+## Synopsis
 
 ```bash
-clio save-state --help
-Display canonical options and usage examples
-```
-
-## Arguments
-
-```bash
-EnvironmentName
-    Application name
-ManifestName
-    Path to Manifest file. Required.
+clio save-state [OPTIONS]
 ```
 
 ## Options
@@ -39,64 +20,20 @@ ManifestName
 Supports the canonical save-state command options.
 ```
 
-## Environment Options
+## Examples
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+clio save-state --help
+Display canonical options and usage examples
 ```
+
+## See Also
+
+apply-manifest - Apply a previously saved manifest
+show-diff - Compare saved state with another source
 
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `apply`
-- `show`
 
 - [Clio Command Reference](../../Commands.md#save-state)

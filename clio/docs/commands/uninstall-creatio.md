@@ -1,13 +1,16 @@
 # uninstall-creatio
 
-Uninstall local instance of creatio.
+## Command Type
 
+    Environment Management commands
 
-## Usage
+## Name
 
-```bash
-uninstall-creatio [options]
-```
+uninstall-creatio - Completely remove a local Creatio instance
+
+## Aliases
+
+uc
 
 ## Description
 
@@ -28,102 +31,6 @@ to manage IIS sites and application pools.
 IMPORTANT: Ensure you have backups of any important data before proceeding.
 This operation cannot be undone.
 
-## Aliases
-
-`uc`
-
-## Examples
-
-```bash
-Uninstall by environment name (recommended):
-clio uninstall-creatio -e production
-clio uninstall-creatio -e development
-
-Uninstall by physical path:
-clio uninstall-creatio -d C:\inetpub\wwwroot\mysite
-clio uninstall-creatio --physicalPath C:\inetpub\wwwroot\creatio-dev
-```
-
-## Arguments
-
-```bash
-EnvironmentName
-    Application name
-```
-
-## Options
-
-```bash
---environment, -e       Name of registered environment to uninstall
-
---physicalPath, -d      Physical path to Creatio installation folder
-(e.g., C:\inetpub\wwwroot\mysite)
-```
-
-## Environment Options
-
-```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
-```
-
-## Notes
-
-- This is an irreversible operation - files are permanently deleted
-- No confirmation prompt - command executes immediately
-- Consider using 'clear-local-env' if you want to clean data without
-destroying the entire instance
-- The command does not modify clio environment registration - use
-'unreg-web-app' separately if needed
-
-## Command Type
-
-    Environment Management commands
-
 ## Uninstall Process
 
     When using environment name (-e):
@@ -141,11 +48,38 @@ destroying the entire instance
         6. Deletes all files in installation directory
         7. Removes application pool user profile directory
 
+## Synopsis
+
+```bash
+uninstall-creatio [options]
+```
+
+## Options
+
+```bash
+--environment, -e       Name of registered environment to uninstall
+
+--physicalPath, -d      Physical path to Creatio installation folder
+(e.g., C:\inetpub\wwwroot\mysite)
+```
+
 ## Validation Rules
 
     - You must provide either -e or -d (but not both)
     - Physical path must be a valid absolute directory path
     - Physical path must point to an existing directory
+
+## Examples
+
+```bash
+Uninstall by environment name (recommended):
+clio uninstall-creatio -e production
+clio uninstall-creatio -e development
+
+Uninstall by physical path:
+clio uninstall-creatio -d C:\inetpub\wwwroot\mysite
+clio uninstall-creatio --physicalPath C:\inetpub\wwwroot\creatio-dev
+```
 
 ## Output
 
@@ -236,6 +170,15 @@ destroying the entire instance
         - Drop the database automatically
         - Log success or failure of database operations
 
+## Notes
+
+- This is an irreversible operation - files are permanently deleted
+- No confirmation prompt - command executes immediately
+- Consider using 'clear-local-env' if you want to clean data without
+destroying the entire instance
+- The command does not modify clio environment registration - use
+'unreg-web-app' separately if needed
+
 ## Related Commands
 
     deploy-creatio       Deploy a new Creatio instance
@@ -246,14 +189,16 @@ destroying the entire instance
     restart-web-app     Restart a Creatio instance
     clear-local-env     Clear environment data without destroying instance
 
-## See also
+## See Also
 
-- `For complete documentation with examples, see:`
-- `docs/commands/uninstall`
-- `For Creatio installation information:`
-- `clio help deploy`
-- `For environment management:`
-- `clio help reg`
-- `clio help show`
+For complete documentation with examples, see:
+docs/commands/uninstall-creatio.md
+
+For Creatio installation information:
+clio help deploy-creatio
+
+For environment management:
+clio help reg-web-app
+clio help show-env
 
 - [Clio Command Reference](../../Commands.md#uninstall-creatio)

@@ -8,7 +8,7 @@ namespace Clio.Command.McpServer.Tools;
 
 [McpServerToolType]
 public abstract class BaseTool<T>(
-	Command<T> command,
+	Command<T>? command,
 	ILogger logger,
 	IToolCommandResolver commandResolver = null,
 	IDbOperationLogContextAccessor dbOperationLogContextAccessor = null) {
@@ -17,6 +17,10 @@ public abstract class BaseTool<T>(
 	private protected static object CommandExecutionSyncRoot => CommandExecutionLock;
 
 	private protected CommandExecutionResult InternalExecute(T options) {
+		if (command is null) {
+			throw new InvalidOperationException(
+				$"{GetType().Name} does not support direct command execution.");
+		}
 		return InternalExecute(command, options);
 	}
 
@@ -48,6 +52,10 @@ public abstract class BaseTool<T>(
 									   CreateTestProjectOptions envOptions when string.IsNullOrWhiteSpace(envOptions.Environment) && string.IsNullOrWhiteSpace(envOptions.Uri)
 										   => commandResolver.ResolveWithoutEnvironment<TCommand>(envOptions),
 									   AddPackageOptions envOptions when string.IsNullOrWhiteSpace(envOptions.Environment) && string.IsNullOrWhiteSpace(envOptions.Uri)
+										   => commandResolver.ResolveWithoutEnvironment<TCommand>(envOptions),
+									   CreateWorkspaceCommandOptions envOptions when envOptions.Empty
+										   && string.IsNullOrWhiteSpace(envOptions.Environment)
+										   && string.IsNullOrWhiteSpace(envOptions.Uri)
 										   => commandResolver.ResolveWithoutEnvironment<TCommand>(envOptions),
 
 									   EnvironmentOptions envOptions => commandResolver.Resolve<TCommand>(envOptions),

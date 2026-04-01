@@ -1,9 +1,14 @@
 # register
 
-Register clio shell integrations.
+## Command Type
 
+    System configuration
 
-## Usage
+## Name
+
+register - Register clio commands in Windows context menu
+
+## Synopsis
 
 ```bash
 register [OPTIONS]
@@ -25,6 +30,18 @@ REQUIREMENTS:
 - Administrator privileges required
 - Windows Registry access
 
+## Options
+
+```bash
+-t, --Target            Target environment location for registry entries.
+Values: 'u' for user location (default)
+'m' for machine location
+Default: u
+
+-p, --Path              Path where clio is stored. Used to locate icon files
+and registry configuration files.
+```
+
 ## Examples
 
 ```bash
@@ -41,29 +58,15 @@ register --Target m
 register --Path "C:\Tools\clio"
 ```
 
-## Options
+## Behavior
 
-```bash
--t, --Target            Target environment location for registry entries.
-Values: 'u' for user location (default)
-'m' for machine location
-Default: u
-
--p, --Path              Path where clio is stored. Used to locate icon files
-and registry configuration files.
-```
-
-## Notes
-
-- This command only works on Windows operating systems
-- Administrator privileges are mandatory
-- Previous context menu entries are automatically removed before registration
-- Icons are stored in: %APPDATA%\clio\
-- To remove context menu entries, use the 'unregister' command
-
-## Command Type
-
-    System configuration
+1. Checks if running on Windows operating system
+2. Verifies administrator privileges
+3. Creates %APPDATA%\clio folder if it doesn't exist
+4. Copies all icon files from clio installation img folder to AppData
+5. Imports unregister registry file to clean previous entries
+6. Imports register registry file to add new context menu entries
+7. Displays success or error message
 
 ## Registry Files Used
 
@@ -74,6 +77,14 @@ and registry configuration files.
 
     0   Successfully registered context menu
     1   Failed to register (not Windows, no admin rights, registry import failed, or other error occurred)
+
+## Notes
+
+- This command only works on Windows operating systems
+- Administrator privileges are mandatory
+- Previous context menu entries are automatically removed before registration
+- Icons are stored in: %APPDATA%\clio\
+- To remove context menu entries, use the 'unregister' command
 
 ## Security Considerations
 
@@ -90,12 +101,12 @@ and registry configuration files.
     - Verify `reg import` commands complete successfully and do not return non-zero exit codes
     - Try unregistering first, then registering again
 
+## See Also
+
+unregister - Remove clio from context menu
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `unregister`
 
 - [Clio Command Reference](../../Commands.md#register)

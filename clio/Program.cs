@@ -1047,9 +1047,9 @@ internal class Program {
 		const string helpFolderName = "help";
 		string envPath = creatioEnv.GetAssemblyFolderPath();
 		string helpDirectoryPath = Path.Combine(envPath ?? string.Empty, helpFolderName);
-		IServiceProvider bm = new BindingsModule().Register();
 		Parser.Default.Settings.ShowHeader = false;
 		Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
+		IServiceProvider bm = new BindingsModule().Register(applyBootstrapRepairs: false);
 		if (TryHandleBuiltInHelp(args, bm, out int helpExitCode)) {
 			return helpExitCode;
 		}
@@ -1147,7 +1147,10 @@ internal class Program {
 			ConsoleLogger.Instance.WriteInfo(settings.Uri);
 		}
 		if (Container == null) {
-			Container = new BindingsModule().Register(settings);
+			BindingsModuleRegistrationProfile profile = settings is null
+				? BindingsModuleRegistrationProfile.Bootstrap
+				: BindingsModuleRegistrationProfile.EnvironmentScoped;
+			Container = new BindingsModule().Register(settings, profile: profile);
 		}
 		if (useCreatioLogStreamer) {
 			ConsoleLogger.Instance.SetCreatioLogStreamer(Container.GetRequiredService<ILogStreamer>());

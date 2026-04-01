@@ -1,34 +1,17 @@
 # push-nuget-pkg
 
-Push a NuGet package to a feed.
+## Name
 
-
-## Usage
-
-```bash
-clio push-nuget-pkg [OPTIONS]
-```
+push-nuget-pkg - Push package on NuGet server
 
 ## Description
 
 Publishes a prepared NuGet package to the configured NuGet feed.
 
-## Aliases
-
-`push-n`, `push-nuget`
-
-## Examples
+## Synopsis
 
 ```bash
-clio push-nuget-pkg --help
-Display canonical options and usage examples
-```
-
-## Arguments
-
-```bash
-NugetPkgPath
-    Nuget package file path. Required.
+clio push-nuget-pkg [OPTIONS]
 ```
 
 ## Options
@@ -37,63 +20,19 @@ NugetPkgPath
 Supports the canonical push-nuget-pkg command options.
 ```
 
-## Environment Options
+## Examples
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+clio push-nuget-pkg --help
+Display canonical options and usage examples
 ```
+
+## See Also
+
+pack-nuget-pkg - Build a NuGet package before publishing
 
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `pack-nuget-pkg`
 
 - [Clio Command Reference](../../Commands.md#push-nuget-pkg)

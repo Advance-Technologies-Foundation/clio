@@ -237,13 +237,13 @@ public sealed class PageGetToolE2ETests {
 		CancellationToken cancellationToken,
 		string environmentName,
 		IReadOnlyList<PageListItem> pages) {
-		foreach (PageListItem page in pages.Where(item => !string.IsNullOrWhiteSpace(item.Name))) {
-			PageGetResponse response = await CallPageGetAsync(session, cancellationToken, environmentName, page.Name);
+		foreach (PageListItem page in pages.Where(item => !string.IsNullOrWhiteSpace(item.SchemaName))) {
+			PageGetResponse response = await CallPageGetAsync(session, cancellationToken, environmentName, page.SchemaName);
 			if (!response.Success || response.Bundle?.ViewConfig is null || response.Bundle.ViewConfig.Count == 0) {
 				continue;
 			}
 
-			return new PageGetSuccessCandidate(page.Name, response);
+			return new PageGetSuccessCandidate(page.SchemaName, response);
 		}
 
 		return null;

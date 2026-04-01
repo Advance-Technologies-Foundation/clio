@@ -76,14 +76,25 @@ internal sealed class CommandHelpRenderer {
 			return null;
 		}
 		HelpDocument source = LoadHelpDocument(command);
-		if (!source.IsAliasShim && source.Sections.Count > 0) {
-			return RenderCommandHelp(command, source);
+		if (HasManualHelp(source)) {
+			return RenderManualCommandHelp(command, source);
 		}
 		return RenderGeneratedCommandHelp(command);
 	}
 
 	public string RenderMarkdownDoc(HelpCommandMetadata command) {
 		HelpDocument source = LoadHelpDocument(command);
+		if (HasManualHelp(source)) {
+			return RenderManualMarkdownDoc(command, source);
+		}
+		return RenderGeneratedMarkdownDoc(command);
+	}
+
+	private static bool HasManualHelp(HelpDocument source) =>
+		!source.IsAliasShim && source.Sections.Count > 0;
+
+	private string RenderGeneratedMarkdownDoc(HelpCommandMetadata command) {
+		HelpDocument source = HelpDocument.Empty;
 		StringBuilder builder = new();
 		builder.AppendLine($"# {command.CanonicalName}");
 		builder.AppendLine();
@@ -129,6 +140,29 @@ internal sealed class CommandHelpRenderer {
 			foreach (string line in seeAlso) {
 				builder.AppendLine($"- `{line}`");
 			}
+		}
+		builder.AppendLine();
+		builder.AppendLine($"- [Clio Command Reference](../../Commands.md#{command.CanonicalName})");
+		return builder.ToString();
+	}
+
+	private static string RenderManualMarkdownDoc(HelpCommandMetadata command, HelpDocument source) {
+		StringBuilder builder = new();
+		builder.AppendLine($"# {command.CanonicalName}");
+		foreach (HelpSection section in source.Sections) {
+			IReadOnlyList<string> lines = GetManualSectionLines(command, section);
+			if (lines.Count == 0) {
+				continue;
+			}
+			string title = FormatMarkdownHeading(section.Heading);
+			if (IsCodeBlockSection(section.NormalizedHeading)) {
+				WriteMarkdownSection(builder, title, NormalizeSectionLines(lines), asCodeBlock: true);
+				continue;
+			}
+			WriteMarkdownRawSection(
+				builder,
+				title,
+				IsCustomSection(section.NormalizedHeading) ? lines : NormalizeSectionLines(lines));
 		}
 		builder.AppendLine();
 		builder.AppendLine($"- [Clio Command Reference](../../Commands.md#{command.CanonicalName})");
@@ -347,45 +381,14 @@ internal sealed class CommandHelpRenderer {
 		return builder.ToString();
 	}
 
-	private string RenderCommandHelp(HelpCommandMetadata command, HelpDocument source) {
+	private static string RenderManualCommandHelp(HelpCommandMetadata command, HelpDocument source) {
 		StringBuilder builder = new();
-		foreach (HelpSection section in GetLeadingCustomSections(source)) {
-			AppendSection(builder, section.Heading, section.Lines);
-		}
-		AppendSection(builder, "NAME", GetNameLines(command, source));
-		AppendSection(builder, SecUsage, GetUsageLines(command, source));
-		AppendSection(builder, SecDescription, GetDescriptionLines(command, source));
-		IReadOnlyList<string> aliases = GetAliases(command, source);
-		if (aliases.Count > 0) {
-			AppendSection(builder, "ALIASES", aliases);
-		}
-		AppendSection(builder, SecExamples, GetExamples(command, source));
-		IReadOnlyList<string> arguments = GetArgumentLines(command, source);
-		if (arguments.Count > 0) {
-			AppendSection(builder, "ARGUMENTS", arguments);
-		}
-		IReadOnlyList<string> options = GetOptionLines(command, source, environmentOptionsOnly: false);
-		if (options.Count > 0) {
-			AppendSection(builder, "OPTIONS", options);
-		}
-		IReadOnlyList<string> environmentOptions = GetOptionLines(command, source, environmentOptionsOnly: true);
-		if (environmentOptions.Count > 0) {
-			AppendSection(builder, "ENVIRONMENT OPTIONS", environmentOptions);
-		}
-		IReadOnlyList<string> requirements = GetRequirementLines(command, source);
-		if (requirements.Count > 0) {
-			AppendSection(builder, SecRequirements, requirements);
-		}
-		IReadOnlyList<string> notes = GetNotes(source);
-		if (notes.Count > 0) {
-			AppendSection(builder, SecNotes, notes);
-		}
-		foreach (HelpSection section in GetTrailingCustomSections(source)) {
-			AppendSection(builder, section.Heading, section.Lines);
-		}
-		IReadOnlyList<string> seeAlso = GetSeeAlso(command, source);
-		if (seeAlso.Count > 0) {
-			AppendSection(builder, SecSeeAlso, seeAlso);
+		foreach (HelpSection section in source.Sections) {
+			IReadOnlyList<string> lines = GetManualSectionLines(command, section);
+			if (lines.Count == 0) {
+				continue;
+			}
+			AppendSection(builder, section.Heading, lines);
 		}
 		return builder.ToString();
 	}
@@ -580,23 +583,29 @@ internal sealed class CommandHelpRenderer {
 			.FirstOrDefault(section => string.Equals(section.NormalizedHeading, normalizedHeading, StringComparison.OrdinalIgnoreCase))
 			?.Lines ?? [];
 
+	private static IReadOnlyList<string> GetManualSectionLines(HelpCommandMetadata command, HelpSection section) =>
+		section.NormalizedHeading switch {
+			"NAME" => CanonicalizeCommandLines(command, section.Lines),
+			SecUsage => CanonicalizeCommandLines(command, section.Lines),
+			SecExamples => CanonicalizeCommandLines(command, section.Lines),
+			_ => section.Lines
+		};
+
 	private static IReadOnlyList<HelpSection> GetCustomSections(HelpDocument source) {
 		return source.Sections
 			.Where(section => !IsStandardSection(section.NormalizedHeading))
 			.ToArray();
 	}
 
-	private static IReadOnlyList<HelpSection> GetLeadingCustomSections(HelpDocument source) =>
-		source.Sections
-			.TakeWhile(section => !string.Equals(section.NormalizedHeading, "NAME", StringComparison.OrdinalIgnoreCase))
-			.Where(section => !IsStandardSection(section.NormalizedHeading))
-			.ToArray();
+	private static bool IsCodeBlockSection(string normalizedHeading) =>
+		normalizedHeading is "ARGUMENTS"
+			or "ENVIRONMENT OPTIONS"
+			or "OPTIONS"
+			or SecExamples
+			or SecUsage;
 
-	private static IReadOnlyList<HelpSection> GetTrailingCustomSections(HelpDocument source) =>
-		source.Sections
-			.SkipWhile(section => !string.Equals(section.NormalizedHeading, "NAME", StringComparison.OrdinalIgnoreCase))
-			.Where(section => !IsStandardSection(section.NormalizedHeading))
-			.ToArray();
+	private static bool IsCustomSection(string normalizedHeading) =>
+		!IsStandardSection(normalizedHeading);
 
 	private static bool IsStandardSection(string normalizedHeading) =>
 		normalizedHeading is "ALIASES"

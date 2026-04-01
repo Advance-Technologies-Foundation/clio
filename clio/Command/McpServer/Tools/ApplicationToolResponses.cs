@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using Clio.Command;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -33,6 +34,7 @@ public sealed record ApplicationContextResponse(
 	[property: JsonPropertyName("application-code")] string? ApplicationCode = null,
 	[property: JsonPropertyName("application-version")] string? ApplicationVersion = null,
 	[property: JsonPropertyName("entities")] IReadOnlyList<ApplicationEntityResult>? Entities = null,
+	[property: JsonPropertyName("pages")] IReadOnlyList<PageListItem>? Pages = null,
 	[property: JsonPropertyName("error")] string? Error = null);
 
 /// <summary>

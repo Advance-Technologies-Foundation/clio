@@ -1,13 +1,12 @@
 # healthcheck
 
-Run Creatio health checks.
+## Command Type
 
+    CI/CD commands
 
-## Usage
+## Name
 
-```bash
-healthcheck [options]
-```
+healthcheck - Healthcheck monitoring
 
 ## Description
 
@@ -16,25 +15,15 @@ applications by checking the availability and responsiveness of WebHost
 and/or WebAppLoader endpoints. This command is useful for monitoring
 application status in CI/CD pipelines or during development.
 
-## Aliases
-
-`hc`
-
-## Examples
+## Synopsis
 
 ```bash
-clio healthcheck -a true
-checks WebAppLoader health status
-
-clio healthcheck -h true
-checks WebHost health status
-
-clio healthcheck -a true -h true
-checks both WebAppLoader and WebHost health status
-
-clio healthcheck -a true -e myenv
-checks WebAppLoader health status for environment named myenv
+healthcheck [options]
 ```
+
+## Aliases
+
+hc
 
 ## Options
 
@@ -54,60 +43,21 @@ checks WebAppLoader health status for environment named myenv
 --Environment           -e          Environment name
 ```
 
-## Environment Options
+## Example
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+clio healthcheck -a true
+checks WebAppLoader health status
+
+clio healthcheck -h true
+checks WebHost health status
+
+clio healthcheck -a true -h true
+checks both WebAppLoader and WebHost health status
+
+clio healthcheck -a true -e myenv
+checks WebAppLoader health status for environment named myenv
 ```
-
-## Command Type
-
-    CI/CD commands
 
 ## Reporting Bugs
 

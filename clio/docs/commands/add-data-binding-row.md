@@ -1,9 +1,14 @@
 # add-data-binding-row
 
-Add or replace a row in a package data binding.
+## Command Type
 
+    Development commands
 
-## Usage
+## Name
+
+add-data-binding-row - Add or replace a row in an existing package data binding
+
+## Synopsis
 
 ```bash
 clio add-data-binding-row [OPTIONS]
@@ -21,22 +26,6 @@ binding Localization folder. Once a binding exists locally, this command
 does not require Creatio access, including bindings that were created from
 built-in offline templates.
 
-## Examples
-
-```bash
-# Add a new row from the current workspace
-clio add-data-binding-row --package Custom --binding-name SysSettings --values '{\"Name\":\"Setting name\"}'
-
-# Replace an existing row and update localization data
-clio add-data-binding-row --package Custom --binding-name SysSettings --workspace-path C:\Work\MyWorkspace --values '{\"Name\":\"New name\"}" --localizations "{\"en-US\":{\"Name\":\"Localized name\"}}'
-
-# Add a SysModule row using a local image file for Image16
-clio add-data-binding-row --package Custom --binding-name SysModule --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrModule\",\"Image16\":\"assets\\icon.png\"}"
-
-# Add a SysModule row with explicit lookup display text
-clio add-data-binding-row --package Custom --binding-name SysModule --values "{\"Code\":\"UsrModule\",\"FolderMode\":{\"value\":\"b659d704-3955-e011-981f-00155d043204\",\"displayValue\":\"Folders\"}}"
-```
-
 ## Options
 
 ```bash
@@ -53,6 +42,22 @@ an object with value and displayValue
 --localizations        Optional JSON object keyed by culture and column name
 ```
 
+## Examples
+
+```bash
+# Add a new row from the current workspace
+clio add-data-binding-row --package Custom --binding-name SysSettings --values '{\"Name\":\"Setting name\"}'
+
+# Replace an existing row and update localization data
+clio add-data-binding-row --package Custom --binding-name SysSettings --workspace-path C:\Work\MyWorkspace --values '{\"Name\":\"New name\"}" --localizations "{\"en-US\":{\"Name\":\"Localized name\"}}'
+
+# Add a SysModule row using a local image file for Image16
+clio add-data-binding-row --package Custom --binding-name SysModule --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrModule\",\"Image16\":\"assets\\icon.png\"}"
+
+# Add a SysModule row with explicit lookup display text
+clio add-data-binding-row --package Custom --binding-name SysModule --values "{\"Code\":\"UsrModule\",\"FolderMode\":{\"value\":\"b659d704-3955-e011-981f-00155d043204\",\"displayValue\":\"Folders\"}}"
+```
+
 ## Notes
 
 - The binding must already exist locally
@@ -65,16 +70,12 @@ an object with value and displayValue
 - Unknown columns in --values or --localizations are rejected
 - Existing rows with the same primary key are replaced instead of duplicated
 
-## Command Type
-
-    Development commands
-
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
 
-## See also
+## See Also
 
-- `add-item`
+create-data-binding, remove-data-binding-row
 
 - [Clio Command Reference](../../Commands.md#add-data-binding-row)

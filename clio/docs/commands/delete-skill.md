@@ -1,13 +1,12 @@
 # delete-skill
 
-Delete a managed skill.
+## Command Type
 
+    Workspace commands
 
-## Usage
+## Name
 
-```bash
-clio delete-skill --skill <name> [--scope <workspace|user>]
-```
+delete-skill - Delete a managed skill
 
 ## Description
 
@@ -25,14 +24,10 @@ delete-skill removes only skills recorded in the selected scope manifest.
 If the skill exists in the selected scope skills root but is not managed by
 clio, the command fails and leaves the folder unchanged.
 
-## Examples
+## Synopsis
 
 ```bash
-Delete one managed skill:
-clio delete-skill --skill my-skill
-
-Delete one managed skill from user scope:
-clio delete-skill --scope user --skill my-skill
+clio delete-skill --skill <name> [--scope <workspace|user>]
 ```
 
 ## Options
@@ -45,8 +40,14 @@ Required.
 Defaults to workspace.
 ```
 
-## Command Type
+## Examples
 
-    Workspace commands
+```bash
+Delete one managed skill:
+clio delete-skill --skill my-skill
+
+Delete one managed skill from user scope:
+clio delete-skill --scope user --skill my-skill
+```
 
 - [Clio Command Reference](../../Commands.md#delete-skill)

@@ -1,14 +1,13 @@
 # restore-workspace
 
-Restore editable packages into a workspace.
+## Command Type
 
+    Workspace commands
 
-## Usage
+## Name
 
-```bash
-clio restore-workspace -e <ENVIRONMENT_NAME> [options]
-clio restore-workspace -e <ENVIRONMENT_NAME> [options]
-```
+restore-workspace (restorew, pullw, pull-workspace) - Restore clio workspace
+from Creatio environment
 
 ## Description
 
@@ -28,37 +27,21 @@ KEY FEATURES (New in recent versions):
 - Adds Import statements to all package .csproj files for build props
 - Supports OAuth and basic authentication methods
 
-## Aliases
+## Prerequisites
 
-`pull-workspace`, `pullw`, `restorew`
+cliogate package version 2.0.0.0 or higher must be installed on the Creatio
+instance. Install using:
 
-## Examples
+clio install-gate -e <ENVIRONMENT_NAME>
+
+The command must be run from within a workspace directory. If no workspace
+exists, it will automatically create one.
+
+## Synopsis
 
 ```bash
-Basic restore using environment configuration (recommended):
-clio restore-workspace -e dev
-clio restore-workspace -e dev
-
-Restore without creating solution file:
-clio restore-workspace -e dev --IsCreateSolution false
-
-Restore without NuGet SDK:
-clio restore-workspace -e dev --IsNugetRestore false
-
-Restore without build props:
-clio restore-workspace -e dev --AddBuildProps false
-
-Restore using OAuth authentication:
-clio restore-workspace --uri https://mysite.com \
---ClientId abc123 --ClientSecret secret123 \
---AuthAppUri https://oauth.site.com
-
-Restore using basic authentication:
-clio restore-workspace --uri https://mysite.com \
---Login administrator --Password mypass
-
-Restore with application code filter:
-clio restore-workspace -e dev --AppCode MyApp
+clio restore-workspace -e <ENVIRONMENT_NAME> [options]
+clio restore-workspace -e <ENVIRONMENT_NAME> [options]
 ```
 
 ## Options
@@ -94,81 +77,6 @@ Example: --AddBuildProps false
 --AuthAppUri                        OAuth Authentication App URI
 ```
 
-## Environment Options
-
-```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
-```
-
-## Requirements
-
-cliogate package version 2.0.0.0 or higher must be installed on the Creatio
-instance. Install using:
-
-clio install-gate -e <ENVIRONMENT_NAME>
-
-The command must be run from within a workspace directory. If no workspace
-exists, it will automatically create one.
-
-## Notes
-
-- Use 'restore-workspace' to refresh an existing workspace or when workspace
-configuration exists
-- If no workspace exists, the command automatically calls 'create-workspace'
-- The 'restorew' alias provides a shorter command for frequent use
-- MainSolution.slnx and .build-props are key updates that improve the
-development experience
-- Workspace configuration is stored in .clio/workspaceSettings.json
-
-## Command Type
-
-    Workspace commands
-
 ## Output
 
     The command creates the following in your workspace:
@@ -183,6 +91,35 @@ development experience
     Each package .csproj file is updated with:
         <Import Project="..\..\..\build-props\env.$(Configuration).props"
                 Condition="Exists('..\..\..\build-props\env.$(Configuration).props')" />
+
+## Examples
+
+```bash
+Basic restore using environment configuration (recommended):
+clio restore-workspace -e dev
+clio restore-workspace -e dev
+
+Restore without creating solution file:
+clio restore-workspace -e dev --IsCreateSolution false
+
+Restore without NuGet SDK:
+clio restore-workspace -e dev --IsNugetRestore false
+
+Restore without build props:
+clio restore-workspace -e dev --AddBuildProps false
+
+Restore using OAuth authentication:
+clio restore-workspace --uri https://mysite.com \
+--ClientId abc123 --ClientSecret secret123 \
+--AuthAppUri https://oauth.site.com
+
+Restore using basic authentication:
+clio restore-workspace --uri https://mysite.com \
+--Login administrator --Password mypass
+
+Restore with application code filter:
+clio restore-workspace -e dev --AppCode MyApp
+```
 
 ## Authentication Methods
 
@@ -239,6 +176,16 @@ development experience
     - Easier version control maintenance
     - Compatible with .NET SDK command-line tools
 
+## Notes
+
+- Use 'restore-workspace' to refresh an existing workspace or when workspace
+configuration exists
+- If no workspace exists, the command automatically calls 'create-workspace'
+- The 'restorew' alias provides a shorter command for frequent use
+- MainSolution.slnx and .build-props are key updates that improve the
+development experience
+- Workspace configuration is stored in .clio/workspaceSettings.json
+
 ## Troubleshooting
 
     Error: "cliogate version 2.0.0.0 or higher is required"
@@ -255,14 +202,14 @@ development experience
     Missing packages:
         Check workspace settings filter in .clio/workspaceSettings.json
 
+## See Also
+
+create-workspace    - Create new workspace from scratch
+push-workspace      - Push local changes to Creatio environment
+install-gate        - Install cliogate package (required)
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `add-item`
-- `push-pkg`
-- `push-pkg`
 
 - [Clio Command Reference](../../Commands.md#restore-workspace)

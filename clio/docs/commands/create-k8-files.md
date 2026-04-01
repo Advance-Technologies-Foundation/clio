@@ -1,14 +1,12 @@
 # create-k8-files
 
-Prepare K8 files for deployment.
+## Command Type
 
+    Installation and Deployment commands
 
-## Usage
+## Name
 
-```bash
-clio create-k8-files [OPTIONS]
-clio create-k8-files [OPTIONS]
-```
+create-k8-files - Generate Kubernetes deployment files for Creatio infrastructure
 
 ## Description
 
@@ -30,43 +28,11 @@ Generated files include complete configurations for:
 Resource limits control CPU and memory allocation for database containers,
 enabling optimization for different environments (development, staging, production).
 
-## Aliases
-
-`ck8f`
-
-## Examples
+## Synopsis
 
 ```bash
-Basic usage with default resources (4Gi/2CPU limit, 2Gi/1CPU request):
-clio create-k8-files
-clio create-k8-files
-
-Development environment (minimal resources):
-clio create-k8-files \
---pg-limit-memory 2Gi --pg-limit-cpu 1 \
---mssql-limit-memory 2Gi --mssql-limit-cpu 1
-
-Production environment (PostgreSQL optimized):
-clio create-k8-files \
---pg-limit-memory 8Gi --pg-limit-cpu 4 \
---pg-request-memory 4Gi --pg-request-cpu 2
-
-Production environment (MSSQL optimized):
-clio create-k8-files \
---mssql-limit-memory 8Gi --mssql-limit-cpu 4 \
---mssql-request-memory 4Gi --mssql-request-cpu 2
-
-High-load environment (both databases):
-clio create-k8-files \
---pg-limit-memory 16Gi --pg-limit-cpu 8 \
---pg-request-memory 8Gi --pg-request-cpu 4 \
---mssql-limit-memory 16Gi --mssql-limit-cpu 8 \
---mssql-request-memory 8Gi --mssql-request-cpu 4
-
-Custom configuration (different resources per database):
-clio create-k8-files \
---pg-limit-memory 8Gi --pg-limit-cpu 4 \
---mssql-limit-memory 6Gi --mssql-limit-cpu 3
+clio create-k8-files [OPTIONS]
+clio create-k8-files [OPTIONS]
 ```
 
 ## Options
@@ -101,18 +67,6 @@ Default: 2Gi
 --mssql-request-cpu NUMBER      MSSQL CPU request (cores)
 Default: 1
 ```
-
-## Requirements
-
-- Clio installed and accessible in PATH
-- k8s cluster available for deployment
-- kubectl configured for target cluster
-- Write permissions to user settings directory
-- Understanding of Kubernetes resource management
-
-## Command Type
-
-    Installation and Deployment commands
 
 ## Resource Format
 
@@ -156,6 +110,41 @@ Default: 1
     |   |-- pgadmin-volumes.yaml
     |   |-- pgadmin-services.yaml
     |   `-- pgadmin-workload.yaml
+
+## Examples
+
+```bash
+Basic usage with default resources (4Gi/2CPU limit, 2Gi/1CPU request):
+clio create-k8-files
+clio create-k8-files
+
+Development environment (minimal resources):
+clio create-k8-files \
+--pg-limit-memory 2Gi --pg-limit-cpu 1 \
+--mssql-limit-memory 2Gi --mssql-limit-cpu 1
+
+Production environment (PostgreSQL optimized):
+clio create-k8-files \
+--pg-limit-memory 8Gi --pg-limit-cpu 4 \
+--pg-request-memory 4Gi --pg-request-cpu 2
+
+Production environment (MSSQL optimized):
+clio create-k8-files \
+--mssql-limit-memory 8Gi --mssql-limit-cpu 4 \
+--mssql-request-memory 4Gi --mssql-request-cpu 2
+
+High-load environment (both databases):
+clio create-k8-files \
+--pg-limit-memory 16Gi --pg-limit-cpu 8 \
+--pg-request-memory 8Gi --pg-request-cpu 4 \
+--mssql-limit-memory 16Gi --mssql-limit-cpu 8 \
+--mssql-request-memory 8Gi --mssql-request-cpu 4
+
+Custom configuration (different resources per database):
+clio create-k8-files \
+--pg-limit-memory 8Gi --pg-limit-cpu 4 \
+--mssql-limit-memory 6Gi --mssql-limit-cpu 3
+```
 
 ## Resource Planning
 
@@ -301,6 +290,14 @@ Default: 1
     6. Document Changes: Keep notes on resource allocation decisions
     7. Test First: Validate in non-production before production deployment
     8. Regular Review: Adjust resources based on actual usage patterns
+
+## Prerequisites
+
+- Clio installed and accessible in PATH
+- k8s cluster available for deployment
+- kubectl configured for target cluster
+- Write permissions to user settings directory
+- Understanding of Kubernetes resource management
 
 ## Related Commands
 

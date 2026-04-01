@@ -1,13 +1,12 @@
 # build-docker-image
 
-Build a Docker image for a Creatio .NET 8+ distribution or bundled database backup.
+## Command Type
 
+    Installation and Deployment commands
 
-## Usage
+## Name
 
-```bash
-clio build-docker-image --template <NAME_OR_PATH> [OPTIONS]
-```
+build-docker-image - Build a Docker image for a Creatio .NET 8+ distribution or bundled database backup
 
 ## Description
 
@@ -45,53 +44,10 @@ Examples:
 - template `dev` + source `8.3.3_StudioNet8.zip` -> `creatio-dev:8.3.3_studionet8`
 - template `prod` + source folder `release-build` -> `creatio-prod:release-build`
 
-## Examples
+## Synopsis
 
 ```bash
-Build the default shared base image:
-clio build-docker-image --template base
-
-Build a custom-named shared base image:
-clio build-docker-image --template base --base-image "ghcr.io/acme/creatio-base:dotnet10-vpn"
-
-Build a local development image from a ZIP archive:
-clio build-docker-image --from "C:\Creatio\8.3.3_StudioNet8.zip" --template dev
-
-Build a development image from a custom base image:
-clio build-docker-image --from "/opt/builds/creatio-net8" --template dev --base-image "ghcr.io/acme/creatio-base:dotnet10-vpn"
-
-Build a production image from an extracted directory:
-clio build-docker-image --from "/opt/builds/creatio-net8" --template prod
-
-Build a database-backup image from a ZIP archive:
-clio build-docker-image --from "C:\Creatio\8.3.4_StudioNet8.zip" --template db
-
-Build and export a tar file:
-clio build-docker-image \
---from "/opt/builds/creatio-net8" \
---template prod \
---output-path "/tmp/creatio-prod.tar"
-
-Build, export, and push in one command:
-clio build-docker-image \
---from "C:\Creatio\8.3.3_StudioNet8.zip" \
---template prod \
---output-path "C:\Images\creatio-prod.tar" \
---registry "ghcr.io/acme"
-
-Force nerdctl for a single run:
-clio build-docker-image --from "/opt/builds/creatio-net8" --template prod --use-nerdctl
-
-Force docker for a single run:
-clio build-docker-image --from "/opt/builds/creatio-net8" --template prod --use-docker
-
-Build bundled dev image with a specific cached code-server version:
-clio build-docker-image --from "/opt/builds/creatio-net8" --template dev --vscode-version "4.113.1"
-
-Use a custom template directory:
-clio build-docker-image \
---from "/opt/builds/creatio-net8" \
---template "/workspace/docker-templates/custom-prod"
+clio build-docker-image --template <NAME_OR_PATH> [OPTIONS]
 ```
 
 ## Options
@@ -141,10 +97,6 @@ Optional. Force docker for this invocation and bypass runtime CLI auto-detection
 Optional. Force nerdctl for this invocation and bypass runtime CLI auto-detection.
 clio always adds `--namespace k8s.io` when nerdctl is used.
 ```
-
-## Command Type
-
-    Installation and Deployment commands
 
 ## Registry Authentication
 
@@ -225,6 +177,41 @@ clio always adds `--namespace k8s.io` when nerdctl is used.
         Pass an absolute or relative directory path to --template.
         The directory must contain a Dockerfile.
 
+## Behavior
+
+1. Resolve and validate template
+2. For templates other than `base`, resolve and validate source path
+3. Prepare a temporary Docker build context
+- for bundled `db`, locate the source `db` directory and copy it to the
+Docker build context as `db/`
+- for `dev`, `prod`, and custom Creatio templates, exclude `db` directories
+from the extracted payload and emitted Docker build context
+- for `dev`, `prod`, and custom Creatio templates, write `.dockerignore`
+rules for `db` and `source/db`
+- Normalize staged `*.sh` files to Unix LF line endings for Linux container compatibility
+- for bundled `dev`, ensure the requested code-server archive is cached locally
+and copy it into the Docker build context as `code-server.tar.gz`
+4. Resolve the effective container image CLI from CLI flags or runtime probing
+5. Run the CLI version check
+6. For bundled `dev` and `prod`, verify that the selected base image is available locally
+- if it is missing and a cached base image archive exists, restore it first
+- when `nerdctl` is used, clio accepts the image from namespace `k8s.io`
+or `buildkit`
+- if it is available only in `k8s.io`, clio also syncs that image into the
+`buildkit` namespace so BuildKit can resolve `FROM <base-image>` locally
+without registry access
+7. If `--registry` is set, run registry push preflight before the expensive image build
+- probe `GET /v2/` to confirm registry availability
+- probe `POST /v2/<repository>/blobs/uploads/` to confirm upload initiation
+- fail early when the registry is unreachable, rejects anonymous upload,
+or requires authentication
+8. Run image build with `--pull=false` so locally cached base images are reused
+9. Optionally run image save
+10. Optionally run image tag + image push
+- clio now logs explicit `Tagging Docker image for registry push: ...`
+and `Pushing Docker image to registry: ...` lines before these steps
+11. Clean up temporary files
+
 ## Performance Note
 
     Build log lines such as:
@@ -241,6 +228,55 @@ clio always adds `--namespace k8s.io` when nerdctl is used.
     on Rancher Desktop because the Windows host streams the context into BuildKit
     running inside WSL/containerd. In the last `dev` build the context reached about
     1.99 GB, so the slow step was expected.
+
+## Examples
+
+```bash
+Build the default shared base image:
+clio build-docker-image --template base
+
+Build a custom-named shared base image:
+clio build-docker-image --template base --base-image "ghcr.io/acme/creatio-base:dotnet10-vpn"
+
+Build a local development image from a ZIP archive:
+clio build-docker-image --from "C:\Creatio\8.3.3_StudioNet8.zip" --template dev
+
+Build a development image from a custom base image:
+clio build-docker-image --from "/opt/builds/creatio-net8" --template dev --base-image "ghcr.io/acme/creatio-base:dotnet10-vpn"
+
+Build a production image from an extracted directory:
+clio build-docker-image --from "/opt/builds/creatio-net8" --template prod
+
+Build a database-backup image from a ZIP archive:
+clio build-docker-image --from "C:\Creatio\8.3.4_StudioNet8.zip" --template db
+
+Build and export a tar file:
+clio build-docker-image \
+--from "/opt/builds/creatio-net8" \
+--template prod \
+--output-path "/tmp/creatio-prod.tar"
+
+Build, export, and push in one command:
+clio build-docker-image \
+--from "C:\Creatio\8.3.3_StudioNet8.zip" \
+--template prod \
+--output-path "C:\Images\creatio-prod.tar" \
+--registry "ghcr.io/acme"
+
+Force nerdctl for a single run:
+clio build-docker-image --from "/opt/builds/creatio-net8" --template prod --use-nerdctl
+
+Force docker for a single run:
+clio build-docker-image --from "/opt/builds/creatio-net8" --template prod --use-docker
+
+Build bundled dev image with a specific cached code-server version:
+clio build-docker-image --from "/opt/builds/creatio-net8" --template dev --vscode-version "4.113.1"
+
+Use a custom template directory:
+clio build-docker-image \
+--from "/opt/builds/creatio-net8" \
+--template "/workspace/docker-templates/custom-prod"
+```
 
 ## Output
 

@@ -176,6 +176,7 @@ internal static class ToolContractCatalog {
 	private static readonly IReadOnlyDictionary<string, ToolContractDefinition> Contracts =
 		new Dictionary<string, ToolContractDefinition>(StringComparer.OrdinalIgnoreCase) {
 			[ToolContractGetTool.ToolName] = BuildToolContractGet(),
+			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationGetInfoTool.ApplicationGetInfoToolName] = BuildApplicationGetInfo(),
 			[ApplicationGetListTool.ApplicationGetListToolName] = BuildApplicationGetList(),
@@ -198,6 +199,7 @@ internal static class ToolContractCatalog {
 		};
 
 	private static readonly string[] CanonicalToolNames = [
+		SettingsHealthTool.ToolName,
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationGetInfoTool.ApplicationGetInfoToolName,
 		ApplicationGetListTool.ApplicationGetListToolName,
@@ -320,6 +322,52 @@ internal static class ToolContractCatalog {
 			[]);
 	}
 
+	private static ToolContractDefinition BuildSettingsHealth() {
+		return new ToolContractDefinition(
+			SettingsHealthTool.ToolName,
+			"Reports the clio bootstrap health for appsettings.json, including auto-repairs, active environment resolution, and whether environment-scoped tools can execute.",
+			new ToolInputSchemaContract(
+				[],
+				[]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, "Whether the settings-health lookup succeeded."),
+				Field("status", StringType, "Bootstrap health status: healthy, repaired, degraded, or broken."),
+				Field("settings-file-path", StringType, "Absolute path to clio appsettings.json."),
+				Field("active-environment-key", StringType, "Configured ActiveEnvironmentKey before fallback resolution."),
+				Field("resolved-active-environment-key", StringType, "Environment key resolved for bootstrap use after repair or fallback."),
+				Field("environment-count", NumberType, "Number of configured environments after bootstrap processing."),
+				Field("issues", ArrayType, "Detected bootstrap issues."),
+				Field("repairs-applied", ArrayType, "Safe automatic repairs applied during bootstrap."),
+				Field("can-start-bootstrap-tools", BooleanType, "Whether bootstrap-safe tools can start."),
+				Field("can-execute-env-tools", BooleanType, "Whether commands that depend on named environments can execute."),
+				Field(ErrorFieldName, ObjectType, "Structured error payload when lookup fails.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Report current clio bootstrap health", new Dictionary<string, object?>())
+			],
+			Flow(
+				[
+					SettingsHealthTool.ToolName
+				],
+				"Use before environment-scoped commands when local clio settings may be stale, missing, or unreadable."),
+			[
+				Flow(
+					[
+						SettingsHealthTool.ToolName,
+						ToolContractGetTool.ToolName
+					],
+					"Follow with tool-contract-get when the caller must choose a bootstrap-safe recovery or inspection tool.")
+			],
+			[]);
+	}
+
 	private static ToolContractDefinition BuildApplicationCreate() {
 		return new ToolContractDefinition(
 			ApplicationCreateTool.ApplicationCreateToolName,
@@ -367,6 +415,7 @@ internal static class ToolContractCatalog {
 				Field("application-code", StringType, "Installed application code."),
 				Field("application-version", StringType, "Installed application version."),
 				Field("entities", ArrayType, "Application entities."),
+				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using page-list item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -435,6 +484,7 @@ internal static class ToolContractCatalog {
 				Field("application-code", StringType, "Installed application code."),
 				Field("application-version", StringType, "Installed application version."),
 				Field("entities", ArrayType, "Application entities."),
+				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using page-list item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -627,13 +677,24 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageList() {
 		return new ToolContractDefinition(
 			PageListTool.ToolName,
-			"Lists Freedom UI pages for the requested package with package and parent schema context so the caller can discover candidate page schemas before inspection or mutation.",
+			"Lists Freedom UI pages for the requested package or installed app with schema, package, and parent schema context so the caller can discover candidate page schemas before inspection or mutation.",
 			new ToolInputSchemaContract(
 				[],
 				EnvironmentOrExplicitConnectionFields(
 					Field(PackageNameFieldName, StringType, "Package name to inspect."),
+					Field(AppCodeFieldName, StringType, "Installed application code. When provided, page-list resolves the application's primary package before querying pages."),
 					Field("search-pattern", StringType, "Optional case-insensitive schema-name filter."),
 					Field("limit", NumberType, "Optional max result count.")),
+				Validators: [
+					new ToolContractValidator(
+						"mutually-exclusive-fields",
+						"invalid-workflow-shape",
+						Fields: [
+							PackageNameFieldName,
+							AppCodeFieldName
+						],
+						Context: "page-list accepts package-name or app-code, not both."),
+				],
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -641,7 +702,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field(PagesFieldName, ArrayType, "Discovered pages with schema, package, and parent schema context."),
+				Field(PagesFieldName, ArrayType, "Discovered pages using `schema-name`, `uId`, `packageName`, and `parentSchemaName`."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -654,6 +715,10 @@ internal static class ToolContractCatalog {
 			[
 				Example("List pages in the target package", new Dictionary<string, object?> {
 					[PackageNameFieldName] = ExamplePackageName,
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				}),
+				Example("List pages for an installed app code", new Dictionary<string, object?> {
+					[AppCodeFieldName] = ExamplePackageName,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
@@ -680,7 +745,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageGet() {
 		return new ToolContractDefinition(
 			PageGetTool.ToolName,
-			"Reads a Freedom UI page bundle plus the raw editable body so the caller can inspect before mutating.",
+			"Reads a Freedom UI page bundle plus the raw editable body so the caller can inspect before mutating and edit `raw.body` directly when saving.",
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
@@ -692,9 +757,9 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("page", ObjectType, "Page metadata."),
+				Field("page", ObjectType, "Page metadata carrying schema and package identity such as schemaName, schemaUId, packageName, packageUId, and parentSchemaName."),
 				Field("bundle", ObjectType, "Merged page bundle."),
-				Field("raw", ObjectType, "Raw body and related data."),
+				Field("raw", ObjectType, "Raw editable payload. The JavaScript source to edit and round-trip through page-update/page-sync is `raw.body`."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -716,7 +781,7 @@ internal static class ToolContractCatalog {
 					PageUpdateTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Use after page-list to inspect the raw body before a minimal page edit and to read back after saving when needed."),
+				"Use after page-list to inspect `raw.body` before a minimal page edit and to read back after saving when needed."),
 			[
 				Flow(
 					[

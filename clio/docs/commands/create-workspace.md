@@ -1,14 +1,12 @@
 # create-workspace
 
-Create a local workspace.
+## Command Type
 
+    Workspace commands
 
-## Usage
+## Name
 
-```bash
-clio create-workspace [options]
-clio create-workspace [options]
-```
+create-workspace (createw) - Create a new clio workspace
 
 ## Description
 
@@ -26,35 +24,11 @@ first, then from appsettings.json property workspaces-root.
 On success, the command reports the full directory where the workspace was
 created.
 
-## Aliases
-
-`createw`
-
-## Examples
+## Synopsis
 
 ```bash
-Create a new empty workspace in a subfolder under the configured global workspaces root:
-clio create-workspace my-workspace --empty
-Output: Workspace created at: C:\Workspaces\my-workspace
-
-Create a new empty workspace in a subfolder under an explicit directory:
-clio create-workspace my-workspace --empty --directory C:\Workspaces
-
-Create in a subfolder even if the destination folder is not empty:
-clio create-workspace my-workspace --empty --directory C:\Workspaces --force
-
-Create workspace and download editable packages from a configured environment:
-clio create-workspace -e dev
-
-Create workspace in the current directory (existing behavior):
-clio create-workspace
-```
-
-## Arguments
-
-```bash
-WorkspaceName
-    Workspace folder name (used with --empty)
+clio create-workspace [options]
+clio create-workspace [options]
 ```
 
 ## Options
@@ -97,59 +71,24 @@ Default: true
 --AppCode               -a          Application code
 ```
 
-## Environment Options
+## Examples
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+Create a new empty workspace in a subfolder under the configured global workspaces root:
+clio create-workspace my-workspace --empty
+Output: Workspace created at: C:\Workspaces\my-workspace
+
+Create a new empty workspace in a subfolder under an explicit directory:
+clio create-workspace my-workspace --empty --directory C:\Workspaces
+
+Create in a subfolder even if the destination folder is not empty:
+clio create-workspace my-workspace --empty --directory C:\Workspaces --force
+
+Create workspace and download editable packages from a configured environment:
+clio create-workspace -e dev
+
+Create workspace in the current directory (existing behavior):
+clio create-workspace
 ```
-
-## Command Type
-
-    Workspace commands
 
 - [Clio Command Reference](../../Commands.md#create-workspace)

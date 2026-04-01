@@ -1,13 +1,22 @@
 # get-info
 
-Show system information for a Creatio instance.
+## Command Type
 
+    Information commands
 
-## Usage
+## Name
+
+get-info - Get system information for Creatio instance
+
+## Synopsis
 
 ```bash
 get-info [OPTIONS]
 ```
+
+## Aliases
+
+describe, describe-creatio, instance-info
 
 ## Description
 
@@ -28,9 +37,26 @@ REQUIREMENTS:
 - Minimum cliogate version: 2.0.0.32
 - Valid environment configuration with proper credentials
 
-## Aliases
+## Options
 
-`describe`, `describe-creatio`, `instance-info`
+```bash
+-e, --Environment       Environment name from the registered configuration
+The environment must be registered using
+'reg-web-app' command (RECOMMENDED)
+
+Alternative authentication (when not using -e):
+-u, --uri               Creatio application URI
+-l, --login             Username for basic authentication
+-p, --password          Password for basic authentication
+
+OR for OAuth authentication:
+--clientid              OAuth Client ID
+--clientsecret          OAuth Client Secret
+--authappuri            OAuth Authentication App URI
+
+Additional options:
+--timeout               Request timeout in milliseconds (default: 100000)
+```
 
 ## Examples
 
@@ -59,77 +85,19 @@ clio get-info -u "https://myapp.creatio.com" \
 clio get-info -e MyEnvironment --timeout 60000
 ```
 
-## Options
+## Behavior
 
-```bash
--e, --Environment       Environment name from the registered configuration
-The environment must be registered using
-'reg-web-app' command (RECOMMENDED)
+1. Validates that cliogate is installed on the target environment
+2. Checks cliogate version meets minimum requirement (2.0.0.32)
+3. Sends GET request to /rest/CreatioApiGateway/GetSysInfo endpoint
+4. Parses the JSON response
+5. Displays system information in formatted output
 
-Alternative authentication (when not using -e):
--u, --uri               Creatio application URI
--l, --login             Username for basic authentication
--p, --password          Password for basic authentication
+## Exit Codes
 
-OR for OAuth authentication:
---clientid              OAuth Client ID
---clientsecret          OAuth Client Secret
---authappuri            OAuth Authentication App URI
-
-Additional options:
---timeout               Request timeout in milliseconds (default: 100000)
-```
-
-## Environment Options
-
-```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
-```
+    0   Successfully retrieved and displayed system information
+    1   Failed to retrieve information (environment not found, connection error,
+        or cliogate not installed/outdated)
 
 ## Notes
 
@@ -138,16 +106,6 @@ Path to the application root folder
 installation instructions
 - The command uses GET HTTP method for the API call
 - Response is returned as formatted JSON with system details
-
-## Command Type
-
-    Information commands
-
-## Exit Codes
-
-    0   Successfully retrieved and displayed system information
-    1   Failed to retrieve information (environment not found, connection error,
-        or cliogate not installed/outdated)
 
 ## Troubleshooting
 
@@ -158,17 +116,17 @@ installation instructions
     - Verify network connectivity to Creatio instance
     - Check credentials are valid for the registered environment
 
+## See Also
+
+install-gate       - Install cliogate on Creatio instance
+reg-web-app        - Register environment configuration
+show-web-app-list  - Show registered environments
+get-pkg-list       - Get list of packages in environment
+get-build-info     - Get build information
+info               - Get clio version information
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `push-pkg`
-- `reg-web-app`
-- `show`
-- `get`
-- `get`
-- `info`
 
 - [Clio Command Reference](../../Commands.md#get-info)

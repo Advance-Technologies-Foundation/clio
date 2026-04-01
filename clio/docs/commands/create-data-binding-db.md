@@ -1,27 +1,14 @@
 # create-data-binding-db
 
-Create a DB-first package data binding by saving data directly to the remote Creatio database.
+## Description
 
+Creates a DB-first package data binding by persisting row data directly to the remote Creatio database.
 
 ## Usage
 
 ```bash
 clio create-data-binding-db -e <ENVIRONMENT_NAME> --package <PACKAGE_NAME> --schema <SCHEMA_NAME>
 [--binding-name <BINDING_NAME>] [--rows <JSON_ARRAY>]
-```
-
-## Description
-
-Creates a DB-first package data binding by persisting row data directly to the remote Creatio database.
-
-## Examples
-
-```bash
-clio create-data-binding-db -e dev --package Custom --schema SysSettings
-
-clio create-data-binding-db -e dev --package Custom --schema SysSettings \
---binding-name UsrMyBinding \
---rows "[{\"values\":{\"Name\":\"Row\",\"Code\":\"UsrRow\"}}]"
 ```
 
 ## Options
@@ -37,55 +24,21 @@ clio create-data-binding-db -e dev --package Custom --schema SysSettings \
 -H, --help                 Show this help
 ```
 
-## Environment Options
+## Behavior
+
+Resolves the package UId from the remote environment, fetches the entity schema column
+list from Creatio, and calls SchemaDataDesignerService.svc/SaveSchema to create or
+update the binding schema data record in the DB.
+To sync the result to a local workspace, use restore-workspace separately.
+
+## Examples
 
 ```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
+clio create-data-binding-db -e dev --package Custom --schema SysSettings
+
+clio create-data-binding-db -e dev --package Custom --schema SysSettings \
+--binding-name UsrMyBinding \
+--rows "[{\"values\":{\"Name\":\"Row\",\"Code\":\"UsrRow\"}}]"
 ```
 
 - [Clio Command Reference](../../Commands.md#create-data-binding-db)

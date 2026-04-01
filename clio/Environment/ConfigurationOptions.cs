@@ -369,100 +369,91 @@ namespace Clio
 
 		public static string AppSettingsFile => Path.Combine(AppSettingsFolderPath, FileName);
 		public string AppSettingsFilePath => AppSettingsFile;
-		private string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
 
 		internal static IFileSystem FileSystem { get; set; } = new FileSystem();
 
-		public SettingsRepository(IFileSystem fileSystem = null) {
-			if(fileSystem != null) {
+		internal static string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
+
+		public SettingsRepository(IFileSystem fileSystem = null, ISettingsBootstrapService settingsBootstrapService = null) {
+			if (fileSystem != null) {
 				FileSystem = fileSystem;
 			}
-			
-			InitializeSettingsFile();
-			InitSettings();
+			ISettingsBootstrapService bootstrapService = settingsBootstrapService ?? new SettingsBootstrapService(FileSystem);
+			SettingsBootstrapResult bootstrapResult = bootstrapService.GetResult();
+			_settings = bootstrapResult.Settings ?? new Settings();
+			EnsureSettingsCollections();
+			AttachDbServers(_settings);
 		}
 
-		private void InitSettings() {
-			try {
-				var filePath = AppSettingsFilePath;
-				if (FileSystem.File.Exists(filePath)) {
-					var fileContent = FileSystem.File.ReadAllText(filePath);
-					if (!String.IsNullOrWhiteSpace(fileContent)) {
-						_settings = JsonConvert.DeserializeObject<Settings>(fileContent);
-						foreach (var environment in _settings.Environments) {
-							if (environment.Value.DbServerKey != null && _settings.DbServers != null && _settings.DbServers.ContainsKey(environment.Value.DbServerKey)) {
-								environment.Value.DbServer = _settings.DbServers[environment.Value.DbServerKey];
-							}
-						}
-
-					}
-				}
-			} catch (Exception ex) {
-				Console.WriteLine($"{ex.Message} Correct or delete settings file before use clio. File path: {AppSettingsFilePath}");
-				if (Program.IsCfgOpenCommand) {
-					_settings = default;
-				} else {
-					throw;
-				}
-			}
-		}
-
-		private void InitializeSettingsFile() {
-			if (FileSystem.File.Exists(AppSettingsFilePath)) {
-				return;
-			}
-			if (!FileSystem.Directory.Exists(AppSettingsFolderPath)) {
-				FileSystem.Directory.CreateDirectory(AppSettingsFolderPath);
-			}
-			InitDefaultSettings();
-			Save();
-		}
-
-		private void InitDefaultSettings() {
-			_settings = new Settings();
-			_settings.Environments.Add("dev", new EnvironmentSettings() {
+		internal static Settings CreateDefaultSettings(Settings settings = null) {
+			Settings result = settings ?? new Settings();
+			result.Environments ??= new Dictionary<string, EnvironmentSettings>();
+			result.Environments.Clear();
+			result.Environments.Add("dev", new EnvironmentSettings {
 				Login = "Supervisor",
 				Password = "Supervisor",
 				Uri = "http://localhost"
 			});
-			_settings.ActiveEnvironmentKey = "dev";
-			SaveSchema();
+			result.ActiveEnvironmentKey = "dev";
+			return result;
 		}
 
-		/// <summary>
-		/// Creates json schema file.
-		/// This file is used by intelisence in vs code and other json editors.
-		/// </summary>
-		private void SaveSchema() {
-			lock (SchemaFileLock) {
-				if (FileSystem.File.Exists(SchemaFilePath)) {
-					return;
+		internal static void AttachDbServers(Settings settings) {
+			if (settings?.Environments == null || settings.DbServers == null) {
+				return;
+			}
+			foreach (EnvironmentSettings environment in settings.Environments.Values) {
+				if (!string.IsNullOrWhiteSpace(environment?.DbServerKey)
+					&& settings.DbServers.TryGetValue(environment.DbServerKey, out DbServer dbServer)) {
+					environment.DbServer = dbServer;
 				}
-				var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-				var tplPath = Path.Combine(baseDir, "tpl", "jsonschema", "schema.json.tpl");
-				var tplContect = File.ReadAllText(tplPath);
-				File.WriteAllText(SchemaFilePath, tplContect);
 			}
 		}
 
-		private void Save() {
-			using (StreamWriter fileWriter = FileSystem.File.CreateText(AppSettingsFilePath)) {
-				JsonSerializer serializer = new JsonSerializer() {
+		internal static void SaveSettings(IFileSystem fileSystem, Settings settings) {
+			if (!fileSystem.Directory.Exists(AppSettingsFolderPath)) {
+				fileSystem.Directory.CreateDirectory(AppSettingsFolderPath);
+			}
+			using (StreamWriter fileWriter = fileSystem.File.CreateText(AppSettingsFile)) {
+				JsonSerializer serializer = new() {
 					Formatting = Formatting.Indented,
 					NullValueHandling = NullValueHandling.Ignore
 				};
-
-				//_settings.Schema = 
-				serializer.Serialize(fileWriter, _settings);
+				serializer.Serialize(fileWriter, settings);
 			}
+			SaveSchema(fileSystem);
+		}
 
-			if (!File.Exists(SchemaFilePath)) {
-				SaveSchema();
+		private static void SaveSchema(IFileSystem fileSystem) {
+			lock (SchemaFileLock) {
+				if (fileSystem.File.Exists(SchemaFilePath)) {
+					return;
+				}
+				if (!fileSystem.Directory.Exists(AppSettingsFolderPath)) {
+					fileSystem.Directory.CreateDirectory(AppSettingsFolderPath);
+				}
+				string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+				string tplPath = Path.Combine(baseDir, "tpl", "jsonschema", "schema.json.tpl");
+				if (!File.Exists(tplPath)) {
+					return;
+				}
+				string tplContect = File.ReadAllText(tplPath);
+				fileSystem.File.WriteAllText(SchemaFilePath, tplContect);
 			}
+		}
 
+		private void EnsureSettingsCollections() {
+			_settings ??= new Settings();
+			_settings.Environments ??= new Dictionary<string, EnvironmentSettings>();
+		}
+
+		private void Save() {
+			EnsureSettingsCollections();
+			SaveSettings(FileSystem, _settings);
 		}
 
 		public void ShowSettingsTo(TextWriter streamWriter, string environment = null, bool showShort = false) {
+			EnsureSettingsCollections();
 			JsonSerializer serializer = new () {
 				Formatting = Formatting.Indented,
 				NullValueHandling = NullValueHandling.Ignore
@@ -494,9 +485,15 @@ namespace Clio
 		}
 
 		public EnvironmentSettings GetEnvironment(string name = null) {
+			EnsureSettingsCollections();
 			if (string.IsNullOrWhiteSpace(name)) {
-				var activeEnvironment = _settings.ActiveEnvironmentKey;
-				return _settings.Environments[activeEnvironment];
+				string activeEnvironment = _settings.ActiveEnvironmentKey;
+				if (!string.IsNullOrWhiteSpace(activeEnvironment)
+					&& _settings.Environments.TryGetValue(activeEnvironment, out EnvironmentSettings activeEnvironmentSettings)) {
+					return activeEnvironmentSettings;
+				}
+				throw new InvalidOperationException(
+					$"Active environment is not configured. Repair {AppSettingsFilePath} or register an environment.");
 			}
 			if (!_settings.Environments.TryGetValue(name, out EnvironmentSettings environment)) {
 				environment = new EnvironmentSettings();
@@ -532,14 +529,20 @@ namespace Clio
 		}
 
 		public string GetDefaultEnvironmentName() {
+			EnsureSettingsCollections();
 			return _settings.ActiveEnvironmentKey;
 		}
 
 		public bool IsEnvironmentExists(string name) {
-			return _settings.Environments.ContainsKey(name);
+			EnsureSettingsCollections();
+			return !string.IsNullOrWhiteSpace(name) && _settings.Environments.ContainsKey(name);
 		}
 
 		public string FindEnvironmentNameByUri(string uri) {
+			EnsureSettingsCollections();
+			if (string.IsNullOrWhiteSpace(uri)) {
+				return null;
+			}
 			string safeUri = uri.TrimEnd('/');
 			return _settings.Environments.FirstOrDefault(pair => pair.Value.Uri == safeUri).Key;
 		}
@@ -549,21 +552,32 @@ namespace Clio
 		}
 
 		public void ConfigureEnvironment(string name, EnvironmentSettings environment) {
+			EnsureSettingsCollections();
 			if (string.IsNullOrEmpty(name)) {
+				if (_settings.Environments.Count == 0) {
+					_settings = CreateDefaultSettings(_settings);
+				}
 				_settings.GetActiveEnvironment().Merge(environment);
 			} else if (!_settings.Environments.TryAdd(name, environment)) {
 				_settings.Environments[name].Merge(environment);
+			} else if (string.IsNullOrWhiteSpace(_settings.ActiveEnvironmentKey)) {
+				_settings.ActiveEnvironmentKey = name;
 			}
 			Save();
 		}
 
 		public void SetActiveEnvironment(string activeEnvironment) {
+			EnsureSettingsCollections();
 			_settings.ActiveEnvironmentKey = activeEnvironment;
 			Save();
 		}
 
 		public void RemoveEnvironment(string environment) {
+			EnsureSettingsCollections();
 			if (_settings.Environments.Remove(environment)) {
+				if (string.Equals(_settings.ActiveEnvironmentKey, environment, StringComparison.OrdinalIgnoreCase)) {
+					_settings.ActiveEnvironmentKey = _settings.Environments.Keys.FirstOrDefault();
+				}
 				Save();
 			} else {
 				throw new KeyNotFoundException($"Application \"{environment}\" not found");
@@ -579,13 +593,16 @@ namespace Clio
 		}
 
 		public Dictionary<string, EnvironmentSettings> GetAllEnvironments() {
+			EnsureSettingsCollections();
 			return _settings?.Environments == null
 				? new Dictionary<string, EnvironmentSettings>()
 				: new Dictionary<string, EnvironmentSettings>(_settings.Environments);
 		}
 
 		void ISettingsRepository.RemoveAllEnvironment() {
+			EnsureSettingsCollections();
 			_settings.Environments.Clear();
+			_settings.ActiveEnvironmentKey = null;
 			Save();
 		}
 

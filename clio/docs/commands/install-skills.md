@@ -1,13 +1,12 @@
 # install-skills
 
-Install managed skills from a repository.
+## Command Type
 
+    Workspace commands
 
-## Usage
+## Name
 
-```bash
-clio install-skills [options]
-```
+install-skills - Install managed skills from a repository
 
 ## Description
 
@@ -38,6 +37,25 @@ Managed install metadata is stored in the selected scope manifest:
 `.agents/skills/.clio-managed.json` for workspace scope or
 `<agent-home>/skills/.clio-managed.json` for user scope.
 
+## Synopsis
+
+```bash
+clio install-skills [options]
+```
+
+## Options
+
+```bash
+--skill                             Optional skill name to install.
+When omitted, all discovered skills are installed.
+
+--repo                              Optional local repository path or git URL.
+When omitted, clio uses the default bootstrap skills repository.
+
+--scope                             Skill target scope: workspace or user.
+Defaults to workspace.
+```
+
 ## Examples
 
 ```bash
@@ -59,22 +77,5 @@ clio install-skills --scope user --repo C:\Repos\bootstrap-composable-app-starte
 Install one skill from a remote git repository:
 clio install-skills --repo https://creatio.ghe.com/engineering/bootstrap-composable-app-starter-kit --skill my-skill
 ```
-
-## Options
-
-```bash
---skill                             Optional skill name to install.
-When omitted, all discovered skills are installed.
-
---repo                              Optional local repository path or git URL.
-When omitted, clio uses the default bootstrap skills repository.
-
---scope                             Skill target scope: workspace or user.
-Defaults to workspace.
-```
-
-## Command Type
-
-    Workspace commands
 
 - [Clio Command Reference](../../Commands.md#install-skills)

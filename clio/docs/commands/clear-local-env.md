@@ -1,13 +1,12 @@
 # clear-local-env
 
-Clear deleted local environments.
+## Command Type
 
+    Maintenance commands
 
-## Usage
+## Name
 
-```bash
-clear-local-env [options]
-```
+clear-local-env - clean up deleted local environments and orphaned services
 
 ## Description
 
@@ -26,11 +25,19 @@ By default, the command displays what will be deleted and prompts for
 confirmation. Use the --force flag to skip confirmation in automated
 scenarios.
 
-## Aliases
+## Synopsis
 
-`clear-env`
+```bash
+clear-local-env [options]
+```
 
-## Examples
+## Options
+
+```bash
+--force         -f          Skip confirmation prompt and delete immediately
+```
+
+## Example
 
 ```bash
 clio clear-local-env
@@ -57,16 +64,6 @@ Removing from configuration...
 ✓ Environment removed from settings
 ✓ old-app-1 cleaned up successfully
 ```
-
-## Options
-
-```bash
---force         -f          Skip confirmation prompt and delete immediately
-```
-
-## Command Type
-
-    Maintenance commands
 
 ## Reporting Bugs
 

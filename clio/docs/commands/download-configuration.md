@@ -1,14 +1,12 @@
 # download-configuration
 
-Download configuration libraries from Creatio.
+## Command Type
 
+    Development commands
 
-## Usage
+## Name
 
-```bash
-clio download-configuration [OPTIONS]
-clio download-configuration [OPTIONS]
-```
+download-configuration - Download Creatio configuration files to workspace
 
 ## Description
 
@@ -22,29 +20,11 @@ to the workspace .application folder. Supports three modes:
 The command automatically detects Creatio type (NetFramework or NetCore) and
 copies appropriate files to the workspace structure.
 
-## Aliases
-
-`dconf`
-
-## Examples
+## Synopsis
 
 ```bash
-Download from registered environment:
-clio download-configuration -e development
-
-Extract from ZIP file:
-clio download-configuration --build C:\Downloads\creatio-8.3.3.zip
-
-Use pre-extracted directory (CI/CD):
-clio download-configuration --build C:\build\extracted-creatio
-
-With debug output:
-clio download-configuration --build C:\creatio.zip --debug
-
-Quick workspace setup:
-clio new-workspace MyWorkspace
-cd MyWorkspace
-clio download-configuration --build C:\creatio.zip
+clio download-configuration [OPTIONS]
+clio download-configuration [OPTIONS]
 ```
 
 ## Options
@@ -62,76 +42,6 @@ clio download-configuration --build C:\creatio.zip
 
 --debug                         Enable detailed debug output
 ```
-
-## Environment Options
-
-```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restartEnvironment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
-```
-
-## Requirements
-
-- Must be in valid clio workspace
-- For environment mode: Valid environment, network, credentials
-- For ZIP mode: Valid ZIP file with Creatio structure
-- For directory mode: Valid directory with Creatio structure
-
-## Notes
-
-- Only packages with Files\bin folder are copied
-- For numbered conf\bin folders, latest (highest number) is used
-- ZIP extraction uses temporary directory (auto-cleanup)
-- Directory mode preserves source (no cleanup)
-- Configuration files from environment override ZIP/directory
-
-## Command Type
-
-    Development commands
 
 ## Operation Modes
 
@@ -183,6 +93,27 @@ Path to the application root folder
         FILE003 - ZIP file is empty
         FILE004 - Directory is empty
 
+## Examples
+
+```bash
+Download from registered environment:
+clio download-configuration -e development
+
+Extract from ZIP file:
+clio download-configuration --build C:\Downloads\creatio-8.3.3.zip
+
+Use pre-extracted directory (CI/CD):
+clio download-configuration --build C:\build\extracted-creatio
+
+With debug output:
+clio download-configuration --build C:\creatio.zip --debug
+
+Quick workspace setup:
+clio new-workspace MyWorkspace
+cd MyWorkspace
+clio download-configuration --build C:\creatio.zip
+```
+
 ## Use Cases
 
     - Offline development: Extract without running instance
@@ -231,6 +162,21 @@ Path to the application root folder
     0   Command executed successfully
     1   Error occurred during execution
 
+## Prerequisites
+
+- Must be in valid clio workspace
+- For environment mode: Valid environment, network, credentials
+- For ZIP mode: Valid ZIP file with Creatio structure
+- For directory mode: Valid directory with Creatio structure
+
+## Notes
+
+- Only packages with Files\bin folder are copied
+- For numbered conf\bin folders, latest (highest number) is used
+- ZIP extraction uses temporary directory (auto-cleanup)
+- Directory mode preserves source (no cleanup)
+- Configuration files from environment override ZIP/directory
+
 ## Cleanup
 
     ZIP mode: Temporary directory automatically deleted after processing
@@ -256,14 +202,14 @@ Path to the application root folder
         - Verify source has valid Creatio structure
         - Check workspace is writable
 
+## See Also
+
+new-workspace           Create clio workspace
+compile-package         Compile package using configuration
+add-package            Add package (auto-downloads config)
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio
-
-## See also
-
-- `new`
-- `build-workspace`
-- `add`
 
 - [Clio Command Reference](../../Commands.md#download-configuration)

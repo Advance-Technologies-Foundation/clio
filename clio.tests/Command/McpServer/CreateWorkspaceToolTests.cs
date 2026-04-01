@@ -1,12 +1,11 @@
+using System.Linq;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.UserEnvironment;
-using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
-using System.Linq;
 
 namespace Clio.Tests.Command.McpServer;
 
@@ -14,21 +13,30 @@ namespace Clio.Tests.Command.McpServer;
 public class CreateWorkspaceToolTests {
 
 	[Test]
-	[Description("Maps the create-workspace MCP arguments into create-workspace command options and forces the empty workspace mode.")]
+	[Description("Maps the create-workspace MCP arguments into create-workspace command options and resolves the command without startup-time environment registration.")]
 	[Category("Unit")]
 	public void CreateWorkspace_Should_Map_Required_And_Optional_Arguments() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateWorkspaceCommand command = new();
-		CreateWorkspaceTool tool = new(command, ConsoleLogger.Instance);
-	
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.ResolveWithoutEnvironment<CreateWorkspaceCommand>(Arg.Any<CreateWorkspaceCommandOptions>())
+			.Returns(command);
+		CreateWorkspaceTool tool = new(ConsoleLogger.Instance, commandResolver);
+
 		// Act
 		CommandExecutionResult result = tool.CreateWorkspace(
 			new CreateWorkspaceArgs("my-workspace", @"C:\Workspaces"));
-	
+
 		// Assert
 		result.ExitCode.Should().Be(0, because: "the MCP tool should forward a valid create-workspace payload");
-		command.CapturedOptions.Should().NotBeNull(because: "the command should receive the mapped options");
+		commandResolver.Received(1).ResolveWithoutEnvironment<CreateWorkspaceCommand>(
+			Arg.Is<EnvironmentOptions>(options =>
+				options.GetType() == typeof(CreateWorkspaceCommandOptions)
+				&& ((CreateWorkspaceCommandOptions)options).WorkspaceName == "my-workspace"
+				&& ((CreateWorkspaceCommandOptions)options).Directory == @"C:\Workspaces"
+				&& ((CreateWorkspaceCommandOptions)options).Empty));
+		command.CapturedOptions.Should().NotBeNull(because: "the resolved command should receive the mapped options");
 		command.CapturedOptions!.WorkspaceName.Should().Be("my-workspace",
 			because: "the requested workspace name must be preserved");
 		command.CapturedOptions.Directory.Should().Be(@"C:\Workspaces",
@@ -45,7 +53,10 @@ public class CreateWorkspaceToolTests {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateWorkspaceCommand command = new();
-		CreateWorkspaceTool tool = new(command, ConsoleLogger.Instance);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.ResolveWithoutEnvironment<CreateWorkspaceCommand>(Arg.Any<CreateWorkspaceCommandOptions>())
+			.Returns(command);
+		CreateWorkspaceTool tool = new(ConsoleLogger.Instance, commandResolver);
 
 		// Act
 		CommandExecutionResult result = tool.CreateWorkspace(
@@ -53,7 +64,13 @@ public class CreateWorkspaceToolTests {
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "the MCP tool should support the global workspaces-root fallback path");
-		command.CapturedOptions.Should().NotBeNull(because: "the command should receive the mapped options");
+		commandResolver.Received(1).ResolveWithoutEnvironment<CreateWorkspaceCommand>(
+			Arg.Is<EnvironmentOptions>(options =>
+				options.GetType() == typeof(CreateWorkspaceCommandOptions)
+				&& ((CreateWorkspaceCommandOptions)options).WorkspaceName == "my-workspace"
+				&& ((CreateWorkspaceCommandOptions)options).Directory == null
+				&& ((CreateWorkspaceCommandOptions)options).Empty));
+		command.CapturedOptions.Should().NotBeNull(because: "the resolved command should receive the mapped options");
 		command.CapturedOptions!.Directory.Should().BeNull(
 			because: "omitting the optional directory should let the command resolve workspaces-root from settings");
 		command.CapturedOptions.Empty.Should().BeTrue(
@@ -87,13 +104,13 @@ public class CreateWorkspaceToolTests {
 
 		public FakeCreateWorkspaceCommand()
 			: base(
-				Substitute.For<IWorkspace>(),
+				Substitute.For<Clio.Workspaces.IWorkspace>(),
 				ConsoleLogger.Instance,
 				Substitute.For<IInstalledApplication>(),
-				Substitute.For<IFileSystem>(),
-				Substitute.For<ISettingsRepository>(),
-				Substitute.For<IWorkspacePathBuilder>(),
-				Substitute.For<IWorkingDirectoriesProvider>()) {
+				Substitute.For<Clio.Common.IFileSystem>(),
+				Substitute.For<Clio.UserEnvironment.ISettingsRepository>(),
+				Substitute.For<Clio.Workspaces.IWorkspacePathBuilder>(),
+				Substitute.For<Clio.Common.IWorkingDirectoriesProvider>()) {
 		}
 
 		public override int Execute(CreateWorkspaceCommandOptions options) {

@@ -1,14 +1,12 @@
 # mcp-server
 
-Start the MCP server over stdio.
+## Command Type
 
+    AI integration commands
 
-## Usage
+## Name
 
-```bash
-clio mcp-server
-clio mcp-server
-```
+mcp-server, mcp - start MCP server in stdio mode
 
 ## Description
 
@@ -33,9 +31,12 @@ Available MCP guidance resources:
 - docs://mcp/guides/app-modeling
 - docs://mcp/guides/existing-app-maintenance
 
-## Aliases
+## Synopsis
 
-`mcp`
+```bash
+clio mcp-server
+clio mcp-server
+```
 
 ## Examples
 
@@ -53,16 +54,7 @@ CLIO_CMD="clio" python3 scripts/mcp_client.py component-info '{"component-type":
 Inspect a Freedom UI component contract from the shipped local registry.
 ```
 
-## Options
-
-```bash
-----fail-on-error
-Return fail code on errors
-----fail-on-warning
-Return fail code on warnings
-```
-
-## Requirements
+## Prerequisites
 
 - clio version 8.0.2.35 or higher
 - At least one registered clio environment (clio reg-web-app)
@@ -77,10 +69,6 @@ Return fail code on warnings
 - Preferred existing-app flow is application-get-list -> application-get-info, then page or schema inspection, then page-update / modify-entity-schema-column / schema-sync as needed
 - Boolean parameters must be JSON booleans (true/false), not strings
 - Entity tools work DB-first: schemas are created directly in PostgreSQL
-
-## Command Type
-
-    AI integration commands
 
 ## Return Values
 
