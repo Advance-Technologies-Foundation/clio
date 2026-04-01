@@ -547,9 +547,9 @@ internal sealed class DataBindingDbService(
 				: null;
 			if (rowName is not null && existingNameToId.TryGetValue(rowName, out string? existingId)) {
 				AddToBoundIds(boundRecordIds, existingId);
-				skippedRows.Add(new DataBindingCreatedRow(
-					existingId,
-					row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString())));
+				Dictionary<string, string?> skippedValues = row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString());
+				skippedValues["Id"] = existingId;
+				skippedRows.Add(new DataBindingCreatedRow(existingId, skippedValues));
 			} else {
 				InsertEntityRow(schemaName, row, schema.SchemaColumns);
 				if (rowName is not null) {
