@@ -34,7 +34,8 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Use `application-get-info` after `application-get-list` to confirm the primary package and entity context for the target app.
 
 			       Inspect pages before editing
-			       - Use `page-list` to discover candidate Freedom UI page schemas in the target package.
+			       - Use `page-list` to discover candidate Freedom UI page schemas in the target package or by installed `app-code`.
+			       - `page-list` page items identify each page with `schema-name`, together with `uId`, `packageName`, and `parentSchemaName`.
 			       - Use `page-get` to inspect the merged page bundle and retrieve the raw editable page body.
 			       - Use `component-info` when `page-get` shows unfamiliar `crt.*` component types before editing nested config or child collections.
 			       - For standard data-bound form fields, bind `control` or `value` directly to `$Name` or `$PDS_*` attributes and prefer datasource captions such as `$Resources.Strings.PDS_UsrStatus`.

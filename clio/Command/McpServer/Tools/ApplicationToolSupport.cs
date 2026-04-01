@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using Clio.Command;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -30,6 +31,14 @@ internal static class ApplicationToolResultMapper {
 							column.DataValueType,
 							column.ReferenceSchema))
 						.ToList()))
+				.ToList(),
+			result.Pages?
+				.Select(page => new PageListItem {
+					SchemaName = page.SchemaName,
+					UId = page.UId,
+					PackageName = page.PackageName,
+					ParentSchemaName = page.ParentSchemaName
+				})
 				.ToList());
 	}
 }

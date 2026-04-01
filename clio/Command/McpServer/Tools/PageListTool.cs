@@ -18,9 +18,10 @@ public sealed class PageListTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("List Freedom UI pages in Creatio with package and parent schema context")]
-	public PageListResponse ListPages([Description("Parameters: package-name, search-pattern, limit, environment-name (all optional)")] [Required] PageListArgs args) {
+	public PageListResponse ListPages([Description("Parameters: package-name, app-code, search-pattern, limit, environment-name (all optional)")] [Required] PageListArgs args) {
 		PageListOptions options = new() {
 			PackageName = args.PackageName,
+			AppCode = args.AppCode,
 			SearchPattern = args.SearchPattern,
 			Limit = args.Limit ?? 50,
 			Environment = args.EnvironmentName,
@@ -45,6 +46,10 @@ public sealed record PageListArgs(
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Filter by package name")]
 	string? PackageName,
+
+	[property: JsonPropertyName("app-code")]
+	[property: Description("Filter by installed application code using its primary package")]
+	string? AppCode,
 
 	[property: JsonPropertyName("search-pattern")]
 	[property: Description("Filter by schema name pattern, e.g. 'UsrMyApp*'")]

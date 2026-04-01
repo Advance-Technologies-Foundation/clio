@@ -132,11 +132,13 @@ public sealed class ApplicationInfoService(
 			.OrderBy(entity => entity.Caption, StringComparer.OrdinalIgnoreCase)
 			.ThenBy(entity => entity.Name, StringComparer.OrdinalIgnoreCase)
 			.ToList();
+		IReadOnlyList<PageListItem> pages = GetApplicationPages(client, serviceUrlBuilder, primaryPackage.Name);
 
 		return new ApplicationInfoResult(
 			primaryPackage.UId,
 			primaryPackage.Name,
 			entities,
+			pages,
 			application.Id,
 			application.Name,
 			application.Code,
@@ -201,6 +203,27 @@ public sealed class ApplicationInfoService(
 			serviceUrlBuilder,
 			BuildApplicationEntitiesQuery(appId, packageUId));
 		return response.Rows;
+	}
+
+	private static IReadOnlyList<PageListItem> GetApplicationPages(
+		IApplicationClient client,
+		ServiceUrlBuilder serviceUrlBuilder,
+		string packageName)
+	{
+		ApplicationPageSelectQueryResponseDto response = ExecuteSelectQuery<ApplicationPageSelectQueryResponseDto>(
+			client,
+			serviceUrlBuilder,
+			BuildApplicationPagesQuery(packageName));
+		return response.Rows
+			.Where(page => !string.IsNullOrWhiteSpace(page.SchemaName))
+			.Select(page => new PageListItem {
+				SchemaName = page.SchemaName!,
+				UId = page.UId ?? string.Empty,
+				PackageName = page.PackageName ?? string.Empty,
+				ParentSchemaName = page.ParentSchemaName ?? string.Empty
+			})
+			.OrderBy(page => page.SchemaName, StringComparer.OrdinalIgnoreCase)
+			.ToList();
 	}
 
 	private static ApplicationEntityInfoResult LoadEntityInfo(
@@ -524,6 +547,22 @@ public sealed class ApplicationInfoService(
 			]);
 	}
 
+	private static object BuildApplicationPagesQuery(string packageName)
+	{
+		return BuildSelectQuery(
+			"SysSchema",
+			[
+				new SelectQueryColumnDefinition("Name", "Name"),
+				new SelectQueryColumnDefinition("UId", "UId"),
+				new SelectQueryColumnDefinition("SysPackage.Name", "PackageName"),
+				new SelectQueryColumnDefinition("[SysSchema:Id:Parent].Name", "ParentSchemaName")
+			],
+			[
+				new SelectQueryFilterDefinition("ManagerName", "ClientUnitSchemaManager", TextDataValueType),
+				new SelectQueryFilterDefinition("SysPackage.Name", packageName, TextDataValueType)
+			]);
+	}
+
 	private static object? ConvertJsonElement(JsonElement? element)
 	{
 		if (!element.HasValue)
@@ -569,6 +608,12 @@ public sealed class ApplicationInfoService(
 	{
 		[JsonPropertyName("rows")]
 		public List<ApplicationEntityRecordDto> Rows { get; set; } = [];
+	}
+
+	private sealed class ApplicationPageSelectQueryResponseDto : SelectQueryResponseBaseDto
+	{
+		[JsonPropertyName("rows")]
+		public List<ApplicationPageRecordDto> Rows { get; set; } = [];
 	}
 
 	private sealed class ApplicationPackagesResponseDto
@@ -647,6 +692,21 @@ public sealed class ApplicationInfoService(
 
 		[JsonPropertyName("Caption")]
 		public string? Caption { get; set; }
+	}
+
+	private sealed class ApplicationPageRecordDto
+	{
+		[JsonPropertyName("Name")]
+		public string? SchemaName { get; set; }
+
+		[JsonPropertyName("UId")]
+		public string? UId { get; set; }
+
+		[JsonPropertyName("PackageName")]
+		public string? PackageName { get; set; }
+
+		[JsonPropertyName("ParentSchemaName")]
+		public string? ParentSchemaName { get; set; }
 	}
 
 	private sealed class RuntimeSchemaDto
@@ -745,6 +805,7 @@ public sealed record ApplicationInfoResult(
 	string PackageUId,
 	string PackageName,
 	IReadOnlyList<ApplicationEntityInfoResult> Entities,
+	IReadOnlyList<PageListItem>? Pages = null,
 	string? ApplicationId = null,
 	string? ApplicationName = null,
 	string? ApplicationCode = null,

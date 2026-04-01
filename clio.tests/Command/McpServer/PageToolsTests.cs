@@ -38,12 +38,14 @@ public class PageToolsTests {
 	public void PageToolArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
 		// Arrange
 		PageGetArgs getArgs = new("UsrTodo_FormPage", "sandbox", "https://sandbox", "Supervisor", "Supervisor");
-		PageListArgs listArgs = new("UsrTodo", "FormPage", 25, "sandbox", "https://sandbox", "Supervisor", "Supervisor");
+		PageListArgs listArgs = new("UsrTodo", null, "FormPage", 25, "sandbox", "https://sandbox", "Supervisor", "Supervisor");
+		PageListArgs listArgsByApp = new(null, "UsrTodo", "FormPage", 25, "sandbox", "https://sandbox", "Supervisor", "Supervisor");
 		PageUpdateArgs updateArgs = new("UsrTodo_FormPage", "define(...)", "{\"UsrTitle\":\"Title\"}", true, "sandbox", "https://sandbox", "Supervisor", "Supervisor");
 
 		// Act
 		string getJson = System.Text.Json.JsonSerializer.Serialize(getArgs);
 		string listJson = System.Text.Json.JsonSerializer.Serialize(listArgs);
+		string listByAppJson = System.Text.Json.JsonSerializer.Serialize(listArgsByApp);
 		string updateJson = System.Text.Json.JsonSerializer.Serialize(updateArgs);
 
 		// Assert
@@ -65,6 +67,8 @@ public class PageToolsTests {
 			because: "page-list should no longer serialize the removed camelCase request field");
 		listJson.Should().NotContain("\"searchPattern\"",
 			because: "page-list should no longer serialize the removed camelCase request field");
+		listByAppJson.Should().Contain("\"app-code\":\"UsrTodo\"",
+			because: "page-list should expose the normalized app-code request field when app discovery is used");
 		updateJson.Should().Contain("\"schema-name\":\"UsrTodo_FormPage\"",
 			because: "page-update should expose the normalized schema-name request field");
 		updateJson.Should().Contain("\"dry-run\":true",
@@ -92,6 +96,8 @@ public class PageToolsTests {
 		// Assert
 		prompt.Should().Contain("`schema-name`",
 			because: "page-get prompt guidance should match the current MCP argument contract");
+		prompt.Should().Contain("`app-code`",
+			because: "page guidance should mention app-code as a valid discovery selector for page-list");
 		prompt.Should().Contain("`environment-name`",
 			because: "page-get prompt guidance should match the current MCP argument contract");
 		prompt.Should().Contain($"`{ComponentInfoTool.ToolName}`",
@@ -110,6 +116,8 @@ public class PageToolsTests {
 			because: "page guidance should reserve custom Usr label resources for standalone UI only");
 		prompt.Should().Contain("discover -> inspect -> mutate -> verify",
 			because: "page-get prompt guidance should describe the canonical maintenance sequence for minimal page edits");
+		prompt.Should().Contain("raw.body",
+			because: "page guidance should explicitly call out raw.body as the editable JavaScript source");
 		prompt.Should().NotContain("`schemaName`",
 			because: "page-get prompt guidance should no longer advertise removed camelCase request fields");
 		prompt.Should().NotContain("`environmentName`",
@@ -236,7 +244,7 @@ public class PageToolsTests {
 		response.Success.Should().BeTrue("because the query succeeded");
 		response.Count.Should().Be(2, "because two rows were returned from the DataService");
 		response.Pages.Should().HaveCount(2, "because each row maps to a page item");
-		response.Pages[0].Name.Should().Be("TestPage1", "because the first row has Name=TestPage1");
+		response.Pages[0].SchemaName.Should().Be("TestPage1", "because the first row has Name=TestPage1");
 		response.Pages[0].ParentSchemaName.Should().Be("PageWithTabsFreedomTemplate",
 			"because page-list should now preserve direct parent schema context for target selection");
 	}
@@ -311,6 +319,73 @@ public class PageToolsTests {
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("SysPackage.Name") && body.Contains("MyPackage")),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryListPages resolves the primary package from app-code before querying pages")]
+	public void TryListPages_WhenAppCodeProvided_ResolvesPrimaryPackage_And_ReturnsPages() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		serviceUrlBuilder.Build("ServiceModel/ApplicationPackagesService.svc/GetApplicationPackages").Returns("http://test/packages");
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(
+				new JObject {
+					["success"] = true,
+					["rows"] = new JArray {
+						new JObject { ["Id"] = "app-uid" }
+					}
+				}.ToString(),
+				new JObject {
+					["success"] = true,
+					["packages"] = new JArray {
+						new JObject {
+							["name"] = "UsrTodo",
+							["isApplicationPrimaryPackage"] = true
+						}
+					}
+				}.ToString(),
+				new JObject {
+					["success"] = true,
+					["rows"] = new JArray {
+						new JObject { ["Name"] = "UsrTodo_FormPage", ["UId"] = "page-uid", ["PackageName"] = "UsrTodo", ["ParentSchemaName"] = "BasePage" }
+					}
+				}.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { AppCode = "UsrTodoApp", Limit = 50 };
+
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		result.Should().BeTrue("because the app-code selector should resolve the primary package and then list its pages");
+		response.Success.Should().BeTrue("because the page query succeeded after package resolution");
+		response.Pages.Should().ContainSingle("because one page row was returned");
+		response.Pages[0].SchemaName.Should().Be("UsrTodo_FormPage");
+		applicationClient.Received(3).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("SysPackage.Name") && body.Contains("UsrTodo")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryListPages rejects the invalid selector combination of package-name and app-code")]
+	public void TryListPages_WhenPackageNameAndAppCodeProvided_ReturnsFailure() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { PackageName = "UsrTodo", AppCode = "UsrTodoApp", Limit = 50 };
+
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		result.Should().BeFalse("because page-list should reject ambiguous selectors");
+		response.Success.Should().BeFalse("because the invalid selector combination should not execute");
+		response.Error.Should().Contain("either package-name or app-code",
+			because: "the failure should explain the mutually exclusive selector rule");
+		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
 	}
 
 	[Test]

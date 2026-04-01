@@ -14,10 +14,10 @@ public sealed class PageListItem {
 	/// <summary>
 	/// Gets or sets the schema name.
 	/// </summary>
-	[DataMember(Name = "name")]
-	[JsonProperty("name")]
-	[JsonPropertyName("name")]
-	public string Name { get; set; }
+	[DataMember(Name = "schema-name")]
+	[JsonProperty("schema-name")]
+	[JsonPropertyName("schema-name")]
+	public string SchemaName { get; set; }
 
 	/// <summary>
 	/// Gets or sets the schema identifier.

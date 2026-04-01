@@ -25,6 +25,7 @@ internal sealed record ApplicationContextResponseEnvelope(
 	[property: JsonPropertyName("application-code")] string? ApplicationCode,
 	[property: JsonPropertyName("application-version")] string? ApplicationVersion,
 	[property: JsonPropertyName("entities")] IReadOnlyList<ApplicationEntityEnvelope>? Entities,
+	[property: JsonPropertyName("pages")] IReadOnlyList<ApplicationPageEnvelope>? Pages,
 	[property: JsonPropertyName("error")] string? Error);
 
 internal sealed record ApplicationDeleteResponseEnvelope(
@@ -42,6 +43,12 @@ internal sealed record ApplicationColumnEnvelope(
 	[property: JsonPropertyName("caption")] string Caption,
 	[property: JsonPropertyName("data-value-type")] string DataValueType,
 	[property: JsonPropertyName("reference-schema")] string? ReferenceSchema);
+
+internal sealed record ApplicationPageEnvelope(
+	[property: JsonPropertyName("schema-name")] string SchemaName,
+	[property: JsonPropertyName("uId")] string UId,
+	[property: JsonPropertyName("packageName")] string PackageName,
+	[property: JsonPropertyName("parentSchemaName")] string ParentSchemaName);
 
 internal static class ApplicationResultParser {
 	public static ApplicationListResponseEnvelope ExtractList(CallToolResult callResult) {

@@ -179,6 +179,14 @@ public sealed class ApplicationToolTests {
 								"Default")
 						])
 				],
+				[
+					new PageListItem {
+						SchemaName = "UsrVehicle_FormPage",
+						UId = "page-uid",
+						PackageName = "UsrVehicle",
+						ParentSchemaName = "BasePage"
+					}
+				],
 				ApplicationId: "app-id",
 				ApplicationName: "Vehicle App",
 				ApplicationCode: "UsrVehicleApp",
@@ -215,6 +223,10 @@ public sealed class ApplicationToolTests {
 			because: "the MCP tool should surface the entity metadata returned by the backend service");
 		result.Entities![0].Columns[0].DataValueType.Should().Be("Text",
 			because: "the Clio response should preserve application column types");
+		result.Pages.Should().ContainSingle(
+			because: "application-get-info should now return the primary-package page summaries");
+		result.Pages![0].SchemaName.Should().Be("UsrVehicle_FormPage",
+			because: "application-get-info should expose page identities through schema-name");
 	}
 
 	[Test]
@@ -317,6 +329,14 @@ public sealed class ApplicationToolTests {
 								"Default")
 						])
 				],
+				[
+					new PageListItem {
+						SchemaName = "UsrCodexApp_FormPage",
+						UId = "page-uid",
+						PackageName = "UsrCodexApp",
+						ParentSchemaName = "BasePage"
+					}
+				],
 				ApplicationId: "created-app-id",
 				ApplicationName: "Codex App",
 				ApplicationCode: "UsrCodexApp",
@@ -367,6 +387,9 @@ public sealed class ApplicationToolTests {
 			because: "application-create should return the created application code in the structured envelope");
 		result.Entities![0].Columns[0].DataValueType.Should().Be("Text",
 			because: "the create MCP tool should preserve Clio-style column metadata");
+		result.Pages.Should().ContainSingle(
+			because: "application-create should return the same primary-package page summaries as application-get-info");
+		result.Pages![0].SchemaName.Should().Be("UsrCodexApp_FormPage");
 	}
 
 	[Test]
@@ -395,6 +418,14 @@ public sealed class ApplicationToolTests {
 							DataValueType: "Text",
 							ReferenceSchema: "Contact")
 					])
+			],
+			Pages: [
+				new PageListItem {
+					SchemaName = "UsrEntity_FormPage",
+					UId = "page-uid",
+					PackageName = "Pkg",
+					ParentSchemaName = "BasePage"
+				}
 			]);
 
 		// Act
@@ -415,6 +446,10 @@ public sealed class ApplicationToolTests {
 			because: "application context responses should preserve the installed application code");
 		json.Should().Contain("\"application-version\":\"8.3.0\"",
 			because: "application context responses should preserve the installed application version");
+		json.Should().Contain("\"pages\"",
+			because: "application context responses should now surface primary-package page summaries");
+		json.Should().Contain("\"schema-name\":\"UsrEntity_FormPage\"",
+			because: "application page payloads should use schema-name instead of name");
 		json.Should().Contain("\"u-id\":\"entity-uid\"",
 			because: "entity payloads should keep Clio kebab-case payload fields");
 		json.Should().Contain("\"data-value-type\":\"Text\"",

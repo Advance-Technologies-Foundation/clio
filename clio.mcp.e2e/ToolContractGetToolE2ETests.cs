@@ -1,3 +1,4 @@
+using System;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -47,6 +48,7 @@ public sealed class ToolContractGetToolE2ETests {
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
 				["tool-names"] = new[] {
+					SettingsHealthTool.ToolName,
 					ApplicationGetListTool.ApplicationGetListToolName,
 					PageUpdateTool.ToolName,
 					ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
@@ -60,6 +62,7 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "a successful lookup should return the requested contract payload");
 		response.Tools!.Select(tool => tool.Name).Should().Equal(
 			new[] {
+				SettingsHealthTool.ToolName,
 				ApplicationGetListTool.ApplicationGetListToolName,
 				PageUpdateTool.ToolName,
 				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
@@ -88,6 +91,37 @@ public sealed class ToolContractGetToolE2ETests {
 					GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName
 				},
 				because: "single-column schema edits should inspect current metadata first and verify it again after saving");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("tool-contract-get advertises settings-health bootstrap diagnostics contract")]
+	public async Task ToolContractGet_Should_Advertise_Settings_Health_Contract() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					SettingsHealthTool.ToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "settings-health should be part of the executable clio MCP contract catalog");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "status",
+			because: "bootstrap diagnostics should expose the health status");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "settings-file-path",
+			because: "bootstrap diagnostics should expose the physical settings file path");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "repairs-applied",
+			because: "bootstrap diagnostics should expose automatic repairs");
 	}
 
 	[Test]
@@ -154,6 +188,42 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "the contract should advertise the installed application code");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "application-version",
 			because: "the contract should advertise the installed application version");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "pages",
+			because: "the contract should advertise the shared primary-package page summaries");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("tool-contract-get advertises page discovery selectors and raw body semantics")]
+	public async Task ToolContractGet_Should_Advertise_Page_List_And_Page_Get_Metadata() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					PageListTool.ToolName,
+					PageGetTool.ToolName
+				}
+			});
+
+		response.Success.Should().BeTrue(
+			because: "page discovery and inspection contracts should be readable through the MCP server");
+		ToolContractDefinition pageListContract = response.Tools!.Single(tool => tool.Name == PageListTool.ToolName);
+		pageListContract.InputSchema.Properties.Should().Contain(field => field.Name == "app-code",
+			because: "page-list should advertise app-code as a first-class selector");
+		pageListContract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "pages" &&
+				field.Description.Contains("schema-name", StringComparison.Ordinal),
+			because: "page-list should describe page discovery items through schema-name");
+		ToolContractDefinition pageGetContract = response.Tools.Single(tool => tool.Name == PageGetTool.ToolName);
+		pageGetContract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "raw" &&
+				field.Description.Contains("raw.body", StringComparison.Ordinal),
+			because: "page-get should explicitly advertise raw.body as the editable JavaScript source");
 	}
 
 	[Test]

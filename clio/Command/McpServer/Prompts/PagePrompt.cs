@@ -19,11 +19,11 @@ public static class PagePrompt {
 		[Description("Optional Creatio environment name")] string? environmentName = null) =>
 		$"""
 		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
-		 Use `page-list` first when you need to discover candidate page schemas.
+		 Use `page-list` first when you need to discover candidate page schemas by `package-name`, `app-code`, or `search-pattern`.
 		 Use `{PageGetTool.ToolName}` with `schema-name` `{schemaName}` and `environment-name` `{environmentName ?? "<default or explicit connection args>"}` to inspect the effective merged page structure.
 		 Read layout and container hierarchy from `bundle.viewConfig`.
 		 When `bundle.viewConfig` contains unfamiliar `crt.*` types, call `{ComponentInfoTool.ToolName}` with `component-type` set to that type before editing nested config or children.
-		 Read page metadata from `page`.
+		 Read page metadata from `page`, and treat `raw.body` as the editable JavaScript source of truth.
 		 When you need to edit the page, take the JavaScript payload from `raw.body`, modify that raw body, and send it to `{PageUpdateTool.ToolName}`.
 		 Pass `resources` to `{PageUpdateTool.ToolName}` as a valid JSON object string when the edited body contains `#ResourceString(key)#` macros that need child-schema localizable strings.
 		 For standard data-bound form fields, bind `control` or `value` directly to `$Name` or `$PDS_*` attributes and prefer datasource captions like `$Resources.Strings.PDS_UsrStatus`.
