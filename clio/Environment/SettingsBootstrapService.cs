@@ -41,6 +41,7 @@ public sealed record SettingsBootstrapResult(
 );
 
 public sealed class SettingsBootstrapService : ISettingsBootstrapService {
+	private const string SettingsFileUnreadableCode = "settings-file-unreadable";
 	private readonly IFileSystem _fileSystem;
 	private readonly bool _applyRepairs;
 	private SettingsBootstrapResult? _result;
@@ -78,11 +79,11 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 			fileContent = _fileSystem.File.ReadAllText(settingsFilePath);
 		}
 		catch (Exception e) {
-			return BuildBroken(settingsFilePath, "settings-file-unreadable",
+			return BuildBroken(settingsFilePath, SettingsFileUnreadableCode,
 				$"Unable to read appsettings.json: {e.Message}");
 		}
 		if (string.IsNullOrWhiteSpace(fileContent)) {
-			return BuildBroken(settingsFilePath, "settings-file-unreadable",
+			return BuildBroken(settingsFilePath, SettingsFileUnreadableCode,
 				"appsettings.json is empty or whitespace and cannot be parsed.");
 		}
 		Settings? settingsModel;
@@ -90,11 +91,11 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 			settingsModel = JsonConvert.DeserializeObject<Settings>(fileContent);
 		}
 		catch (Exception e) {
-			return BuildBroken(settingsFilePath, "settings-file-unreadable",
+			return BuildBroken(settingsFilePath, SettingsFileUnreadableCode,
 				$"appsettings.json could not be parsed: {e.Message}");
 		}
 		if (settingsModel is null) {
-			return BuildBroken(settingsFilePath, "settings-file-unreadable",
+			return BuildBroken(settingsFilePath, SettingsFileUnreadableCode,
 				"appsettings.json could not be deserialized into clio settings.");
 		}
 		string? originalActiveEnvironmentKey = settingsModel.ActiveEnvironmentKey;

@@ -146,7 +146,7 @@ internal sealed class CommandHelpRenderer {
 		return builder.ToString();
 	}
 
-	private string RenderManualMarkdownDoc(HelpCommandMetadata command, HelpDocument source) {
+	private static string RenderManualMarkdownDoc(HelpCommandMetadata command, HelpDocument source) {
 		StringBuilder builder = new();
 		builder.AppendLine($"# {command.CanonicalName}");
 		foreach (HelpSection section in source.Sections) {
@@ -381,7 +381,7 @@ internal sealed class CommandHelpRenderer {
 		return builder.ToString();
 	}
 
-	private string RenderManualCommandHelp(HelpCommandMetadata command, HelpDocument source) {
+	private static string RenderManualCommandHelp(HelpCommandMetadata command, HelpDocument source) {
 		StringBuilder builder = new();
 		foreach (HelpSection section in source.Sections) {
 			IReadOnlyList<string> lines = GetManualSectionLines(command, section);

@@ -402,10 +402,10 @@ namespace Clio
 			if (settings?.Environments == null || settings.DbServers == null) {
 				return;
 			}
-			foreach (KeyValuePair<string, EnvironmentSettings> environment in settings.Environments) {
-				if (!string.IsNullOrWhiteSpace(environment.Value?.DbServerKey)
-					&& settings.DbServers.TryGetValue(environment.Value.DbServerKey, out DbServer dbServer)) {
-					environment.Value.DbServer = dbServer;
+			foreach (EnvironmentSettings environment in settings.Environments.Values) {
+				if (!string.IsNullOrWhiteSpace(environment?.DbServerKey)
+					&& settings.DbServers.TryGetValue(environment.DbServerKey, out DbServer dbServer)) {
+					environment.DbServer = dbServer;
 				}
 			}
 		}

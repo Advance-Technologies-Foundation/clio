@@ -65,6 +65,7 @@ public class BindingsModule {
 
 	public static string k8sDns = "127.0.0.1";
 	private static readonly object BootstrapDiagnosticsSyncRoot = new();
+	private const string BootstrapPlaceholderUri = "http://localhost";
 	private static bool _bootstrapDiagnosticsLogged;
 	private readonly IFileSystem _fileSystem;
 
@@ -443,7 +444,7 @@ public class BindingsModule {
 
 	private static EnvironmentSettings CreateBootstrapPlaceholderEnvironment() {
 		return new EnvironmentSettings {
-			Uri = "http://localhost",
+			Uri = BootstrapPlaceholderUri,
 			Login = string.Empty,
 			Password = string.Empty
 		};

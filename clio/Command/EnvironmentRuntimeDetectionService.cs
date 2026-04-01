@@ -140,7 +140,7 @@ internal sealed class EnvironmentRuntimeDetectionService(
 		}
 	}
 
-	private string ExecuteAuthenticatedServiceProbe(IApplicationClient client, string serviceUrl) {
+	private static string ExecuteAuthenticatedServiceProbe(IApplicationClient client, string serviceUrl) {
 		return client.ExecutePostRequest(serviceUrl, BuildSelectQueryBody(), ProbeTimeoutMs, 1, 1);
 	}
 
