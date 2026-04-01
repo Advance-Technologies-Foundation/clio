@@ -115,4 +115,40 @@ public sealed class SettingsBootstrapServiceTests {
 		persistedContent.Should().Be(invalidJson,
 			because: "broken bootstrap should preserve the original file content until an explicit repair command changes it");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Recomputes bootstrap health after the settings file is repaired during the same process lifetime.")]
+	public void GetResult_Should_Recompute_After_Settings_File_Changes() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("{ invalid-json"));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult initialResult = service.GetResult();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "ActiveEnvironmentKey": "dev",
+			  "Environments": {
+			    "dev": {
+			      "Login": "Supervisor",
+			      "Password": "Supervisor",
+			      "Uri": "http://localhost"
+			    }
+			  }
+			}
+			"""));
+		SettingsBootstrapResult repairedResult = service.GetResult();
+
+		// Assert
+		initialResult.Report.Status.Should().Be("broken",
+			because: "the first read should reflect the invalid bootstrap file");
+		repairedResult.Report.Status.Should().Be("healthy",
+			because: "the same singleton service should observe a repaired settings file without requiring process restart");
+		repairedResult.Report.CanExecuteEnvTools.Should().BeTrue(
+			because: "named-environment MCP tools should start working again after the file becomes valid");
+		repairedResult.Report.ResolvedActiveEnvironmentKey.Should().Be("dev",
+			because: "the repaired bootstrap result should expose the newly valid active environment");
+	}
 }

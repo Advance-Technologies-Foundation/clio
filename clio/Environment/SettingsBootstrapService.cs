@@ -44,7 +44,6 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 	private const string SettingsFileUnreadableCode = "settings-file-unreadable";
 	private readonly IFileSystem _fileSystem;
 	private readonly bool _applyRepairs;
-	private SettingsBootstrapResult? _result;
 
 	public SettingsBootstrapService(IFileSystem? fileSystem = null, bool applyRepairs = true) {
 		_fileSystem = fileSystem ?? SettingsRepository.FileSystem;
@@ -52,7 +51,7 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 	}
 
 	public SettingsBootstrapResult GetResult() {
-		return _result ??= Load();
+		return Load();
 	}
 
 	public SettingsBootstrapReport GetReport() {

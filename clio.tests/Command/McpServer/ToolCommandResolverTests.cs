@@ -84,4 +84,31 @@ public class ToolCommandResolverTests {
 			SettingsRepository.FileSystem = originalFileSystem;
 		}
 	}
+
+	[Test]
+	[Description("Keeps environmentless MCP resolution independent from the active configured environment.")]
+	[Category("Unit")]
+	public void ResolveWithoutEnvironment_Should_Not_Read_Default_Environment_When_Name_Is_Missing() {
+		// Arrange
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		ToolCommandResolver resolver = new(settingsRepository, settingsBootstrapService);
+		EnvironmentOptions options = new();
+
+		try {
+			// Act
+			Action act = () => resolver.ResolveWithoutEnvironment<CreateEntitySchemaCommand>(options);
+
+			// Assert
+			act.Should().NotThrow(
+				because: "environmentless MCP tools should not depend on whatever active environment is configured locally");
+			settingsRepository.DidNotReceive().FindEnvironment(Arg.Any<string>());
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
 }

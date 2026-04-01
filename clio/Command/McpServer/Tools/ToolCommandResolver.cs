@@ -77,10 +77,14 @@ public class ToolCommandResolver(
 
 	public TCommand ResolveWithoutEnvironment<TCommand>(EnvironmentOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
-		EnvironmentSettings settings = settingsRepository.FindEnvironment(options.Environment)
-			?? new EnvironmentSettings {
+		EnvironmentSettings settings = string.IsNullOrWhiteSpace(options.Environment)
+			? new EnvironmentSettings {
 				Login = "default"
-			};
+			}
+			: settingsRepository.FindEnvironment(options.Environment)
+				?? new EnvironmentSettings {
+					Login = "default"
+				};
 		settings = settings.Fill(options);
 		IServiceProvider container = new BindingsModule().Register(settings);
 		return container.GetRequiredService<TCommand>();
