@@ -2,15 +2,16 @@
 
 Push workspace to selected environment.
 
+
 ## Usage
 
 ```bash
-clio push-workspace [options]
+clio push-workspace [OPTIONS]
 ```
 
 ## Description
 
-Push workspace to selected environment.
+Packs the current workspace and installs it into the target environment.
 
 ## Aliases
 
@@ -20,70 +21,80 @@ Push workspace to selected environment.
 
 ```bash
 clio push-workspace -e dev
+Push the current workspace to the dev environment
+
+clio push-workspace -e dev --skip-backup true
+Push the workspace without creating a backup package first
 ```
 
 ## Options
 
 ```bash
---skip-backup
-    Skip package backup before install when explicitly set to true
---unlock
-    Unlock workspace package after install workspace to the environment
---TideRepositoryId <VALUE>
-    Update TIde repository by id
---use-application-installer
-    Use ApplicationInstaller instead of PackageInstaller for installation
+-e, --Environment <ENVIRONMENT_NAME>
+Target environment name
+
+--skip-backup <true|false>
+Skip backup creation only when explicitly set to true
 ```
 
 ## Environment Options
 
 ```bash
 -u, --uri <VALUE>
-    Application uri
+Application uri
 -p, --Password <VALUE>
-    User password
+User password
 -l, --Login <VALUE>
-    User login (administrator permission required)
+User login (administrator permission required)
 -i, --IsNetCore
-    Use NetCore application
+Use NetCore application
 -e, --Environment <VALUE>
-    Environment name
+Environment name
 -m, --Maintainer <VALUE>
-    Maintainer name
+Maintainer name
 -c, --dev <VALUE>
-    Developer mode state for environment
+Developer mode state for environment
 --WorkspacePathes <VALUE>
-    Workspace path
+Workspace path
 -s, --Safe <VALUE>
-    Safe action in this environment
+Safe action in this environment
 --clientId <VALUE>
-    OAuth client id
+OAuth client id
 --clientSecret <VALUE>
-    OAuth client secret
+OAuth client secret
 --authAppUri <VALUE>
-    OAuth app URI
+OAuth app URI
 --silent
-    Use default behavior without user interaction
+Use default behavior without user interaction
 --restartEnvironment
-    Restart environment after execute command
+Restart environment after execute command
 --db-server-uri <VALUE>
-    Db server uri
+Db server uri
 --db-user <VALUE>
-    Database user
+Database user
 --db-password <VALUE>
-    Database password
+Database password
 --backup-file <VALUE>
-    Full path to backup file
+Full path to backup file
 --db-working-folder <VALUE>
-    Folder visible to db server
+Folder visible to db server
 --db-name <VALUE>
-    Desired database name
+Desired database name
 --force
-    Force restore
+Force restore
 --callback-process <VALUE>
-    Callback process name
+Callback process name
 --ep <VALUE>
-    Path to the application root folder
+Path to the application root folder
 ```
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
+
+## See also
+
+- `add-item`
+- `restore-configuration`
 
 - [Clio Command Reference](../../Commands.md#push-workspace)

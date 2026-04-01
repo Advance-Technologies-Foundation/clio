@@ -2,84 +2,85 @@
 
 Upsert a row in a DB-first package data binding.
 
+
 ## Usage
 
 ```bash
-clio upsert-data-binding-row-db [options]
+clio upsert-data-binding-row-db -e <ENVIRONMENT_NAME> --package <PACKAGE_NAME>
+--binding-name <BINDING_NAME> --values <JSON>
 ```
 
 ## Description
 
-Upsert a row in a DB-first package data binding.
+Upserts a single row in a DB-first package data binding.
 
 ## Examples
 
 ```bash
-clio upsert-data-binding-row-db -e dev
+clio upsert-data-binding-row-db -e dev --package Custom --binding-name SysSettings \
+--values "{\"Name\":\"Updated name\",\"Code\":\"UsrSetting\"}"
 ```
 
 ## Options
 
 ```bash
---environment <VALUE>
-    Environment name
---package <VALUE>
-    Target package name. Required.
---binding-name <VALUE>
-    Binding folder name. Required.
---values <VALUE>
-    Row values as JSON object keyed by column name. Required.
+-e, --environment          Creatio environment name (required when --uri is omitted)
+--uri                      Creatio application URI (alternative to --environment)
+--package                  Target package name (required)
+--binding-name             Binding folder name (required)
+--values                   Row values as JSON object keyed by column name (required)
+-H, --help                 Show this help
 ```
 
 ## Environment Options
 
 ```bash
 -u, --uri <VALUE>
-    Application uri
+Application uri
 -p, --Password <VALUE>
-    User password
+User password
 -l, --Login <VALUE>
-    User login (administrator permission required)
+User login (administrator permission required)
 -i, --IsNetCore
-    Use NetCore application
+Use NetCore application
 -e, --Environment <VALUE>
-    Environment name
+Environment name
 -m, --Maintainer <VALUE>
-    Maintainer name
+Maintainer name
 -c, --dev <VALUE>
-    Developer mode state for environment
+Developer mode state for environment
 --WorkspacePathes <VALUE>
-    Workspace path
+Workspace path
 -s, --Safe <VALUE>
-    Safe action in this environment
+Safe action in this environment
 --clientId <VALUE>
-    OAuth client id
+OAuth client id
 --clientSecret <VALUE>
-    OAuth client secret
+OAuth client secret
 --authAppUri <VALUE>
-    OAuth app URI
+OAuth app URI
 --silent
-    Use default behavior without user interaction
+Use default behavior without user interaction
 --restartEnvironment
-    Restart environment after execute command
+Restart environment after execute command
 --db-server-uri <VALUE>
-    Db server uri
+Db server uri
 --db-user <VALUE>
-    Database user
+Database user
 --db-password <VALUE>
-    Database password
+Database password
 --backup-file <VALUE>
-    Full path to backup file
+Full path to backup file
 --db-working-folder <VALUE>
-    Folder visible to db server
+Folder visible to db server
 --db-name <VALUE>
-    Desired database name
+Desired database name
 --force
-    Force restore
+Force restore
 --callback-process <VALUE>
-    Callback process name
+Callback process name
 --ep <VALUE>
-    Path to the application root folder
+Path to the application root folder
 ```
 
 - [Clio Command Reference](../../Commands.md#upsert-data-binding-row-db)

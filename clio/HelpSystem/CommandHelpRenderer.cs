@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
@@ -16,9 +17,16 @@ internal enum RootHelpRenderMode {
 	Export
 }
 
-internal sealed record HelpFileSections(
-	IReadOnlyDictionary<string, IReadOnlyList<string>> Sections,
-	bool IsAliasShim);
+internal sealed record HelpSection(
+	string Heading,
+	string NormalizedHeading,
+	IReadOnlyList<string> Lines);
+
+internal sealed record HelpDocument(
+	IReadOnlyList<HelpSection> Sections,
+	bool IsAliasShim) {
+	public static readonly HelpDocument Empty = new([], false);
+}
 
 internal sealed class CommandHelpRenderer {
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
@@ -67,62 +75,22 @@ internal sealed class CommandHelpRenderer {
 		if (!_catalog.TryGetCommand(commandName, out HelpCommandMetadata command)) {
 			return null;
 		}
-		HelpFileSections source = LoadHelpSections(command);
-		StringBuilder builder = new();
-		AppendSection(builder, "NAME", [$"{command.CanonicalName} - {command.ShortDescription}"]);
-		AppendSection(builder, SecUsage, GetUsageLines(command, source));
-		AppendSection(builder, SecDescription, GetDescriptionLines(command, source));
-		if (command.Aliases.Count > 0) {
-			AppendSection(builder, "ALIASES", [string.Join(", ", command.Aliases)]);
+		HelpDocument source = LoadHelpDocument(command);
+		if (!source.IsAliasShim && source.Sections.Count > 0) {
+			return RenderCommandHelp(command, source);
 		}
-		AppendSection(builder, SecExamples, GetExamples(command, source));
-		IReadOnlyList<string> arguments = BuildPositionalArguments(command.OptionsType);
-		if (arguments.Count > 0) {
-			AppendSection(builder, "ARGUMENTS", arguments);
-		}
-		IReadOnlyList<string> options = BuildOptions(command.OptionsType, environmentOptionsOnly: false);
-		if (options.Count > 0) {
-			AppendSection(builder, "OPTIONS", options);
-		}
-		IReadOnlyList<string> environmentOptions = BuildOptions(command.OptionsType, environmentOptionsOnly: true);
-		if (environmentOptions.Count > 0) {
-			AppendSection(builder, "ENVIRONMENT OPTIONS", environmentOptions);
-		}
-		IReadOnlyList<string> requirements = GetRequirementLines(command, source);
-		if (requirements.Count > 0) {
-			AppendSection(builder, SecRequirements, requirements);
-		}
-		IReadOnlyList<string> notes = GetNotes(source);
-		if (notes.Count > 0) {
-			AppendSection(builder, SecNotes, notes);
-		}
-		IReadOnlyList<string> seeAlso = GetSeeAlso(command, source);
-		if (seeAlso.Count > 0) {
-			AppendSection(builder, SecSeeAlso, seeAlso);
-		}
-		return builder.ToString();
+		return RenderGeneratedCommandHelp(command);
 	}
 
 	public string RenderMarkdownDoc(HelpCommandMetadata command) {
-		HelpFileSections source = LoadHelpSections(command);
+		HelpDocument source = LoadHelpDocument(command);
 		StringBuilder builder = new();
 		builder.AppendLine($"# {command.CanonicalName}");
 		builder.AppendLine();
 		builder.AppendLine(command.ShortDescription + ".");
 		builder.AppendLine();
-		builder.AppendLine("## Usage");
-		builder.AppendLine();
-		builder.AppendLine("```bash");
-		foreach (string line in GetUsageLines(command, source)) {
-			builder.AppendLine(line);
-		}
-		builder.AppendLine("```");
-		builder.AppendLine();
-		builder.AppendLine("## Description");
-		builder.AppendLine();
-		foreach (string line in GetDescriptionLines(command, source)) {
-			builder.AppendLine(line);
-		}
+		WriteMarkdownSection(builder, "Usage", GetUsageLines(command, source), asCodeBlock: true);
+		WriteMarkdownRawSection(builder, "Description", GetDescriptionLines(command, source));
 		if (command.Aliases.Count > 0) {
 			builder.AppendLine();
 			builder.AppendLine("## Aliases");
@@ -130,11 +98,29 @@ internal sealed class CommandHelpRenderer {
 			builder.AppendLine(string.Join(", ", command.Aliases.Select(alias => $"`{alias}`")));
 		}
 		WriteMarkdownSection(builder, "Examples", GetExamples(command, source), asCodeBlock: true);
-		WriteMarkdownSection(builder, "Arguments", BuildPositionalArguments(command.OptionsType), asCodeBlock: true);
-		WriteMarkdownSection(builder, "Options", BuildOptions(command.OptionsType, environmentOptionsOnly: false), asCodeBlock: true);
-		WriteMarkdownSection(builder, "Environment Options", BuildOptions(command.OptionsType, environmentOptionsOnly: true), asCodeBlock: true);
-		WriteMarkdownSection(builder, "Requirements", GetRequirementLines(command, source));
-		WriteMarkdownSection(builder, "Notes", GetNotes(source));
+		IReadOnlyList<string> arguments = GetArgumentLines(command, source);
+		if (arguments.Count > 0) {
+			WriteMarkdownSection(builder, "Arguments", arguments, asCodeBlock: true);
+		}
+		IReadOnlyList<string> options = GetOptionLines(command, source, environmentOptionsOnly: false);
+		if (options.Count > 0) {
+			WriteMarkdownSection(builder, "Options", NormalizeSectionLines(options), asCodeBlock: true);
+		}
+		IReadOnlyList<string> environmentOptions = GetOptionLines(command, source, environmentOptionsOnly: true);
+		if (environmentOptions.Count > 0) {
+			WriteMarkdownSection(builder, "Environment Options", NormalizeSectionLines(environmentOptions), asCodeBlock: true);
+		}
+		IReadOnlyList<string> requirements = GetRequirementLines(command, source);
+		if (requirements.Count > 0) {
+			WriteMarkdownRawSection(builder, "Requirements", NormalizeSectionLines(requirements));
+		}
+		IReadOnlyList<string> notes = GetNotes(source);
+		if (notes.Count > 0) {
+			WriteMarkdownRawSection(builder, "Notes", NormalizeSectionLines(notes));
+		}
+		foreach (HelpSection section in GetCustomSections(source)) {
+			WriteMarkdownRawSection(builder, FormatMarkdownHeading(section.Heading), section.Lines);
+		}
 		IReadOnlyList<string> seeAlso = GetSeeAlso(command, source);
 		if (seeAlso.Count > 0) {
 			builder.AppendLine();
@@ -209,6 +195,18 @@ internal sealed class CommandHelpRenderer {
 		}
 		foreach (string line in lines) {
 			builder.AppendLine($"- {line}");
+		}
+	}
+
+	private static void WriteMarkdownRawSection(StringBuilder builder, string title, IReadOnlyList<string> lines) {
+		if (lines.Count == 0) {
+			return;
+		}
+		builder.AppendLine();
+		builder.AppendLine($"## {title}");
+		builder.AppendLine();
+		foreach (string line in lines) {
+			builder.AppendLine(line);
 		}
 	}
 
@@ -317,56 +315,146 @@ internal sealed class CommandHelpRenderer {
 		return lines;
 	}
 
-	private HelpFileSections LoadHelpSections(HelpCommandMetadata command) {
-		string helpDirectory = Parser.Default.Settings.HelpDirectory;
-		if (string.IsNullOrWhiteSpace(helpDirectory) || !_fileSystem.Directory.Exists(helpDirectory)) {
-			return new HelpFileSections(new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase), false);
+	private string RenderGeneratedCommandHelp(HelpCommandMetadata command) {
+		StringBuilder builder = new();
+		AppendSection(builder, "NAME", [$"{command.CanonicalName} - {command.ShortDescription}"]);
+		AppendSection(builder, SecUsage, GetUsageLines(command, HelpDocument.Empty));
+		AppendSection(builder, SecDescription, GetDescriptionLines(command, HelpDocument.Empty));
+		if (command.Aliases.Count > 0) {
+			AppendSection(builder, "ALIASES", [string.Join(", ", command.Aliases)]);
 		}
-		foreach (string candidate in GetHelpFileCandidates(command)) {
-			string? file = _fileSystem.Directory
-				.EnumerateFiles(helpDirectory, $"{candidate}.txt", SearchOption.AllDirectories)
-				.FirstOrDefault();
-			if (file == null) {
-				continue;
-			}
-			string content = _fileSystem.File.ReadAllText(file);
-			return ParseSections(content);
+		AppendSection(builder, SecExamples, GetExamples(command, HelpDocument.Empty));
+		IReadOnlyList<string> arguments = BuildPositionalArguments(command.OptionsType);
+		if (arguments.Count > 0) {
+			AppendSection(builder, "ARGUMENTS", arguments);
 		}
-		return new HelpFileSections(new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase), false);
+		IReadOnlyList<string> options = BuildOptions(command.OptionsType, environmentOptionsOnly: false);
+		if (options.Count > 0) {
+			AppendSection(builder, "OPTIONS", options);
+		}
+		IReadOnlyList<string> environmentOptions = BuildOptions(command.OptionsType, environmentOptionsOnly: true);
+		if (environmentOptions.Count > 0) {
+			AppendSection(builder, "ENVIRONMENT OPTIONS", environmentOptions);
+		}
+		IReadOnlyList<string> requirements = GetRequirementLines(command, HelpDocument.Empty);
+		if (requirements.Count > 0) {
+			AppendSection(builder, SecRequirements, requirements);
+		}
+		IReadOnlyList<string> seeAlso = GetSeeAlso(command, HelpDocument.Empty);
+		if (seeAlso.Count > 0) {
+			AppendSection(builder, SecSeeAlso, seeAlso);
+		}
+		return builder.ToString();
 	}
 
-	private static IEnumerable<string> GetHelpFileCandidates(HelpCommandMetadata command) =>
-		[command.CanonicalName, ..command.LegacyNames, ..command.Aliases];
+	private string RenderCommandHelp(HelpCommandMetadata command, HelpDocument source) {
+		StringBuilder builder = new();
+		foreach (HelpSection section in GetLeadingCustomSections(source)) {
+			AppendSection(builder, section.Heading, section.Lines);
+		}
+		AppendSection(builder, "NAME", GetNameLines(command, source));
+		AppendSection(builder, SecUsage, GetUsageLines(command, source));
+		AppendSection(builder, SecDescription, GetDescriptionLines(command, source));
+		IReadOnlyList<string> aliases = GetAliases(command, source);
+		if (aliases.Count > 0) {
+			AppendSection(builder, "ALIASES", aliases);
+		}
+		AppendSection(builder, SecExamples, GetExamples(command, source));
+		IReadOnlyList<string> arguments = GetArgumentLines(command, source);
+		if (arguments.Count > 0) {
+			AppendSection(builder, "ARGUMENTS", arguments);
+		}
+		IReadOnlyList<string> options = GetOptionLines(command, source, environmentOptionsOnly: false);
+		if (options.Count > 0) {
+			AppendSection(builder, "OPTIONS", options);
+		}
+		IReadOnlyList<string> environmentOptions = GetOptionLines(command, source, environmentOptionsOnly: true);
+		if (environmentOptions.Count > 0) {
+			AppendSection(builder, "ENVIRONMENT OPTIONS", environmentOptions);
+		}
+		IReadOnlyList<string> requirements = GetRequirementLines(command, source);
+		if (requirements.Count > 0) {
+			AppendSection(builder, SecRequirements, requirements);
+		}
+		IReadOnlyList<string> notes = GetNotes(source);
+		if (notes.Count > 0) {
+			AppendSection(builder, SecNotes, notes);
+		}
+		foreach (HelpSection section in GetTrailingCustomSections(source)) {
+			AppendSection(builder, section.Heading, section.Lines);
+		}
+		IReadOnlyList<string> seeAlso = GetSeeAlso(command, source);
+		if (seeAlso.Count > 0) {
+			AppendSection(builder, SecSeeAlso, seeAlso);
+		}
+		return builder.ToString();
+	}
 
-	private static HelpFileSections ParseSections(string content) {
-		Dictionary<string, List<string>> sections = new(StringComparer.OrdinalIgnoreCase);
-		string currentSection = SecDescription;
-		sections[currentSection] = [];
+	private HelpDocument LoadHelpDocument(HelpCommandMetadata command) {
+		if (!TryGetManualHelpFilePath(command, out string helpFilePath)) {
+			return HelpDocument.Empty;
+		}
+		string content = _fileSystem.File.ReadAllText(helpFilePath);
+		return ParseSections(content);
+	}
+
+	private bool TryGetManualHelpFilePath(HelpCommandMetadata command, out string helpFilePath) {
+		helpFilePath = string.Empty;
+		string helpDirectory = Parser.Default.Settings.HelpDirectory;
+		if (string.IsNullOrWhiteSpace(helpDirectory) || !_fileSystem.Directory.Exists(helpDirectory)) {
+			return false;
+		}
+		helpFilePath = _fileSystem.Directory
+			.EnumerateFiles(helpDirectory, $"{command.CanonicalName}.txt", SearchOption.AllDirectories)
+			.FirstOrDefault() ?? string.Empty;
+		return !string.IsNullOrWhiteSpace(helpFilePath);
+	}
+
+	private static HelpDocument ParseSections(string content) {
+		List<(string Heading, string NormalizedHeading, List<string> Lines)> sections = [];
+		(string Heading, string NormalizedHeading, List<string> Lines)? currentSection = null;
 		foreach (string rawLine in content.Replace("\r\n", "\n").Split('\n')) {
 			string line = rawLine.TrimEnd();
-			string heading = NormalizeSectionHeading(line);
-			if (!string.IsNullOrEmpty(heading)) {
-				currentSection = heading;
-				sections.TryAdd(currentSection, []);
+			if (TryParseSectionHeading(rawLine, out string heading, out string normalizedHeading)) {
+				currentSection = (heading, normalizedHeading, []);
+				sections.Add(currentSection.Value);
 				continue;
 			}
-			sections[currentSection].Add(line.Trim('\ufeff'));
+			if (currentSection == null) {
+				currentSection = (SecDescription, SecDescription, []);
+				sections.Add(currentSection.Value);
+			}
+			currentSection.Value.Lines.Add(line.Trim('\ufeff'));
+			sections[^1] = currentSection.Value;
 		}
 		bool isAliasShim = content.Contains("alias for", StringComparison.OrdinalIgnoreCase)
 			|| content.Contains("legacy heading", StringComparison.OrdinalIgnoreCase)
 			|| content.Contains("exists so the legacy heading", StringComparison.OrdinalIgnoreCase);
-		return new HelpFileSections(
-			sections.ToDictionary(pair => pair.Key, pair => TrimEmptyLines(pair.Value), StringComparer.OrdinalIgnoreCase),
+		return new HelpDocument(
+			sections
+				.Select(section => new HelpSection(section.Heading, section.NormalizedHeading, TrimEmptyLines(section.Lines)))
+				.Where(section => section.Lines.Count > 0)
+				.ToArray(),
 			isAliasShim);
 	}
 
-	private static string NormalizeSectionHeading(string line) {
-		string trimmed = line.Trim().Trim('\ufeff');
-		if (string.IsNullOrWhiteSpace(trimmed) || !SectionHeadingRegex.IsMatch(trimmed)) {
-			return string.Empty;
+	private static bool TryParseSectionHeading(string rawLine, out string heading, out string normalizedHeading) {
+		heading = string.Empty;
+		normalizedHeading = string.Empty;
+		if (string.IsNullOrWhiteSpace(rawLine) || char.IsWhiteSpace(rawLine[0])) {
+			return false;
 		}
-		string heading = trimmed.TrimEnd(':');
-		return heading switch {
+		string trimmed = rawLine.Trim().Trim('\ufeff');
+		if (!SectionHeadingRegex.IsMatch(trimmed)) {
+			return false;
+		}
+		heading = trimmed.TrimEnd(':');
+		normalizedHeading = NormalizeSectionHeading(heading);
+		return true;
+	}
+
+	private static string NormalizeSectionHeading(string heading) =>
+		heading switch {
 			"SYNOPSIS" => SecUsage,
 			"USAGE" => SecUsage,
 			"EXAMPLE" => SecExamples,
@@ -378,16 +466,8 @@ internal sealed class CommandHelpRenderer {
 			"REQUIREMENTS" => SecRequirements,
 			"OUTPUT FORMAT" => SecNotes,
 			"NOTES" => SecNotes,
-			"ALIASES" => "ALIASES",
-			"ARGUMENTS" => "ARGUMENTS",
-			"OPTIONS" => "OPTIONS",
-			"SEE ALSO" => SecSeeAlso,
-			"REPORTING BUGS" => "REPORTING BUGS",
-			"NAME" => "NAME",
-			"COMMAND TYPE" => "COMMAND TYPE",
-			_ => string.Empty
+			_ => heading
 		};
-	}
 
 	private static IReadOnlyList<string> TrimEmptyLines(IEnumerable<string> lines) {
 		List<string> result = lines.ToList();
@@ -400,22 +480,43 @@ internal sealed class CommandHelpRenderer {
 		return result;
 	}
 
-	private static IReadOnlyList<string> GetUsageLines(HelpCommandMetadata command, HelpFileSections source) {
-		if (!source.IsAliasShim && source.Sections.TryGetValue(SecUsage, out IReadOnlyList<string> usage) && usage.Count > 0) {
+	private static IReadOnlyList<string> GetUsageLines(HelpCommandMetadata command, HelpDocument source) {
+		IReadOnlyList<string> usage = GetSectionLines(source, SecUsage);
+		if (!source.IsAliasShim && usage.Count > 0) {
 			return NormalizeSectionLines(CanonicalizeCommandLines(command, usage));
 		}
 		return [BuildUsage(command.OptionsType, command.CanonicalName)];
 	}
 
-	private static IReadOnlyList<string> GetDescriptionLines(HelpCommandMetadata command, HelpFileSections source) {
-		if (!source.IsAliasShim && source.Sections.TryGetValue(SecDescription, out IReadOnlyList<string> description) && description.Count > 0) {
+	private static IReadOnlyList<string> GetDescriptionLines(HelpCommandMetadata command, HelpDocument source) {
+		IReadOnlyList<string> description = GetSectionLines(source, SecDescription);
+		if (!source.IsAliasShim && description.Count > 0) {
 			return NormalizeSectionLines(description);
 		}
 		return [$"{command.ShortDescription}."];
 	}
 
-	private static IReadOnlyList<string> GetExamples(HelpCommandMetadata command, HelpFileSections source) {
-		if (!source.IsAliasShim && source.Sections.TryGetValue(SecExamples, out IReadOnlyList<string> examples) && examples.Count > 0) {
+	private static IReadOnlyList<string> GetNameLines(HelpCommandMetadata command, HelpDocument source) {
+		IReadOnlyList<string> name = GetSectionLines(source, "NAME");
+		if (!source.IsAliasShim && name.Count > 0) {
+			return CanonicalizeCommandLines(command, name);
+		}
+		return [$"{command.CanonicalName} - {command.ShortDescription}"];
+	}
+
+	private static IReadOnlyList<string> GetAliases(HelpCommandMetadata command, HelpDocument source) {
+		IReadOnlyList<string> aliases = GetSectionLines(source, "ALIASES");
+		if (!source.IsAliasShim && aliases.Count > 0) {
+			return NormalizeSectionLines(aliases);
+		}
+		return command.Aliases.Count == 0
+			? []
+			: [string.Join(", ", command.Aliases)];
+	}
+
+	private static IReadOnlyList<string> GetExamples(HelpCommandMetadata command, HelpDocument source) {
+		IReadOnlyList<string> examples = GetSectionLines(source, SecExamples);
+		if (!source.IsAliasShim && examples.Count > 0) {
 			return NormalizeSectionLines(CanonicalizeCommandLines(command, examples));
 		}
 		IReadOnlyList<string> usageExamples = GetUsageExamples(command.OptionsType);
@@ -425,8 +526,9 @@ internal sealed class CommandHelpRenderer {
 		return [BuildFallbackExample(command.OptionsType, command.CanonicalName)];
 	}
 
-	private static IReadOnlyList<string> GetRequirementLines(HelpCommandMetadata command, HelpFileSections source) {
-		if (!source.IsAliasShim && source.Sections.TryGetValue(SecRequirements, out IReadOnlyList<string> requirements) && requirements.Count > 0) {
+	private static IReadOnlyList<string> GetRequirementLines(HelpCommandMetadata command, HelpDocument source) {
+		IReadOnlyList<string> requirements = GetSectionLines(source, SecRequirements);
+		if (!source.IsAliasShim && requirements.Count > 0) {
 			return NormalizeSectionLines(requirements);
 		}
 		return string.IsNullOrWhiteSpace(command.Requirement)
@@ -434,15 +536,34 @@ internal sealed class CommandHelpRenderer {
 			: [command.Requirement];
 	}
 
-	private static IReadOnlyList<string> GetNotes(HelpFileSections source) {
-		if (!source.IsAliasShim && source.Sections.TryGetValue(SecNotes, out IReadOnlyList<string> notes) && notes.Count > 0) {
+	private static IReadOnlyList<string> GetNotes(HelpDocument source) {
+		IReadOnlyList<string> notes = GetSectionLines(source, SecNotes);
+		if (!source.IsAliasShim && notes.Count > 0) {
 			return NormalizeSectionLines(notes);
 		}
 		return [];
 	}
 
-	private IReadOnlyList<string> GetSeeAlso(HelpCommandMetadata command, HelpFileSections source) {
-		if (!source.IsAliasShim && source.Sections.TryGetValue(SecSeeAlso, out IReadOnlyList<string> seeAlso) && seeAlso.Count > 0) {
+	private static IReadOnlyList<string> GetArgumentLines(HelpCommandMetadata command, HelpDocument source) {
+		IReadOnlyList<string> arguments = GetSectionLines(source, "ARGUMENTS");
+		if (!source.IsAliasShim && arguments.Count > 0) {
+			return arguments;
+		}
+		return BuildPositionalArguments(command.OptionsType);
+	}
+
+	private static IReadOnlyList<string> GetOptionLines(HelpCommandMetadata command, HelpDocument source, bool environmentOptionsOnly) {
+		string heading = environmentOptionsOnly ? "ENVIRONMENT OPTIONS" : "OPTIONS";
+		IReadOnlyList<string> options = GetSectionLines(source, heading);
+		if (!source.IsAliasShim && options.Count > 0) {
+			return options;
+		}
+		return BuildOptions(command.OptionsType, environmentOptionsOnly);
+	}
+
+	private IReadOnlyList<string> GetSeeAlso(HelpCommandMetadata command, HelpDocument source) {
+		IReadOnlyList<string> seeAlso = GetSectionLines(source, SecSeeAlso);
+		if (!source.IsAliasShim && seeAlso.Count > 0) {
 			return seeAlso
 				.Select(line => line.Split('-', 2)[0].Trim())
 				.Where(line => !string.IsNullOrWhiteSpace(line))
@@ -453,6 +574,45 @@ internal sealed class CommandHelpRenderer {
 			? []
 			: command.RelatedCommands;
 	}
+
+	private static IReadOnlyList<string> GetSectionLines(HelpDocument source, string normalizedHeading) =>
+		source.Sections
+			.FirstOrDefault(section => string.Equals(section.NormalizedHeading, normalizedHeading, StringComparison.OrdinalIgnoreCase))
+			?.Lines ?? [];
+
+	private static IReadOnlyList<HelpSection> GetCustomSections(HelpDocument source) {
+		return source.Sections
+			.Where(section => !IsStandardSection(section.NormalizedHeading))
+			.ToArray();
+	}
+
+	private static IReadOnlyList<HelpSection> GetLeadingCustomSections(HelpDocument source) =>
+		source.Sections
+			.TakeWhile(section => !string.Equals(section.NormalizedHeading, "NAME", StringComparison.OrdinalIgnoreCase))
+			.Where(section => !IsStandardSection(section.NormalizedHeading))
+			.ToArray();
+
+	private static IReadOnlyList<HelpSection> GetTrailingCustomSections(HelpDocument source) =>
+		source.Sections
+			.SkipWhile(section => !string.Equals(section.NormalizedHeading, "NAME", StringComparison.OrdinalIgnoreCase))
+			.Where(section => !IsStandardSection(section.NormalizedHeading))
+			.ToArray();
+
+	private static bool IsStandardSection(string normalizedHeading) =>
+		normalizedHeading is "ALIASES"
+			or "ARGUMENTS"
+			or "ENVIRONMENT OPTIONS"
+			or "NAME"
+			or "OPTIONS"
+			or SecDescription
+			or SecExamples
+			or SecNotes
+			or SecRequirements
+			or SecSeeAlso
+			or SecUsage;
+
+	private static string FormatMarkdownHeading(string heading) =>
+		CultureInfo.InvariantCulture.TextInfo.ToTitleCase(heading.ToLowerInvariant());
 
 	private string NormalizeRelatedCommand(string name) =>
 		_catalog.TryGetCommand(name, out HelpCommandMetadata command)

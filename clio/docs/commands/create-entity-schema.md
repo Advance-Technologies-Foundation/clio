@@ -2,6 +2,7 @@
 
 Create an entity schema in a remote Creatio package.
 
+
 ## Usage
 
 ```bash
@@ -22,77 +23,85 @@ clio create-entity-schema -e dev
 
 ```bash
 --package <VALUE>
-    Target package name. Required.
+Target package name. Required.
 --name <VALUE>
-    Schema name. Required.
+Schema name. Required.
 --title <VALUE>
-    Schema title. Required.
+Schema title. Required.
 --parent <VALUE>
-    Parent schema name
+Parent schema name
 --extend-parent
-    Create replacement schema
+Create replacement schema
 --column <VALUE>
-    Column spec <name>:<type>[:<title>[:<refSchema>]] or JSON with
-    name/type/title/reference-schema-name/required/default-value-source/default-value.
-    Repeat the option for multiple columns
+Column spec <name>:<type>[:<title>[:<refSchema>]] or JSON with
+name/type/title/reference-schema-name/required/default-value-source/default-value.
+Repeat the option for multiple columns
 --timeout <NUMBER>
-    Request timeout in milliseconds. Default: 100000.
+Request timeout in milliseconds. Default: 100000.
 ```
 
 ## Environment Options
 
 ```bash
 -u, --uri <VALUE>
-    Application uri
+Application uri
 -p, --Password <VALUE>
-    User password
+User password
 -l, --Login <VALUE>
-    User login (administrator permission required)
+User login (administrator permission required)
 -i, --IsNetCore
-    Use NetCore application
+Use NetCore application
 -e, --Environment <VALUE>
-    Environment name
+Environment name
 -m, --Maintainer <VALUE>
-    Maintainer name
+Maintainer name
 -c, --dev <VALUE>
-    Developer mode state for environment
+Developer mode state for environment
 --WorkspacePathes <VALUE>
-    Workspace path
+Workspace path
 -s, --Safe <VALUE>
-    Safe action in this environment
+Safe action in this environment
 --clientId <VALUE>
-    OAuth client id
+OAuth client id
 --clientSecret <VALUE>
-    OAuth client secret
+OAuth client secret
 --authAppUri <VALUE>
-    OAuth app URI
+OAuth app URI
 --silent
-    Use default behavior without user interaction
+Use default behavior without user interaction
 --restartEnvironment
-    Restart environment after execute command
+Restart environment after execute command
 --db-server-uri <VALUE>
-    Db server uri
+Db server uri
 --db-user <VALUE>
-    Database user
+Database user
 --db-password <VALUE>
-    Database password
+Database password
 --backup-file <VALUE>
-    Full path to backup file
+Full path to backup file
 --db-working-folder <VALUE>
-    Folder visible to db server
+Folder visible to db server
 --db-name <VALUE>
-    Desired database name
+Desired database name
 --force
-    Force restore
+Force restore
 --callback-process <VALUE>
-    Callback process name
+Callback process name
 --ep <VALUE>
-    Path to the application root folder
+Path to the application root folder
 ```
 
 ## Requirements
 
-- cliogate must be installed on the target Creatio environment.
+cliogate must be installed on the target Creatio environment.
+
+## Command Type
+
+    Package Management commands
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
 
 ## See also
 

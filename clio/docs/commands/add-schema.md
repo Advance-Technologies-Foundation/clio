@@ -2,20 +2,22 @@
 
 Create a schema file in a workspace package.
 
+
 ## Usage
 
 ```bash
-clio add-schema <SchemaName> [options]
+clio add-schema [OPTIONS]
 ```
 
 ## Description
 
-Create a schema file in a workspace package.
+Adds a schema file or schema definition to the specified package.
 
 ## Examples
 
 ```bash
-clio add-schema <SchemaName> [options]
+clio add-schema --help
+Display canonical options and usage examples
 ```
 
 ## Arguments
@@ -28,10 +30,16 @@ SchemaName
 ## Options
 
 ```bash
--p, --package <VALUE>
-    Package path or name. Required.
--t, --type <VALUE>
-    Schema type. Required.
+Supports the canonical add-schema command options.
 ```
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
+
+## See also
+
+- `add`
+- `add-item`
 
 - [Clio Command Reference](../../Commands.md#add-schema)

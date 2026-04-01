@@ -2,6 +2,7 @@
 
 Update managed skills from a repository.
 
+
 ## Usage
 
 ```bash
@@ -10,24 +11,62 @@ clio update-skill [options]
 
 ## Description
 
-Update managed skills from a repository.
+update-skill refreshes clio-managed skills in the selected scope when the
+source repository HEAD commit hash changed.
+
+With --scope workspace, the command must be executed from inside a clio
+workspace directory (a directory containing `.clio/workspaceSettings.json`,
+or any child folder below it).
+
+With --scope user, the command can run from any directory. Clio resolves
+the agent home from `CODEX_HOME` when it is set, or falls back to `~/.codex`.
+
+Managed skills are tracked in the selected scope manifest.
+update-skill only operates on skills recorded there.
+
+By default, clio uses the bootstrap skills repository:
+https://creatio.ghe.com/engineering/bootstrap-composable-app-starter-kit
+
+Without --skill, clio updates all managed skills that belong to the
+selected repository. With --skill, clio updates only that managed skill.
+
+If the current repository HEAD hash matches the stored hash, clio reports
+that the skill is already up to date and leaves files unchanged.
 
 ## Examples
 
 ```bash
-clio update-skill [options]
+Update all managed skills from the default bootstrap repository:
+clio update-skill
+
+Update all managed skills in user scope:
+clio update-skill --scope user
+
+Update one managed skill from the default bootstrap repository:
+clio update-skill --skill my-skill
+
+Update all managed skills from a local repository checkout:
+clio update-skill --repo C:\Repos\bootstrap-composable-app-starter-kit
+
+Update one managed skill in user scope from a local repository checkout:
+clio update-skill --scope user --repo C:\Repos\bootstrap-composable-app-starter-kit --skill my-skill
 ```
 
 ## Options
 
 ```bash
---skill <VALUE>
-    Specific skill name to process
---repo <VALUE>
-    Optional local repository path or git URL. Defaults to the bootstrap workspace
-    skills repository
---scope <VALUE>
-    Skill target scope: workspace or user. Defaults to workspace
+--skill                             Optional managed skill name to update.
+When omitted, all managed skills for the selected repository are updated.
+
+--repo                              Optional local repository path or git URL.
+When omitted, clio uses the default bootstrap skills repository.
+
+--scope                             Skill target scope: workspace or user.
+Defaults to workspace.
 ```
+
+## Command Type
+
+    Workspace commands
 
 - [Clio Command Reference](../../Commands.md#update-skill)

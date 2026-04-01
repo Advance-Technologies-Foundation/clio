@@ -2,15 +2,16 @@
 
 Register a Creatio environment.
 
+
 ## Usage
 
 ```bash
-clio reg-web-app [<EnvironmentName>] [options]
+clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.creatio.com -l administrator -p password
 ```
 
 ## Description
 
-Register a Creatio environment.
+Register a new web application settings or update existing
 
 ## Aliases
 
@@ -19,7 +20,8 @@ Register a Creatio environment.
 ## Examples
 
 ```bash
-clio reg-web-app [<EnvironmentName>] [options]
+clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.creatio.com -l administrator -p password
+creates new environment, named <ENVIRONMENT_NAME> or updates existing environment settings
 ```
 
 ## Arguments
@@ -32,65 +34,78 @@ EnvironmentName
 ## Options
 
 ```bash
--a, --ActiveEnvironment <VALUE>
-    Set as default web application
---checkLogin
-    Try login after registration
---add-from-iis
-    Register all Creatios from IIS
---host <VALUE>
-    Computer name where IIS is hosted
+Name (pos. 0)	Environment(web application) name
+
+--ActiveEnvironment     -a          Set a web application by default
+
+--Safe                  -s          Safe action in this environment
+
+--uri                   -u          Application uri
+
+--Password              -p          User password
+
+--Login                 -l          User login (administrator permission required)
+
+--Maintainer            -m          Maintainer name
 ```
 
 ## Environment Options
 
 ```bash
 -u, --uri <VALUE>
-    Application uri
+Application uri
 -p, --Password <VALUE>
-    User password
+User password
 -l, --Login <VALUE>
-    User login (administrator permission required)
+User login (administrator permission required)
 -i, --IsNetCore
-    Use NetCore application
+Use NetCore application
 -e, --Environment <VALUE>
-    Environment name
+Environment name
 -m, --Maintainer <VALUE>
-    Maintainer name
+Maintainer name
 -c, --dev <VALUE>
-    Developer mode state for environment
+Developer mode state for environment
 --WorkspacePathes <VALUE>
-    Workspace path
+Workspace path
 -s, --Safe <VALUE>
-    Safe action in this environment
+Safe action in this environment
 --clientId <VALUE>
-    OAuth client id
+OAuth client id
 --clientSecret <VALUE>
-    OAuth client secret
+OAuth client secret
 --authAppUri <VALUE>
-    OAuth app URI
+OAuth app URI
 --silent
-    Use default behavior without user interaction
+Use default behavior without user interaction
 --restartEnvironment
-    Restart environment after execute command
+Restart environment after execute command
 --db-server-uri <VALUE>
-    Db server uri
+Db server uri
 --db-user <VALUE>
-    Database user
+Database user
 --db-password <VALUE>
-    Database password
+Database password
 --backup-file <VALUE>
-    Full path to backup file
+Full path to backup file
 --db-working-folder <VALUE>
-    Folder visible to db server
+Folder visible to db server
 --db-name <VALUE>
-    Desired database name
+Desired database name
 --force
-    Force restore
+Force restore
 --callback-process <VALUE>
-    Callback process name
+Callback process name
 --ep <VALUE>
-    Path to the application root folder
+Path to the application root folder
 ```
+
+## Command Type
+
+    CI/CD commands
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
 
 - [Clio Command Reference](../../Commands.md#reg-web-app)

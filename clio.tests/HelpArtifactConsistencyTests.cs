@@ -17,15 +17,13 @@ internal class HelpArtifactConsistencyTests {
 	private static readonly string WikiAnchorsPath = Path.Combine(RepositoryRoot, "clio", "Wiki", "WikiAnchors.txt");
 
 	[Test]
-	[Description("Every visible command should have canonical help, markdown, index, and wiki artifacts.")]
+	[Description("Every visible command should have canonical markdown, index, and wiki artifacts even when manual txt help is optional.")]
 	public void VisibleCommands_ShouldHaveCanonicalArtifacts() {
 		CommandHelpCatalog catalog = new();
 		string commandsContent = File.ReadAllText(CommandsPath);
 		string[] wikiAnchors = File.ReadAllLines(WikiAnchorsPath);
 
 		foreach (HelpCommandMetadata command in catalog.GetVisibleCommands()) {
-			File.Exists(Path.Combine(HelpDirectory, $"{command.CanonicalName}.txt")).Should().BeTrue(
-				because: "every visible command should have a canonical CLI help file");
 			File.Exists(Path.Combine(DocsDirectory, $"{command.CanonicalName}.md")).Should().BeTrue(
 				because: "every visible command should have a canonical markdown document");
 			commandsContent.Should().Contain($"(docs/commands/{command.CanonicalName}.md)",

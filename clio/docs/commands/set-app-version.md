@@ -2,6 +2,7 @@
 
 Set application version.
 
+
 ## Usage
 
 ```bash
@@ -33,11 +34,11 @@ workspace
 
 ```bash
 -v, --app-version <VALUE>
-    Application version. Required.
+Application version. Required.
 -p, --package-name <VALUE>
-    Package name
+Package name
 -f, --package-folder <VALUE>
-    Package folder path
+Package folder path
 ```
 
 - [Clio Command Reference](../../Commands.md#set-app-version)

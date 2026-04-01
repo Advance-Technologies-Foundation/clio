@@ -2,15 +2,16 @@
 
 Link environment package(s) to repository.
 
+
 ## Usage
 
 ```bash
-clio link-to-repository [options]
+clio link-to-repository [OPTIONS]
 ```
 
 ## Description
 
-Link environment package(s) to repository.
+Links packages from an environment package directory into a repository location.
 
 ## Aliases
 
@@ -19,17 +20,22 @@ Link environment package(s) to repository.
 ## Examples
 
 ```bash
-clio link-to-repository [options]
+clio link-to-repository --help
+Display canonical options and usage examples
 ```
 
 ## Options
 
 ```bash
--r, --repoPath <VALUE>
-    Path to package repository folder. Required.
--e, --envPkgPath <VALUE>
-    Path to environment package folder
-    ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\Terrasoft.Configuration\Pkg). Required.
+Supports the canonical link-to-repository command options.
 ```
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
+
+## See also
+
+- `externalLink`
 
 - [Clio Command Reference](../../Commands.md#link-to-repository)

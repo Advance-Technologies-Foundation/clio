@@ -2,15 +2,30 @@
 
 Restore a database backup.
 
+
 ## Usage
 
 ```bash
-clio restore-db [options]
+clio restore-db [OPTIONS]
 ```
 
 ## Description
 
-Restore a database backup.
+restore-db restores a database from a backup file or Creatio ZIP package.
+It supports both PostgreSQL and MSSQL databases.
+
+Every restore-db run creates a temp database-operation log file. The final
+CLI output includes the absolute path in a "Database operation log:" line.
+For MCP tool execution, the same path is returned in the structured
+response as log-file-path.
+
+The command supports three main modes:
+- PostgreSQL direct restore from .backup or ZIP without --dbServerName
+- Local database server restore through --dbServerName
+- PostgreSQL template-only mode through --as-template
+
+ZIP files are now supported for PostgreSQL restore/template flows even
+when --dbServerName is omitted.
 
 ## Aliases
 
@@ -19,74 +34,216 @@ Restore a database backup.
 ## Examples
 
 ```bash
-clio restore-db -e dev
+Restore PostgreSQL from ZIP without dbServerName:
+clio restore-db --backupPath C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip
+--dbName creatiodev --drop-if-exists
+
+Create or refresh only a PostgreSQL template from ZIP:
+clio restore-db --backupPath C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip
+--as-template --drop-if-exists
+
+Restore PostgreSQL to local server:
+clio restore-db --dbServerName my-local-postgres --dbName creatiodev
+--backupPath database.backup
+
+Restore PostgreSQL ZIP to local server:
+clio restore-db --dbServerName my-local-postgres --dbName creatiodev
+--backupPath C:\Creatio\8.3.4.1788_Studio_Softkey_PostgreSQL_ENU.zip
+
+Create or refresh only the local PostgreSQL template:
+clio restore-db --dbServerName my-local-postgres
+--backupPath database.backup --as-template --drop-if-exists
+
+Restore MSSQL to local server:
+clio restore-db --dbServerName my-local-mssql --dbName creatiodev
+--backupPath database.bak
 ```
 
 ## Options
 
 ```bash
---disable-reset-password
-    Disables reset password after restore. Default: True.
---dbName <VALUE>
-    dbName
---backupPath <VALUE>
-    backup Path
---dbServerName <VALUE>
-    Name of database server configuration from appsettings.json
+--dbName
+Database name to create/restore.
+Required unless --as-template is specified.
+
+--backupPath
+Path to backup file or ZIP archive.
+Supported inputs:
+- .backup extension for PostgreSQL backups
+- .bak extension for MSSQL backups
+- .zip archive containing db/*.backup or db/*.bak
+
+--dbServerName
+Name of database server configuration from appsettings.json.
+If specified, restore runs against the configured local server.
+If omitted, PostgreSQL .backup and ZIP flows can still run directly.
+
 --drop-if-exists
-    Automatically drops existing database if present without prompting
+Drops the existing database before restore.
+In --as-template mode, drops the existing matching PostgreSQL template
+before recreating it.
+
 --as-template
-    Create or refresh only the PostgreSQL template without creating a target
-    database
+Create or refresh only the PostgreSQL template and do not create a
+target database.
+Supported only for PostgreSQL .backup or ZIP sources.
+
+--disable-reset-password
+Hidden advanced option, default: true
+Reuses the same post-restore password-reset disabling behavior as
+deploy-creatio. Set to false to skip that step.
 ```
 
 ## Environment Options
 
 ```bash
 -u, --uri <VALUE>
-    Application uri
+Application uri
 -p, --Password <VALUE>
-    User password
+User password
 -l, --Login <VALUE>
-    User login (administrator permission required)
+User login (administrator permission required)
 -i, --IsNetCore
-    Use NetCore application
+Use NetCore application
 -e, --Environment <VALUE>
-    Environment name
+Environment name
 -m, --Maintainer <VALUE>
-    Maintainer name
+Maintainer name
 -c, --dev <VALUE>
-    Developer mode state for environment
+Developer mode state for environment
 --WorkspacePathes <VALUE>
-    Workspace path
+Workspace path
 -s, --Safe <VALUE>
-    Safe action in this environment
+Safe action in this environment
 --clientId <VALUE>
-    OAuth client id
+OAuth client id
 --clientSecret <VALUE>
-    OAuth client secret
+OAuth client secret
 --authAppUri <VALUE>
-    OAuth app URI
+OAuth app URI
 --silent
-    Use default behavior without user interaction
+Use default behavior without user interaction
 --restartEnvironment
-    Restart environment after execute command
+Restart environment after execute command
 --db-server-uri <VALUE>
-    Db server uri
+Db server uri
 --db-user <VALUE>
-    Database user
+Database user
 --db-password <VALUE>
-    Database password
+Database password
 --backup-file <VALUE>
-    Full path to backup file
+Full path to backup file
 --db-working-folder <VALUE>
-    Folder visible to db server
+Folder visible to db server
 --force
-    Force restore
+Force restore
 --callback-process <VALUE>
-    Callback process name
+Callback process name
 --ep <VALUE>
-    Path to the application root folder
+Path to the application root folder
 ```
+
+## Requirements
+
+For PostgreSQL local restore, PostgreSQL client tools must be installed:
+
+Windows: Download from https://www.postgresql.org/download/windows/
+Linux:   Install via package manager (e.g., apt-get install postgresql-client)
+macOS:   Install via Homebrew (brew install postgresql)
+
+## Command Type
+
+    Database commands
+
+## Configuration
+
+    To restore to a local database server, add a 'db' section to appsettings.json:
+
+    {
+      "db": {
+        "my-local-mssql": {
+          "dbType": "mssql",
+          "hostname": "localhost",
+          "port": 1433,
+          "username": "sa",
+          "password": "YourPassword",
+          "enabled": true,
+          "description": "Local MSSQL Server for development"
+        },
+        "my-local-postgres": {
+          "dbType": "postgres",
+          "hostname": "localhost",
+          "port": 5432,
+          "username": "postgres",
+          "password": "postgres",
+          "enabled": true,
+          "PgToolsPath": "C:\\Program Files\\PostgreSQL\\18\\bin",
+          "description": "Local PostgreSQL Server for development"
+        }
+      }
+    }
+
+    Configuration fields:
+    - dbType (required): Database type - 'mssql' or 'postgres'
+    - hostname (required): Database server hostname or IP address
+    - port (required): Database server port
+    - enabled (optional): When false, this server is ignored by clio commands
+    - username (required): Database username
+    - password (required): Database password
+    - useWindowsAuth (optional, MSSQL only): Use Windows Authentication
+    - description (optional): Description for documentation
+    - pgToolsPath (optional, PostgreSQL only): Path to PostgreSQL client tools
+                                                directory if not in PATH
+
+## Features
+
+    - ZIP Support: Extracts db/*.bak or db/*.backup from Creatio ZIP packages
+    - Template Mode: PostgreSQL backups can create/refresh only the reusable template
+    - Connection Testing: Tests local database connectivity before restore
+    - Automatic Type Detection: Determines backup type from file extension
+    - Type Validation: Ensures backup file type matches database server type
+    - Temp Log Artifact: Always writes command output plus native PostgreSQL/MSSQL
+                         restore output into a temp log file
+    - Existing Database Handling: Supports automatic drop before restore
+    - Password Reset Handling: Reuses the same optional post-restore
+                              password-reset disabling step as deploy-creatio
+
+## Error Handling
+
+    The command provides detailed error messages for common issues:
+
+    Configuration not found:
+        Lists available enabled configurations in appsettings.json
+
+    Connection failures:
+        Suggests checking server status, credentials, firewall settings,
+        and for Docker PostgreSQL the published host port mapping
+
+    Missing pg_restore:
+        Provides download link and installation instructions
+        Notes that pg_restore must exist on the machine running clio even when
+        PostgreSQL itself runs in Docker
+
+    Incompatible backup type:
+        Explains the mismatch between backup and database types and fails
+        before any database mutation
+
+## Troubleshooting
+
+    PostgreSQL: "pg_restore not found"
+    - Install PostgreSQL client tools
+    - Add PostgreSQL bin directory to PATH environment variable
+    - Or specify pgToolsPath in configuration
+
+    Backup type mismatch
+    - Use .backup or PostgreSQL ZIP packages with PostgreSQL/template mode
+    - Use .bak or MSSQL ZIP packages with MSSQL local server mode
+
+    Database already exists
+    - Use --drop-if-exists flag to automatically drop the existing database
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
 
 - [Clio Command Reference](../../Commands.md#restore-db)

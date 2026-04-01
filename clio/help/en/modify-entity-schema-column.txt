@@ -1,127 +1,98 @@
+COMMAND TYPE
+    Development commands
+
 NAME
     modify-entity-schema-column - Add, modify, or remove a column in a remote Creatio entity schema
 
-USAGE
-    clio modify-entity-schema-column [options]
+SYNOPSIS
+    clio modify-entity-schema-column [OPTIONS]
 
 DESCRIPTION
-    Add, modify, or remove a column in a remote Creatio entity schema.
+    Loads the full entity schema design item from the remote Creatio environment,
+    mutates one own column locally, and saves the schema back through
+    EntitySchemaDesignerService.
 
-EXAMPLES
-    clio modify-entity-schema-column -e dev
+    This command is part of the canonical clio MCP mutation surface for
+    explicit single-column edits. Use schema-sync when the work spans
+    multiple ordered schema operations.
+
+    Supported actions:
+    - add
+    - modify
+    - remove
+
+    Supported types for add and modify:
+    - Guid
+    - Text, ShortText, MediumText, LongText, MaxSizeText
+    - Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText
+    - Binary, Image, File, SecureText (Blob is accepted as an alias for Binary; Encrypted and Password are accepted as aliases for SecureText; EmailAddress is accepted as an alias for Email)
+    - Integer
+    - Float
+    - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, Currency0, Currency1, Currency2, Currency3
+    - Boolean
+    - Date, DateTime, Time
+    - Lookup (requires --reference-schema)
 
 OPTIONS
-    --package <VALUE>
-        Target package name. Required.
-    --schema-name <VALUE>
-        Entity schema name. Required.
-    --action <VALUE>
-        Column action: add, modify, or remove. Required.
-    --column-name <VALUE>
-        Target column name. Required.
-    --new-name <VALUE>
-        New column name for rename operations
-    --type <VALUE>
-        Column type. Supported values:
-Guid, Integer, Float, Boolean, Date, DateTime,
-        Time, Lookup,
-Text, ShortText, MediumText, LongText, MaxSizeText,
-Text50,
-        Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText,
-        
-Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
-Currency0,
-        Currency1, Currency2, Currency3
-    --title <VALUE>
-        Column title/caption
-    --description <VALUE>
-        Column description
-    --reference-schema <VALUE>
-        Lookup reference schema name
-    --required
-        Set required flag
-    --indexed
-        Set indexed flag
-    --cloneable
-        Set make-copy flag
-    --track-changes
-        Set update-change-log flag
-    --default-value <VALUE>
-        Set a constant default value
-    --default-value-source <VALUE>
-        Default value source: Const or None
-    --multiline-text
-        Set multi-line text flag
-    --localizable-text
-        Set localizable text flag
-    --accent-insensitive
-        Set accent-insensitive flag
-    --masked
-        Set masked flag
-    --format-validated
-        Set format-validated flag
-    --use-seconds
-        Set use-seconds flag
-    --simple-lookup
-        Set simple-lookup flag
-    --cascade
-        Set cascade-connection flag
-    --do-not-control-integrity
-        Set do-not-control-integrity flag
-    --timeout <NUMBER>
-        Request timeout in milliseconds. Default: 100000.
+    --package                      Target package name
+    --schema-name                  Entity schema name
+    --action                       Column action: add, modify, or remove
+    --column-name                  Target column name
+    --new-name                     New column name for rename operations
+    --type                         Column type for add/modify
+    --title                        Column title/caption
+    --description                  Column description
+    --reference-schema             Lookup reference schema name
+    --required                     Set required flag
+    --indexed                      Set indexed flag
+    --cloneable                    Set make-copy flag
+    --track-changes                Set update-change-log flag
+    --default-value-source         Legacy default value shorthand: Const or None
+    --default-value                Legacy constant default value shorthand
+    --multiline-text               Set multi-line text flag (Text only)
+    --localizable-text             Set localizable text flag (Text only)
+    --accent-insensitive           Set accent-insensitive flag (Text only)
+    --masked                       Set masked flag (Text/SecureText only)
+    --format-validated             Set format-validated flag (Text only)
+    --use-seconds                  Set use-seconds flag (DateTime only)
+    --simple-lookup                Set simple-lookup flag (Lookup only)
+    --cascade                      Set cascade-connection flag (Lookup only)
+    --do-not-control-integrity     Set do-not-control-integrity flag (Lookup only)
 
-ENVIRONMENT OPTIONS
-    -u, --uri <VALUE>
-        Application uri
-    -p, --Password <VALUE>
-        User password
-    -l, --Login <VALUE>
-        User login (administrator permission required)
-    -i, --IsNetCore
-        Use NetCore application
-    -e, --Environment <VALUE>
-        Environment name
-    -m, --Maintainer <VALUE>
-        Maintainer name
-    -c, --dev <VALUE>
-        Developer mode state for environment
-    --WorkspacePathes <VALUE>
-        Workspace path
-    -s, --Safe <VALUE>
-        Safe action in this environment
-    --clientId <VALUE>
-        OAuth client id
-    --clientSecret <VALUE>
-        OAuth client secret
-    --authAppUri <VALUE>
-        OAuth app URI
-    --silent
-        Use default behavior without user interaction
-    --restartEnvironment
-        Restart environment after execute command
-    --db-server-uri <VALUE>
-        Db server uri
-    --db-user <VALUE>
-        Database user
-    --db-password <VALUE>
-        Database password
-    --backup-file <VALUE>
-        Full path to backup file
-    --db-working-folder <VALUE>
-        Folder visible to db server
-    --db-name <VALUE>
-        Desired database name
-    --force
-        Force restore
-    --callback-process <VALUE>
-        Callback process name
-    --ep <VALUE>
-        Path to the application root folder
+    Environment options are also available:
+    -e, --Environment              Environment name from the registered configuration
+    -u, --uri                      Application URI
+    -l, --Login                    User login
+    -p, --Password                 User password
 
-REQUIREMENTS
-    cliogate must be installed on the target Creatio environment.
+EXAMPLES
+    # Add a text column
+    clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action add --column-name Name --type Text --title "Vehicle name"
+
+    # Add a lookup column
+    clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action add --column-name Owner --type Lookup --reference-schema Contact --title "Owner"
+
+    # Rename and update a column
+    clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action modify --column-name Owner --new-name PrimaryOwner --title "Primary owner"
+
+    # Clear a previously configured default value
+    clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action modify --column-name Status --default-value-source None
+
+    # Remove an own column
+    clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action remove --column-name LegacyCode
+
+NOTES
+    - v1 allows mutations for own columns only; inherited columns are read-only
+    - remove clears schema-level references to the deleted column and validates required fallbacks locally
+    - unspecified modify options are preserved as-is in the saved payload
+    - MCP callers can also send structured default-value-config with source
+      None, Const, Settings, SystemValue, or Sequence; direct CLI flags remain
+      shorthand for Const and None
+    - Binary, Image, and File columns do not support --default-value or --default-value-source Const
+    - After save, the schema is reloaded immediately; save is treated as failed if the mutated column cannot be read back
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
 
 SEE ALSO
-    get-entity-schema-column-properties
-    get-entity-schema-properties
+    get-entity-schema-column-properties, get-entity-schema-properties, create-entity-schema

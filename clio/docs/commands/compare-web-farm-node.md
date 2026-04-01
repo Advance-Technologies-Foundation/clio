@@ -2,6 +2,7 @@
 
 Compare file content across web farm nodes.
 
+
 ## Usage
 
 ```bash
@@ -33,7 +34,7 @@ Paths
 
 ```bash
 -d, --detail
-    Short information
+Short information
 ```
 
 - [Clio Command Reference](../../Commands.md#compare-web-farm-node)

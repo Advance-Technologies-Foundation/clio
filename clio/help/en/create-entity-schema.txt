@@ -1,84 +1,91 @@
+COMMAND TYPE
+    Package Management commands
+
 NAME
     create-entity-schema - Create an entity schema in a remote Creatio package
 
-USAGE
-    clio create-entity-schema [options]
+SYNOPSIS
+    clio create-entity-schema [OPTIONS]
 
 DESCRIPTION
-    Create an entity schema in a remote Creatio package.
+    Creates an entity schema in an existing remote package using
+    EntitySchemaDesignerService.
 
-EXAMPLES
-    clio create-entity-schema -e dev
+    The command creates a draft schema on the server, optionally assigns a
+    parent schema, applies the requested name, title, and initial columns, and
+    then saves the result.
+
+    Current clio entity-schema commands are part of the canonical clio MCP
+    contract. Keep using create-entity-schema / modify-entity-schema-column
+    rather than frontend-only aliases like entity.create / entity.update.
+
+    Supported column types:
+    - Guid
+    - Text, ShortText, MediumText, LongText, MaxSizeText
+    - Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText
+    - Binary, Image, File, SecureText (Blob is accepted as an alias for Binary; Encrypted and Password are accepted as aliases for SecureText; EmailAddress is accepted as an alias for Email)
+    - Integer
+    - Float
+    - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, Currency0, Currency1, Currency2, Currency3
+    - Boolean
+    - Date, DateTime, Time
+    - Lookup (requires --reference-schema)
 
 OPTIONS
-    --package <VALUE>
-        Target package name. Required.
-    --name <VALUE>
-        Schema name. Required.
-    --title <VALUE>
-        Schema title. Required.
-    --parent <VALUE>
-        Parent schema name
-    --extend-parent
-        Create replacement schema
-    --column <VALUE>
-        Column spec <name>:<type>[:<title>[:<refSchema>]] or JSON with
-        name/type/title/reference-schema-name/required/default-value-source/default-value.
-        Repeat the option for multiple columns
-    --timeout <NUMBER>
-        Request timeout in milliseconds. Default: 100000.
+    --package              Target package name
+    --name                 Entity schema name. Maximum length is 22 characters
+    --title                Entity schema title/caption
+    --parent               Parent schema name
+    --extend-parent        Create a replacement schema. Requires --parent
+    --column               Column definition in format
+                           <name>:<type>[:<title>[:<refSchema>]]
+                           or JSON with name/type/title or caption/
+                           reference-schema-name/required/
+                           legacy default-value-source/default-value or
+                           structured default-value-config.
+                           Repeat the option for multiple columns
 
-ENVIRONMENT OPTIONS
-    -u, --uri <VALUE>
-        Application uri
-    -p, --Password <VALUE>
-        User password
-    -l, --Login <VALUE>
-        User login (administrator permission required)
-    -i, --IsNetCore
-        Use NetCore application
-    -e, --Environment <VALUE>
-        Environment name
-    -m, --Maintainer <VALUE>
-        Maintainer name
-    -c, --dev <VALUE>
-        Developer mode state for environment
-    --WorkspacePathes <VALUE>
-        Workspace path
-    -s, --Safe <VALUE>
-        Safe action in this environment
-    --clientId <VALUE>
-        OAuth client id
-    --clientSecret <VALUE>
-        OAuth client secret
-    --authAppUri <VALUE>
-        OAuth app URI
-    --silent
-        Use default behavior without user interaction
-    --restartEnvironment
-        Restart environment after execute command
-    --db-server-uri <VALUE>
-        Db server uri
-    --db-user <VALUE>
-        Database user
-    --db-password <VALUE>
-        Database password
-    --backup-file <VALUE>
-        Full path to backup file
-    --db-working-folder <VALUE>
-        Folder visible to db server
-    --db-name <VALUE>
-        Desired database name
-    --force
-        Force restore
-    --callback-process <VALUE>
-        Callback process name
-    --ep <VALUE>
-        Path to the application root folder
+    Environment options are also available:
+    -e, --Environment      Environment name from the registered configuration
+    -u, --uri              Application URI
+    -l, --Login            User login
+    -p, --Password         User password
 
-REQUIREMENTS
-    cliogate must be installed on the target Creatio environment.
+EXAMPLES
+    # Create a bare entity schema
+    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle"
+
+    # Create an entity schema with columns
+    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --column "Name:Text:Name"
+
+    # Create a lookup column
+    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --column "Owner:Lookup:Owner:Contact"
+
+    # Create a column with frontend-style type alias and default metadata
+    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --column "{\"name\":\"Status\",\"type\":\"ShortText\",\"title\":\"Status\",\"required\":true,\"default-value-source\":\"Const\",\"default-value\":\"Draft\"}"
+
+    # Create a column with structured default-value-config metadata
+    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --column "{\"name\":\"UsrStartDate\",\"type\":\"DateTime\",\"title\":\"Start date\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
+
+    # Create a schema inheriting from a parent schema
+    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --parent BaseEntity
+
+    # Create a replacement schema
+    clio create-entity-schema -e dev --package Custom --name UsrAccount --title "Account" --parent Account --extend-parent
+
+NOTES
+    - The command works against a remote Creatio environment only
+    - Package resolution requires cliogate to be installed on the target environment
+    - If no Guid column is supplied for a root schema, Id:Guid is added automatically
+    - If no display column is set, the first text-like column is used as primary display column
+    - Prefer default-value-config for Settings, SystemValue, or Sequence; keep
+      default-value-source/default-value as shorthand only for Const and None
+    - Binary, Image, and File columns do not support --default-value or --default-value-source Const
+    - After save, the schema is reloaded immediately; save is treated as failed if the schema cannot be read back
+    - Schema names longer than 22 characters are rejected before the server call
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
 
 SEE ALSO
-    get-entity-schema-properties
-    modify-entity-schema-column
+    install-gate, get-pkg-list, add-schema

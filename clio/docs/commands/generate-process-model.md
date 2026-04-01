@@ -2,6 +2,7 @@
 
 Generate process model for ATF.Repository.
 
+
 ## Usage
 
 ```bash
@@ -10,7 +11,9 @@ clio generate-process-model <Code> [options]
 
 ## Description
 
-Generate process model for ATF.Repository.
+Generates a C# model for starting a business process through ATF.Repository.
+The command reads the process schema from the target Creatio environment and
+writes the generated model to the requested destination path.
 
 ## Aliases
 
@@ -19,7 +22,17 @@ Generate process model for ATF.Repository.
 ## Examples
 
 ```bash
-clio generate-process-model <Code> [options]
+Generate a process model in the current directory:
+clio generate-process-model UsrStartOrder -e dev
+
+Generate a process model into a folder:
+clio generate-process-model UsrStartOrder -e dev -d C:\Models
+
+Generate a process model into an explicit file:
+clio generate-process-model UsrStartOrder -e dev -d C:\Models\OrderStart.cs
+
+Generate a process model with custom namespace and culture:
+clio generate-process-model UsrStartOrder -e dev -n Contoso.ProcessModels -x uk-UA
 ```
 
 ## Arguments
@@ -32,64 +45,97 @@ Code
 ## Options
 
 ```bash
--d, --DestinationPath <VALUE>
-    Destination folder or explicit .cs file path for the generated process model.
-    Default: ..
--n, --Namespace <VALUE>
-    Namespace for generated process model classes. Default: AtfTIDE.ProcessModels.
--x, --Culture <VALUE>
-    Description culture. Default: en-US.
+Code (pos. 0)                Process code as it appears in the process designer
+
+--DestinationPath       -d   Destination folder or explicit .cs file path
+(default: current directory)
+
+--Namespace             -n   Namespace for generated process model classes
+(default: AtfTIDE.ProcessModels)
+
+--Culture               -x   Culture used to resolve localized descriptions
+(default: en-US)
+
+--Environment           -e   Environment name
+
+--uri                        Application URI
+
+--Login                 -l   User login
+
+--Password              -p   User password
+
+--clientId                   OAuth client ID
+
+--clientSecret               OAuth client secret
+
+--authAppUri                 OAuth authentication app URI
 ```
 
 ## Environment Options
 
 ```bash
 -u, --uri <VALUE>
-    Application uri
+Application uri
 -p, --Password <VALUE>
-    User password
+User password
 -l, --Login <VALUE>
-    User login (administrator permission required)
+User login (administrator permission required)
 -i, --IsNetCore
-    Use NetCore application
+Use NetCore application
 -e, --Environment <VALUE>
-    Environment name
+Environment name
 -m, --Maintainer <VALUE>
-    Maintainer name
+Maintainer name
 -c, --dev <VALUE>
-    Developer mode state for environment
+Developer mode state for environment
 --WorkspacePathes <VALUE>
-    Workspace path
+Workspace path
 -s, --Safe <VALUE>
-    Safe action in this environment
+Safe action in this environment
 --clientId <VALUE>
-    OAuth client id
+OAuth client id
 --clientSecret <VALUE>
-    OAuth client secret
+OAuth client secret
 --authAppUri <VALUE>
-    OAuth app URI
+OAuth app URI
 --silent
-    Use default behavior without user interaction
+Use default behavior without user interaction
 --restartEnvironment
-    Restart environment after execute command
+Restart environment after execute command
 --db-server-uri <VALUE>
-    Db server uri
+Db server uri
 --db-user <VALUE>
-    Database user
+Database user
 --db-password <VALUE>
-    Database password
+Database password
 --backup-file <VALUE>
-    Full path to backup file
+Full path to backup file
 --db-working-folder <VALUE>
-    Folder visible to db server
+Folder visible to db server
 --db-name <VALUE>
-    Desired database name
+Desired database name
 --force
-    Force restore
+Force restore
 --callback-process <VALUE>
-    Callback process name
+Callback process name
 --ep <VALUE>
-    Path to the application root folder
+Path to the application root folder
 ```
+
+## Notes
+
+When DestinationPath points to a folder, the command creates <Code>.cs
+inside that folder.
+
+When DestinationPath points to a .cs file, the command writes the generated
+model to that exact file name.
+
+## Command Type
+
+    Development commands
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
 
 - [Clio Command Reference](../../Commands.md#generate-process-model)

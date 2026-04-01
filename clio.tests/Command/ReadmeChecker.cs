@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using Clio.Help;
 using CommandLine;
 
 namespace Clio.Tests.Command;
@@ -16,6 +17,12 @@ public class ReadmeChecker
 	private static readonly string DocsDirectoryPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "clio", "docs", "commands");
 	private readonly string _readmeContent = File.ReadAllText(ReadmeFilePath);
 	private readonly IReadOnlyList<string> _wikiAnchorsContent = File.ReadAllLines(WikiAnchorsFilePath);
+	private readonly CommandHelpRenderer _commandHelpRenderer;
+
+	public ReadmeChecker() {
+		Parser.Default.Settings.HelpDirectory = HelpDirectoryPath;
+		_commandHelpRenderer = new CommandHelpRenderer(new System.IO.Abstractions.FileSystem(), new CommandHelpCatalog());
+	}
 
 	
 	/// <summary>
@@ -47,13 +54,13 @@ public class ReadmeChecker
 		}
 		string canonicalName = verbAttribute.Name;
 		return HasCommandIndexEntry(canonicalName)
-			&& HasCanonicalHelpFile(canonicalName)
+			&& HasCommandHelp(canonicalName)
 			&& HasCanonicalMarkdownDoc(canonicalName)
 			&& HasWikiAnchor(canonicalName);
 	}
 
-	private bool HasCanonicalHelpFile(string canonicalName) =>
-		File.Exists(Path.Combine(HelpDirectoryPath, $"{canonicalName}.txt"));
+	private bool HasCommandHelp(string canonicalName) =>
+		!string.IsNullOrWhiteSpace(_commandHelpRenderer.TryRenderCommandHelp(canonicalName));
 
 	private bool HasCanonicalMarkdownDoc(string canonicalName) =>
 		File.Exists(Path.Combine(DocsDirectoryPath, $"{canonicalName}.md"));

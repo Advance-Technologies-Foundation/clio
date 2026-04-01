@@ -1607,3 +1607,24 @@ Decision: Removed root-help-specific description wrapping and rendered each comm
 Discovery: The previous wrapping mainly affected long alias groups like `compare-web-farm-node` and `publish-app`; `Commands.md` already used one source line per entry and needed no renderer-format change.
 Files: clio/HelpSystem/CommandHelpRenderer.cs, clio.tests/CommandHelpRendererTests.cs, clio/help/en/help.txt, .codex/workspace-diary.md
 Impact: Root help is easier to scan because every command now occupies one line in generated output, and tests explicitly guard against reintroducing manual line breaks.
+
+## 2026-04-01 09:55 – Analyze loss of rich txt command help
+Context: User reported that command help no longer shows the richer manual `clio/help/en/*.txt` content and shared screenshots pointing at `add-item.txt`.
+Decision: Investigated the current runtime help path, the help artifact exporter, and the pre-modernization `add-item.txt` history instead of patching immediately.
+Discovery: `LocalHelpViewer` now always renders through `CommandHelpRenderer`, `HelpArtifactExporter` rewrites canonical `help/en/*.txt` files from generated metadata, and the section parser recognizes only a small whitelist, while the pre-modernization help set contained at least 89 additional custom headings such as `DETAIL COLLECTIONS`, `MODEL VALIDATION`, `AUTHENTICATION`, and `TROUBLESHOOTING`.
+Files: clio/WikiHelpViewer.cs, clio/HelpSystem/CommandHelpRenderer.cs, clio/HelpSystem/HelpArtifactExporter.cs, clio.tests/CommandHelpRendererTests.cs, clio.tests/HelpArtifactConsistencyTests.cs, .codex/workspace-diary.md
+Impact: The current regression is architectural rather than a single-file doc mismatch; restoring rich command help will require preserving manual help content and widening the parser/test contract instead of only tweaking output formatting.
+
+## 2026-04-01 10:34 – Restore manual txt command help as runtime source
+Context: User asked to implement the regression fix so command help once again shows the richer manual `help/en/*.txt` content instead of only generated sections.
+Decision: Kept top-level root help unchanged, switched command runtime help back to manual-file-first with generated fallback only when no canonical manual file exists, stopped the exporter from regenerating command txt files, and rebuilt markdown docs from the restored pre-modernization manual canonical files.
+Discovery: The safest manual baseline was the tree immediately before `ea0ddcb6`, not the older fixed commit initially assumed, because newer manual help pages like `page-list` and `page-update` already existed before the generated-help rewrite and would have been lost by restoring from the older snapshot.
+Files: clio/HelpSystem/CommandHelpRenderer.cs, clio/HelpSystem/HelpArtifactExporter.cs, clio/help/en, clio/docs/commands, clio.tests/CommonProgramTest.cs, clio.tests/CommandHelpRendererTests.cs, clio.tests/HelpArtifactConsistencyTests.cs, clio.tests/HelpArtifactExporterTests.cs, .codex/workspace-diary.md
+Impact: `clio add-item --help` and `clio help add-item` now show rich manual content again, commands without manual txt still fall back to generated help, and markdown docs preserve custom manual sections instead of truncating them.
+
+## 2026-04-01 13:33 – Merge sparse manual help with generated syntax fallback
+Context: PR review pointed out that returning manual command help verbatim dropped reflected `USAGE`, `ARGUMENTS`, and `OPTIONS` for sparse manual files like `set-pkg-version`, and CI still expected runtime help availability even when no canonical manual txt exists.
+Decision: Changed runtime command help to merge manual sections with generated fallback for any missing syntax sections, updated markdown export to do the same, and relaxed `ReadmeChecker` to verify renderable command help instead of requiring a physical canonical txt file for every visible command.
+Discovery: The GitHub PR failure was confined to `ReadmeChecker` assumptions, while a full local macOS run still shows unrelated `StopCommand` test failures that did not appear in the PR's Windows CI run; the focused help/doc suite remains the relevant regression signal for this change.
+Files: clio/HelpSystem/CommandHelpRenderer.cs, clio.tests/CommandHelpRendererTests.cs, clio.tests/CommonProgramTest.cs, clio.tests/Command/ReadmeChecker.cs, clio/docs/commands, .codex/workspace-diary.md
+Impact: Sparse manual help keeps its rich prose and custom sections without losing discoverable syntax, generated markdown docs regain missing argument/option blocks, and PR CI no longer fails solely because fallback-help commands lack manual txt files.
