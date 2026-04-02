@@ -48,6 +48,20 @@ public class AppUpdaterTests {
 	}
 
 	[Test]
+	[Description("NormalizeInstalledVersion should find the clio semantic version even when it is not the last output line")]
+	public void NormalizeInstalledVersion_WhenOutputContainsMultipleInfoLines_ReturnsFirstClioVersion() {
+		// Arrange
+		const string standardOutput =
+			"[INF] - clio:   8.0.2.55\r\n[INF] - gate:   2.0.0.41\r\n[INF] - settings file path: /tmp/appsettings.json";
+
+		// Act
+		string result = AppUpdater.NormalizeInstalledVersion(standardOutput);
+
+		// Assert
+		result.Should().Be("8.0.2.55", "because verification should not depend on the clio version line being the final line in the command output");
+	}
+
+	[Test]
 	[Description("NormalizeInstalledVersion should fall back to stderr when the version command writes there")]
 	public void NormalizeInstalledVersion_WhenStdoutIsEmptyAndStderrHasVersion_ReturnsVersion() {
 		// Arrange

@@ -1712,3 +1712,10 @@ Decision: Replaced the workflow's full-line regex assertion with semantic versio
 Discovery: The runner output remained `[INF] - clio:   8.0.2.54`, but the PowerShell `-match` based full-line assertion was still brittle on the runner; extracting `\d+\.\d+\.\d+\.\d+` is simpler and aligns with the app-side normalization logic.
 Files: .github/workflows/reliase-to-nuget.yml, .codex/workspace-diary.md
 Impact: Future release verification should no longer fail on logger prefixes or other harmless formatting around the semantic version string.
+
+## 2026-04-02 22:31 – Restore updater compatibility for legacy root version check
+Context: Users still saw `Update completed, but verification failed` after upgrading to `8.0.2.55`, even though `clio ver` showed the correct installed version.
+Decision: Added a built-in root `--version` compatibility path that prints a plain `clio <version>` line before command parsing, and hardened installed-version normalization to scan every output line for the first semantic version instead of assuming the version is on the last line.
+Discovery: The published `8.0.2.55` package and release workflow were already correct; the false warning came from older `clio update` binaries that still shell out to `clio --version` after installing the new binary, so the fix had to be backward-compatible in the CLI itself rather than in CI.
+Files: clio/Program.cs, clio/AppUpdater.cs, clio.tests/CommonProgramTest.cs, clio.tests/AppUpdaterTests.cs, .codex/workspace-diary.md
+Impact: Updating from older broken builds should now self-heal on the first successful upgrade because the newly installed binary answers the legacy verification command in a parsable format.

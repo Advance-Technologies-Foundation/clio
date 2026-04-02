@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -882,6 +883,9 @@ internal class Program {
 			if (clearArgs.Length > 0 && string.Equals(clearArgs[0], "__generate-help-artifacts", StringComparison.OrdinalIgnoreCase)) {
 				return ExportHelpArtifacts();
 			}
+			if (TryHandleBuiltInVersion(clearArgs, out int versionExitCode)) {
+				return versionExitCode;
+			}
 			bool isMcp = IsMcpCommand(clearArgs);
 			IsMcpServerMode = isMcp;
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
@@ -1091,10 +1095,30 @@ internal class Program {
 		return false;
 	}
 
+	private static bool TryHandleBuiltInVersion(string[] args, out int exitCode) {
+		string[] normalizedArgs = NormalizeCommandLineArgs(args);
+		if (normalizedArgs.Length == 1 && IsRootVersionToken(normalizedArgs[0])) {
+			Console.Out.WriteLine(GetBuiltInVersionOutput());
+			exitCode = 0;
+			return true;
+		}
+		exitCode = 1;
+		return false;
+	}
+
 	private static bool IsRootHelpToken(string value) =>
 		string.Equals(value, "help", StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(value, "--help", StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(value, "-h", StringComparison.OrdinalIgnoreCase);
+
+	private static bool IsRootVersionToken(string value) =>
+		string.Equals(value, "--version", StringComparison.OrdinalIgnoreCase);
+
+	private static string GetBuiltInVersionOutput() {
+		Assembly clioAssembly = Assembly.GetExecutingAssembly();
+		FileVersionInfo versionInfo = FileVersionInfo.GetVersionInfo(clioAssembly.Location);
+		return $"clio {versionInfo.FileVersion}";
+	}
 
 	private static int ExportHelpArtifacts() {
 		BindingsModule bindingsModule = new();

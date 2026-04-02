@@ -7,6 +7,7 @@ using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Clio.Common;
 using Newtonsoft.Json.Linq;
@@ -19,6 +20,8 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 	#region Properties: Private
 
 	private const string  LastVersionUrl = "https://api.github.com/repos/Advance-Technologies-Foundation/clio/releases/latest";
+	private static readonly Regex SemanticVersionRegex =
+		new(@"\b(?<version>\d+\.\d+\.\d+\.\d+)(?:\+[0-9A-Za-z\.-]+)?\b", RegexOptions.Compiled);
 
 	#endregion
 
@@ -224,33 +227,39 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 
 		string[] lines = combinedOutput
 			.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-		string versionLine = lines.Length > 0 ? lines[^1].Trim() : combinedOutput;
-		int infoPrefixIndex = versionLine.IndexOf("clio:", StringComparison.OrdinalIgnoreCase);
+		foreach (string rawLine in lines) {
+			if (TryExtractSemanticVersion(rawLine.Trim(), out string normalizedVersion)) {
+				return normalizedVersion;
+			}
+		}
+
+		return string.Empty;
+	}
+
+	private static bool TryExtractSemanticVersion(string line, out string normalizedVersion) {
+		normalizedVersion = string.Empty;
+		if (string.IsNullOrWhiteSpace(line)) {
+			return false;
+		}
+
+		string candidate = line;
+		int infoPrefixIndex = candidate.IndexOf("clio:", StringComparison.OrdinalIgnoreCase);
 		if (infoPrefixIndex > 0) {
-			versionLine = versionLine[infoPrefixIndex..];
-		}
-		int barePrefixIndex = versionLine.IndexOf("clio ", StringComparison.OrdinalIgnoreCase);
-		if (barePrefixIndex > 0 && infoPrefixIndex < 0) {
-			versionLine = versionLine[barePrefixIndex..];
-		}
-
-		if (versionLine.StartsWith("clio:", StringComparison.OrdinalIgnoreCase)) {
-			versionLine = versionLine["clio:".Length..].Trim();
-		} else if (versionLine.StartsWith("clio ", StringComparison.OrdinalIgnoreCase)) {
-			versionLine = versionLine["clio ".Length..].Trim();
+			candidate = candidate[infoPrefixIndex..];
+		} else {
+			int barePrefixIndex = candidate.IndexOf("clio ", StringComparison.OrdinalIgnoreCase);
+			if (barePrefixIndex > 0) {
+				candidate = candidate[barePrefixIndex..];
+			}
 		}
 
-		int metadataSeparatorIndex = versionLine.IndexOf('+');
-		if (metadataSeparatorIndex >= 0) {
-			versionLine = versionLine[..metadataSeparatorIndex];
+		Match match = SemanticVersionRegex.Match(candidate);
+		if (!match.Success) {
+			return false;
 		}
 
-		int suffixSeparatorIndex = versionLine.IndexOf(' ');
-		if (suffixSeparatorIndex >= 0) {
-			versionLine = versionLine[..suffixSeparatorIndex];
-		}
-
-		return versionLine.Trim();
+		normalizedVersion = match.Groups["version"].Value;
+		return true;
 	}
 
 	#endregion
