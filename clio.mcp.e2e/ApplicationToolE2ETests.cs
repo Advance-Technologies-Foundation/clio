@@ -327,7 +327,7 @@ public sealed class ApplicationToolE2ETests {
 			templateCode: "AppFreedomUI",
 			iconId: "11111111-1111-1111-1111-111111111111",
 			iconBackground: "#FFFFFF",
-			optionalTemplateDataJson: null,
+			optionalTemplateDataJson: null);
 
 		// Assert
 		result.Success.Should().BeFalse(
