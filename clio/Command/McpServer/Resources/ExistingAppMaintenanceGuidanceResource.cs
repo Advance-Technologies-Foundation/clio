@@ -32,6 +32,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       Discover the target app
 			       - Use `application-get-list` when you do not yet know the installed application code or need to confirm candidates.
 			       - Use `application-get-info` after `application-get-list` to confirm the primary package and entity context for the target app.
+			       - If `application-create` fails because the app or configuration already exists, switch to the existing-app discovery flow: call `application-get-list` to find the existing app, then `application-get-info` with the matched identifier, and continue with the inspect → mutate → verify flow.
 
 			       Inspect pages before editing
 			       - Use `page-list` to discover candidate Freedom UI page schemas in the target package or by installed `app-code`.
@@ -55,6 +56,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - After `page-update` or `page-sync`, read the page again with `page-get` when you need explicit read-back verification.
 			       - After `modify-entity-schema-column`, re-read the column with `get-entity-schema-column-properties` or the full schema with `get-entity-schema-properties`.
 			       - After `schema-sync`, refresh app or schema context with `application-get-info`, `get-entity-schema-properties`, or both, depending on the workflow.
+			       - The refresh after schema mutations is essential: it verifies that changes were materialized, updates the canonical main-entity selector, and detects incomplete states such as `Database update required`. Treat the schema batch as successful only when refreshed metadata is available and no schema is left in an incomplete state.
 			       """
 		};
 }
