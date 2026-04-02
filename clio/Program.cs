@@ -1117,7 +1117,7 @@ internal class Program {
 	private static string GetBuiltInVersionOutput() {
 		Assembly clioAssembly = Assembly.GetExecutingAssembly();
 		FileVersionInfo versionInfo = FileVersionInfo.GetVersionInfo(clioAssembly.Location);
-		return $"clio {versionInfo.FileVersion}";
+		return versionInfo.FileVersion;
 	}
 
 	private static int ExportHelpArtifacts() {

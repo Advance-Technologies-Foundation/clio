@@ -222,7 +222,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 
 		// Assert
 		exitCode.Should().Be(0, because: "legacy updaters still invoke the root --version flag after installing a new binary");
-		output.Should().StartWith("clio ", because: "the compatibility path should emit a plain version line without logger prefixes");
+		output.Should().NotContain("clio ", because: "older updater builds compare the root --version output to the semantic version string directly");
 		output.Should().Contain(".", because: "the compatibility output should include the installed semantic version");
 	}
 

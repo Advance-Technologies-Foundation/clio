@@ -1719,3 +1719,10 @@ Decision: Added a built-in root `--version` compatibility path that prints a pla
 Discovery: The published `8.0.2.55` package and release workflow were already correct; the false warning came from older `clio update` binaries that still shell out to `clio --version` after installing the new binary, so the fix had to be backward-compatible in the CLI itself rather than in CI.
 Files: clio/Program.cs, clio/AppUpdater.cs, clio.tests/CommonProgramTest.cs, clio.tests/AppUpdaterTests.cs, .codex/workspace-diary.md
 Impact: Updating from older broken builds should now self-heal on the first successful upgrade because the newly installed binary answers the legacy verification command in a parsable format.
+
+## 2026-04-02 23:42 – Tighten root version output for oldest updater compatibility
+Context: A real NuGet.org smoke test from isolated global install `8.0.2.48` to `8.0.2.56` still produced the warning after the first compatibility fix.
+Decision: Changed the built-in root `--version` output to emit only the semantic version string, without the `clio ` prefix, because the oldest updater compares the full stdout directly to the expected semantic version.
+Discovery: The old updater path does call the new binary after update, but it does not normalize `clio 8.0.2.56`; the exact mismatch observed was `expected 8.0.2.56, got clio 8.0.2.56`.
+Files: clio/Program.cs, clio.tests/CommonProgramTest.cs, .codex/workspace-diary.md
+Impact: The next release should finally remove the false warning for users upgrading from pre-fix global installations such as `8.0.2.48`.
