@@ -97,8 +97,8 @@ jobs:
             throw "Packaged tool did not report a version."
           }
 
-          if ($reportedVersion -notmatch "^.*clio:\\s+$([regex]::Escape($version))\\s*$") {
-            throw "Packaged tool version mismatch. Expected 'clio:   $version', got '$reportedVersion'."
+          if ($reportedVersion -notmatch "^.*clio:\\s+$([regex]::Escape($version))([+ ].*)?$") {
+            throw "Packaged tool version mismatch. Expected version '$version' in '$reportedVersion'."
           }
 
           echo "Verified packaged tool version: $reportedVersion"

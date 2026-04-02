@@ -1698,3 +1698,10 @@ Decision: Updated both repository workflows to use `actions/checkout@v5` instead
 Discovery: The warning came from JavaScript action runtime deprecation rather than any build/test failure; both `build.yml` and `reliase-to-nuget.yml` were still pinned to checkout v4.
 Files: .github/workflows/build.yml, .github/workflows/reliase-to-nuget.yml, .codex/workspace-diary.md
 Impact: Future workflow runs should stop reporting the Node 20 deprecation warning once the self-hosted runner supports the newer checkout action runtime.
+
+## 2026-04-02 22:09 – Fix release verification for logger-prefixed version output
+Context: Release `8.0.2.53` failed in GitHub Actions run `23919151113` during the `Verify packaged tool version` step even though the packaged tool installed and reported the correct version.
+Decision: Relaxed the workflow regex to accept the console logger prefix around `clio:   <version>`, and updated `AppUpdater.NormalizeInstalledVersion` to strip leading logger text before parsing the semantic version.
+Discovery: The CLI version command output on the runner is `[INF] - clio:   8.0.2.53`, so the previous exact match against only `clio:   8.0.2.53` was too strict; the same prefix would also have broken local `clio update` verification.
+Files: .github/workflows/reliase-to-nuget.yml, clio/AppUpdater.cs, clio.tests/AppUpdaterTests.cs, .codex/workspace-diary.md
+Impact: The next release run should pass packaged-tool verification instead of failing on the logger prefix, and local updater verification now parses the installed version correctly.

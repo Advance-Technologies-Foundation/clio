@@ -225,6 +225,14 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 		string[] lines = combinedOutput
 			.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
 		string versionLine = lines.Length > 0 ? lines[^1].Trim() : combinedOutput;
+		int infoPrefixIndex = versionLine.IndexOf("clio:", StringComparison.OrdinalIgnoreCase);
+		if (infoPrefixIndex > 0) {
+			versionLine = versionLine[infoPrefixIndex..];
+		}
+		int barePrefixIndex = versionLine.IndexOf("clio ", StringComparison.OrdinalIgnoreCase);
+		if (barePrefixIndex > 0 && infoPrefixIndex < 0) {
+			versionLine = versionLine[barePrefixIndex..];
+		}
 
 		if (versionLine.StartsWith("clio:", StringComparison.OrdinalIgnoreCase)) {
 			versionLine = versionLine["clio:".Length..].Trim();

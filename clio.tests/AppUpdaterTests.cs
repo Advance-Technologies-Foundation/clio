@@ -35,6 +35,19 @@ public class AppUpdaterTests {
 	}
 
 	[Test]
+	[Description("NormalizeInstalledVersion should ignore logger prefixes before labelled version output")]
+	public void NormalizeInstalledVersion_WhenInfoCommandIncludesLoggerPrefix_ReturnsBaseVersion() {
+		// Arrange
+		const string standardOutput = "[INF] - clio:   8.0.2.51";
+
+		// Act
+		string result = AppUpdater.NormalizeInstalledVersion(standardOutput);
+
+		// Assert
+		result.Should().Be("8.0.2.51", "because installed tool output is written through the console logger");
+	}
+
+	[Test]
 	[Description("NormalizeInstalledVersion should fall back to stderr when the version command writes there")]
 	public void NormalizeInstalledVersion_WhenStdoutIsEmptyAndStderrHasVersion_ReturnsVersion() {
 		// Arrange
