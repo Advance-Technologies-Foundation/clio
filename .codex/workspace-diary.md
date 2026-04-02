@@ -1057,6 +1057,13 @@ Discovery: Several important Freedom UI contracts were missing from the shipped 
 Files: clio/Command/McpServer/Data/ComponentRegistry.json, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.mcp.e2e/ComponentInfoToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Future page-editing flows can inspect real frontend-derived component slots and action contracts directly through MCP, and the added tests guard both catalog search semantics and nested menu detail lookups.
 
+## 2026-04-02 15:20 – Add init-workspace command
+Context: User needed a workspace initialization command for non-empty directories because `createw` is intended for creating a workspace in an empty folder.
+Decision: Added a new `init-workspace`/`initw` command that initializes the current directory without overwriting existing files, and aligned docs plus MCP surface with the new command.
+Discovery: Safe initialization required a separate template copy path that only fills missing files, while environment-backed initialization can still attach packages and run restore after creating missing workspace metadata.
+Files: clio/Command/InitWorkspaceCommand.cs, clio/Workspace/WorkspaceCreator.cs, clio/Common/TemplateProvider.cs, clio/Command/McpServer/Tools/InitWorkspaceTool.cs, clio/Command/McpServer/Prompts/InitWorkspacePrompt.cs, clio/tests/Command/InitWorkspaceCommand.Tests.cs, clio.mcp.e2e/InitWorkspaceToolE2ETests.cs, clio/help/en/init-workspace.txt, clio/docs/commands/init-workspace.md, clio/Commands.md, .codex/workspace-diary.md
+Impact: Future workspace flows can distinguish clean creation from in-place initialization, and the MCP/docs/test surface now documents and verifies the non-overwrite contract explicitly.
+
 ## 2026-03-24 22:20 – Fix PR 480 review comments on MCP mode and page-update resources
 Context: User asked to validate PR `#480` review comments, fix confirmed issues, push the branch, and respond in GitHub review threads.
 Decision: Confirmed both unresolved review findings, restricted MCP mode detection to the invoked verb instead of any argument value, made `page-update` reject malformed `--resources` payloads during validation, and aligned `page-update` docs plus MCP page prompt with the new behavior.

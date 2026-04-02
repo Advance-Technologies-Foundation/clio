@@ -18,6 +18,13 @@ namespace Clio.Workspaces
 
 		void SaveWorkspaceSettings();
 		void Create(string environmentName, bool isAddedPackageNames = false, bool force = false);
+
+		/// <summary>
+		/// Initializes workspace metadata in the current root path without overwriting existing files.
+		/// </summary>
+		/// <param name="environmentName">Optional environment name to persist for the workspace.</param>
+		/// <param name="isAddedPackageNames">Whether editable package names should be preloaded into workspace settings.</param>
+		void Initialize(string environmentName, bool isAddedPackageNames = false);
 		void Restore(WorkspaceOptions restoreWorkspaceOptions);
 		void Install(string creatioPackagesZipName = null, bool useApplicationInstaller = false,
 			bool createBackup = true);

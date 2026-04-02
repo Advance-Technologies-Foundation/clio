@@ -361,9 +361,11 @@ public class CreateWorkspaceCommandTests
 
 	private static void ConfigurePathOperations(IFileSystem fileSystem) {
 		fileSystem.IsPathRooted(Arg.Any<string>())
-			.Returns(callInfo => Path.IsPathRooted(callInfo.Arg<string>()));
+			.Returns(callInfo => IsRootedPath(callInfo.Arg<string>()));
 		fileSystem.GetFullPath(Arg.Any<string>())
-			.Returns(callInfo => Path.GetFullPath(callInfo.Arg<string>()));
+			.Returns(callInfo => NormalizePath(callInfo.Arg<string>()));
+		fileSystem.Combine(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => Path.Combine(callInfo.Arg<string>(), callInfo.Arg<string>()));
 		fileSystem.Combine(Arg.Any<string[]>())
 			.Returns(callInfo => Path.Combine(callInfo.Arg<string[]>()));
 		fileSystem.DirectorySeparatorChar.Returns(Path.DirectorySeparatorChar);
@@ -371,5 +373,18 @@ public class CreateWorkspaceCommandTests
 
 	private static string GetRootedPath(params string[] segments) {
 		return TestFileSystem.GetRootedPath(segments);
+	}
+
+	private static bool IsRootedPath(string path) {
+		if (string.IsNullOrWhiteSpace(path)) {
+			return false;
+		}
+
+		return Path.IsPathRooted(path)
+			|| (path.Length >= 3 && char.IsLetter(path[0]) && path[1] == ':' && (path[2] == '\\' || path[2] == '/'));
+	}
+
+	private static string NormalizePath(string path) {
+		return IsRootedPath(path) ? path : Path.GetFullPath(path);
 	}
 }

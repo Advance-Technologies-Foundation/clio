@@ -72,6 +72,9 @@ internal class Program {
 		typeof(CheckNugetUpdateOptions),
 		typeof(UpdateCliOptions),
 		typeof(CreateWorkspaceCommandOptions),
+		// Workspace management
+		typeof(CreateWorkspaceCommandOptions),
+		typeof(InitWorkspaceCommandOptions),
 		typeof(RestoreWorkspaceOptions),
 		typeof(PushWorkspaceCommandOptions),
 		typeof(LoadPackagesToFileSystemOptions),
@@ -255,6 +258,7 @@ internal class Program {
 					UpdateCliOptions opts => Resolve<UpdateCliCommand>(opts).Execute(opts),
 					RestoreWorkspaceOptions opts => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
 					CreateWorkspaceCommandOptions opts => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
+					InitWorkspaceCommandOptions opts => Resolve<InitWorkspaceCommand>(opts).Execute(opts),
 					PushWorkspaceCommandOptions opts => Resolve<PushWorkspaceCommand>(opts).Execute(opts),
 					LoadPackagesToFileSystemOptions opts => Resolve<LoadPackagesToFileSystemCommand>(opts)
 						.Execute(opts),

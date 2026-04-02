@@ -230,6 +230,7 @@ public class BindingsModule {
 		services.AddTransient<GetPkgListCommand>();
 		services.AddTransient<RestoreWorkspaceCommand>();
 		services.AddTransient<CreateWorkspaceCommand>();
+		services.AddTransient<InitWorkspaceCommand>();
 		services.AddTransient<PushWorkspaceCommand>();
 		services.AddSingleton<IDataBindingTemplateSchemaCatalog, DataBindingTemplateCatalog>();
 		services.AddSingleton<IDataBindingTemplateCatalog>(provider =>

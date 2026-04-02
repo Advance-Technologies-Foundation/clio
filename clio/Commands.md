@@ -197,6 +197,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="create-workspace"></a>
 <a id="createw"></a>
 - [`create-workspace`](docs/commands/create-workspace.md) - Create a local workspace, `createw`
+<a id="init-workspace"></a>
+<a id="initw"></a>
+- [`init-workspace`](docs/commands/init-workspace.md) - Initialize a workspace in the current directory without overwriting existing files, `initw`
 <a id="link-core-src"></a>
 <a id="lcs"></a>
 - [`link-core-src`](docs/commands/link-core-src.md) - Link core source code to environment for development, `lcs`

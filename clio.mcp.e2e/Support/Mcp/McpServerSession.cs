@@ -15,12 +15,15 @@ internal sealed class McpServerSession : IAsyncDisposable {
 
 	public McpClient Client { get; }
 
-	public static async Task<McpServerSession> StartAsync(McpE2ESettings settings, CancellationToken cancellationToken) {
+	public static async Task<McpServerSession> StartAsync(
+		McpE2ESettings settings,
+		CancellationToken cancellationToken,
+		string? workingDirectory = null) {
 		ClioProcessDescriptor process = ClioExecutableResolver.Resolve(settings);
 		StdioClientTransport transport = new(new StdioClientTransportOptions {
 			Command = process.Command,
 			Arguments = [.. process.Arguments],
-			WorkingDirectory = process.WorkingDirectory,
+			WorkingDirectory = workingDirectory ?? process.WorkingDirectory,
 			EnvironmentVariables = settings.ProcessEnvironmentVariables,
 			Name = "clio-mcp-e2e",
 			ShutdownTimeout = TimeSpan.FromSeconds(10)

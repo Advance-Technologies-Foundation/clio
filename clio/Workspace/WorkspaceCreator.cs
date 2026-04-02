@@ -18,6 +18,13 @@ namespace Clio.Workspaces
 
 		void Create(string environmentName, bool isAddingPackageNames = false, bool force = false);
 
+		/// <summary>
+		/// Initializes workspace metadata without overwriting existing files in the target directory.
+		/// </summary>
+		/// <param name="environmentName">Optional environment name to persist.</param>
+		/// <param name="isAddingPackageNames">Whether editable package names should be preloaded into workspace settings.</param>
+		void Initialize(string environmentName, bool isAddingPackageNames = false);
+
 		void SaveWorkspaceEnvironmentSettings(string environmentName);
 
 		#endregion
@@ -171,6 +178,19 @@ namespace Clio.Workspaces
 			ValidateNotExistingWorkspace(force);
 			ValidateDirectory(force);
 			_templateProvider.CopyTemplateFolder("workspace", RootPath, "", "", false);
+			NormalizeWorkspaceGitIgnore();
+			if (!ExistsWorkspaceSettingsFile) {
+				CreateWorkspaceSettingsFile(isAddingPackageNames);
+				SaveWorkspaceEnvironmentSettings(environmentName);
+			}
+			if (_osPlatformChecker.IsWindowsEnvironment) {
+				return;
+			}
+			ActualizeExecutablePermissions();
+		}
+
+		public void Initialize(string environmentName, bool isAddingPackageNames = false) {
+			_templateProvider.CopyTemplateFolderIfMissing("workspace", RootPath);
 			NormalizeWorkspaceGitIgnore();
 			if (!ExistsWorkspaceSettingsFile) {
 				CreateWorkspaceSettingsFile(isAddingPackageNames);

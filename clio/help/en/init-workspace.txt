@@ -1,0 +1,65 @@
+COMMAND TYPE
+    Workspace commands
+
+NAME
+    init-workspace (initw) - Initialize a clio workspace in the current directory
+
+DESCRIPTION
+    init-workspace safely initializes the current directory as a clio workspace.
+
+    Unlike create-workspace, this command is intended for directories that already
+    contain files or package folders. clio adds missing workspace files and
+    metadata but does not overwrite files that already exist.
+
+    By default, the command works locally and does not require environment
+    credentials.
+
+    When -e/--uri is provided, clio initializes the directory first and then
+    restores editable packages from the selected environment.
+
+    On success, the command reports the full directory where the workspace was
+    initialized.
+
+SYNOPSIS
+    clio init-workspace [options]
+    clio initw [options]
+
+OPTIONS
+    --force                             Accepted for compatibility with shared workspace options, but init-workspace
+                                        does not overwrite existing files in the current directory.
+                                        Default: false
+
+    --Environment           -e          Environment name
+
+    --uri                   -u          Server URI (alternative to -e)
+
+    --Login                 -l          Username for basic authentication
+
+    --Password              -p          Password for basic authentication
+
+    --ClientId                          OAuth Client ID (OAuth authentication)
+
+    --ClientSecret                      OAuth Client Secret (OAuth authentication)
+
+    --AuthAppUri                        OAuth Authentication App URI
+
+    --IsNugetRestore                    Restore CreatioSDK NuGet package (when restore step is executed)
+                                        Default: true
+
+    --IsCreateSolution                  Create MainSolution.slnx solution file (when restore step is executed)
+                                        Default: true
+
+    --AddBuildProps                     Create .build-props directory and update project files (when restore step is executed)
+                                        Default: true
+
+    --AppCode               -a          Application code
+
+EXAMPLES
+    Initialize the current repository folder as a workspace without changing existing files:
+        clio init-workspace
+
+    Initialize the current directory and download editable packages from a configured environment:
+        clio init-workspace -e dev
+
+    Initialize the current directory and include packages from an installed application:
+        clio init-workspace -e dev --AppCode <APP_CODE>

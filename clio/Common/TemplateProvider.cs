@@ -70,6 +70,23 @@ public class TemplateProvider : ITemplateProvider
 		return content;
 	}
 
+	private void CopyDirectoryIfMissing(string source, string destination) {
+		_fileSystem.CreateDirectoryIfNotExists(destination);
+		foreach (string filePath in _fileSystem.GetFiles(source)) {
+			string destinationFilePath = Path.Combine(destination, Path.GetFileName(filePath));
+			if (_fileSystem.ExistsFile(destinationFilePath)) {
+				continue;
+			}
+
+			_fileSystem.CopyFile(filePath, destinationFilePath, false);
+		}
+
+		foreach (string directoryPath in _fileSystem.GetDirectories(source)) {
+			string destinationDirectoryPath = Path.Combine(destination, Path.GetFileName(directoryPath));
+			CopyDirectoryIfMissing(directoryPath, destinationDirectoryPath);
+		}
+	}
+
 	#endregion
 
 	#region Methods: Public
@@ -80,6 +97,14 @@ public class TemplateProvider : ITemplateProvider
 		destinationPath.CheckArgumentNullOrWhiteSpace(nameof(destinationPath));
 		string templatePath = GetCompatibleVersionTemplatePath(templateFolderName, creatioVersion, group);
 		_fileSystem.CopyDirectory(templatePath, destinationPath, overrideFolder);
+	}
+
+	public void CopyTemplateFolderIfMissing(string templateFolderName, string destinationPath, string creatioVersion = "",
+		string group = "") {
+		templateFolderName.CheckArgumentNullOrWhiteSpace(nameof(templateFolderName));
+		destinationPath.CheckArgumentNullOrWhiteSpace(nameof(destinationPath));
+		string templatePath = GetCompatibleVersionTemplatePath(templateFolderName, creatioVersion, group);
+		CopyDirectoryIfMissing(templatePath, destinationPath);
 	}
 
 	public void CopyTemplateFolder(string templateFolderName, string destinationPath,
