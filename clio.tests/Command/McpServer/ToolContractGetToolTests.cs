@@ -228,6 +228,66 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the canonical DB-first binding contract surface with explicit fallback, lifecycle, and failure guidance.")]
+	public void ToolContractGet_Should_Return_Canonical_DbFirst_Binding_Surface() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		string[] requestedTools = [
+			CreateDataBindingDbTool.CreateDataBindingDbToolName,
+			UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName,
+			RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName
+		];
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(requestedTools));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the authoritative DB-first binding surface should be served by clio");
+		result.Tools.Should().NotBeNull(
+			because: "a successful lookup should return the requested DB-first binding contracts");
+		result.Tools!.Select(contract => contract.Name).Should().Equal(requestedTools,
+			because: "the response should preserve the requested DB-first binding tool order");
+
+		ToolContractDefinition createContract = result.Tools.Single(contract =>
+			contract.Name == CreateDataBindingDbTool.CreateDataBindingDbToolName);
+		createContract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					SchemaSyncTool.ToolName
+				},
+				because: "create-data-binding-db should advertise schema-sync as the canonical batched path");
+		createContract.Deprecations.Should().ContainSingle(
+			because: "create-data-binding-db should advertise that it is a fallback or standalone path");
+		createContract.Deprecations[0].Message.Should().Contain("fallback",
+			because: "the deprecation guidance should explicitly frame create-data-binding-db as a fallback");
+		createContract.Deprecations[0].Message.Should().Contain("seed-rows",
+			because: "the deprecation guidance should point callers at inline seed-rows inside schema-sync");
+		createContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "rows" &&
+				field.Description.Contains("values object"),
+			because: "create-data-binding-db should canonically describe the required rows[].values shape");
+
+		ToolContractDefinition upsertContract = result.Tools.Single(contract =>
+			contract.Name == UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName);
+		upsertContract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					CreateDataBindingDbTool.CreateDataBindingDbToolName,
+					UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName
+				},
+				because: "upsert-data-binding-row-db should advertise the required create-then-upsert sequence");
+		upsertContract.ErrorContract.Codes.Should().Contain(code => code.Code == "binding-not-found",
+			because: "upsert-data-binding-row-db should document the missing-binding failure mode");
+
+		ToolContractDefinition removeContract = result.Tools.Single(contract =>
+			contract.Name == RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName);
+		removeContract.Description.Should().Contain("package schema data record",
+			because: "remove-data-binding-row-db should document the last-row lifecycle cleanup");
+		removeContract.InputSchema.Properties.Should().Contain(field => field.Name == "key-value",
+			because: "remove-data-binding-row-db should continue advertising the canonical key-value parameter name");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Advertises enriched application-get-info output fields for installed application identity.")]
 	public void ToolContractGet_Should_Advertise_Application_Info_Identity_Fields() {
 		// Arrange

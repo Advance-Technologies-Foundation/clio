@@ -24,6 +24,8 @@ public static class DataBindingDbPrompt {
 		$"""
 		 Use clio mcp server `{CreateDataBindingDbTool.CreateDataBindingDbToolName}` to create a DB-first data binding
 		 for schema `{schemaName}` in package `{packageName}` on environment `{environmentName}`.
+		 Prefer `schema-sync` with inline `seed-rows` as the canonical batched path. Use
+		 `{CreateDataBindingDbTool.CreateDataBindingDbToolName}` only for explicit fallback or standalone binding work.
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Use `binding-name` `{bindingName ?? "<default: same as schema>"}` and provide `rows`
 		 `{rows ?? "<not provided>"}` as a JSON array of objects each with a `values` key.
@@ -43,6 +45,8 @@ public static class DataBindingDbPrompt {
 		$"""
 		 Use clio mcp server `{UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName}` to upsert a row in binding
 		 `{bindingName}` under package `{packageName}` on environment `{environmentName}`.
+		 The binding must already exist. If it does not, call `{CreateDataBindingDbTool.CreateDataBindingDbToolName}`
+		 first and then retry the row upsert.
 		 Pass `environment-name` `{environmentName}` and `values` `{values}` exactly as provided.
 		 To sync the result to a local workspace after the DB write, use `restore-workspace` separately.
 		 """;

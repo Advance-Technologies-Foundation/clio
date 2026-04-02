@@ -928,13 +928,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCreateDataBindingDb() {
 		return new ToolContractDefinition(
 			CreateDataBindingDbTool.CreateDataBindingDbToolName,
-			"Creates or updates a DB-first package data binding and optionally applies rows immediately.",
+			"Creates or updates a DB-first package data binding and optionally applies rows immediately as an explicit fallback or standalone path outside a batched schema-sync flow.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName],
 				EnvironmentPackageSchemaFields(
 					"Entity schema name for the binding.",
 					Field(BindingNameFieldName, StringType, "Optional binding name; defaults to the schema name."),
-					Field("rows", StringType, "Optional JSON array of rows."))),
+					Field("rows", StringType,
+						"Optional JSON array of row objects. Each row must contain a values object keyed by column name."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(),
@@ -951,7 +952,7 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				new ToolDeprecation(
-					"Prefer schema-sync with inline seed-rows as the canonical path. Keep create-data-binding-db for explicit fallback or standalone binding work.",
+					"Prefer schema-sync with inline seed-rows as the canonical batched path. Keep create-data-binding-db for explicit fallback or standalone binding work.",
 					[
 						SchemaSyncTool.ToolName
 					])
@@ -995,7 +996,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildRemoveDataBindingRowDb() {
 		return new ToolContractDefinition(
 			RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName,
-			"Removes a single row from an existing DB-first binding by key value.",
+			"Removes a single row from an existing DB-first binding by key value, and deletes the package schema data record when the removed row was the last bound row.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, BindingNameFieldName, KeyValueFieldName],
 				EnvironmentPackageFields(
