@@ -135,6 +135,64 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the full canonical entity-schema contract surface with authoritative flows and metadata from clio.")]
+	public void ToolContractGet_Should_Return_Canonical_EntitySchema_Surface() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		string[] requestedTools = [
+			SchemaSyncTool.ToolName,
+			CreateLookupTool.CreateLookupToolName,
+			CreateEntitySchemaTool.CreateEntitySchemaToolName,
+			UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
+			GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
+			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
+		];
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(requestedTools));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "tool-contract-get should expose the full canonical entity/schema MCP surface from clio");
+		result.Tools.Should().NotBeNull(
+			because: "successful canonical surface lookup should include contract definitions");
+		result.Tools!.Select(contract => contract.Name).Should().BeEquivalentTo(requestedTools,
+			because: "the canonical entity/schema tool surface should be retrievable as one consistent contract set");
+		result.Tools.Should().OnlyContain(contract =>
+				contract.OutputContract != null
+				&& contract.ErrorContract != null
+				&& contract.PreferredFlow != null
+				&& contract.FallbackFlow != null,
+			because: "each canonical schema tool contract should publish output, error, and flow metadata");
+		result.Tools.Should().Contain(contract =>
+				contract.Name == SchemaSyncTool.ToolName
+				&& contract.PreferredFlow.Tools.SequenceEqual(new[] {
+					ApplicationCreateTool.ApplicationCreateToolName,
+					SchemaSyncTool.ToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName
+				}),
+			because: "schema-sync should advertise the canonical batched entity workflow");
+		result.Tools.Should().Contain(contract =>
+				contract.Name == CreateLookupTool.CreateLookupToolName
+				&& contract.PreferredFlow.Tools.SequenceEqual(new[] { SchemaSyncTool.ToolName }),
+			because: "create-lookup should advertise schema-sync as the preferred canonical path");
+		result.Tools.Should().Contain(contract =>
+				contract.Name == CreateEntitySchemaTool.CreateEntitySchemaToolName
+				&& contract.PreferredFlow.Tools.SequenceEqual(new[] { SchemaSyncTool.ToolName }),
+			because: "create-entity-schema should advertise schema-sync as the preferred canonical path");
+		result.Tools.Should().Contain(contract =>
+				contract.Name == UpdateEntitySchemaTool.UpdateEntitySchemaToolName
+				&& contract.PreferredFlow.Tools.SequenceEqual(new[] {
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+					UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName
+				}),
+			because: "update-entity-schema should advertise the canonical inspect-mutate-verify flow");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Advertises enriched application-get-info output fields for installed application identity.")]
 	public void ToolContractGet_Should_Advertise_Application_Info_Identity_Fields() {
 		// Arrange

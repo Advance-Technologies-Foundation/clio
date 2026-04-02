@@ -42,6 +42,10 @@ public sealed class SchemaSyncTool(
 			try {
 				foreach (SchemaSyncOperation op in args.Operations) {
 					logger.ClearMessages();
+					if (TryValidateSeedRows(op, out SchemaSyncOperationResult? seedValidationFailure)) {
+						results.Add(seedValidationFailure);
+						break;
+					}
 					SchemaSyncOperationResult result = ExecuteOperation(op, args);
 					results.Add(result);
 					if (!result.Success) {
@@ -77,6 +81,27 @@ public sealed class SchemaSyncTool(
 				Success = false, Error = $"Unknown operation type: {op.Type}"
 			}
 		};
+	}
+
+	private static bool TryValidateSeedRows(
+		SchemaSyncOperation op,
+		out SchemaSyncOperationResult? validationFailure) {
+		validationFailure = null;
+		if (op.SeedRows?.Any() != true) {
+			return false;
+		}
+
+		if (op.SeedRows.Any(row => row is null || row.Values is null)) {
+			validationFailure = new SchemaSyncOperationResult {
+				Operation = "seed-data",
+				SchemaName = op.SchemaName,
+				Success = false,
+				Error = "seed-rows validation failed: each row must contain a non-null 'values' object."
+			};
+			return true;
+		}
+
+		return false;
 	}
 
 	private SchemaSyncOperationResult ExecuteCreateSchema(
