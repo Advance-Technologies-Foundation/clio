@@ -225,6 +225,70 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("tool-contract-get returns canonical DB-first binding contracts from clio")]
+	public async Task ToolContractGet_Should_Return_Canonical_DbFirst_Binding_Surface() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					CreateDataBindingDbTool.CreateDataBindingDbToolName,
+					UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName,
+					RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the DB-first binding contract surface should be discoverable through the MCP server");
+		response.Tools.Should().NotBeNull(
+			because: "a successful lookup should return the requested DB-first binding contracts");
+		response.Tools!.Select(tool => tool.Name).Should().Equal(
+			new[] {
+				CreateDataBindingDbTool.CreateDataBindingDbToolName,
+				UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName,
+				RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName
+			},
+			because: "the response should preserve the requested binding tool order");
+
+		ToolContractDefinition createContract = response.Tools.Single(tool => tool.Name == CreateDataBindingDbTool.CreateDataBindingDbToolName);
+		createContract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					SchemaSyncTool.ToolName
+				},
+				because: "create-data-binding-db should advertise schema-sync as the canonical batched path");
+		createContract.Deprecations.Should().ContainSingle(
+			because: "create-data-binding-db should advertise its explicit fallback positioning");
+		createContract.Deprecations[0].Message.Should().Contain("seed-rows",
+			because: "the fallback guidance should direct callers to inline seed-rows inside schema-sync");
+		createContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "rows" &&
+				field.Description.Contains("values object"),
+			because: "the canonical contract should describe the required rows[].values wrapper shape");
+
+		ToolContractDefinition upsertContract = response.Tools.Single(tool => tool.Name == UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName);
+		upsertContract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					CreateDataBindingDbTool.CreateDataBindingDbToolName,
+					UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName
+				},
+				because: "upsert-data-binding-row-db should advertise the create-then-upsert sequence");
+		upsertContract.ErrorContract.Codes.Should().Contain(code => code.Code == "binding-not-found",
+			because: "the DB-first upsert contract should advertise the missing-binding failure mode");
+
+		ToolContractDefinition removeContract = response.Tools.Single(tool => tool.Name == RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName);
+		removeContract.Description.Should().Contain("package schema data record",
+			because: "the DB-first remove contract should document the final-row lifecycle cleanup");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("tool-contract-get returns canonical required field name for modify-entity-schema-column")]
 	public async Task ToolContractGet_Should_Return_Canonical_Required_Field_Name() {
 		// Arrange
