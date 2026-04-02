@@ -66,10 +66,42 @@ jobs:
         run: |
           $version = "${{ steps.extract_version.outputs.VERSION }}"
           echo "Building clio with version: $version"
-          dotnet build .\clio\clio.csproj -c Release --no-incremental
+          dotnet build .\clio\clio.csproj -c Release --no-incremental `
+            /p:ContinuousIntegrationBuild=true `
+            /p:GeneratePackageOnBuild=false `
+            /p:AssemblyVersion=$version /p:FileVersion=$version /p:Version=$version /p:InformationalVersion=$version
           echo "Packing clio with version: $version"
-          dotnet pack .\clio\clio.csproj --configuration Release --output ./output /p:AssemblyVersion=$version /p:FileVersion=$version /p:Version=$version
+          dotnet pack .\clio\clio.csproj --configuration Release --no-build --output ./output `
+            /p:GeneratePackageOnBuild=false `
+            /p:AssemblyVersion=$version /p:FileVersion=$version /p:Version=$version /p:InformationalVersion=$version
         shell: powershell
+
+      - name: Verify packaged tool version
+        shell: powershell
+        run: |
+          $version = "${{ steps.extract_version.outputs.VERSION }}"
+          $toolPath = Join-Path $PWD "tool-smoke"
+          if (Test-Path $toolPath) {
+            Remove-Item $toolPath -Recurse -Force
+          }
+
+          dotnet tool install clio --tool-path $toolPath --version $version --add-source (Join-Path $PWD "output")
+
+          $clioExecutable = Join-Path $toolPath "clio"
+          if (-not (Test-Path $clioExecutable)) {
+            $clioExecutable = Join-Path $toolPath "clio.exe"
+          }
+
+          $reportedVersion = & $clioExecutable info --clio
+          if (-not $reportedVersion) {
+            throw "Packaged tool did not report a version."
+          }
+
+          if ($reportedVersion -notmatch "^.*clio:\\s+$([regex]::Escape($version))\\s*$") {
+            throw "Packaged tool version mismatch. Expected 'clio:   $version', got '$reportedVersion'."
+          }
+
+          echo "Verified packaged tool version: $reportedVersion"
 
       - name: Publish to NuGet
         env:
