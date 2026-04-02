@@ -1685,7 +1685,35 @@ Discovery: The local macOS test runner hit a `CreateAppHost` access violation du
 Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio/Environment/SettingsBootstrapService.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/ToolCommandResolverTests.cs, clio.tests/Command/SettingsBootstrapServiceTests.cs, .codex/workspace-diary.md
 Impact: Environmentless MCP tools no longer inherit active-environment safety flags accidentally, settings-health reflects repaired files in the same process, and PR #506 should converge to zero actionable Sonar/Codex findings after the next push analysis.
 
-## 2026-04-02 12:05 – Canonicalize application MCP validation in clio
+## 2026-04-02 01:23 – Add PR delivery flow skill
+Context: User asked for a dedicated skill that captures the full GitHub delivery sequence so future branch update, PR, review-response, quality-gate, and merge tasks do not miss reply/resolve steps.
+Decision: Added a canonical `pr-delivery-flow` instruction in `docs/agent-instructions/` plus a local skill wrapper and UI metadata under `.codex/skills/pr-delivery-flow`, with explicit mandatory checkpoints for unresolved review threads, checks, Sonar, and merge verification.
+Discovery: The missing step in the earlier PR flow was not code validation but GitHub hygiene; the skill now encodes reply-and-resolve as a first-class required step instead of an optional cleanup action.
+Files: docs/agent-instructions/pr-delivery-flow.md, .codex/skills/pr-delivery-flow/SKILL.md, .codex/skills/pr-delivery-flow/agents/openai.yaml, .codex/workspace-diary.md
+Impact: Future delivery requests can trigger a reusable checklist-driven workflow that reduces the chance of forgetting AI/human review thread replies or final merge verification.
+
+## 2026-04-02 01:31 – Expand PR delivery skill with session-specific edge cases
+Context: User asked to review the new PR delivery skill against all nuances discovered during this session and fill in anything that was still missing.
+Decision: Expanded the canonical flow to cover new-branch-from-master creation, latest-head verification after every push, direct Sonar issue inspection even when the quality gate is green, explicit handling of outdated unresolved review threads, self-hosted runner polling, and optional release follow-up on the verified merge commit.
+Discovery: The easy-to-miss failures in this session were not basic GitHub operations but edge cases: green checks on an older head, Sonar passing while still showing minor new issues, and outdated AI threads remaining unresolved after the code fix until replied to explicitly.
+Files: docs/agent-instructions/pr-delivery-flow.md, .codex/skills/pr-delivery-flow/SKILL.md, .codex/workspace-diary.md
+Impact: The skill now reflects the real operational pitfalls we hit in this session and should reduce the chance of repeating them in future branch-to-release delivery flows.
+
+## 2026-04-02 02:08 – Canonicalize page MCP surface for ENG-87890
+Context: User asked to implement ENG-87890 so `clio` becomes the only source of truth for page MCP semantics while ADAC keeps only local page editing, orchestration, and evidence behavior.
+Decision: Reframed `PagePrompt`, `ExistingAppMaintenanceGuidanceResource`, and `ToolContractGetTool` around the canonical `page-list -> page-get -> page-sync -> page-get` flow, marked `page-update` as fallback-only for dry-run or legacy save cases, aligned the page-tool tests and E2E assertions with that contract, and updated ADAC docs to delegate executable semantics to `tool-contract-get` and `docs://mcp/guides/existing-app-maintenance`.
+Discovery: The real cross-repo mismatch was documentation authority rather than runtime payload shape; targeted unit coverage passed directly, while the MCP E2E slice needed a `--no-restore` rerun because the default restore path hit a private NuGet feed 403 unrelated to the code changes.
+Files: clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.mcp.e2e/ToolContractGetToolE2ETests.cs, /Users/a.kravchuk/Projects/ai-driven-app-creation/README.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/agents/04-implementation.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/essentials.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/mcp-application-tools-reference.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/ui-reference.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/viewconfig-reference.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/handlers-reference.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/docs/mcp-testing-guide.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/skills/page-schema-editing/SKILL.md, .codex/workspace-diary.md
+Impact: `clio` now advertises one consistent page-tool contract across prompts, guidance, and machine-readable metadata, and ADAC no longer competes with that contract while still preserving its local page-sync orchestration and evidence flow.
+
+## 2026-04-02 16:20 – Bump local default clio version to 8.0.2.53
+Context: User requested to prepare the next release baseline so local builds use version 8.0.2.53 and the change is pushed to the current development branch.
+Decision: Updated `AssemblyVersion` default in `clio/clio.csproj` from 8.0.2.48 to 8.0.2.53 and validated by rebuilding `clio` and checking `clio ver` output.
+Discovery: The global `clio` command on this machine resolves to `/Users/a.kravchuk/bin/clio`, a wrapper that prioritizes local `clio/bin/Debug` and `Release` artifacts over the dotnet global tool, so local `AssemblyVersion` directly affects observed version output.
+Files: clio/clio.csproj, .codex/workspace-diary.md
+Impact: Local and branch builds now report 8.0.2.53, aligning the repository default with the intended next release baseline.
+
+## 2026-04-02 16:51 – Canonicalize application MCP validation in clio
 Context: User asked to implement the application-surface decoupling task so `clio` becomes the single technical source of truth for `application-create`, `application-get-info`, and `application-get-list`, while ADAC keeps orchestration and business workflow ownership.
 Decision: Added JSON extension-data capture for application MCP args, enforced runtime rejection of unsupported extra fields in the application tool family, aligned `ApplicationPrompt.ApplicationCreate` with the live contract by exposing optional `client-type-id`, added unit and MCP E2E coverage for forbidden application fields, and reduced remaining ADAC application guidance to delegation toward `tool-contract-get` and `docs://mcp/...`.
 Discovery: Recent ADAC cleanup had already removed most wrapper-level duplication, so the real remaining gap was runtime enforcement inside `clio`; without extension-data capture, legacy alias fields and localization maps on `application-create` would deserialize silently and bypass the technical guardrails already advertised by `tool-contract-get`.

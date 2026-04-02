@@ -49,6 +49,9 @@ public sealed class ToolContractGetToolE2ETests {
 			new Dictionary<string, object?> {
 				["tool-names"] = new[] {
 					ApplicationGetListTool.ApplicationGetListToolName,
+					PageListTool.ToolName,
+					PageGetTool.ToolName,
+					PageSyncTool.ToolName,
 					PageUpdateTool.ToolName,
 					ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
 				}
@@ -62,6 +65,9 @@ public sealed class ToolContractGetToolE2ETests {
 		response.Tools!.Select(tool => tool.Name).Should().Equal(
 			new[] {
 				ApplicationGetListTool.ApplicationGetListToolName,
+				PageListTool.ToolName,
+				PageGetTool.ToolName,
+				PageSyncTool.ToolName,
 				PageUpdateTool.ToolName,
 				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
 			},
@@ -73,6 +79,33 @@ public sealed class ToolContractGetToolE2ETests {
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				},
 				because: "application discovery should flow into application inspection for existing-app edits");
+		response.Tools.Single(tool => tool.Name == PageListTool.ToolName)
+			.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					PageListTool.ToolName,
+					PageGetTool.ToolName,
+					PageSyncTool.ToolName,
+					PageGetTool.ToolName
+				},
+				because: "page discovery should lead into the canonical clio page workflow");
+		response.Tools.Single(tool => tool.Name == PageGetTool.ToolName)
+			.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					PageListTool.ToolName,
+					PageGetTool.ToolName,
+					PageSyncTool.ToolName,
+					PageGetTool.ToolName
+				},
+				because: "page inspection should advertise page-sync as the canonical save path");
+		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
+			.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					PageListTool.ToolName,
+					PageGetTool.ToolName,
+					PageSyncTool.ToolName,
+					PageGetTool.ToolName
+				},
+				because: "page-sync should advertise itself as the canonical page write path");
 		response.Tools.Single(tool => tool.Name == PageUpdateTool.ToolName)
 			.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -80,7 +113,12 @@ public sealed class ToolContractGetToolE2ETests {
 					PageUpdateTool.ToolName,
 					PageGetTool.ToolName
 				},
-				because: "single-page edits should read before write and read back after saving when verification is needed");
+				because: "page-update should still expose a concrete fallback flow for callers that explicitly require it");
+		response.Tools.Single(tool => tool.Name == PageUpdateTool.ToolName)
+			.Deprecations.Should().ContainSingle(deprecation =>
+				deprecation.ReplacementTools.SequenceEqual(new[] { PageSyncTool.ToolName }) &&
+				deprecation.Message.Contains("fallback"),
+				because: "page-update should advertise page-sync as the canonical replacement");
 		response.Tools.Single(tool => tool.Name == ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName)
 			.PreferredFlow.Tools.Should().Equal(
 				new[] {

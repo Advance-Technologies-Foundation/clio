@@ -27,6 +27,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 
 			       Canonical flow
 			       - Prefer `discover -> inspect -> mutate -> verify` for minimal edits to an existing app.
+			       - Prefer `page-list -> page-get -> page-sync -> page-get` as the canonical page workflow, including single-page saves when the caller wants the clio-advertised path.
 			       - Read before write, and read back after mutations when the tool or workflow allows it.
 
 			       Discover the target app
@@ -48,11 +49,14 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Use `get-entity-schema-column-properties` when the change is scoped to one existing column and you need current metadata first.
 
 			       Preferred minimal mutations
-			       - Use `page-update` for a single-page save after editing the raw body returned by `page-get`.
+			       - Use `page-sync` as the canonical page write path after editing the raw body returned by `page-get`.
+			       - Keep `page-update` only for single-page dry-run or legacy save workflows.
 			       - Use `modify-entity-schema-column` for a single-column schema change when the target schema and column are already known.
 			       - Use `schema-sync` when the work spans multiple ordered schema steps, mixes create/update/seed operations, or must stay batched.
 
 			       Verification
+			       - `page-sync` keeps client-side validation enabled by default.
+			       - Enable `page-sync` `verify` only when the workflow needs explicit read-back within the same tool call. Otherwise keep the default `false` and follow with `page-get` when read-back evidence is still required.
 			       - After `page-update` or `page-sync`, read the page again with `page-get` when you need explicit read-back verification.
 			       - After `modify-entity-schema-column`, re-read the column with `get-entity-schema-column-properties` or the full schema with `get-entity-schema-properties`.
 			       - After `schema-sync`, refresh app or schema context with `application-get-info`, `get-entity-schema-properties`, or both, depending on the workflow.

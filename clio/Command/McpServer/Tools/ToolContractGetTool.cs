@@ -616,7 +616,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageSync() {
 		return new ToolContractDefinition(
 			PageSyncTool.ToolName,
-			"Batches page body validation, save, and optional read-back verification for multiple pages.",
+			"Canonical page write path that batches page body validation, save, and optional read-back verification for one or more pages.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
@@ -659,7 +659,7 @@ internal static class ToolContractCatalog {
 					PageSyncTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Canonical write path for page synchronization."),
+				"Canonical write path for page synchronization, including single-page saves when the caller wants the clio-advertised workflow."),
 			[
 				Flow(
 					[
@@ -726,18 +726,20 @@ internal static class ToolContractCatalog {
 				[
 					PageListTool.ToolName,
 					PageGetTool.ToolName,
-					PageUpdateTool.ToolName
+					PageSyncTool.ToolName,
+					PageGetTool.ToolName
 				],
-				"Use when the page schema is not yet known and the workflow is a minimal single-page edit."),
+				"Use when the page schema is not yet known and the workflow should follow the canonical clio page path."),
 			[
 				Flow(
 					[
 						PageListTool.ToolName,
 						PageGetTool.ToolName,
-						PageSyncTool.ToolName,
+						PageUpdateTool.ToolName,
+						PageUpdateTool.ToolName,
 						PageGetTool.ToolName
 					],
-					"Fallback when the workflow needs multi-page save orchestration or explicit page read-back verification.")
+					"Fallback when single-page dry-run or legacy save is required after discovery.")
 			],
 			[]);
 	}
@@ -778,18 +780,26 @@ internal static class ToolContractCatalog {
 				[
 					PageListTool.ToolName,
 					PageGetTool.ToolName,
-					PageUpdateTool.ToolName,
+					PageSyncTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Use after page-list to inspect `raw.body` before a minimal page edit and to read back after saving when needed."),
+				"Use after page-list to inspect `raw.body` before following the canonical page write path and to read back after saving."),
 			[
 				Flow(
 					[
 						PageGetTool.ToolName,
 						ComponentInfoTool.ToolName,
-						PageUpdateTool.ToolName
+						PageSyncTool.ToolName,
+						PageGetTool.ToolName
 					],
-					"Call component-info before editing when bundle.viewConfig contains unfamiliar crt.* component types.")
+					"Call component-info before editing when bundle.viewConfig contains unfamiliar crt.* component types."),
+				Flow(
+					[
+						PageGetTool.ToolName,
+						PageUpdateTool.ToolName,
+						PageGetTool.ToolName
+					],
+					"Fallback when the caller explicitly needs single-page dry-run or legacy save behavior.")
 			],
 			[]);
 	}
@@ -1209,7 +1219,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageUpdate() {
 		return new ToolContractDefinition(
 			PageUpdateTool.ToolName,
-			"Saves a full Freedom UI page body for one page as the minimal page-mutation path.",
+			"Fallback single-page save path for a full Freedom UI page body when the workflow explicitly requires dry-run or legacy save behavior.",
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName, "body"],
 				EnvironmentOrExplicitConnectionFields(
@@ -1251,7 +1261,7 @@ internal static class ToolContractCatalog {
 					PageUpdateTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Use for a minimal single-page edit after reading the raw body with page-get and read back with page-get when verification is needed."),
+				"Use only when the workflow explicitly requires single-page dry-run or legacy save behavior after reading the raw body with page-get."),
 			[
 				Flow(
 					[
@@ -1270,7 +1280,13 @@ internal static class ToolContractCatalog {
 					],
 					"Fallback when the workflow expands into a multi-page save or ordered page-sync plan.")
 			],
-			[]);
+			[
+				new ToolDeprecation(
+					"Prefer page-sync as the canonical page write path. Keep page-update only as a fallback for single-page dry-run or legacy save workflows.",
+					[
+						PageSyncTool.ToolName
+					])
+			]);
 	}
 
 	private static ToolContractDefinition BuildApplicationDelete() {
