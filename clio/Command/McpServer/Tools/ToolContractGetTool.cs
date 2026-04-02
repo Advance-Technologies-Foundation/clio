@@ -176,7 +176,6 @@ internal static class ToolContractCatalog {
 	private static readonly IReadOnlyDictionary<string, ToolContractDefinition> Contracts =
 		new Dictionary<string, ToolContractDefinition>(StringComparer.OrdinalIgnoreCase) {
 			[ToolContractGetTool.ToolName] = BuildToolContractGet(),
-			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationGetInfoTool.ApplicationGetInfoToolName] = BuildApplicationGetInfo(),
 			[ApplicationGetListTool.ApplicationGetListToolName] = BuildApplicationGetList(),
@@ -199,7 +198,6 @@ internal static class ToolContractCatalog {
 		};
 
 	private static readonly string[] CanonicalToolNames = [
-		SettingsHealthTool.ToolName,
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationGetInfoTool.ApplicationGetInfoToolName,
 		ApplicationGetListTool.ApplicationGetListToolName,
@@ -319,52 +317,6 @@ internal static class ToolContractCatalog {
 			],
 			Flow(["tool-contract-get"], "Use before execution when the caller needs authoritative clio MCP metadata or must choose the next discovery, inspection, or mutation step."),
 			[],
-			[]);
-	}
-
-	private static ToolContractDefinition BuildSettingsHealth() {
-		return new ToolContractDefinition(
-			SettingsHealthTool.ToolName,
-			"Reports the clio bootstrap health for appsettings.json, including auto-repairs, active environment resolution, and whether environment-scoped tools can execute.",
-			new ToolInputSchemaContract(
-				[],
-				[]),
-			EnvelopeOutput(
-				SuccessFieldName,
-				[
-					SuccessFalseSignal
-				],
-				Field(SuccessFieldName, BooleanType, "Whether the settings-health lookup succeeded."),
-				Field("status", StringType, "Bootstrap health status: healthy, repaired, degraded, or broken."),
-				Field("settings-file-path", StringType, "Absolute path to clio appsettings.json."),
-				Field("active-environment-key", StringType, "Configured ActiveEnvironmentKey before fallback resolution."),
-				Field("resolved-active-environment-key", StringType, "Environment key resolved for bootstrap use after repair or fallback."),
-				Field("environment-count", NumberType, "Number of configured environments after bootstrap processing."),
-				Field("issues", ArrayType, "Detected bootstrap issues."),
-				Field("repairs-applied", ArrayType, "Safe automatic repairs applied during bootstrap."),
-				Field("can-start-bootstrap-tools", BooleanType, "Whether bootstrap-safe tools can start."),
-				Field("can-execute-env-tools", BooleanType, "Whether commands that depend on named environments can execute."),
-				Field(ErrorFieldName, ObjectType, "Structured error payload when lookup fails.")
-			),
-			CommonErrorContract,
-			[],
-			[],
-			[
-				Example("Report current clio bootstrap health", new Dictionary<string, object?>())
-			],
-			Flow(
-				[
-					SettingsHealthTool.ToolName
-				],
-				"Use before environment-scoped commands when local clio settings may be stale, missing, or unreadable."),
-			[
-				Flow(
-					[
-						SettingsHealthTool.ToolName,
-						ToolContractGetTool.ToolName
-					],
-					"Follow with tool-contract-get when the caller must choose a bootstrap-safe recovery or inspection tool.")
-			],
 			[]);
 	}
 

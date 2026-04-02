@@ -421,6 +421,40 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects malformed seed-rows before executing the schema operation command")]
+	public void SchemaSync_SeedRows_Should_Fail_Before_Command_Resolution_When_Values_Are_Missing() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"missing-env", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+					TitleLocalizations: Localizations("Todo Status"),
+					SeedRows: [new SchemaSyncSeedRow(null!)])
+			]);
+
+		// Act
+		SchemaSyncResponse response = tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "malformed seed-rows must fail schema-sync before any remote command is executed");
+		response.Results.Should().ContainSingle(
+			because: "the batch should stop immediately on the malformed seed-data payload");
+		response.Results[0].Operation.Should().Be("seed-data",
+			because: "the failure should be attributed to the seed-data step");
+		response.Results[0].Error.Should().Contain("values",
+			because: "the caller must be told that each seed row requires a values wrapper");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "schema-sync should not attempt create-lookup after local seed-row validation fails");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Executes multiple operations in order when all succeed")]
 	public void SchemaSync_Should_Execute_Multiple_Operations_In_Order() {
 		// Arrange
