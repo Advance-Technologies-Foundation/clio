@@ -1684,3 +1684,10 @@ Decision: Updated the GitHub release workflow to build and pack with one explici
 Discovery: The old workflow built Release once without tag version overrides and then packed with overrides, which allowed a stale binary to be published under a newer NuGet package version; `clio version` is the reliable verification command and returns `clio <version>+<sha>`.
 Files: .github/workflows/reliase-to-nuget.yml, clio/AppUpdater.cs, clio/Command/Update/UpdateCliCommand.cs, clio/help/en/update-cli.txt, clio/docs/commands/update-cli.md, clio.tests/AppUpdaterTests.cs, .codex/workspace-diary.md
 Impact: Future releases should fail in CI before publish if the packed tool reports a version different from the release tag, and local `clio update` verification aligns with the actual CLI version output.
+
+## 2026-04-02 22:02 – Clean PR 512 to release-only diff
+Context: PR #512 initially included unrelated `init-workspace` changes because the release-fix branch was created from `codex/init-workspace` instead of `master`.
+Decision: Rebased `codex/fix-release-version-mismatch` onto `origin/master`, kept only the release-version fix in the PR, and simplified `NormalizeInstalledVersion` string assembly while the branch was being refreshed.
+Discovery: The repo source backs version verification through `clio info --clio`, not a dedicated `version` verb; the Sonar issues shown on PR #512 before rebase were stale findings from the accidental `init-workspace` diff and should disappear after the refreshed analysis.
+Files: clio/AppUpdater.cs, .codex/workspace-diary.md
+Impact: PR #512 now represents the intended release-flow fix only and should re-run GitHub checks/Sonar against the correct file set after force-push.

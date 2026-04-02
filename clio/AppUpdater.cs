@@ -217,7 +217,7 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 	}
 
 	internal static string NormalizeInstalledVersion(string standardOutput, string standardError = ""){
-		string combinedOutput = string.Join(Environment.NewLine, new[] { standardOutput, standardError }).Trim();
+		string combinedOutput = $"{standardOutput}{Environment.NewLine}{standardError}".Trim();
 		if (string.IsNullOrWhiteSpace(combinedOutput)) {
 			return string.Empty;
 		}
