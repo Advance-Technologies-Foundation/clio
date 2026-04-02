@@ -303,6 +303,40 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	[Test]
+	[Description("Starts the real clio MCP server, invokes application-create with forbidden localization-map fields, and verifies that validation rejects the request before any create side effect is attempted.")]
+	[AllureFeature(CreateToolName)]
+	[AllureTag(CreateToolName)]
+	[AllureName("Application create rejects localization map fields")]
+	[AllureDescription("Uses the real clio MCP server to call application-create with forbidden localization-map fields and verifies that the tool returns a structured validation error instead of attempting app creation.")]
+	public async Task ApplicationCreate_Should_Reject_Localization_Map_Fields() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		string suffix = Guid.NewGuid().ToString("N")[..8];
+
+		// Act
+		ApplicationContextResponseEnvelope result = await ActCreateFailureAsync(
+			session,
+			cancellationTokenSource.Token,
+			environmentName: "sandbox",
+			name: $"Codex Invalid Localization {suffix}",
+			code: $"UsrBadLoc{suffix}",
+			description: null,
+			templateCode: "AppFreedomUI",
+			iconId: "11111111-1111-1111-1111-111111111111",
+			iconBackground: "#FFFFFF",
+			optionalTemplateDataJson: null);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "application-create should reject forbidden localization maps before attempting a create");
+		result.Error.Should().MatchRegex("(?is)(scalar-only|locali[sz]ation|title-localizations)",
+			because: "the failure should explain that localization maps are forbidden on application-create");
+	}
+
+	[Test]
 	[Description("Starts the real clio MCP server, invokes application-create with an invalid template payload, and verifies that a structured error envelope reports the failure.")]
 	[AllureFeature(CreateToolName)]
 	[AllureTag(CreateToolName)]

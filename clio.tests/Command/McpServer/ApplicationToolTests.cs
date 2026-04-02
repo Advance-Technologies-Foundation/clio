@@ -807,6 +807,7 @@ public sealed class ApplicationToolTests {
 			iconBackground: "#112233",
 			description: null,
 			iconId: "11111111-1111-1111-1111-111111111111",
+			clientTypeId: "22222222-2222-2222-2222-222222222222",
 			optionalTemplateDataJson: "{\"entitySchemaName\":\"UsrCodexEntity\"}");
 
 		// Assert
@@ -844,7 +845,10 @@ public sealed class ApplicationToolTests {
 			because: "the create prompt should state that application-create keeps app shell fields as plain strings");
 		createPrompt.Should().Contain("Do not send `title-localizations`",
 			because: "the create prompt should prevent callers from mixing application-create with entity-schema localization maps");
+		createPrompt.Should().Contain("Pass `client-type-id` only when a non-default Creatio client type is required.",
+			because: "the create prompt signature should stay in parity with the executable application-create contract");
 		createPrompt.Should().Contain("follow-up entity-schema tools",
 			because: "the create prompt should direct callers to schema tools when localized captions are needed");
 	}
+
 }

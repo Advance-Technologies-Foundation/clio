@@ -70,6 +70,8 @@ public static class ApplicationPrompt {
 		string? description = null,
 		[Description("Application icon identifier")]
 		string? iconId = null,
+		[Description("Optional client type identifier")]
+		string? clientTypeId = null,
 		[Description("Optional template data JSON")]
 		string? optionalTemplateDataJson = null) =>
 		$"""

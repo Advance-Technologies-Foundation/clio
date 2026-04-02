@@ -31,6 +31,10 @@ public sealed class AppModelingGuidanceResource {
 			       - Newer design tools use kebab-case JSON argument names such as `environment-name`, `package-name`, and `schema-name`.
 			       - For existing-app minimal edits, read `docs://mcp/guides/existing-app-maintenance`.
 
+			       Discovery before invocation
+			       - Always read the executable contract through `tool-contract-get` before the first invocation of any MCP tool in a workflow. The contract specifies exact parameter names, aliases, required fields, defaults, and response shapes.
+			       - Tool-specific identifiers follow their own naming conventions and must not be guessed. For example, `application-get-info` and `application-get-list` accept `app-code` (not `application-code`), and `application-create` accepts `icon-background` (not `icon-name` or `icon-color`).
+
 			       Preferred workflow
 			       - Use `application-create` when the workflow is modeling a new app shell rather than editing an existing installed app.
 			       - Prefer `schema-sync` for multi-step schema work and `page-sync` for multi-page saves.
@@ -46,12 +50,14 @@ public sealed class AppModelingGuidanceResource {
 			       - Entity-schema MCP write tools use explicit localization maps. Send schema and column captions through `title-localizations`, and column descriptions through `description-localizations`. Every provided localization map must include `en-US`.
 			       - Do not send legacy scalar `title`, `caption`, or `description` fields to entity-schema MCP write tools.
 			       - Seed rows create data only. A requirement like "defaults to New" still needs an explicit `schema default` or `ui default`.
+			       - Preserve semantic text field types: use `Email`, `PhoneNumber`, and `WebLink` for email, phone, and URL fields instead of collapsing them to generic `ShortText`. These types affect both data validation and Freedom UI component selection.
 
 			       Page editing guardrails
 			       - Preferred page flow: `page-list` -> `page-get` -> `component-info` when needed -> `page-update` or `page-sync`.
 			       - `page-list` identifies page candidates by `schema-name`.
 			       - Use the raw page body returned by `page-get`, specifically `raw.body`, as the editable source of truth.
 			       - Pass `resources` when edited bodies introduce `#ResourceString(key)#` macros.
+			       - For new apps or extended main entities, perform page edits after `schema-sync` and `application-get-info` refresh so that page bindings reference materialized columns.
 			       """
 		};
 }

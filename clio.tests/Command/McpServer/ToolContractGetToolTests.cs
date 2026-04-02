@@ -254,6 +254,53 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Advertises the canonical application-create validators aliases and preferred flow through tool-contract-get.")]
+	public void ToolContractGet_Should_Advertise_Application_Create_Canonical_Rules() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ApplicationCreateTool.ApplicationCreateToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the application-create contract should be available through tool-contract-get");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "canonical-main-entity-name",
+			because: "application-create should advertise the canonical main entity field in its response shape");
+		contract.InputSchema.Validators.Should().ContainSingle(validator =>
+				validator.Name == "forbid-fields"
+				&& validator.Fields!.Contains("title-localizations")
+				&& validator.Fields.Contains("descriptionLocalizations"),
+			because: "application-create should advertise forbidden localization maps through the canonical contract");
+		contract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "code"
+				&& alias.Alias == "app-code"
+				&& alias.Status == "rejected",
+			because: "application-create should reject legacy alias parameters through the canonical contract");
+		contract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "name"
+				&& alias.Alias == "app-name"
+				&& alias.Status == "rejected",
+			because: "application-create should reject legacy alias parameters through the canonical contract");
+		contract.PreferredFlow.Tools.Should().Equal(
+			new[] {
+				ApplicationCreateTool.ApplicationCreateToolName,
+				SchemaSyncTool.ToolName,
+				ApplicationGetInfoTool.ApplicationGetInfoToolName
+			},
+			because: "application-create should advertise the canonical create -> schema-sync -> refresh flow");
+		contract.FallbackFlow.Should().Contain(flow => flow.Tools.SequenceEqual(new[] {
+				ApplicationGetListTool.ApplicationGetListToolName,
+				ApplicationGetInfoTool.ApplicationGetInfoToolName
+			}),
+			because: "application-create should advertise the canonical existing-app fallback flow");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns structured unknown tool suggestions when the requested tool name is misspelled.")]
 	public void ToolContractGet_Should_Return_Structured_Error_For_Unknown_Tool() {
 		// Arrange
