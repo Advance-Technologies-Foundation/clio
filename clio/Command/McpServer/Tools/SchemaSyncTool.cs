@@ -91,7 +91,7 @@ public sealed class SchemaSyncTool(
 			return false;
 		}
 
-		if (op.SeedRows.Any(row => row.Values is null)) {
+		if (op.SeedRows.Any(row => row is null || row.Values is null)) {
 			validationFailure = new SchemaSyncOperationResult {
 				Operation = "seed-data",
 				SchemaName = op.SchemaName,

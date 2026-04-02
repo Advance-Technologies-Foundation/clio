@@ -93,6 +93,37 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("tool-contract-get advertises settings-health bootstrap diagnostics contract")]
+	public async Task ToolContractGet_Should_Advertise_Settings_Health_Contract() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					SettingsHealthTool.ToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "settings-health should remain discoverable through the executable clio MCP contract catalog");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "status",
+			because: "bootstrap diagnostics should expose the health status");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "settings-file-path",
+			because: "bootstrap diagnostics should expose the physical settings file path");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "repairs-applied",
+			because: "bootstrap diagnostics should expose automatic repairs");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("tool-contract-get returns canonical entity-schema contracts from clio")]
 	public async Task ToolContractGet_Should_Return_Canonical_Entity_Schema_Surface() {
 		// Arrange
