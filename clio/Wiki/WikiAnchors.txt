@@ -25,6 +25,7 @@ create-data-binding-db:create-data-binding-db
 create-entity-schema:create-entity-schema
 create-k8-files:create-k8-files,ck8f
 create-workspace:create-workspace,createw
+init-workspace:init-workspace,initw
 CustomizeDataProtection:CustomizeDataProtection,cdp
 dataservice:dataservice,ds
 deactivate-pkg:deactivate-pkg,deactivate-package,disable-package,dpkg
