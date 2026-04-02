@@ -162,7 +162,7 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 		try {
 			ProcessStartInfo psi = new ProcessStartInfo {
 				FileName = "clio",
-				Arguments = "--version",
+				Arguments = "info --clio",
 				UseShellExecute = false,
 				RedirectStandardOutput = true,
 				RedirectStandardError = true,
@@ -176,14 +176,15 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 				}
 
 				string output = await process.StandardOutput.ReadToEndAsync();
+				string error = await process.StandardError.ReadToEndAsync();
 				process.WaitForExit();
 
 				if (process.ExitCode != 0) {
-					logger.WriteError("Verification command failed");
+					logger.WriteError($"Verification command failed: {error.Trim()}");
 					return false;
 				}
 
-				string installedVersion = output.Trim();
+				string installedVersion = NormalizeInstalledVersion(output, error);
 				bool isVerified = installedVersion.Equals(expectedVersion, StringComparison.OrdinalIgnoreCase);
 
 				if (!isVerified) {
@@ -213,6 +214,35 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 			// Fallback to string comparison if version parsing fails
 			return string.Compare(version1, version2, StringComparison.OrdinalIgnoreCase);
 		}
+	}
+
+	internal static string NormalizeInstalledVersion(string standardOutput, string standardError = ""){
+		string combinedOutput = $"{standardOutput}{Environment.NewLine}{standardError}".Trim();
+		if (string.IsNullOrWhiteSpace(combinedOutput)) {
+			return string.Empty;
+		}
+
+		string[] lines = combinedOutput
+			.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+		string versionLine = lines.Length > 0 ? lines[^1].Trim() : combinedOutput;
+
+		if (versionLine.StartsWith("clio:", StringComparison.OrdinalIgnoreCase)) {
+			versionLine = versionLine["clio:".Length..].Trim();
+		} else if (versionLine.StartsWith("clio ", StringComparison.OrdinalIgnoreCase)) {
+			versionLine = versionLine["clio ".Length..].Trim();
+		}
+
+		int metadataSeparatorIndex = versionLine.IndexOf('+');
+		if (metadataSeparatorIndex >= 0) {
+			versionLine = versionLine[..metadataSeparatorIndex];
+		}
+
+		int suffixSeparatorIndex = versionLine.IndexOf(' ');
+		if (suffixSeparatorIndex >= 0) {
+			versionLine = versionLine[..suffixSeparatorIndex];
+		}
+
+		return versionLine.Trim();
 	}
 
 	#endregion

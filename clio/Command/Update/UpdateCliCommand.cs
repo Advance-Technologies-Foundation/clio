@@ -98,7 +98,7 @@ public class UpdateCliCommand : Command<UpdateCliOptions> {
 
 			if (!verified) {
 				_logger.WriteWarning("Update completed, but verification failed.");
-				_logger.WriteInfo("Please verify by running: clio --version");
+				_logger.WriteInfo("Please verify by running: clio info --clio");
 				return 1;
 			}
 

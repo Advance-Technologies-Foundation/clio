@@ -12,7 +12,7 @@ update-cli - Update clio to the latest available version
 
 ```bash
 update-cli [OPTIONS]
-update-cli [OPTIONS]
+update [OPTIONS]
 ```
 
 ## Description
@@ -20,8 +20,6 @@ update-cli [OPTIONS]
 Checks for a newer version of clio on NuGet.org and updates the installation
 if an update is available. By default, the command proceeds with the update
 automatically without prompting for confirmation.
-
-Use the --prompt option if you want to review the changes before updating.
 
 Recommended to use the latest version of clio for bug fixes and new features.
 
@@ -41,7 +39,7 @@ Recommended to use the latest version of clio for bug fixes and new features.
 update-cli
 
 # Same as above using alias
-update-cli
+update
 ```
 
 ## Behavior
@@ -50,7 +48,7 @@ update-cli
 - If already on latest version, displays confirmation message and exits
 - If update available, automatically proceeds with update (unless overridden)
 - Runs: dotnet tool update clio -g
-- Verifies the new version is installed correctly
+- Verifies the new version is installed correctly using `clio info --clio`
 - Reports success or failure with appropriate exit codes
 
 ## Exit Codes

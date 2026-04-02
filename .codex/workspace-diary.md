@@ -1677,3 +1677,17 @@ Decision: Kept `ResolveWithoutEnvironment` independent from the active configure
 Discovery: The local macOS test runner hit a `CreateAppHost` access violation during a rebuild-based `dotnet test`, but the same targeted test slice passed reliably with `--no-build` immediately after a successful `dotnet build`, so the validation issue was host-tooling flakiness rather than a product failure.
 Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio/Environment/SettingsBootstrapService.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/ToolCommandResolverTests.cs, clio.tests/Command/SettingsBootstrapServiceTests.cs, .codex/workspace-diary.md
 Impact: Environmentless MCP tools no longer inherit active-environment safety flags accidentally, settings-health reflects repaired files in the same process, and PR #506 should converge to zero actionable Sonar/Codex findings after the next push analysis.
+
+## 2026-04-02 21:35 – Fix release tool-version mismatch
+Context: `clio update` reported a version mismatch after installing NuGet package `8.0.2.51`, while `clio version` showed embedded tool version `8.0.2.48+<sha>`.
+Decision: Updated the GitHub release workflow to build and pack with one explicit version contract, disabled package-on-build during the release build, added a local artifact install smoke check before NuGet publish, and switched updater verification from `clio --version` to `clio version` with normalization that strips the `clio ` prefix and git metadata suffix.
+Discovery: The old workflow built Release once without tag version overrides and then packed with overrides, which allowed a stale binary to be published under a newer NuGet package version; `clio version` is the reliable verification command and returns `clio <version>+<sha>`.
+Files: .github/workflows/reliase-to-nuget.yml, clio/AppUpdater.cs, clio/Command/Update/UpdateCliCommand.cs, clio/help/en/update-cli.txt, clio/docs/commands/update-cli.md, clio.tests/AppUpdaterTests.cs, .codex/workspace-diary.md
+Impact: Future releases should fail in CI before publish if the packed tool reports a version different from the release tag, and local `clio update` verification aligns with the actual CLI version output.
+
+## 2026-04-02 22:02 – Clean PR 512 to release-only diff
+Context: PR #512 initially included unrelated `init-workspace` changes because the release-fix branch was created from `codex/init-workspace` instead of `master`.
+Decision: Rebased `codex/fix-release-version-mismatch` onto `origin/master`, kept only the release-version fix in the PR, and simplified `NormalizeInstalledVersion` string assembly while the branch was being refreshed.
+Discovery: The repo source backs version verification through `clio info --clio`, not a dedicated `version` verb; the Sonar issues shown on PR #512 before rebase were stale findings from the accidental `init-workspace` diff and should disappear after the refreshed analysis.
+Files: clio/AppUpdater.cs, .codex/workspace-diary.md
+Impact: PR #512 now represents the intended release-flow fix only and should re-run GitHub checks/Sonar against the correct file set after force-push.
