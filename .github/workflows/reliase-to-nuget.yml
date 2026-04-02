@@ -97,8 +97,14 @@ jobs:
             throw "Packaged tool did not report a version."
           }
 
-          if ($reportedVersion -notmatch "^.*clio:\\s+$([regex]::Escape($version))([+ ].*)?$") {
-            throw "Packaged tool version mismatch. Expected version '$version' in '$reportedVersion'."
+          $reportedVersionText = "$reportedVersion".Trim()
+          $reportedVersionMatch = [regex]::Match($reportedVersionText, "\d+\.\d+\.\d+\.\d+")
+          if (-not $reportedVersionMatch.Success) {
+            throw "Packaged tool did not contain a semantic version. Output: '$reportedVersionText'."
+          }
+
+          if ($reportedVersionMatch.Value -ne $version) {
+            throw "Packaged tool version mismatch. Expected '$version', got '$($reportedVersionMatch.Value)' from '$reportedVersionText'."
           }
 
           echo "Verified packaged tool version: $reportedVersion"

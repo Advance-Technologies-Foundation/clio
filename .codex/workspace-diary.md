@@ -1705,3 +1705,10 @@ Decision: Relaxed the workflow regex to accept the console logger prefix around 
 Discovery: The CLI version command output on the runner is `[INF] - clio:   8.0.2.53`, so the previous exact match against only `clio:   8.0.2.53` was too strict; the same prefix would also have broken local `clio update` verification.
 Files: .github/workflows/reliase-to-nuget.yml, clio/AppUpdater.cs, clio.tests/AppUpdaterTests.cs, .codex/workspace-diary.md
 Impact: The next release run should pass packaged-tool verification instead of failing on the logger prefix, and local updater verification now parses the installed version correctly.
+
+## 2026-04-02 22:12 – Replace workflow line match with semantic-version extraction
+Context: Release `8.0.2.54` still failed verification in GitHub Actions run `23919797506` even after allowing the logger prefix in the workflow regex.
+Decision: Replaced the workflow's full-line regex assertion with semantic version extraction from the `clio info --clio` output and compared the extracted version directly to the release tag value.
+Discovery: The runner output remained `[INF] - clio:   8.0.2.54`, but the PowerShell `-match` based full-line assertion was still brittle on the runner; extracting `\d+\.\d+\.\d+\.\d+` is simpler and aligns with the app-side normalization logic.
+Files: .github/workflows/reliase-to-nuget.yml, .codex/workspace-diary.md
+Impact: Future release verification should no longer fail on logger prefixes or other harmless formatting around the semantic version string.
