@@ -45,10 +45,11 @@ public sealed class ToolContractGetToolTests {
 		result.Tools!.Select(contract => contract.Name).Should().Contain([
 				SettingsHealthTool.ToolName,
 				ApplicationGetListTool.ApplicationGetListToolName,
+				PageSyncTool.ToolName,
 				PageUpdateTool.ToolName,
 				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
 			],
-			because: "the canonical contract set should include bootstrap diagnostics plus the key existing-app discovery and minimal mutation tools");
+			because: "the canonical contract set should include bootstrap diagnostics plus the key existing-app discovery and page mutation tools");
 		result.Tools!.Select(contract => contract.Name).Should().NotContain(ToolContractGetTool.ToolName,
 			because: "tool-contract-get should not include itself in the default returned contract set");
 	}
@@ -81,7 +82,7 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns maintenance-oriented canonical flows for discovery inspection and minimal mutation tools.")]
+	[Description("Returns maintenance-oriented canonical flows for discovery inspection and canonical page mutation tools.")]
 	public void ToolContractGet_Should_Return_Maintenance_Oriented_Canonical_Flows() {
 		// Arrange
 		ToolContractGetTool tool = new();
@@ -89,6 +90,9 @@ public sealed class ToolContractGetToolTests {
 		// Act
 		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
 			ApplicationGetListTool.ApplicationGetListToolName,
+			PageListTool.ToolName,
+			PageGetTool.ToolName,
+			PageSyncTool.ToolName,
 			PageUpdateTool.ToolName,
 			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
 		]));
@@ -104,6 +108,33 @@ public sealed class ToolContractGetToolTests {
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				},
 				because: "application discovery should flow into application inspection for existing-app edits");
+		ToolContractDefinition pageListContract = contracts.Single(contract => contract.Name == PageListTool.ToolName);
+		pageListContract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					PageListTool.ToolName,
+					PageGetTool.ToolName,
+					PageSyncTool.ToolName,
+					PageGetTool.ToolName
+				},
+				because: "page-list should advertise the canonical clio page workflow after discovery");
+		ToolContractDefinition pageGetContract = contracts.Single(contract => contract.Name == PageGetTool.ToolName);
+		pageGetContract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					PageListTool.ToolName,
+					PageGetTool.ToolName,
+					PageSyncTool.ToolName,
+					PageGetTool.ToolName
+				},
+				because: "page-get should advertise page-sync as the canonical save path after inspection");
+		ToolContractDefinition pageSyncContract = contracts.Single(contract => contract.Name == PageSyncTool.ToolName);
+		pageSyncContract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					PageListTool.ToolName,
+					PageGetTool.ToolName,
+					PageSyncTool.ToolName,
+					PageGetTool.ToolName
+				},
+				because: "page-sync should advertise itself as the canonical page write path");
 		ToolContractDefinition pageUpdateContract = contracts.Single(contract => contract.Name == PageUpdateTool.ToolName);
 		pageUpdateContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -111,14 +142,18 @@ public sealed class ToolContractGetToolTests {
 					PageUpdateTool.ToolName,
 					PageGetTool.ToolName
 				},
-				because: "single-page edits should read before write and read back after saving when verification is needed");
+				because: "page-update still needs a concrete fallback flow for callers that explicitly require it");
+		pageUpdateContract.Deprecations.Should().ContainSingle(deprecation =>
+				deprecation.ReplacementTools.SequenceEqual(new[] { PageSyncTool.ToolName }) &&
+				deprecation.Message.Contains("fallback"),
+			because: "page-update should advertise page-sync as the canonical replacement");
 		pageUpdateContract.FallbackFlow.Should().Contain(flow => flow.Tools.SequenceEqual(new[] {
 				PageListTool.ToolName,
 				PageGetTool.ToolName,
 				PageSyncTool.ToolName,
 				PageGetTool.ToolName
 			}),
-			because: "page-update should advertise page-sync as the fallback when the work expands into a multi-page flow");
+			because: "page-update should point callers back to the canonical page-sync workflow");
 		ToolContractDefinition modifyColumnContract = contracts.Single(contract => contract.Name == ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName);
 		modifyColumnContract.PreferredFlow.Tools.Should().Equal(
 				new[] {

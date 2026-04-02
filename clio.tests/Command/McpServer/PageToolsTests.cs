@@ -104,8 +104,14 @@ public class PageToolsTests {
 			because: "page-get prompt guidance should direct callers to component-info for unfamiliar Freedom UI types");
 		prompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
 			because: "page-get prompt guidance should point callers to the MCP-owned existing-app maintenance guide");
+		prompt.Should().Contain($"`{PageSyncTool.ToolName}`",
+			because: "page guidance should advertise page-sync as the canonical page write path");
+		prompt.Should().Contain("`validate`",
+			because: "page guidance should surface the canonical validation semantics for page-sync");
+		prompt.Should().Contain("`verify`",
+			because: "page guidance should surface the optional read-back semantics for page-sync");
 		prompt.Should().Contain("`resources`",
-			because: "page-get prompt guidance should tell callers how to preserve ResourceString macros during page-update");
+			because: "page guidance should tell callers how to preserve ResourceString macros during page-sync");
 		prompt.Should().Contain("valid JSON object string",
 			because: "page-get prompt guidance should clarify that malformed resource payloads are rejected");
 		prompt.Should().Contain("$PDS_*",
@@ -114,10 +120,14 @@ public class PageToolsTests {
 			because: "page guidance should call out the proxy binding pattern that page-update now rejects");
 		prompt.Should().Contain("Usr*_label",
 			because: "page guidance should reserve custom Usr label resources for standalone UI only");
-		prompt.Should().Contain("discover -> inspect -> mutate -> verify",
-			because: "page-get prompt guidance should describe the canonical maintenance sequence for minimal page edits");
+		prompt.Should().Contain("`page-list -> page-get -> page-sync -> page-get`",
+			because: "page guidance should describe the canonical maintenance sequence for page edits");
+		prompt.Should().Contain("single-page dry-run or legacy save workflows",
+			because: "page guidance should keep page-update in a fallback-only role");
 		prompt.Should().Contain("raw.body",
 			because: "page guidance should explicitly call out raw.body as the editable JavaScript source");
+		prompt.Should().NotContain("Use `page-sync` only when you need to save multiple pages in one workflow.",
+			because: "page-sync should no longer be presented as a multi-page-only path");
 		prompt.Should().NotContain("`schemaName`",
 			because: "page-get prompt guidance should no longer advertise removed camelCase request fields");
 		prompt.Should().NotContain("`environmentName`",

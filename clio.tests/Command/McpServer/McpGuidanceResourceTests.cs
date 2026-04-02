@@ -70,6 +70,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should describe page discovery before inspection");
 		article.Text.Should().Contain("page-get",
 			because: "the guide should explain how callers inspect raw page bodies before editing");
+		article.Text.Should().Contain("page-sync",
+			because: "the guide should advertise the canonical page write path");
+		article.Text.Should().Contain("page-list -> page-get -> page-sync -> page-get",
+			because: "the guide should state the canonical page workflow explicitly");
 		article.Text.Should().Contain("component-info",
 			because: "the guide should explain how callers inspect unfamiliar Freedom UI components");
 		article.Text.Should().Contain("$PDS_*",
@@ -86,6 +90,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should identify the minimal single-column mutation path");
 		article.Text.Should().Contain("schema-sync",
 			because: "the guide should explain when a larger ordered schema workflow is required");
+		article.Text.Should().Contain("single-page dry-run or legacy save workflows",
+			because: "the guide should keep page-update as a fallback-only path");
+		article.Text.Should().Contain("client-side validation enabled by default",
+			because: "the guide should explain the canonical validate semantics for page-sync");
+		article.Text.Should().Contain("default `false`",
+			because: "the guide should explain that page-sync verify stays optional by default");
 		article.Text.Should().Contain("Read before write, and read back after mutations",
 			because: "the guide should set the canonical verification discipline for existing-app edits");
 	}
