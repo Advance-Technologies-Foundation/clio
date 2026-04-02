@@ -1691,3 +1691,10 @@ Decision: Rebased `codex/fix-release-version-mismatch` onto `origin/master`, kep
 Discovery: The repo source backs version verification through `clio info --clio`, not a dedicated `version` verb; the Sonar issues shown on PR #512 before rebase were stale findings from the accidental `init-workspace` diff and should disappear after the refreshed analysis.
 Files: clio/AppUpdater.cs, .codex/workspace-diary.md
 Impact: PR #512 now represents the intended release-flow fix only and should re-run GitHub checks/Sonar against the correct file set after force-push.
+
+## 2026-04-02 21:58 – Move workflow checkout off Node 20
+Context: GitHub Actions UI showed a warning that Node.js 20 actions are deprecated on the repository workflows.
+Decision: Updated both repository workflows to use `actions/checkout@v5` instead of `actions/checkout@v4`.
+Discovery: The warning came from JavaScript action runtime deprecation rather than any build/test failure; both `build.yml` and `reliase-to-nuget.yml` were still pinned to checkout v4.
+Files: .github/workflows/build.yml, .github/workflows/reliase-to-nuget.yml, .codex/workspace-diary.md
+Impact: Future workflow runs should stop reporting the Node 20 deprecation warning once the self-hosted runner supports the newer checkout action runtime.
