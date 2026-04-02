@@ -48,7 +48,6 @@ public sealed class ToolContractGetToolE2ETests {
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
 				["tool-names"] = new[] {
-					SettingsHealthTool.ToolName,
 					ApplicationGetListTool.ApplicationGetListToolName,
 					PageUpdateTool.ToolName,
 					ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
@@ -62,7 +61,6 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "a successful lookup should return the requested contract payload");
 		response.Tools!.Select(tool => tool.Name).Should().Equal(
 			new[] {
-				SettingsHealthTool.ToolName,
 				ApplicationGetListTool.ApplicationGetListToolName,
 				PageUpdateTool.ToolName,
 				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
@@ -114,7 +112,7 @@ public sealed class ToolContractGetToolE2ETests {
 
 		// Assert
 		response.Success.Should().BeTrue(
-			because: "settings-health should be part of the executable clio MCP contract catalog");
+			because: "settings-health should remain discoverable through the executable clio MCP contract catalog");
 		ToolContractDefinition contract = response.Tools!.Single();
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "status",
 			because: "bootstrap diagnostics should expose the health status");
@@ -122,6 +120,69 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "bootstrap diagnostics should expose the physical settings file path");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "repairs-applied",
 			because: "bootstrap diagnostics should expose automatic repairs");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("tool-contract-get returns canonical entity-schema contracts from clio")]
+	public async Task ToolContractGet_Should_Return_Canonical_Entity_Schema_Surface() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					SchemaSyncTool.ToolName,
+					CreateLookupTool.CreateLookupToolName,
+					CreateEntitySchemaTool.CreateEntitySchemaToolName,
+					UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+					GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
+					ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the authoritative entity/schema contract surface should be served by clio MCP");
+		response.Tools.Should().NotBeNull(
+			because: "a successful lookup should return the canonical entity/schema contracts");
+		response.Tools!.Select(tool => tool.Name).Should().Equal(
+			new[] {
+				SchemaSyncTool.ToolName,
+				CreateLookupTool.CreateLookupToolName,
+				CreateEntitySchemaTool.CreateEntitySchemaToolName,
+				UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
+				GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+				GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
+				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
+			},
+			because: "the response should preserve the requested canonical schema tool order");
+		response.Tools.Single(tool => tool.Name == SchemaSyncTool.ToolName)
+			.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					ApplicationCreateTool.ApplicationCreateToolName,
+					SchemaSyncTool.ToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName
+				},
+				because: "schema-sync should advertise the canonical batched schema workflow");
+		response.Tools.Single(tool => tool.Name == CreateLookupTool.CreateLookupToolName)
+			.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					SchemaSyncTool.ToolName
+				},
+				because: "create-lookup should advertise schema-sync as the preferred canonical path");
+		response.Tools.Single(tool => tool.Name == CreateEntitySchemaTool.CreateEntitySchemaToolName)
+			.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					SchemaSyncTool.ToolName
+				},
+				because: "create-entity-schema should advertise schema-sync as the preferred canonical path");
 	}
 
 	[Test]

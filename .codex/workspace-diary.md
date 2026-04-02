@@ -1650,6 +1650,13 @@ Discovery: The clean worktree regeneration touched a broad set of markdown docs 
 Files: clio/HelpSystem/CommandHelpRenderer.cs, clio.tests/CommandHelpRendererTests.cs, clio.tests/CommonProgramTest.cs, clio/docs/commands, .codex/workspace-diary.md
 Impact: `clio add-item --help` no longer shows unrelated inherited environment/requirement blocks, sparse manuals such as `set-pkg-version` stay manual-only by design, and GitHub markdown docs now match the same manual-first contract as runtime help.
 
+## 2026-04-01 15:02 – Canonicalize entity/schema MCP contract ownership
+Context: ENG-87888 required `clio` to stay the sole owner of entity/schema MCP semantics while ADAC drops duplicate schema validation and schema-handbook behavior.
+Decision: Removed the phantom `settings-health` contract from `tool-contract-get`, expanded contract coverage tests around the canonical entity/schema surface, and updated ADAC schema sync plus workflow docs to pass semantics through to `clio` via `tool-contract-get` and `docs://mcp/guides/app-modeling` instead of enforcing them locally.
+Discovery: The main blocker was not schema behavior itself but stale contract advertising: `ToolContractGetTool` and its E2E tests still referenced a non-existent `SettingsHealthTool`, which prevented the targeted test slice from compiling until the dead contract was removed.
+Files: clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.mcp.e2e/ToolContractGetToolE2ETests.cs, .codex/workspace-diary.md
+Impact: `tool-contract-get` now advertises only real tools, ADAC no longer rejects lookup/default/title semantics on its own, and the schema contract split is covered by unit, regression, and MCP E2E verification.
+
 ## 2026-04-01 16:08 – Harden MCP bootstrap against broken local settings
 Context: User asked to implement the bootstrap-hardening plan for `Unable to resolve service for type 'Clio.EnvironmentSettings'`, including diagnostics, safer MCP startup, and end-to-end coverage for broken `appsettings.json`.
 Decision: Added a dedicated settings bootstrap service/report model with safe repair rules, routed bootstrap-safe CLI startup through non-mutating pre-parse bootstrap so `mcp-server` reports the real repair performed during command startup, moved `create-workspace` MCP execution onto `IToolCommandResolver`, and exposed the new `settings-health` MCP diagnostics contract plus E2E coverage.
