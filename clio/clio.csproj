@@ -147,7 +147,7 @@
 		<PackageReference Include="Ignore" />
 		<PackageReference Include="YamlDotNet" />
 		<PackageReference Include="SharpZipLib" />
-		<PackageReference Include="HjsonSharp" />
+		<PackageReference Include="JsonhCs" />
 		<PackageReference Include="Microsoft.IdentityModel.Tokens" />
 		<PackageReference Include="Newtonsoft.Json" />
 		<PackageReference Include="FluentValidation" />

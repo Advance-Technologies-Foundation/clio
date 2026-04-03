@@ -1,7 +1,7 @@
 namespace Clio.Command;
 
 using System;
-using HjsonSharp;
+using JsonhCs;
 using Newtonsoft.Json.Linq;
 
 /// <summary>
@@ -42,7 +42,7 @@ internal sealed class PageSchemaBodyParser : IPageSchemaBodyParser {
 		}
 
 		try {
-			var element = CustomJsonReader.ParseElement(content, CustomJsonReaderOptions.Hjson, true).Value;
+			var element = JsonhReader.ParseElement(content).Value;
 			string rawJson = element.GetRawText();
 			return string.IsNullOrWhiteSpace(rawJson) ? fallback.DeepClone() : JToken.Parse(rawJson);
 		}
