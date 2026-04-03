@@ -124,6 +124,12 @@ public sealed class ToolContractGetToolE2ETests {
 				field.Name == "pages" &&
 				field.Description.Contains("page-get.raw.body", StringComparison.Ordinal),
 				because: "page-sync should advertise raw.body as the source of page write payloads");
+		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
+			.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "pages" &&
+				field.Description.Contains("verified-body", StringComparison.Ordinal) &&
+				field.Description.Contains("page", StringComparison.Ordinal),
+				because: "page-sync should advertise the richer per-page verify response through tool-contract-get");
 		response.Tools.Single(tool => tool.Name == PageUpdateTool.ToolName)
 			.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "resources" &&

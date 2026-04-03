@@ -63,13 +63,29 @@ Each entry in the `pages` array must have:
       "success": true,
       "body-length": 3775,
       "validation": {"markers-ok": true, "js-syntax-ok": true},
-      "resources-registered": 1
+      "resources-registered": 1,
+      "page": {
+        "schemaName": "UsrTodoList_FormPage",
+        "schemaUId": "11111111-1111-1111-1111-111111111111",
+        "packageName": "UsrTodoList",
+        "packageUId": "22222222-2222-2222-2222-222222222222",
+        "parentSchemaName": "PageWithTabsFreedomTemplate"
+      },
+      "verified-body": "define(\"UsrTodoList_FormPage\", ...full page body...)"
     },
     {
       "schema-name": "UsrTodoList_ListPage",
       "success": true,
       "body-length": 2181,
-      "validation": {"markers-ok": true, "js-syntax-ok": true}
+      "validation": {"markers-ok": true, "js-syntax-ok": true},
+      "page": {
+        "schemaName": "UsrTodoList_ListPage",
+        "schemaUId": "33333333-3333-3333-3333-333333333333",
+        "packageName": "UsrTodoList",
+        "packageUId": "22222222-2222-2222-2222-222222222222",
+        "parentSchemaName": "BaseSectionTemplate"
+      },
+      "verified-body": "define(\"UsrTodoList_ListPage\", ...full page body...)"
     }
   ]
 }
@@ -92,6 +108,11 @@ When a page body contains `#ResourceString(key)#` macros, `page-sync` forwards e
 optional `resources` JSON object string to `page-update`. The response returns
 `resources-registered` for each page so callers can see how many child-schema resources
 were added during save.
+
+When `verify` is `true`, each successful page result also returns:
+
+- `page` — the same metadata shape as `page-get.page`
+- `verified-body` — the raw body read back from Creatio after save
 
 ## Error Handling
 

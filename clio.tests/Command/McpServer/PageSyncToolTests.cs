@@ -364,7 +364,15 @@ public sealed class PageSyncToolTests {
 				new PageSyncPageResult {
 					SchemaName = "UsrTodo_FormPage",
 					Success = true,
-					ResourcesRegistered = 1
+					ResourcesRegistered = 1,
+					Page = new PageMetadataInfo {
+						SchemaName = "UsrTodo_FormPage",
+						SchemaUId = "test-uid",
+						PackageName = "UsrPkg",
+						PackageUId = "test-package-uid",
+						ParentSchemaName = "BaseModulePage"
+					},
+					VerifiedBody = "define('VerifiedPage', function() { return {}; });"
 				}
 			]
 		};
@@ -378,6 +386,10 @@ public sealed class PageSyncToolTests {
 			because: "page-sync should include the optional page resources payload when it is provided");
 		serializedResponse.Should().Contain("\"resources-registered\":1",
 			because: "page-sync should serialize the registered-resource count using the documented MCP field name");
+		serializedResponse.Should().Contain("\"page\":{",
+			because: "page-sync should serialize read-back page metadata when it is present");
+		serializedResponse.Should().Contain("\"verified-body\":\"define(\\u0027VerifiedPage\\u0027, function() { return {}; });\"",
+			because: "page-sync should serialize the verified raw body using the documented MCP field name");
 	}
 
 	[Test]
@@ -407,6 +419,18 @@ public sealed class PageSyncToolTests {
 			because: "both save and verification should succeed");
 		response.Pages[0].Success.Should().BeTrue(
 			because: "the page was saved and verified successfully");
+		response.Pages[0].Page.Should().NotBeNull(
+			because: "verify=true should surface page metadata from the read-back response");
+		response.Pages[0].Page!.SchemaName.Should().Be("UsrTodo_FormPage",
+			because: "the verified page metadata should identify the saved schema");
+		response.Pages[0].Page.SchemaUId.Should().Be("test-uid",
+			because: "the read-back page metadata should preserve schema identity");
+		response.Pages[0].Page.PackageName.Should().Be("UsrPkg",
+			because: "the read-back page metadata should preserve package ownership");
+		response.Pages[0].Page.ParentSchemaName.Should().Be("BaseModulePage",
+			because: "the read-back page metadata should preserve the parent schema");
+		response.Pages[0].VerifiedBody.Should().Be(ValidPageBody,
+			because: "verify=true should surface the raw body returned by the read-back page-get");
 	}
 
 	[Test]
