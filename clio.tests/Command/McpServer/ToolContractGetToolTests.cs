@@ -113,15 +113,27 @@ public sealed class ToolContractGetToolTests {
 				example.Arguments.Keys.SequenceEqual(new[] { "environment-name" }),
 			because: "application-get-list should advertise the minimal top-level payload explicitly");
 		ToolContractDefinition pageListContract = contracts.Single(contract => contract.Name == PageListTool.ToolName);
-		pageListContract.PreferredFlow.Tools.Should().Equal(
-				new[] {
+			pageListContract.PreferredFlow.Tools.Should().Equal(
+					new[] {
+						PageListTool.ToolName,
+						PageGetTool.ToolName,
+						PageSyncTool.ToolName,
+						PageGetTool.ToolName
+					},
+					because: "page-list should advertise the canonical clio page workflow after discovery");
+			pageListContract.Aliases.Should().Contain(alias =>
+					alias.CanonicalName == "code"
+					&& alias.Alias == "app-code"
+					&& alias.Status == "rejected",
+				because: "page-list should reject the legacy app-code selector through the canonical contract");
+			pageListContract.FallbackFlow.Should().Contain(flow => flow.Tools.SequenceEqual(new[] {
 					PageListTool.ToolName,
 					PageGetTool.ToolName,
-					PageSyncTool.ToolName,
+					PageUpdateTool.ToolName,
 					PageGetTool.ToolName
-				},
-				because: "page-list should advertise the canonical clio page workflow after discovery");
-		ToolContractDefinition pageGetContract = contracts.Single(contract => contract.Name == PageGetTool.ToolName);
+				}),
+				because: "page-list should keep the legacy page-update fallback as a single-save sequence after discovery");
+			ToolContractDefinition pageGetContract = contracts.Single(contract => contract.Name == PageGetTool.ToolName);
 		pageGetContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					PageListTool.ToolName,

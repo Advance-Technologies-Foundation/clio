@@ -708,11 +708,12 @@ internal static class ToolContractCatalog {
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
-			[
-				PackageNameParameterAlias(),
-				Alias(ParameterScope, "search-pattern", "searchPattern", RejectedStatus, "Use 'search-pattern' instead of 'searchPattern'."),
-				EnvironmentNameParameterAlias()
-			],
+				[
+					PackageNameParameterAlias(),
+					Alias(ParameterScope, "code", AppCodeFieldName, RejectedStatus, $"Use 'code' instead of '{AppCodeFieldName}'."),
+					Alias(ParameterScope, "search-pattern", "searchPattern", RejectedStatus, "Use 'search-pattern' instead of 'searchPattern'."),
+					EnvironmentNameParameterAlias()
+				],
 			[],
 			[
 				Example("List pages in the target package", new Dictionary<string, object?> {
@@ -734,13 +735,12 @@ internal static class ToolContractCatalog {
 				"Use when the page schema is not yet known and the workflow should follow the canonical clio page path."),
 			[
 				Flow(
-					[
-						PageListTool.ToolName,
-						PageGetTool.ToolName,
-						PageUpdateTool.ToolName,
-						PageUpdateTool.ToolName,
-						PageGetTool.ToolName
-					],
+						[
+							PageListTool.ToolName,
+							PageGetTool.ToolName,
+							PageUpdateTool.ToolName,
+							PageGetTool.ToolName
+						],
 					"Fallback when single-page dry-run or legacy save is required after discovery.")
 			],
 			[]);

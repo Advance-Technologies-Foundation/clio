@@ -402,10 +402,22 @@ public sealed class ToolContractGetToolE2ETests {
 		ToolContractDefinition pageListContract = response.Tools!.Single(tool => tool.Name == PageListTool.ToolName);
 		pageListContract.InputSchema.Properties.Should().Contain(field => field.Name == "code",
 			because: "page-list should advertise code as a first-class selector");
+		pageListContract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "code"
+				&& alias.Alias == "app-code"
+				&& alias.Status == "rejected",
+			because: "page-list should advertise the legacy app-code selector as rejected");
 		pageListContract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "pages" &&
 				field.Description.Contains("schema-name", StringComparison.Ordinal),
 			because: "page-list should describe page discovery items through schema-name");
+		pageListContract.FallbackFlow.Should().Contain(flow => flow.Tools.SequenceEqual(new[] {
+				PageListTool.ToolName,
+				PageGetTool.ToolName,
+				PageUpdateTool.ToolName,
+				PageGetTool.ToolName
+			}),
+			because: "page-list should advertise a single page-update fallback sequence after discovery");
 		ToolContractDefinition pageGetContract = response.Tools!.Single(tool => tool.Name == PageGetTool.ToolName);
 		pageGetContract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "raw" &&

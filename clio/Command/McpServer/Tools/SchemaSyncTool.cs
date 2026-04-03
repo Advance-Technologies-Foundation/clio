@@ -22,6 +22,9 @@ public sealed class SchemaSyncTool(
 
 	internal const string ToolName = "schema-sync";
 	private const string CreateLookupOperationName = "create-lookup";
+	private const string CreateEntityOperationName = "create-entity";
+	private const string UpdateEntityOperationName = "update-entity";
+	private const string SeedDataOperationName = "seed-data";
 
 	/// <summary>
 	/// Executes a batch of schema operations in a single MCP call.
@@ -74,8 +77,8 @@ public sealed class SchemaSyncTool(
 	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args, int operationIndex) {
 		return op.Type switch {
 			CreateLookupOperationName => ExecuteCreateSchema(op, args, "BaseLookup", false, CreateLookupOperationName),
-			"create-entity" => ExecuteCreateSchema(op, args, op.ParentSchemaName, op.ExtendParent, "create-entity"),
-			"update-entity" => ExecuteUpdateEntity(op, args),
+			CreateEntityOperationName => ExecuteCreateSchema(op, args, op.ParentSchemaName, op.ExtendParent, CreateEntityOperationName),
+			UpdateEntityOperationName => ExecuteUpdateEntity(op, args),
 			_ => new SchemaSyncOperationResult {
 				Type = GetReportedOperationType(op),
 				SchemaName = op.SchemaName,
@@ -96,7 +99,7 @@ public sealed class SchemaSyncTool(
 
 		if (op.SeedRows.Any(row => row is null || row.Values is null)) {
 			validationFailure = new SchemaSyncOperationResult {
-				Type = "seed-data",
+				Type = SeedDataOperationName,
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = $"schema-sync operations[{operationIndex}] seed-rows validation failed: each row must contain a non-null 'values' object."
@@ -156,9 +159,9 @@ public sealed class SchemaSyncTool(
 
 	private SchemaSyncOperationResult ExecuteUpdateEntity(SchemaSyncOperation op, SchemaSyncArgs args) {
 		try {
-			if (op.UpdateOperations?.Any() != true) {
-				return new SchemaSyncOperationResult {
-					Type = "update-entity",
+				if (op.UpdateOperations?.Any() != true) {
+					return new SchemaSyncOperationResult {
+						Type = UpdateEntityOperationName,
 					SchemaName = op.SchemaName,
 					Success = false, Error = "update-entity requires at least one operation in update-operations"
 				};
@@ -172,16 +175,16 @@ public sealed class SchemaSyncTool(
 			UpdateEntitySchemaCommand command = commandResolver.Resolve<UpdateEntitySchemaCommand>(options);
 			int exitCode = command.Execute(options);
 			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
-			return new SchemaSyncOperationResult {
-				Type = "update-entity",
+				return new SchemaSyncOperationResult {
+					Type = UpdateEntityOperationName,
 				SchemaName = op.SchemaName,
 				Success = exitCode == 0,
 				Messages = messages,
-				Error = BuildOperationError("update-entity", exitCode, messages)
-			};
-		} catch (Exception ex) {
-			return new SchemaSyncOperationResult {
-				Type = "update-entity",
+					Error = BuildOperationError(UpdateEntityOperationName, exitCode, messages)
+				};
+			} catch (Exception ex) {
+				return new SchemaSyncOperationResult {
+					Type = UpdateEntityOperationName,
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = ex.Message,
@@ -203,15 +206,15 @@ public sealed class SchemaSyncTool(
 			int exitCode = command.Execute(options);
 			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
 			return new SchemaSyncOperationResult {
-				Type = "seed-data",
+				Type = SeedDataOperationName,
 				SchemaName = op.SchemaName,
 				Success = exitCode == 0,
 				Messages = messages,
-				Error = BuildOperationError("seed-data", exitCode, messages)
+				Error = BuildOperationError(SeedDataOperationName, exitCode, messages)
 			};
 		} catch (Exception ex) {
 			return new SchemaSyncOperationResult {
-				Type = "seed-data",
+				Type = SeedDataOperationName,
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = ex.Message,
@@ -241,7 +244,7 @@ public sealed class SchemaSyncTool(
 			return $"schema-sync operations[{operationIndex}] is missing required field 'type'.";
 		}
 
-		string supportedTypes = string.Join(", ", new[] { CreateLookupOperationName, "create-entity", "update-entity" });
+		string supportedTypes = string.Join(", ", CreateLookupOperationName, CreateEntityOperationName, UpdateEntityOperationName);
 		return $"schema-sync operations[{operationIndex}].type '{op.Type}' is invalid. Supported values: {supportedTypes}.";
 	}
 

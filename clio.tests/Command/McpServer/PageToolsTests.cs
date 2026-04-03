@@ -86,6 +86,26 @@ public class PageToolsTests {
 	}
 
 	[Test]
+	[Description("Rejects legacy page-list aliases so callers do not silently fall back to an unscoped query.")]
+	public void PageListTool_Should_Reject_Legacy_AppCode_Alias() {
+		PageListCommand command = Substitute.For<PageListCommand>(
+			Substitute.For<IApplicationClient>(),
+			Substitute.For<IServiceUrlBuilder>(),
+			Substitute.For<ILogger>());
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		PageListTool tool = new(command, logger, resolver);
+		PageListArgs args = System.Text.Json.JsonSerializer.Deserialize<PageListArgs>("{\"app-code\":\"UsrTodoApp\"}")!;
+
+		PageListResponse response = tool.ListPages(args);
+
+		response.Success.Should().BeFalse(
+			because: "legacy aliases should be rejected before page-list runs an unscoped discovery query");
+		response.Error.Should().Be("Use 'code' instead of 'app-code'.",
+			because: "the MCP tool should direct callers to the canonical selector field");
+	}
+
+	[Test]
 	[Description("Prompt guidance for page MCP tools references kebab-case request arguments and the optional resources payload.")]
 	public void PagePrompt_Should_Mention_Kebab_Case_Arguments_And_Resources() {
 		// Arrange
