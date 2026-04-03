@@ -50,6 +50,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should explain lookup inheritance and display-field behavior");
 		article.Text.Should().Contain("schema default",
 			because: "the guide should explain that seed rows alone do not satisfy default requirements");
+		article.Text.Should().Contain("operations[*].type",
+			because: "the guide should explicitly document the canonical schema-sync request field");
+		article.Text.Should().Contain("do not invent or send `operations[*].operation`",
+			because: "the guide should explicitly reject the legacy request field name");
 	}
 
 	[Test]
@@ -72,6 +76,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should start existing-app discovery from installed application lookup");
 		article.Text.Should().Contain("application-get-info",
 			because: "the guide should explain the follow-up app inspection step");
+		article.Text.Should().Contain("`code`",
+			because: "the guide should steer existing-app flows toward the canonical code selector");
 		article.Text.Should().Contain("page-list",
 			because: "the guide should describe page discovery before inspection");
 		article.Text.Should().Contain("page-get",
@@ -114,5 +120,9 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should steer standalone lookup seeding back to MCP-native data-binding tools");
 		article.Text.Should().Contain("Read before write, and read back after mutations",
 			because: "the guide should set the canonical verification discipline for existing-app edits");
+		article.Text.Should().Contain("operations[*].type",
+			because: "the maintenance guide should explicitly document the canonical schema-sync request field");
+		article.Text.Should().Contain("operations[*].operation",
+			because: "the maintenance guide should explicitly warn callers away from the legacy request field");
 	}
 }

@@ -196,8 +196,8 @@ public sealed class ApplicationToolTests {
 		// Act
 		ApplicationContextResponse result = tool.ApplicationGetInfo(new ApplicationGetInfoArgs(
 			EnvironmentName: "sandbox",
-			AppId: "app-id",
-			AppCode: null));
+			Id: "app-id",
+			Code: null));
 
 		// Assert
 		applicationInfoService.Received(1).GetApplicationInfo("sandbox", "app-id", null);
@@ -240,17 +240,17 @@ public sealed class ApplicationToolTests {
 		// Act
 		ApplicationContextResponse result = tool.ApplicationGetInfo(new ApplicationGetInfoArgs(
 			EnvironmentName: "sandbox",
-			AppId: null,
-			AppCode: null));
+			Id: null,
+			Code: null));
 
 		// Assert
 		result.Success.Should().BeFalse(
 			because: "tool validation failures should now be returned as structured error payloads");
 		result.Error.Should().Match("*exactly one*",
 			because: "the MCP tool contract should follow the core rule that exactly one identifier is required");
-		result.Error.Should().Match("*app-id*",
+		result.Error.Should().Match("*id*",
 			because: "the MCP tool contract should mention the supported identifier names");
-		result.Error.Should().Match("*app-code*",
+		result.Error.Should().Match("*code*",
 			because: "the MCP tool contract should mention the supported identifier names");
 		applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
 	}
@@ -266,8 +266,8 @@ public sealed class ApplicationToolTests {
 		// Act
 		ApplicationContextResponse result = tool.ApplicationGetInfo(new ApplicationGetInfoArgs(
 			EnvironmentName: "sandbox",
-			AppId: "app-id",
-			AppCode: "APP"));
+			Id: "app-id",
+			Code: "APP"));
 
 		// Assert
 		result.Success.Should().BeFalse(
@@ -290,8 +290,8 @@ public sealed class ApplicationToolTests {
 		// Act
 		ApplicationContextResponse result = tool.ApplicationGetInfo(new ApplicationGetInfoArgs(
 			EnvironmentName: "sandbox",
-			AppId: null,
-			AppCode: "missing-app"));
+			Id: null,
+			Code: "missing-app"));
 
 		// Assert
 		result.Success.Should().BeFalse(
@@ -797,8 +797,8 @@ public sealed class ApplicationToolTests {
 		string listPrompt = ApplicationPrompt.ApplicationGetList(environmentName: "sandbox");
 		string infoPrompt = ApplicationPrompt.ApplicationGetInfo(
 			environmentName: "sandbox",
-			appId: "7f2d7f13-58d7-47d3-b410-03d432558db3",
-			appCode: null);
+			id: "7f2d7f13-58d7-47d3-b410-03d432558db3",
+			code: null);
 		string createPrompt = ApplicationPrompt.ApplicationCreate(
 			environmentName: "sandbox",
 			name: "Codex App",
@@ -835,6 +835,10 @@ public sealed class ApplicationToolTests {
 			because: "the info prompt should keep the normalized environment argument visible");
 		infoPrompt.Should().Contain("exactly one identifier",
 			because: "the info prompt should require the core-aligned identifier rule");
+		infoPrompt.Should().Contain("`id`",
+			because: "the info prompt should document the canonical installed-application id selector");
+		infoPrompt.Should().Contain("`code`",
+			because: "the info prompt should document the canonical installed-application code selector");
 		infoPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
 			because: "the info prompt should point callers to the dedicated MCP maintenance guide for discover and inspect flows");
 		createPrompt.Should().Contain(ApplicationCreateTool.ApplicationCreateToolName,

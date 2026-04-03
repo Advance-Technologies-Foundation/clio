@@ -40,13 +40,13 @@ public sealed class SchemaSyncTool(
 			bool previousPreserveMessages = logger.PreserveMessages;
 			logger.PreserveMessages = true;
 			try {
-				foreach (SchemaSyncOperation op in args.Operations) {
+				foreach ((SchemaSyncOperation op, int index) in args.Operations.Select((operation, operationIndex) => (operation, operationIndex))) {
 					logger.ClearMessages();
-					if (TryValidateSeedRows(op, out SchemaSyncOperationResult? seedValidationFailure)) {
+					if (TryValidateSeedRows(op, index, out SchemaSyncOperationResult? seedValidationFailure)) {
 						results.Add(seedValidationFailure);
 						break;
 					}
-					SchemaSyncOperationResult result = ExecuteOperation(op, args);
+					SchemaSyncOperationResult result = ExecuteOperation(op, args, index);
 					results.Add(result);
 					if (!result.Success) {
 						break;
@@ -71,20 +71,23 @@ public sealed class SchemaSyncTool(
 		};
 	}
 
-	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args) {
+	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args, int operationIndex) {
 		return op.Type switch {
 			CreateLookupOperationName => ExecuteCreateSchema(op, args, "BaseLookup", false, CreateLookupOperationName),
 			"create-entity" => ExecuteCreateSchema(op, args, op.ParentSchemaName, op.ExtendParent, "create-entity"),
 			"update-entity" => ExecuteUpdateEntity(op, args),
 			_ => new SchemaSyncOperationResult {
-				Operation = op.Type, SchemaName = op.SchemaName,
-				Success = false, Error = $"Unknown operation type: {op.Type}"
+				Type = GetReportedOperationType(op),
+				SchemaName = op.SchemaName,
+				Success = false,
+				Error = BuildUnknownOperationError(op, operationIndex)
 			}
 		};
 	}
 
 	private static bool TryValidateSeedRows(
 		SchemaSyncOperation op,
+		int operationIndex,
 		out SchemaSyncOperationResult? validationFailure) {
 		validationFailure = null;
 		if (op.SeedRows?.Any() != true) {
@@ -93,10 +96,10 @@ public sealed class SchemaSyncTool(
 
 		if (op.SeedRows.Any(row => row is null || row.Values is null)) {
 			validationFailure = new SchemaSyncOperationResult {
-				Operation = "seed-data",
+				Type = "seed-data",
 				SchemaName = op.SchemaName,
 				Success = false,
-				Error = "seed-rows validation failed: each row must contain a non-null 'values' object."
+				Error = $"schema-sync operations[{operationIndex}] seed-rows validation failed: each row must contain a non-null 'values' object."
 			};
 			return true;
 		}
@@ -134,14 +137,16 @@ public sealed class SchemaSyncTool(
 			}
 			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
 			return new SchemaSyncOperationResult {
-				Operation = operationName, SchemaName = op.SchemaName,
+				Type = operationName,
+				SchemaName = op.SchemaName,
 				Success = exitCode == 0,
 				Messages = messages,
 				Error = BuildOperationError(operationName, exitCode, messages)
 			};
 		} catch (Exception ex) {
 			return new SchemaSyncOperationResult {
-				Operation = operationName, SchemaName = op.SchemaName,
+				Type = operationName,
+				SchemaName = op.SchemaName,
 				Success = false,
 				Error = ex.Message,
 				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
@@ -153,7 +158,8 @@ public sealed class SchemaSyncTool(
 		try {
 			if (op.UpdateOperations?.Any() != true) {
 				return new SchemaSyncOperationResult {
-					Operation = "update-entity", SchemaName = op.SchemaName,
+					Type = "update-entity",
+					SchemaName = op.SchemaName,
 					Success = false, Error = "update-entity requires at least one operation in update-operations"
 				};
 			}
@@ -167,14 +173,16 @@ public sealed class SchemaSyncTool(
 			int exitCode = command.Execute(options);
 			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
 			return new SchemaSyncOperationResult {
-				Operation = "update-entity", SchemaName = op.SchemaName,
+				Type = "update-entity",
+				SchemaName = op.SchemaName,
 				Success = exitCode == 0,
 				Messages = messages,
 				Error = BuildOperationError("update-entity", exitCode, messages)
 			};
 		} catch (Exception ex) {
 			return new SchemaSyncOperationResult {
-				Operation = "update-entity", SchemaName = op.SchemaName,
+				Type = "update-entity",
+				SchemaName = op.SchemaName,
 				Success = false,
 				Error = ex.Message,
 				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
@@ -195,19 +203,46 @@ public sealed class SchemaSyncTool(
 			int exitCode = command.Execute(options);
 			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
 			return new SchemaSyncOperationResult {
-				Operation = "seed-data", SchemaName = op.SchemaName,
+				Type = "seed-data",
+				SchemaName = op.SchemaName,
 				Success = exitCode == 0,
 				Messages = messages,
 				Error = BuildOperationError("seed-data", exitCode, messages)
 			};
 		} catch (Exception ex) {
 			return new SchemaSyncOperationResult {
-				Operation = "seed-data", SchemaName = op.SchemaName,
+				Type = "seed-data",
+				SchemaName = op.SchemaName,
 				Success = false,
 				Error = ex.Message,
 				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
 			};
 		}
+	}
+
+	private static string GetReportedOperationType(SchemaSyncOperation op) {
+		if (!string.IsNullOrWhiteSpace(op.Type)) {
+			return op.Type;
+		}
+		if (op.ExtensionData?.TryGetValue("operation", out JsonElement legacyOperation) == true &&
+			legacyOperation.ValueKind == JsonValueKind.String) {
+			return legacyOperation.GetString() ?? string.Empty;
+		}
+		return string.Empty;
+	}
+
+	private static string BuildUnknownOperationError(SchemaSyncOperation op, int operationIndex) {
+		if (string.IsNullOrWhiteSpace(op.Type)) {
+			if (op.ExtensionData?.TryGetValue("operation", out JsonElement legacyOperation) == true &&
+				legacyOperation.ValueKind == JsonValueKind.String) {
+				string legacyOperationName = legacyOperation.GetString() ?? string.Empty;
+				return $"schema-sync operations[{operationIndex}] uses unsupported request field 'operation'. Send 'type': '{legacyOperationName}' instead.";
+			}
+			return $"schema-sync operations[{operationIndex}] is missing required field 'type'.";
+		}
+
+		string supportedTypes = string.Join(", ", new[] { CreateLookupOperationName, "create-entity", "update-entity" });
+		return $"schema-sync operations[{operationIndex}].type '{op.Type}' is invalid. Supported values: {supportedTypes}.";
 	}
 
 	private static string? BuildOperationError(string operationName, int exitCode, IReadOnlyList<LogMessage> messages) {
@@ -291,6 +326,9 @@ public sealed record SchemaSyncOperation(
 	[property: JsonPropertyName("title")]
 	[property: Description("Legacy scalar title. Not accepted by MCP. Use title-localizations instead.")]
 	public string? LegacyTitle { get; init; }
+
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }
 
 /// <summary>
@@ -320,8 +358,8 @@ public sealed class SchemaSyncResponse {
 /// </summary>
 public sealed class SchemaSyncOperationResult {
 
-	[JsonPropertyName("operation")]
-	public string Operation { get; init; }
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
 
 	[JsonPropertyName("schema-name")]
 	public string SchemaName { get; init; }

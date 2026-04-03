@@ -26,6 +26,8 @@ entity column references.
 Each operation in the `operations` array must have a `type` and `schema-name`. Additional
 fields depend on the operation type.
 
+Requests use `operations[*].type`. Responses also identify each result by `type`. Do not send `operations[*].operation` in requests.
+
 #### `create-lookup`
 
 Creates a lookup schema inheriting from `BaseLookup` and automatically registers it in the standard `Lookups` section.
@@ -164,14 +166,16 @@ Each seed row must have a `values` key containing column name-value pairs:
 {
   "success": true,
   "results": [
-    {"operation": "create-lookup", "schema-name": "UsrTodoStatus", "success": true},
-    {"operation": "seed-data", "schema-name": "UsrTodoStatus", "success": true},
-    {"operation": "create-lookup", "schema-name": "UsrTodoPriority", "success": true},
-    {"operation": "seed-data", "schema-name": "UsrTodoPriority", "success": true},
-    {"operation": "update-entity", "schema-name": "UsrTodoList", "success": true}
+    {"type": "create-lookup", "schema-name": "UsrTodoStatus", "success": true},
+    {"type": "seed-data", "schema-name": "UsrTodoStatus", "success": true},
+    {"type": "create-lookup", "schema-name": "UsrTodoPriority", "success": true},
+    {"type": "seed-data", "schema-name": "UsrTodoPriority", "success": true},
+    {"type": "update-entity", "schema-name": "UsrTodoList", "success": true}
   ]
 }
 ```
+
+`type` is the result discriminator for response items. It identifies the executed step, such as `create-lookup`, `update-entity`, or synthetic follow-up steps like `seed-data`.
 
 ## Error Handling
 

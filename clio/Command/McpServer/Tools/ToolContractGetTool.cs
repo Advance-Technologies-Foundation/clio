@@ -156,6 +156,8 @@ internal static class ToolContractCatalog {
 	private const string ReferenceSchemaNameFieldName = "reference-schema-name";
 	private const string RegisteredEnvironmentNameDescription = "Registered clio environment name.";
 	private const string RejectedStatus = "rejected";
+	private const string SelectorCodeFieldName = "code";
+	private const string SelectorIdFieldName = "id";
 	private const string SchemaNameFieldName = "schema-name";
 	private const string StringType = "string";
 	private const string SuccessFalseSignal = "success == false";
@@ -463,12 +465,12 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field("app-id", StringType, "Application GUID."),
-					Field(AppCodeFieldName, StringType, "Application code.")
+					Field(SelectorIdFieldName, StringType, "Application GUID."),
+					Field(SelectorCodeFieldName, StringType, "Application code.")
 				],
 				AnyOf: [
-					new[] { "app-id" },
-					[AppCodeFieldName]
+					new[] { SelectorIdFieldName },
+					[SelectorCodeFieldName]
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -493,7 +495,7 @@ internal static class ToolContractCatalog {
 			[
 				Example("Refresh app context by code", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
-					[AppCodeFieldName] = ExamplePackageName
+					[SelectorCodeFieldName] = ExamplePackageName
 				})
 			],
 			Flow(
@@ -545,7 +547,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSchemaSync() {
 		return new ToolContractDefinition(
 			SchemaSyncTool.ToolName,
-			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call.",
+			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call. Requests use operations[*].type; do not send operations[*].operation.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
@@ -562,7 +564,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every schema-sync operation succeeded."),
-				Field("results", ArrayType, "Per-operation execution results.")
+				Field("results", ArrayType, "Per-operation execution results keyed by canonical `type`.")
 			),
 			CommonErrorContract,
 			EnvironmentPackageAliases(),
@@ -682,7 +684,7 @@ internal static class ToolContractCatalog {
 				[],
 				EnvironmentOrExplicitConnectionFields(
 					Field(PackageNameFieldName, StringType, "Package name to inspect."),
-					Field(AppCodeFieldName, StringType, "Installed application code. When provided, page-list resolves the application's primary package before querying pages."),
+					Field(SelectorCodeFieldName, StringType, "Installed application code. When provided, page-list resolves the application's primary package before querying pages."),
 					Field("search-pattern", StringType, "Optional case-insensitive schema-name filter."),
 					Field("limit", NumberType, "Optional max result count.")),
 				Validators: [
@@ -691,9 +693,9 @@ internal static class ToolContractCatalog {
 						"invalid-workflow-shape",
 						Fields: [
 							PackageNameFieldName,
-							AppCodeFieldName
+							SelectorCodeFieldName
 						],
-						Context: "page-list accepts package-name or app-code, not both."),
+						Context: "page-list accepts package-name or code, not both."),
 				],
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
@@ -718,7 +720,7 @@ internal static class ToolContractCatalog {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				}),
 				Example("List pages for an installed app code", new Dictionary<string, object?> {
-					[AppCodeFieldName] = ExamplePackageName,
+					[SelectorCodeFieldName] = ExamplePackageName,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],

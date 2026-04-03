@@ -37,7 +37,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - If `application-create` fails because the app or configuration already exists, switch to the existing-app discovery flow: call `application-get-list` to find the existing app, then `application-get-info` with the matched identifier, and continue with the inspect → mutate → verify flow.
 
 			       Inspect pages before editing
-			       - Use `page-list` to discover candidate Freedom UI page schemas in the target package or by installed `app-code`.
+			       - Use `page-list` to discover candidate Freedom UI page schemas in the target package or by installed `code`.
 			       - `page-list` page items identify each page with `schema-name`, together with `uId`, `packageName`, and `parentSchemaName`.
 			       - Use `page-get` to inspect the merged page bundle and retrieve the raw editable page body.
 			       - For writes, send the full `raw.body` string back to `page-sync` or `page-update`; do not send `bundle` or `bundle.viewConfig` as the body payload.
@@ -56,6 +56,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Keep `page-update` only for single-page dry-run or legacy save workflows.
 			       - Use `modify-entity-schema-column` for a single-column schema change when the target schema and column are already known.
 			       - Use `schema-sync` when the work spans multiple ordered schema steps, mixes create/update/seed operations, or must stay batched.
+			       - `schema-sync` requests use `operations[*].type`. Responses also use `type`; do not send `operations[*].operation` in requests.
 			       - Treat `create-lookup`, `create-entity-schema`, `update-entity-schema`, `create-data-binding-db`, and `page-update` as fallback-oriented tools when the preferred batched workflow is not the right fit for the requested scope.
 			       - For standalone lookup seeding in an MCP workflow, prefer `create-data-binding-db` or `upsert-data-binding-row-db` over direct SQL commands.
 

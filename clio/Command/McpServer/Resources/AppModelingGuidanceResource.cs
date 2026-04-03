@@ -34,12 +34,13 @@ public sealed class AppModelingGuidanceResource {
 			       Discovery before invocation
 			       - Always read the executable contract through `tool-contract-get` before the first invocation of any MCP tool in a workflow. The contract specifies exact parameter names, aliases, required fields, defaults, and response shapes.
 			       - Send tool arguments at the top level of the MCP request. Do not wrap canonical fields inside a synthetic `args` object.
-			       - Tool-specific identifiers follow their own naming conventions and must not be guessed. For example, `application-get-info` and `application-get-list` accept `app-code` (not `application-code`), and `application-create` accepts `icon-background` (not `icon-name` or `icon-color`).
+			       - Tool-specific identifiers follow their own naming conventions and must not be guessed. For example, `application-get-info` and `page-list` use `code`, `application-get-info` uses `id`, and `application-create` accepts `icon-background` (not `icon-name` or `icon-color`).
 
 			       Preferred workflow
 			       - Use `application-create` when the workflow is modeling a new app shell rather than editing an existing installed app.
 			       - Prefer `schema-sync` for multi-step schema work and `page-sync` for multi-page saves.
 			       - Canonical new-app entity flow: `application-create` -> `schema-sync` -> `application-get-info`.
+			       - `schema-sync` requests use `operations[*].type`. Responses also identify each result by `type`; do not invent or send `operations[*].operation`.
 			       - Canonical page flow after planning a page change: `page-list` -> `page-get` -> `component-info` when needed -> `page-sync` or `page-update` -> `page-get` when explicit read-back verification is required.
 			       - Entity-schema mutations are DB-first. After a successful schema tool call, treat the schema as immediately usable without a compile step.
 			       - Treat single-tool entity or page mutations as compatibility fallbacks. Keep the preferred workflow in the current MCP contract unless the task is truly limited to one column, one lookup, or one page save.

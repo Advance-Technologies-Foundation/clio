@@ -19,10 +19,10 @@ public interface IApplicationInfoService
 	/// Loads application package and entity metadata for the requested installed application.
 	/// </summary>
 	/// <param name="environmentName">Registered clio environment name.</param>
-	/// <param name="appId">Optional installed application identifier.</param>
-	/// <param name="appCode">Optional installed application code.</param>
+	/// <param name="id">Optional installed application identifier.</param>
+	/// <param name="code">Optional installed application code.</param>
 	/// <returns>Structured application package and entity information.</returns>
-	ApplicationInfoResult GetApplicationInfo(string environmentName, string? appId, string? appCode);
+	ApplicationInfoResult GetApplicationInfo(string environmentName, string? id, string? code);
 }
 
 /// <summary>
@@ -104,16 +104,16 @@ public sealed class ApplicationInfoService(
 		};
 
 	/// <inheritdoc />
-	public ApplicationInfoResult GetApplicationInfo(string environmentName, string? appId, string? appCode)
+	public ApplicationInfoResult GetApplicationInfo(string environmentName, string? id, string? code)
 	{
 		if (string.IsNullOrWhiteSpace(environmentName))
 		{
 			throw new ArgumentException("Environment name is required.", nameof(environmentName));
 		}
 
-		if (string.IsNullOrWhiteSpace(appId) && string.IsNullOrWhiteSpace(appCode))
+		if (string.IsNullOrWhiteSpace(id) && string.IsNullOrWhiteSpace(code))
 		{
-			throw new ArgumentException("Either app-id or app-code is required.");
+			throw new ArgumentException("Either id or code is required.");
 		}
 
 		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
@@ -122,7 +122,7 @@ public sealed class ApplicationInfoService(
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		ServiceUrlBuilder serviceUrlBuilder = new(environmentSettings);
 
-		InstalledApplicationDto application = ResolveApplication(client, serviceUrlBuilder, appId, appCode);
+		InstalledApplicationDto application = ResolveApplication(client, serviceUrlBuilder, id, code);
 		ApplicationPackageDto primaryPackage = GetPrimaryPackage(client, serviceUrlBuilder, application.Id);
 		IReadOnlyList<ApplicationEntityRecordDto> entityRows =
 			GetApplicationEntities(client, serviceUrlBuilder, application.Id, primaryPackage.UId);
@@ -148,20 +148,20 @@ public sealed class ApplicationInfoService(
 	private static InstalledApplicationDto ResolveApplication(
 		IApplicationClient client,
 		ServiceUrlBuilder serviceUrlBuilder,
-		string? appId,
-		string? appCode)
+		string? id,
+		string? code)
 	{
 		SelectQueryResponseDto response = ExecuteSelectQuery<SelectQueryResponseDto>(
 			client,
 			serviceUrlBuilder,
-			BuildInstalledApplicationsQuery(appId, appCode));
+			BuildInstalledApplicationsQuery(id, code));
 		InstalledApplicationDto? application = response.Rows.FirstOrDefault();
 		if (application is not null)
 		{
 			return application;
 		}
 
-		string identifier = !string.IsNullOrWhiteSpace(appId) ? appId.Trim() : appCode?.Trim() ?? "unknown";
+		string identifier = !string.IsNullOrWhiteSpace(id) ? id.Trim() : code?.Trim() ?? "unknown";
 		throw new InvalidOperationException($"Application '{identifier}' not found.");
 	}
 

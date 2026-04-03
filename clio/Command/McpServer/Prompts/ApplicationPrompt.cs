@@ -38,15 +38,15 @@ public static class ApplicationPrompt {
 		[Description("Creatio environment name")]
 		string environmentName,
 		[Description("Optional installed application id filter")]
-		string? appId = null,
+		string? id = null,
 		[Description("Optional installed application code filter")]
-		string? appCode = null) =>
+		string? code = null) =>
 		$"""
 		 Use clio mcp server `{ApplicationGetInfoTool.ApplicationGetInfoToolName}` to return installed application identity plus the primary package and runtime entity metadata for one installed Creatio application.
 		 If this is the first application-related MCP call in the workflow, call `{ToolContractGetTool.ToolName}` first with `tool-names` such as `application-get-list` and `application-get-info` so the client starts from the authoritative contract.
 		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
 		 Pass `environment-name` `{environmentName}` exactly as provided.
-		 Pass exactly one identifier: `app-id` when you already have the installed application GUID, or `app-code` when you have the installed application code.
+		 Pass exactly one identifier: `id` when you already have the installed application GUID, or `code` when you have the installed application code.
 		 Do not include both identifiers in the same call.
 		 Use this after `{ApplicationGetListTool.ApplicationGetListToolName}` when the target app is not fully known.
 		 """;

@@ -400,8 +400,8 @@ public sealed class ToolContractGetToolE2ETests {
 		response.Success.Should().BeTrue(
 			because: "page discovery and inspection contracts should be readable through the MCP server");
 		ToolContractDefinition pageListContract = response.Tools!.Single(tool => tool.Name == PageListTool.ToolName);
-		pageListContract.InputSchema.Properties.Should().Contain(field => field.Name == "app-code",
-			because: "page-list should advertise app-code as a first-class selector");
+		pageListContract.InputSchema.Properties.Should().Contain(field => field.Name == "code",
+			because: "page-list should advertise code as a first-class selector");
 		pageListContract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "pages" &&
 				field.Description.Contains("schema-name", StringComparison.Ordinal),

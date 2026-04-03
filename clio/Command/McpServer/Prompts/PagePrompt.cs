@@ -20,7 +20,7 @@ public static class PagePrompt {
 		$"""
 		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
 		 Before the first page inspection or mutation tool call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `page-list`, `page-get`, `component-info`, `page-sync`, and `page-update` so the client starts from the authoritative page contract.
-		 Use `page-list` first when you need to discover candidate page schemas by `package-name`, `app-code`, or `search-pattern`.
+		 Use `page-list` first when you need to discover candidate page schemas by `package-name`, `code`, or `search-pattern`.
 		 Use `{PageGetTool.ToolName}` with `schema-name` `{schemaName}` and `environment-name` `{environmentName ?? "<default or explicit connection args>"}` to inspect the effective merged page structure.
 		 Read layout and container hierarchy from `bundle.viewConfig`.
 		 When `bundle.viewConfig` contains unfamiliar `crt.*` types, call `{ComponentInfoTool.ToolName}` with `component-type` set to that type before editing nested config or children.

@@ -67,8 +67,8 @@ public class PageToolsTests {
 			because: "page-list should no longer serialize the removed camelCase request field");
 		listJson.Should().NotContain("\"searchPattern\"",
 			because: "page-list should no longer serialize the removed camelCase request field");
-		listByAppJson.Should().Contain("\"app-code\":\"UsrTodo\"",
-			because: "page-list should expose the normalized app-code request field when app discovery is used");
+		listByAppJson.Should().Contain("\"code\":\"UsrTodo\"",
+			because: "page-list should expose the normalized code request field when app discovery is used");
 		updateJson.Should().Contain("\"schema-name\":\"UsrTodo_FormPage\"",
 			because: "page-update should expose the normalized schema-name request field");
 		updateJson.Should().Contain("\"dry-run\":true",
@@ -96,8 +96,8 @@ public class PageToolsTests {
 		// Assert
 		prompt.Should().Contain("`schema-name`",
 			because: "page-get prompt guidance should match the current MCP argument contract");
-		prompt.Should().Contain("`app-code`",
-			because: "page guidance should mention app-code as a valid discovery selector for page-list");
+		prompt.Should().Contain("`code`",
+			because: "page guidance should mention code as a valid discovery selector for page-list");
 		prompt.Should().Contain("`environment-name`",
 			because: "page-get prompt guidance should match the current MCP argument contract");
 		prompt.Should().Contain($"`{ComponentInfoTool.ToolName}`",

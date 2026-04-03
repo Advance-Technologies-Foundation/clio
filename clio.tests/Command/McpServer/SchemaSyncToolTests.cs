@@ -76,8 +76,8 @@ public sealed class SchemaSyncToolTests {
 			because: "a create-lookup with exit code 0 should succeed");
 		response.Results.Should().HaveCount(1,
 			because: "one create-lookup operation was requested");
-		response.Results[0].Operation.Should().Be("create-lookup",
-			because: "the result should reflect the requested operation type");
+		response.Results[0].Type.Should().Be("create-lookup",
+			because: "schema-sync results should expose the canonical type field");
 		fakeCreateCommand.CapturedOptions.Should().NotBeNull(
 			because: "the tool should forward the operation to CreateEntitySchemaCommand");
 		fakeCreateCommand.CapturedOptions!.Package.Should().Be("UsrPkg",
@@ -121,8 +121,8 @@ public sealed class SchemaSyncToolTests {
 			because: "schema-sync should fail fast when a create-lookup operation tries to redefine inherited BaseLookup columns");
 		response.Results.Should().HaveCount(1,
 			because: "validation should stop the batch on the rejected create-lookup operation");
-		response.Results[0].Operation.Should().Be("create-lookup",
-			because: "the failed result should still identify the rejected operation");
+		response.Results[0].Type.Should().Be("create-lookup",
+			because: "validation failures should still report the canonical type field");
 		response.Results[0].Error.Should().Contain("BaseLookup",
 			because: "the failure should explain the inherited-column guardrail");
 		response.Results[0].Error.Should().Contain("Name",
@@ -231,10 +231,10 @@ public sealed class SchemaSyncToolTests {
 			because: "both create-lookup and seed-data should succeed");
 		response.Results.Should().HaveCount(2,
 			because: "a create-lookup and its seed-data produce two results");
-		response.Results[0].Operation.Should().Be("create-lookup",
-			because: "the first result should be the create operation");
-		response.Results[1].Operation.Should().Be("seed-data",
-			because: "the second result should be the seed operation");
+		response.Results[0].Type.Should().Be("create-lookup",
+			because: "create results should expose the canonical type field");
+		response.Results[1].Type.Should().Be("seed-data",
+			because: "seed results should expose the canonical type field");
 		fakeSeedCommand.CapturedOptions.Should().NotBeNull(
 			because: "seed-data should be executed after create");
 		fakeSeedCommand.CapturedOptions!.SchemaName.Should().Be("UsrTodoStatus",
@@ -328,8 +328,46 @@ public sealed class SchemaSyncToolTests {
 			because: "an unknown operation type should fail");
 		response.Results.Should().HaveCount(1,
 			because: "one operation was attempted");
-		response.Results[0].Error.Should().Contain("Unknown operation type",
-			because: "the error should describe the unsupported type");
+		response.Results[0].Error.Should().Contain("operations[0].type",
+			because: "the error should identify the failing operation slot and field name");
+		response.Results[0].Error.Should().Contain("delete-schema",
+			because: "the error should describe the unsupported type value");
+		response.Results[0].Error.Should().Contain("Supported values",
+			because: "the error should list the accepted schema-sync operation types");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects the legacy operation field name with a targeted schema-sync validation message.")]
+	public void SchemaSync_Should_Reject_Legacy_Operation_Field_Name() {
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev",
+			"UsrPkg",
+			[
+				new SchemaSyncOperation(
+					null!,
+					"UsrTodoStatus",
+					TitleLocalizations: Localizations("Todo Status")) {
+					ExtensionData = new Dictionary<string, System.Text.Json.JsonElement> {
+						["operation"] = ToJsonElement("create-lookup")
+					}
+				}
+			]);
+
+		SchemaSyncResponse response = tool.SchemaSync(args);
+
+		response.Success.Should().BeFalse(
+			because: "legacy request field names should fail before any schema command executes");
+		response.Results.Should().HaveCount(1,
+			because: "the rejected request should produce one targeted validation result");
+		response.Results[0].Type.Should().Be("create-lookup",
+			because: "the validation result should preserve the reported legacy operation name in the canonical type field");
+		response.Results[0].Error.Should().Contain("unsupported request field 'operation'",
+			because: "the error should explain the legacy field-name mistake directly");
+		response.Results[0].Error.Should().Contain("Send 'type': 'create-lookup' instead",
+			because: "the error should point callers to the exact canonical replacement");
 	}
 
 	[Test]
@@ -445,7 +483,7 @@ public sealed class SchemaSyncToolTests {
 			because: "malformed seed-rows must fail schema-sync before any remote command is executed");
 		response.Results.Should().ContainSingle(
 			because: "the batch should stop immediately on the malformed seed-data payload");
-		response.Results[0].Operation.Should().Be("seed-data",
+		response.Results[0].Type.Should().Be("seed-data",
 			because: "the failure should be attributed to the seed-data step");
 		response.Results[0].Error.Should().Contain("values",
 			because: "the caller must be told that each seed row requires a values wrapper");
@@ -481,7 +519,7 @@ public sealed class SchemaSyncToolTests {
 			because: "a null seed row should produce a structured validation failure instead of throwing");
 		response.Results.Should().ContainSingle(
 			because: "the batch should stop immediately on the malformed seed-data payload");
-		response.Results[0].Operation.Should().Be("seed-data",
+		response.Results[0].Type.Should().Be("seed-data",
 			because: "the failure should be attributed to the seed-data step");
 		response.Results[0].Error.Should().Contain("values",
 			because: "the caller must be told that each seed row requires a non-null values wrapper");
@@ -524,9 +562,9 @@ public sealed class SchemaSyncToolTests {
 			because: "all operations should succeed");
 		response.Results.Should().HaveCount(2,
 			because: "two operations were requested");
-		response.Results[0].Operation.Should().Be("create-lookup",
+		response.Results[0].Type.Should().Be("create-lookup",
 			because: "operations should be processed in order");
-		response.Results[1].Operation.Should().Be("update-entity",
+		response.Results[1].Type.Should().Be("update-entity",
 			because: "the update should follow the create");
 		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Status");
 	}
