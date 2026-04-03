@@ -193,6 +193,8 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 			because: "the create prompt should advertise schema-sync as the canonical batched path");
 		createPrompt.Should().Contain("explicit fallback",
 			because: "the create prompt should frame create-data-binding-db as explicit fallback or standalone work");
+		createPrompt.Should().Contain("prefer this tool over dropping to direct SQL commands",
+			because: "the prompt should steer standalone lookup seeding back to the supported MCP path");
 		createPrompt.Should().Contain("values",
 			because: "the create prompt should explain the required row wrapper shape");
 		upsertPrompt.Should().Contain(UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName,

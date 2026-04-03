@@ -9,7 +9,7 @@ jobs:
     name: release-to-nuget
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 1  # Shallow clones should be disabled for a better relevancy of analysis
 
@@ -66,10 +66,48 @@ jobs:
         run: |
           $version = "${{ steps.extract_version.outputs.VERSION }}"
           echo "Building clio with version: $version"
-          dotnet build .\clio\clio.csproj -c Release --no-incremental
+          dotnet build .\clio\clio.csproj -c Release --no-incremental `
+            /p:ContinuousIntegrationBuild=true `
+            /p:GeneratePackageOnBuild=false `
+            /p:AssemblyVersion=$version /p:FileVersion=$version /p:Version=$version /p:InformationalVersion=$version
           echo "Packing clio with version: $version"
-          dotnet pack .\clio\clio.csproj --configuration Release --output ./output /p:AssemblyVersion=$version /p:FileVersion=$version /p:Version=$version
+          dotnet pack .\clio\clio.csproj --configuration Release --no-build --output ./output `
+            /p:GeneratePackageOnBuild=false `
+            /p:AssemblyVersion=$version /p:FileVersion=$version /p:Version=$version /p:InformationalVersion=$version
         shell: powershell
+
+      - name: Verify packaged tool version
+        shell: powershell
+        run: |
+          $version = "${{ steps.extract_version.outputs.VERSION }}"
+          $toolPath = Join-Path $PWD "tool-smoke"
+          if (Test-Path $toolPath) {
+            Remove-Item $toolPath -Recurse -Force
+          }
+
+          dotnet tool install clio --tool-path $toolPath --version $version --add-source (Join-Path $PWD "output")
+
+          $clioExecutable = Join-Path $toolPath "clio"
+          if (-not (Test-Path $clioExecutable)) {
+            $clioExecutable = Join-Path $toolPath "clio.exe"
+          }
+
+          $reportedVersion = & $clioExecutable info --clio
+          if (-not $reportedVersion) {
+            throw "Packaged tool did not report a version."
+          }
+
+          $reportedVersionText = "$reportedVersion".Trim()
+          $reportedVersionMatch = [regex]::Match($reportedVersionText, "\d+\.\d+\.\d+\.\d+")
+          if (-not $reportedVersionMatch.Success) {
+            throw "Packaged tool did not contain a semantic version. Output: '$reportedVersionText'."
+          }
+
+          if ($reportedVersionMatch.Value -ne $version) {
+            throw "Packaged tool version mismatch. Expected '$version', got '$($reportedVersionMatch.Value)' from '$reportedVersionText'."
+          }
+
+          echo "Verified packaged tool version: $reportedVersion"
 
       - name: Publish to NuGet
         env:

@@ -210,12 +210,12 @@ public sealed record PageSyncPageInput(
 	string SchemaName,
 
 	[property: JsonPropertyName("body")]
-	[property: Description("Full JavaScript page body")]
+	[property: Description("Full JavaScript page body copied from page-get raw.body")]
 	[property: Required]
 	string Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object of resource key-value pairs for #ResourceString(key)# macros")]
+	[property: Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros")]
 	string? Resources = null
 );
 

@@ -209,6 +209,24 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	}
 
 	[Test]
+	[Description("Prints a compatibility version line for legacy callers that still invoke clio with the root --version flag.")]
+	public void Main_WithRootVersionFlag_ShouldReturnZeroAndPrintCompatibilityVersion() {
+		// Arrange
+		StringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		string[] args = ["--version"];
+
+		// Act
+		int exitCode = Program.Main(args);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		exitCode.Should().Be(0, because: "legacy updaters still invoke the root --version flag after installing a new binary");
+		output.Should().NotContain("clio ", because: "older updater builds compare the root --version output to the semantic version string directly");
+		output.Should().Contain(".", because: "the compatibility output should include the installed semantic version");
+	}
+
+	[Test]
 	[Description("Prints up to ten alphabetically sorted suggestions and help hints for an unknown top-level command.")]
 	public void ExecuteCommands_WithUnknownVerb_ShouldPrintSuggestionsAndKeepExitCodeOne() {
 		StringWriter consoleOutput = new();

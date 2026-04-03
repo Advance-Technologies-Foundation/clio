@@ -26,6 +26,7 @@ public static class DataBindingDbPrompt {
 		 for schema `{schemaName}` in package `{packageName}` on environment `{environmentName}`.
 		 Prefer `schema-sync` with inline `seed-rows` as the canonical batched path. Use
 		 `{CreateDataBindingDbTool.CreateDataBindingDbToolName}` only for explicit fallback or standalone binding work.
+		 When the task is standalone lookup seeding in an MCP workflow, prefer this tool over dropping to direct SQL commands.
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Use `binding-name` `{bindingName ?? "<default: same as schema>"}` and provide `rows`
 		 `{rows ?? "<not provided>"}` as a JSON array of objects each with a `values` key.

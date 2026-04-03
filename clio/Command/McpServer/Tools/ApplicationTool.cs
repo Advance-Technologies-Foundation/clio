@@ -136,7 +136,9 @@ public sealed class ApplicationCreateTool(IApplicationCreateService applicationC
 		}
 
 		if (string.IsNullOrWhiteSpace(args.TemplateCode)) {
-			throw new ArgumentException("template-code is required.");
+			throw new ArgumentException(
+				"template-code is required. " +
+				"Provide the technical template name as a top-level field, for example AppFreedomUI.");
 		}
 
 		if (!KnownTemplates.Contains(args.TemplateCode.Trim(), StringComparer.OrdinalIgnoreCase)) {
@@ -148,7 +150,9 @@ public sealed class ApplicationCreateTool(IApplicationCreateService applicationC
 		}
 
 		if (string.IsNullOrWhiteSpace(args.IconBackground)) {
-			throw new ArgumentException("icon-background is required.");
+			throw new ArgumentException(
+				"icon-background is required. " +
+				"Provide a top-level #RRGGBB value such as #1F5F8B.");
 		}
 	}
 

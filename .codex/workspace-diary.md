@@ -1685,13 +1685,6 @@ Discovery: The local macOS test runner hit a `CreateAppHost` access violation du
 Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio/Environment/SettingsBootstrapService.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/ToolCommandResolverTests.cs, clio.tests/Command/SettingsBootstrapServiceTests.cs, .codex/workspace-diary.md
 Impact: Environmentless MCP tools no longer inherit active-environment safety flags accidentally, settings-health reflects repaired files in the same process, and PR #506 should converge to zero actionable Sonar/Codex findings after the next push analysis.
 
-## 2026-04-02 12:05 – Canonicalize DB-first binding contract ownership
-Context: ENG-87891 required `clio` to stay the sole owner of DB-first binding MCP semantics while ADAC drops duplicated binding policy and keeps only orchestration-level guidance plus repo-local section registration invariants.
-Decision: Tightened `tool-contract-get` for `create-data-binding-db`, `upsert-data-binding-row-db`, and `remove-data-binding-row-db`, aligned the binding MCP prompts to the same canonical/fallback wording and preconditions, added unit and MCP E2E coverage for the binding-family contract surface, and cleaned ADAC docs/skill guidance so they now defer binding semantics back to `clio` while preserving `SysModule` / `SysModuleEntity` artifact invariants.
-Discovery: ADAC did not need script changes for binding tools; `scripts/mcp_schema_sync.py` still routes only through `schema-sync`, and `scripts/mcp_client.py` contains no direct DB-first binding tool orchestration, so the real duplication lived in authority docs and skill wording rather than Python wrappers.
-Files: clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Prompts/DataBindingDbPrompt.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.tests/Command/McpServer/DataBindingDbToolTests.cs, clio.mcp.e2e/ToolContractGetToolE2ETests.cs, ai-driven-app-creation/context/data-bindings-reference.md, ai-driven-app-creation/context/essentials.md, ai-driven-app-creation/agents/03-implementation-plan.md, ai-driven-app-creation/agents/04-implementation.md, ai-driven-app-creation/skills/data-bindings-creation/SKILL.md, .codex/workspace-diary.md
-Impact: MCP consumers now get a single canonical binding contract from `tool-contract-get` plus matching prompt guidance in `clio`, ADAC no longer acts like a parallel binding handbook, and the split is covered by targeted unit, MCP E2E, and ADAC regression tests.
-
 ## 2026-04-02 01:23 – Add PR delivery flow skill
 Context: User asked for a dedicated skill that captures the full GitHub delivery sequence so future branch update, PR, review-response, quality-gate, and merge tasks do not miss reply/resolve steps.
 Decision: Added a canonical `pr-delivery-flow` instruction in `docs/agent-instructions/` plus a local skill wrapper and UI metadata under `.codex/skills/pr-delivery-flow`, with explicit mandatory checkpoints for unresolved review threads, checks, Sonar, and merge verification.
@@ -1713,6 +1706,13 @@ Discovery: The real cross-repo mismatch was documentation authority rather than 
 Files: clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.mcp.e2e/ToolContractGetToolE2ETests.cs, /Users/a.kravchuk/Projects/ai-driven-app-creation/README.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/agents/04-implementation.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/essentials.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/mcp-application-tools-reference.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/ui-reference.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/viewconfig-reference.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/context/handlers-reference.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/docs/mcp-testing-guide.md, /Users/a.kravchuk/Projects/ai-driven-app-creation/skills/page-schema-editing/SKILL.md, .codex/workspace-diary.md
 Impact: `clio` now advertises one consistent page-tool contract across prompts, guidance, and machine-readable metadata, and ADAC no longer competes with that contract while still preserving its local page-sync orchestration and evidence flow.
 
+## 2026-04-02 12:05 – Canonicalize DB-first binding contract ownership
+Context: ENG-87891 required `clio` to stay the sole owner of DB-first binding MCP semantics while ADAC drops duplicated binding policy and keeps only orchestration-level guidance plus repo-local section registration invariants.
+Decision: Tightened `tool-contract-get` for `create-data-binding-db`, `upsert-data-binding-row-db`, and `remove-data-binding-row-db`, aligned the binding MCP prompts to the same canonical/fallback wording and preconditions, added unit and MCP E2E coverage for the binding-family contract surface, and cleaned ADAC docs/skill guidance so they now defer binding semantics back to `clio` while preserving `SysModule` / `SysModuleEntity` artifact invariants.
+Discovery: ADAC did not need script changes for binding tools; `scripts/mcp_schema_sync.py` still routes only through `schema-sync`, and `scripts/mcp_client.py` contains no direct DB-first binding tool orchestration, so the real duplication lived in authority docs and skill wording rather than Python wrappers.
+Files: clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Prompts/DataBindingDbPrompt.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.tests/Command/McpServer/DataBindingDbToolTests.cs, clio.mcp.e2e/ToolContractGetToolE2ETests.cs, ai-driven-app-creation/context/data-bindings-reference.md, ai-driven-app-creation/context/essentials.md, ai-driven-app-creation/agents/03-implementation-plan.md, ai-driven-app-creation/agents/04-implementation.md, ai-driven-app-creation/skills/data-bindings-creation/SKILL.md, .codex/workspace-diary.md
+Impact: MCP consumers now get a single canonical binding contract from `tool-contract-get` plus matching prompt guidance in `clio`, ADAC no longer acts like a parallel binding handbook, and the split is covered by targeted unit, MCP E2E, and ADAC regression tests.
+
 ## 2026-04-02 16:20 – Bump local default clio version to 8.0.2.53
 Context: User requested to prepare the next release baseline so local builds use version 8.0.2.53 and the change is pushed to the current development branch.
 Decision: Updated `AssemblyVersion` default in `clio/clio.csproj` from 8.0.2.48 to 8.0.2.53 and validated by rebuilding `clio` and checking `clio ver` output.
@@ -1726,3 +1726,73 @@ Decision: Added JSON extension-data capture for application MCP args, enforced r
 Discovery: Recent ADAC cleanup had already removed most wrapper-level duplication, so the real remaining gap was runtime enforcement inside `clio`; without extension-data capture, legacy alias fields and localization maps on `application-create` would deserialize silently and bypass the technical guardrails already advertised by `tool-contract-get`.
 Files: clio/Command/McpServer/Tools/ApplicationToolArgs.cs, clio/Command/McpServer/Tools/ApplicationTool.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs, .codex/workspace-diary.md
 Impact: `clio` now enforces the application MCP contract it advertises, prompt/runtime parity is tighter, ADAC no longer needs to restate application technical rules locally, and the application-surface boundary between `clio` and ADAC is protected by focused unit, doc, and E2E coverage.
+
+## 2026-04-02 21:35 – Fix release tool-version mismatch
+Context: `clio update` reported a version mismatch after installing NuGet package `8.0.2.51`, while `clio version` showed embedded tool version `8.0.2.48+<sha>`.
+Decision: Updated the GitHub release workflow to build and pack with one explicit version contract, disabled package-on-build during the release build, added a local artifact install smoke check before NuGet publish, and switched updater verification from `clio --version` to `clio version` with normalization that strips the `clio ` prefix and git metadata suffix.
+Discovery: The old workflow built Release once without tag version overrides and then packed with overrides, which allowed a stale binary to be published under a newer NuGet package version; `clio version` is the reliable verification command and returns `clio <version>+<sha>`.
+Files: .github/workflows/reliase-to-nuget.yml, clio/AppUpdater.cs, clio/Command/Update/UpdateCliCommand.cs, clio/help/en/update-cli.txt, clio/docs/commands/update-cli.md, clio.tests/AppUpdaterTests.cs, .codex/workspace-diary.md
+Impact: Future releases should fail in CI before publish if the packed tool reports a version different from the release tag, and local `clio update` verification aligns with the actual CLI version output.
+
+## 2026-04-02 22:02 – Clean PR 512 to release-only diff
+Context: PR #512 initially included unrelated `init-workspace` changes because the release-fix branch was created from `codex/init-workspace` instead of `master`.
+Decision: Rebased `codex/fix-release-version-mismatch` onto `origin/master`, kept only the release-version fix in the PR, and simplified `NormalizeInstalledVersion` string assembly while the branch was being refreshed.
+Discovery: The repo source backs version verification through `clio info --clio`, not a dedicated `version` verb; the Sonar issues shown on PR #512 before rebase were stale findings from the accidental `init-workspace` diff and should disappear after the refreshed analysis.
+Files: clio/AppUpdater.cs, .codex/workspace-diary.md
+Impact: PR #512 now represents the intended release-flow fix only and should re-run GitHub checks/Sonar against the correct file set after force-push.
+
+## 2026-04-02 21:58 – Move workflow checkout off Node 20
+Context: GitHub Actions UI showed a warning that Node.js 20 actions are deprecated on the repository workflows.
+Decision: Updated both repository workflows to use `actions/checkout@v5` instead of `actions/checkout@v4`.
+Discovery: The warning came from JavaScript action runtime deprecation rather than any build/test failure; both `build.yml` and `reliase-to-nuget.yml` were still pinned to checkout v4.
+Files: .github/workflows/build.yml, .github/workflows/reliase-to-nuget.yml, .codex/workspace-diary.md
+Impact: Future workflow runs should stop reporting the Node 20 deprecation warning once the self-hosted runner supports the newer checkout action runtime.
+
+## 2026-04-02 22:09 – Fix release verification for logger-prefixed version output
+Context: Release `8.0.2.53` failed in GitHub Actions run `23919151113` during the `Verify packaged tool version` step even though the packaged tool installed and reported the correct version.
+Decision: Relaxed the workflow regex to accept the console logger prefix around `clio:   <version>`, and updated `AppUpdater.NormalizeInstalledVersion` to strip leading logger text before parsing the semantic version.
+Discovery: The CLI version command output on the runner is `[INF] - clio:   8.0.2.53`, so the previous exact match against only `clio:   8.0.2.53` was too strict; the same prefix would also have broken local `clio update` verification.
+Files: .github/workflows/reliase-to-nuget.yml, clio/AppUpdater.cs, clio.tests/AppUpdaterTests.cs, .codex/workspace-diary.md
+Impact: The next release run should pass packaged-tool verification instead of failing on the logger prefix, and local updater verification now parses the installed version correctly.
+
+## 2026-04-02 22:12 – Replace workflow line match with semantic-version extraction
+Context: Release `8.0.2.54` still failed verification in GitHub Actions run `23919797506` even after allowing the logger prefix in the workflow regex.
+Decision: Replaced the workflow's full-line regex assertion with semantic version extraction from the `clio info --clio` output and compared the extracted version directly to the release tag value.
+Discovery: The runner output remained `[INF] - clio:   8.0.2.54`, but the PowerShell `-match` based full-line assertion was still brittle on the runner; extracting `\d+\.\d+\.\d+\.\d+` is simpler and aligns with the app-side normalization logic.
+Files: .github/workflows/reliase-to-nuget.yml, .codex/workspace-diary.md
+Impact: Future release verification should no longer fail on logger prefixes or other harmless formatting around the semantic version string.
+
+## 2026-04-02 22:31 – Restore updater compatibility for legacy root version check
+Context: Users still saw `Update completed, but verification failed` after upgrading to `8.0.2.55`, even though `clio ver` showed the correct installed version.
+Decision: Added a built-in root `--version` compatibility path that prints a plain `clio <version>` line before command parsing, and hardened installed-version normalization to scan every output line for the first semantic version instead of assuming the version is on the last line.
+Discovery: The published `8.0.2.55` package and release workflow were already correct; the false warning came from older `clio update` binaries that still shell out to `clio --version` after installing the new binary, so the fix had to be backward-compatible in the CLI itself rather than in CI.
+Files: clio/Program.cs, clio/AppUpdater.cs, clio.tests/CommonProgramTest.cs, clio.tests/AppUpdaterTests.cs, .codex/workspace-diary.md
+Impact: Updating from older broken builds should now self-heal on the first successful upgrade because the newly installed binary answers the legacy verification command in a parsable format.
+
+## 2026-04-02 23:42 – Tighten root version output for oldest updater compatibility
+Context: A real NuGet.org smoke test from isolated global install `8.0.2.48` to `8.0.2.56` still produced the warning after the first compatibility fix.
+Decision: Changed the built-in root `--version` output to emit only the semantic version string, without the `clio ` prefix, because the oldest updater compares the full stdout directly to the expected semantic version.
+Discovery: The old updater path does call the new binary after update, but it does not normalize `clio 8.0.2.56`; the exact mismatch observed was `expected 8.0.2.56, got clio 8.0.2.56`.
+Files: clio/Program.cs, clio.tests/CommonProgramTest.cs, .codex/workspace-diary.md
+Impact: The next release should finally remove the false warning for users upgrading from pre-fix global installations such as `8.0.2.48`.
+
+## 2026-04-03 12:40 – Clarify MCP guidance for app creation, page sync, and DB-first seeding
+Context: ADAC log analysis showed repeated avoidable failures around wrapped application payloads, page body reuse, JSON-encoded resources, and fallback to direct SQL for lookup seeding.
+Decision: Tightened MCP prompts, guidance resources, tool-contract examples, and runtime validation hints so the canonical paths now explicitly require top-level application arguments, `page-get.raw.body` reuse for page writes, JSON-string `resources`, and `create-data-binding-db` for standalone lookup seeding.
+Discovery: Most session losses came from contract ambiguity rather than missing capability; once the agent switched to `raw.body`, stringified `resources`, and MCP-native DB-first binding tools, the same workflow recovered immediately.
+Files: clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Prompts/DataBindingDbPrompt.cs, clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, clio/Command/McpServer/Tools/ApplicationTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/PageUpdateOptions.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/DataBindingDbToolTests.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/ToolContractGetToolE2ETests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, .codex/workspace-diary.md
+Impact: CLIO now teaches the recovery paths that succeeded in the real ADAC session, and the updated unit plus MCP E2E coverage guards those contract hints against regression.
+
+## 2026-04-03 12:50 – Push tool-contract bootstrap into prompt entry points and MCP docs
+Context: A follow-up implementation review found that the “call tool-contract-get before the first MCP invocation” rule was present in guidance resources but still missing from direct application/page prompts and the public mcp-server docs/help examples where agents often start.
+Decision: Added explicit `tool-contract-get` bootstrap instructions to application and page prompt entry points, updated mcp-server docs/help so workflow examples begin from contract discovery, and removed stale wording that implied this repo ships a generic stdio helper wrapper.
+Discovery: The parser-hardening finding referenced an external wrapper script that is not part of this repository, so the honest CLIO-side fix here was documentation alignment rather than inventing a missing client implementation.
+Files: clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/docs/commands/mcp-server.md, clio/help/en/mcp-server.txt, docs/McpCapabilityMap.md, clio.tests/Command/McpServer/ApplicationToolTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs, .codex/workspace-diary.md
+Impact: Agents that enter CLIO through prompt entry points or command docs now hit the authoritative bootstrap step first, reducing the chance of repeating the original contract-guessing failure mode.
+
+## 2026-04-03 13:25 – Review plan coverage for ADAC guidance changes
+Context: Needed to evaluate whether the staged `clio` changes fully implement the ADAC follow-up plan captured in the external note from 2026-04-03.
+Decision: Reviewed the staged MCP prompt/resource/tool-contract changes against each plan item instead of treating the whole diff as one task, and checked targeted test commands for basic verification.
+Discovery: The staged work covers the CLIO-side guidance for top-level MCP args, `page-get.raw.body`, JSON-string `resources`, and DB-first lookup seeding, but the direct prompt/examples layer still does not consistently teach `tool-contract-get` first and there is no repository-side implementation of the ADAC `mcp_client.py` parsing change. Targeted `dotnet test` runs were blocked earlier by a missing `clio/obj/Debug/net8.0/apphost` build artifact.
+Files: /Users/a.kravchuk/Projects/clio/Command/McpServer/Prompts/ApplicationPrompt.cs, /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Prompts/PagePrompt.cs, /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Tools/ToolContractGetTool.cs, /Users/a.kravchuk/Projects/clio/clio/docs/commands/mcp-server.md, /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
+Impact: Future follow-up can focus narrowly on the remaining uncovered plan items instead of re-reviewing the already aligned MCP contract and guidance updates.

@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
@@ -108,6 +109,9 @@ public sealed class ToolContractGetToolTests {
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				},
 				because: "application discovery should flow into application inspection for existing-app edits");
+		applicationListContract.Examples.Should().ContainSingle(example =>
+				example.Arguments.Keys.SequenceEqual(new[] { "environment-name" }),
+			because: "application-get-list should advertise the minimal top-level payload explicitly");
 		ToolContractDefinition pageListContract = contracts.Single(contract => contract.Name == PageListTool.ToolName);
 		pageListContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -154,6 +158,18 @@ public sealed class ToolContractGetToolTests {
 				PageGetTool.ToolName
 			}),
 			because: "page-update should point callers back to the canonical page-sync workflow");
+		pageSyncContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "pages" &&
+				field.Description.Contains("page-get.raw.body"),
+			because: "page-sync should advertise raw.body as the source of page write payloads");
+		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "body" &&
+				field.Description.Contains("page-get.raw.body"),
+			because: "page-update should advertise raw.body as the source of fallback single-page saves");
+		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "resources" &&
+				field.Description.Contains("JSON object string"),
+			because: "page-update should clarify the concrete resources payload shape");
 		ToolContractDefinition modifyColumnContract = contracts.Single(contract => contract.Name == ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName);
 		modifyColumnContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -262,10 +278,16 @@ public sealed class ToolContractGetToolTests {
 			because: "the deprecation guidance should explicitly frame create-data-binding-db as a fallback");
 		createContract.Deprecations[0].Message.Should().Contain("seed-rows",
 			because: "the deprecation guidance should point callers at inline seed-rows inside schema-sync");
+		createContract.Deprecations[0].Message.Should().Contain("direct SQL",
+			because: "the deprecation guidance should keep standalone lookup seeding on the MCP surface");
 		createContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "rows" &&
 				field.Description.Contains("values object"),
 			because: "create-data-binding-db should canonically describe the required rows[].values shape");
+		createContract.Examples.Should().Contain(example =>
+				example.Arguments["rows"] != null &&
+				example.Arguments["rows"].ToString()!.Contains("In Progress", StringComparison.Ordinal),
+			because: "create-data-binding-db should advertise a realistic multi-row lookup seeding example");
 
 		ToolContractDefinition upsertContract = result.Tools.Single(contract =>
 			contract.Name == UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName);
@@ -357,6 +379,9 @@ public sealed class ToolContractGetToolTests {
 				ApplicationGetInfoTool.ApplicationGetInfoToolName
 			}),
 			because: "application-create should advertise the canonical existing-app fallback flow");
+		contract.Examples.Should().ContainSingle(example =>
+				example.Summary.Contains("top-level payload", StringComparison.Ordinal),
+			because: "application-create should advertise the minimal top-level request shape explicitly");
 	}
 
 	[Test]

@@ -813,8 +813,12 @@ public sealed class ApplicationToolTests {
 		// Assert
 		listPrompt.Should().Contain(ApplicationGetListTool.ApplicationGetListToolName,
 			because: "the list prompt should reference the exact production tool name");
+		listPrompt.Should().Contain(ToolContractGetTool.ToolName,
+			because: "the list prompt should bootstrap the workflow from the authoritative MCP contract before the first application call");
 		listPrompt.Should().Contain("`environment-name`",
 			because: "the list prompt should keep the normalized environment argument visible");
+		listPrompt.Should().Contain("do not wrap `environment-name` inside an `args` object",
+			because: "the list prompt should explicitly reject the request shape that caused the analyzed session failure");
 		listPrompt.Should().NotContain("`app-id`",
 			because: "the list prompt should no longer advertise application filters");
 		listPrompt.Should().NotContain("`app-code`",
@@ -825,6 +829,8 @@ public sealed class ApplicationToolTests {
 			because: "the list prompt should direct callers to the canonical follow-up application inspection step");
 		infoPrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
 			because: "the info prompt should reference the exact production tool name");
+		infoPrompt.Should().Contain(ToolContractGetTool.ToolName,
+			because: "the info prompt should explain how callers bootstrap the workflow when inspection is their first application call");
 		infoPrompt.Should().Contain("`environment-name`",
 			because: "the info prompt should keep the normalized environment argument visible");
 		infoPrompt.Should().Contain("exactly one identifier",
@@ -833,8 +839,12 @@ public sealed class ApplicationToolTests {
 			because: "the info prompt should point callers to the dedicated MCP maintenance guide for discover and inspect flows");
 		createPrompt.Should().Contain(ApplicationCreateTool.ApplicationCreateToolName,
 			because: "the create prompt should reference the exact production tool name");
+		createPrompt.Should().Contain(ToolContractGetTool.ToolName,
+			because: "the create prompt should bootstrap app-modeling workflows from the authoritative MCP contract");
 		createPrompt.Should().Contain("Provide `name`, `code`, `template-code`, and `icon-background`",
 			because: "the create prompt should explain the new required input contract");
+		createPrompt.Should().Contain("do not nest them under `args`",
+			because: "the create prompt should explicitly reject the wrapper shape that caused the analyzed session failure");
 		createPrompt.Should().Contain("`optional-template-data-json`",
 			because: "the create prompt should mention the JSON string template-data field");
 		createPrompt.Should().Contain("docs://mcp/guides/app-modeling",
@@ -845,10 +855,72 @@ public sealed class ApplicationToolTests {
 			because: "the create prompt should state that application-create keeps app shell fields as plain strings");
 		createPrompt.Should().Contain("Do not send `title-localizations`",
 			because: "the create prompt should prevent callers from mixing application-create with entity-schema localization maps");
+		createPrompt.Should().Contain("Known values include `AppFreedomUI`",
+			because: "the create prompt should steer callers toward technical template names instead of display labels");
 		createPrompt.Should().Contain("Pass `client-type-id` only when a non-default Creatio client type is required.",
 			because: "the create prompt signature should stay in parity with the executable application-create contract");
 		createPrompt.Should().Contain("follow-up entity-schema tools",
 			because: "the create prompt should direct callers to schema tools when localized captions are needed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when template-code is missing from the minimal application-create shell.")]
+	public void ApplicationCreate_Should_Return_Error_When_TemplateCode_Is_Missing() {
+		// Arrange
+		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		ApplicationCreateTool tool = new(applicationCreateService);
+
+		// Act
+		ApplicationContextResponse result = tool.ApplicationCreate(new ApplicationCreateArgs(
+			EnvironmentName: "sandbox",
+			Name: "Codex App",
+			Code: "UsrCodexApp",
+			Description: null,
+			TemplateCode: string.Empty,
+			IconId: null,
+			IconBackground: "#112233",
+			ClientTypeId: null,
+			OptionalTemplateDataJson: null));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "missing required shell fields should fail before the backend create flow starts");
+		result.Error.Should().Contain("template-code is required",
+			because: "the validation message should identify the missing contract field");
+		result.Error.Should().Contain("AppFreedomUI",
+			because: "the validation message should point callers to a usable technical template example");
+		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when icon-background is missing from the minimal application-create shell.")]
+	public void ApplicationCreate_Should_Return_Error_When_IconBackground_Is_Missing() {
+		// Arrange
+		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		ApplicationCreateTool tool = new(applicationCreateService);
+
+		// Act
+		ApplicationContextResponse result = tool.ApplicationCreate(new ApplicationCreateArgs(
+			EnvironmentName: "sandbox",
+			Name: "Codex App",
+			Code: "UsrCodexApp",
+			Description: null,
+			TemplateCode: "AppFreedomUI",
+			IconId: null,
+			IconBackground: string.Empty,
+			ClientTypeId: null,
+			OptionalTemplateDataJson: null));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "missing required shell fields should fail before the backend create flow starts");
+		result.Error.Should().Contain("icon-background is required",
+			because: "the validation message should identify the missing contract field");
+		result.Error.Should().Contain("#1F5F8B",
+			because: "the validation message should point callers to a valid color example");
+		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
 	}
 
 }

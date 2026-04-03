@@ -104,6 +104,8 @@ public class PageToolsTests {
 			because: "page-get prompt guidance should direct callers to component-info for unfamiliar Freedom UI types");
 		prompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
 			because: "page-get prompt guidance should point callers to the MCP-owned existing-app maintenance guide");
+		prompt.Should().Contain($"`{ToolContractGetTool.ToolName}`",
+			because: "page-get prompt guidance should bootstrap page workflows from the authoritative MCP contract before the first page tool call");
 		prompt.Should().Contain($"`{PageSyncTool.ToolName}`",
 			because: "page guidance should advertise page-sync as the canonical page write path");
 		prompt.Should().Contain("`validate`",
@@ -126,6 +128,10 @@ public class PageToolsTests {
 			because: "page guidance should keep page-update in a fallback-only role");
 		prompt.Should().Contain("raw.body",
 			because: "page guidance should explicitly call out raw.body as the editable JavaScript source");
+		prompt.Should().Contain("Do not send `bundle` or `bundle.viewConfig`",
+			because: "page guidance should explicitly reject the payload shape that caused the analyzed session failure");
+		prompt.Should().Contain("do not send a nested object payload",
+			because: "page guidance should explicitly reject non-string resources payloads");
 		prompt.Should().NotContain("Use `page-sync` only when you need to save multiple pages in one workflow.",
 			because: "page-sync should no longer be presented as a multi-page-only path");
 		prompt.Should().NotContain("`schemaName`",
@@ -1079,6 +1085,33 @@ public class PageToolsTests {
 			because: "a missing schema should fail before the command attempts to save it");
 		response.Error.Should().Contain("MissingPage").And.Contain("not found",
 			because: "the failure should identify the missing schema name");
+	}
+
+	[Test]
+	[Description("TryUpdatePage rejects empty body payloads with a raw.body hint before any remote calls are made.")]
+	public void TryUpdatePage_WhenBodyIsEmpty_ReturnsRawBodyHint() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrEmptyBody_FormPage",
+			Body = string.Empty,
+			DryRun = true
+		};
+
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		result.Should().BeFalse(
+			because: "an empty page body should fail before the command attempts remote validation or save");
+		response.Success.Should().BeFalse(
+			because: "the validation failure should be surfaced in the response envelope");
+		response.Error.Should().Contain("page-get raw.body",
+			because: "the error should teach callers which page payload shape is required");
+		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
+			because: "validation should fail before the command builds any service URLs");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "validation should fail before the command sends any remote requests");
 	}
 
 	[Test]

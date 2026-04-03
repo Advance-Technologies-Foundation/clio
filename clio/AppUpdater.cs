@@ -7,6 +7,7 @@ using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Clio.Common;
 using Newtonsoft.Json.Linq;
@@ -19,6 +20,8 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 	#region Properties: Private
 
 	private const string  LastVersionUrl = "https://api.github.com/repos/Advance-Technologies-Foundation/clio/releases/latest";
+	private static readonly Regex SemanticVersionRegex =
+		new(@"\b(?<version>\d+\.\d+\.\d+\.\d+)(?:\+[0-9A-Za-z\.-]+)?\b", RegexOptions.Compiled);
 
 	#endregion
 
@@ -162,7 +165,7 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 		try {
 			ProcessStartInfo psi = new ProcessStartInfo {
 				FileName = "clio",
-				Arguments = "--version",
+				Arguments = "info --clio",
 				UseShellExecute = false,
 				RedirectStandardOutput = true,
 				RedirectStandardError = true,
@@ -176,14 +179,15 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 				}
 
 				string output = await process.StandardOutput.ReadToEndAsync();
+				string error = await process.StandardError.ReadToEndAsync();
 				process.WaitForExit();
 
 				if (process.ExitCode != 0) {
-					logger.WriteError("Verification command failed");
+					logger.WriteError($"Verification command failed: {error.Trim()}");
 					return false;
 				}
 
-				string installedVersion = output.Trim();
+				string installedVersion = NormalizeInstalledVersion(output, error);
 				bool isVerified = installedVersion.Equals(expectedVersion, StringComparison.OrdinalIgnoreCase);
 
 				if (!isVerified) {
@@ -213,6 +217,49 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 			// Fallback to string comparison if version parsing fails
 			return string.Compare(version1, version2, StringComparison.OrdinalIgnoreCase);
 		}
+	}
+
+	internal static string NormalizeInstalledVersion(string standardOutput, string standardError = ""){
+		string combinedOutput = $"{standardOutput}{Environment.NewLine}{standardError}".Trim();
+		if (string.IsNullOrWhiteSpace(combinedOutput)) {
+			return string.Empty;
+		}
+
+		string[] lines = combinedOutput
+			.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+		foreach (string rawLine in lines) {
+			if (TryExtractSemanticVersion(rawLine.Trim(), out string normalizedVersion)) {
+				return normalizedVersion;
+			}
+		}
+
+		return string.Empty;
+	}
+
+	private static bool TryExtractSemanticVersion(string line, out string normalizedVersion) {
+		normalizedVersion = string.Empty;
+		if (string.IsNullOrWhiteSpace(line)) {
+			return false;
+		}
+
+		string candidate = line;
+		int infoPrefixIndex = candidate.IndexOf("clio:", StringComparison.OrdinalIgnoreCase);
+		if (infoPrefixIndex > 0) {
+			candidate = candidate[infoPrefixIndex..];
+		} else {
+			int barePrefixIndex = candidate.IndexOf("clio ", StringComparison.OrdinalIgnoreCase);
+			if (barePrefixIndex > 0) {
+				candidate = candidate[barePrefixIndex..];
+			}
+		}
+
+		Match match = SemanticVersionRegex.Match(candidate);
+		if (!match.Success) {
+			return false;
+		}
+
+		normalizedVersion = match.Groups["version"].Value;
+		return true;
 	}
 
 	#endregion

@@ -397,12 +397,12 @@ The `50` prompts do not add new execution power, but they materially change how 
 
 The prompt layer acts as embedded operating guidance:
 
-- page prompts teach a workflow: `page-list` -> `page-get` -> `component-info` -> `page-update` or `page-sync`
+- page prompts teach a workflow: `tool-contract-get` -> `page-list` -> `page-get` -> `component-info` -> `page-update` or `page-sync`
 - deployment prompts teach a workflow: `assert-infrastructure` -> `show-passing-infrastructure` -> `find-empty-iis-port` -> `deploy-creatio`
 - FSM prompts encode the operational rule that mode changes should be followed by full compilation
 - workspace prompts tell the AI when absolute local paths are required
 - help lookup prompt teaches the AI how to read CLI help through resources
-- schema and application prompts now point to a shared modeling guide for DB-first app creation, lookup design, defaults, and batch-first workflows
+- schema and application prompts now point to a shared modeling guide for DB-first app creation, lookup design, defaults, batch-first workflows, and contract bootstrap through `tool-contract-get`
 
 Important observation:
 
@@ -443,7 +443,7 @@ Good MCP-level candidates:
 - application modeling rules tied directly to tool behavior, especially that `application-create` typically returns the canonical main entity for single-record-type apps
 - lookup modeling rules tied directly to `create-lookup`, especially `BaseLookup` inheritance, inherited `Name` / `Description`, and `Name` as the display field
 - default-value semantics that are tool-domain specific, such as seed rows not satisfying a `defaults to X` requirement without explicit schema or UI defaults
-- page-editing workflow guidance tied to MCP tools, for example `page-list` -> `page-get` -> `component-info` -> `page-update` or `page-sync`
+- page-editing workflow guidance tied to MCP tools, for example `tool-contract-get` -> `page-list` -> `page-get` -> `component-info` -> `page-update` or `page-sync`
 
 Guidance that should stay outside clio MCP:
 

@@ -32,6 +32,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should steer callers toward the batch page workflow");
 		article.Text.Should().Contain("application-create",
 			because: "the guide should explain the canonical app-creation entry point");
+		article.Text.Should().Contain("Canonical new-app entity flow",
+			because: "the guide should publish the preferred new-app entity sequence as MCP-owned guidance");
+		article.Text.Should().Contain("Canonical page flow after planning a page change",
+			because: "the guide should publish the preferred page inspection and write sequence as MCP-owned guidance");
 		article.Text.Should().Contain("docs://mcp/guides/existing-app-maintenance",
 			because: "the creation-oriented guide should point callers to the dedicated existing-app maintenance guide for minimal edits");
 		article.Text.Should().Contain("scalar-only for app shell fields",
@@ -40,6 +44,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should prevent callers from mixing application-create with entity-schema localization maps");
 		article.Text.Should().Contain("create the app first and then apply those captions through `schema-sync`",
 			because: "the guide should steer callers toward follow-up schema tools when localized captions are needed");
+		article.Text.Should().Contain("compatibility fallbacks",
+			because: "the guide should explain that single-tool mutations are fallback paths rather than the primary modeling workflow");
 		article.Text.Should().Contain("BaseLookup",
 			because: "the guide should explain lookup inheritance and display-field behavior");
 		article.Text.Should().Contain("schema default",
@@ -96,6 +102,16 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should explain the canonical validate semantics for page-sync");
 		article.Text.Should().Contain("default `false`",
 			because: "the guide should explain that page-sync verify stays optional by default");
+		article.Text.Should().Contain("fallback-oriented tools",
+			because: "the guide should explain which single-surface tools are compatibility paths when the preferred batched workflow is not appropriate");
+		article.Text.Should().Contain("do not wrap MCP arguments inside `args`",
+			because: "the guide should explicitly reject the synthetic args wrapper that caused real session failures");
+		article.Text.Should().Contain("do not send `bundle` or `bundle.viewConfig` as the body payload",
+			because: "the guide should explain the concrete page payload shape expected by the page tools");
+		article.Text.Should().Contain("JSON object string",
+			because: "the guide should explain the concrete resources payload shape expected by page tools");
+		article.Text.Should().Contain("create-data-binding-db",
+			because: "the guide should steer standalone lookup seeding back to MCP-native data-binding tools");
 		article.Text.Should().Contain("Read before write, and read back after mutations",
 			because: "the guide should set the canonical verification discipline for existing-app edits");
 	}

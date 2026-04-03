@@ -49,12 +49,12 @@ public sealed record PageUpdateArgs(
 	string SchemaName,
 
 	[property: JsonPropertyName("body")]
-	[property: Description("Full JavaScript page body with markers")]
+	[property: Description("Full JavaScript page body with markers. Reuse page-get raw.body.")]
 	[property: Required]
 	string Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object of resource key-value pairs for #ResourceString(key)# macros in the body, e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. Unresolved macros are auto-registered with captions derived from key names.")]
+	[property: Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros in the body, e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. Unresolved macros are auto-registered with captions derived from key names.")]
 	string? Resources,
 
 	[property: JsonPropertyName("dry-run")]

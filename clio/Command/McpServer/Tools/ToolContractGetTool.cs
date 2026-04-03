@@ -429,7 +429,7 @@ internal static class ToolContractCatalog {
 				Default(TemplateCodeFieldName, "AppFreedomUI", "Default template for standard Freedom UI app shells.")
 			],
 			[
-				Example("Create a new Freedom UI application", new Dictionary<string, object?> {
+				Example("Create a new Freedom UI application with the minimal top-level payload", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					["name"] = "Task App",
 					["code"] = ExamplePackageName,
@@ -528,7 +528,7 @@ internal static class ToolContractCatalog {
 			[],
 			[],
 			[
-				Example("List installed applications", new Dictionary<string, object?> {
+				Example("List installed applications with top-level environment-name", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
@@ -621,7 +621,7 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PagesFieldName, ArrayType, "Page update requests."),
+					Field(PagesFieldName, ArrayType, "Page update requests built from `page-get.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string."),
 					Field("validate", BooleanType, "Run client-side validation before save."),
 					Field("verify", BooleanType, "Read the page back after save.")
 				]),
@@ -640,16 +640,16 @@ internal static class ToolContractCatalog {
 				Default("verify", "false", "Read-back verification is optional and disabled by default.")
 			],
 			[
-				Example("Validate and save a single page", new Dictionary<string, object?> {
+				Example("Validate and save one page body copied from page-get raw.body", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PagesFieldName] = new object[] {
 						new Dictionary<string, object?> {
 							[SchemaNameFieldName] = "UsrTaskApp_FormPage",
-							["body"] = "define(...)"
+							["body"] = "/* raw.body returned by page-get */ define(...)",
+							["resources"] = "{\"PDS_Name\":\"Title\"}"
 						}
 					},
-					["validate"] = true,
-					["verify"] = true
+					["validate"] = true
 				})
 			],
 			Flow(
@@ -928,7 +928,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCreateDataBindingDb() {
 		return new ToolContractDefinition(
 			CreateDataBindingDbTool.CreateDataBindingDbToolName,
-			"Creates or updates a DB-first package data binding and optionally applies rows immediately as an explicit fallback or standalone path outside a batched schema-sync flow.",
+			"Creates or updates a DB-first package data binding and optionally applies rows immediately as an explicit fallback or standalone path outside a batched schema-sync flow, including standalone lookup seeding when direct SQL is not the right MCP path.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName],
 				EnvironmentPackageSchemaFields(
@@ -941,18 +941,18 @@ internal static class ToolContractCatalog {
 			EnvironmentPackageSchemaAliases(),
 			[],
 			[
-				Example("Create a default lookup binding with rows", new Dictionary<string, object?> {
+				Example("Create lookup seed rows without leaving the MCP data-binding surface", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName,
 					[SchemaNameFieldName] = ExampleTaskStatusSchemaName,
-					["rows"] = "[{\"values\":{\"Name\":\"New\"}}]"
+					["rows"] = "[{\"values\":{\"Name\":\"New\"}},{\"values\":{\"Name\":\"In Progress\"}}]"
 				})
 			],
 			Flow([SchemaSyncTool.ToolName], "Prefer inline seed-rows inside schema-sync when the flow can stay batched."),
 			[],
 			[
 				new ToolDeprecation(
-					"Prefer schema-sync with inline seed-rows as the canonical batched path. Keep create-data-binding-db for explicit fallback or standalone binding work.",
+					"Prefer schema-sync with inline seed-rows as the canonical batched path. Keep create-data-binding-db for explicit fallback or standalone binding work, and prefer it over direct SQL when MCP callers still need lookup seed rows.",
 					[
 						SchemaSyncTool.ToolName
 					])
@@ -1220,14 +1220,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageUpdate() {
 		return new ToolContractDefinition(
 			PageUpdateTool.ToolName,
-			"Fallback single-page save path for a full Freedom UI page body when the workflow explicitly requires dry-run or legacy save behavior.",
+			"Fallback single-page save path for a full Freedom UI page body copied from `page-get.raw.body` when the workflow explicitly requires dry-run or legacy save behavior.",
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName, "body"],
 				EnvironmentOrExplicitConnectionFields(
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
-					Field("body", StringType, "Full page body with all marker pairs."),
+					Field("body", StringType, "Full page body with all marker pairs. Reuse `page-get.raw.body` rather than `bundle` or `bundle.viewConfig`."),
 					Field("dry-run", BooleanType, "Validate without saving."),
-					Field("resources", StringType, "Optional JSON object of resource strings.")),
+					Field("resources", StringType, "Optional JSON object string of resource strings.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1249,9 +1249,10 @@ internal static class ToolContractCatalog {
 			],
 			[],
 			[
-				Example("Dry-run validate one page body", new Dictionary<string, object?> {
+				Example("Dry-run validate one page body copied from page-get raw.body", new Dictionary<string, object?> {
 					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
-					["body"] = "define(...)",
+					["body"] = "/* raw.body returned by page-get */ define(...)",
+					["resources"] = "{\"UsrDetailsTab_caption\":\"Details\"}",
 					["dry-run"] = true,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})

@@ -119,6 +119,16 @@ public sealed class ToolContractGetToolE2ETests {
 				deprecation.ReplacementTools.SequenceEqual(new[] { PageSyncTool.ToolName }) &&
 				deprecation.Message.Contains("fallback"),
 				because: "page-update should advertise page-sync as the canonical replacement");
+		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
+			.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "pages" &&
+				field.Description.Contains("page-get.raw.body", StringComparison.Ordinal),
+				because: "page-sync should advertise raw.body as the source of page write payloads");
+		response.Tools.Single(tool => tool.Name == PageUpdateTool.ToolName)
+			.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "resources" &&
+				field.Description.Contains("JSON object string", StringComparison.Ordinal),
+				because: "page-update should clarify the concrete resources payload shape through the MCP server");
 		response.Tools.Single(tool => tool.Name == ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName)
 			.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -267,10 +277,18 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "create-data-binding-db should advertise its explicit fallback positioning");
 		createContract.Deprecations[0].Message.Should().Contain("seed-rows",
 			because: "the fallback guidance should direct callers to inline seed-rows inside schema-sync");
+		createContract.Deprecations[0].Message.Should().Contain("direct SQL",
+			because: "the fallback guidance should keep standalone lookup seeding on the MCP surface");
 		createContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "rows" &&
 				field.Description.Contains("values object"),
 			because: "the canonical contract should describe the required rows[].values wrapper shape");
+		createContract.Examples.Should().Contain(example =>
+				example.Arguments != null &&
+				example.Arguments.ContainsKey("rows") &&
+				example.Arguments["rows"] != null &&
+				example.Arguments["rows"]!.ToString()!.Contains("In Progress", StringComparison.Ordinal),
+			because: "the canonical contract should expose a realistic multi-row lookup seeding example");
 
 		ToolContractDefinition upsertContract = response.Tools.Single(tool => tool.Name == UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName);
 		upsertContract.PreferredFlow.Tools.Should().Equal(
@@ -382,7 +400,7 @@ public sealed class ToolContractGetToolE2ETests {
 				field.Name == "pages" &&
 				field.Description.Contains("schema-name", StringComparison.Ordinal),
 			because: "page-list should describe page discovery items through schema-name");
-		ToolContractDefinition pageGetContract = response.Tools.Single(tool => tool.Name == PageGetTool.ToolName);
+		ToolContractDefinition pageGetContract = response.Tools!.Single(tool => tool.Name == PageGetTool.ToolName);
 		pageGetContract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "raw" &&
 				field.Description.Contains("raw.body", StringComparison.Ordinal),
