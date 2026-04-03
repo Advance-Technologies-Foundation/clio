@@ -34,7 +34,10 @@ public sealed class AppModelingGuidanceResource {
 			       Preferred workflow
 			       - Use `application-create` when the workflow is modeling a new app shell rather than editing an existing installed app.
 			       - Prefer `schema-sync` for multi-step schema work and `page-sync` for multi-page saves.
+			       - Canonical new-app entity flow: `application-create` -> `schema-sync` -> `application-get-info`.
+			       - Canonical page flow after planning a page change: `page-list` -> `page-get` -> `component-info` when needed -> `page-sync` or `page-update` -> `page-get` when explicit read-back verification is required.
 			       - Entity-schema mutations are DB-first. After a successful schema tool call, treat the schema as immediately usable without a compile step.
+			       - Treat single-tool entity or page mutations as compatibility fallbacks. Keep the preferred workflow in the current MCP contract unless the task is truly limited to one column, one lookup, or one page save.
 
 			       Application modeling guardrails
 			       - For a new app with one primary record type, `application-create` usually returns the canonical main entity. Extend that entity instead of creating a synonym entity for the same records.
@@ -48,9 +51,9 @@ public sealed class AppModelingGuidanceResource {
 			       - Seed rows create data only. A requirement like "defaults to New" still needs an explicit `schema default` or `ui default`.
 
 			       Page editing guardrails
-			       - Preferred page flow: `page-list` -> `page-get` -> `component-info` when needed -> `page-update` or `page-sync`.
 			       - `page-list` identifies page candidates by `schema-name`.
 			       - Use the raw page body returned by `page-get`, specifically `raw.body`, as the editable source of truth.
+			       - Use `page-sync` for multi-page or plan-driven page writes. Use `page-update` only for a single-page save or dry-run workflow.
 			       - Pass `resources` when edited bodies introduce `#ResourceString(key)#` macros.
 			       """
 		};

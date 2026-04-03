@@ -50,6 +50,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Use `page-update` for a single-page save after editing the raw body returned by `page-get`.
 			       - Use `modify-entity-schema-column` for a single-column schema change when the target schema and column are already known.
 			       - Use `schema-sync` when the work spans multiple ordered schema steps, mixes create/update/seed operations, or must stay batched.
+			       - Treat `create-lookup`, `create-entity-schema`, `update-entity-schema`, `create-data-binding-db`, and `page-update` as fallback-oriented tools when the preferred batched workflow is not the right fit for the requested scope.
 
 			       Verification
 			       - After `page-update` or `page-sync`, read the page again with `page-get` when you need explicit read-back verification.
