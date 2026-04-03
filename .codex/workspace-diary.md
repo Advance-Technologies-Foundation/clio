@@ -1845,3 +1845,10 @@ Decision: Rejected legacy `app-code` and related camelCase aliases in `page-list
 Discovery: The risky part of the page-list regression was not the contract text itself but silent deserialization of unknown selector fields: without explicit rejection, deprecated `app-code` payloads would execute an unscoped page query. The Sonar findings on `schema-sync` were both low-risk maintainability smells and closed cleanly with constants plus the params overload of `string.Join`.
 Files: /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Tools/PageListTool.cs, /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Tools/SchemaSyncTool.cs, /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Tools/ToolContractGetTool.cs, /Users/a.kravchuk/Projects/clio/clio.tests/Command/McpServer/PageToolsTests.cs, /Users/a.kravchuk/Projects/clio/clio.tests/Command/McpServer/ToolContractGetToolTests.cs, /Users/a.kravchuk/Projects/clio/clio.mcp.e2e/PageGetToolE2ETests.cs, /Users/a.kravchuk/Projects/clio/clio.mcp.e2e/ToolContractGetToolE2ETests.cs, /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
 Impact: PR #514 should no longer advertise or execute the broken page-list fallback path, legacy selector payloads now fail loudly instead of drifting to unrelated pages, and the remaining Sonar noise on new code should disappear on the next analysis.
+
+## 2026-04-04 01:46 – Clear final Sonar issue on PR 514
+Context: SonarCloud still reported one new issue on PR 514 after the review-gap fixes, and the user asked not to miss any new Sonar issue.
+Decision: Simplified the legacy-alias scan in `PageListTool` to a LINQ pipeline and added the required namespace import instead of broadening the fix scope.
+Discovery: The last leak-period finding was isolated to `GetLegacyAliasError`, so one narrow refactor plus targeted unit and MCP E2E checks was enough to validate the change.
+Files: /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Tools/PageListTool.cs, /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
+Impact: PR 514 can now be revalidated against Sonar's new-code gate without a leftover `page-list` maintainability issue.

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -61,12 +62,10 @@ public sealed class PageListTool(
 		if (args.ExtensionData is null) {
 			return null;
 		}
-		foreach (KeyValuePair<string, string> legacyAlias in LegacyAliases) {
-			if (args.ExtensionData.ContainsKey(legacyAlias.Key)) {
-				return $"Use '{legacyAlias.Value}' instead of '{legacyAlias.Key}'.";
-			}
-		}
-		return null;
+		return LegacyAliases
+			.Where(legacyAlias => args.ExtensionData.ContainsKey(legacyAlias.Key))
+			.Select(legacyAlias => $"Use '{legacyAlias.Value}' instead of '{legacyAlias.Key}'.")
+			.FirstOrDefault();
 	}
 }
 
