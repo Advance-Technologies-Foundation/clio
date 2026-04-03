@@ -61,17 +61,11 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 	private SettingsBootstrapResult Load() {
 		string settingsFilePath = SettingsRepository.AppSettingsFile;
 		if (!_fileSystem.File.Exists(settingsFilePath)) {
-			Settings settings = SettingsRepository.CreateDefaultSettings();
+			Settings emptySettings = new() { Environments = [] };
 			if (_applyRepairs) {
-				SettingsRepository.SaveSettings(_fileSystem, settings);
+				SettingsRepository.SaveSettings(_fileSystem, emptySettings);
 			}
-			return BuildResult(
-				"healthy",
-				settingsFilePath,
-				settings.ActiveEnvironmentKey,
-				settings,
-				[],
-				[]);
+			return BuildResult("healthy", settingsFilePath, null, emptySettings, [], []);
 		}
 		string fileContent;
 		try {
@@ -101,13 +95,8 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 		List<SettingsIssue> issues = [];
 		List<SettingsRepair> repairs = [];
 		bool changed = false;
-		if (settingsModel.Environments is null || settingsModel.Environments.Count == 0) {
-			issues.Add(new SettingsIssue("missing-environments",
-				"Registered environments are missing, null, or empty."));
-			repairs.Add(new SettingsRepair("create-default-environment",
-				"Initialized the default 'dev' environment and selected it as active."));
-			settingsModel = SettingsRepository.CreateDefaultSettings(settingsModel);
-			changed = true;
+		if (settingsModel.Environments is null) {
+			settingsModel.Environments = [];
 		}
 		if (settingsModel.Environments is not null && settingsModel.Environments.Count > 0
 			&& (string.IsNullOrWhiteSpace(settingsModel.ActiveEnvironmentKey)

@@ -61,20 +61,20 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 		OpenWorld = false)]
 	[Description("Gets application information from Creatio through backend MCP. Returns installed application identity plus package and entity context.")]
 	public ApplicationContextResponse ApplicationGetInfo(
-		[Description("Parameters: environment-name (required), app-id or app-code (exactly one required)")]
+		[Description("Parameters: environment-name (required), id or code (exactly one required)")]
 		[Required]
 		ApplicationGetInfoArgs args) {
 		try {
-			bool hasAppId = !string.IsNullOrWhiteSpace(args.AppId);
-			bool hasAppCode = !string.IsNullOrWhiteSpace(args.AppCode);
-			if (hasAppId == hasAppCode) {
-				throw new ArgumentException("Provide exactly one identifier: app-id or app-code.");
+			bool hasId = !string.IsNullOrWhiteSpace(args.Id);
+			bool hasCode = !string.IsNullOrWhiteSpace(args.Code);
+			if (hasId == hasCode) {
+				throw new ArgumentException("Provide exactly one identifier: id or code.");
 			}
 
 			ApplicationInfoResult result = applicationInfoService.GetApplicationInfo(
 				args.EnvironmentName,
-				args.AppId,
-				args.AppCode);
+				args.Id,
+				args.Code);
 			return ApplicationToolHelper.CreateContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateContextErrorResponse(ex.Message);
@@ -136,7 +136,9 @@ public sealed class ApplicationCreateTool(IApplicationCreateService applicationC
 		}
 
 		if (string.IsNullOrWhiteSpace(args.TemplateCode)) {
-			throw new ArgumentException("template-code is required.");
+			throw new ArgumentException(
+				"template-code is required. " +
+				"Provide the technical template name as a top-level field, for example AppFreedomUI.");
 		}
 
 		if (!KnownTemplates.Contains(args.TemplateCode.Trim(), StringComparer.OrdinalIgnoreCase)) {
@@ -148,7 +150,9 @@ public sealed class ApplicationCreateTool(IApplicationCreateService applicationC
 		}
 
 		if (string.IsNullOrWhiteSpace(args.IconBackground)) {
-			throw new ArgumentException("icon-background is required.");
+			throw new ArgumentException(
+				"icon-background is required. " +
+				"Provide a top-level #RRGGBB value such as #1F5F8B.");
 		}
 	}
 

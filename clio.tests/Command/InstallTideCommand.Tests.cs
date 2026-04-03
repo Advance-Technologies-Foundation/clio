@@ -40,7 +40,11 @@ public class InstallTideCommandTests : BaseCommandTests<InstallTideCommandOption
 		HealthCheckCommand healthCheckCommand
 			= Substitute.For<HealthCheckCommand>(applicationClient, environmentSettings);
 
-		InstallTideCommandOptions options = new();
+		InstallTideCommandOptions options = new() {
+			Uri = "http://localhost",
+			Login = "Supervisor",
+			Password = "Supervisor"
+		};
 
 		// Setup gate install to fail
 		installGatePkgCommand
@@ -83,7 +87,11 @@ public class InstallTideCommandTests : BaseCommandTests<InstallTideCommandOption
 		HealthCheckCommand healthCheckCommand
 			= Substitute.For<HealthCheckCommand>(applicationClient, environmentSettings);
 
-		InstallTideCommandOptions options = new();
+		InstallTideCommandOptions options = new() {
+			Uri = "http://localhost",
+			Login = "Supervisor",
+			Password = "Supervisor"
+		};
 
 		// Setup gate install to succeed but health check to fail
 		installGatePkgCommand
@@ -130,7 +138,11 @@ public class InstallTideCommandTests : BaseCommandTests<InstallTideCommandOption
 		HealthCheckCommand healthCheckCommand
 			= Substitute.For<HealthCheckCommand>(applicationClient, environmentSettings);
 
-		InstallTideCommandOptions options = new();
+		InstallTideCommandOptions options = new() {
+			Uri = "http://localhost",
+			Login = "Supervisor",
+			Password = "Supervisor"
+		};
 
 		// Setup the command mocks to simulate successful execution
 		installGatePkgCommand.Execute(Arg.Any<PushPkgOptions>()).Returns(0);

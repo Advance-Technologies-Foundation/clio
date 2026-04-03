@@ -112,6 +112,15 @@ public sealed class PageSyncTool(
 						Error = $"Page saved but verification failed: {getResponse.Error}"
 					};
 				}
+				return new PageSyncPageResult {
+					SchemaName = page.SchemaName,
+					Success = true,
+					BodyLength = updateResponse.BodyLength,
+					Validation = validationResult,
+					ResourcesRegistered = updateResponse.ResourcesRegistered,
+					Page = getResponse.Page,
+					VerifiedBody = getResponse.Raw?.Body
+				};
 			}
 			return new PageSyncPageResult {
 				SchemaName = page.SchemaName,
@@ -210,12 +219,12 @@ public sealed record PageSyncPageInput(
 	string SchemaName,
 
 	[property: JsonPropertyName("body")]
-	[property: Description("Full JavaScript page body")]
+	[property: Description("Full JavaScript page body copied from page-get raw.body")]
 	[property: Required]
 	string Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object of resource key-value pairs for #ResourceString(key)# macros")]
+	[property: Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros")]
 	string? Resources = null
 );
 
@@ -257,6 +266,14 @@ public sealed class PageSyncPageResult {
 	[JsonPropertyName("resources-registered")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
 	public int ResourcesRegistered { get; init; }
+
+	[JsonPropertyName("page")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public PageMetadataInfo Page { get; init; }
+
+	[JsonPropertyName("verified-body")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string VerifiedBody { get; init; }
 }
 
 /// <summary>

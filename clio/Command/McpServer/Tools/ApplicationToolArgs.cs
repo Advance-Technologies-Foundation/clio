@@ -23,13 +23,13 @@ public sealed record ApplicationGetInfoArgs(
 	[property: Required]
 	string EnvironmentName,
 
-	[property: JsonPropertyName("app-id")]
+	[property: JsonPropertyName("id")]
 	[property: Description("Application ID (GUID). Optional filter.")]
-	string? AppId = null,
+	string? Id = null,
 
-	[property: JsonPropertyName("app-code")]
+	[property: JsonPropertyName("code")]
 	[property: Description("Application code, e.g. 'UsrMyApp'. Optional filter.")]
-	string? AppCode = null
+	string? Code = null
 );
 
 /// <summary>

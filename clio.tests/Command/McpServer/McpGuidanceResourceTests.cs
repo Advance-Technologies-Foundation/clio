@@ -50,6 +50,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should explain lookup inheritance and display-field behavior");
 		article.Text.Should().Contain("schema default",
 			because: "the guide should explain that seed rows alone do not satisfy default requirements");
+		article.Text.Should().Contain("operations[*].type",
+			because: "the guide should explicitly document the canonical schema-sync request field");
+		article.Text.Should().Contain("do not invent or send `operations[*].operation`",
+			because: "the guide should explicitly reject the legacy request field name");
 	}
 
 	[Test]
@@ -72,10 +76,16 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should start existing-app discovery from installed application lookup");
 		article.Text.Should().Contain("application-get-info",
 			because: "the guide should explain the follow-up app inspection step");
+		article.Text.Should().Contain("`code`",
+			because: "the guide should steer existing-app flows toward the canonical code selector");
 		article.Text.Should().Contain("page-list",
 			because: "the guide should describe page discovery before inspection");
 		article.Text.Should().Contain("page-get",
 			because: "the guide should explain how callers inspect raw page bodies before editing");
+		article.Text.Should().Contain("page-sync",
+			because: "the guide should advertise the canonical page write path");
+		article.Text.Should().Contain("page-list -> page-get -> page-sync -> page-get",
+			because: "the guide should state the canonical page workflow explicitly");
 		article.Text.Should().Contain("component-info",
 			because: "the guide should explain how callers inspect unfamiliar Freedom UI components");
 		article.Text.Should().Contain("$PDS_*",
@@ -92,9 +102,27 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should identify the minimal single-column mutation path");
 		article.Text.Should().Contain("schema-sync",
 			because: "the guide should explain when a larger ordered schema workflow is required");
+		article.Text.Should().Contain("single-page dry-run or legacy save workflows",
+			because: "the guide should keep page-update as a fallback-only path");
+		article.Text.Should().Contain("client-side validation enabled by default",
+			because: "the guide should explain the canonical validate semantics for page-sync");
+		article.Text.Should().Contain("default `false`",
+			because: "the guide should explain that page-sync verify stays optional by default");
 		article.Text.Should().Contain("fallback-oriented tools",
 			because: "the guide should explain which single-surface tools are compatibility paths when the preferred batched workflow is not appropriate");
+		article.Text.Should().Contain("do not wrap MCP arguments inside `args`",
+			because: "the guide should explicitly reject the synthetic args wrapper that caused real session failures");
+		article.Text.Should().Contain("do not send `bundle` or `bundle.viewConfig` as the body payload",
+			because: "the guide should explain the concrete page payload shape expected by the page tools");
+		article.Text.Should().Contain("JSON object string",
+			because: "the guide should explain the concrete resources payload shape expected by page tools");
+		article.Text.Should().Contain("create-data-binding-db",
+			because: "the guide should steer standalone lookup seeding back to MCP-native data-binding tools");
 		article.Text.Should().Contain("Read before write, and read back after mutations",
 			because: "the guide should set the canonical verification discipline for existing-app edits");
+		article.Text.Should().Contain("operations[*].type",
+			because: "the maintenance guide should explicitly document the canonical schema-sync request field");
+		article.Text.Should().Contain("operations[*].operation",
+			because: "the maintenance guide should explicitly warn callers away from the legacy request field");
 	}
 }

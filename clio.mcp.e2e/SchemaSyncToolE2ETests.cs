@@ -104,6 +104,9 @@ public sealed class SchemaSyncToolE2ETests {
 			because: "the composite batch should succeed on the reachable sandbox environment");
 		results.Should().HaveCount(4,
 			because: "create-entity, create-lookup, seed-data, and update-entity should each produce one result");
+		results.Select(result => result.GetProperty("type").GetString()).Should().OnlyContain(type =>
+				!string.IsNullOrWhiteSpace(type),
+			because: "schema-sync should expose the canonical type field on every result");
 		createLookupMessages.Should().Contain(message => message.Contains(context.LookupSchemaName!, StringComparison.Ordinal),
 			because: "create-lookup should keep its schema creation message on its own result");
 		createLookupMessages.Should().NotContain(message => message.Contains("Created row:", StringComparison.Ordinal),
@@ -195,8 +198,8 @@ public sealed class SchemaSyncToolE2ETests {
 			because: "the batch should fail when create-lookup tries to redefine inherited BaseLookup columns");
 		results.Should().HaveCount(1,
 			because: "validation should stop the batch on the rejected create-lookup operation");
-		createLookupResult.GetProperty("operation").GetString().Should().Be("create-lookup",
-			because: "the failed result should still identify the rejected operation");
+		createLookupResult.GetProperty("type").GetString().Should().Be("create-lookup",
+			because: "the failed result should identify the rejected operation through the canonical type field");
 		error.Should().Contain("BaseLookup",
 			because: "the failure should explain the inherited-column guardrail");
 		error.Should().Contain("Name",
@@ -632,7 +635,7 @@ public sealed class SchemaSyncToolE2ETests {
 
 	private static JsonElement FindResult(IEnumerable<JsonElement> results, string operation, string schemaName) {
 		return results.Single(result =>
-			string.Equals(result.GetProperty("operation").GetString(), operation, StringComparison.Ordinal) &&
+			string.Equals(result.GetProperty("type").GetString(), operation, StringComparison.Ordinal) &&
 			string.Equals(result.GetProperty("schema-name").GetString(), schemaName, StringComparison.Ordinal));
 	}
 
@@ -694,7 +697,9 @@ public sealed class SchemaSyncToolE2ETests {
 		response.GetProperty("success").GetBoolean().Should().BeFalse(
 			because: "flat seed-rows without the 'values' wrapper must cause the batch to fail");
 		JsonElement seedResult = results.Single(r =>
-			string.Equals(r.GetProperty("operation").GetString(), "seed-data", StringComparison.Ordinal));
+			string.Equals(r.GetProperty("type").GetString(), "seed-data", StringComparison.Ordinal));
+		seedResult.GetProperty("type").GetString().Should().Be("seed-data",
+			because: "failed seed-data results should still expose the canonical type field");
 		seedResult.GetProperty("success").GetBoolean().Should().BeFalse(
 			because: "the seed-data step must report failure when rows have a null values map");
 		string seedError = seedResult.GetProperty("error").GetString()!;

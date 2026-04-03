@@ -156,6 +156,8 @@ internal static class ToolContractCatalog {
 	private const string ReferenceSchemaNameFieldName = "reference-schema-name";
 	private const string RegisteredEnvironmentNameDescription = "Registered clio environment name.";
 	private const string RejectedStatus = "rejected";
+	private const string SelectorCodeFieldName = "code";
+	private const string SelectorIdFieldName = "id";
 	private const string SchemaNameFieldName = "schema-name";
 	private const string StringType = "string";
 	private const string SuccessFalseSignal = "success == false";
@@ -429,7 +431,7 @@ internal static class ToolContractCatalog {
 				Default(TemplateCodeFieldName, "AppFreedomUI", "Default template for standard Freedom UI app shells.")
 			],
 			[
-				Example("Create a new Freedom UI application", new Dictionary<string, object?> {
+				Example("Create a new Freedom UI application with the minimal top-level payload", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					["name"] = "Task App",
 					["code"] = ExamplePackageName,
@@ -463,12 +465,12 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field("app-id", StringType, "Application GUID."),
-					Field(AppCodeFieldName, StringType, "Application code.")
+					Field(SelectorIdFieldName, StringType, "Application GUID."),
+					Field(SelectorCodeFieldName, StringType, "Application code.")
 				],
 				AnyOf: [
-					new[] { "app-id" },
-					[AppCodeFieldName]
+					new[] { SelectorIdFieldName },
+					[SelectorCodeFieldName]
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -493,7 +495,7 @@ internal static class ToolContractCatalog {
 			[
 				Example("Refresh app context by code", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
-					[AppCodeFieldName] = ExamplePackageName
+					[SelectorCodeFieldName] = ExamplePackageName
 				})
 			],
 			Flow(
@@ -528,7 +530,7 @@ internal static class ToolContractCatalog {
 			[],
 			[],
 			[
-				Example("List installed applications", new Dictionary<string, object?> {
+				Example("List installed applications with top-level environment-name", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
@@ -545,7 +547,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSchemaSync() {
 		return new ToolContractDefinition(
 			SchemaSyncTool.ToolName,
-			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call.",
+			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call. Requests use operations[*].type; do not send operations[*].operation.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
@@ -562,7 +564,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every schema-sync operation succeeded."),
-				Field("results", ArrayType, "Per-operation execution results.")
+				Field("results", ArrayType, "Per-operation execution results keyed by canonical `type`.")
 			),
 			CommonErrorContract,
 			EnvironmentPackageAliases(),
@@ -616,12 +618,12 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageSync() {
 		return new ToolContractDefinition(
 			PageSyncTool.ToolName,
-			"Batches page body validation, save, and optional read-back verification for multiple pages.",
+			"Canonical page write path that batches page body validation, save, and optional read-back verification for one or more pages.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PagesFieldName, ArrayType, "Page update requests."),
+					Field(PagesFieldName, ArrayType, "Page update requests built from `page-get.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string."),
 					Field("validate", BooleanType, "Run client-side validation before save."),
 					Field("verify", BooleanType, "Read the page back after save.")
 				]),
@@ -631,7 +633,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every page operation succeeded."),
-				Field(PagesFieldName, ArrayType, "Per-page results.")
+				Field(PagesFieldName, ArrayType, "Per-page results with `schema-name`, `success`, `body-length`, `validation`, `error`, `resources-registered`, optional `page` metadata, and optional `verified-body` when `verify=true`.")
 			),
 			CommonErrorContract,
 			[],
@@ -640,16 +642,16 @@ internal static class ToolContractCatalog {
 				Default("verify", "false", "Read-back verification is optional and disabled by default.")
 			],
 			[
-				Example("Validate and save a single page", new Dictionary<string, object?> {
+				Example("Validate and save one page body copied from page-get raw.body", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PagesFieldName] = new object[] {
 						new Dictionary<string, object?> {
 							[SchemaNameFieldName] = "UsrTaskApp_FormPage",
-							["body"] = "define(...)"
+							["body"] = "/* raw.body returned by page-get */ define(...)",
+							["resources"] = "{\"PDS_Name\":\"Title\"}"
 						}
 					},
-					["validate"] = true,
-					["verify"] = true
+					["validate"] = true
 				})
 			],
 			Flow(
@@ -659,7 +661,7 @@ internal static class ToolContractCatalog {
 					PageSyncTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Canonical write path for page synchronization."),
+				"Canonical write path for page synchronization, including single-page saves when the caller wants the clio-advertised workflow."),
 			[
 				Flow(
 					[
@@ -682,7 +684,7 @@ internal static class ToolContractCatalog {
 				[],
 				EnvironmentOrExplicitConnectionFields(
 					Field(PackageNameFieldName, StringType, "Package name to inspect."),
-					Field(AppCodeFieldName, StringType, "Installed application code. When provided, page-list resolves the application's primary package before querying pages."),
+					Field(SelectorCodeFieldName, StringType, "Installed application code. When provided, page-list resolves the application's primary package before querying pages."),
 					Field("search-pattern", StringType, "Optional case-insensitive schema-name filter."),
 					Field("limit", NumberType, "Optional max result count.")),
 				Validators: [
@@ -691,9 +693,9 @@ internal static class ToolContractCatalog {
 						"invalid-workflow-shape",
 						Fields: [
 							PackageNameFieldName,
-							AppCodeFieldName
+							SelectorCodeFieldName
 						],
-						Context: "page-list accepts package-name or app-code, not both."),
+						Context: "page-list accepts package-name or code, not both."),
 				],
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
@@ -706,11 +708,12 @@ internal static class ToolContractCatalog {
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
-			[
-				PackageNameParameterAlias(),
-				Alias(ParameterScope, "search-pattern", "searchPattern", RejectedStatus, "Use 'search-pattern' instead of 'searchPattern'."),
-				EnvironmentNameParameterAlias()
-			],
+				[
+					PackageNameParameterAlias(),
+					Alias(ParameterScope, "code", AppCodeFieldName, RejectedStatus, $"Use 'code' instead of '{AppCodeFieldName}'."),
+					Alias(ParameterScope, "search-pattern", "searchPattern", RejectedStatus, "Use 'search-pattern' instead of 'searchPattern'."),
+					EnvironmentNameParameterAlias()
+				],
 			[],
 			[
 				Example("List pages in the target package", new Dictionary<string, object?> {
@@ -718,7 +721,7 @@ internal static class ToolContractCatalog {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				}),
 				Example("List pages for an installed app code", new Dictionary<string, object?> {
-					[AppCodeFieldName] = ExamplePackageName,
+					[SelectorCodeFieldName] = ExamplePackageName,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
@@ -726,18 +729,19 @@ internal static class ToolContractCatalog {
 				[
 					PageListTool.ToolName,
 					PageGetTool.ToolName,
-					PageUpdateTool.ToolName
+					PageSyncTool.ToolName,
+					PageGetTool.ToolName
 				],
-				"Use when the page schema is not yet known and the workflow is a minimal single-page edit."),
+				"Use when the page schema is not yet known and the workflow should follow the canonical clio page path."),
 			[
 				Flow(
-					[
-						PageListTool.ToolName,
-						PageGetTool.ToolName,
-						PageSyncTool.ToolName,
-						PageGetTool.ToolName
-					],
-					"Fallback when the workflow needs multi-page save orchestration or explicit page read-back verification.")
+						[
+							PageListTool.ToolName,
+							PageGetTool.ToolName,
+							PageUpdateTool.ToolName,
+							PageGetTool.ToolName
+						],
+					"Fallback when single-page dry-run or legacy save is required after discovery.")
 			],
 			[]);
 	}
@@ -778,18 +782,26 @@ internal static class ToolContractCatalog {
 				[
 					PageListTool.ToolName,
 					PageGetTool.ToolName,
-					PageUpdateTool.ToolName,
+					PageSyncTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Use after page-list to inspect `raw.body` before a minimal page edit and to read back after saving when needed."),
+				"Use after page-list to inspect `raw.body` before following the canonical page write path and to read back after saving."),
 			[
 				Flow(
 					[
 						PageGetTool.ToolName,
 						ComponentInfoTool.ToolName,
-						PageUpdateTool.ToolName
+						PageSyncTool.ToolName,
+						PageGetTool.ToolName
 					],
-					"Call component-info before editing when bundle.viewConfig contains unfamiliar crt.* component types.")
+					"Call component-info before editing when bundle.viewConfig contains unfamiliar crt.* component types."),
+				Flow(
+					[
+						PageGetTool.ToolName,
+						PageUpdateTool.ToolName,
+						PageGetTool.ToolName
+					],
+					"Fallback when the caller explicitly needs single-page dry-run or legacy save behavior.")
 			],
 			[]);
 	}
@@ -918,30 +930,31 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCreateDataBindingDb() {
 		return new ToolContractDefinition(
 			CreateDataBindingDbTool.CreateDataBindingDbToolName,
-			"Creates or updates a DB-first package data binding and optionally applies rows immediately.",
+			"Creates or updates a DB-first package data binding and optionally applies rows immediately as an explicit fallback or standalone path outside a batched schema-sync flow, including standalone lookup seeding when direct SQL is not the right MCP path.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName],
 				EnvironmentPackageSchemaFields(
 					"Entity schema name for the binding.",
 					Field(BindingNameFieldName, StringType, "Optional binding name; defaults to the schema name."),
-					Field("rows", StringType, "Optional JSON array of rows."))),
+					Field("rows", StringType,
+						"Optional JSON array of row objects. Each row must contain a values object keyed by column name."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(),
 			[],
 			[
-				Example("Create a default lookup binding with rows", new Dictionary<string, object?> {
+				Example("Create lookup seed rows without leaving the MCP data-binding surface", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName,
 					[SchemaNameFieldName] = ExampleTaskStatusSchemaName,
-					["rows"] = "[{\"values\":{\"Name\":\"New\"}}]"
+					["rows"] = "[{\"values\":{\"Name\":\"New\"}},{\"values\":{\"Name\":\"In Progress\"}}]"
 				})
 			],
 			Flow([SchemaSyncTool.ToolName], "Prefer inline seed-rows inside schema-sync when the flow can stay batched."),
 			[],
 			[
 				new ToolDeprecation(
-					"Prefer schema-sync with inline seed-rows as the canonical path. Keep create-data-binding-db for explicit fallback or standalone binding work.",
+					"Prefer schema-sync with inline seed-rows as the canonical batched path. Keep create-data-binding-db for explicit fallback or standalone binding work, and prefer it over direct SQL when MCP callers still need lookup seed rows.",
 					[
 						SchemaSyncTool.ToolName
 					])
@@ -985,7 +998,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildRemoveDataBindingRowDb() {
 		return new ToolContractDefinition(
 			RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName,
-			"Removes a single row from an existing DB-first binding by key value.",
+			"Removes a single row from an existing DB-first binding by key value, and deletes the package schema data record when the removed row was the last bound row.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, BindingNameFieldName, KeyValueFieldName],
 				EnvironmentPackageFields(
@@ -1209,14 +1222,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageUpdate() {
 		return new ToolContractDefinition(
 			PageUpdateTool.ToolName,
-			"Saves a full Freedom UI page body for one page as the minimal page-mutation path.",
+			"Fallback single-page save path for a full Freedom UI page body copied from `page-get.raw.body` when the workflow explicitly requires dry-run or legacy save behavior.",
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName, "body"],
 				EnvironmentOrExplicitConnectionFields(
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
-					Field("body", StringType, "Full page body with all marker pairs."),
+					Field("body", StringType, "Full page body with all marker pairs. Reuse `page-get.raw.body` rather than `bundle` or `bundle.viewConfig`."),
 					Field("dry-run", BooleanType, "Validate without saving."),
-					Field("resources", StringType, "Optional JSON object of resource strings.")),
+					Field("resources", StringType, "Optional JSON object string of resource strings.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1238,9 +1251,10 @@ internal static class ToolContractCatalog {
 			],
 			[],
 			[
-				Example("Dry-run validate one page body", new Dictionary<string, object?> {
+				Example("Dry-run validate one page body copied from page-get raw.body", new Dictionary<string, object?> {
 					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
-					["body"] = "define(...)",
+					["body"] = "/* raw.body returned by page-get */ define(...)",
+					["resources"] = "{\"UsrDetailsTab_caption\":\"Details\"}",
 					["dry-run"] = true,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
@@ -1251,7 +1265,7 @@ internal static class ToolContractCatalog {
 					PageUpdateTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Use for a minimal single-page edit after reading the raw body with page-get and read back with page-get when verification is needed."),
+				"Use only when the workflow explicitly requires single-page dry-run or legacy save behavior after reading the raw body with page-get."),
 			[
 				Flow(
 					[
@@ -1270,7 +1284,13 @@ internal static class ToolContractCatalog {
 					],
 					"Fallback when the workflow expands into a multi-page save or ordered page-sync plan.")
 			],
-			[]);
+			[
+				new ToolDeprecation(
+					"Prefer page-sync as the canonical page write path. Keep page-update only as a fallback for single-page dry-run or legacy save workflows.",
+					[
+						PageSyncTool.ToolName
+					])
+			]);
 	}
 
 	private static ToolContractDefinition BuildApplicationDelete() {

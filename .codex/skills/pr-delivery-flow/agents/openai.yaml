@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Delivery Flow"
+  short_description: "Run the full branch-to-PR-to-merge GitHub delivery loop"
+  default_prompt: "Update the current working branch from master, create or refresh the PR, monitor comments and quality gates, address and resolve all actionable review threads, and merge only after the PR is fully clean."

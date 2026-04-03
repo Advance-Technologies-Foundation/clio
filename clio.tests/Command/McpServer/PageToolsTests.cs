@@ -67,8 +67,8 @@ public class PageToolsTests {
 			because: "page-list should no longer serialize the removed camelCase request field");
 		listJson.Should().NotContain("\"searchPattern\"",
 			because: "page-list should no longer serialize the removed camelCase request field");
-		listByAppJson.Should().Contain("\"app-code\":\"UsrTodo\"",
-			because: "page-list should expose the normalized app-code request field when app discovery is used");
+		listByAppJson.Should().Contain("\"code\":\"UsrTodo\"",
+			because: "page-list should expose the normalized code request field when app discovery is used");
 		updateJson.Should().Contain("\"schema-name\":\"UsrTodo_FormPage\"",
 			because: "page-update should expose the normalized schema-name request field");
 		updateJson.Should().Contain("\"dry-run\":true",
@@ -86,6 +86,26 @@ public class PageToolsTests {
 	}
 
 	[Test]
+	[Description("Rejects legacy page-list aliases so callers do not silently fall back to an unscoped query.")]
+	public void PageListTool_Should_Reject_Legacy_AppCode_Alias() {
+		PageListCommand command = Substitute.For<PageListCommand>(
+			Substitute.For<IApplicationClient>(),
+			Substitute.For<IServiceUrlBuilder>(),
+			Substitute.For<ILogger>());
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		PageListTool tool = new(command, logger, resolver);
+		PageListArgs args = System.Text.Json.JsonSerializer.Deserialize<PageListArgs>("{\"app-code\":\"UsrTodoApp\"}")!;
+
+		PageListResponse response = tool.ListPages(args);
+
+		response.Success.Should().BeFalse(
+			because: "legacy aliases should be rejected before page-list runs an unscoped discovery query");
+		response.Error.Should().Be("Use 'code' instead of 'app-code'.",
+			because: "the MCP tool should direct callers to the canonical selector field");
+	}
+
+	[Test]
 	[Description("Prompt guidance for page MCP tools references kebab-case request arguments and the optional resources payload.")]
 	public void PagePrompt_Should_Mention_Kebab_Case_Arguments_And_Resources() {
 		// Arrange
@@ -96,16 +116,24 @@ public class PageToolsTests {
 		// Assert
 		prompt.Should().Contain("`schema-name`",
 			because: "page-get prompt guidance should match the current MCP argument contract");
-		prompt.Should().Contain("`app-code`",
-			because: "page guidance should mention app-code as a valid discovery selector for page-list");
+		prompt.Should().Contain("`code`",
+			because: "page guidance should mention code as a valid discovery selector for page-list");
 		prompt.Should().Contain("`environment-name`",
 			because: "page-get prompt guidance should match the current MCP argument contract");
 		prompt.Should().Contain($"`{ComponentInfoTool.ToolName}`",
 			because: "page-get prompt guidance should direct callers to component-info for unfamiliar Freedom UI types");
 		prompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
 			because: "page-get prompt guidance should point callers to the MCP-owned existing-app maintenance guide");
+		prompt.Should().Contain($"`{ToolContractGetTool.ToolName}`",
+			because: "page-get prompt guidance should bootstrap page workflows from the authoritative MCP contract before the first page tool call");
+		prompt.Should().Contain($"`{PageSyncTool.ToolName}`",
+			because: "page guidance should advertise page-sync as the canonical page write path");
+		prompt.Should().Contain("`validate`",
+			because: "page guidance should surface the canonical validation semantics for page-sync");
+		prompt.Should().Contain("`verify`",
+			because: "page guidance should surface the optional read-back semantics for page-sync");
 		prompt.Should().Contain("`resources`",
-			because: "page-get prompt guidance should tell callers how to preserve ResourceString macros during page-update");
+			because: "page guidance should tell callers how to preserve ResourceString macros during page-sync");
 		prompt.Should().Contain("valid JSON object string",
 			because: "page-get prompt guidance should clarify that malformed resource payloads are rejected");
 		prompt.Should().Contain("$PDS_*",
@@ -114,10 +142,18 @@ public class PageToolsTests {
 			because: "page guidance should call out the proxy binding pattern that page-update now rejects");
 		prompt.Should().Contain("Usr*_label",
 			because: "page guidance should reserve custom Usr label resources for standalone UI only");
-		prompt.Should().Contain("discover -> inspect -> mutate -> verify",
-			because: "page-get prompt guidance should describe the canonical maintenance sequence for minimal page edits");
+		prompt.Should().Contain("`page-list -> page-get -> page-sync -> page-get`",
+			because: "page guidance should describe the canonical maintenance sequence for page edits");
+		prompt.Should().Contain("single-page dry-run or legacy save workflows",
+			because: "page guidance should keep page-update in a fallback-only role");
 		prompt.Should().Contain("raw.body",
 			because: "page guidance should explicitly call out raw.body as the editable JavaScript source");
+		prompt.Should().Contain("Do not send `bundle` or `bundle.viewConfig`",
+			because: "page guidance should explicitly reject the payload shape that caused the analyzed session failure");
+		prompt.Should().Contain("do not send a nested object payload",
+			because: "page guidance should explicitly reject non-string resources payloads");
+		prompt.Should().NotContain("Use `page-sync` only when you need to save multiple pages in one workflow.",
+			because: "page-sync should no longer be presented as a multi-page-only path");
 		prompt.Should().NotContain("`schemaName`",
 			because: "page-get prompt guidance should no longer advertise removed camelCase request fields");
 		prompt.Should().NotContain("`environmentName`",
@@ -1069,6 +1105,33 @@ public class PageToolsTests {
 			because: "a missing schema should fail before the command attempts to save it");
 		response.Error.Should().Contain("MissingPage").And.Contain("not found",
 			because: "the failure should identify the missing schema name");
+	}
+
+	[Test]
+	[Description("TryUpdatePage rejects empty body payloads with a raw.body hint before any remote calls are made.")]
+	public void TryUpdatePage_WhenBodyIsEmpty_ReturnsRawBodyHint() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrEmptyBody_FormPage",
+			Body = string.Empty,
+			DryRun = true
+		};
+
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		result.Should().BeFalse(
+			because: "an empty page body should fail before the command attempts remote validation or save");
+		response.Success.Should().BeFalse(
+			because: "the validation failure should be surfaced in the response envelope");
+		response.Error.Should().Contain("page-get raw.body",
+			because: "the error should teach callers which page payload shape is required");
+		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
+			because: "validation should fail before the command builds any service URLs");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "validation should fail before the command sends any remote requests");
 	}
 
 	[Test]

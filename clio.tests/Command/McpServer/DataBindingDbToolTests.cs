@@ -189,10 +189,22 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 			because: "the create prompt should highlight the required environment-name argument");
 		createPrompt.Should().Contain("restore-workspace",
 			because: "the create prompt should guide users to restore-workspace for syncing");
+		createPrompt.Should().Contain("schema-sync",
+			because: "the create prompt should advertise schema-sync as the canonical batched path");
+		createPrompt.Should().Contain("explicit fallback",
+			because: "the create prompt should frame create-data-binding-db as explicit fallback or standalone work");
+		createPrompt.Should().Contain("prefer this tool over dropping to direct SQL commands",
+			because: "the prompt should steer standalone lookup seeding back to the supported MCP path");
+		createPrompt.Should().Contain("values",
+			because: "the create prompt should explain the required row wrapper shape");
 		upsertPrompt.Should().Contain(UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName,
 			because: "the upsert prompt should reference the exact production MCP tool name");
 		upsertPrompt.Should().Contain("environment-name",
 			because: "the upsert prompt should reference the environment-name argument");
+		upsertPrompt.Should().Contain("must already exist",
+			because: "the upsert prompt should state the existing-binding precondition");
+		upsertPrompt.Should().Contain(CreateDataBindingDbTool.CreateDataBindingDbToolName,
+			because: "the upsert prompt should tell callers to create the binding first when needed");
 		removePrompt.Should().Contain(RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName,
 			because: "the remove prompt should reference the exact production MCP tool name");
 		removePrompt.Should().Contain("package schema data record",

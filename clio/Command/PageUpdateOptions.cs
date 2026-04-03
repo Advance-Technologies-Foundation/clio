@@ -209,7 +209,10 @@ namespace Clio.Command {
 				return new PageUpdateResponse { Success = false, Error = "schemaName is required" };
 			}
 			if (string.IsNullOrWhiteSpace(options.Body)) {
-				return new PageUpdateResponse { Success = false, Error = "body is required and must not be empty" };
+				return new PageUpdateResponse {
+					Success = false,
+					Error = "body is required and must not be empty. Reuse page-get raw.body instead of bundle or viewConfig fragments."
+				};
 			}
 			var integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
 			if (!integrityResult.IsValid) {

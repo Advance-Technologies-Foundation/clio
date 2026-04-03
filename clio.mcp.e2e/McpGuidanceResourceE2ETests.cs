@@ -59,6 +59,14 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the article should explain how to discover the target installed application");
 		article.Text.Should().Contain("page-update",
 			because: "the article should describe the minimal page mutation path");
+		article.Text.Should().Contain("do not wrap MCP arguments inside `args`",
+			because: "the article should explicitly reject the request wrapper that caused the analyzed session failure");
+		article.Text.Should().Contain("do not send `bundle` or `bundle.viewConfig` as the body payload",
+			because: "the article should explain the concrete writable page payload shape");
+		article.Text.Should().Contain("JSON object string",
+			because: "the article should explain the concrete page resources payload shape");
+		article.Text.Should().Contain("create-data-binding-db",
+			because: "the article should steer standalone lookup seeding to MCP-native data-binding tools");
 		article.Text.Should().Contain("modify-entity-schema-column",
 			because: "the article should describe the minimal single-column schema mutation path");
 		article.Text.Should().Contain("Read before write",

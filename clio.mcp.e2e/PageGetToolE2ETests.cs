@@ -200,6 +200,32 @@ public sealed class PageGetToolE2ETests {
 			because: "the MCP tool should return a human-readable validation error for malformed resources");
 	}
 
+	[Test]
+	[Description("Rejects legacy page-list selector aliases before the server attempts unscoped page discovery.")]
+	[AllureFeature(PageListTool.ToolName)]
+	[AllureTag(PageListTool.ToolName)]
+	[AllureName("page-list rejects legacy app-code alias")]
+	[AllureDescription("Starts the real clio MCP server, invokes page-list with the deprecated app-code selector, and verifies that the tool returns a readable alias error instead of running an unscoped query.")]
+	public async Task PageListTool_Should_Reject_Legacy_AppCode_Alias() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			PageListTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["app-code"] = "UsrTodoApp"
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageListResponse response = EntitySchemaStructuredResultParser.Extract<PageListResponse>(callResult);
+
+		response.Success.Should().BeFalse(
+			because: "legacy aliases should be rejected before page-list can fall back to an unscoped query");
+		response.Error.Should().Be("Use 'code' instead of 'app-code'.",
+			because: "the MCP tool should direct callers to the canonical selector field");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);

@@ -35,7 +35,7 @@ public sealed class ApplicationInfoServiceTests {
 	}
 
 	[Test]
-	[Description("Loads application info by app-code, uses package and entity endpoints, removes inherited columns, and sorts the final payload deterministically.")]
+	[Description("Loads application info by code, uses package and entity endpoints, removes inherited columns, and sorts the final payload deterministically.")]
 	public void GetApplicationInfo_Should_Load_Aggregate_By_AppCode() {
 		// Arrange
 		ConfigureHappyPathResponses();
@@ -65,7 +65,7 @@ public sealed class ApplicationInfoServiceTests {
 	}
 
 	[Test]
-	[Description("Loads application info by app-id when the installed-application query is filtered by identifier.")]
+	[Description("Loads application info by id when the installed-application query is filtered by identifier.")]
 	public void GetApplicationInfo_Should_Load_Aggregate_By_AppId() {
 		// Arrange
 		ConfigureHappyPathResponses();
@@ -75,13 +75,13 @@ public sealed class ApplicationInfoServiceTests {
 
 		// Assert
 		result.PackageName.Should().Be("PrimaryPkg",
-			because: "app-id lookups should follow the same package resolution flow as app-code lookups");
+			because: "id lookups should follow the same package resolution flow as code lookups");
 		_applicationClient.Received().ExecutePostRequest(
 			Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
 			Arg.Is<string>(body => body.Contains("\"columnPath\":\"Id\"", StringComparison.Ordinal) &&
 				body.Contains("\"value\":\"app-uid\"", StringComparison.Ordinal)));
 		result.Pages.Should().ContainSingle(
-			because: "app-id lookups should still include primary-package page metadata");
+			because: "id lookups should still include primary-package page metadata");
 	}
 
 	[Test]
@@ -220,9 +220,9 @@ public sealed class ApplicationInfoServiceTests {
 		// Assert
 		ArgumentException exception = action.Should().Throw<ArgumentException>()
 			.Which;
-		exception.Message.Should().Match("*app-id*",
+		exception.Message.Should().Match("*id*",
 			"the service requires at least one installed-application identifier");
-		exception.Message.Should().Match("*app-code*",
+		exception.Message.Should().Match("*code*",
 			"the service requires at least one installed-application identifier");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 	}

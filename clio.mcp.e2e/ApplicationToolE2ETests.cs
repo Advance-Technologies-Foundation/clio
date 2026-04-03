@@ -84,8 +84,8 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName,
-			appId: null,
-			appCode: appCode);
+			id: null,
+			code: appCode);
 
 		// Assert
 		actResult.CallResult.IsError.Should().NotBeTrue(
@@ -119,7 +119,7 @@ public sealed class ApplicationToolE2ETests {
 	[AllureFeature(InfoToolName)]
 	[AllureTag(InfoToolName)]
 	[AllureName("Application get info rejects missing identifiers")]
-	[AllureDescription("Uses the real clio MCP server to call application-get-info without app-id or app-code and verifies that the tool returns a structured error envelope with clear exactly-one validation guidance.")]
+	[AllureDescription("Uses the real clio MCP server to call application-get-info without id or code and verifies that the tool returns a structured error envelope with clear exactly-one validation guidance.")]
 	public async Task ApplicationGetInfo_Should_Reject_Missing_Identifiers() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -131,14 +131,14 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName,
-			appId: null,
-			appCode: null);
+			id: null,
+			code: null);
 
 		// Assert
 		result.Success.Should().BeFalse(
 			because: "application-get-info should return a structured error envelope when neither identifier is provided");
-		result.Error.Should().MatchRegex("(?is)(exactly one|app-id|app-code)",
-			because: "the failure should explain the exact-one identifier rule");
+		result.Error.Should().MatchRegex("(?is)(exactly one|id or code)",
+			because: "the failure should explain the exact-one identifier rule with the canonical selector names");
 	}
 
 	[Test]
@@ -146,7 +146,7 @@ public sealed class ApplicationToolE2ETests {
 	[AllureFeature(InfoToolName)]
 	[AllureTag(InfoToolName)]
 	[AllureName("Application get info rejects both identifiers")]
-	[AllureDescription("Uses the real clio MCP server to call application-get-info with both app-id and app-code and verifies that the tool returns a structured error envelope with clear exactly-one validation guidance.")]
+	[AllureDescription("Uses the real clio MCP server to call application-get-info with both id and code and verifies that the tool returns a structured error envelope with clear exactly-one validation guidance.")]
 	public async Task ApplicationGetInfo_Should_Reject_Both_Identifiers() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -163,14 +163,14 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName,
-			appId: application.Id,
-			appCode: application.Code);
+			id: application.Id,
+			code: application.Code);
 
 		// Assert
 		result.Success.Should().BeFalse(
 			because: "application-get-info should return a structured error envelope when both identifiers are provided");
-		result.Error.Should().MatchRegex("(?is)(exactly one|app-id|app-code)",
-			because: "the failure should explain the exact-one identifier rule");
+		result.Error.Should().MatchRegex("(?is)(exactly one|id or code)",
+			because: "the failure should explain the exact-one identifier rule with the canonical selector names");
 	}
 
 	[Test]
@@ -191,8 +191,8 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName,
-			appId: null,
-			appCode: invalidAppCode);
+			id: null,
+			code: invalidAppCode);
 
 		// Assert
 		result.Success.Should().BeFalse(
@@ -300,6 +300,40 @@ public sealed class ApplicationToolE2ETests {
 		result.Error.Should().MatchRegex(
 			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
 			because: "the failure should tell a human that the requested environment is not registered");
+	}
+
+	[Test]
+	[Description("Starts the real clio MCP server, invokes application-create with forbidden localization-map fields, and verifies that validation rejects the request before any create side effect is attempted.")]
+	[AllureFeature(CreateToolName)]
+	[AllureTag(CreateToolName)]
+	[AllureName("Application create rejects localization map fields")]
+	[AllureDescription("Uses the real clio MCP server to call application-create with forbidden localization-map fields and verifies that the tool returns a structured validation error instead of attempting app creation.")]
+	public async Task ApplicationCreate_Should_Reject_Localization_Map_Fields() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		string suffix = Guid.NewGuid().ToString("N")[..8];
+
+		// Act
+		ApplicationContextResponseEnvelope result = await ActCreateFailureAsync(
+			session,
+			cancellationTokenSource.Token,
+			environmentName: "sandbox",
+			name: $"Codex Invalid Localization {suffix}",
+			code: $"UsrBadLoc{suffix}",
+			description: null,
+			templateCode: "AppFreedomUI",
+			iconId: "11111111-1111-1111-1111-111111111111",
+			iconBackground: "#FFFFFF",
+			optionalTemplateDataJson: null);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "application-create should reject forbidden localization maps before attempting a create");
+		result.Error.Should().MatchRegex("(?is)(scalar-only|locali[sz]ation|title-localizations)",
+			because: "the failure should explain that localization maps are forbidden on application-create");
 	}
 
 	[Test]
@@ -549,9 +583,9 @@ public sealed class ApplicationToolE2ETests {
 		McpServerSession session,
 		CancellationToken cancellationToken,
 		string environmentName,
-		string? appId,
-		string? appCode) {
-		CallToolResult callResult = await CallInfoAsync(session, cancellationToken, environmentName, appId, appCode);
+		string? id,
+		string? code) {
+		CallToolResult callResult = await CallInfoAsync(session, cancellationToken, environmentName, id, code);
 		ApplicationContextResponseEnvelope result;
 		try {
 			result = ApplicationResultParser.ExtractInfo(callResult);
@@ -568,9 +602,9 @@ public sealed class ApplicationToolE2ETests {
 		McpServerSession session,
 		CancellationToken cancellationToken,
 		string environmentName,
-		string? appId,
-		string? appCode) {
-		CallToolResult callResult = await CallInfoAsync(session, cancellationToken, environmentName, appId, appCode);
+		string? id,
+		string? code) {
+		CallToolResult callResult = await CallInfoAsync(session, cancellationToken, environmentName, id, code);
 		callResult.IsError.Should().NotBeTrue(
 			because: $"structured application-get-info failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
 		return ApplicationResultParser.ExtractInfo(callResult);
@@ -663,8 +697,8 @@ public sealed class ApplicationToolE2ETests {
 		McpServerSession session,
 		CancellationToken cancellationToken,
 		string environmentName,
-		string? appId,
-		string? appCode) {
+		string? id,
+		string? code) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(InfoToolName,
 			because: "the application-get-info MCP tool must be advertised before the end-to-end call can be executed");
@@ -672,12 +706,12 @@ public sealed class ApplicationToolE2ETests {
 		Dictionary<string, object?> args = new() {
 			["environment-name"] = environmentName
 		};
-		if (!string.IsNullOrWhiteSpace(appId)) {
-			args["app-id"] = appId;
+		if (!string.IsNullOrWhiteSpace(id)) {
+			args["id"] = id;
 		}
 
-		if (!string.IsNullOrWhiteSpace(appCode)) {
-			args["app-code"] = appCode;
+		if (!string.IsNullOrWhiteSpace(code)) {
+			args["code"] = code;
 		}
 
 		return await session.CallToolAsync(

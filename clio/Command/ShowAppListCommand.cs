@@ -290,8 +290,8 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 				Dictionary<string, EnvironmentSettings> allEnvs = GetAllEnvironments();
 
 				if (allEnvs == null || allEnvs.Count == 0) {
-					logger.WriteLine("No environments configured");
-					return 0;
+					logger.WriteError("No environments registered. Run 'clio reg-web-app' to add one.");
+					return 1;
 				}
 
 				switch (format.ToLower()) {
