@@ -63,13 +63,12 @@ public sealed class SettingsBootstrapServiceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Creates and persists the default dev environment when the settings file is parseable but does not contain any environments.")]
-	public void GetResult_Should_Create_Default_Environment_When_Environment_Map_Is_Empty() {
+	[Description("Returns healthy bootstrap state when appsettings.json has no registered environments, without injecting a default environment.")]
+	public void GetResult_Should_Return_Healthy_When_Environment_Map_Is_Empty() {
 		// Arrange
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
 		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
 			{
-			  "ActiveEnvironmentKey": "missing",
 			  "Environments": {}
 			}
 			"""));
@@ -77,20 +76,38 @@ public sealed class SettingsBootstrapServiceTests {
 
 		// Act
 		SettingsBootstrapResult result = service.GetResult();
-		Settings persistedSettings = JsonConvert.DeserializeObject<Settings>(
-			fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile));
 
 		// Assert
-		result.Report.Status.Should().Be("repaired",
-			because: "missing environments are a safe structural problem that bootstrap can repair automatically");
-		result.Report.EnvironmentCount.Should().Be(1,
-			because: "bootstrap should create exactly one default environment for an empty configuration");
-		result.Report.ResolvedActiveEnvironmentKey.Should().Be("dev",
-			because: "the default environment should become active after repair");
-		persistedSettings.Environments.Should().ContainKey("dev",
-			because: "the default dev environment should be written to appsettings.json");
-		persistedSettings.ActiveEnvironmentKey.Should().Be("dev",
-			because: "the persisted settings file should select the newly created default environment");
+		result.Report.Status.Should().Be("healthy",
+			because: "an empty environment map is a valid initial state, not a structural error");
+		result.Report.CanExecuteEnvTools.Should().BeFalse(
+			because: "named-environment execution requires at least one registered environment");
+		result.Report.EnvironmentCount.Should().Be(0,
+			because: "bootstrap must not inject any default environments into the result");
+		result.Report.ResolvedActiveEnvironmentKey.Should().BeNull(
+			because: "there is no active environment when the environment map is empty");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Creates an empty appsettings.json when the file does not exist and returns healthy bootstrap state.")]
+	public void GetResult_Should_Create_Empty_Settings_File_When_Missing() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+
+		// Assert
+		result.Report.Status.Should().Be("healthy",
+			because: "a missing appsettings.json should be initialized as an empty file so commands can validate their own arguments");
+		result.Report.CanExecuteEnvTools.Should().BeFalse(
+			because: "named-environment execution requires at least one registered environment");
+		result.Report.EnvironmentCount.Should().Be(0,
+			because: "the created file must not contain any default environments");
+		fileSystem.File.Exists(SettingsRepository.AppSettingsFile).Should().BeTrue(
+			because: "bootstrap should create an empty appsettings.json on first run");
 	}
 
 	[Test]
