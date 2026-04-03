@@ -38,13 +38,12 @@ internal class MediatorPipelineIntegrationTests : BaseClioModuleTests {
 		string workingDirectory = Path.Combine(Path.GetTempPath(), $"clio-mediatr-{Guid.NewGuid():N}");
 		string archivePath = Path.Combine(workingDirectory, "archive.zip");
 		string destinationDirectory = Path.Combine(workingDirectory, "out");
+		string extractedDirectory = Path.Combine(destinationDirectory, "nested");
 		Directory.CreateDirectory(workingDirectory);
 		Directory.CreateDirectory(destinationDirectory);
 		await using (FileStream archiveStream = File.Create(archivePath))
 		using (ZipArchive archive = new(archiveStream, ZipArchiveMode.Create)) {
-			ZipArchiveEntry entry = archive.CreateEntry("data.txt");
-			await using StreamWriter writer = new(entry.Open());
-			await writer.WriteAsync("payload");
+			archive.CreateEntry("nested/");
 		}
 		UnzipRequest request = new() {
 			Arguments = new() {
@@ -58,7 +57,7 @@ internal class MediatorPipelineIntegrationTests : BaseClioModuleTests {
 			var result = await mediator.Send(request);
 
 			// Assert
-			File.Exists(Path.Combine(destinationDirectory, "data.txt")).Should().BeTrue(
+			Directory.Exists(extractedDirectory).Should().BeTrue(
 				because: "a valid request should pass through the MediatR pipeline and execute the unzip handler");
 			result.Value.Should().NotBeNull(because: "the handler should return a success response through MediatR");
 		}
