@@ -12,7 +12,7 @@ import { CrtModule } from '@creatio-devkit/common';
 })
 export class DesignFeatureModule implements DoBootstrap {
     public ngDoBootstrap(): void {
-		/*
+        /*
             Define your property panel custom elements here.
             Example:
             if (!customElements.get(MY_PROPERTY_PANEL_SELECTOR)) {
