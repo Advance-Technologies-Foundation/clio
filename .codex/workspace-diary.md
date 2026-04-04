@@ -1852,3 +1852,10 @@ Decision: Simplified the legacy-alias scan in `PageListTool` to a LINQ pipeline 
 Discovery: The last leak-period finding was isolated to `GetLegacyAliasError`, so one narrow refactor plus targeted unit and MCP E2E checks was enough to validate the change.
 Files: /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Tools/PageListTool.cs, /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
 Impact: PR 514 can now be revalidated against Sonar's new-code gate without a leftover `page-list` maintainability issue.
+
+## 2026-04-04 08:44 – Prepare release 8.0.2.58 on master
+Context: After merging PR 514 and creating the follow-up branch, the next requested task was to create the next repository release and update the project version in the csproj beforehand.
+Decision: Fast-forwarded local `master` to `origin/master`, derived the next version from the latest tag `8.0.2.57`, and bumped the default `AssemblyVersion` in `clio.csproj` to `8.0.2.58` so the local project file matches the release tag.
+Discovery: The release workflow still takes the published GitHub release tag as the source of truth for package versioning, but the repository also expects `clio.csproj` to be updated for local builds before cutting the release.
+Files: /Users/a.kravchuk/Projects/clio/clio/clio.csproj, /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
+Impact: The upcoming tag and GitHub release will align with both the automated NuGet publish flow and the repository’s default local version metadata.
