@@ -33,10 +33,6 @@ export class DemoPropertyPanelComponent {
         void this._loadState(value);
     }
 
-    public get viewNodeEditor(): ViewNodeEditor {
-        return this._viewNodeEditor;
-    }
-
     private async _loadState(editor: ViewNodeEditor): Promise<void> {
         this.isPanelReady.set(false);
         const propertyValue = await editor.getPropertyValue('label');
