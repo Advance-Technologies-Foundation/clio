@@ -9,7 +9,7 @@ export async function activateRuntimeFeature(): Promise<void> {
     Define your custom elements here.
     Example:
     if (!customElements.get(MY_COMPONENT_SELECTOR)) {
-        const el = createCustomElement(MyComponent, { injector: this._injector });
+        const el = createCustomElement(MyComponent, { injector: moduleRef.injector });
         customElements.define(MY_COMPONENT_SELECTOR, el);
     }
   */

@@ -9,7 +9,7 @@ export async function activateDesignFeature(): Promise<void> {
     Define your property panel custom elements here.
     Example:
     if (!customElements.get(MY_PROPERTY_PANEL_SELECTOR)) {
-        const el = createCustomElement(MyPropertyPanelComponent, { injector: this._injector });
+        const el = createCustomElement(MyPropertyPanelComponent, { injector: moduleRef.injector });
         customElements.define(MY_PROPERTY_PANEL_SELECTOR, el);
     }
   */
