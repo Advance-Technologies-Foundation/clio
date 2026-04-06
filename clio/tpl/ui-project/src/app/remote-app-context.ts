@@ -1,6 +1,5 @@
 import { Injector, NgModuleRef, Type, createNgModule } from '@angular/core';
 import { platformBrowser } from '@angular/platform-browser';
-import { firstValueFrom } from 'rxjs';
 
 import { RemoteAppModule } from './remote-app.module';
 
