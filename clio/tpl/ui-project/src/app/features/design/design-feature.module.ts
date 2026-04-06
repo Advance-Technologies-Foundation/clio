@@ -13,13 +13,4 @@ import { DEMO_PROPERTY_PANEL_SELECTOR } from './design-feature.ids';
   imports: [CommonModule],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
-export class DesignFeatureModule implements DoBootstrap {
-  constructor(private readonly _injector: Injector) {}
-
-  public ngDoBootstrap(): void {
-    if (!customElements.get(DEMO_PROPERTY_PANEL_SELECTOR)) {
-      const elementConstructor = createCustomElement(DemoPropertyPanelComponent, { injector: this._injector });
-      customElements.define(DEMO_PROPERTY_PANEL_SELECTOR, elementConstructor);
-    }
-  }
-}
+export class DesignFeatureModule {}
