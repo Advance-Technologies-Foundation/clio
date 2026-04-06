@@ -1,4 +1,4 @@
-import { Injector, NgModuleRef, Type, createNgModule } from '@angular/core';
+﻿import { Injector, NgModuleRef, Type, createNgModule } from '@angular/core';
 import { platformBrowser } from '@angular/platform-browser';
 
 import { RemoteAppModule } from './remote-app.module';

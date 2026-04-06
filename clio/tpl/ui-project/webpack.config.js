@@ -1,4 +1,4 @@
-const { withModuleFederationPlugin } = require('@angular-architects/module-federation/webpack');
+﻿const { withModuleFederationPlugin } = require('@angular-architects/module-federation/webpack');
 
 const config = withModuleFederationPlugin({
   name: '<%projectName%>',
@@ -13,6 +13,6 @@ const config = withModuleFederationPlugin({
 config.resolve.alias.lodash = 'lodash-es';
 config.output.uniqueName = '<%projectName%>';
 config.optimization.splitChunks = {
-	...config.optimization.splitChunks,
-	chunks: 'all'
+  ...config.optimization.splitChunks,
+  chunks: 'all'
 };

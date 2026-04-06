@@ -6,20 +6,20 @@ import { DemoPropertyPanelComponent } from './property-panels/demo-property-pane
 import { DEMO_PROPERTY_PANEL_SELECTOR } from './design-feature.ids';
 
 @CrtModule({
-    viewElements: [DemoPropertyPanelComponent]
+  viewElements: [DemoPropertyPanelComponent]
 })
 @NgModule({
-    declarations: [DemoPropertyPanelComponent],
-    imports: [CommonModule],
-    schemas: [CUSTOM_ELEMENTS_SCHEMA],
+  declarations: [DemoPropertyPanelComponent],
+  imports: [CommonModule],
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
 export class DesignFeatureModule implements DoBootstrap {
-    constructor(private readonly _injector: Injector) {}
+  constructor(private readonly _injector: Injector) {}
 
-    public ngDoBootstrap(): void {
-        if (!customElements.get(DEMO_PROPERTY_PANEL_SELECTOR)) {
-            const elementConstructor = createCustomElement(DemoPropertyPanelComponent, { injector: this._injector });
-            customElements.define(DEMO_PROPERTY_PANEL_SELECTOR, elementConstructor);
-        }
+  public ngDoBootstrap(): void {
+    if (!customElements.get(DEMO_PROPERTY_PANEL_SELECTOR)) {
+      const elementConstructor = createCustomElement(DemoPropertyPanelComponent, { injector: this._injector });
+      customElements.define(DEMO_PROPERTY_PANEL_SELECTOR, elementConstructor);
     }
+  }
 }

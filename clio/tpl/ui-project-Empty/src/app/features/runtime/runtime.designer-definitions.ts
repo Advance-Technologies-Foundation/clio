@@ -1,13 +1,13 @@
 import type {
-    RemoteDesignerDefinitionsLoadContext,
-    RemoteFeatureDesignerDefinitions,
+  RemoteDesignerDefinitionsLoadContext,
+  RemoteFeatureDesignerDefinitions,
 } from '@creatio-devkit/common';
 
 export async function loadRuntimeDesignerDefinitions(
-    context: RemoteDesignerDefinitionsLoadContext,
+  context: RemoteDesignerDefinitionsLoadContext
 ): Promise<RemoteFeatureDesignerDefinitions> {
-    return {
-        viewElements: [],
-        mobileViewElements: [],
-    };
+  return {
+    viewElements: [],
+    mobileViewElements: [],
+  };
 }
