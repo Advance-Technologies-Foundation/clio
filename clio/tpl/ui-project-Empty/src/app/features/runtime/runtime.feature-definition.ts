@@ -4,7 +4,7 @@ export const runtimeFeatureDefinition = {
   id: '<%projectName%>-runtime',
   discovery: {
     viewElements: [],
-	mobileViewElements: [],
+    mobileViewElements: [],
   },
   loadDesignerDefinitions: (context: RemoteDesignerDefinitionsLoadContext) =>
     import('./runtime.designer-definitions').then((m) => m.loadRuntimeDesignerDefinitions(context)),
