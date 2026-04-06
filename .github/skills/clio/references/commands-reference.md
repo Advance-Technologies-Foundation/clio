@@ -906,3 +906,248 @@ Compress application packages into zip file. **Aliases:** `comp-app`
 clio compressApp -s /path/to/packages -p Pkg1,Pkg2 -d /path/to/output
 ```
 Options: `-s, --SourcePath` (required), `-p, --Packages` (required), `-d, --DestinationPath` (required), `--SkipPdb` (default: true)
+
+### externalLink
+Handle external deep links. **Aliases:** `link`
+```bash
+clio externalLink <CONTENT>
+clio link <CONTENT>
+```
+
+---
+
+## Entity Schema Management
+
+### create-entity-schema
+Create an entity schema in a remote Creatio package. Requires cliogate.
+```bash
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" -e <ENV>
+
+# With columns inline
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" \
+  --column "Name:ShortText:Vehicle name" \
+  --column "OwnerId:Lookup:Owner:Contact" \
+  -e <ENV>
+
+# Replacement schema (extend parent)
+clio create-entity-schema --package MyPackage --name UsrAccount --parent Account \
+  --extend-parent --title "Extended Account" -e <ENV>
+```
+Options: `--package` (required), `--name` (required), `--title` (required), `--parent`, `--extend-parent`, `--column` (repeatable, format: `name:type[:title[:refSchema]]` or JSON), `--timeout`
+
+### get-entity-schema-properties
+Get a human-readable summary of a remote Creatio entity schema.
+```bash
+clio get-entity-schema-properties -e dev --package Custom --schema-name UsrVehicle
+```
+Output includes: package, parent schema, primary columns, column counts, indexes, schema flags, and grouped own/inherited column listings.
+
+### get-entity-schema-column-properties
+Get column properties from a remote Creatio entity schema.
+```bash
+# Own column
+clio get-entity-schema-column-properties -e dev --package Custom --schema-name UsrVehicle --column-name Name
+
+# Inherited column
+clio get-entity-schema-column-properties -e dev --package Custom --schema-name UsrVehicle --column-name Owner
+```
+Output includes: own/inherited flag, type, default-value-source, default-value, default-value-config.
+
+### modify-entity-schema-column
+Add, modify, or remove a column in a remote Creatio entity schema. Requires cliogate.
+```bash
+# Add column
+clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle \
+  --action add --column-name Make --type ShortText --title "Manufacturer" -e <ENV>
+
+# Add lookup column
+clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle \
+  --action add --column-name OwnerId --type Lookup --reference-schema Contact \
+  --title "Owner" --required -e <ENV>
+
+# Rename column
+clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle \
+  --action modify --column-name Make --new-name Brand -e <ENV>
+
+# Remove column
+clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle \
+  --action remove --column-name ObsoleteField -e <ENV>
+```
+Options: `--package` (required), `--schema-name` (required), `--action` add|modify|remove (required), `--column-name` (required), `--new-name`, `--type`, `--title`, `--description`, `--reference-schema`, `--required`, `--indexed`, `--cloneable`, `--track-changes`, `--default-value`, `--default-value-source`, `--masked`, `--timeout`
+
+### update-entity-schema
+Apply batch column operations to a remote Creatio entity schema. Requires cliogate.
+```bash
+clio update-entity-schema --package MyPackage --schema-name UsrVehicle \
+  --operation '{"action":"add","columnName":"Make","type":"ShortText"}' \
+  --operation '{"action":"add","columnName":"Year","type":"Integer"}' \
+  -e <ENV>
+```
+Options: `--package` (required), `--schema-name` (required), `--operation` JSON (repeatable, required), `--timeout`
+
+---
+
+## Freedom UI Page Management
+
+### page-list
+List Freedom UI page schemas in a Creatio environment.
+```bash
+clio page-list -e <ENV>
+clio page-list --search-pattern FormPage --limit 20 -e <ENV>
+clio page-list --package-name UsrApp -e <ENV>
+```
+Options: `--package-name`, `--search-pattern`, `--limit` (default: 50)
+
+### page-get
+Read a Freedom UI page as a merged bundle plus raw schema body.
+```bash
+clio page-get --schema-name UsrTodo_FormPage -e <ENV>
+```
+Returns a JSON envelope with page metadata, bundle data, and `raw.body`. Use `raw.body` as the editable payload for `page-update`.
+
+### page-update
+Update the raw schema body of a Freedom UI page.
+```bash
+# Dry-run validation (no save)
+clio page-update --schema-name UsrTodo_FormPage --body "<raw body>" --dry-run true -e <ENV>
+
+# Save updated body
+clio page-update --schema-name UsrTodo_FormPage --body "<edited body>" -e <ENV>
+
+# Save with missing resource string registration
+clio page-update --schema-name UsrTodo_FormPage --body "<edited body>" \
+  --resources '{"UsrDetailsTab_caption":"Details"}' -e <ENV>
+```
+Options: `--schema-name` (required), `--body` (required), `--dry-run`, `--resources` (JSON object)
+
+### page-sync
+Update multiple Freedom UI page schemas in one MCP call. **MCP-only tool** — not available as a standalone CLI command.
+
+Each page is processed independently; failures do not stop remaining pages. Supports client-side validation (`validate: true`, default) and read-back verification (`verify: false`, default).
+
+Input:
+```json
+{
+  "environment-name": "dev",
+  "pages": [
+    { "schema-name": "UsrTodo_FormPage", "body": "define(...)" },
+    { "schema-name": "UsrTodo_ListPage", "body": "define(...)", "resources": "{\"caption\":\"List\"}" }
+  ],
+  "validate": true,
+  "verify": false
+}
+```
+
+---
+
+## Data Bindings
+
+### create-data-binding
+Create or regenerate a package data binding from a runtime schema.
+```bash
+# SysSettings / SysModule — no environment required (offline template)
+clio create-data-binding --package Custom --schema SysSettings
+
+# Non-templated schema — environment required
+clio create-data-binding -e dev --package Custom --schema UsrVehicle \
+  --values '{"Name":"Initial name"}'
+
+# With localizations
+clio create-data-binding -e dev --package Custom --schema SysSettings \
+  --values '{"Name":"Setting"}' \
+  --localizations '{"ru-RU":{"Name":"Настройка"}}'
+```
+Options: `--package` (required), `--schema` (required), `--binding-name`, `--workspace-path`, `--install-type` (0-3, default: 0), `--values` (JSON), `--localizations` (JSON)
+
+### create-data-binding-db
+Create a DB-first package data binding by saving data directly to the remote Creatio database.
+```bash
+clio create-data-binding-db -e dev --package Custom --schema SysSettings
+
+clio create-data-binding-db -e dev --package Custom --schema SysSettings \
+  --binding-name UsrMyBinding \
+  --rows '[{"values":{"Name":"Row","Code":"UsrRow"}}]'
+```
+Options: `--package` (required), `--schema` (required), `--binding-name`, `--rows` (JSON array)
+
+### add-data-binding-row
+Add or replace a row in an existing package data binding.
+```bash
+clio add-data-binding-row --package Custom --binding-name SysSettings \
+  --values '{"Name":"Setting name"}'
+
+# With lookup column
+clio add-data-binding-row --package Custom --binding-name SysModule \
+  --values '{"Code":"UsrModule","FolderMode":{"value":"b659d704-...","displayValue":"Folders"}}'
+```
+Options: `--package` (required), `--binding-name` (required), `--values` (JSON, required), `--workspace-path`, `--localizations` (JSON)
+
+### remove-data-binding-row
+Remove a row from a local package data binding by primary key.
+```bash
+clio remove-data-binding-row --package Custom --binding-name SysSettings \
+  --key-value 4f41bcc2-7ed0-45e8-a1fd-474918966d15
+```
+Options: `--package` (required), `--binding-name` (required), `--key-value` (required), `--workspace-path`
+
+### remove-data-binding-row-db
+Remove a row from a DB-first package data binding.
+```bash
+clio remove-data-binding-row-db -e dev --package Custom --binding-name SysSettings \
+  --key-value 4f41bcc2-7ed0-45e8-a1fd-474918966d15
+```
+Options: `--package` (required), `--binding-name` (required), `--key-value` (required)
+
+### upsert-data-binding-row-db
+Upsert a single row in a DB-first package data binding.
+```bash
+clio upsert-data-binding-row-db -e dev --package Custom --binding-name SysSettings \
+  --values '{"Name":"Updated name","Code":"UsrSetting"}'
+```
+Options: `--package` (required), `--binding-name` (required), `--values` (JSON, required)
+
+---
+
+## Schema & Process User Task CRUD
+
+### delete-schema
+Delete a schema from a workspace package. Must be run from a workspace directory.
+```bash
+clio delete-schema UsrSendInvoice -e <ENV>
+```
+Only schemas whose package belongs to the current local workspace can be deleted.
+
+### add-user-task
+Create a process user task schema in a workspace package. Must be run from a workspace directory.
+```bash
+# Simple task
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" -e <ENV>
+
+# With parameters
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" \
+  --parameter "code=IsError;title=Is error;type=Boolean;direction=Out|code=ResultMessage;title=Result message;type=Text;required=true" \
+  -e <ENV>
+
+# With lookup parameter
+clio add-user-task UsrSendInvoice --package MyPackage --title "Send invoice" \
+  --parameter "code=AccountRef;title=Account reference;type=Lookup;lookup=Account" \
+  -e <ENV>
+```
+Options: `--package` (required), `--title` / `-t` (required), `--description` / `-d`, `--parameter` (repeatable, `|`-separated), `--parameter-item` (repeatable), `--culture` (default: en-US), `--title-localization`, `--description-localization`
+
+### modify-user-task-parameters
+Add or remove parameters on an existing workspace user task.
+```bash
+# Add parameter
+clio modify-user-task-parameters UsrSendInvoice \
+  --add-parameter "code=IsError;title=Is error;type=Boolean;direction=In" -e <ENV>
+
+# Remove parameter
+clio modify-user-task-parameters UsrSendInvoice \
+  --remove-parameter "ObsoleteFlag|LegacyResult" -e <ENV>
+
+# Update direction
+clio modify-user-task-parameters UsrSendInvoice \
+  --set-direction "IsError=Out|ResultMessage=Variable" -e <ENV>
+```
+Options: `--add-parameter` (`|`-separated), `--add-parameter-item` (`|`-separated), `--remove-parameter` (`|`-separated), `--set-direction` (`|`-separated, format: `name=In|Out|Variable`), `--culture` (default: en-US)

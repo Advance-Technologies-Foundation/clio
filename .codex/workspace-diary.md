@@ -1852,3 +1852,9 @@ Decision: Simplified the legacy-alias scan in `PageListTool` to a LINQ pipeline 
 Discovery: The last leak-period finding was isolated to `GetLegacyAliasError`, so one narrow refactor plus targeted unit and MCP E2E checks was enough to validate the change.
 Files: /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Tools/PageListTool.cs, /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
 Impact: PR 514 can now be revalidated against Sonar's new-code gate without a leftover `page-list` maintainability issue.
+
+## 2026-04-06 07:30 – Update clio skill with new commands
+Context: Skill files hadn't been updated since b042f984 (2026-03-30); many new commands were missing.
+Decision: Added 19 missing command sections to commands-reference.md and 3 new workflow sections to SKILL.md; fixed stale publish-workspace→publish-app and env-ui alias references.
+Files: .github/skills/clio/references/commands-reference.md, .github/skills/clio/SKILL.md
+Impact: Skill now covers entity schema management, Freedom UI page management, data bindings, delete-schema, add-user-task, modify-user-task-parameters, externalLink; commands-reference.md grew from 908 to 1153 lines.
