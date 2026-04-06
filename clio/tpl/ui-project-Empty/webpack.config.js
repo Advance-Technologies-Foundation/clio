@@ -1,7 +1,6 @@
 const { withModuleFederationPlugin } = require('@angular-architects/module-federation/webpack');
-const { set } = require('lodash');
 
-const mfConfig = {
+const config = withModuleFederationPlugin({
   name: '<%projectName%>',
   filename: 'remoteModuleEntry.js',
   exposes: {
@@ -9,11 +8,13 @@ const mfConfig = {
   },
   shared: {},
   sharedMappings: [],
-};
+});
 
-const config = withModuleFederationPlugin(mfConfig);
-set(config, 'resolve.alias.lodash', 'lodash-es');
-set(config, 'output.uniqueName', '<%projectName%>');
-set(config, 'optimization.splitChunks.chunks', 'async');
+config.resolve.alias.lodash = 'lodash-es';
+config.output.uniqueName = '<%projectName%>';
+config.optimization.splitChunks = {
+	...config.optimization.splitChunks,
+	chunks: 'all'
+};
 
 module.exports = config;

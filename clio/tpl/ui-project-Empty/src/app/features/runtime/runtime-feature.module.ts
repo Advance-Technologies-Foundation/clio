@@ -1,5 +1,5 @@
 import { DoBootstrap, NgModule } from '@angular/core';
-import { BrowserModule } from '@angular/platform-browser';
+import { CommonModule } from '@angular/common';
 import { CrtModule } from '@creatio-devkit/common';
 
 @CrtModule({
@@ -7,7 +7,7 @@ import { CrtModule } from '@creatio-devkit/common';
 })
 @NgModule({
     declarations: [],
-    imports: [BrowserModule],
+    imports: [CommonModule],
 })
 export class RuntimeFeatureModule implements DoBootstrap {
     public ngDoBootstrap(): void {

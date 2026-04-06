@@ -5,10 +5,10 @@ export const designFeatureDefinition = {
     id: '<%projectName%>-design',
     discovery: {
         viewElements: [
-			{
-				type: DEMO_PROPERTY_PANEL_TYPE
-			}
-		],
+            {
+                type: DEMO_PROPERTY_PANEL_TYPE
+            }
+        ],
     },
     activate: () =>
         import('./design.feature-activation').then((m) => m.activateDesignFeature()),

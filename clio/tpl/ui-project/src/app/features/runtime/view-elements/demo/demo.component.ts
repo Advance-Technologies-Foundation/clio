@@ -13,12 +13,12 @@ import {
 } from '../../runtime-feature.ids';
 
 @CrtViewElement({
-	selector: DEMO_SELECTOR,
-	type: DEMO_VIEW_ELEMENT_TYPE
+    selector: DEMO_SELECTOR,
+    type: DEMO_VIEW_ELEMENT_TYPE
 })
 @CrtMobileViewElement({
-	selector: DEMO_MOBILE_SELECTOR,
-	type: DEMO_MOBILE_VIEW_ELEMENT_TYPE
+    selector: DEMO_MOBILE_SELECTOR,
+    type: DEMO_MOBILE_VIEW_ELEMENT_TYPE
 })
 @Component({
     selector: '<%vendorPrefix%>-demo-internal',
