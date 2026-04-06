@@ -1,4 +1,4 @@
-import { DoBootstrap, NgModule } from '@angular/core';
+import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CrtModule } from '@creatio-devkit/common';
 
