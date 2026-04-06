@@ -19,6 +19,7 @@ import { DEMO_PROPERTY_PANEL_SELECTOR, DEMO_PROPERTY_PANEL_TYPE } from '../desig
   styleUrls: ['./demo-property-panel.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
+  standalone: false,
 })
 export class DemoPropertyPanelComponent {
   private _viewNodeEditor!: ViewNodeEditor;

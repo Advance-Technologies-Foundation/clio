@@ -25,6 +25,7 @@ import {
   template: `<button type="button" (click)="showAlert()">{{ effectiveLabel }}</button>`,
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.ShadowDom,
+  standalone: false,
 })
 export class DemoComponent {
   @Input()
