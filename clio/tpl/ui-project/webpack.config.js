@@ -1,39 +1,18 @@
-const ModuleFederationPlugin = require("webpack/lib/container/ModuleFederationPlugin");
-const mf = require("@angular-architects/module-federation/webpack");
-const path = require("path");
-const share = mf.share;
+const { withModuleFederationPlugin } = require('@angular-architects/module-federation/webpack');
 
-const sharedMappings = new mf.SharedMappings();
-sharedMappings.register(
-  path.join(__dirname, 'tsconfig.json'),
-  []);
+const config = withModuleFederationPlugin({
+  name: '<%projectName%>',
+  filename: 'remoteModuleEntry.js',
+  exposes: {
+    './Main': './src/main.ts',
+  },
+  shared: {},
+  sharedMappings: [],
+});
 
-module.exports = {
-  output: {
-    uniqueName: "<%projectName%>",
-    publicPath: "auto",
-    scriptType: 'text/javascript'
-  },
-  optimization: {
-    runtimeChunk: false
-  },   
-  resolve: {
-    alias: {
-      ...sharedMappings.getAliases(),
-        lodash: 'lodash-es',
-    }
-  },
-  plugins: [
-    new ModuleFederationPlugin({
-        name: "<%projectName%>",
-        filename: "remoteEntry.js",
-        exposes: {
-            './RemoteEntry': './/src/main.ts',
-        },
-        shared: share({
-          ...sharedMappings.getDescriptors()
-        })
-    }),
-    sharedMappings.getPlugin()
-  ],
+config.resolve.alias.lodash = 'lodash-es';
+config.output.uniqueName = '<%projectName%>';
+config.optimization.splitChunks = {
+	...config.optimization.splitChunks,
+	chunks: 'all'
 };
