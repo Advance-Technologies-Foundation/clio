@@ -60,6 +60,7 @@ public sealed class BuildDockerImageService(
 	private const string TerrasoftWebHostConfig = "Terrasoft.WebHost.dll.config";
 	private const string NetFrameworkConfig = "Web.config";
 	private static readonly TimeSpan DockerfileFromInstructionRegexTimeout = TimeSpan.FromSeconds(1);
+	private static readonly TimeSpan PathSanitizationRegexTimeout = TimeSpan.FromSeconds(1);
 
 	private readonly ICodeServerArchiveCache _codeServerArchiveCache =
 		codeServerArchiveCache ?? throw new ArgumentNullException(nameof(codeServerArchiveCache));
@@ -418,7 +419,12 @@ public sealed class BuildDockerImageService(
 	}
 
 	private string SanitizePathSegment(string value) {
-		string sanitized = Regex.Replace(value, @"[^a-zA-Z0-9._-]+", "_");
+		string sanitized = Regex.Replace(
+			value,
+			@"[^a-zA-Z0-9._-]+",
+			"_",
+			RegexOptions.None,
+			PathSanitizationRegexTimeout);
 		string trimmed = sanitized.Trim('_', '.', ' ');
 		return string.IsNullOrWhiteSpace(trimmed) ? "image" : trimmed;
 	}
