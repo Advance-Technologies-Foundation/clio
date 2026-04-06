@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -83,18 +84,18 @@ public sealed class BuildDockerImageService(
 
 		string stagingRoot = string.Empty;
 		try {
-			DockerTemplateResolution templateResolution = _dockerTemplatePathProvider.ResolveTemplate(options.Template);
-			bool isBaseTemplate = IsBaseTemplate(templateResolution);
-			string sourcePath = isBaseTemplate ? string.Empty : ValidateSourcePath(options.SourcePath);
-			string sourceLeafName = isBaseTemplate ? string.Empty : GetSourceLeafName(sourcePath);
-			string localImageReference = ResolveLocalImageReference(templateResolution, sourceLeafName, options);
-			string registryImageReference = BuildRegistryImageReference(options.Registry, localImageReference);
-			string outputTarPath = NormalizeOptionalOutputPath(options.OutputPath);
+			IReadOnlyList<BuildDockerTemplateRequest> templateRequests = ResolveTemplateRequests(options.Template);
+			bool requiresSource = templateRequests.Any(request => !IsBaseTemplate(request.TemplateResolution));
+			string sourcePath = requiresSource ? ValidateSourcePath(options.SourcePath) : string.Empty;
+			string sourceLeafName = requiresSource ? GetSourceLeafName(sourcePath) : string.Empty;
+			string outputPath = NormalizeOptionalOutputPath(options.OutputPath);
+			bool isBatch = templateRequests.Count > 1;
+			ValidateOutputPath(templateRequests.Count, outputPath);
 
 			stagingRoot = CreateTemporaryDirectory("build-docker-image");
 			_logger.WriteInfo($"Created temp directory: {stagingRoot}");
 
-			string preparedSourceRoot = isBaseTemplate ? string.Empty : PrepareSourceRoot(sourcePath, stagingRoot, templateResolution);
+			PreparedDockerBuildSource preparedSource = PrepareBuildSource(sourcePath, stagingRoot, templateRequests);
 			ContainerImageCliKind containerImageCli = ResolveContainerImageCli(options);
 			ProcessExecutionResult versionResult = ExecuteContainerCli(containerImageCli, "--version", null);
 			if (!WasSuccessful(versionResult)) {
@@ -102,87 +103,34 @@ public sealed class BuildDockerImageService(
 					$"Container image CLI '{containerImageCli.ToCliName()}' is not installed or not available in PATH.");
 			}
 
-			int baseImageValidationResult = ValidateBaseImageAvailability(containerImageCli, templateResolution, options);
-			if (baseImageValidationResult != 0) {
-				return baseImageValidationResult;
-			}
-
-			int registryPreflightResult =
-				ValidateRegistryPushTarget(containerImageCli, registryImageReference);
+			int registryPreflightResult = ValidateRegistryPushTargetBatch(
+				containerImageCli,
+				templateRequests,
+				sourceLeafName,
+				options);
 			if (registryPreflightResult != 0) {
 				return registryPreflightResult;
 			}
 
-			string buildContextPath = CreateBuildContext(
-				preparedSourceRoot,
-				templateResolution,
-				stagingRoot,
-				options,
-				isBaseTemplate);
-			string buildArguments = BuildImageBuildArguments(
-				containerImageCli,
-				templateResolution,
-				sourceLeafName,
-				localImageReference,
-				options);
-
-			if (!isBaseTemplate) {
-				_logger.WriteInfo($"Resolved source: {preparedSourceRoot}");
+			List<BuildDockerImageTemplateResult> templateResults = [];
+			for (int index = 0; index < templateRequests.Count; index++) {
+				BuildDockerTemplateRequest templateRequest = templateRequests[index];
+				BuildDockerImageTemplateResult templateResult = ExecuteTemplateBuild(
+					templateRequest,
+					index,
+					templateRequests.Count,
+					preparedSource,
+					sourceLeafName,
+					outputPath,
+					containerImageCli,
+					options,
+					stagingRoot,
+					isBatch);
+				templateResults.Add(templateResult);
 			}
 
-			_logger.WriteInfo($"Resolved template: {templateResolution.TemplatePath}");
-			_logger.WriteInfo($"Container image CLI: {containerImageCli.ToCliName()}");
-			_logger.WriteInfo($"Local image reference: {localImageReference}");
-			if (isBaseTemplate) {
-				_logger.WriteInfo($"Building base image: {localImageReference}");
-			}
-
-			ProcessExecutionResult buildResult = ExecuteContainerCli(containerImageCli, buildArguments, buildContextPath);
-			if (!WasSuccessful(buildResult)) {
-				return LogAndReturnFailure(buildResult,
-					$"Container image build failed for image '{localImageReference}' using '{containerImageCli.ToCliName()}'.");
-			}
-
-			_logger.WriteInfo($"Built Docker image: {localImageReference}");
-
-			if (!string.IsNullOrWhiteSpace(outputTarPath)) {
-				EnsureOutputDirectoryExists(outputTarPath);
-				ProcessExecutionResult saveResult =
-					ExecuteContainerCli(containerImageCli,
-						$"save --output \"{outputTarPath}\" \"{localImageReference}\"", buildContextPath);
-				if (!WasSuccessful(saveResult)) {
-					return LogAndReturnFailure(saveResult,
-						$"Container image save failed for image '{localImageReference}' to '{outputTarPath}'.");
-				}
-
-				_logger.WriteInfo($"Saved Docker image tar: {outputTarPath}");
-			}
-
-			CacheBundledBaseImageArchive(containerImageCli, templateResolution, localImageReference, buildContextPath);
-
-			if (!string.IsNullOrWhiteSpace(registryImageReference)) {
-				_logger.WriteInfo($"Tagging Docker image for registry push: {registryImageReference}");
-				ProcessExecutionResult tagResult =
-					ExecuteContainerCli(containerImageCli,
-						$"tag \"{localImageReference}\" \"{registryImageReference}\"", buildContextPath);
-				if (!WasSuccessful(tagResult)) {
-					return LogAndReturnFailure(tagResult,
-						$"Container image tag failed for '{localImageReference}' to '{registryImageReference}'.");
-				}
-
-				_logger.WriteInfo(
-					$"Pushing Docker image to registry: {registryImageReference}. Push output can stay quiet if the container CLI does not emit line-based progress.");
-				ProcessExecutionResult pushResult =
-					ExecuteContainerCli(containerImageCli, $"push \"{registryImageReference}\"", buildContextPath);
-				if (!WasSuccessful(pushResult)) {
-					return LogAndReturnFailure(pushResult,
-						$"Container image push failed for image '{registryImageReference}'.");
-				}
-
-				_logger.WriteInfo($"Pushed Docker image: {registryImageReference}");
-			}
-
-			return 0;
+			LogTemplateBatchSummary(templateResults);
+			return templateResults.All(result => result.Succeeded) ? 0 : 1;
 		}
 		catch (Exception exception) {
 			_logger.WriteError(exception.Message);
@@ -192,6 +140,314 @@ public sealed class BuildDockerImageService(
 			if (!string.IsNullOrWhiteSpace(stagingRoot)) {
 				TryDeleteDirectoryIfExists(stagingRoot, "temporary Docker build context");
 			}
+		}
+	}
+
+	private BuildDockerImageTemplateResult ExecuteTemplateBuild(
+		BuildDockerTemplateRequest templateRequest,
+		int templateIndex,
+		int templateCount,
+		PreparedDockerBuildSource preparedSource,
+		string sourceLeafName,
+		string outputPath,
+		ContainerImageCliKind containerImageCli,
+		BuildDockerImageOptions options,
+		string stagingRoot,
+		bool sharedRegistryPreflightCompleted) {
+		DockerTemplateResolution templateResolution = templateRequest.TemplateResolution;
+		bool isBaseTemplate = IsBaseTemplate(templateResolution);
+		string preparedSourceRoot = GetPreparedSourceRoot(templateResolution, preparedSource);
+		string localImageReference = ResolveLocalImageReference(templateResolution, sourceLeafName, options);
+		string registryImageReference = BuildRegistryImageReference(options.Registry, localImageReference);
+		string outputTarPath = ResolveOutputTarPath(outputPath, localImageReference, templateCount);
+		string templateStagingRoot = _fileSystem.Combine(
+			stagingRoot,
+			"templates",
+			$"{templateIndex + 1:D2}-{SanitizePathSegment(templateRequest.DisplayName)}");
+		_fileSystem.CreateDirectoryIfNotExists(templateStagingRoot);
+		List<string> failedSteps = [];
+
+		_logger.WriteInfo(
+			$"Starting Docker image build for template '{templateRequest.DisplayName}' ({templateIndex + 1}/{templateCount}).");
+
+		int baseImageValidationResult = ValidateBaseImageAvailability(containerImageCli, templateResolution, options);
+		if (baseImageValidationResult != 0) {
+			failedSteps.Add("base-image");
+			return new BuildDockerImageTemplateResult(templateRequest.DisplayName, localImageReference, false, failedSteps);
+		}
+
+		if (!sharedRegistryPreflightCompleted) {
+			int registryPreflightResult = ValidateRegistryPushTarget(containerImageCli, registryImageReference);
+			if (registryPreflightResult != 0) {
+				failedSteps.Add("registry-preflight");
+				return new BuildDockerImageTemplateResult(templateRequest.DisplayName, localImageReference, false, failedSteps);
+			}
+		}
+
+		string buildContextPath = CreateBuildContext(
+			preparedSourceRoot,
+			templateResolution,
+			templateStagingRoot,
+			options,
+			isBaseTemplate);
+		string buildArguments = BuildImageBuildArguments(
+			containerImageCli,
+			templateResolution,
+			sourceLeafName,
+			localImageReference,
+			options);
+
+		if (!isBaseTemplate) {
+			_logger.WriteInfo($"Resolved source: {preparedSourceRoot}");
+		}
+
+		_logger.WriteInfo($"Resolved template: {templateResolution.TemplatePath}");
+		_logger.WriteInfo($"Container image CLI: {containerImageCli.ToCliName()}");
+		_logger.WriteInfo($"Local image reference: {localImageReference}");
+		if (isBaseTemplate) {
+			_logger.WriteInfo($"Building base image: {localImageReference}");
+		}
+
+		ProcessExecutionResult buildResult = ExecuteContainerCli(containerImageCli, buildArguments, buildContextPath);
+		if (!WasSuccessful(buildResult)) {
+			LogAndReturnFailure(buildResult,
+				$"Container image build failed for image '{localImageReference}' using '{containerImageCli.ToCliName()}'.");
+			failedSteps.Add("build");
+			return new BuildDockerImageTemplateResult(templateRequest.DisplayName, localImageReference, false, failedSteps);
+		}
+
+		_logger.WriteInfo($"Built Docker image: {localImageReference}");
+		CacheBundledBaseImageArchive(containerImageCli, templateResolution, localImageReference, buildContextPath);
+
+		if (!string.IsNullOrWhiteSpace(outputTarPath)) {
+			EnsureOutputDirectoryExists(outputTarPath);
+			ProcessExecutionResult saveResult =
+				ExecuteContainerCli(containerImageCli,
+					$"save --output \"{outputTarPath}\" \"{localImageReference}\"", buildContextPath);
+			if (!WasSuccessful(saveResult)) {
+				LogAndReturnFailure(saveResult,
+					$"Container image save failed for image '{localImageReference}' to '{outputTarPath}'.");
+				failedSteps.Add("save");
+			}
+			else {
+				_logger.WriteInfo($"Saved Docker image tar: {outputTarPath}");
+			}
+		}
+
+		if (!string.IsNullOrWhiteSpace(registryImageReference)) {
+			_logger.WriteInfo($"Tagging Docker image for registry push: {registryImageReference}");
+			ProcessExecutionResult tagResult =
+				ExecuteContainerCli(containerImageCli,
+					$"tag \"{localImageReference}\" \"{registryImageReference}\"", buildContextPath);
+			if (!WasSuccessful(tagResult)) {
+				LogAndReturnFailure(tagResult,
+					$"Container image tag failed for '{localImageReference}' to '{registryImageReference}'.");
+				failedSteps.Add("tag");
+			}
+			else {
+				_logger.WriteInfo(
+					$"Pushing Docker image to registry: {registryImageReference}. Push output can stay quiet if the container CLI does not emit line-based progress.");
+				ProcessExecutionResult pushResult =
+					ExecuteContainerCli(containerImageCli, $"push \"{registryImageReference}\"", buildContextPath);
+				if (!WasSuccessful(pushResult)) {
+					LogAndReturnFailure(pushResult,
+						$"Container image push failed for image '{registryImageReference}'.");
+					failedSteps.Add("push");
+				}
+				else {
+					_logger.WriteInfo($"Pushed Docker image: {registryImageReference}");
+				}
+			}
+		}
+
+		bool succeeded = failedSteps.Count == 0;
+		_logger.WriteInfo(
+			succeeded
+				? $"Template '{templateRequest.DisplayName}' completed successfully."
+				: $"Template '{templateRequest.DisplayName}' completed with failures: {string.Join(", ", failedSteps)}.");
+		return new BuildDockerImageTemplateResult(templateRequest.DisplayName, localImageReference, succeeded, failedSteps);
+	}
+
+	private PreparedDockerBuildSource PrepareBuildSource(
+		string sourcePath,
+		string stagingRoot,
+		IReadOnlyList<BuildDockerTemplateRequest> templateRequests) {
+		if (string.IsNullOrWhiteSpace(sourcePath)) {
+			return new PreparedDockerBuildSource(string.Empty, string.Empty, string.Empty);
+		}
+
+		bool requiresApplicationSource = templateRequests.Any(request =>
+			!IsBaseTemplate(request.TemplateResolution) && !IsDbTemplate(request.TemplateResolution));
+		bool requiresDatabaseSource = templateRequests.Any(request => IsDbTemplate(request.TemplateResolution));
+		string rawSourceRoot = sourcePath;
+		if (_fileSystem.ExistsFile(sourcePath)) {
+			string extractedPath = _fileSystem.Combine(stagingRoot, "extracted");
+			_fileSystem.CreateDirectoryIfNotExists(extractedPath);
+			_logger.WriteInfo($"Extracting source ZIP to: {extractedPath}");
+			_zipFile.ExtractToDirectory(sourcePath, extractedPath);
+			rawSourceRoot = extractedPath;
+		}
+
+		string applicationSourceRoot = string.Empty;
+		if (requiresApplicationSource) {
+			string resolvedApplicationSourceRoot = ResolveApplicationRoot(rawSourceRoot);
+			ValidateDotNetPayload(resolvedApplicationSourceRoot);
+			if (ContainsDatabaseDirectory(resolvedApplicationSourceRoot)) {
+				string preparedApplicationSourceRoot = _fileSystem.Combine(stagingRoot, "prepared-app-source");
+				_fileSystem.CopyDirectory(resolvedApplicationSourceRoot, preparedApplicationSourceRoot, true);
+				RemoveDatabaseDirectory(preparedApplicationSourceRoot);
+				applicationSourceRoot = preparedApplicationSourceRoot;
+			}
+			else {
+				applicationSourceRoot = resolvedApplicationSourceRoot;
+			}
+		}
+
+		string databaseSourceRoot = requiresDatabaseSource
+			? ResolveDatabasePayloadRoot(rawSourceRoot)
+			: string.Empty;
+		return new PreparedDockerBuildSource(rawSourceRoot, applicationSourceRoot, databaseSourceRoot);
+	}
+
+	private IReadOnlyList<BuildDockerTemplateRequest> ResolveTemplateRequests(string templateArgument) {
+		IReadOnlyList<string> templateValues = ParseTemplateValues(templateArgument);
+		return templateValues
+			.Select(templateValue => new BuildDockerTemplateRequest(
+				templateValue,
+				_dockerTemplatePathProvider.ResolveTemplate(templateValue)))
+			.ToList();
+	}
+
+	private IReadOnlyList<string> ParseTemplateValues(string templateArgument) {
+		if (string.IsNullOrWhiteSpace(templateArgument)) {
+			throw new ArgumentException("Template is required.", nameof(templateArgument));
+		}
+
+		string trimmedTemplateArgument = templateArgument.Trim();
+		string fullTemplatePath = _fileSystem.GetFullPath(trimmedTemplateArgument);
+		if (_fileSystem.ExistsDirectory(fullTemplatePath)) {
+			return [trimmedTemplateArgument];
+		}
+
+		string[] templateValues = trimmedTemplateArgument
+			.Split(',', StringSplitOptions.None)
+			.Select(template => template.Trim())
+			.ToArray();
+		if (templateValues.Any(string.IsNullOrWhiteSpace)) {
+			throw new InvalidOperationException(
+				"Template list contains an empty item. Use a comma-separated list like 'db,dev,prod'.");
+		}
+
+		string[] duplicateTemplates = templateValues
+			.GroupBy(template => template, StringComparer.OrdinalIgnoreCase)
+			.Where(group => group.Count() > 1)
+			.Select(group => group.Key)
+			.ToArray();
+		if (duplicateTemplates.Length > 0) {
+			throw new InvalidOperationException(
+				$"Template list contains duplicates: {string.Join(", ", duplicateTemplates)}.");
+		}
+
+		return templateValues;
+	}
+
+	private void ValidateOutputPath(int templateCount, string outputPath) {
+		if (templateCount <= 1 || string.IsNullOrWhiteSpace(outputPath)) {
+			return;
+		}
+
+		if (_fileSystem.ExistsFile(outputPath)) {
+			throw new InvalidOperationException(
+				$"Output path '{outputPath}' must be a directory when multiple templates are requested.");
+		}
+
+		if (LooksLikeTarFilePath(outputPath)) {
+			throw new InvalidOperationException(
+				$"Output path '{outputPath}' must be a directory when multiple templates are requested.");
+		}
+	}
+
+	private int ValidateRegistryPushTargetBatch(
+		ContainerImageCliKind containerImageCli,
+		IReadOnlyList<BuildDockerTemplateRequest> templateRequests,
+		string sourceLeafName,
+		BuildDockerImageOptions options) {
+		if (templateRequests.Count <= 1 || string.IsNullOrWhiteSpace(options.Registry)) {
+			return 0;
+		}
+
+		string[] registryTargets = templateRequests
+			.Select(templateRequest => ResolveLocalImageReference(templateRequest.TemplateResolution, sourceLeafName, options))
+			.Select(localImageReference => BuildRegistryImageReference(options.Registry, localImageReference))
+			.Where(registryImageReference => !string.IsNullOrWhiteSpace(registryImageReference))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+
+		foreach (string registryTarget in registryTargets) {
+			_logger.WriteInfo($"Running shared registry push preflight for batch against: {registryTarget}");
+			int registryPreflightResult = ValidateRegistryPushTarget(containerImageCli, registryTarget);
+			if (registryPreflightResult != 0) {
+				return registryPreflightResult;
+			}
+		}
+
+		return 0;
+	}
+
+	private string GetPreparedSourceRoot(DockerTemplateResolution templateResolution, PreparedDockerBuildSource preparedSource) {
+		if (IsBaseTemplate(templateResolution)) {
+			return string.Empty;
+		}
+
+		return IsDbTemplate(templateResolution)
+			? preparedSource.DatabaseSourceRoot
+			: preparedSource.ApplicationSourceRoot;
+	}
+
+	private string ResolveOutputTarPath(string outputPath, string localImageReference, int templateCount) {
+		if (string.IsNullOrWhiteSpace(outputPath)) {
+			return string.Empty;
+		}
+
+		if (templateCount <= 1) {
+			return outputPath;
+		}
+
+		string tarFileName = $"{SanitizePathSegment(localImageReference)}.tar";
+		return _fileSystem.Combine(outputPath, tarFileName);
+	}
+
+	private string SanitizePathSegment(string value) {
+		string sanitized = Regex.Replace(value, @"[^a-zA-Z0-9._-]+", "_");
+		string trimmed = sanitized.Trim('_', '.', ' ');
+		return string.IsNullOrWhiteSpace(trimmed) ? "image" : trimmed;
+	}
+
+	private bool LooksLikeTarFilePath(string outputPath) {
+		string normalizedOutputPath = outputPath.Trim();
+		return normalizedOutputPath.EndsWith(".tar", StringComparison.OrdinalIgnoreCase)
+			|| normalizedOutputPath.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase)
+			|| normalizedOutputPath.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private bool ContainsDatabaseDirectory(string rootPath) {
+		string databaseDirectoryPath = _fileSystem.Combine(rootPath, DatabaseDirectoryName);
+		return _fileSystem.ExistsDirectory(databaseDirectoryPath);
+	}
+
+	private void LogTemplateBatchSummary(IReadOnlyList<BuildDockerImageTemplateResult> templateResults) {
+		if (templateResults.Count <= 1) {
+			return;
+		}
+
+		_logger.WriteInfo("Docker image batch summary:");
+		foreach (BuildDockerImageTemplateResult templateResult in templateResults) {
+			string status = templateResult.Succeeded ? "OK" : "FAILED";
+			string stepSuffix = templateResult.FailedSteps.Count == 0
+				? string.Empty
+				: $" ({string.Join(", ", templateResult.FailedSteps)})";
+			_logger.WriteInfo(
+				$"- {templateResult.TemplateName}: {status} -> {templateResult.LocalImageReference}{stepSuffix}");
 		}
 	}
 
@@ -464,43 +720,6 @@ public sealed class BuildDockerImageService(
 		}
 
 		return _fileSystem.GetFullPath(outputPath);
-	}
-
-	private string PrepareSourceRoot(string sourcePath, string stagingRoot, DockerTemplateResolution templateResolution) {
-		if (IsDbTemplate(templateResolution)) {
-			return PrepareDatabaseSourceRoot(sourcePath, stagingRoot);
-		}
-
-		if (_fileSystem.ExistsDirectory(sourcePath)) {
-			string sourceRoot = ResolveApplicationRoot(sourcePath);
-			ValidateDotNetPayload(sourceRoot);
-			return sourceRoot;
-		}
-
-		string extractedPath = _fileSystem.Combine(stagingRoot, "extracted");
-		_fileSystem.CreateDirectoryIfNotExists(extractedPath);
-
-		_logger.WriteInfo($"Extracting source ZIP to: {extractedPath}");
-		_zipFile.ExtractToDirectory(sourcePath, extractedPath);
-
-		string extractedSourceRoot = ResolveApplicationRoot(extractedPath);
-		RemoveDatabaseDirectory(extractedPath);
-		RemoveDatabaseDirectory(extractedSourceRoot);
-		ValidateDotNetPayload(extractedSourceRoot);
-		return extractedSourceRoot;
-	}
-
-	private string PrepareDatabaseSourceRoot(string sourcePath, string stagingRoot) {
-		if (_fileSystem.ExistsDirectory(sourcePath)) {
-			return ResolveDatabasePayloadRoot(sourcePath);
-		}
-
-		string extractedPath = _fileSystem.Combine(stagingRoot, "extracted");
-		_fileSystem.CreateDirectoryIfNotExists(extractedPath);
-
-		_logger.WriteInfo($"Extracting source ZIP to: {extractedPath}");
-		_zipFile.ExtractToDirectory(sourcePath, extractedPath);
-		return ResolveDatabasePayloadRoot(extractedPath);
 	}
 
 	private void RemoveDatabaseDirectory(string rootPath) {
@@ -983,6 +1202,21 @@ public sealed class BuildDockerImageService(
 		return result.Started && result.ExitCode.GetValueOrDefault(-1) == 0;
 	}
 }
+
+internal sealed record BuildDockerTemplateRequest(
+	string DisplayName,
+	DockerTemplateResolution TemplateResolution);
+
+internal sealed record PreparedDockerBuildSource(
+	string RawSourceRoot,
+	string ApplicationSourceRoot,
+	string DatabaseSourceRoot);
+
+internal sealed record BuildDockerImageTemplateResult(
+	string TemplateName,
+	string LocalImageReference,
+	bool Succeeded,
+	IReadOnlyList<string> FailedSteps);
 
 /// <summary>
 /// Identifies the container image CLI used by build-docker-image.
