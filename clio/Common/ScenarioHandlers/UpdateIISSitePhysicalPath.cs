@@ -67,6 +67,7 @@ namespace Clio.Common.ScenarioHandlers {
             string appcmdPath = Path.Combine("C:", "Windows", "System32", "inetsrv", "appcmd.exe");
 
             // Update root virtual directory physical path for the site
+            _logger?.WriteInfo($"Setting physical path for root virtual directory '{siteName}/' to: {physicalPath}");
             string command = $"set vdir /vdir.name:\"{siteName}/\" /physicalPath:\"{physicalPath}\"";
             try {
                 string result = _processExecutor.Execute(appcmdPath, command, true);
@@ -84,18 +85,21 @@ namespace Clio.Common.ScenarioHandlers {
 
             // Update Web application '0' virtual directory to point to physicalPath\Terrasoft.WebApp
             string webAppPath = Path.Combine(physicalPath, "Terrasoft.WebApp");
-            command = $"set vdir /vdir.name:\"{siteName}/0/\" /physicalPath:\"{webAppPath}\"";
-            try {
-                string resultApp = _processExecutor.Execute(appcmdPath, command, true);
-                sb.AppendLine(resultApp);
-            }
-            catch (Exception ex) {
-                var msg = $"Failed to update physical path for application '0' under site '{siteName}', {ex.Message}";
-                _logger?.WriteError(msg);
-                return Task.FromResult<OneOf<BaseHandlerResponse, HandlerError>>(new UpdateIISSitePhysicalPathResponse {
-                    Status = BaseHandlerResponse.CompletionStatus.Failure,
-                    Description = msg
-                });
+            if (Directory.Exists(webAppPath)) {
+                _logger?.WriteInfo($"Setting physical path for virtual directory '{siteName}/0/' to: {webAppPath}");
+                command = $"set vdir /vdir.name:\"{siteName}/0/\" /physicalPath:\"{webAppPath}\"";
+                try {
+                    string resultApp = _processExecutor.Execute(appcmdPath, command, true);
+                    sb.AppendLine(resultApp);
+                }
+                catch (Exception ex) {
+                    var msg = $"Failed to update physical path for application '0' under site '{siteName}', {ex.Message}";
+                    _logger?.WriteError(msg);
+                    return Task.FromResult<OneOf<BaseHandlerResponse, HandlerError>>(new UpdateIISSitePhysicalPathResponse {
+                        Status = BaseHandlerResponse.CompletionStatus.Failure,
+                        Description = msg
+                    });
+                }
             }
 
             return Task.FromResult<OneOf<BaseHandlerResponse, HandlerError>>(new UpdateIISSitePhysicalPathResponse {

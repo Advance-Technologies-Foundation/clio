@@ -361,10 +361,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 			UpdateEnvironmentPath(options, env);
 
-			if (options.Mode == CreatioMode.NetFramework)
-			{
-				UpdateIISPhysicalPath(options, env);
-			}
+			UpdateIISPhysicalPath(options, env);
 
 			// Handle service restart if running
 			HandleServiceRestartAndReregistration(options.Environment);
@@ -386,12 +383,19 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		string coreWebHostPath = options.Mode == CreatioMode.NetCore
 			? ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "appsettings.json", "Terrasoft.WebHost.dll.config")
 			: ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "Terrasoft.WebApp.Loader.dll");
+
+		// For NetCore, set IIS physical path to the WebHost directory (parent of bin)
+		// For NetFramework, use the Loader directory directly
+		string iisPhysicalPath = options.Mode == CreatioMode.NetCore
+			? Path.GetDirectoryName(coreWebHostPath)
+			: coreWebHostPath;
+
 		(int code, string message) = _mediator.Send(new UpdateIISSitePhysicalPathRequest()
 			{
 				Arguments = new Dictionary<string, string>()
 				{
 					{"siteName", options.Environment},
-					{"physicalPath", coreWebHostPath}
+					{"physicalPath", iisPhysicalPath}
 				}
 			}).Result.Value switch
 			{
@@ -745,10 +749,16 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 				? ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "appsettings.json", "Terrasoft.WebHost.dll.config")
 				: ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "Terrasoft.WebApp.Loader.dll");
 
+			// For NetCore, set environment path to the WebHost directory (parent of bin)
+			// For NetFramework, keep as the Loader directory
+			string environmentPath = options.Mode == CreatioMode.NetCore
+				? Path.GetDirectoryName(coreWebHostPath)
+				: coreWebHostPath;
+
 			// Update environment configuration with core path
-			env.EnvironmentPath = coreWebHostPath;
+			env.EnvironmentPath = environmentPath;
 			_settingsRepository.ConfigureEnvironment(options.Environment, env);
-			_logger.WriteInfo($"  ✓ Environment configuration updated with core path: {coreWebHostPath}");
+			_logger.WriteInfo($"  ✓ Environment configuration updated with core path: {environmentPath}");
 		}
 		catch (Exception ex)
 		{
@@ -825,6 +835,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			_logger.WriteWarning($"    Please manually restart the service if needed");
 		}
 	}
+
 
 	#endregion
 
