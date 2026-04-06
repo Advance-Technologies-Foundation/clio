@@ -24,6 +24,7 @@ public class BuildDockerImageServiceTests {
 	private IDockerTemplatePathProvider _templatePathProvider = null!;
 	private string _tempRoot = string.Empty;
 	private IZipFile _zipFile = null!;
+	private string _cachedCodeServerArchivePath = string.Empty;
 
 	[SetUp]
 	public void Setup() {
@@ -42,6 +43,9 @@ public class BuildDockerImageServiceTests {
 		_tempRoot = _msFileSystem.Path.Combine(_msFileSystem.Path.GetTempPath(), "clio-build-docker-image-tests",
 			Guid.NewGuid().ToString("N"));
 		_msFileSystem.Directory.CreateDirectory(_tempRoot);
+		_cachedCodeServerArchivePath = _msFileSystem.Path.Combine(_tempRoot, "code-server.tar.gz");
+		_msFileSystem.File.WriteAllText(_cachedCodeServerArchivePath, "code-server");
+		_codeServerArchiveCache.EnsureArchiveAvailable(Arg.Any<string>()).Returns(_cachedCodeServerArchivePath);
 		_settingsRepository.AppSettingsFilePath.Returns(_msFileSystem.Path.Combine(_tempRoot, "settings", "appsettings.json"));
 		_service = new BuildDockerImageService(_processExecutor, _codeServerArchiveCache, _containerRegistryPreflightService, _logger, _settingsRepository,
 			_fileSystem, _msFileSystem, _zipFile, _templatePathProvider);
@@ -1043,6 +1047,212 @@ public class BuildDockerImageServiceTests {
 		// Assert
 		result.Should().Be(1, "because .NET Framework payloads are not supported for Docker builds");
 		_logger.Received().WriteError(Arg.Is<string>(s => s.Contains(".NET Framework", StringComparison.Ordinal)));
+		_processExecutor.DidNotReceive().ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>());
+	}
+
+	[Test]
+	[Description("Execute should reject duplicate template names in a comma-separated batch request.")]
+	public void Execute_ShouldRejectDuplicateTemplateNames() {
+		// Arrange
+		BuildDockerImageOptions options = new() {
+			SourcePath = "/workspace/app",
+			Template = "dev,prod,dev"
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because the command should fail fast when the same template is requested more than once");
+		_logger.Received().WriteError(Arg.Is<string>(s =>
+			s.Contains("duplicates", StringComparison.Ordinal)
+			&& s.Contains("dev", StringComparison.Ordinal)));
+		_templatePathProvider.DidNotReceive().ResolveTemplate(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Execute should extract the zip source and probe the container CLI only once when multiple templates are built from one batch request.")]
+	public void Execute_ShouldReuseZipExtractionAndCliDetectionAcrossTemplateBatch() {
+		// Arrange
+		string sourceZipPath = _msFileSystem.Path.Combine(_tempRoot, "Multi Source.zip");
+		_msFileSystem.File.WriteAllText(sourceZipPath, "zip-placeholder");
+		string devTemplateDirectory = CreateTemplateDirectory("dev-template", "ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		string prodTemplateDirectory = CreateTemplateDirectory("prod-template", "ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		_templatePathProvider.ResolveTemplate("dev")
+			.Returns(new DockerTemplateResolution("dev", devTemplateDirectory, true));
+		_templatePathProvider.ResolveTemplate("prod")
+			.Returns(new DockerTemplateResolution("prod", prodTemplateDirectory, true));
+		_zipFile.When(z => z.ExtractToDirectory(sourceZipPath, Arg.Any<string>()))
+			.Do(callInfo => {
+				string extractedPath = callInfo.ArgAt<string>(1);
+				_msFileSystem.File.WriteAllText(_msFileSystem.Path.Combine(extractedPath, "Terrasoft.WebHost.dll"), "dll");
+				_msFileSystem.File.WriteAllText(_msFileSystem.Path.Combine(extractedPath, "Terrasoft.WebHost.dll.config"), "config");
+				_msFileSystem.Directory.CreateDirectory(_msFileSystem.Path.Combine(extractedPath, "db"));
+				_msFileSystem.File.WriteAllText(_msFileSystem.Path.Combine(extractedPath, "db", "backup.dump"), "backup");
+			});
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(callInfo => {
+				ProcessExecutionOptions executionOptions = callInfo.Arg<ProcessExecutionOptions>();
+				if (executionOptions.Arguments.StartsWith("image inspect", StringComparison.Ordinal)) {
+					return Task.FromResult(new ProcessExecutionResult {
+						Started = true,
+						ExitCode = 0
+					});
+				}
+
+				return Task.FromResult(new ProcessExecutionResult {
+					Started = true,
+					ExitCode = 0
+				});
+			});
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceZipPath,
+			Template = "dev,prod"
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because both bundled templates should be able to reuse the same prepared source payload");
+		_zipFile.Received(1).ExtractToDirectory(sourceZipPath, Arg.Any<string>());
+		_processExecutor.Received(1).ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
+			o.Program == "docker" && o.Arguments == "info"));
+		_processExecutor.Received(1).ExecuteWithRealtimeOutputAsync(Arg.Is<ProcessExecutionOptions>(o =>
+			o.Program == "docker" && o.Arguments == "--version"));
+		GetReceivedExecutionOptions().Count(o => o.Arguments.Contains("build --pull=false", StringComparison.Ordinal))
+			.Should().Be(2, "because the batch should still execute one docker build per requested template");
+	}
+
+	[Test]
+	[Description("Execute should continue building later templates when an earlier template build fails in the batch.")]
+	public void Execute_ShouldContinueBatchAfterTemplateBuildFailure() {
+		// Arrange
+		string sourceDirectory = CreateDotNetSourceDirectory("Batch Failure Source");
+		string devTemplateDirectory = CreateTemplateDirectory("dev-template", "ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		string prodTemplateDirectory = CreateTemplateDirectory("prod-template", "ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		_templatePathProvider.ResolveTemplate("prod")
+			.Returns(new DockerTemplateResolution("prod", prodTemplateDirectory, true));
+		_templatePathProvider.ResolveTemplate("dev")
+			.Returns(new DockerTemplateResolution("dev", devTemplateDirectory, true));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(callInfo => {
+				ProcessExecutionOptions executionOptions = callInfo.Arg<ProcessExecutionOptions>();
+				if (executionOptions.Arguments.StartsWith("image inspect", StringComparison.Ordinal)
+					|| executionOptions.Arguments == "info"
+					|| executionOptions.Arguments == "--version") {
+					return Task.FromResult(new ProcessExecutionResult {
+						Started = true,
+						ExitCode = 0
+					});
+				}
+
+				if (executionOptions.Arguments.Contains("-t \"creatio-prod:batch_failure_source\"", StringComparison.Ordinal)) {
+					return Task.FromResult(new ProcessExecutionResult {
+						Started = true,
+						ExitCode = 1,
+						StandardError = "prod-build-failed"
+					});
+				}
+
+				return Task.FromResult(new ProcessExecutionResult {
+					Started = true,
+					ExitCode = 0
+				});
+			});
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "prod,dev"
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because the overall batch should report failure when any template build fails");
+		GetReceivedExecutionOptions().Should().Contain(o =>
+				o.Arguments.Contains("-t \"creatio-dev:batch_failure_source\"", StringComparison.Ordinal),
+			"because later templates should still be built after an earlier build failure in the batch");
+		_logger.Received().WriteInfo(Arg.Is<string>(s =>
+			s.Contains("Docker image batch summary", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Execute should save one tar file per template when a multi-template batch uses an output directory.")]
+	public void Execute_ShouldSaveOneTarPerTemplateWhenBatchUsesOutputDirectory() {
+		// Arrange
+		string sourceDirectory = CreateDotNetSourceDirectory("Batch Output Source");
+		string devTemplateDirectory = CreateTemplateDirectory("dev-template", "ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		string prodTemplateDirectory = CreateTemplateDirectory("prod-template", "ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		string outputDirectory = _msFileSystem.Path.Combine(_tempRoot, "exports");
+		_templatePathProvider.ResolveTemplate("dev")
+			.Returns(new DockerTemplateResolution("dev", devTemplateDirectory, true));
+		_templatePathProvider.ResolveTemplate("prod")
+			.Returns(new DockerTemplateResolution("prod", prodTemplateDirectory, true));
+		_processExecutor.ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(callInfo => {
+				ProcessExecutionOptions executionOptions = callInfo.Arg<ProcessExecutionOptions>();
+				if (executionOptions.Arguments.StartsWith("image inspect", StringComparison.Ordinal)
+					|| executionOptions.Arguments == "info"
+					|| executionOptions.Arguments == "--version") {
+					return Task.FromResult(new ProcessExecutionResult {
+						Started = true,
+						ExitCode = 0
+					});
+				}
+
+				return Task.FromResult(new ProcessExecutionResult {
+					Started = true,
+					ExitCode = 0
+				});
+			});
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "dev,prod",
+			OutputPath = outputDirectory
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because the batch should treat the output path as a directory and save one tar per template");
+		GetReceivedExecutionOptions().Should().Contain(o =>
+				o.Arguments.Contains("save --output", StringComparison.Ordinal)
+				&& o.Arguments.Contains("exports", StringComparison.Ordinal)
+				&& o.Arguments.Contains("creatio-dev_batch_output_source.tar", StringComparison.Ordinal),
+			"because the dev template should save into its own deterministic tar path under the output directory");
+		GetReceivedExecutionOptions().Should().Contain(o =>
+				o.Arguments.Contains("save --output", StringComparison.Ordinal)
+				&& o.Arguments.Contains("exports", StringComparison.Ordinal)
+				&& o.Arguments.Contains("creatio-prod_batch_output_source.tar", StringComparison.Ordinal),
+			"because the prod template should save into its own deterministic tar path under the output directory");
+	}
+
+	[Test]
+	[Description("Execute should reject a file-like output path when multiple templates are requested.")]
+	public void Execute_ShouldRejectFileLikeOutputPathForTemplateBatch() {
+		// Arrange
+		string sourceDirectory = CreateDotNetSourceDirectory("Batch Output Validation");
+		string devTemplateDirectory = CreateTemplateDirectory("dev-template", "ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		string prodTemplateDirectory = CreateTemplateDirectory("prod-template", "ARG BASE_IMAGE=creatio-base:8.0-v1\nFROM ${BASE_IMAGE}\nCOPY source/ ./\n");
+		_templatePathProvider.ResolveTemplate("dev")
+			.Returns(new DockerTemplateResolution("dev", devTemplateDirectory, true));
+		_templatePathProvider.ResolveTemplate("prod")
+			.Returns(new DockerTemplateResolution("prod", prodTemplateDirectory, true));
+		BuildDockerImageOptions options = new() {
+			SourcePath = sourceDirectory,
+			Template = "dev,prod",
+			OutputPath = _msFileSystem.Path.Combine(_tempRoot, "exports.tar")
+		};
+
+		// Act
+		int result = _service.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because multi-template output paths must point to a directory instead of a single tar file");
+		_logger.Received().WriteError(Arg.Is<string>(s =>
+			s.Contains("must be a directory", StringComparison.Ordinal)));
 		_processExecutor.DidNotReceive().ExecuteWithRealtimeOutputAsync(Arg.Any<ProcessExecutionOptions>());
 	}
 
