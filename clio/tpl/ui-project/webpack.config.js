@@ -16,3 +16,5 @@ config.optimization.splitChunks = {
   ...config.optimization.splitChunks,
   chunks: 'all'
 };
+
+module.exports = config;
