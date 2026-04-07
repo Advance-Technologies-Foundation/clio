@@ -18,7 +18,7 @@ import { DEMO_PROPERTY_PANEL_SELECTOR, DEMO_PROPERTY_PANEL_TYPE } from '../desig
   templateUrl: './demo-property-panel.component.html',
   styleUrls: ['./demo-property-panel.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  encapsulation: ViewEncapsulation.None,
+  encapsulation: ViewEncapsulation.Emulated,
   standalone: false,
 })
 export class DemoPropertyPanelComponent {

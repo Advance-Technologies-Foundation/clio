@@ -5,6 +5,9 @@ import { DoBootstrap, NgModule } from '@angular/core';
   imports: [BrowserModule],
 })
 export class RemoteAppModule implements DoBootstrap {
+  /**
+   * This method must exist to bootstrap the module..
+  */
   public ngDoBootstrap(): void {
   }
 }
