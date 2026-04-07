@@ -362,10 +362,21 @@ clio update-entity-schema --package MyPackage --schema-name UsrVehicle \
   --operation '{"action":"add","columnName":"Mileage","type":"Integer"}' \
   -e myenv
 
+# Batch default from SystemValue caption (normalized to Guid)
+clio update-entity-schema --package MyPackage --schema-name UsrVehicle \
+  --operation '{"action":"modify","column-name":"UsrStartDate","default-value-config":{"source":"SystemValue","value-source":"Current Time and Date"}}' \
+  -e myenv
+
 # Read specific column properties
 clio get-entity-schema-column-properties -e myenv --package MyPackage \
   --schema-name UsrVehicle --column-name Make
 ```
+
+Default resolution behavior for entity schema defaults:
+- `SystemValue` accepts Guid, alias, or caption and persists canonical Guid.
+- `Settings` accepts code, name, or id and persists canonical setting code.
+- `get-entity-schema-column-properties` reports canonical identifiers in `default-value-config.resolved-value-source`.
+- Ambiguous matches fail fast and require explicit Guid/code input.
 
 ### 9. Freedom UI Page Management
 

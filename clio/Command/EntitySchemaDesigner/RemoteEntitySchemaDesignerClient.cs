@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using Clio.Common;
 using Clio.Common.Responses;
+using Clio.Package;
 
 namespace Clio.Command.EntitySchemaDesigner;
 
@@ -17,6 +19,10 @@ internal interface IRemoteEntitySchemaDesignerClient
 	SaveDesignItemDesignerResponse SaveSchema(EntityDesignSchemaDto schema, RemoteCommandOptions options);
 	BaseResponse SaveSchemaDbStructure(Guid schemaUId, RemoteCommandOptions options);
 	RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options);
+	IReadOnlyList<SystemValueLookupValueDto> GetSystemValues(Guid dataValueTypeUId, RemoteCommandOptions options);
+	IReadOnlyList<SysSettingsSelectQueryRowDto> GetSysSettingsByValueTypeName(
+		string valueTypeName,
+		RemoteCommandOptions options);
 }
 
 internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesignerClient
@@ -95,6 +101,41 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			},
 			options,
 			"GetRuntimeEntitySchema");
+	}
+
+	public IReadOnlyList<SystemValueLookupValueDto> GetSystemValues(Guid dataValueTypeUId, RemoteCommandOptions options) {
+		SystemValuesResponse response = Post<object, SystemValuesResponse>(
+			"GetSystemValues",
+			new {
+				dataValueTypeUId
+			},
+			options);
+		return response.Items ?? [];
+	}
+
+	public IReadOnlyList<SysSettingsSelectQueryRowDto> GetSysSettingsByValueTypeName(
+		string valueTypeName,
+		RemoteCommandOptions options) {
+		object query = SelectQueryHelper.BuildSelectQuery(
+			"SysSettings",
+			[
+				new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Code", "Code"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("ValueTypeName", "ValueTypeName")
+			],
+			[
+				new SelectQueryHelper.SelectQueryFilterDefinition(
+					"ValueTypeName",
+					valueTypeName,
+					SelectQueryHelper.TextDataValueType)
+			]);
+		SysSettingsSelectQueryResponse response = PostToUrl<object, SysSettingsSelectQueryResponse>(
+			_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
+			query,
+			options,
+			"SelectQuery(SysSettings)");
+		return response.Rows ?? [];
 	}
 
 	private TResponse Post<TRequest, TResponse>(string methodName, TRequest request, RemoteCommandOptions options)

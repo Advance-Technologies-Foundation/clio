@@ -51,12 +51,16 @@ public interface IRemoteEntitySchemaColumnManager
 internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColumnManager
 {
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
+	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
 	private readonly ILogger _logger;
 
 	public RemoteEntitySchemaColumnManager(IApplicationPackageListProvider applicationPackageListProvider,
-		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient, ILogger logger) {
+		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
+		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
+		ILogger logger) {
 		_applicationPackageListProvider = applicationPackageListProvider;
+		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_logger = logger;
 	}
@@ -267,7 +271,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			CascadeConnection = options.Cascade ?? false,
 			DoNotControlIntegrity = options.DoNotControlIntegrity ?? false
 		};
-		ApplyDefaultValue(column, options, preserveWhenUnspecified: false);
+		ApplyDefaultValue(column, options, preserveWhenUnspecified: false, options);
 
 		if (dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"]) {
 			ManagerItemDto referenceSchema = ResolveReferenceSchema(package.Descriptor.UId, options.ReferenceSchemaName,
@@ -332,7 +336,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (options.TrackChanges.HasValue) {
 			column.IsTrackChangesInDB = options.TrackChanges.Value;
 		}
-		ApplyDefaultValue(column, options, preserveWhenUnspecified: true);
+		ApplyDefaultValue(column, options, preserveWhenUnspecified: true, options);
 		if (options.MultilineText.HasValue) {
 			column.MultiLineText = options.MultilineText.Value;
 		}
@@ -420,7 +424,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		ValidateTextOptions(options, dataValueType);
 		ValidateMaskedOption(options, dataValueType);
 		ValidateDateTimeOptions(options, dataValueType);
-		ValidateDefaultValueOptions(options, dataValueType);
+		ValidateDefaultValueOptions(options, dataValueType, options);
 	}
 
 	private static void ValidateLookupOptions(
@@ -481,7 +485,10 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 	}
 
-	private static void ValidateDefaultValueOptions(ModifyEntitySchemaColumnOptions options, int dataValueType) {
+	private void ValidateDefaultValueOptions(
+		ModifyEntitySchemaColumnOptions options,
+		int dataValueType,
+		RemoteCommandOptions remoteOptions) {
 		if (UsesUnsupportedLegacyBinaryDefaultValue(options, dataValueType)) {
 			throw new EntitySchemaDesignerException(
 				$"Type '{EntitySchemaDesignerSupport.GetFriendlyTypeName(dataValueType)}' does not support --default-value or --default-value-source Const.");
@@ -491,6 +498,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			options.DefaultValueSource,
 			options.DefaultValue,
 			$"Column '{options.ColumnName}'");
+		if (defaultValueConfig != null) {
+			defaultValueConfig = _defaultValueSourceResolver.Resolve(
+				defaultValueConfig,
+				dataValueType,
+				$"Column '{options.ColumnName}'",
+				remoteOptions);
+		}
 		EntitySchemaDesignerSupport.ValidateDefaultValueConfig(defaultValueConfig, dataValueType,
 			$"Column '{options.ColumnName}'");
 	}
@@ -652,10 +666,11 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		return requirementType != (int)EntitySchemaColumnRequirementType.None;
 	}
 
-	private static void ApplyDefaultValue(
+	private void ApplyDefaultValue(
 		EntitySchemaColumnDto column,
 		ModifyEntitySchemaColumnOptions options,
-		bool preserveWhenUnspecified) {
+		bool preserveWhenUnspecified,
+		RemoteCommandOptions remoteOptions) {
 		EntitySchemaDefaultValueConfig? defaultValueConfig = EntitySchemaDesignerSupport.ResolveDefaultValueConfig(
 			options.DefaultValueConfig,
 			options.DefaultValueSource,
@@ -675,6 +690,11 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.DefValue = null;
 			return;
 		}
+		defaultValueConfig = _defaultValueSourceResolver.Resolve(
+			defaultValueConfig,
+			column.DataValueType ?? 0,
+			$"Column '{options.ColumnName}'",
+			remoteOptions);
 		column.DefValue = EntitySchemaDesignerSupport.CreateDefaultValueDto(defaultValueConfig,
 			$"Column '{options.ColumnName}'");
 	}

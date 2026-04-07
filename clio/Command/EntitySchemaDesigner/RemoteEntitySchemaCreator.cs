@@ -22,6 +22,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	#region Fields: Private
 
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
+	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
 	private readonly ILogger _logger;
 
@@ -78,9 +79,11 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 	public RemoteEntitySchemaCreator(
 		IApplicationPackageListProvider applicationPackageListProvider,
+		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
 		ILogger logger) {
 		_applicationPackageListProvider = applicationPackageListProvider;
+		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_logger = logger;
 	}
@@ -107,14 +110,15 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			: new Dictionary<string, ManagerItemDto>(StringComparer.OrdinalIgnoreCase);
 		List<EntitySchemaColumnDto> columns = schema.Columns.ToList();
 		foreach (ParsedColumn parsedColumn in parsedColumns) {
-			columns.Add(CreateColumn(parsedColumn, referenceSchemas, cultureName));
+			columns.Add(CreateColumn(parsedColumn, referenceSchemas, cultureName, options));
 		}
 
 		if (!schema.ParentSchema.HasValue() && columns.All(column => !column.IsGuidType())) {
 			columns.Insert(0, CreateColumn(
 				new ParsedColumn("Id", "guid", "Id", null, null, null, null, null, null, null),
 				referenceSchemas,
-				cultureName));
+				cultureName,
+				options));
 		}
 
 		schema.Columns = columns;
@@ -150,7 +154,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		return response.Schema ?? throw new InvalidOperationException("AssignParentSchema returned no schema.");
 	}
 
-	private static void ApplyDefaultValue(EntitySchemaColumnDto column, ParsedColumn parsedColumn) {
+	private void ApplyDefaultValue(EntitySchemaColumnDto column, ParsedColumn parsedColumn, CreateEntitySchemaOptions options) {
 		EntitySchemaDefaultValueConfig? defaultValueConfig = EntitySchemaDesignerSupport.ResolveDefaultValueConfig(
 			parsedColumn.DefaultValueConfig,
 			parsedColumn.DefaultValueSource,
@@ -167,6 +171,11 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			column.DefValue = null;
 			return;
 		}
+		defaultValueConfig = _defaultValueSourceResolver.Resolve(
+			defaultValueConfig,
+			column.DataValueType ?? 0,
+			$"Column '{parsedColumn.Name}'",
+			options);
 		column.DefValue = EntitySchemaDesignerSupport.CreateDefaultValueDto(defaultValueConfig,
 			$"Column '{parsedColumn.Name}'");
 	}
@@ -183,12 +192,13 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	private EntitySchemaColumnDto CreateColumn(
 		ParsedColumn parsedColumn,
 		IReadOnlyDictionary<string, ManagerItemDto> referenceSchemas,
-		string cultureName) {
+		string cultureName,
+		CreateEntitySchemaOptions options) {
 		if (!EntitySchemaDesignerSupport.TryResolveDataValueType(parsedColumn.Type, out int dataValueType)) {
 			throw new InvalidOperationException(
 				$"Column type '{parsedColumn.Type}' is not supported. Supported types: {GetSupportedTypesList()}.");
 		}
-		ValidateDefaultValue(parsedColumn, dataValueType);
+		ValidateDefaultValue(parsedColumn, dataValueType, options);
 		ValidateMaskedOption(parsedColumn, dataValueType);
 
 		EntitySchemaColumnDto column = new() {
@@ -204,7 +214,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			Masked = parsedColumn.Masked ?? false,
 			ValueMasked = parsedColumn.Masked ?? false
 		};
-		ApplyDefaultValue(column, parsedColumn);
+		ApplyDefaultValue(column, parsedColumn, options);
 		if (parsedColumn.IsLookup) {
 			if (!referenceSchemas.TryGetValue(parsedColumn.ReferenceSchemaName!, out ManagerItemDto referenceSchema)) {
 				throw new InvalidOperationException(
@@ -226,7 +236,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		return column;
 	}
 
-	private static void ValidateDefaultValue(ParsedColumn parsedColumn, int dataValueType) {
+	private void ValidateDefaultValue(ParsedColumn parsedColumn, int dataValueType, CreateEntitySchemaOptions options) {
 		if (UsesUnsupportedLegacyBinaryDefaultValue(parsedColumn, dataValueType)) {
 			throw new InvalidOperationException(
 				$"Column '{parsedColumn.Name}' of type '{EntitySchemaDesignerSupport.GetFriendlyTypeName(dataValueType)}' does not support default-value or default-value-source Const.");
@@ -236,6 +246,13 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			parsedColumn.DefaultValueSource,
 			parsedColumn.DefaultValue,
 			$"Column '{parsedColumn.Name}'");
+		if (defaultValueConfig != null) {
+			defaultValueConfig = _defaultValueSourceResolver.Resolve(
+				defaultValueConfig,
+				dataValueType,
+				$"Column '{parsedColumn.Name}'",
+				options);
+		}
 		EntitySchemaDesignerSupport.ValidateDefaultValueConfig(defaultValueConfig, dataValueType,
 			$"Column '{parsedColumn.Name}'");
 	}

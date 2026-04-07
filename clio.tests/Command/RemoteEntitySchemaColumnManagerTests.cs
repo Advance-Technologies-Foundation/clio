@@ -22,6 +22,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	private static readonly Guid CodeColumnUId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
 	private IApplicationPackageListProvider _packageListProvider;
+	private IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private IRemoteEntitySchemaDesignerClient _designerClient;
 	private ILogger _logger;
 	private RemoteEntitySchemaColumnManager _manager;
@@ -31,6 +32,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	[SetUp]
 	public void Setup() {
 		_packageListProvider = Substitute.For<IApplicationPackageListProvider>();
+		_defaultValueSourceResolver = Substitute.For<IEntitySchemaDefaultValueSourceResolver>();
 		_designerClient = Substitute.For<IRemoteEntitySchemaDesignerClient>();
 		_logger = Substitute.For<ILogger>();
 		_savedSchema = null;
@@ -72,7 +74,27 @@ internal class RemoteEntitySchemaColumnManagerTests
 					}
 				]
 			});
-		_manager = new RemoteEntitySchemaColumnManager(_packageListProvider, _designerClient, _logger);
+		_designerClient.GetSystemValues(Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>())
+			.Returns(new[] {
+				new SystemValueLookupValueDto {
+					Value = Guid.Parse("d7c295d3-3146-4ee1-ac49-3a7bd0edc45d"),
+					DisplayValue = "Current Time and Date"
+				}
+			});
+		_defaultValueSourceResolver
+			.Resolve(Arg.Any<EntitySchemaDefaultValueConfig>(), Arg.Any<int>(), Arg.Any<string>(),
+				Arg.Any<RemoteCommandOptions>())
+			.Returns(callInfo =>
+				new EntitySchemaDefaultValueSourceResolver(_designerClient).Resolve(
+					callInfo.ArgAt<EntitySchemaDefaultValueConfig>(0),
+					callInfo.ArgAt<int>(1),
+					callInfo.ArgAt<string>(2),
+					callInfo.ArgAt<RemoteCommandOptions>(3)));
+		_manager = new RemoteEntitySchemaColumnManager(
+			_packageListProvider,
+			_defaultValueSourceResolver,
+			_designerClient,
+			_logger);
 	}
 
 	[Test]
@@ -484,6 +506,33 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Returns additive resolved-value-source metadata for system-value defaults in structured readback.")]
+	public void GetColumnProperties_ReturnsResolvedValueSource_ForSystemValueDefault() {
+		// Arrange
+		EntitySchemaColumnDto startDateColumn = CreateTextColumn("UsrStartDate", NameColumnUId);
+		startDateColumn.DataValueType = 7;
+		startDateColumn.DefValue = new EntitySchemaColumnDefValueDto {
+			ValueSourceType = EntitySchemaColumnDefSource.SystemValue,
+			ValueSource = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d"
+		};
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), startDateColumn]);
+		SetupLoadedSchema();
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(new GetEntitySchemaColumnPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ColumnName = "UsrStartDate"
+		});
+
+		// Assert
+		result.DefaultValueConfig.Should().NotBeNull(
+			because: "system-value defaults should produce structured default-value-config metadata");
+		result.DefaultValueConfig!.ResolvedValueSource.Should().Be("d7c295d3-3146-4ee1-ac49-3a7bd0edc45d",
+			because: "readback should include the stable resolved identifier alongside value-source");
+	}
+
+	[Test]
 	[Description("Clears a saved default value when modify requests default-value-source none without requiring other field changes.")]
 	public void ModifyColumn_ClearsDefaultValue_WhenDefaultValueSourceIsNone() {
 		// Arrange
@@ -539,8 +588,48 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "structured default value configs should create designer default value metadata");
 		savedColumn.DefValue!.ValueSourceType.Should().Be(EntitySchemaColumnDefSource.SystemValue,
 			because: "the structured config source should map to the designer system-value source");
-		savedColumn.DefValue.ValueSource.Should().Be("CurrentDateTime",
-			because: "the structured config value-source should be preserved");
+		savedColumn.DefValue.ValueSource.Should().Be("d7c295d3-3146-4ee1-ac49-3a7bd0edc45d",
+			because: "the structured config value-source should be normalized to the canonical GUID");
+	}
+
+	[Test]
+	[Description("Normalizes Settings defaults from setting names to canonical setting codes when modifying columns.")]
+	public void ModifyColumn_AppliesStructuredSettingsDefaultValueConfig_UsingCanonicalCode() {
+		// Arrange
+		EntitySchemaColumnDto titleColumn = CreateTextColumn("UsrTitle", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), titleColumn]);
+		SetupLoadedSchema();
+		_designerClient.GetSysSettingsByValueTypeName("Text", Arg.Any<RemoteCommandOptions>())
+			.Returns(new[] {
+				new SysSettingsSelectQueryRowDto {
+					Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+					Code = "UsrDefaultTitle",
+					Name = "Default Title",
+					ValueTypeName = "Text"
+				}
+			});
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "UsrTitle",
+			DefaultValueConfig = new EntitySchemaDefaultValueConfig {
+				Source = "Settings",
+				ValueSource = "Default Title"
+			}
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrTitle");
+		savedColumn.DefValue.Should().NotBeNull(
+			because: "structured settings defaults should create designer default value metadata");
+		savedColumn.DefValue!.ValueSourceType.Should().Be(EntitySchemaColumnDefSource.Settings,
+			because: "the structured config source should map to the designer settings source");
+		savedColumn.DefValue.ValueSource.Should().Be("UsrDefaultTitle",
+			because: "settings defaults should be normalized to canonical setting codes");
 	}
 
 	[Test]

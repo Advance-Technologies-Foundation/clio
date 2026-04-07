@@ -1858,3 +1858,25 @@ Context: Skill files hadn't been updated since b042f984 (2026-03-30); many new c
 Decision: Added 19 missing command sections to commands-reference.md and 3 new workflow sections to SKILL.md; fixed stale publish-workspace→publish-app and env-ui alias references.
 Files: .github/skills/clio/references/commands-reference.md, .github/skills/clio/SKILL.md
 Impact: Skill now covers entity schema management, Freedom UI page management, data bindings, delete-schema, add-user-task, modify-user-task-parameters, externalLink; commands-reference.md grew from 908 to 1153 lines.
+
+## 2026-04-06 19:45 – Normalize entity default sources for SystemValue/Settings
+Context: Clio MCP did not consistently persist object-column defaults when callers provided friendly System variable or System setting identifiers; behavior needed to match Entity Schema Designer backend contracts.
+Decision: Added a shared default-value source resolver in entity schema create/modify flows, backed by designer/DataService endpoints (`GetSystemValues`, `SysSettings SelectQuery`) and canonical normalization rules (`SystemValue -> Guid`, `Settings -> Code`) with deterministic ambiguity failures.
+Discovery: The reliability gap was in command-layer normalization rather than MCP mapping alone; fixing only MCP wrappers would still leave non-MCP command paths inconsistent. Structured readback required an additive canonical field (`resolved-value-source`) so clients can rely on stable persisted identifiers.
+Files: clio/Command/EntitySchemaDesigner/EntitySchemaDefaultValueSourceResolver.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaDesignerClient.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDesignerSupport.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDefaultValueConfig.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDesignerDtos.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, clio.tests/Command/EntitySchemaDefaultValueSourceResolverTests.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio/help/en/create-entity-schema.txt, clio/help/en/modify-entity-schema-column.txt, clio/help/en/update-entity-schema.txt, clio/help/en/get-entity-schema-column-properties.txt, clio/docs/commands/create-entity-schema.md, clio/docs/commands/modify-entity-schema-column.md, clio/docs/commands/update-entity-schema.md, clio/docs/commands/get-entity-schema-column-properties.md, .github/skills/clio/references/commands-reference.md, .github/skills/clio/SKILL.md, .codex/workspace-diary.md
+Impact: Entity schema default persistence is now stable across create/modify/update paths with backend-canonical identifiers, MCP consumers can read canonical values directly, and command/skill docs now describe accepted input forms and normalization behavior.
+
+## 2026-04-06 20:20 – Fix SystemValue runtime type UId mapping for entity-schema defaults
+Context: Review flagged a blocker: SystemValue resolution used process-model runtime type mapping (`DataValueTypeMap.FromRuntimeValueType`) which mismatches entity-schema runtime ids.
+Decision: Switched resolver to entity-schema-specific mapping (`EntitySchemaDesignerSupport.GetDataValueTypeUIdForRuntimeType`) and added explicit runtime->UId map in entity-schema layer; removed process-model map dependency from resolver.
+Discovery: Runtime id `30` must map to LongText UId (not RichText), and runtime id `50` (Currency3) must be supported for SystemValue lookups using currency UId.
+Files: clio/Command/EntitySchemaDesigner/EntitySchemaDefaultValueSourceResolver.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDesignerSupport.cs, clio.tests/Command/EntitySchemaDefaultValueSourceResolverTests.cs, .codex/workspace-diary.md
+Impact: GetSystemValues queries now use correct entity-schema dataValueType UIds, preventing false unsupported-type errors and wrong SystemValue resolution for valid column types.
+
+## 2026-04-07 10:10 – Fix ambiguous Settings code error path
+Context: Session review found confusing validation output when a Settings default was provided by code (`SiteUrl`) but multiple rows shared that code.
+Decision: Updated settings resolution logic to treat duplicate code matches as a direct ambiguity error (`matched multiple setting code values`) instead of falling back to name resolution.
+Discovery: Previous flow used `TryResolveSingle` for code and silently switched to name lookup when more than one code match existed, producing misleading "setting name" errors.
+Files: clio/Command/EntitySchemaDesigner/EntitySchemaDefaultValueSourceResolver.cs, clio.tests/Command/EntitySchemaDefaultValueSourceResolverTests.cs, .codex/workspace-diary.md
+Impact: Operators now get correct diagnostics for ambiguous setting codes and can resolve with explicit setting id without confusion.
+

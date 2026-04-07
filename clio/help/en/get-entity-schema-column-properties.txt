@@ -37,6 +37,8 @@ NOTES
     - the report includes whether the column is own or inherited
     - the report includes default-value-source, default-value, and
       structured default-value-config
+    - default-value-config includes resolved-value-source for stable canonical
+      identifiers (SystemValue Guid, Settings code)
     - column type names are normalized to readable values such as Binary, Image, File, and ImageLookup
 
 REPORTING BUGS
