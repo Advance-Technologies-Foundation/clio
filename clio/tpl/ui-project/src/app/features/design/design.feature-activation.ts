@@ -13,6 +13,9 @@ function defineCustomElement(selector: string, component: Type<unknown>, injecto
   }
 }
 
+/**
+ * Initializes the design feature module, registers property panel custom elements.
+ */
 export async function activateDesignFeature(): Promise<void> {
   const moduleRef = await ensureFeatureModuleRef(DesignFeatureModule);
   const injector = moduleRef.injector;

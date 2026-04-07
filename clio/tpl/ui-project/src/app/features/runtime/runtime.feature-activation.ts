@@ -13,6 +13,9 @@ function defineCustomElement(selector: string, component: Type<unknown>, injecto
   }
 }
 
+/**
+ * Initializes the runtime feature module, registers its custom elements, and boots the Creatio runtime integration.
+ */
 export async function activateRuntimeFeature(): Promise<void> {
   const moduleRef = await ensureFeatureModuleRef(RuntimeFeatureModule);
   const injector = moduleRef.injector;

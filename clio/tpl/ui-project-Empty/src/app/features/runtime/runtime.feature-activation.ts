@@ -3,6 +3,9 @@ import { bootstrapCrtModule } from '@creatio-devkit/common';
 import { RuntimeFeatureModule } from './runtime-feature.module';
 import { ensureFeatureModuleRef } from '../../remote-app-context';
 
+/**
+ * Initializes the runtime feature module and boots the Creatio runtime integration.
+ */
 export async function activateRuntimeFeature(): Promise<void> {
   const moduleRef = await ensureFeatureModuleRef(RuntimeFeatureModule);
   /*

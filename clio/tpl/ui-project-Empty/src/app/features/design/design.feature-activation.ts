@@ -3,6 +3,9 @@ import { bootstrapCrtModule } from '@creatio-devkit/common';
 import { DesignFeatureModule } from './design-feature.module';
 import { ensureFeatureModuleRef } from '../../remote-app-context';
 
+/**
+ * Initializes the design feature module, registers property panel custom elements.
+ */
 export async function activateDesignFeature(): Promise<void> {
   const moduleRef = await ensureFeatureModuleRef(DesignFeatureModule);
   /*
