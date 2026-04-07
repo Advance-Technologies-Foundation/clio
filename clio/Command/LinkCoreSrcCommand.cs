@@ -168,8 +168,7 @@ public class LinkCoreSrcOptionsValidator : AbstractValidator<LinkCoreSrcOptions>
 			// Validate required files based on mode
 			if (options.Mode == CreatioMode.NetCore)
 			{
-				ValidateRequiredFilesInDirectories(coreWebHostDirs, targetFolder, options.CorePath, context,
-					"appsettings.json", "Terrasoft.WebHost.dll.config");
+				ValidateRequiredFilesInDirectories(coreWebHostDirs, targetFolder, options.CorePath, context, "Terrasoft.WebHost.dll.config");
 			}
 			else
 			{
@@ -381,21 +380,15 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		// Resolve core directory (must be unique)
 		string targetFolder = GetTargetFolderName(options.Mode);
 		string coreWebHostPath = options.Mode == CreatioMode.NetCore
-			? ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "appsettings.json", "Terrasoft.WebHost.dll.config")
+			? ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "Terrasoft.WebHost.dll.config")
 			: ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "Terrasoft.WebApp.Loader.dll");
-
-		// For NetCore, set IIS physical path to the WebHost directory (parent of bin)
-		// For NetFramework, use the Loader directory directly
-		string iisPhysicalPath = options.Mode == CreatioMode.NetCore
-			? Path.GetDirectoryName(coreWebHostPath)
-			: coreWebHostPath;
 
 		(int code, string message) = _mediator.Send(new UpdateIISSitePhysicalPathRequest()
 			{
 				Arguments = new Dictionary<string, string>()
 				{
 					{"siteName", options.Environment},
-					{"physicalPath", iisPhysicalPath}
+					{"physicalPath", coreWebHostPath}
 				}
 			}).Result.Value switch
 			{
@@ -493,6 +486,11 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 	private void ConfigurePortsInAppSettings(LinkCoreSrcOptions options, EnvironmentSettings env)
 	{
 		_logger.WriteInfo("\n[2/4] Configuring ports in appsettings.json...");
+		if (options.Mode != CreatioMode.NetCore)
+		{
+			_logger.WriteInfo($"{nameof(ConfigurePortsInAppSettings)} does not support NetCore mode");
+			return;
+		}
 
 		try
 		{
@@ -508,8 +506,9 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 
 			// Resolve core directory with appsettings.json
 			string targetFolder = GetTargetFolderName(options.Mode);
-			string coreWebHostPath = ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "appsettings.json");
-			string[] appSettingsFiles = _fileSystem.GetFiles(coreWebHostPath, "appsettings.json", SearchOption.AllDirectories);
+			string coreWebHostBinPath = ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "Terrasoft.WebHost.dll.config");
+			string webHostParentPath = Path.GetDirectoryName(coreWebHostBinPath);
+			string[] appSettingsFiles = _fileSystem.GetFiles(webHostParentPath, "appsettings.json", SearchOption.AllDirectories);
 
 			string appSettingsPath = appSettingsFiles[0];
 			_logger.WriteInfo($"  Processing: {appSettingsPath}");
@@ -625,6 +624,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 	private string ResolveCoreDirectory(string corePath, string targetFolder, CreatioMode mode, params string[] requiredFiles)
 	{
 		var coreBinDirs = GetCoreBinDirectories(corePath, targetFolder, mode).ToList();
+		_logger.WriteInfo($"Found {coreBinDirs.Count} {targetFolder} bin directories: {string.Join(", ", coreBinDirs)}");
 		if (!coreBinDirs.Any())
 		{
 			throw new Exception($"{targetFolder} binariess directory not found in core: {corePath}");
@@ -746,19 +746,13 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			// Resolve core directory (must be unique)
 			string targetFolder = GetTargetFolderName(options.Mode);
 			string coreWebHostPath = options.Mode == CreatioMode.NetCore
-				? ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "appsettings.json", "Terrasoft.WebHost.dll.config")
+				? ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "Terrasoft.WebHost.dll.config")
 				: ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "Terrasoft.WebApp.Loader.dll");
 
-			// For NetCore, set environment path to the WebHost directory (parent of bin)
-			// For NetFramework, keep as the Loader directory
-			string environmentPath = options.Mode == CreatioMode.NetCore
-				? Path.GetDirectoryName(coreWebHostPath)
-				: coreWebHostPath;
-
 			// Update environment configuration with core path
-			env.EnvironmentPath = environmentPath;
+			env.EnvironmentPath = coreWebHostPath;
 			_settingsRepository.ConfigureEnvironment(options.Environment, env);
-			_logger.WriteInfo($"  ✓ Environment configuration updated with core path: {environmentPath}");
+			_logger.WriteInfo($"  ✓ Environment configuration updated with core path: {coreWebHostPath}");
 		}
 		catch (Exception ex)
 		{
