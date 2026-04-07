@@ -65,7 +65,10 @@ EXAMPLES
     clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --column "{\"name\":\"Status\",\"type\":\"ShortText\",\"title\":\"Status\",\"required\":true,\"default-value-source\":\"Const\",\"default-value\":\"Draft\"}"
 
     # Create a column with structured default-value-config metadata
-    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --column "{\"name\":\"UsrStartDate\",\"type\":\"DateTime\",\"title\":\"Start date\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
+    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --column "{\"name\":\"UsrStartDate\",\"type\":\"DateTime\",\"title\":\"Start date\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"Current Time and Date\"}}"
+
+    # Create a column with system setting default (name/code/id accepted)
+    clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --column "{\"name\":\"UsrOwner\",\"type\":\"Lookup\",\"title\":\"Owner\",\"reference-schema-name\":\"Contact\",\"default-value-config\":{\"source\":\"Settings\",\"value-source\":\"Maintainer\"}}"
 
     # Create a schema inheriting from a parent schema
     clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --parent BaseEntity
@@ -80,6 +83,14 @@ NOTES
     - If no display column is set, the first text-like column is used as primary display column
     - Prefer default-value-config for Settings, SystemValue, or Sequence; keep
       default-value-source/default-value as shorthand only for Const and None
+    - For default-value-config source=SystemValue:
+      value-source can be Guid, enum alias (for example CurrentDateTime), or caption
+      (for example Current Time and Date); values are normalized to Guid before save
+    - For default-value-config source=Settings:
+      value-source can be setting code, setting name, or setting id; values are
+      normalized to setting code before save
+    - If Settings or SystemValue lookup is ambiguous, the command fails with a
+      validation error and requests explicit code/Guid input
     - Binary, Image, and File columns do not support --default-value or --default-value-source Const
     - After save, the schema is reloaded immediately; save is treated as failed if the schema cannot be read back
     - Schema names longer than 22 characters are rejected before the server call

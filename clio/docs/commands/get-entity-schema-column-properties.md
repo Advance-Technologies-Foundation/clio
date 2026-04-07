@@ -52,6 +52,8 @@ clio get-entity-schema-column-properties -e dev --package Custom --schema-name U
 - the report includes whether the column is own or inherited
 - the report includes default-value-source, default-value, and
 structured default-value-config
+- structured default-value-config includes `resolved-value-source` for canonical
+  identifiers (`SystemValue` Guid, `Settings` code)
 - column type names are normalized to readable values such as Binary, Image, File, and ImageLookup
 
 ## Reporting Bugs

@@ -26,6 +26,8 @@ namespace Clio.Mcp.E2E;
 [AllureFeature("entity-schema")]
 [NonParallelizable]
 public sealed class EntitySchemaToolE2ETests {
+	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
+	private const string MaintainerSettingCode = "Maintainer";
 	private const string CreateToolName = CreateEntitySchemaTool.CreateEntitySchemaToolName;
 	private const string CreateLookupToolName = CreateLookupTool.CreateLookupToolName;
 	private const string UpdateToolName = UpdateEntitySchemaTool.UpdateEntitySchemaToolName;
@@ -196,6 +198,35 @@ public sealed class EntitySchemaToolE2ETests {
 		AssertIncludesInfoMessage(addResult,
 			"successful structured default mutations should emit progress output");
 		AssertStructuredSystemValueColumnProperties(columnProperties, arrangeContext.SchemaName, startDateColumnName, "Start date");
+	}
+
+	[Test]
+	[Description("Applies a structured settings default through modify-entity-schema-column and verifies canonical setting code readback metadata.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(ModifyToolName)]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("Modify entity schema column applies structured settings defaults")]
+	[AllureDescription("Creates a sandbox entity schema through the real MCP server, adds a Text column with default-value-config source Settings, and verifies structured readback exposes canonical setting-code metadata.")]
+	public async Task ModifyEntitySchemaColumn_Should_Apply_Structured_Settings_Default_And_Read_Back_Canonical_Code() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string titleColumnName = "UsrTitle";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope addResult = await ActAddTextColumnWithStructuredSettingsDefaultAsync(arrangeContext, titleColumnName);
+		EntitySchemaColumnPropertiesInfo columnProperties = await ActGetColumnPropertiesAsync(arrangeContext, titleColumnName);
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"the schema must exist before structured settings default mutations can add the new Text column");
+		AssertIncludesInfoMessage(createResult,
+			"successful schema creation should emit progress output before the structured settings mutation");
+		AssertCommandSucceeded(addResult,
+			"modify-entity-schema-column should succeed when adding a Text column with a settings default");
+		AssertIncludesInfoMessage(addResult,
+			"successful structured settings mutations should emit progress output");
+		AssertStructuredSettingsColumnProperties(columnProperties, arrangeContext.SchemaName, titleColumnName, "Title");
 	}
 
 	[Test]
@@ -557,7 +588,25 @@ public sealed class EntitySchemaToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token,
 			type: "DateTime",
 			titleLocalizations: BuildLocalizations("Start date"),
-			defaultValueConfig: BuildSystemValueDefaultValueConfig("CurrentDateTime"));
+			defaultValueConfig: BuildSystemValueDefaultValueConfig("Current Time and Date"));
+		return McpCommandExecutionParser.Extract(callResult);
+	}
+
+	[AllureStep("Act by invoking modify-entity-schema-column through MCP for a structured settings default")]
+	private static async Task<CommandExecutionEnvelope> ActAddTextColumnWithStructuredSettingsDefaultAsync(
+		EntitySchemaArrangeContext arrangeContext,
+		string columnName) {
+		CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName,
+			"add",
+			columnName,
+			arrangeContext.CancellationTokenSource.Token,
+			type: "Text",
+			titleLocalizations: BuildLocalizations("Title"),
+			defaultValueConfig: BuildSettingsDefaultValueConfig(MaintainerSettingCode));
 		return McpCommandExecutionParser.Extract(callResult);
 	}
 
@@ -894,14 +943,16 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the structured result should preserve the added DateTime column title");
 		properties.DefaultValueSource.Should().Be("SystemValue",
 			because: "legacy summary fields should still surface the resolved system-value source");
-		properties.DefaultValue.Should().Be("CurrentDateTime",
-			because: "legacy summary fields should expose the resolved system value name");
+		properties.DefaultValue.Should().Be(CurrentDateTimeSystemValueUId,
+			because: "legacy summary fields should expose the canonical resolved system value guid");
 		properties.DefaultValueConfig.Should().NotBeNull(
 			because: "structured column readback should expose default-value-config metadata for system-value defaults");
 		properties.DefaultValueConfig!.Source.Should().Be("SystemValue",
 			because: "the structured default value config should preserve the resolved system-value source");
-		properties.DefaultValueConfig.ValueSource.Should().Be("CurrentDateTime",
-			because: "the structured default value config should preserve the system value name");
+		properties.DefaultValueConfig.ValueSource.Should().Be(CurrentDateTimeSystemValueUId,
+			because: "the structured default value config should preserve the canonical system value guid");
+		properties.DefaultValueConfig.ResolvedValueSource.Should().Be(CurrentDateTimeSystemValueUId,
+			because: "structured default value readback should include the additive resolved-value-source field");
 		properties.DefaultValueConfig.Value.Should().BeNull(
 			because: "system-value defaults should not project a constant payload");
 	}
@@ -922,6 +973,36 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the structured result should preserve the masked column title");
 		properties.Masked.Should().BeTrue(
 			because: "create-entity-schema should forward masked=true through the MCP contract and persist it remotely");
+	}
+
+	[AllureStep("Assert structured settings column properties")]
+	private static void AssertStructuredSettingsColumnProperties(
+		EntitySchemaColumnPropertiesInfo properties,
+		string schemaName,
+		string columnName,
+		string title) {
+		properties.SchemaName.Should().Be(schemaName,
+			because: "the structured result should identify the schema that received the settings default");
+		properties.ColumnName.Should().Be(columnName,
+			because: "the structured result should identify the Text column that received the settings default");
+		properties.Source.Should().Be("own",
+			because: "columns added through modify-entity-schema-column should be reported as own columns");
+		properties.Type.Should().Be("Text",
+			because: "the structured result should preserve the requested Text column type");
+		properties.Title.Should().Be(title,
+			because: "the structured result should preserve the added Text column title");
+		properties.DefaultValueSource.Should().Be("Settings",
+			because: "legacy summary fields should surface the resolved settings source");
+		properties.DefaultValue.Should().Be(MaintainerSettingCode,
+			because: "legacy summary fields should expose canonical setting code values");
+		properties.DefaultValueConfig.Should().NotBeNull(
+			because: "structured column readback should expose default-value-config metadata for settings defaults");
+		properties.DefaultValueConfig!.Source.Should().Be("Settings",
+			because: "the structured default value config should preserve the resolved settings source");
+		properties.DefaultValueConfig.ValueSource.Should().Be(MaintainerSettingCode,
+			because: "the structured default value config should preserve canonical setting code values");
+		properties.DefaultValueConfig.ResolvedValueSource.Should().Be(MaintainerSettingCode,
+			because: "structured default value readback should include additive resolved-value-source metadata");
 	}
 
 	[AllureStep("Assert schema properties include Binary, Image, and File columns")]
@@ -1025,6 +1106,13 @@ public sealed class EntitySchemaToolE2ETests {
 	private static Dictionary<string, object?> BuildSystemValueDefaultValueConfig(string valueSource) {
 		return new Dictionary<string, object?> {
 			["source"] = "SystemValue",
+			["value-source"] = valueSource
+		};
+	}
+
+	private static Dictionary<string, object?> BuildSettingsDefaultValueConfig(string valueSource) {
+		return new Dictionary<string, object?> {
+			["source"] = "Settings",
 			["value-source"] = valueSource
 		};
 	}

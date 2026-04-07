@@ -932,8 +932,22 @@ clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle
 # Replacement schema (extend parent)
 clio create-entity-schema --package MyPackage --name UsrAccount --parent Account \
   --extend-parent --title "Extended Account" -e <ENV>
+
+# SystemValue default from friendly caption (normalized to Guid)
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" \
+  --column '{"name":"UsrStartDate","type":"DateTime","title":"Start date","default-value-config":{"source":"SystemValue","value-source":"Current Time and Date"}}' \
+  -e <ENV>
+
+# Settings default from name/code/id (normalized to setting code)
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" \
+  --column '{"name":"UsrOwner","type":"Lookup","title":"Owner","reference-schema-name":"Contact","default-value-config":{"source":"Settings","value-source":"Maintainer"}}' \
+  -e <ENV>
 ```
 Options: `--package` (required), `--name` (required), `--title` (required), `--parent`, `--extend-parent`, `--column` (repeatable, format: `name:type[:title[:refSchema]]` or JSON), `--timeout`
+Default resolution:
+- `default-value-config.source = SystemValue` accepts Guid, alias, or caption and persists canonical Guid.
+- `default-value-config.source = Settings` accepts code, name, or id and persists canonical setting code.
+- Ambiguous matches fail with explicit disambiguation guidance.
 
 ### get-entity-schema-properties
 Get a human-readable summary of a remote Creatio entity schema.
@@ -952,6 +966,7 @@ clio get-entity-schema-column-properties -e dev --package Custom --schema-name U
 clio get-entity-schema-column-properties -e dev --package Custom --schema-name UsrVehicle --column-name Owner
 ```
 Output includes: own/inherited flag, type, default-value-source, default-value, default-value-config.
+`default-value-config` also includes `resolved-value-source` for canonical identifiers (`SystemValue` Guid, `Settings` code).
 
 ### modify-entity-schema-column
 Add, modify, or remove a column in a remote Creatio entity schema. Requires cliogate.
@@ -974,6 +989,11 @@ clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle \
   --action remove --column-name ObsoleteField -e <ENV>
 ```
 Options: `--package` (required), `--schema-name` (required), `--action` add|modify|remove (required), `--column-name` (required), `--new-name`, `--type`, `--title`, `--description`, `--reference-schema`, `--required`, `--indexed`, `--cloneable`, `--track-changes`, `--default-value`, `--default-value-source`, `--masked`, `--timeout`
+Default resolution:
+- CLI flags `--default-value-source/--default-value` remain shorthand for `Const` and `None`.
+- MCP `default-value-config.source = SystemValue` accepts Guid, alias, or caption and persists canonical Guid.
+- MCP `default-value-config.source = Settings` accepts code, name, or id and persists canonical setting code.
+- Ambiguous matches fail with explicit disambiguation guidance.
 
 ### update-entity-schema
 Apply batch column operations to a remote Creatio entity schema. Requires cliogate.
@@ -982,8 +1002,22 @@ clio update-entity-schema --package MyPackage --schema-name UsrVehicle \
   --operation '{"action":"add","columnName":"Make","type":"ShortText"}' \
   --operation '{"action":"add","columnName":"Year","type":"Integer"}' \
   -e <ENV>
+
+# SystemValue default from friendly caption (normalized to Guid)
+clio update-entity-schema --package MyPackage --schema-name UsrVehicle \
+  --operation '{"action":"modify","column-name":"UsrStartDate","default-value-config":{"source":"SystemValue","value-source":"Current Time and Date"}}' \
+  -e <ENV>
+
+# Settings default from name/code/id (normalized to setting code)
+clio update-entity-schema --package MyPackage --schema-name UsrVehicle \
+  --operation '{"action":"modify","column-name":"UsrOwner","default-value-config":{"source":"Settings","value-source":"Maintainer"}}' \
+  -e <ENV>
 ```
 Options: `--package` (required), `--schema-name` (required), `--operation` JSON (repeatable, required), `--timeout`
+Default resolution:
+- `default-value-config.source = SystemValue` accepts Guid, alias, or caption and persists canonical Guid.
+- `default-value-config.source = Settings` accepts code, name, or id and persists canonical setting code.
+- Ambiguous matches fail with explicit disambiguation guidance.
 
 ---
 

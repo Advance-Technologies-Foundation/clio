@@ -34,7 +34,7 @@ Parent schema name
 Create replacement schema
 --column <VALUE>
 Column spec <name>:<type>[:<title>[:<refSchema>]] or JSON with
-name/type/title/reference-schema-name/required/default-value-source/default-value.
+name/type/title/reference-schema-name/required/default-value-source/default-value/default-value-config.
 Repeat the option for multiple columns
 --timeout <NUMBER>
 Request timeout in milliseconds. Default: 100000.
@@ -94,6 +94,12 @@ Path to the application root folder
 ## Requirements
 
 cliogate must be installed on the target Creatio environment.
+
+## Notes
+
+- `default-value-config` is recommended for non-constant sources.
+- For `default-value-config.source = SystemValue`, `value-source` can be Guid, alias, or caption; clio persists canonical Guid.
+- For `default-value-config.source = Settings`, `value-source` can be code, name, or id; clio persists canonical setting code.
 
 ## See also
 

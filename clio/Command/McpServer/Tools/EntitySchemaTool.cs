@@ -538,7 +538,7 @@ public sealed record CreateEntitySchemaColumnArgs(
 	/// Gets the structured default value metadata used for non-legacy default scenarios.
 	/// </summary>
 	[property: JsonPropertyName("default-value-config")]
-	[property: Description("Structured default value metadata. Use source None, Const, Settings, SystemValue, or Sequence for non-legacy scenarios.")]
+	[property: Description("Structured default value metadata. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID.")]
 	public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; init; }
 
 	[property: JsonPropertyName("masked")]
@@ -662,7 +662,7 @@ public abstract record ColumnModificationArgsBase(
 	/// Gets the structured default value metadata used for non-legacy mutation scenarios.
 	/// </summary>
 	[property: JsonPropertyName("default-value-config")]
-	[property: Description("Structured default value metadata. Use source None, Const, Settings, SystemValue, or Sequence for non-legacy scenarios.")]
+	[property: Description("Structured default value metadata. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID.")]
 	public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; init; }
 }
 

@@ -348,6 +348,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 				saveBody = body;
 				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
 			}
+			if (url.Contains("GetSystemValues", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"items\":[{\"displayValue\":\"Current Time and Date\",\"value\":\"d7c295d3-3146-4ee1-ac49-3a7bd0edc45d\"}]}";
+			}
 			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true}";
 			}
@@ -378,8 +381,61 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		JToken savedColumn = JObject.Parse(saveBody)["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrStartDate");
 		savedColumn["defValue"]!["valueSourceType"]!.Value<int>().Should().Be((int)Terrasoft.Core.Entities.EntitySchemaColumnDefSource.SystemValue,
 			because: "structured default-value-config should preserve non-legacy default sources");
-		savedColumn["defValue"]!["valueSource"]!.Value<string>().Should().Be("CurrentDateTime",
-			because: "structured default-value-config should preserve the requested system value name");
+		savedColumn["defValue"]!["valueSource"]!.Value<string>().Should().Be("d7c295d3-3146-4ee1-ac49-3a7bd0edc45d",
+			because: "structured default-value-config should persist the canonical system value guid");
+	}
+
+	[Test]
+	[Description("Normalizes structured Settings defaults from display names to canonical setting codes before save.")]
+	public void Create_CreatesSchema_WithStructuredSettingsDefault_UsingCanonicalCode() {
+		// Arrange
+		string saveBody = null;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SelectQuery", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"rows\":[{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Code\":\"UsrDefaultTitle\",\"Name\":\"Default Title\",\"ValueTypeName\":\"Text\"}]}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+		string structuredColumn = JsonSerializer.Serialize(new {
+			name = "UsrTitle",
+			type = "Text",
+			title = "Title",
+			default_value_config = new {
+				source = "Settings",
+				value_source = "Default Title"
+			}
+		}).Replace("default_value_config", "default-value-config").Replace("value_source", "value-source");
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = [structuredColumn]
+		});
+
+		// Assert
+		JToken savedColumn = JObject.Parse(saveBody)["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrTitle");
+		savedColumn["defValue"]!["valueSourceType"]!.Value<int>().Should().Be((int)Terrasoft.Core.Entities.EntitySchemaColumnDefSource.Settings,
+			because: "structured default-value-config should preserve Settings source metadata");
+		savedColumn["defValue"]!["valueSource"]!.Value<string>().Should().Be("UsrDefaultTitle",
+			because: "settings defaults must persist canonical setting codes after resolution");
 	}
 
 	[Test]

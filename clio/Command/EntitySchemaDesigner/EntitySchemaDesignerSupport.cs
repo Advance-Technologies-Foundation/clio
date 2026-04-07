@@ -83,6 +83,35 @@ internal static class EntitySchemaDesignerSupport
 		SupportedDataValueTypes[FileTypeName]
 	];
 
+	private static readonly IReadOnlyDictionary<int, Guid> RuntimeDataValueTypeUIdMap =
+		new Dictionary<int, Guid> {
+			[0] = new("{23018567-A13C-4320-8687-FD6F9E3699BD}"),  // Guid
+			[1] = new("{8B3F29BB-EA14-4CE5-A5C5-293A929B6BA2}"),  // Text
+			[4] = new("{6B6B74E2-820D-490E-A017-2B73D4CCF2B0}"),  // Integer
+			[6] = new("{969093E2-2B4E-463B-883A-3D3B8C61F0CD}"),  // Currency2
+			[7] = new("{D21E9EF4-C064-4012-B286-FA1A8171DA44}"),  // DateTime
+			[10] = new("{B295071F-7EA9-4E62-8D1A-919BF3732FF2}"), // Lookup
+			[12] = new("{90B65BF8-0FFC-4141-8779-2420877AF907}"), // Boolean
+			[24] = new("{3509B9DD-2C90-4540-B82E-8F6AE85D8248}"), // SecureText
+			[27] = new("{325A73B8-0F47-44A0-8412-7606F78003AC}"), // Text50
+			[28] = new("{DDB3A1EE-07E8-4D62-B7A9-D0E618B00FBD}"), // Text250
+			[29] = new("{C0F04627-4620-4BC0-84E5-9419DC8516B1}"), // TextUnlimited
+			[30] = new("{5CA35F10-A101-4C67-A96A-383DA6AFACFC}"), // Text500
+			[31] = new("{07BA84CE-0BF7-44B4-9F2C-7B15032EB98C}"), // Decimal1
+			[32] = new("{5CC8060D-6D10-4773-89FC-8C12D6F659A6}"), // Decimal2
+			[33] = new("{3F62414E-6C25-4182-BCEF-A73C9E396F31}"), // Decimal3
+			[34] = new("{FF22E049-4D16-46EE-A529-92D8808932DC}"), // Decimal4
+			[40] = new("{A4AAF398-3531-4A0D-9D75-A587F5B5B59E}"), // Decimal8
+			[42] = new("{26CBA63C-DAF1-4F36-B2EA-73C0D675D90C}"), // PhoneNumber
+			[43] = new("{79BCCFFA-8C8B-4863-B376-A69D2244182B}"), // RichText
+			[44] = new("{26CBA64C-DAF1-4F36-B2EA-73C0D695D90C}"), // WebLink
+			[45] = new("{66CBA64C-DAF1-4F36-B8EA-73C0D695D90C}"), // Email
+			[47] = new("{57EE4C31-5EC4-45FA-B95D-3A2868AA89A8}"), // Decimal0
+			[48] = new("{969093E2-2B4E-463B-883A-3D3B8C61F0CD}"), // Currency0
+			[49] = new("{969093E2-2B4E-463B-883A-3D3B8C61F0CD}"), // Currency1
+			[50] = new("{969093E2-2B4E-463B-883A-3D3B8C61F0CD}")  // Currency3
+		};
+
 	internal static string GetCurrentCultureName() {
 		string cultureName = CultureInfo.CurrentCulture.Name;
 		return string.IsNullOrWhiteSpace(cultureName) ? DefaultCultureName : cultureName;
@@ -289,6 +318,15 @@ internal static class EntitySchemaDesignerSupport
 		return BinaryLikeDataValueTypes.Contains(dataValueType);
 	}
 
+	internal static Guid GetDataValueTypeUIdForRuntimeType(int runtimeDataValueType) {
+		if (RuntimeDataValueTypeUIdMap.TryGetValue(runtimeDataValueType, out Guid dataValueTypeUId)) {
+			return dataValueTypeUId;
+		}
+
+		throw new EntitySchemaDesignerException(
+			$"Unsupported dataValueType '{runtimeDataValueType}' for default-value-config source SystemValue.");
+	}
+
 	internal static string GetFriendlyTypeName(int? dataValueType) {
 		if (dataValueType == null) {
 			return "<none>";
@@ -395,11 +433,13 @@ internal static class EntitySchemaDesignerSupport
 			},
 			EntitySchemaColumnDefSource.Settings => new EntitySchemaDefaultValueConfig {
 				Source = source,
-				ValueSource = NormalizeTextValue(defValue.ValueSource)
+				ValueSource = NormalizeTextValue(defValue.ValueSource),
+				ResolvedValueSource = NormalizeTextValue(defValue.ValueSource)
 			},
 			EntitySchemaColumnDefSource.SystemValue => new EntitySchemaDefaultValueConfig {
 				Source = source,
-				ValueSource = NormalizeTextValue(defValue.ValueSource)
+				ValueSource = NormalizeTextValue(defValue.ValueSource),
+				ResolvedValueSource = NormalizeTextValue(defValue.ValueSource)
 			},
 			EntitySchemaColumnDefSource.Sequence => new EntitySchemaDefaultValueConfig {
 				Source = source,

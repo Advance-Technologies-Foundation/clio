@@ -75,6 +75,42 @@ internal sealed class RuntimeEntitySchemaResponse : BaseResponse
 	public RuntimeEntitySchemaDto Schema { get; set; }
 }
 
+internal sealed class SystemValuesResponse : BaseResponse
+{
+	[JsonProperty("items")]
+	public SystemValueLookupValueDto[] Items { get; set; } = [];
+}
+
+internal sealed class SystemValueLookupValueDto
+{
+	[JsonProperty("value")]
+	public Guid Value { get; set; }
+
+	[JsonProperty("displayValue")]
+	public string DisplayValue { get; set; } = string.Empty;
+}
+
+internal sealed class SysSettingsSelectQueryResponse : BaseResponse
+{
+	[JsonProperty("rows")]
+	public SysSettingsSelectQueryRowDto[] Rows { get; set; } = [];
+}
+
+internal sealed class SysSettingsSelectQueryRowDto
+{
+	[JsonProperty("Id")]
+	public Guid Id { get; set; }
+
+	[JsonProperty("Code")]
+	public string Code { get; set; } = string.Empty;
+
+	[JsonProperty("Name")]
+	public string Name { get; set; } = string.Empty;
+
+	[JsonProperty("ValueTypeName")]
+	public string ValueTypeName { get; set; } = string.Empty;
+}
+
 internal sealed class RuntimeEntitySchemaDto
 {
 	[JsonProperty("uId")]

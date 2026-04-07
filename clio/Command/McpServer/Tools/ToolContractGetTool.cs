@@ -1126,7 +1126,7 @@ internal static class ToolContractCatalog {
 					Field("required", BooleanType, "Optional required flag."),
 					Field("default-value-source", StringType, "Legacy optional default source shorthand. Supports only Const or None."),
 					Field("default-value", StringType, "Legacy optional default value shorthand for Const."),
-					Field("default-value-config", ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence."))),
+					Field("default-value-config", ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
@@ -1158,7 +1158,7 @@ internal static class ToolContractCatalog {
 					[ColumnNameFieldName] = "UsrStartDate",
 					["default-value-config"] = new Dictionary<string, object?> {
 						["source"] = "SystemValue",
-						["value-source"] = "CurrentDateTime"
+						["value-source"] = "Current Time and Date"
 					}
 				})
 			],

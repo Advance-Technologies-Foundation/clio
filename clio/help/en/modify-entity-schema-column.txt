@@ -88,6 +88,14 @@ NOTES
     - MCP callers can also send structured default-value-config with source
       None, Const, Settings, SystemValue, or Sequence; direct CLI flags remain
       shorthand for Const and None
+    - For default-value-config source=SystemValue:
+      value-source can be Guid, enum alias, or caption; values are normalized
+      to Guid before save
+    - For default-value-config source=Settings:
+      value-source can be setting code, setting name, or setting id; values are
+      normalized to setting code before save
+    - If Settings or SystemValue lookup is ambiguous, the command fails with a
+      validation error and requests explicit code/Guid input
     - Binary, Image, and File columns do not support --default-value or --default-value-source Const
     - After save, the schema is reloaded immediately; save is treated as failed if the mutated column cannot be read back
 

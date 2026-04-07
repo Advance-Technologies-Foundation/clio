@@ -55,7 +55,10 @@ public static class EntitySchemaPrompt {
 		 `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`. Keep legacy `default-value-source` and
 		 `default-value` only for shorthand `Const` and `None`. Do not send `default-value` or
 		 `default-value-source=Const` for `Binary`, `Image`, or `File` columns, and use
-		 `default-value-config` source `Sequence` only for text columns.
+		 `default-value-config` source `Sequence` only for text columns. For `Settings`, `value-source`
+		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
+		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
+		 normalizes it to GUID before save.
 		 Current parent request: `{parentSchemaName ?? "<not provided>"}`. Current replacement request:
 		 `{extendParent}`.
 		 """;
@@ -124,7 +127,10 @@ public static class EntitySchemaPrompt {
 		 `EmailAddress` can be used as an alias for `Email`. Prefer `default-value-config`
 		 sources `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`. Do not send `default-value` or
 		 `default-value-source=Const` for `Binary`, `Image`, or `File` operations, and use
-		 `default-value-config` source `Sequence` only for text columns. For create + seed + update workflows,
+		 `default-value-config` source `Sequence` only for text columns. For `Settings`, `value-source`
+		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
+		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
+		 normalizes it to GUID before save. For create + seed + update workflows,
 		 prefer `schema-sync`. Seed rows create data only; model default requirements separately as
 		 `schema default` or `ui default`. For existing-app maintenance guidance, read
 		 `docs://mcp/guides/existing-app-maintenance`.
@@ -220,7 +226,10 @@ public static class EntitySchemaPrompt {
 		 used as an alias for `Binary`, `Encrypted` / `Password` can be used as aliases for `SecureText`, and
 		 `EmailAddress` can be used as an alias for `Email`. Do not
 		 send `default-value` or `default-value-source=Const` for `Binary`, `Image`, or `File`, and use
-		 `default-value-config` source `Sequence` only for text columns.
+		 `default-value-config` source `Sequence` only for text columns. For `Settings`, `value-source`
+		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
+		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
+		 normalizes it to GUID before save.
 		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
 		 Prefer reading current metadata with `{GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName}` first and reading it back after the mutation when explicit verification is needed.
 		 """;
