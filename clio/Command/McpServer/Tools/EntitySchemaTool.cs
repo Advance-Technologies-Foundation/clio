@@ -53,11 +53,17 @@ public sealed class CreateEntitySchemaTool(
 			args.TitleLocalizations,
 			args.LegacyTitle,
 			context);
+		TitleLocalizationNormalizationResult titleNormalization =
+			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
+				titleLocalizations,
+				null,
+				"title-localizations");
 		return new CreateEntitySchemaOptions {
 			Package = args.PackageName,
 			SchemaName = args.SchemaName,
-			Title = EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context),
-			TitleLocalizations = titleLocalizations,
+			Title = titleNormalization.EffectiveTitle
+				?? EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context),
+			TitleLocalizations = titleNormalization.Localizations ?? titleLocalizations,
 			ParentSchemaName = parentSchemaName,
 			ExtendParent = extendParent,
 			Columns = SerializeColumns(args.Columns, context),
@@ -341,6 +347,17 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
 		try {
 			string context = $"Column '{args.ColumnName}' action '{args.Action}'";
+			IReadOnlyDictionary<string, string>? titleLocalizations =
+				EntitySchemaLocalizationContract.NormalizeMutationTitleLocalizations(
+					args.Action,
+					args.TitleLocalizations,
+					args.LegacyTitle,
+					context);
+			TitleLocalizationNormalizationResult titleNormalization =
+				EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
+					titleLocalizations,
+					null,
+					"title-localizations");
 			ModifyEntitySchemaColumnOptions options = new() {
 				Environment = args.EnvironmentName,
 				Package = args.PackageName,
@@ -349,11 +366,8 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 				ColumnName = args.ColumnName,
 				NewName = args.NewName,
 				Type = args.Type,
-				TitleLocalizations = EntitySchemaLocalizationContract.NormalizeMutationTitleLocalizations(
-					args.Action,
-					args.TitleLocalizations,
-					args.LegacyTitle,
-					context),
+				Title = titleNormalization.EffectiveTitle,
+				TitleLocalizations = titleNormalization.Localizations,
 				DescriptionLocalizations = EntitySchemaLocalizationContract.NormalizeMutationDescriptionLocalizations(
 					args.Action,
 					args.DescriptionLocalizations,

@@ -172,6 +172,43 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	[Test]
+	[Description("Adds a column through update-entity-schema with only title-localizations, then applies default-value-config through modify-entity-schema-column and verifies the column remains readable.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(UpdateToolName)]
+	[AllureTag(ModifyToolName)]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("Entity schema MCP tools keep localized columns valid for later structured default mutations")]
+	[AllureDescription("Creates a sandbox entity schema through the real MCP server, adds a Text column through update-entity-schema using only title-localizations, then modifies that column through modify-entity-schema-column with default-value-config and verifies the follow-up mutation plus structured readback both succeed.")]
+	public async Task UpdateEntitySchema_Should_Keep_Localized_Column_Valid_For_Later_DefaultValueConfig_Modify() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string localizedColumnName = "UsrStatus";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope addResult = await ActBatchAddLocalizedTextColumnAsync(arrangeContext, localizedColumnName);
+		CommandExecutionEnvelope modifyResult =
+			await ActModifyLocalizedTextColumnWithStructuredSettingsDefaultAsync(arrangeContext, localizedColumnName);
+		EntitySchemaColumnPropertiesInfo columnProperties =
+			await ActGetColumnPropertiesAsync(arrangeContext, localizedColumnName);
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"the schema must exist before update-entity-schema can add the localized column");
+		AssertIncludesInfoMessage(createResult,
+			"successful schema creation should emit progress output before the localized add");
+		AssertCommandSucceeded(addResult,
+			"update-entity-schema should succeed when adding a column that only provides title-localizations");
+		AssertIncludesInfoMessage(addResult,
+			"successful batch adds should emit progress output before the follow-up modify");
+		AssertCommandSucceeded(modifyResult,
+			"modify-entity-schema-column should succeed when applying default-value-config after a localized batch add");
+		AssertIncludesInfoMessage(modifyResult,
+			"successful follow-up default-value-config mutations should emit progress output");
+		AssertStructuredSettingsColumnProperties(columnProperties, arrangeContext.SchemaName, localizedColumnName, "Status");
+	}
+
+	[Test]
 	[Description("Applies a structured system-value default through modify-entity-schema-column and verifies both legacy summary fields and structured readback metadata.")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(ModifyToolName)]
@@ -656,6 +693,43 @@ public sealed class EntitySchemaToolE2ETests {
 					["title-localizations"] = BuildLocalizations("Document")
 				}
 			]);
+		return McpCommandExecutionParser.Extract(callResult);
+	}
+
+	[AllureStep("Act by invoking update-entity-schema through MCP for a localized text column")]
+	private static async Task<CommandExecutionEnvelope> ActBatchAddLocalizedTextColumnAsync(
+		EntitySchemaArrangeContext arrangeContext,
+		string columnName) {
+		CallToolResult callResult = await CallUpdateEntitySchemaAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName,
+			arrangeContext.CancellationTokenSource.Token,
+			[
+				new Dictionary<string, object?> {
+					["action"] = "add",
+					["column-name"] = columnName,
+					["type"] = "Text",
+					["title-localizations"] = BuildLocalizations("Status")
+				}
+			]);
+		return McpCommandExecutionParser.Extract(callResult);
+	}
+
+	[AllureStep("Act by invoking modify-entity-schema-column through MCP for a localized column follow-up default")]
+	private static async Task<CommandExecutionEnvelope> ActModifyLocalizedTextColumnWithStructuredSettingsDefaultAsync(
+		EntitySchemaArrangeContext arrangeContext,
+		string columnName) {
+		CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName,
+			"modify",
+			columnName,
+			arrangeContext.CancellationTokenSource.Token,
+			defaultValueConfig: BuildSettingsDefaultValueConfig(MaintainerSettingCode));
 		return McpCommandExecutionParser.Extract(callResult);
 	}
 

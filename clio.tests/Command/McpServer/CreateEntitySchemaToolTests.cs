@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command;
@@ -14,6 +15,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[NonParallelizable]
 public class CreateEntitySchemaToolTests {
 
 	[Test]
@@ -255,6 +257,43 @@ public class CreateEntitySchemaToolTests {
 				message.Value != null && message.Value.ToString().Contains("en-US", StringComparison.Ordinal),
 			because: "the validation error should explain the required base localization");
 		resolvedCommand.CapturedOptions.Should().BeNull();
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Derives the internal schema title and current-culture localization from MCP title-localizations without reopening the legacy title field.")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Derive_Internal_Title_And_CurrentCultureLocalization_From_TitleLocalizations() {
+		// Arrange
+		using CultureScope cultureScope = new("uk-UA");
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateEntitySchemaCommand defaultCommand = new();
+		FakeCreateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+			"MyPackage",
+			"UsrVehicle",
+			Localizations("Vehicle"),
+			"docker_fix2"));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "strict MCP localization payloads should still map to a validator-safe internal schema title");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive mapped create options");
+		resolvedCommand.CapturedOptions!.Title.Should().Be("Vehicle",
+			because: "Clio should derive the internal scalar schema title from title-localizations");
+		resolvedCommand.CapturedOptions.TitleLocalizations.Should().ContainKey("en-US",
+			because: "the canonical en-US title localization must be preserved");
+		resolvedCommand.CapturedOptions.TitleLocalizations.Should().ContainKey("uk-UA",
+			because: "Clio should synthesize a current-culture title localization before save");
+		resolvedCommand.CapturedOptions.TitleLocalizations!["uk-UA"].Should().Be("Vehicle",
+			because: "the synthesized current-culture localization should reuse the effective title value");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -565,5 +604,23 @@ public class CreateEntitySchemaToolTests {
 			result["uk-UA"] = ukUa;
 		}
 		return result;
+	}
+
+	private sealed class CultureScope : IDisposable {
+		private readonly CultureInfo _originalCurrentCulture;
+		private readonly CultureInfo _originalCurrentUiCulture;
+
+		public CultureScope(string cultureName) {
+			_originalCurrentCulture = CultureInfo.CurrentCulture;
+			_originalCurrentUiCulture = CultureInfo.CurrentUICulture;
+			CultureInfo culture = CultureInfo.GetCultureInfo(cultureName);
+			CultureInfo.CurrentCulture = culture;
+			CultureInfo.CurrentUICulture = culture;
+		}
+
+		public void Dispose() {
+			CultureInfo.CurrentCulture = _originalCurrentCulture;
+			CultureInfo.CurrentUICulture = _originalCurrentUiCulture;
+		}
 	}
 }

@@ -8,6 +8,10 @@ using Terrasoft.Core.Entities;
 
 namespace Clio.Command.EntitySchemaDesigner;
 
+internal sealed record TitleLocalizationNormalizationResult(
+	IReadOnlyDictionary<string, string>? Localizations,
+	string? EffectiveTitle);
+
 internal static class EntitySchemaDesignerSupport
 {
 	internal const string DefaultCultureName = "en-US";
@@ -162,6 +166,40 @@ internal static class EntitySchemaDesignerSupport
 		}
 
 		return normalizedValues;
+	}
+
+	internal static TitleLocalizationNormalizationResult NormalizeTitleLocalizations(
+		IReadOnlyDictionary<string, string>? values,
+		string? fallbackValue,
+		string fieldName) {
+		string? normalizedFallbackValue = string.IsNullOrWhiteSpace(fallbackValue)
+			? null
+			: fallbackValue.Trim();
+		if (values == null) {
+			return new TitleLocalizationNormalizationResult(null, normalizedFallbackValue);
+		}
+
+		Dictionary<string, string> normalizedValues = new(
+			NormalizeLocalizationMap(values, fieldName) ?? throw new EntitySchemaDesignerException(
+				$"{fieldName} must contain at least one localization."),
+			StringComparer.OrdinalIgnoreCase);
+		string currentCultureName = GetCurrentCultureName();
+		string? effectiveTitle = null;
+		if (normalizedValues.TryGetValue(currentCultureName, out string? currentCultureValue)
+			&& !string.IsNullOrWhiteSpace(currentCultureValue)) {
+			effectiveTitle = currentCultureValue;
+		} else if (normalizedValues.TryGetValue(DefaultCultureName, out string? defaultCultureValue)
+			&& !string.IsNullOrWhiteSpace(defaultCultureValue)) {
+			effectiveTitle = defaultCultureValue;
+		} else {
+			effectiveTitle = normalizedValues.Values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+		}
+
+		if (!string.IsNullOrWhiteSpace(effectiveTitle) && !normalizedValues.ContainsKey(currentCultureName)) {
+			normalizedValues[currentCultureName] = effectiveTitle;
+		}
+
+		return new TitleLocalizationNormalizationResult(normalizedValues, effectiveTitle ?? normalizedFallbackValue);
 	}
 
 	internal static List<LocalizableStringDto> CreateLocalizableStrings(

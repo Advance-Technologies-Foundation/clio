@@ -21,6 +21,7 @@ public interface IRemoteEntitySchemaCreator{
 internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	#region Fields: Private
 
+	private const string TitleLocalizationsArgumentName = "title-localizations";
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
@@ -47,7 +48,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	private sealed record StructuredColumnSpec(
 		[property: JsonPropertyName("name")] string Name,
 		[property: JsonPropertyName("type")] string Type,
-		[property: JsonPropertyName("title-localizations")] Dictionary<string, string>? TitleLocalizations = null) {
+		[property: JsonPropertyName(TitleLocalizationsArgumentName)] Dictionary<string, string>? TitleLocalizations = null) {
 		[property: JsonPropertyName("title")]
 		public string? Title { get; init; }
 
@@ -98,8 +99,15 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		IReadOnlyCollection<ParsedColumn> parsedColumns,
 		PackageInfo package) {
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
+		TitleLocalizationNormalizationResult schemaTitleNormalization =
+			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
+				options.TitleLocalizations,
+				options.Title,
+				TitleLocalizationsArgumentName);
 		schema.Name = options.SchemaName;
-		schema.Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(options.TitleLocalizations, options.Title);
+		schema.Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(
+			schemaTitleNormalization.Localizations,
+			schemaTitleNormalization.EffectiveTitle);
 		EntitySchemaDesignerSupport.EnsurePackageAssigned(schema, package);
 		schema.Columns ??= [];
 		schema.Indexes ??= [];
@@ -200,14 +208,19 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 		ValidateDefaultValue(parsedColumn, dataValueType, options);
 		ValidateMaskedOption(parsedColumn, dataValueType);
+		TitleLocalizationNormalizationResult titleNormalization =
+			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
+				parsedColumn.TitleLocalizations,
+				parsedColumn.Title,
+				TitleLocalizationsArgumentName);
 
 		EntitySchemaColumnDto column = new() {
 			UId = Guid.NewGuid(),
 			Name = parsedColumn.Name,
 			DataValueType = dataValueType,
 			Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(
-				parsedColumn.TitleLocalizations,
-				parsedColumn.Title),
+				titleNormalization.Localizations,
+				titleNormalization.EffectiveTitle),
 			RequirementType = parsedColumn.Required == true
 				? (int)EntitySchemaColumnRequirementType.ApplicationLevel
 				: (int)EntitySchemaColumnRequirementType.None,
@@ -317,7 +330,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			? null
 			: EntitySchemaDesignerSupport.NormalizeLocalizationMap(
 				structuredColumn.TitleLocalizations,
-				"title-localizations");
+				TitleLocalizationsArgumentName);
 		string title = ResolveTitle(structuredColumn, name);
 		string? referenceSchemaName = string.IsNullOrWhiteSpace(structuredColumn.ReferenceSchemaName)
 			? null
@@ -405,7 +418,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		if (column.TitleLocalizations?.Count > 0) {
 			return EntitySchemaDesignerSupport.GetRequiredLocalizationValue(
 				column.TitleLocalizations,
-				"title-localizations");
+				TitleLocalizationsArgumentName);
 		}
 		if (!string.IsNullOrWhiteSpace(column.Title)) {
 			return column.Title.Trim();

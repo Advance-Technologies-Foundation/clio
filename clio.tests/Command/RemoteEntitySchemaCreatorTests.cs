@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command;
@@ -13,6 +15,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[NonParallelizable]
 internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 {
 	private IApplicationClient _applicationClient;
@@ -386,6 +389,63 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Creates schema and column captions with synthesized current-culture localizations when only en-US title-localizations are provided.")]
+	public void Create_CreatesSchema_WithCurrentCultureTitleLocalizations_WhenOnlyEnUsIsProvided() {
+		// Arrange
+		using CultureScope cultureScope = new("uk-UA");
+		string saveBody = null;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+		string structuredColumn = JsonSerializer.Serialize(new {
+			name = "UsrStatus",
+			type = "Text",
+			title_localizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["en-US"] = "Status"
+			}
+		}).Replace("title_localizations", "title-localizations");
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			TitleLocalizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["en-US"] = "Vehicle"
+			},
+			Columns = [structuredColumn]
+		});
+
+		// Assert
+		JObject json = JObject.Parse(saveBody);
+		json["caption"]!.Should().Contain(token =>
+				token["cultureName"]!.Value<string>() == "uk-UA"
+				&& token["value"]!.Value<string>() == "Vehicle",
+			because: "schema caption should include the synthesized current-culture localization");
+		JToken savedColumn = json["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrStatus");
+		savedColumn["caption"]!.Should().Contain(token =>
+				token["cultureName"]!.Value<string>() == "uk-UA"
+				&& token["value"]!.Value<string>() == "Status",
+			because: "column caption should include the synthesized current-culture localization");
+	}
+
+	[Test]
 	[Description("Normalizes structured Settings defaults from display names to canonical setting codes before save.")]
 	public void Create_CreatesSchema_WithStructuredSettingsDefault_UsingCanonicalCode() {
 		// Arrange
@@ -689,5 +749,23 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 
 				return handler(url, body);
 			});
+	}
+
+	private sealed class CultureScope : IDisposable {
+		private readonly CultureInfo _originalCurrentCulture;
+		private readonly CultureInfo _originalCurrentUiCulture;
+
+		public CultureScope(string cultureName) {
+			_originalCurrentCulture = CultureInfo.CurrentCulture;
+			_originalCurrentUiCulture = CultureInfo.CurrentUICulture;
+			CultureInfo culture = CultureInfo.GetCultureInfo(cultureName);
+			CultureInfo.CurrentCulture = culture;
+			CultureInfo.CurrentUICulture = culture;
+		}
+
+		public void Dispose() {
+			CultureInfo.CurrentCulture = _originalCurrentCulture;
+			CultureInfo.CurrentUICulture = _originalCurrentUiCulture;
+		}
 	}
 }
