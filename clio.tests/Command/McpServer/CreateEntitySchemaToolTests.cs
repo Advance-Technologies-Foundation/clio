@@ -361,6 +361,7 @@ public class CreateEntitySchemaToolTests {
 	[Category("Unit")]
 	public void CreateLookup_Should_Resolve_Command_For_Requested_Environment() {
 		// Arrange
+		using CultureScope cultureScope = new("en-US");
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
 		FakeCreateEntitySchemaCommand resolvedCommand = new();
