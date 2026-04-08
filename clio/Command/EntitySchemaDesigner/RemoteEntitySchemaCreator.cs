@@ -98,8 +98,15 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		IReadOnlyCollection<ParsedColumn> parsedColumns,
 		PackageInfo package) {
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
+		TitleLocalizationNormalizationResult schemaTitleNormalization =
+			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
+				options.TitleLocalizations,
+				options.Title,
+				"title-localizations");
 		schema.Name = options.SchemaName;
-		schema.Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(options.TitleLocalizations, options.Title);
+		schema.Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(
+			schemaTitleNormalization.Localizations,
+			schemaTitleNormalization.EffectiveTitle);
 		EntitySchemaDesignerSupport.EnsurePackageAssigned(schema, package);
 		schema.Columns ??= [];
 		schema.Indexes ??= [];
@@ -200,14 +207,19 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 		ValidateDefaultValue(parsedColumn, dataValueType, options);
 		ValidateMaskedOption(parsedColumn, dataValueType);
+		TitleLocalizationNormalizationResult titleNormalization =
+			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
+				parsedColumn.TitleLocalizations,
+				parsedColumn.Title,
+				"title-localizations");
 
 		EntitySchemaColumnDto column = new() {
 			UId = Guid.NewGuid(),
 			Name = parsedColumn.Name,
 			DataValueType = dataValueType,
 			Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(
-				parsedColumn.TitleLocalizations,
-				parsedColumn.Title),
+				titleNormalization.Localizations,
+				titleNormalization.EffectiveTitle),
 			RequirementType = parsedColumn.Required == true
 				? (int)EntitySchemaColumnRequirementType.ApplicationLevel
 				: (int)EntitySchemaColumnRequirementType.None,

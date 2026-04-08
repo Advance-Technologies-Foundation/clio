@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
@@ -12,6 +14,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[NonParallelizable]
 internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 {
 	private UpdateEntitySchemaCommand _command;
@@ -149,6 +152,36 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Derives the internal scalar title and current-culture localization from title-localizations when batch mutations omit legacy title.")]
+	public void Execute_DerivesTitleAndCurrentCultureLocalization_FromTitleLocalizations() {
+		// Arrange
+		using CultureScope cultureScope = new("uk-UA");
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = [
+				"""{"action":"add","column-name":"UsrStatus","type":"Lookup","title-localizations":{"en-US":"Status"},"reference-schema-name":"UsrVehicleStatus"}"""
+			]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "localized batch mutations should stay valid without public scalar title input");
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Count() == 1
+			&& mutations.ElementAt(0).ColumnName == "UsrStatus"
+			&& mutations.ElementAt(0).Title == "Status"
+			&& mutations.ElementAt(0).TitleLocalizations != null
+			&& mutations.ElementAt(0).TitleLocalizations!.ContainsKey("en-US")
+			&& mutations.ElementAt(0).TitleLocalizations!["en-US"] == "Status"
+			&& mutations.ElementAt(0).TitleLocalizations!.ContainsKey("uk-UA")
+			&& mutations.ElementAt(0).TitleLocalizations!["uk-UA"] == "Status"));
+	}
+
+	[Test]
 	[Description("Rejects malformed JSON operation payloads with a clear error before executing any mutation.")]
 	public void Execute_ReturnsFailure_WhenOperationJsonIsInvalid() {
 		// Arrange
@@ -193,5 +226,23 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 			because: "a successful parse should produce update-entity-schema options");
 		parsedOptions!.Operations.Should().BeEquivalentTo([jsonOperation],
 			because: "semicolons inside a JSON title or default value are part of the operation payload, not separators");
+	}
+
+	private sealed class CultureScope : IDisposable {
+		private readonly CultureInfo _originalCurrentCulture;
+		private readonly CultureInfo _originalCurrentUiCulture;
+
+		public CultureScope(string cultureName) {
+			_originalCurrentCulture = CultureInfo.CurrentCulture;
+			_originalCurrentUiCulture = CultureInfo.CurrentUICulture;
+			CultureInfo culture = CultureInfo.GetCultureInfo(cultureName);
+			CultureInfo.CurrentCulture = culture;
+			CultureInfo.CurrentUICulture = culture;
+		}
+
+		public void Dispose() {
+			CultureInfo.CurrentCulture = _originalCurrentCulture;
+			CultureInfo.CurrentUICulture = _originalCurrentUiCulture;
+		}
 	}
 }

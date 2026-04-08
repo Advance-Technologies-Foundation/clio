@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
@@ -14,6 +15,7 @@ using Terrasoft.Core.Entities;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[NonParallelizable]
 internal class RemoteEntitySchemaColumnManagerTests
 {
 	private static readonly Guid PackageUId = Guid.Parse("11111111-1111-1111-1111-111111111111");
@@ -198,6 +200,35 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Adds the current culture title localization when add receives only en-US so .NET Framework save validation still sees an effective caption.")]
+	public void ModifyColumn_AddsOwnColumn_AddsCurrentCultureLocalization_WhenOnlyEnUsTitleLocalizationIsProvided() {
+		// Arrange
+		using CultureScope cultureScope = new("uk-UA");
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrVehicleStatus",
+			Type = "Text",
+			TitleLocalizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["en-US"] = "Status"
+			}
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
+		addedColumn.Caption.Should().Contain(item => item.CultureName == "en-US" && item.Value == "Status",
+			because: "the canonical en-US title must still be preserved");
+		addedColumn.Caption.Should().Contain(item => item.CultureName == "uk-UA" && item.Value == "Status",
+			because: "Clio should synthesize the current-culture title from en-US before save");
+	}
+
+	[Test]
 	[Description("Falls back to the column name when add requests a whitespace title so caption is never persisted as empty.")]
 	public void ModifyColumn_AddsOwnColumn_UsesColumnName_WhenTitleIsWhitespace() {
 		// Arrange
@@ -268,6 +299,37 @@ internal class RemoteEntitySchemaColumnManagerTests
 		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
 		EntitySchemaDesignerSupport.GetLocalizableValue(savedColumn.Caption).Should().Be("Vehicle Status",
 			because: "modify title updates should trim accidental whitespace from caller payloads");
+	}
+
+	[Test]
+	[Description("Replaces caption localizations with a normalized set that includes the current culture when modify receives only en-US title-localizations.")]
+	public void ModifyColumn_NormalizesTitleLocalizations_WhenOnlyEnUsTitleLocalizationIsProvided() {
+		// Arrange
+		using CultureScope cultureScope = new("uk-UA");
+		EntitySchemaColumnDto statusColumn = CreateTextColumn("UsrVehicleStatus", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), statusColumn]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "UsrVehicleStatus",
+			TitleLocalizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["en-US"] = "Vehicle Status"
+			}
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
+		savedColumn.Caption.Should().Contain(item => item.CultureName == "en-US" && item.Value == "Vehicle Status",
+			because: "modify should preserve the canonical en-US title localization");
+		savedColumn.Caption.Should().Contain(item => item.CultureName == "uk-UA" && item.Value == "Vehicle Status",
+			because: "modify should synthesize a current-culture title so later .NET Framework validation succeeds");
+		savedColumn.Caption.Select(item => item.CultureName).Should().OnlyHaveUniqueItems(
+			because: "title localization normalization should not duplicate cultures in the saved caption payload");
 	}
 
 	[Test]
@@ -1015,5 +1077,23 @@ internal class RemoteEntitySchemaColumnManagerTests
 				}]
 			}
 		};
+	}
+
+	private sealed class CultureScope : IDisposable {
+		private readonly CultureInfo _originalCurrentCulture;
+		private readonly CultureInfo _originalCurrentUiCulture;
+
+		public CultureScope(string cultureName) {
+			_originalCurrentCulture = CultureInfo.CurrentCulture;
+			_originalCurrentUiCulture = CultureInfo.CurrentUICulture;
+			CultureInfo culture = CultureInfo.GetCultureInfo(cultureName);
+			CultureInfo.CurrentCulture = culture;
+			CultureInfo.CurrentUICulture = culture;
+		}
+
+		public void Dispose() {
+			CultureInfo.CurrentCulture = _originalCurrentCulture;
+			CultureInfo.CurrentUICulture = _originalCurrentUiCulture;
+		}
 	}
 }
