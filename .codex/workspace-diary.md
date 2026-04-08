@@ -1956,3 +1956,10 @@ Decision: Root cause was CommandLineParser treating bool option with Default=tru
 Discovery: CommandLineParser cannot set a bool option to false via --flag false or --flag=false when Default=true. Must use string? with manual bool.Parse. Also added missing create-app-section and update-app-section entries to clio/Wiki/WikiAnchors.txt to fix VisibleCommands_ShouldHaveCanonicalArtifacts test.
 Files: clio/Command/ApplicationSectionCreateCommand.cs, clio/Wiki/WikiAnchors.txt
 Impact: --with-mobile-pages false now correctly prevents mobile page schema generation. 1921/1921 relevant tests pass; 3 pre-existing StopCommand failures unrelated to our work.
+  
+## 2026-04-08 16:05 – Keep canonical application entity captions out of `Base object`
+Context: AI-driven app creation logs showed `application-create` returning the correct canonical main entity caption, but a later `application-get-info` after `schema-sync` could degrade that same entity to the generic `Base object` caption on `.NET Framework` environments.
+Decision: Narrowed the fix to `ApplicationInfoService` readback: pass the installed application display name into entity mapping and, for the canonical main entity only, use that display name when runtime metadata says `Base object` and the design caption cannot be read. Added regression/guard unit tests plus an MCP E2E scenario that mutates the created app through `schema-sync` before re-reading `application-get-info`.
+Discovery: The existing canonical-entity safeguard already preferred a design caption over `Base object`, so the missing case was specifically the unreadable-design fallback path rather than application creation or MCP response mapping.
+Files: clio/Command/ApplicationInfoService.cs, clio.tests/Command/ApplicationInfoServiceTests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs, .codex/workspace-diary.md
+Impact: `application-get-info` now keeps the business caption for the canonical main entity after schema mutations instead of leaking the template fallback `Base object`, while non-canonical entity captions remain unchanged.
