@@ -21,6 +21,7 @@ public interface IRemoteEntitySchemaCreator{
 internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	#region Fields: Private
 
+	private const string TitleLocalizationsArgumentName = "title-localizations";
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
@@ -47,7 +48,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	private sealed record StructuredColumnSpec(
 		[property: JsonPropertyName("name")] string Name,
 		[property: JsonPropertyName("type")] string Type,
-		[property: JsonPropertyName("title-localizations")] Dictionary<string, string>? TitleLocalizations = null) {
+		[property: JsonPropertyName(TitleLocalizationsArgumentName)] Dictionary<string, string>? TitleLocalizations = null) {
 		[property: JsonPropertyName("title")]
 		public string? Title { get; init; }
 
@@ -102,7 +103,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
 				options.TitleLocalizations,
 				options.Title,
-				"title-localizations");
+				TitleLocalizationsArgumentName);
 		schema.Name = options.SchemaName;
 		schema.Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(
 			schemaTitleNormalization.Localizations,
@@ -211,7 +212,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
 				parsedColumn.TitleLocalizations,
 				parsedColumn.Title,
-				"title-localizations");
+				TitleLocalizationsArgumentName);
 
 		EntitySchemaColumnDto column = new() {
 			UId = Guid.NewGuid(),
@@ -329,7 +330,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			? null
 			: EntitySchemaDesignerSupport.NormalizeLocalizationMap(
 				structuredColumn.TitleLocalizations,
-				"title-localizations");
+				TitleLocalizationsArgumentName);
 		string title = ResolveTitle(structuredColumn, name);
 		string? referenceSchemaName = string.IsNullOrWhiteSpace(structuredColumn.ReferenceSchemaName)
 			? null
@@ -417,7 +418,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		if (column.TitleLocalizations?.Count > 0) {
 			return EntitySchemaDesignerSupport.GetRequiredLocalizationValue(
 				column.TitleLocalizations,
-				"title-localizations");
+				TitleLocalizationsArgumentName);
 		}
 		if (!string.IsNullOrWhiteSpace(column.Title)) {
 			return column.Title.Trim();
