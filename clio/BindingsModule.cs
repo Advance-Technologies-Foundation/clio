@@ -191,6 +191,10 @@ public class BindingsModule {
 		services.AddTransient<DeleteSkillCommand>();
 		services.AddTransient<PushPackageCommand>();
 		services.AddTransient<InstallApplicationCommand>();
+		services.AddTransient<IApplicationSectionCreateService, ApplicationSectionCreateService>();
+		services.AddTransient<CreateAppSectionCommand>();
+		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
+		services.AddTransient<UpdateAppSectionCommand>();
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
 		services.AddTransient<PageUpdateCommand>();
@@ -203,6 +207,13 @@ public class BindingsModule {
 		
 		// MCP Tools
 		services.AddTransient<PageListTool>();
+		services.AddTransient<ApplicationGetListTool>();
+		services.AddTransient<ApplicationGetInfoTool>();
+		services.AddTransient<ApplicationCreateTool>();
+		services.AddTransient<ApplicationSectionCreateTool>();
+		services.AddTransient<ApplicationSectionUpdateTool>();
+		services.AddTransient<ApplicationDeleteTool>();
+		services.AddTransient<ToolContractGetTool>();
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
 		services.AddTransient<PageSyncTool>();

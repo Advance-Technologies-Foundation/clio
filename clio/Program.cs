@@ -108,6 +108,8 @@ internal class Program {
 		typeof(SetFsmConfigOptions),
 		typeof(ScenarioRunnerOptions),
 		typeof(InstallApplicationOptions),
+		typeof(CreateAppSectionOptions),
+		typeof(UpdateAppSectionOptions),
 		typeof(PageListOptions),
 		typeof(PageGetOptions),
 		typeof(PageUpdateOptions),
@@ -221,6 +223,8 @@ internal class Program {
 					GeneratePkgZipOptions opts => Resolve<CompressPackageCommand>().Execute(opts),
 					PushPkgOptions opts => Resolve<PushPackageCommand>(opts).Execute(opts),
 					InstallApplicationOptions opts => Resolve<InstallApplicationCommand>(opts).Execute(opts),
+					CreateAppSectionOptions opts => Resolve<CreateAppSectionCommand>(opts).Execute(opts),
+					UpdateAppSectionOptions opts => Resolve<UpdateAppSectionCommand>(opts).Execute(opts),
 					DeletePkgOptions opts => Resolve<DeletePackageCommand>(opts).Execute(opts),
 					ReferenceOptions opts => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator())
 						.Execute(opts),
