@@ -128,7 +128,13 @@ public sealed class ApplicationInfoService(
 			GetApplicationEntities(client, serviceUrlBuilder, application.Id, primaryPackage.UId);
 		IReadOnlyList<ApplicationEntityInfoResult> entities = entityRows
 			.GroupBy(entity => entity.UId, StringComparer.OrdinalIgnoreCase)
-			.Select(group => LoadEntityInfo(client, serviceUrlBuilder, primaryPackage.UId, primaryPackage.Name, group.First()))
+			.Select(group => LoadEntityInfo(
+				client,
+				serviceUrlBuilder,
+				primaryPackage.UId,
+				primaryPackage.Name,
+				application.Name,
+				group.First()))
 			.OrderBy(entity => entity.Caption, StringComparer.OrdinalIgnoreCase)
 			.ThenBy(entity => entity.Name, StringComparer.OrdinalIgnoreCase)
 			.ToList();
@@ -231,6 +237,7 @@ public sealed class ApplicationInfoService(
 		ServiceUrlBuilder serviceUrlBuilder,
 		string packageUId,
 		string canonicalMainEntityName,
+		string? canonicalMainEntityCaptionFallback,
 		ApplicationEntityRecordDto entityRow)
 	{
 		string responseJson = client.ExecutePostRequest(
@@ -264,6 +271,7 @@ public sealed class ApplicationInfoService(
 				string.Equals(entityName, canonicalMainEntityName, StringComparison.OrdinalIgnoreCase),
 				response.Schema.Caption,
 				designSchema?.Caption,
+				canonicalMainEntityCaptionFallback,
 				entityRow.Caption,
 				entityName),
 			columns);
@@ -358,6 +366,11 @@ public sealed class ApplicationInfoService(
 			return designCaption!;
 		}
 
+		if (ShouldPreferFallbackCaptionForCanonicalMainEntity(isCanonicalMainEntity, runtimeCaption, designCaption, fallbacks))
+		{
+			return fallbacks[0]!.Trim();
+		}
+
 		return runtimeCaption
 			?? designCaption
 			?? GetFallbackText(fallbacks)
@@ -373,6 +386,20 @@ public sealed class ApplicationInfoService(
 			string.Equals(runtimeCaption, BaseObjectCaption, StringComparison.OrdinalIgnoreCase) &&
 			!string.IsNullOrWhiteSpace(designCaption) &&
 			!string.Equals(runtimeCaption, designCaption, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool ShouldPreferFallbackCaptionForCanonicalMainEntity(
+		bool isCanonicalMainEntity,
+		string? runtimeCaption,
+		string? designCaption,
+		IReadOnlyList<string?> fallbacks)
+	{
+		return isCanonicalMainEntity &&
+			string.Equals(runtimeCaption, BaseObjectCaption, StringComparison.OrdinalIgnoreCase) &&
+			string.IsNullOrWhiteSpace(designCaption) &&
+			fallbacks.Count > 0 &&
+			!string.IsNullOrWhiteSpace(fallbacks[0]) &&
+			!string.Equals(fallbacks[0]?.Trim(), BaseObjectCaption, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static string? GetFallbackText(IEnumerable<string?> fallbacks)

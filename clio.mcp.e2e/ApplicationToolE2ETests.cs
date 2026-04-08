@@ -27,6 +27,7 @@ public sealed class ApplicationToolE2ETests {
 	private const string InfoToolName = ApplicationGetInfoTool.ApplicationGetInfoToolName;
 	private const string CreateToolName = ApplicationCreateTool.ApplicationCreateToolName;
 	private const string DeleteToolName = ApplicationDeleteTool.ToolName;
+	private const string SchemaSyncToolName = SchemaSyncTool.ToolName;
 
 	[Test]
 	[Description("Starts the real clio MCP server, invokes application-get-list for the configured sandbox environment, and verifies that a structured installed-application list envelope is returned.")]
@@ -267,6 +268,79 @@ public sealed class ApplicationToolE2ETests {
 			because: "the canonical main entity caption should reflect the requested application name instead of the generic template fallback");
 		actResult.Result.Error.Should().BeNullOrWhiteSpace(
 			because: "successful create calls should not include an error payload");
+	}
+
+	[Test]
+	[Description("Creates an application, mutates the canonical main entity through schema-sync, and verifies application-get-info still returns the application display name instead of Base object.")]
+	[AllureFeature(CreateToolName)]
+	[AllureFeature(SchemaSyncToolName)]
+	[AllureFeature(InfoToolName)]
+	[AllureTag(CreateToolName)]
+	[AllureTag(SchemaSyncToolName)]
+	[AllureTag(InfoToolName)]
+	[AllureName("Application get info keeps canonical main entity caption after schema-sync")]
+	[AllureDescription("Uses the real clio MCP server to create an application, applies a minimal schema-sync update-entity mutation to the canonical main entity, then verifies application-get-info still returns the installed application display name instead of the generic Base object fallback.")]
+	public async Task ApplicationGetInfo_Should_Keep_Canonical_Main_Entity_Caption_After_SchemaSync() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run application/schema-sync regression E2E tests.");
+		}
+
+		TestConfiguration.EnsureSandboxIsConfigured(settings);
+		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
+		string suffix = Guid.NewGuid().ToString("N")[..8];
+		string applicationCode = $"UsrCodex{suffix}";
+		string applicationName = $"Codex E2E {suffix}";
+		string addedColumnName = $"UsrStatus{suffix[..4]}";
+
+		if (string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationTemplateCode) ||
+			string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationIconId) ||
+			string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationIconBackground)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:ApplicationTemplateCode, ApplicationIconId, and ApplicationIconBackground to run application/schema-sync regression E2E.");
+		}
+
+		ApplicationInfoActResult createResult = await ActCreateAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			arrangeContext.EnvironmentName,
+			applicationName,
+			applicationCode,
+			description: null,
+			settings.Sandbox.ApplicationTemplateCode!,
+			settings.Sandbox.ApplicationIconId!,
+			settings.Sandbox.ApplicationIconBackground!,
+			optionalTemplateDataJson: null);
+
+		// Act
+		CallToolResult schemaSyncCallResult = await CallSchemaSyncUpdateCanonicalMainEntityAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			arrangeContext.EnvironmentName,
+			createResult.Result.PackageName!,
+			applicationCode,
+			addedColumnName);
+		JsonElement schemaSyncResponse = ExtractSchemaSyncResponse(schemaSyncCallResult);
+		ApplicationInfoActResult infoResult = await ActInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			arrangeContext.EnvironmentName,
+			id: null,
+			code: applicationCode);
+		ApplicationEntityEnvelope? canonicalMainEntity = infoResult.Result.Entities?
+			.FirstOrDefault(entity => string.Equals(entity.Name, applicationCode, StringComparison.OrdinalIgnoreCase));
+
+		// Assert
+		createResult.Result.Success.Should().BeTrue(
+			because: "the regression scenario requires a successfully created application before schema-sync mutates the canonical main entity");
+		schemaSyncCallResult.IsError.Should().NotBeTrue(
+			because: $"schema-sync should return a structured payload for the canonical-main-entity regression scenario. Actual result: {DescribeCallResult(schemaSyncCallResult)}");
+		schemaSyncResponse.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: "the minimal schema-sync update should succeed before application-get-info readback is validated");
+		canonicalMainEntity.Should().NotBeNull(
+			because: "application-get-info should continue to return the canonical main entity after schema-sync mutations");
+		canonicalMainEntity!.Caption.Should().Be(applicationName,
+			because: "the canonical main entity should keep the installed application display name instead of degrading to Base object after schema-sync");
 	}
 
 	[Test]
@@ -755,6 +829,47 @@ public sealed class ApplicationToolE2ETests {
 			cancellationToken);
 	}
 
+	private static async Task<CallToolResult> CallSchemaSyncUpdateCanonicalMainEntityAsync(
+		McpServerSession session,
+		CancellationToken cancellationToken,
+		string environmentName,
+		string packageName,
+		string schemaName,
+		string addedColumnName) {
+		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
+		tools.Select(tool => tool.Name).Should().Contain(SchemaSyncToolName,
+			because: "the schema-sync MCP tool must be advertised before the canonical-main-entity regression scenario can be executed");
+
+		return await session.CallToolAsync(
+			SchemaSyncToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							["schema-name"] = schemaName,
+							["update-operations"] = new object?[] {
+								new Dictionary<string, object?> {
+									["action"] = "modify",
+									["column-name"] = "UsrName",
+									["title-localizations"] = BuildLocalizations("Title")
+								},
+								new Dictionary<string, object?> {
+									["action"] = "add",
+									["column-name"] = addedColumnName,
+									["type"] = "Text",
+									["title-localizations"] = BuildLocalizations("Status")
+								}
+							}
+						}
+					}
+				}
+			},
+			cancellationToken);
+	}
+
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "E2E helper parameters intentionally mirror the application-create MCP request shape.")]
 	private static Dictionary<string, object?> BuildCreateArgs(
@@ -786,6 +901,99 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		return args;
+	}
+
+	private static Dictionary<string, object?> BuildLocalizations(string value) {
+		return new Dictionary<string, object?> {
+			["en-US"] = value
+		};
+	}
+
+	private static JsonElement ExtractSchemaSyncResponse(CallToolResult callResult) {
+		if (TryExtractSchemaSyncResponse(callResult.StructuredContent, out JsonElement structuredPayload)) {
+			return structuredPayload;
+		}
+
+		if (TryExtractSchemaSyncResponse(callResult.Content, out JsonElement contentPayload)) {
+			return contentPayload;
+		}
+
+		throw new InvalidOperationException("Could not parse SchemaSyncResponse MCP result.");
+	}
+
+	private static bool TryExtractSchemaSyncResponse(object? value, out JsonElement payload) {
+		if (value is null) {
+			payload = default;
+			return false;
+		}
+
+		JsonElement element = JsonSerializer.SerializeToElement(value);
+		if (TryExtractSchemaSyncPayloadElement(element, out payload)) {
+			return true;
+		}
+
+		if (element.ValueKind == JsonValueKind.Array) {
+			foreach (JsonElement item in element.EnumerateArray()) {
+				if (TryGetTextPayload(item, out string? textPayload) &&
+					!string.IsNullOrWhiteSpace(textPayload) &&
+					TryParseJson(textPayload, out JsonElement parsedPayload) &&
+					TryExtractSchemaSyncPayloadElement(parsedPayload, out payload)) {
+					return true;
+				}
+			}
+		}
+
+		if (element.ValueKind == JsonValueKind.String) {
+			string? textPayload = element.GetString();
+			if (!string.IsNullOrWhiteSpace(textPayload) &&
+				TryParseJson(textPayload, out JsonElement parsedPayload) &&
+				TryExtractSchemaSyncPayloadElement(parsedPayload, out payload)) {
+				return true;
+			}
+		}
+
+		payload = default;
+		return false;
+	}
+
+	private static bool TryExtractSchemaSyncPayloadElement(JsonElement element, out JsonElement payload) {
+		if (element.ValueKind == JsonValueKind.Object &&
+			element.TryGetProperty("success", out JsonElement successElement) &&
+			successElement.ValueKind is JsonValueKind.True or JsonValueKind.False &&
+			element.TryGetProperty("results", out JsonElement resultsElement) &&
+			resultsElement.ValueKind == JsonValueKind.Array) {
+			payload = element;
+			return true;
+		}
+
+		payload = default;
+		return false;
+	}
+
+	private static bool TryGetTextPayload(JsonElement element, out string? textPayload) {
+		textPayload = null;
+		if (element.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+
+		if (element.TryGetProperty("text", out JsonElement textElement) &&
+			textElement.ValueKind == JsonValueKind.String) {
+			textPayload = textElement.GetString();
+			return true;
+		}
+
+		return false;
+	}
+
+	private static bool TryParseJson(string value, out JsonElement element) {
+		try {
+			element = JsonSerializer.SerializeToElement(JsonSerializer.Deserialize<JsonElement>(value));
+			return true;
+		}
+		catch (JsonException) {
+			element = default;
+			return false;
+		}
 	}
 
 	private static string DescribeCallResult(CallToolResult callResult) {
