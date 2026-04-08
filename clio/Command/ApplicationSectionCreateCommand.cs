@@ -11,7 +11,7 @@ using Clio.UserEnvironment;
 using CommandLine;
 
 namespace Clio.Command;
-
+	
 /// <summary>
 /// CLI options for creating a section inside an existing installed application.
 /// </summary>
@@ -33,7 +33,12 @@ public sealed class CreateAppSectionOptions : EnvironmentOptions {
 	public string? WithMobilePagesValue { get; set; }
 
 	public bool WithMobilePages {
-		get => !string.Equals(WithMobilePagesValue ?? "true", "false", StringComparison.OrdinalIgnoreCase);
+		get {
+			string val = WithMobilePagesValue ?? "true";
+			if (string.Equals(val, "true", StringComparison.OrdinalIgnoreCase)) return true;
+			if (string.Equals(val, "false", StringComparison.OrdinalIgnoreCase)) return false;
+			throw new ArgumentException($"Invalid value '{val}' for --with-mobile-pages. Allowed values: true, false.");
+		}
 		set => WithMobilePagesValue = value ? "true" : "false";
 	}
 }

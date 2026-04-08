@@ -241,3 +241,73 @@ public sealed class ApplicationSectionCreateServiceTests {
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 	}
 }
+
+[TestFixture]
+public sealed class CreateAppSectionOptionsTests {
+
+	[Test]
+	[Description("Returns true when WithMobilePagesValue is 'true' (case-insensitive)")]
+	[TestCase("true")]
+	[TestCase("True")]
+	[TestCase("TRUE")]
+	public void WithMobilePages_WhenValueIsTrue_ReturnsTrue(string value) {
+		// Arrange
+		CreateAppSectionOptions options = new() { WithMobilePagesValue = value };
+
+		// Act
+		bool result = options.WithMobilePages;
+
+		// Assert
+		result.Should().BeTrue(because: $"'{value}' is a valid truthy value for --with-mobile-pages");
+	}
+
+	[Test]
+	[Description("Returns false when WithMobilePagesValue is 'false' (case-insensitive)")]
+	[TestCase("false")]
+	[TestCase("False")]
+	[TestCase("FALSE")]
+	public void WithMobilePages_WhenValueIsFalse_ReturnsFalse(string value) {
+		// Arrange
+		CreateAppSectionOptions options = new() { WithMobilePagesValue = value };
+
+		// Act
+		bool result = options.WithMobilePages;
+
+		// Assert
+		result.Should().BeFalse(because: $"'{value}' is a valid falsy value for --with-mobile-pages");
+	}
+
+	[Test]
+	[Description("Throws ArgumentException for invalid --with-mobile-pages values like '0', 'no', or typos")]
+	[TestCase("0")]
+	[TestCase("1")]
+	[TestCase("no")]
+	[TestCase("yes")]
+	[TestCase("enabled")]
+	[TestCase("xyz")]
+	public void WithMobilePages_WhenValueIsInvalid_ThrowsArgumentException(string value) {
+		// Arrange
+		CreateAppSectionOptions options = new() { WithMobilePagesValue = value };
+
+		// Act
+		Action action = () => _ = options.WithMobilePages;
+
+		// Assert
+		action.Should().Throw<ArgumentException>()
+			.WithMessage($"*{value}*",
+				because: $"'{value}' is not a valid boolean value and should be rejected explicitly");
+	}
+
+	[Test]
+	[Description("Returns true when WithMobilePagesValue is null (default behavior)")]
+	public void WithMobilePages_WhenValueIsNull_ReturnsTrue() {
+		// Arrange
+		CreateAppSectionOptions options = new() { WithMobilePagesValue = null };
+
+		// Act
+		bool result = options.WithMobilePages;
+
+		// Assert
+		result.Should().BeTrue(because: "null means the option was not provided, defaulting to true");
+	}
+}

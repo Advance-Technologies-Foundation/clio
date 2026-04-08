@@ -184,6 +184,7 @@ internal sealed class EntitySchemaDefaultValueSourceResolver : IEntitySchemaDefa
 			0 => ["Guid"],
 			1 => ["Text"],
 			4 => ["Integer"],
+			5 => ["Decimal"],
 			6 => ["Currency"],
 			7 => ["DateTime"],
 			10 => ["Lookup"],
