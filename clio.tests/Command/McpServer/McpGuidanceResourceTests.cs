@@ -32,6 +32,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should steer callers toward the batch page workflow");
 		article.Text.Should().Contain("application-create",
 			because: "the guide should explain the canonical app-creation entry point");
+		article.Text.Should().Contain("application-section-create",
+			because: "the guide should explain the canonical existing-app section creation entry point");
+		article.Text.Should().Contain("application-section-update",
+			because: "the guide should explain the canonical existing-section metadata update entry point");
 		article.Text.Should().Contain("Canonical new-app entity flow",
 			because: "the guide should publish the preferred new-app entity sequence as MCP-owned guidance");
 		article.Text.Should().Contain("Canonical page flow after planning a page change",
@@ -42,6 +46,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should state that application-create keeps shell fields as plain strings");
 		article.Text.Should().Contain("Do not send localization-map fields",
 			because: "the guide should prevent callers from mixing application-create with entity-schema localization maps");
+		article.Text.Should().Contain("application-section-create` is scalar-only",
+			because: "the guide should state that section-create also keeps shell fields as plain scalars");
+		article.Text.Should().Contain("application-section-update` is scalar-only",
+			because: "the guide should state that section-update also keeps metadata fields as plain scalars");
 		article.Text.Should().Contain("create the app first and then apply those captions through `schema-sync`",
 			because: "the guide should steer callers toward follow-up schema tools when localized captions are needed");
 		article.Text.Should().Contain("compatibility fallbacks",
@@ -76,6 +84,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should start existing-app discovery from installed application lookup");
 		article.Text.Should().Contain("application-get-info",
 			because: "the guide should explain the follow-up app inspection step");
+		article.Text.Should().Contain("application-section-create",
+			because: "the guide should include the dedicated section-create mutation path for existing apps");
+		article.Text.Should().Contain("application-section-update",
+			because: "the guide should include the dedicated section-update mutation path for existing apps");
 		article.Text.Should().Contain("`code`",
 			because: "the guide should steer existing-app flows toward the canonical code selector");
 		article.Text.Should().Contain("page-list",
@@ -110,6 +122,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should explain that page-sync verify stays optional by default");
 		article.Text.Should().Contain("fallback-oriented tools",
 			because: "the guide should explain which single-surface tools are compatibility paths when the preferred batched workflow is not appropriate");
+		article.Text.Should().Contain("application-code",
+			because: "the guide should spell out the canonical section-create selector");
+		article.Text.Should().Contain("section-code",
+			because: "the guide should spell out the canonical existing-section selector for updates");
+		article.Text.Should().Contain("with-mobile-pages",
+			because: "the guide should explain the explicit top-level mobile-page toggle for section creation");
 		article.Text.Should().Contain("do not wrap MCP arguments inside `args`",
 			because: "the guide should explicitly reject the synthetic args wrapper that caused real session failures");
 		article.Text.Should().Contain("do not send `bundle` or `bundle.viewConfig` as the body payload",

@@ -365,6 +365,24 @@ clio get-app-list -e <ENV>
 clio apps -e <ENV>
 ```
 
+### create-app-section
+Create a section inside an existing installed application.
+```bash
+clio create-app-section --application-code UsrOrdersApp --caption "Orders" -e <ENV>
+clio create-app-section --application-code UsrSalesApp --caption "Accounts" --entity-schema-name Account -e <ENV>
+clio create-app-section --application-code UsrSalesApp --caption "Visits" --with-mobile-pages false -e <ENV>
+```
+Rules: require `--application-code`; provide `--entity-schema-name` when the section must reuse an existing entity; omit that field to let Creatio create a new object; `--with-mobile-pages` is optional and defaults to `true`.
+
+### update-app-section
+Update metadata of a section inside an existing installed application.
+```bash
+clio update-app-section --application-code UsrOrdersApp --section-code UsrOrders --caption "Orders" -e <ENV>
+clio update-app-section --application-code UsrSalesApp --section-code AccountSection --description "Key customer accounts" -e <ENV>
+clio update-app-section --application-code UsrSalesApp --section-code VisitSection --icon-id 11111111-1111-1111-1111-111111111111 --icon-background "#A1B2C3" -e <ENV>
+```
+Rules: require `--application-code` and `--section-code`; provide at least one mutable field from `--caption`, `--description`, `--icon-id`, `--icon-background`; omitted fields remain unchanged; caption updates persist plain text and can repair broken JSON-style headings.
+
 ### upload-license
 Upload license file. **Aliases:** `license`, `loadlicense`, `load-license`
 ```bash

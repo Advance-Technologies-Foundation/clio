@@ -20,6 +20,7 @@ compare-web-farm-node:compare-web-farm-node,check-farm,check-web-farm-node,cwf,f
 compile-configuration:compile-configuration,cc,compile-remote
 compile-package:compile-package,comp-pkg
 compressApp:compressApp,comp-app
+create-app-section:create-app-section
 create-data-binding:create-data-binding
 create-data-binding-db:create-data-binding-db
 create-entity-schema:create-entity-schema
@@ -126,6 +127,7 @@ uninstall-creatio:uninstall-creatio,uc
 unlock-package:unlock-package,up
 unreg-web-app:unreg-web-app,unreg
 unregister:unregister
+update-app-section:update-app-section
 update-cli:update-cli,update
 update-entity-schema:update-entity-schema
 update-skill:update-skill

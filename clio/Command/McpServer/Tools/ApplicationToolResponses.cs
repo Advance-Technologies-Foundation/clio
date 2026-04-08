@@ -38,6 +38,52 @@ public sealed record ApplicationContextResponse(
 	[property: JsonPropertyName("error")] string? Error = null);
 
 /// <summary>
+/// Structured existing-app section creation envelope returned by application section MCP tools.
+/// </summary>
+public sealed record ApplicationSectionContextResponse(
+	[property: JsonPropertyName("success")] bool Success,
+	[property: JsonPropertyName("package-u-id")] string? PackageUId = null,
+	[property: JsonPropertyName("package-name")] string? PackageName = null,
+	[property: JsonPropertyName("application-id")] string? ApplicationId = null,
+	[property: JsonPropertyName("application-name")] string? ApplicationName = null,
+	[property: JsonPropertyName("application-code")] string? ApplicationCode = null,
+	[property: JsonPropertyName("application-version")] string? ApplicationVersion = null,
+	[property: JsonPropertyName("section")] ApplicationSectionResult? Section = null,
+	[property: JsonPropertyName("entity")] ApplicationEntityResult? Entity = null,
+	[property: JsonPropertyName("pages")] IReadOnlyList<PageListItem>? Pages = null,
+	[property: JsonPropertyName("error")] string? Error = null);
+
+/// <summary>
+/// Structured existing-app section update envelope returned by application section update MCP tools.
+/// </summary>
+public sealed record ApplicationSectionUpdateContextResponse(
+	[property: JsonPropertyName("success")] bool Success,
+	[property: JsonPropertyName("package-u-id")] string? PackageUId = null,
+	[property: JsonPropertyName("package-name")] string? PackageName = null,
+	[property: JsonPropertyName("application-id")] string? ApplicationId = null,
+	[property: JsonPropertyName("application-name")] string? ApplicationName = null,
+	[property: JsonPropertyName("application-code")] string? ApplicationCode = null,
+	[property: JsonPropertyName("application-version")] string? ApplicationVersion = null,
+	[property: JsonPropertyName("previous-section")] ApplicationSectionResult? PreviousSection = null,
+	[property: JsonPropertyName("section")] ApplicationSectionResult? Section = null,
+	[property: JsonPropertyName("error")] string? Error = null);
+
+/// <summary>
+/// Structured section item returned by the <c>application-section-create</c> MCP tool.
+/// </summary>
+public sealed record ApplicationSectionResult(
+	[property: JsonPropertyName("id")] string Id,
+	[property: JsonPropertyName("code")] string Code,
+	[property: JsonPropertyName("caption")] string Caption,
+	[property: JsonPropertyName("description")] string? Description,
+	[property: JsonPropertyName("entity-schema-name")] string? EntitySchemaName,
+	[property: JsonPropertyName("package-id")] string? PackageId,
+	[property: JsonPropertyName("section-schema-u-id")] string? SectionSchemaUId,
+	[property: JsonPropertyName("icon-id")] string? IconId,
+	[property: JsonPropertyName("icon-background")] string? IconBackground,
+	[property: JsonPropertyName("client-type-id")] string? ClientTypeId);
+
+/// <summary>
 /// Structured application entity item returned by the application MCP tool family.
 /// </summary>
 public sealed record ApplicationEntityResult(
