@@ -352,7 +352,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 ## Deployment & Infrastructure
 
 <a id="build-docker-image"></a>
-- [`build-docker-image`](docs/commands/build-docker-image.md) - Build a Docker image for a Creatio .NET 8+ distribution or bundled database backup
+- [`build-docker-image`](docs/commands/build-docker-image.md) - Build one or more Docker images for a Creatio .NET 8+ distribution or bundled database backup
 <a id="check-windows-features"></a>
 <a id="cf"></a>
 <a id="checkf"></a>

@@ -1963,3 +1963,18 @@ Decision: Narrowed the fix to `ApplicationInfoService` readback: pass the instal
 Discovery: The existing canonical-entity safeguard already preferred a design caption over `Base object`, so the missing case was specifically the unreadable-design fallback path rather than application creation or MCP response mapping.
 Files: clio/Command/ApplicationInfoService.cs, clio.tests/Command/ApplicationInfoServiceTests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs, .codex/workspace-diary.md
 Impact: `application-get-info` now keeps the business caption for the canonical main entity after schema mutations instead of leaking the template fallback `Base object`, while non-canonical entity captions remain unchanged.
+
+## 2026-04-04 08:44 – Prepare release 8.0.2.58 on master
+Context: After merging PR 514 and creating the follow-up branch, the next requested task was to create the next repository release and update the project version in the csproj beforehand.
+Decision: Fast-forwarded local `master` to `origin/master`, derived the next version from the latest tag `8.0.2.57`, and bumped the default `AssemblyVersion` in `clio.csproj` to `8.0.2.58` so the local project file matches the release tag.
+Discovery: The release workflow still takes the published GitHub release tag as the source of truth for package versioning, but the repository also expects `clio.csproj` to be updated for local builds before cutting the release.
+Files: /Users/a.kravchuk/Projects/clio/clio/clio.csproj, /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
+Impact: The upcoming tag and GitHub release will align with both the automated NuGet publish flow and the repository’s default local version metadata.
+
+## 2026-04-06 16:17 – Batch docker-image builds and stale Jsonh package fix
+Context: The `build-docker-image` command needed to build `db`, `dev`, and `prod` from one ZIP in a single invocation without repeating extraction and CLI detection, and local verification was blocked by a stale `HjsonSharp` package reference.
+Decision: Refactored `BuildDockerImageService` into batch orchestration with shared source preparation, per-template isolated build contexts, batch-aware output and registry preflight handling, and end-of-run summary logging; updated command docs/help for comma-separated templates; replaced the remaining `HjsonSharp` package reference with `JsonhCs` to match current code usage.
+Discovery: The main regression risk in batch mode was not syntax but orchestration detail: mixed registry targets need shared preflight across distinct effective push targets, dev-template tests need a cached code-server archive stub, and output-path validation must reject tar-like file targets without rejecting dotted directory names.
+Files: C:\Projects\clio\clio\Command\BuildDockerImageService.cs, C:\Projects\clio\clio\Command\BuildDockerImageCommand.cs, C:\Projects\clio\clio.tests\Command\BuildDockerImageServiceTests.cs, C:\Projects\clio\clio\help\en\build-docker-image.txt, C:\Projects\clio\clio\docs\commands\build-docker-image.md, C:\Projects\clio\clio\Commands.md, C:\Projects\clio\clio\clio.csproj, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `clio build-docker-image --template db,dev,prod` now reuses one prepared source payload and one CLI probe/version check per invocation, batch tests run green again, and restore/build is no longer blocked by the stale HJSON package reference.
+

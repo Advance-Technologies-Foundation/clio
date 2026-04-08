@@ -9,7 +9,7 @@
 		<PackageTags>cli ATF clio creatio</PackageTags>
 		<NeutralLanguage>en</NeutralLanguage>
 		<!-- Default version for local development. Will be overridden during release from tag -->
-		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.2.53</AssemblyVersion>
+		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.2.59</AssemblyVersion>
 		<FileVersion>$(AssemblyVersion)</FileVersion>
 		<Version>$(AssemblyVersion)</Version>
 		<Description>CLI interface for Creatio</Description>
@@ -136,7 +136,7 @@
 		
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" VersionOverride="2.0.0"/>
 		<PackageReference Include="MediatR" VersionOverride="[12.5.0]"/>
-		<PackageReference Include="Microsoft.Dism" VersionOverride="4.0.7"/>
+		<PackageReference Include="Microsoft.Dism" VersionOverride="5.0.0" />
 		<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/> <!-- 7.4.13 Is the latest supported on .NET8-->
 		<PackageReference Include="Microsoft.Web.Administration" VersionOverride="11.1.0"/>
 	</ItemGroup>
