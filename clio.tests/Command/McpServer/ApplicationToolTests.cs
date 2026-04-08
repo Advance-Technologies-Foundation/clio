@@ -156,6 +156,42 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Advertises the stable MCP tool name for application-section-create so callers and tests share the same production identifier.")]
+	public void ApplicationSectionCreate_Should_Advertise_Stable_Tool_Name() {
+		// Arrange
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationSectionCreateTool)
+			.GetMethod(nameof(ApplicationSectionCreateTool.ApplicationSectionCreate))!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+
+		// Act
+		string toolName = attribute.Name;
+
+		// Assert
+		toolName.Should().Be(ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+			because: "the MCP tool name must stay centralized on the production tool type");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises the stable MCP tool name for application-section-update so callers and tests share the same production identifier.")]
+	public void ApplicationSectionUpdate_Should_Advertise_Stable_Tool_Name() {
+		// Arrange
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationSectionUpdateTool)
+			.GetMethod(nameof(ApplicationSectionUpdateTool.ApplicationSectionUpdate))!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+
+		// Act
+		string toolName = attribute.Name;
+
+		// Assert
+		toolName.Should().Be(ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+			because: "the MCP tool name must stay centralized on the production tool type");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Calls the application info service with exactly one MCP identifier and returns the expected success envelope.")]
 	public void ApplicationGetInfo_Should_Return_Structured_Success_Envelope() {
 		// Arrange
@@ -253,6 +289,264 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Match("*code*",
 			because: "the MCP tool contract should mention the supported identifier names");
 		applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Calls the section-create service with the top-level MCP request fields and returns the structured section envelope on success.")]
+	public void ApplicationSectionCreate_Should_Return_Structured_Success_Envelope() {
+		// Arrange
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+			.Returns(new ApplicationSectionCreateResult(
+				"pkg-uid",
+				"UsrOrdersApp",
+				"app-id",
+				"Orders App",
+				"UsrOrdersApp",
+				"8.3.0",
+				new ApplicationSectionInfoResult(
+					"section-id",
+					"UsrOrders",
+					"Orders",
+					"Order workspace",
+					"UsrOrder",
+					"pkg-uid",
+					"section-schema-uid",
+					"icon-id",
+					"#123456",
+					null),
+				new ApplicationEntityInfoResult(
+					"entity-uid",
+					"UsrOrder",
+					"Order",
+					[]),
+				[
+					new PageListItem {
+						SchemaName = "UsrOrders_FormPage",
+						UId = "page-uid",
+						PackageName = "UsrOrdersApp",
+						ParentSchemaName = "BasePage"
+					}
+				]));
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Orders",
+			Description: "Order workspace",
+			EntitySchemaName: "UsrOrder",
+			WithMobilePages: true));
+
+		// Assert
+		applicationSectionCreateService.Received(1).CreateSection(
+			"sandbox",
+			Arg.Is<ApplicationSectionCreateRequest>(request =>
+				request.ApplicationCode == "UsrOrdersApp" &&
+				request.Caption == "Orders" &&
+				request.Description == "Order workspace" &&
+				request.EntitySchemaName == "UsrOrder" &&
+				request.WithMobilePages));
+		result.Success.Should().BeTrue(
+			because: "a successful section-create call should be wrapped in a core-style success envelope");
+		result.Section.Should().NotBeNull(
+			because: "the MCP tool should return the created section metadata");
+		result.Section!.Code.Should().Be("UsrOrders",
+			because: "the section envelope should preserve the created section code");
+		result.Entity!.Name.Should().Be("UsrOrder",
+			because: "the entity envelope should preserve the created or targeted entity");
+		result.Pages.Should().ContainSingle(
+			because: "the create response should include page readback data when available");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when section-create omits application-code.")]
+	public void ApplicationSectionCreate_Should_Return_Error_When_ApplicationCode_Is_Missing() {
+		// Arrange
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: null!,
+			Caption: "Orders"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "tool validation failures should be returned as structured error payloads");
+		result.Error.Should().Match("*application-code is required*",
+			because: "the tool should explain that application-code is the supported target selector");
+		applicationSectionCreateService.DidNotReceiveWithAnyArgs().CreateSection(default!, default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when section-create receives forbidden localization maps.")]
+	public void ApplicationSectionCreate_Should_Reject_Localization_Map_Fields() {
+		// Arrange
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Orders",
+			TitleLocalizations: new Dictionary<string, string> {
+				["en-US"] = "Orders"
+			}));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "application-section-create should reject localization maps before any create side effect is attempted");
+		result.Error.Should().Match("*scalar-only*",
+			because: "the failure should explain that localization maps are forbidden on application-section-create");
+		applicationSectionCreateService.DidNotReceiveWithAnyArgs().CreateSection(default!, default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Calls the section-update service with the top-level MCP request fields and returns structured before-and-after section envelopes on success.")]
+	public void ApplicationSectionUpdate_Should_Return_Structured_Success_Envelope() {
+		// Arrange
+		IApplicationSectionUpdateService applicationSectionUpdateService = Substitute.For<IApplicationSectionUpdateService>();
+		applicationSectionUpdateService.UpdateSection("sandbox", Arg.Any<ApplicationSectionUpdateRequest>())
+			.Returns(new ApplicationSectionUpdateResult(
+				"pkg-uid",
+				"UsrOrdersApp",
+				"app-id",
+				"Orders App",
+				"UsrOrdersApp",
+				"8.3.0",
+				new ApplicationSectionInfoResult(
+					"section-id",
+					"UsrOrders",
+					"{\"en-US\":\"Orders\"}",
+					"Old description",
+					"UsrOrder",
+					"pkg-uid",
+					"section-schema-uid",
+					"icon-old",
+					"#111111",
+					null),
+				new ApplicationSectionInfoResult(
+					"section-id",
+					"UsrOrders",
+					"Orders",
+					"New description",
+					"UsrOrder",
+					"pkg-uid",
+					"section-schema-uid",
+					"11111111-1111-1111-1111-111111111111",
+					"#123456",
+					null)));
+		ApplicationSectionUpdateTool tool = new(applicationSectionUpdateService);
+
+		// Act
+		ApplicationSectionUpdateContextResponse result = tool.ApplicationSectionUpdate(new ApplicationSectionUpdateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			SectionCode: "UsrOrders",
+			Caption: "Orders",
+			Description: "New description",
+			IconId: "11111111-1111-1111-1111-111111111111",
+			IconBackground: "#123456"));
+
+		// Assert
+		applicationSectionUpdateService.Received(1).UpdateSection(
+			"sandbox",
+			Arg.Is<ApplicationSectionUpdateRequest>(request =>
+				request.ApplicationCode == "UsrOrdersApp" &&
+				request.SectionCode == "UsrOrders" &&
+				request.Caption == "Orders" &&
+				request.Description == "New description" &&
+				request.IconId == "11111111-1111-1111-1111-111111111111" &&
+				request.IconBackground == "#123456"));
+		result.Success.Should().BeTrue(
+			because: "a successful section-update call should be wrapped in a core-style success envelope");
+		result.PreviousSection.Should().NotBeNull(
+			because: "the MCP tool should return the section metadata before the update");
+		result.Section.Should().NotBeNull(
+			because: "the MCP tool should return the section metadata after the update");
+		result.PreviousSection!.Caption.Should().Be("{\"en-US\":\"Orders\"}",
+			because: "the before-section payload should preserve the original stored caption");
+		result.Section!.Caption.Should().Be("Orders",
+			because: "the after-section payload should preserve the updated plain-text caption");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when section-update omits section-code.")]
+	public void ApplicationSectionUpdate_Should_Return_Error_When_SectionCode_Is_Missing() {
+		// Arrange
+		IApplicationSectionUpdateService applicationSectionUpdateService = Substitute.For<IApplicationSectionUpdateService>();
+		ApplicationSectionUpdateTool tool = new(applicationSectionUpdateService);
+
+		// Act
+		ApplicationSectionUpdateContextResponse result = tool.ApplicationSectionUpdate(new ApplicationSectionUpdateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			SectionCode: null!,
+			Caption: "Orders"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "tool validation failures should be returned as structured error payloads");
+		result.Error.Should().Match("*section-code is required*",
+			because: "the tool should explain that section-code is required for existing-section updates");
+		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default!, default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when section-update receives no mutable fields.")]
+	public void ApplicationSectionUpdate_Should_Return_Error_When_No_Mutable_Fields_Are_Provided() {
+		// Arrange
+		IApplicationSectionUpdateService applicationSectionUpdateService = Substitute.For<IApplicationSectionUpdateService>();
+		ApplicationSectionUpdateTool tool = new(applicationSectionUpdateService);
+
+		// Act
+		ApplicationSectionUpdateContextResponse result = tool.ApplicationSectionUpdate(new ApplicationSectionUpdateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			SectionCode: "UsrOrders"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "tool validation failures should stay inside the structured response payload");
+		result.Error.Should().Match("*at least one mutable field*",
+			because: "the tool should explain that section-update requires at least one field to change");
+		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default!, default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when section-update receives forbidden localization maps.")]
+	public void ApplicationSectionUpdate_Should_Reject_Localization_Map_Fields() {
+		// Arrange
+		IApplicationSectionUpdateService applicationSectionUpdateService = Substitute.For<IApplicationSectionUpdateService>();
+		ApplicationSectionUpdateTool tool = new(applicationSectionUpdateService);
+
+		// Act
+		ApplicationSectionUpdateContextResponse result = tool.ApplicationSectionUpdate(new ApplicationSectionUpdateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			SectionCode: "UsrOrders",
+			Caption: "Orders",
+			TitleLocalizations: new Dictionary<string, string> {
+				["en-US"] = "Orders"
+			}));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "application-section-update should reject localization maps before any update side effect is attempted");
+		result.Error.Should().Match("*scalar-only*",
+			because: "the failure should explain that localization maps are forbidden on application-section-update");
+		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default!, default!);
 	}
 
 	[Test]
@@ -809,6 +1103,21 @@ public sealed class ApplicationToolTests {
 			iconId: "11111111-1111-1111-1111-111111111111",
 			clientTypeId: "22222222-2222-2222-2222-222222222222",
 			optionalTemplateDataJson: "{\"entitySchemaName\":\"UsrCodexEntity\"}");
+		string sectionCreatePrompt = ApplicationPrompt.ApplicationSectionCreate(
+			environmentName: "sandbox",
+			applicationCode: "UsrOrdersApp",
+			caption: "Orders",
+			description: "Order workspace",
+			entitySchemaName: "UsrOrder",
+			withMobilePages: true);
+		string sectionUpdatePrompt = ApplicationPrompt.ApplicationSectionUpdate(
+			environmentName: "sandbox",
+			applicationCode: "UsrOrdersApp",
+			sectionCode: "UsrOrders",
+			caption: "Orders",
+			description: "Order workspace",
+			iconId: "11111111-1111-1111-1111-111111111111",
+			iconBackground: "#123456");
 
 		// Assert
 		listPrompt.Should().Contain(ApplicationGetListTool.ApplicationGetListToolName,
@@ -865,6 +1174,44 @@ public sealed class ApplicationToolTests {
 			because: "the create prompt signature should stay in parity with the executable application-create contract");
 		createPrompt.Should().Contain("follow-up entity-schema tools",
 			because: "the create prompt should direct callers to schema tools when localized captions are needed");
+		sectionCreatePrompt.Should().Contain(ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+			because: "the section-create prompt should reference the exact production tool name");
+		sectionCreatePrompt.Should().Contain(ToolContractGetTool.ToolName,
+			because: "the section-create prompt should bootstrap existing-app mutation workflows from the authoritative MCP contract");
+		sectionCreatePrompt.Should().Contain("`application-code`",
+			because: "the section-create prompt should document the canonical code selector");
+		sectionCreatePrompt.Should().Contain("Provide `caption` as a plain scalar string",
+			because: "the section-create prompt should explain the scalar field shape explicitly");
+		sectionCreatePrompt.Should().Contain("`with-mobile-pages`",
+			because: "the section-create prompt should keep the mobile-page toggle visible");
+		sectionCreatePrompt.Should().Contain("defaults to `true`",
+			because: "the section-create prompt should document the mobile-enabled default explicitly");
+		sectionCreatePrompt.Should().Contain("`entity-schema-name` is provided",
+			because: "the section-create prompt should explain that the entity field alone triggers entity reuse");
+		sectionCreatePrompt.Should().Contain("Do not send `title-localizations`",
+			because: "the section-create prompt should reject localization maps on the scalar section tool");
+		sectionCreatePrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
+			because: "the section-create prompt should point callers to the existing-app maintenance guide");
+		sectionCreatePrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
+			because: "the section-create prompt should point callers to the canonical inspect and verify step");
+		sectionUpdatePrompt.Should().Contain(ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+			because: "the section-update prompt should reference the exact production tool name");
+		sectionUpdatePrompt.Should().Contain(ToolContractGetTool.ToolName,
+			because: "the section-update prompt should bootstrap existing-app mutation workflows from the authoritative MCP contract");
+		sectionUpdatePrompt.Should().Contain("`application-code`",
+			because: "the section-update prompt should document the canonical app selector");
+		sectionUpdatePrompt.Should().Contain("`section-code`",
+			because: "the section-update prompt should document the canonical section selector");
+		sectionUpdatePrompt.Should().Contain("partial update fields",
+			because: "the section-update prompt should explain that omitted fields remain unchanged");
+		sectionUpdatePrompt.Should().Contain("plain-text `caption`",
+			because: "the section-update prompt should explain how callers fix broken JSON-style headings");
+		sectionUpdatePrompt.Should().Contain("Do not send `title-localizations`",
+			because: "the section-update prompt should reject localization maps on the scalar update tool");
+		sectionUpdatePrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
+			because: "the section-update prompt should point callers to the existing-app maintenance guide");
+		sectionUpdatePrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
+			because: "the section-update prompt should point callers to the canonical inspect step");
 	}
 
 	[Test]

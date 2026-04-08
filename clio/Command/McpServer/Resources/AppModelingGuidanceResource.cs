@@ -34,12 +34,16 @@ public sealed class AppModelingGuidanceResource {
 			       Discovery before invocation
 			       - Always read the executable contract through `tool-contract-get` before the first invocation of any MCP tool in a workflow. The contract specifies exact parameter names, aliases, required fields, defaults, and response shapes.
 			       - Send tool arguments at the top level of the MCP request. Do not wrap canonical fields inside a synthetic `args` object.
-			       - Tool-specific identifiers follow their own naming conventions and must not be guessed. For example, `application-get-info` and `page-list` use `code`, `application-get-info` uses `id`, and `application-create` accepts `icon-background` (not `icon-name` or `icon-color`).
+			       - Tool-specific identifiers follow their own naming conventions and must not be guessed. For example, `application-get-info` and `page-list` use `code`, `application-get-info` uses `id`, `application-create` accepts `icon-background`, `application-section-create` accepts `application-code`, and `application-section-update` accepts `application-code` plus `section-code`.
 
 			       Preferred workflow
 			       - Use `application-create` when the workflow is modeling a new app shell rather than editing an existing installed app.
+			       - Use `application-section-create` when the workflow must add a section to an existing installed app instead of creating a new app shell.
+			       - Use `application-section-update` when the workflow must change metadata of an existing section instead of creating a new one.
 			       - Prefer `schema-sync` for multi-step schema work and `page-sync` for multi-page saves.
 			       - Canonical new-app entity flow: `application-create` -> `schema-sync` -> `application-get-info`.
+			       - Canonical existing-app section flow: `application-get-list` -> `application-get-info` -> `application-section-create` -> `application-get-info`.
+			       - Canonical existing-section metadata update flow: `application-get-list` -> `application-get-info` -> `application-section-update`.
 			       - `schema-sync` requests use `operations[*].type`. Responses also identify each result by `type`; do not invent or send `operations[*].operation`.
 			       - Canonical page flow after planning a page change: `page-list` -> `page-get` -> `component-info` when needed -> `page-sync` or `page-update` -> `page-get` when explicit read-back verification is required.
 			       - Entity-schema mutations are DB-first. After a successful schema tool call, treat the schema as immediately usable without a compile step.
@@ -50,6 +54,13 @@ public sealed class AppModelingGuidanceResource {
 			       - `application-create` is scalar-only for app shell fields. Keep `name`, `description`, and `optional-template-data-json.appSectionDescription` as plain strings.
 			       - The minimal `application-create` shell still requires `template-code` and `icon-background`. `template-code` must be the technical template name such as `AppFreedomUI`, not a display label.
 			       - Do not send localization-map fields such as `title-localizations`, `description-localizations`, or `name-localizations` to `application-create`.
+			       - `application-section-create` is scalar-only for section shell fields. Keep `caption`, `description`, and `entity-schema-name` as plain strings and pass `with-mobile-pages` as a top-level boolean.
+			       - `application-section-create` requires `application-code` as the target-app selector.
+			       - Do not send localization-map fields such as `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `application-section-create`.
+			       - When `application-section-create` receives `entity-schema-name`, it reuses that existing entity. Otherwise omit that field and let Creatio create a new object for the section.
+			       - `application-section-update` is scalar-only for section metadata fields. Keep `caption`, `description`, `icon-id`, and `icon-background` as plain top-level scalar values and omit any field that should remain unchanged.
+			       - Use `application-section-update` with `application-code` plus `section-code` to target one existing section inside the app.
+			       - Do not send localization-map fields such as `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `application-section-update`.
 			       - If the app needs localized entity or column captions, create the app first and then apply those captions through `schema-sync`, `create-entity-schema`, `update-entity-schema`, or related entity-schema MCP tools.
 			       - Use `create-lookup` or `schema-sync` `create-lookup` for managed enum-like values such as status or type catalogs.
 			       - `create-lookup` always uses `BaseLookup`. `Name` and `Description` are inherited, and `Name` remains the display field. Do not add duplicate title-like columns just to mirror the lookup caption.

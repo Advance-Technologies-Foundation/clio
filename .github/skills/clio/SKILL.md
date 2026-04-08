@@ -183,6 +183,9 @@ clio download-application MyApp -e myenv
 clio deploy-application MyApp -e source -d target
 clio install-application ./MyApp.gz -e myenv
 clio uninstall-app-remote MyApp -e myenv
+clio create-app-section --application-code UsrOrdersApp --caption "Orders" -e myenv
+clio create-app-section --application-code UsrSalesApp --caption "Accounts" --entity-schema-name Account -e myenv
+clio update-app-section --application-code UsrOrdersApp --section-code UsrOrders --caption "Orders" -e myenv
 
 # Upload license
 clio upload-license license.lic -e myenv
@@ -235,6 +238,70 @@ clio publish-app --repo-path ./workspace --app-hub /hub/path --app-name MyApp -e
 # Link to file design mode
 clio link-from-repository -e myenv --repoPath ./packages --packages "*"
 ```
+
+### 4a. Existing App Section Creation
+
+Use this flow when the app already exists in Creatio and only a new section must be added:
+
+```bash
+# Inspect installed apps first when the app code or id is unknown
+clio get-app-list -e myenv
+
+# Create a section with a new object
+clio create-app-section --application-code UsrOrdersApp --caption "Orders" -e myenv
+
+# Create a section bound to an existing entity
+clio create-app-section \
+  --application-code UsrSalesApp \
+  --caption "Accounts" \
+  --entity-schema-name Account \
+  -e myenv
+
+# Create a web-only section
+clio create-app-section \
+  --application-code UsrSalesApp \
+  --caption "Visits" \
+  --with-mobile-pages false \
+  -e myenv
+```
+
+Rules:
+- pass `--application-code` for the installed target app
+- pass `--entity-schema-name` only when reusing an existing entity
+- omit entity options to let Creatio create a new object for the new section
+
+### 4b. Existing App Section Update
+
+Use this flow when the app and section already exist in Creatio and only section metadata must change:
+
+```bash
+# Fix a broken JSON-style heading
+clio update-app-section \
+  --application-code UsrOrdersApp \
+  --section-code UsrOrders \
+  --caption "Orders" \
+  -e myenv
+
+# Update only description
+clio update-app-section \
+  --application-code UsrSalesApp \
+  --section-code AccountSection \
+  --description "Key customer accounts" \
+  -e myenv
+
+# Update only icon metadata
+clio update-app-section \
+  --application-code UsrSalesApp \
+  --section-code VisitSection \
+  --icon-id 11111111-1111-1111-1111-111111111111 \
+  --icon-background "#A1B2C3" \
+  -e myenv
+```
+
+Rules:
+- pass `--application-code` and `--section-code`
+- provide at least one mutable field: `--caption`, `--description`, `--icon-id`, or `--icon-background`
+- omit fields that must stay unchanged
 
 ### 5. Development Tools
 

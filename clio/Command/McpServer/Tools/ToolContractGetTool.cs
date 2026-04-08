@@ -132,6 +132,8 @@ internal static class ToolContractCatalog {
 	private const string ActionFieldName = "action";
 	private const string AppCodeFieldName = "app-code";
 	private const string AppNameFieldName = "app-name";
+	private const string ApplicationCodeFieldName = "application-code";
+	private const string ApplicationIdFieldName = "application-id";
 	private const string ArrayType = "array";
 	private const string BindingNameFieldName = "binding-name";
 	private const string BooleanType = "boolean";
@@ -180,6 +182,8 @@ internal static class ToolContractCatalog {
 			[ToolContractGetTool.ToolName] = BuildToolContractGet(),
 			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
+			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
+			[ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName] = BuildApplicationSectionUpdate(),
 			[ApplicationGetInfoTool.ApplicationGetInfoToolName] = BuildApplicationGetInfo(),
 			[ApplicationGetListTool.ApplicationGetListToolName] = BuildApplicationGetList(),
 			[SchemaSyncTool.ToolName] = BuildSchemaSync(),
@@ -203,6 +207,8 @@ internal static class ToolContractCatalog {
 	private static readonly string[] CanonicalToolNames = [
 		SettingsHealthTool.ToolName,
 		ApplicationCreateTool.ApplicationCreateToolName,
+		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 		ApplicationGetInfoTool.ApplicationGetInfoToolName,
 		ApplicationGetListTool.ApplicationGetListToolName,
 		SchemaSyncTool.ToolName,
@@ -457,6 +463,187 @@ internal static class ToolContractCatalog {
 			[]);
 	}
 
+	private static ToolContractDefinition BuildApplicationSectionCreate() {
+		return new ToolContractDefinition(
+			ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+			"Creates a section inside an existing installed application and returns structured section, entity, and page readback data.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, ApplicationCodeFieldName, "caption"],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(ApplicationCodeFieldName, StringType, "Installed application code."),
+					Field("caption", StringType, "Section caption."),
+					Field("description", StringType, "Optional section description."),
+					Field("entity-schema-name", StringType, "Optional existing entity schema name. When provided, the section reuses that entity."),
+					Field("with-mobile-pages", BooleanType, "Create mobile pages in addition to web pages.")
+				],
+				Validators: [
+					new ToolContractValidator(
+						"forbid-fields",
+						"invalid-workflow-shape",
+						Fields: [
+							TitleLocalizationsFieldName,
+							DescriptionLocalizationsFieldName,
+							"caption-localizations",
+							"name-localizations",
+							"titleLocalizations",
+							"descriptionLocalizations",
+							"captionLocalizations",
+							"nameLocalizations"
+						],
+						Context: "application-section-create stays scalar-only; localized captions belong to follow-up schema tools.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("package-u-id", StringType, "Primary package identifier."),
+				Field(PackageNameFieldName, StringType, "Primary package name."),
+				Field("application-id", StringType, "Installed application identifier."),
+				Field("application-name", StringType, "Installed application display name."),
+				Field("application-code", StringType, "Installed application code."),
+				Field("application-version", StringType, "Installed application version."),
+				Field("section", ObjectType, "Created section metadata."),
+				Field("entity", ObjectType, "Created or targeted entity metadata when available."),
+				Field(PagesFieldName, ArrayType, "Created page summaries using page-list item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				Alias(ParameterScope, ApplicationCodeFieldName, SelectorCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{SelectorCodeFieldName}'."),
+				Alias(ParameterScope, ApplicationCodeFieldName, AppCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{AppCodeFieldName}'."),
+				Alias(ParameterScope, ApplicationCodeFieldName, ApplicationIdFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{ApplicationIdFieldName}'."),
+				Alias(ParameterScope, "entity-schema-name", "use-existing-entity-schema", RejectedStatus, "Use 'entity-schema-name' alone to reuse an existing entity; the boolean flag is not supported.")
+			],
+			[
+				Default("with-mobile-pages", "true", "Create both web and mobile pages unless the caller explicitly disables mobile pages.")
+			],
+			[
+				Example("Create a new-object section in an existing app", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ApplicationCodeFieldName] = ExamplePackageName,
+					["caption"] = "Orders",
+					["description"] = "Order processing workspace"
+				}),
+				Example("Create a section from an existing entity with mobile pages", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ApplicationCodeFieldName] = ExamplePackageName,
+					["caption"] = "Task statuses",
+					["entity-schema-name"] = ExampleTaskStatusSchemaName,
+					["with-mobile-pages"] = true
+				})
+			],
+			Flow(
+				[
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName
+				],
+				"Use application discovery and inspection first, then create the section, then refresh app context once for verification."),
+			[
+				Flow(
+					[
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						ApplicationSectionCreateTool.ApplicationSectionCreateToolName
+					],
+					"Use this shorter flow when the target existing app is already known and inspected.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildApplicationSectionUpdate() {
+		return new ToolContractDefinition(
+			ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+			"Updates metadata of an existing installed application section and returns structured section readback data before and after the update.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, ApplicationCodeFieldName, "section-code"],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(ApplicationCodeFieldName, StringType, "Installed application code."),
+					Field("section-code", StringType, "Existing section code inside the installed application."),
+					Field("caption", StringType, "Optional updated section caption."),
+					Field("description", StringType, "Optional updated section description."),
+					Field("icon-id", StringType, "Optional updated icon GUID."),
+					Field("icon-background", StringType, "Optional updated icon background color in #RRGGBB format.")
+				],
+				Validators: [
+					new ToolContractValidator(
+						"forbid-fields",
+						"invalid-workflow-shape",
+						Fields: [
+							TitleLocalizationsFieldName,
+							DescriptionLocalizationsFieldName,
+							"caption-localizations",
+							"name-localizations",
+							"titleLocalizations",
+							"descriptionLocalizations",
+							"captionLocalizations",
+							"nameLocalizations"
+						],
+						Context: "application-section-update stays scalar-only; localized captions belong to follow-up schema tools.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("package-u-id", StringType, "Primary package identifier."),
+				Field(PackageNameFieldName, StringType, "Primary package name."),
+				Field("application-id", StringType, "Installed application identifier."),
+				Field("application-name", StringType, "Installed application display name."),
+				Field("application-code", StringType, "Installed application code."),
+				Field("application-version", StringType, "Installed application version."),
+				Field("previous-section", ObjectType, "Section metadata before the update."),
+				Field("section", ObjectType, "Section metadata after the update."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				Alias(ParameterScope, ApplicationCodeFieldName, SelectorCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{SelectorCodeFieldName}'."),
+				Alias(ParameterScope, ApplicationCodeFieldName, AppCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{AppCodeFieldName}'."),
+				Alias(ParameterScope, "section-code", "sectionCode", RejectedStatus, "Use 'section-code' instead of 'sectionCode'."),
+				Alias(ParameterScope, "icon-id", "iconId", RejectedStatus, "Use 'icon-id' instead of 'iconId'."),
+				Alias(ParameterScope, "icon-background", "iconBackground", RejectedStatus, "Use 'icon-background' instead of 'iconBackground'.")
+			],
+			[],
+			[
+				Example("Update a broken section heading with a plain-text caption", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ApplicationCodeFieldName] = ExamplePackageName,
+					["section-code"] = "UsrOrders",
+					["caption"] = "Orders"
+				}),
+				Example("Update section description and icon metadata", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ApplicationCodeFieldName] = ExamplePackageName,
+					["section-code"] = "UsrOrders",
+					["description"] = "Order processing workspace",
+					["icon-id"] = "11111111-1111-1111-1111-111111111111",
+					["icon-background"] = "#1F5F8B"
+				})
+			],
+			Flow(
+				[
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName
+				],
+				"Use application discovery and inspection first, then update the target section metadata with a partial top-level payload."),
+			[
+				Flow(
+					[
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName
+					],
+					"Use this shorter flow when the target app is already known and inspected.")
+			],
+			[]);
+	}
+
 	private static ToolContractDefinition BuildApplicationGetInfo() {
 		return new ToolContractDefinition(
 			ApplicationGetInfoTool.ApplicationGetInfoToolName,
@@ -501,9 +688,11 @@ internal static class ToolContractCatalog {
 			Flow(
 				[
 					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				],
-				"Use after application-get-list when the target app is not fully known, or refresh again after mutations when app context must be re-read."),
+				"Use after application-get-list when the target app is not fully known, or refresh again after section or schema mutations when app context must be re-read."),
 			[],
 			[]);
 	}
@@ -540,7 +729,16 @@ internal static class ToolContractCatalog {
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				],
 				"Use when the workflow must branch into existing-app discovery."),
-			[],
+			[
+				Flow(
+					[
+						ApplicationGetListTool.ApplicationGetListToolName,
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+						ApplicationGetInfoTool.ApplicationGetInfoToolName
+					],
+					"Extend the existing-app discovery flow with section creation when the task is to add a section to an installed app.")
+			],
 			[]);
 	}
 
