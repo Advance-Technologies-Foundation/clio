@@ -278,24 +278,22 @@ public sealed class CreateAppSectionOptionsTests {
 	}
 
 	[Test]
-	[Description("Throws ArgumentException for invalid --with-mobile-pages values like '0', 'no', or typos")]
+	[Description("Returns false for invalid values — validation must be done via ValidateMobilePagesOption, not the getter")]
 	[TestCase("0")]
 	[TestCase("1")]
 	[TestCase("no")]
 	[TestCase("yes")]
 	[TestCase("enabled")]
 	[TestCase("xyz")]
-	public void WithMobilePages_WhenValueIsInvalid_ThrowsArgumentException(string value) {
+	public void WithMobilePages_WhenValueIsInvalid_ReturnsFalse(string value) {
 		// Arrange
 		CreateAppSectionOptions options = new() { WithMobilePagesValue = value };
 
 		// Act
-		Action action = () => _ = options.WithMobilePages;
+		bool result = options.WithMobilePages;
 
 		// Assert
-		action.Should().Throw<ArgumentException>()
-			.WithMessage($"*{value}*",
-				because: $"'{value}' is not a valid boolean value and should be rejected explicitly");
+		result.Should().BeFalse(because: $"'{value}' is not 'true', so the getter returns false; validation is separate");
 	}
 
 	[Test]
@@ -309,5 +307,49 @@ public sealed class CreateAppSectionOptionsTests {
 
 		// Assert
 		result.Should().BeTrue(because: "null means the option was not provided, defaulting to true");
+	}
+
+	[Test]
+	[Description("ValidateMobilePagesOption does not throw for null (default value)")]
+	public void ValidateMobilePagesOption_WhenValueIsNull_DoesNotThrow() {
+		// Arrange / Act
+		Action action = () => CreateAppSectionOptions.ValidateMobilePagesOption(null);
+
+		// Assert
+		action.Should().NotThrow(because: "null means the CLI option was omitted and should use the default");
+	}
+
+	[Test]
+	[Description("ValidateMobilePagesOption does not throw for 'true' or 'false' (case-insensitive)")]
+	[TestCase("true")]
+	[TestCase("True")]
+	[TestCase("TRUE")]
+	[TestCase("false")]
+	[TestCase("False")]
+	[TestCase("FALSE")]
+	public void ValidateMobilePagesOption_WhenValueIsValid_DoesNotThrow(string value) {
+		// Arrange / Act
+		Action action = () => CreateAppSectionOptions.ValidateMobilePagesOption(value);
+
+		// Assert
+		action.Should().NotThrow(because: $"'{value}' is a valid boolean string for --with-mobile-pages");
+	}
+
+	[Test]
+	[Description("ValidateMobilePagesOption throws ArgumentException for invalid values like '0', 'no', or typos")]
+	[TestCase("0")]
+	[TestCase("1")]
+	[TestCase("no")]
+	[TestCase("yes")]
+	[TestCase("enabled")]
+	[TestCase("xyz")]
+	public void ValidateMobilePagesOption_WhenValueIsInvalid_ThrowsArgumentException(string value) {
+		// Arrange / Act
+		Action action = () => CreateAppSectionOptions.ValidateMobilePagesOption(value);
+
+		// Assert
+		action.Should().Throw<ArgumentException>()
+			.WithMessage($"*{value}*",
+				because: $"'{value}' is not a valid boolean value and must be rejected with a clear error message");
 	}
 }

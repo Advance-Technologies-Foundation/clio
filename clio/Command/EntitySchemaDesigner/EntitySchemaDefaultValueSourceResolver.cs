@@ -17,6 +17,9 @@ internal interface IEntitySchemaDefaultValueSourceResolver
 
 internal sealed class EntitySchemaDefaultValueSourceResolver : IEntitySchemaDefaultValueSourceResolver
 {
+	private const string DecimalTypeName = "Decimal";
+	private const string CurrencyTypeName = "Currency";
+
 	private static readonly IReadOnlyDictionary<string, Guid> SystemValueAliasMap =
 		new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase) {
 			["AutoGuid"] = new Guid("{03FAC162-6A98-4F29-8D28-DC2F23AB48DA}"),
@@ -184,8 +187,8 @@ internal sealed class EntitySchemaDefaultValueSourceResolver : IEntitySchemaDefa
 			0 => ["Guid"],
 			1 => ["Text"],
 			4 => ["Integer"],
-			5 => ["Decimal"],
-			6 => ["Currency"],
+			5 => [DecimalTypeName],
+			6 => [CurrencyTypeName],
 			7 => ["DateTime"],
 			10 => ["Lookup"],
 			12 => ["Boolean"],
@@ -194,19 +197,19 @@ internal sealed class EntitySchemaDefaultValueSourceResolver : IEntitySchemaDefa
 			28 => ["MediumText", "Text"],
 			29 => ["MaxSizeText", "Text"],
 			30 => ["LongText", "Text"],
-			31 => ["Decimal"],
-			32 => ["Decimal"],
-			33 => ["Decimal"],
-			34 => ["Decimal"],
-			40 => ["Decimal"],
+			31 => [DecimalTypeName],
+			32 => [DecimalTypeName],
+			33 => [DecimalTypeName],
+			34 => [DecimalTypeName],
+			40 => [DecimalTypeName],
 			42 => ["Text"],
 			43 => ["Text"],
 			44 => ["Text"],
 			45 => ["Text"],
-			47 => ["Decimal"],
-			48 => ["Currency"],
-			49 => ["Currency"],
-			50 => ["Currency"],
+			47 => [DecimalTypeName],
+			48 => [CurrencyTypeName],
+			49 => [CurrencyTypeName],
+			50 => [CurrencyTypeName],
 			_ => throw new EntitySchemaDesignerException(
 				$"Unsupported dataValueType '{dataValueType}' for default-value-config source Settings.")
 		};

@@ -33,13 +33,16 @@ public sealed class CreateAppSectionOptions : EnvironmentOptions {
 	public string? WithMobilePagesValue { get; set; }
 
 	public bool WithMobilePages {
-		get {
-			string val = WithMobilePagesValue ?? "true";
-			if (string.Equals(val, "true", StringComparison.OrdinalIgnoreCase)) return true;
-			if (string.Equals(val, "false", StringComparison.OrdinalIgnoreCase)) return false;
-			throw new ArgumentException($"Invalid value '{val}' for --with-mobile-pages. Allowed values: true, false.");
-		}
+		get => string.Equals(WithMobilePagesValue ?? "true", "true", StringComparison.OrdinalIgnoreCase);
 		set => WithMobilePagesValue = value ? "true" : "false";
+	}
+
+	internal static void ValidateMobilePagesOption(string? value) {
+		if (value is null) return;
+		if (!string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) &&
+			!string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)) {
+			throw new ArgumentException($"Invalid value '{value}' for --with-mobile-pages. Allowed values: true, false.");
+		}
 	}
 }
 
@@ -66,6 +69,7 @@ public sealed class ApplicationSectionCreateService(
 	IApplicationInfoService applicationInfoService)
 	: IApplicationSectionCreateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
+	private const string ApplicationIdJsonField = "ApplicationId";
 	private const string WebClientTypeId = "195785B4-F55A-4E72-ACE3-6480B54C8FA5";
 	private const string SelectQueryRoute = "DataService/json/SyncReply/SelectQuery";
 	private const int SectionTypeNormal = 0;
@@ -207,11 +211,11 @@ public sealed class ApplicationSectionCreateService(
 		}
 
 		throw new InvalidOperationException(
-			$"Section '{request.SectionCode}' was created but its metadata could not be loaded after {PollAttempts} attempts. Last error: {lastError?.Message}",
+			$"Section '{request.SectionCode}' was created but its metadata could not be loaded after {PollAttempts} attempts. Last error: {lastError!.Message}",
 			lastError);
 	}
 
-	private ApplicationSectionRecord GetSectionRecord(
+	private static ApplicationSectionRecord GetSectionRecord(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		string applicationId,
@@ -223,7 +227,7 @@ public sealed class ApplicationSectionCreateService(
 				ApplicationSectionSchemaName,
 				[
 					new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
-					new SelectQueryHelper.SelectQueryColumnDefinition("ApplicationId", "ApplicationId"),
+					new SelectQueryHelper.SelectQueryColumnDefinition(ApplicationIdJsonField, ApplicationIdJsonField),
 					new SelectQueryHelper.SelectQueryColumnDefinition("Caption", "Caption"),
 					new SelectQueryHelper.SelectQueryColumnDefinition("Code", "Code"),
 					new SelectQueryHelper.SelectQueryColumnDefinition("Description", "Description"),
@@ -236,7 +240,7 @@ public sealed class ApplicationSectionCreateService(
 				],
 				[
 					new SelectQueryHelper.SelectQueryFilterDefinition(
-						"ApplicationId",
+						ApplicationIdJsonField,
 						applicationId,
 						SelectQueryHelper.GuidDataValueType)
 				]));
@@ -307,7 +311,7 @@ public sealed class ApplicationSectionCreateService(
 			["Caption"] = CreateParameterExpression(
 				SelectQueryHelper.TextDataValueType,
 				request.Caption),
-			["ApplicationId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, request.ApplicationId),
+			[ApplicationIdJsonField] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, request.ApplicationId),
 			["PackageId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, request.PackageUId),
 			["LogoId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, request.IconId),
 			["IconBackground"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, request.IconBackground),
@@ -540,6 +544,7 @@ public sealed class CreateAppSectionCommand(
 			if (string.IsNullOrWhiteSpace(options.Environment)) {
 				throw new InvalidOperationException("Environment name is required.");
 			}
+			CreateAppSectionOptions.ValidateMobilePagesOption(options.WithMobilePagesValue);
 
 			ApplicationSectionCreateResult result = applicationSectionCreateService.CreateSection(
 				options.Environment,

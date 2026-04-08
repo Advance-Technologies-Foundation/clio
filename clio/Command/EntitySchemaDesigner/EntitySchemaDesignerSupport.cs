@@ -87,12 +87,14 @@ internal static class EntitySchemaDesignerSupport
 		SupportedDataValueTypes[FileTypeName]
 	];
 
-	private static readonly IReadOnlyDictionary<int, Guid> RuntimeDataValueTypeUIdMap =
+	private const string CurrencyUIdString = "{969093E2-2B4E-463B-883A-3D3B8C61F0CD}";
+
+	internal static readonly IReadOnlyDictionary<int, Guid> RuntimeDataValueTypeUIdMap =
 		new Dictionary<int, Guid> {
 			[0] = new("{23018567-A13C-4320-8687-FD6F9E3699BD}"),  // Guid
 			[1] = new("{8B3F29BB-EA14-4CE5-A5C5-293A929B6BA2}"),  // Text
 			[4] = new("{6B6B74E2-820D-490E-A017-2B73D4CCF2B0}"),  // Integer
-			[6] = new("{969093E2-2B4E-463B-883A-3D3B8C61F0CD}"),  // Currency2
+			[6] = new(CurrencyUIdString),                          // Currency2
 			[7] = new("{D21E9EF4-C064-4012-B286-FA1A8171DA44}"),  // DateTime
 			[10] = new("{B295071F-7EA9-4E62-8D1A-919BF3732FF2}"), // Lookup
 			[12] = new("{90B65BF8-0FFC-4141-8779-2420877AF907}"), // Boolean
@@ -111,9 +113,9 @@ internal static class EntitySchemaDesignerSupport
 			[44] = new("{26CBA64C-DAF1-4F36-B2EA-73C0D695D90C}"), // WebLink
 			[45] = new("{66CBA64C-DAF1-4F36-B8EA-73C0D695D90C}"), // Email
 			[47] = new("{57EE4C31-5EC4-45FA-B95D-3A2868AA89A8}"), // Decimal0
-			[48] = new("{969093E2-2B4E-463B-883A-3D3B8C61F0CD}"), // Currency0
-			[49] = new("{969093E2-2B4E-463B-883A-3D3B8C61F0CD}"), // Currency1
-			[50] = new("{969093E2-2B4E-463B-883A-3D3B8C61F0CD}")  // Currency3
+			[48] = new(CurrencyUIdString),                         // Currency0
+			[49] = new(CurrencyUIdString),                         // Currency1
+			[50] = new(CurrencyUIdString)                          // Currency3
 		};
 
 	internal static string GetCurrentCultureName() {

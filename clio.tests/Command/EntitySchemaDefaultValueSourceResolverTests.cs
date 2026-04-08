@@ -94,7 +94,7 @@ internal sealed class EntitySchemaDefaultValueSourceResolverTests
 			});
 
 		// Act
-		_resolver.Resolve(
+		EntitySchemaDefaultValueConfig result = _resolver.Resolve(
 			new EntitySchemaDefaultValueConfig {
 				Source = "SystemValue",
 				ValueSource = "CurrentDateTime"
@@ -105,6 +105,8 @@ internal sealed class EntitySchemaDefaultValueSourceResolverTests
 
 		// Assert
 		_designerClient.Received(1).GetSystemValues(expectedDataValueTypeUId, Arg.Any<RemoteCommandOptions>());
+		result.ValueSource.Should().Be("d7c295d3-3146-4ee1-ac49-3a7bd0edc45d",
+			because: "Text500 (dataValueType 30) runtime map resolves to the Text500 UId which matches CurrentDateTime system value");
 	}
 
 	[Test]
@@ -121,7 +123,7 @@ internal sealed class EntitySchemaDefaultValueSourceResolverTests
 			});
 
 		// Act
-		_resolver.Resolve(
+		EntitySchemaDefaultValueConfig result = _resolver.Resolve(
 			new EntitySchemaDefaultValueConfig {
 				Source = "SystemValue",
 				ValueSource = "CurrentDateTime"
@@ -132,6 +134,8 @@ internal sealed class EntitySchemaDefaultValueSourceResolverTests
 
 		// Assert
 		_designerClient.Received(1).GetSystemValues(expectedDataValueTypeUId, Arg.Any<RemoteCommandOptions>());
+		result.ValueSource.Should().Be("d7c295d3-3146-4ee1-ac49-3a7bd0edc45d",
+			because: "Currency3 (dataValueType 50) runtime map resolves to the Currency UId which matches CurrentDateTime system value");
 	}
 
 	[Test]

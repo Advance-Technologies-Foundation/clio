@@ -178,7 +178,7 @@ public sealed class ApplicationSectionUpdateService(
 		string sectionCode) {
 		string responseBody = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select, environmentSettings),
-			JsonSerializer.Serialize(BuildSectionSelectQuery(applicationId, sectionCode), JsonOptions));
+			JsonSerializer.Serialize(BuildSectionSelectQuery(applicationId), JsonOptions));
 		ApplicationSectionSelectQueryResponseDto response = JsonSerializer.Deserialize<ApplicationSectionSelectQueryResponseDto>(
 				responseBody,
 				JsonOptions)
@@ -193,7 +193,7 @@ public sealed class ApplicationSectionUpdateService(
 				$"Section '{sectionCode}' was not found in application '{applicationId}'.");
 	}
 
-	private static object BuildSectionSelectQuery(string applicationId, string sectionCode) =>
+	private static object BuildSectionSelectQuery(string applicationId) =>
 		SelectQueryHelper.BuildSelectQuery(
 			ApplicationSectionSchemaName,
 			[

@@ -1978,3 +1978,12 @@ Discovery: The main regression risk in batch mode was not syntax but orchestrati
 Files: C:\Projects\clio\clio\Command\BuildDockerImageService.cs, C:\Projects\clio\clio\Command\BuildDockerImageCommand.cs, C:\Projects\clio\clio.tests\Command\BuildDockerImageServiceTests.cs, C:\Projects\clio\clio\help\en\build-docker-image.txt, C:\Projects\clio\clio\docs\commands\build-docker-image.md, C:\Projects\clio\clio\Commands.md, C:\Projects\clio\clio\clio.csproj, C:\Projects\clio\.codex\workspace-diary.md
 Impact: `clio build-docker-image --template db,dev,prod` now reuses one prepared source payload and one CLI probe/version check per invocation, batch tests run green again, and restore/build is no longer blocked by the stale HJSON package reference.
 
+
+## 2026-04-08 23:20 – Fix PR #522 conflicts and Codex review comments
+Context: PR Alfa-04-06 → master had merge conflict and two P2 Codex review comments.
+Decision: Resolved conflict by merging origin/master into branch; fixed both P2 issues in source code.
+Discovery:
+- CreateAppSectionOptions.WithMobilePages silently coerced invalid inputs (0/no/yes) to true; fixed with explicit validation
+- GetSettingsValueTypeCandidates missing Float dataValueType 5; added `5 => ["Decimal"]`
+Files: clio/Command/ApplicationSectionCreateCommand.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDefaultValueSourceResolver.cs, clio.tests/Command/ApplicationSectionCreateServiceTests.cs, .codex/workspace-diary.md
+Impact: PR #522 now MERGEABLE, both Codex P2 issues addressed, 15 new tests added (33 total section tests pass)
