@@ -83,6 +83,12 @@
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
 
+		<None Include="resources\**"/>
+		<Compile Remove="resources\**"/>
+		<Content Include="resources\**">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
+
 		<Content Include="Command\McpServer\Data\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>

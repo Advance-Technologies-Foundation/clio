@@ -281,6 +281,7 @@ public class BindingsModule {
 		services.AddTransient<DownloadConfigurationCommand>();
 		services.AddTransient<DeployCommand>();
 		services.AddTransient<InfoCommand>();
+		services.AddTransient<QuizCommand>();
 		services.AddTransient<ExtractPackageCommand>();
 		services.AddTransient<ExternalLinkCommand>();
 		services.AddTransient<PowerShellFactory>();

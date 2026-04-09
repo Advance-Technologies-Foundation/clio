@@ -178,6 +178,7 @@ internal class Program {
 		typeof(LinkCoreSrcOptions),
 		typeof(AssertOptions),
 		typeof(McpServerCommandOptions),
+		typeof(QuizCommandOptions),
 		
 		
 	];
@@ -363,6 +364,7 @@ internal class Program {
 					AssertOptions opts => Resolve<AssertCommand>(opts).Execute(opts),
 					LinkPackageStoreOptions opts => Resolve<LinkPackageStoreCommand>(opts).Execute(opts),
 					McpServerCommandOptions opts => Resolve<McpServerCommand>(opts).Execute(opts),
+					QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
 					var _ => 1
 				};
 	};
