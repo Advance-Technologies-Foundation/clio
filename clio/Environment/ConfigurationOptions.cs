@@ -504,13 +504,19 @@ namespace Clio
 
 
 		public EnvironmentSettings FindEnvironment(string name = null) {
-			EnvironmentSettings environment;
-			try {
-				environment = GetEnvironment(name);
-			} catch {
+			EnsureSettingsCollections();
+			if (string.IsNullOrWhiteSpace(name)) {
+				string activeEnvironment = _settings.ActiveEnvironmentKey;
+				if (!string.IsNullOrWhiteSpace(activeEnvironment)
+					&& _settings.Environments.TryGetValue(activeEnvironment, out EnvironmentSettings activeEnv)) {
+					return activeEnv;
+				}
 				return null;
 			}
-			return environment;
+			if (_settings.Environments.TryGetValue(name, out EnvironmentSettings environment)) {
+				return environment;
+			}
+			return null;
 		}
 
 		public EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
