@@ -136,6 +136,8 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 
 	#region Fields: Private
 
+	private const string UnlockedPackagesFilter = "{\"isCustomer\": true}";
+
 	private readonly ILogger _logger;
 	private readonly IMediator _mediator;
 	private readonly ISettingsRepository _settingsRepository;
@@ -348,17 +350,22 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	/// (PackageName/branch/version/) or a flat structure (PackageName/descriptor.json).
 	/// </summary>
 	internal bool IsVersionedRepo(string repoPath) {
-		string[] packageDirs = _fileSystem.GetDirectories(repoPath);
+		string[] packageDirs = _fileSystem.GetDirectories(repoPath)
+			.Where(d => !_fileSystem.GetDirectoryInfo(d).Name.StartsWith(".", StringComparison.Ordinal))
+			.ToArray();
 		if (packageDirs.Length == 0) {
 			return false;
 		}
 
-		string firstPkgDir = packageDirs[0];
-		string descriptorPath = _fileSystem.Combine(firstPkgDir, "descriptor.json");
-		if (_fileSystem.ExistsFile(descriptorPath)) {
-			return false;
+		// Check multiple directories to reduce false positives from non-package folders
+		foreach (string dir in packageDirs) {
+			string descriptorPath = _fileSystem.Combine(dir, "descriptor.json");
+			if (_fileSystem.ExistsFile(descriptorPath)) {
+				return false;
+			}
 		}
 
+		string firstPkgDir = packageDirs[0];
 		string[] subDirs = _fileSystem.GetDirectories(firstPkgDir);
 		return subDirs.Length > 0;
 	}
@@ -391,14 +398,50 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	private int HandleUnlockedDryRun(Link4RepoOptions options, string envPkgPath) {
 		_logger.WriteInfo("Querying Creatio site for unlocked packages...");
 		IEnumerable<PackageInfo> unlockedPackages =
-			_applicationPackageListProvider.GetPackages("{\"isCustomer\": true}");
+			_applicationPackageListProvider.GetPackages(UnlockedPackagesFilter);
 		List<PackageInfo> unlockedList = unlockedPackages.ToList();
 		if (unlockedList.Count == 0) {
 			_logger.WriteInfo("[dry-run] No unlocked packages found on the site.");
 			return 0;
 		}
-		_logger.WriteInfo($"[dry-run] Would link {unlockedList.Count} unlocked package(s): " +
+		_logger.WriteInfo($"[dry-run] Found {unlockedList.Count} unlocked package(s) on site: " +
 			string.Join(", ", unlockedList.Select(p => p.Descriptor.Name)));
+
+		string repoPath = options.RepoPath;
+		if (!_fileSystem.ExistsDirectory(repoPath)) {
+			_logger.WriteError($"Repository path does not exist: {repoPath}");
+			return 1;
+		}
+
+		bool isVersioned = IsVersionedRepo(repoPath);
+		_logger.WriteInfo($"[dry-run] Repository structure: {(isVersioned ? "versioned (PackageName/branch/version)" : "flat (PackageName/descriptor.json)")}");
+
+		if (isVersioned) {
+			foreach (PackageInfo pkg in unlockedList) {
+				string versionPath = FindPackageVersionPath(repoPath, pkg.Descriptor.Name, pkg.Descriptor.PackageVersion);
+				if (string.IsNullOrEmpty(versionPath)) {
+					_logger.WriteWarning($"[dry-run]   '{pkg.Descriptor.Name}' (v{pkg.Descriptor.PackageVersion}) — not found in repository, would skip");
+				} else {
+					_logger.WriteInfo($"[dry-run]   '{pkg.Descriptor.Name}' (v{pkg.Descriptor.PackageVersion}) — would link from {versionPath}");
+				}
+			}
+		} else {
+			string packagesSubDir = _fileSystem.Combine(repoPath, "packages");
+			string effectiveRepoPath = _fileSystem.ExistsDirectory(packagesSubDir) ? packagesSubDir : repoPath;
+			string[] repoDirs = _fileSystem.GetDirectories(effectiveRepoPath);
+			HashSet<string> repoPackageNames = new(
+				repoDirs.Select(d => _fileSystem.GetDirectoryInfo(d).Name),
+				StringComparer.OrdinalIgnoreCase);
+
+			foreach (PackageInfo pkg in unlockedList) {
+				if (repoPackageNames.Contains(pkg.Descriptor.Name)) {
+					_logger.WriteInfo($"[dry-run]   '{pkg.Descriptor.Name}' — found in repository, would link");
+				} else {
+					_logger.WriteWarning($"[dry-run]   '{pkg.Descriptor.Name}' — not found in repository, would skip");
+				}
+			}
+		}
+
 		_logger.WriteInfo("[dry-run] No changes applied.");
 		return 0;
 	}
@@ -410,7 +453,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	private int HandleUnlockedLinking(Link4RepoOptions options, string envPkgPath) {
 		_logger.WriteInfo("Querying Creatio site for unlocked packages...");
 		IEnumerable<PackageInfo> unlockedPackages =
-			_applicationPackageListProvider.GetPackages("{\"isCustomer\": true}");
+			_applicationPackageListProvider.GetPackages(UnlockedPackagesFilter);
 		List<PackageInfo> unlockedList = unlockedPackages.ToList();
 
 		if (unlockedList.Count == 0) {
@@ -489,6 +532,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 
 			string envPackagePath = _fileSystem.Combine(envPkgPath, packageName);
 			if (_fileSystem.ExistsDirectory(envPackagePath)) {
+				_logger.WriteWarning($"Existing directory '{envPackagePath}' will be replaced with symlink");
 				_fileSystem.DeleteDirectory(envPackagePath, true);
 			}
 

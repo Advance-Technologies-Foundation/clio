@@ -64,12 +64,14 @@ public class Link4RepoCommandPreparationTests : BaseCommandTests<Link4RepoOption
 			_sysSettingsManager,
 			_packageLockManager,
 			_fileDesignModePackages);
+		ConsoleLogger.Instance.PreserveMessages = true;
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	[TearDown]
 	public override void TearDown() {
 		ConsoleLogger.Instance.ClearMessages();
+		ConsoleLogger.Instance.PreserveMessages = false;
 		base.TearDown();
 	}
 
@@ -290,6 +292,11 @@ public class Link4RepoCommandPreparationTests : BaseCommandTests<Link4RepoOption
 		_packageLockManager.DidNotReceive().Unlock(Arg.Any<IEnumerable<string>>());
 		_fileDesignModePackages.DidNotReceive().LoadPackagesToFileSystem();
 		_command.CapturedSitePath.Should().BeNull("because dry-run should not create symlinks");
+		var logMessages = ConsoleLogger.Instance.FlushAndSnapshotMessages()
+			.Select(m => m.Value.ToString()).ToList();
+		logMessages.Should().Contain(m => m.Contains("Preparation required:"));
+		logMessages.Should().Contain(m => m.Contains("Maintainer"));
+		logMessages.Should().Contain(m => m.Contains("[dry-run] No changes applied."));
 	}
 
 	[Test]

@@ -58,12 +58,14 @@ public class Link4RepoCommandUnlockedTests : BaseCommandTests<Link4RepoOptions> 
 			Substitute.For<ISysSettingsManager>(),
 			Substitute.For<IPackageLockManager>(),
 			Substitute.For<IFileDesignModePackages>());
+		ConsoleLogger.Instance.PreserveMessages = true;
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	[TearDown]
 	public override void TearDown() {
 		ConsoleLogger.Instance.ClearMessages();
+		ConsoleLogger.Instance.PreserveMessages = false;
 		base.TearDown();
 	}
 
@@ -344,6 +346,11 @@ public class Link4RepoCommandUnlockedTests : BaseCommandTests<Link4RepoOptions> 
 		_packageListProvider.Received(1).GetPackages(Arg.Any<string>());
 		_command.CapturedSitePath.Should().BeNull("because dry-run should not create symlinks");
 		_command.VersionedLinkCalls.Should().BeEmpty("because dry-run should not link");
+		var logMessages = ConsoleLogger.Instance.FlushAndSnapshotMessages()
+			.Select(m => m.Value.ToString()).ToList();
+		logMessages.Should().Contain(m => m.Contains("[dry-run]") && m.Contains("unlocked package(s)"));
+		logMessages.Should().Contain(m => m.Contains("Repository structure:"));
+		logMessages.Should().Contain(m => m.Contains("[dry-run] No changes applied."));
 	}
 
 	#endregion

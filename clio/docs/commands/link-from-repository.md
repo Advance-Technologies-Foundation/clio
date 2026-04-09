@@ -27,9 +27,17 @@ structure (`repo/PackageName/`) and versioned PackageStore structure
 (`repo/PackageName/branch/version/`).
 
 When packages are incomplete in the Pkg folder (missing or without `descriptor.json`),
-the `--packages` flow automatically prepares them: checks the `Maintainer` sys setting,
-unlocks the packages, and syncs them to the file system (2fs). Use `--skip-preparation`
-to disable this behavior and link as-is.
+the `--packages` flow automatically prepares them before linking:
+
+1. **Maintainer check** — reads the `Maintainer` field from each package `descriptor.json`
+   in the repository and ensures the Creatio site's `Maintainer` sys setting matches.
+   This is required because Creatio only allows editing packages owned by the current maintainer.
+2. **Unlock** — unlocks the specified packages on the Creatio site so they can be modified
+   in file system development mode.
+3. **2fs (to file system)** — syncs package content from the database to the local file system,
+   creating the folder structure that symlinks will point to.
+
+Use `--skip-preparation` to disable this behavior and link as-is.
 
 `--unlocked` and `--packages` are mutually exclusive.
 

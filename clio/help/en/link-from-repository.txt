@@ -22,8 +22,13 @@ DESCRIPTION
     (repo/PackageName/branch/version/).
 
     When packages are incomplete in the Pkg folder, the --packages flow automatically
-    prepares them (Maintainer check, unlock, 2fs). Use --skip-preparation to disable
-    this behavior. --unlocked and --packages are mutually exclusive.
+    prepares them before linking:
+      1. Maintainer check - ensures the site's Maintainer sys setting matches the
+         package descriptor so Creatio allows editing these packages.
+      2. Unlock - unlocks packages on the site for file system development.
+      3. 2fs - syncs package content from DB to local file system.
+    Use --skip-preparation to disable this behavior.
+    --unlocked and --packages are mutually exclusive.
 
 OPTIONS
     --dry-run             Print a summary without executing any mutations
