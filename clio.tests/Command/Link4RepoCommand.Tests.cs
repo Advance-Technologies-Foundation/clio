@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using Clio.Command;
 using Clio.Common;
+using Clio.Package;
 using Clio.UserEnvironment;
 using FluentAssertions;
 using FluentValidation;
@@ -44,7 +45,12 @@ public class Link4RepoCommandTests : BaseCommandTests<Link4RepoOptions> {
 				Substitute.For<Clio.Common.IFileSystem>(),
 				Substitute.For<IPackageUtilities>(),
 				Substitute.For<ILogger>()),
-			_validator);
+			_validator,
+			Substitute.For<IApplicationPackageListProvider>(),
+			Substitute.For<IJsonConverter>(),
+			Substitute.For<ISysSettingsManager>(),
+			Substitute.For<IPackageLockManager>(),
+			Substitute.For<IFileDesignModePackages>());
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -206,8 +212,15 @@ public class Link4RepoCommandTests : BaseCommandTests<Link4RepoOptions> {
 			ISettingsRepository settingsRepository,
 			Clio.Common.IFileSystem fileSystem,
 			RfsEnvironment rfsEnvironment,
-			IValidator<Link4RepoOptions> validator)
-			: base(logger, mediator, settingsRepository, fileSystem, rfsEnvironment, validator) {
+			IValidator<Link4RepoOptions> validator,
+			IApplicationPackageListProvider applicationPackageListProvider,
+			IJsonConverter jsonConverter,
+			ISysSettingsManager sysSettingsManager,
+			IPackageLockManager packageLockManager,
+			IFileDesignModePackages fileDesignModePackages)
+			: base(logger, mediator, settingsRepository, fileSystem, rfsEnvironment, validator,
+				applicationPackageListProvider, jsonConverter, sysSettingsManager, packageLockManager,
+				fileDesignModePackages) {
 		}
 
 		protected override int HandleLinkWithDirPath(string sitePath, string repoPath, string packages) {

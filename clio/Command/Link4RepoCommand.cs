@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Clio.Common;
+using Clio.Package;
 using Clio.Requests;
 using Clio.UserEnvironment;
 using CommandLine;
@@ -43,6 +44,15 @@ public class Link4RepoOptions : EnvironmentOptions {
 		HelpText = "Path to package repository folder", Default = null)]
 	public string RepoPath { get; set; }
 
+	/// <summary>
+	/// Gets or sets whether to automatically determine packages by querying unlocked packages from the Creatio site.
+	/// </summary>
+	[Option("unlocked", Required = false, Default = false,
+		HelpText = "Query the Creatio site for unlocked packages and link only those. Requires -e or -u for API connection.")]
+	public bool Unlocked { get; set; }
+
+	internal override bool RequiredEnvironment => false;
+
 	#endregion
 
 }
@@ -69,6 +79,27 @@ public class Link4RepoOptionsValidator : AbstractValidator<Link4RepoOptions> {
 					});
 				}
 			});
+
+		RuleFor(o => o)
+			.Custom((options, context) => {
+				if (options.Unlocked && string.IsNullOrWhiteSpace(options.Environment)
+					&& string.IsNullOrWhiteSpace(options.Uri)) {
+					context.AddFailure(new ValidationFailure {
+						ErrorCode = "ArgumentParse.Error",
+						ErrorMessage =
+							"When --unlocked is set, environment name (-e) or URI (-u) must be provided for API connection",
+						Severity = Severity.Error
+					});
+				}
+				if (!options.Unlocked && string.IsNullOrWhiteSpace(options.Packages)) {
+					context.AddFailure(new ValidationFailure {
+						ErrorCode = "ArgumentParse.Error",
+						ErrorMessage =
+							"Either --packages or --unlocked must be specified",
+						Severity = Severity.Error
+					});
+				}
+			});
 	}
 
 	#endregion
@@ -88,6 +119,11 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	private readonly IFileSystem _fileSystem;
 	private readonly RfsEnvironment _rfsEnvironment;
 	private readonly IValidator<Link4RepoOptions> _validator;
+	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
+	private readonly IJsonConverter _jsonConverter;
+	private readonly ISysSettingsManager _sysSettingsManager;
+	private readonly IPackageLockManager _packageLockManager;
+	private readonly IFileDesignModePackages _fileDesignModePackages;
 
 	#endregion
 
@@ -96,20 +132,22 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	/// <summary>
 	/// Initializes a new instance of the <see cref="Link4RepoCommand"/> class.
 	/// </summary>
-	/// <param name="logger">Logger used for command output.</param>
-	/// <param name="mediator">Mediator used for IIS site discovery.</param>
-	/// <param name="settingsRepository">Environment settings repository.</param>
-	/// <param name="fileSystem">Filesystem abstraction used for path resolution.</param>
-	/// <param name="rfsEnvironment">Repository-to-environment linker.</param>
-	/// <param name="validator">Command options validator.</param>
 	public Link4RepoCommand(ILogger logger, IMediator mediator, ISettingsRepository settingsRepository,
-		IFileSystem fileSystem, RfsEnvironment rfsEnvironment, IValidator<Link4RepoOptions> validator){
+		IFileSystem fileSystem, RfsEnvironment rfsEnvironment, IValidator<Link4RepoOptions> validator,
+		IApplicationPackageListProvider applicationPackageListProvider, IJsonConverter jsonConverter,
+		ISysSettingsManager sysSettingsManager, IPackageLockManager packageLockManager,
+		IFileDesignModePackages fileDesignModePackages){
 		_logger = logger;
 		_mediator = mediator;
 		_settingsRepository = settingsRepository;
 		_fileSystem = fileSystem;
 		_rfsEnvironment = rfsEnvironment;
 		_validator = validator;
+		_applicationPackageListProvider = applicationPackageListProvider;
+		_jsonConverter = jsonConverter;
+		_sysSettingsManager = sysSettingsManager;
+		_packageLockManager = packageLockManager;
+		_fileDesignModePackages = fileDesignModePackages;
 	}
 
 	#endregion
@@ -179,6 +217,229 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 
 		resolvedPath = fileSystem.GetFullPath(value);
 		return true;
+	}
+
+	/// <summary>
+	/// Checks whether a package in the environment Pkg folder is incomplete
+	/// (missing entirely or lacks descriptor.json, meaning it hasn't been synced from DB).
+	/// </summary>
+	private bool IsPackageIncomplete(string envPkgPath, string packageName) {
+		string packageDir = _fileSystem.Combine(envPkgPath, packageName);
+		if (!_fileSystem.ExistsDirectory(packageDir)) {
+			return true;
+		}
+		string descriptorPath = _fileSystem.Combine(packageDir, "descriptor.json");
+		return !_fileSystem.ExistsFile(descriptorPath);
+	}
+
+	/// <summary>
+	/// Reads the Maintainer field from a package descriptor.json in the repository.
+	/// </summary>
+	private string ReadRepoPackageMaintainer(string repoPath, string packageName) {
+		string packagesSubDir = _fileSystem.Combine(repoPath, "packages");
+		string effectiveRepoPath = _fileSystem.ExistsDirectory(packagesSubDir) ? packagesSubDir : repoPath;
+		string descriptorPath = _fileSystem.Combine(effectiveRepoPath, packageName, "descriptor.json");
+		if (!_fileSystem.ExistsFile(descriptorPath)) {
+			return null;
+		}
+		PackageDescriptorDto dto = _jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(descriptorPath);
+		return dto?.Descriptor?.Maintainer;
+	}
+
+	/// <summary>
+	/// Prepares packages for linking: verifies maintainer, unlocks packages, syncs to file system.
+	/// Called when packages in the Pkg folder are missing or incomplete.
+	/// </summary>
+	internal int PreparePackagesForLinking(string envPkgPath, string repoPath, IReadOnlyList<string> packageNames) {
+		// 1. Read Maintainer from each package descriptor in repo
+		Dictionary<string, string> packageMaintainers = new();
+		foreach (string name in packageNames) {
+			string maintainer = ReadRepoPackageMaintainer(repoPath, name);
+			if (string.IsNullOrWhiteSpace(maintainer)) {
+				_logger.WriteWarning($"Could not read Maintainer from descriptor.json for package '{name}' in repo — skipping preparation");
+				continue;
+			}
+			packageMaintainers[name] = maintainer;
+		}
+
+		if (packageMaintainers.Count == 0) {
+			_logger.WriteWarning("No package descriptors with Maintainer found in repository — skipping preparation");
+			return 0;
+		}
+
+		// 2. Verify all maintainers are the same
+		HashSet<string> distinctMaintainers = new(packageMaintainers.Values, StringComparer.OrdinalIgnoreCase);
+		if (distinctMaintainers.Count > 1) {
+			_logger.WriteError(
+				$"Packages have different Maintainer values: {string.Join(", ", packageMaintainers.Select(kv => $"'{kv.Key}'='{kv.Value}'"))}. " +
+				"All packages must have the same Maintainer.");
+			return 1;
+		}
+
+		string requiredMaintainer = distinctMaintainers.First();
+		_logger.WriteInfo($"Package Maintainer: '{requiredMaintainer}'");
+
+		// 3. Check current SysSetting Maintainer on the site
+		string currentMaintainer = _sysSettingsManager.GetSysSettingValueByCode("Maintainer");
+		if (!string.Equals(currentMaintainer, requiredMaintainer, StringComparison.OrdinalIgnoreCase)) {
+			_logger.WriteInfo($"Updating SysSetting 'Maintainer' from '{currentMaintainer}' to '{requiredMaintainer}'");
+			bool updated = _sysSettingsManager.UpdateSysSetting("Maintainer", requiredMaintainer);
+			if (!updated) {
+				_logger.WriteError("Failed to update Maintainer sys setting.");
+				return 1;
+			}
+		}
+
+		// 4. Unlock the packages
+		_logger.WriteInfo($"Unlocking packages: {string.Join(", ", packageNames)}");
+		_packageLockManager.Unlock(packageNames);
+
+		// 5. Sync packages to file system (2fs)
+		_logger.WriteInfo("Loading packages to file system (2fs)...");
+		_fileDesignModePackages.LoadPackagesToFileSystem();
+		_logger.WriteInfo("Packages synced to file system successfully.");
+
+		return 0;
+	}
+
+	/// <summary>
+	/// Detects whether a repository uses a versioned PackageStore structure
+	/// (PackageName/branch/version/) or a flat structure (PackageName/descriptor.json).
+	/// </summary>
+	internal bool IsVersionedRepo(string repoPath) {
+		string[] packageDirs = _fileSystem.GetDirectories(repoPath);
+		if (packageDirs.Length == 0) {
+			return false;
+		}
+
+		string firstPkgDir = packageDirs[0];
+		string descriptorPath = _fileSystem.Combine(firstPkgDir, "descriptor.json");
+		if (_fileSystem.ExistsFile(descriptorPath)) {
+			return false;
+		}
+
+		string[] subDirs = _fileSystem.GetDirectories(firstPkgDir);
+		return subDirs.Length > 0;
+	}
+
+	/// <summary>
+	/// Finds the path to a specific package version in a versioned PackageStore repo.
+	/// Structure: repoPath/{PackageName}/{branch}/{version}/
+	/// Returns the first matching version found in any branch.
+	/// </summary>
+	private string FindPackageVersionPath(string repoPath, string packageName, string packageVersion) {
+		string packageDir = _fileSystem.Combine(repoPath, packageName);
+		if (!_fileSystem.ExistsDirectory(packageDir)) {
+			return null;
+		}
+
+		string[] branchDirs = _fileSystem.GetDirectories(packageDir);
+		foreach (string branchDir in branchDirs) {
+			string versionPath = _fileSystem.Combine(branchDir, packageVersion);
+			if (_fileSystem.ExistsDirectory(versionPath)) {
+				return versionPath;
+			}
+		}
+
+		return null;
+	}
+
+	/// <summary>
+	/// Handles linking when --unlocked is set: queries the Creatio API for unlocked packages,
+	/// detects repo structure, and links matching packages.
+	/// </summary>
+	private int HandleUnlockedLinking(Link4RepoOptions options, string envPkgPath) {
+		_logger.WriteInfo("Querying Creatio site for unlocked packages...");
+		IEnumerable<PackageInfo> unlockedPackages =
+			_applicationPackageListProvider.GetPackages("{\"isCustomer\": true}");
+		List<PackageInfo> unlockedList = unlockedPackages.ToList();
+
+		if (unlockedList.Count == 0) {
+			_logger.WriteInfo("No unlocked packages found on the site.");
+			return 0;
+		}
+
+		_logger.WriteInfo($"Found {unlockedList.Count} unlocked package(s): " +
+			string.Join(", ", unlockedList.Select(p => p.Descriptor.Name)));
+
+		string repoPath = options.RepoPath;
+		if (!_fileSystem.ExistsDirectory(repoPath)) {
+			_logger.WriteError($"Repository path does not exist: {repoPath}");
+			return 1;
+		}
+
+		bool isVersioned = IsVersionedRepo(repoPath);
+		if (isVersioned) {
+			return HandleUnlockedVersionedRepo(envPkgPath, repoPath, unlockedList);
+		}
+
+		return HandleUnlockedFlatRepo(envPkgPath, repoPath, unlockedList);
+	}
+
+	/// <summary>
+	/// Links unlocked packages from a flat repo structure (repo/PackageName/).
+	/// </summary>
+	private int HandleUnlockedFlatRepo(string envPkgPath, string repoPath,
+		List<PackageInfo> unlockedPackages) {
+		string packagesSubDir = _fileSystem.Combine(repoPath, "packages");
+		string effectiveRepoPath = _fileSystem.ExistsDirectory(packagesSubDir) ? packagesSubDir : repoPath;
+
+		string[] repoDirs = _fileSystem.GetDirectories(effectiveRepoPath);
+		HashSet<string> repoPackageNames = new(
+			repoDirs.Select(d => _fileSystem.GetDirectoryInfo(d).Name),
+			StringComparer.OrdinalIgnoreCase);
+
+		List<string> packagesToLink = [];
+		foreach (PackageInfo pkg in unlockedPackages) {
+			if (repoPackageNames.Contains(pkg.Descriptor.Name)) {
+				packagesToLink.Add(pkg.Descriptor.Name);
+			} else {
+				_logger.WriteWarning(
+					$"Unlocked package '{pkg.Descriptor.Name}' not found in repository — skipping");
+			}
+		}
+
+		if (packagesToLink.Count == 0) {
+			_logger.WriteWarning("No unlocked packages found in the repository.");
+			return 0;
+		}
+
+		string packageNames = string.Join(",", packagesToLink);
+		return HandleLinkWithDirPath(envPkgPath, repoPath, packageNames);
+	}
+
+	/// <summary>
+	/// Links unlocked packages from a versioned repo structure (PackageName/branch/version/).
+	/// </summary>
+	protected virtual int HandleUnlockedVersionedRepo(string envPkgPath, string repoPath,
+		List<PackageInfo> unlockedPackages) {
+		int linkedCount = 0;
+		int skippedCount = 0;
+
+		foreach (PackageInfo pkg in unlockedPackages) {
+			string packageName = pkg.Descriptor.Name;
+			string packageVersion = pkg.Descriptor.PackageVersion;
+
+			string versionPath = FindPackageVersionPath(repoPath, packageName, packageVersion);
+			if (string.IsNullOrEmpty(versionPath)) {
+				_logger.WriteWarning(
+					$"Unlocked package '{packageName}' (v{packageVersion}) not found in repository — skipping");
+				skippedCount++;
+				continue;
+			}
+
+			string envPackagePath = _fileSystem.Combine(envPkgPath, packageName);
+			if (_fileSystem.ExistsDirectory(envPackagePath)) {
+				_fileSystem.DeleteDirectory(envPackagePath, true);
+			}
+
+			_fileSystem.CreateDirectorySymLink(envPackagePath, versionPath);
+			_logger.WriteInfo($"Linked '{packageName}' (v{packageVersion}) → {versionPath}");
+			linkedCount++;
+		}
+
+		_logger.WriteInfo($"Linking completed: {linkedCount} linked, {skippedCount} skipped");
+		return 0;
 	}
 
 	private int HandleEnvironmentOption(Link4RepoOptions options){
@@ -296,6 +557,23 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 		}
 
 		try {
+			if (options.Unlocked) {
+				string envPkgPath = ResolveEnvPkgPath(options);
+				if (string.IsNullOrWhiteSpace(envPkgPath)) {
+					_logger.WriteError("Could not resolve environment packages path.");
+					return 1;
+				}
+				return HandleUnlockedLinking(options, envPkgPath);
+			}
+
+			// For --packages flow: check if packages need preparation (unlock + 2fs)
+			if (!string.IsNullOrWhiteSpace(options.Packages)) {
+				int prepResult = TryPreparePackages(options);
+				if (prepResult != 0) {
+					return prepResult;
+				}
+			}
+
 			return options switch {
 						not null when !string.IsNullOrWhiteSpace(options.Environment) => HandleEnvironmentOption(options),
 						not null when !string.IsNullOrWhiteSpace(options.EnvPkgPath) => HandleEnvPkgPathOptions(options),
@@ -305,6 +583,57 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 			_logger.WriteError($"Error during linking: {ex.Message}");
 			return 1;
 		}
+	}
+
+	/// <summary>
+	/// Resolves the environment Pkg path from options, trying --envPkgPath first, then -e environment name.
+	/// </summary>
+	private string ResolveEnvPkgPath(Link4RepoOptions options) {
+		if (!string.IsNullOrWhiteSpace(options.EnvPkgPath)) {
+			return TryResolveDirectoryPath(options.EnvPkgPath, _fileSystem, out string resolved)
+				? resolved
+				: options.EnvPkgPath;
+		}
+
+		if (!string.IsNullOrWhiteSpace(options.Environment)) {
+			if (TryResolveDirectoryPath(options.Environment, _fileSystem, out string resolved)) {
+				return resolved;
+			}
+			if (_settingsRepository.IsEnvironmentExists(options.Environment)) {
+				EnvironmentSettings environment = _settingsRepository.GetEnvironment(options.Environment);
+				return ResolveEnvironmentPackagePath(environment);
+			}
+		}
+
+		return null;
+	}
+
+	/// <summary>
+	/// Checks if any of the specified packages are incomplete in the Pkg folder
+	/// and runs preparation (Maintainer check → unlock → 2fs) if needed.
+	/// Returns 0 if preparation succeeded or was not needed, non-zero on error.
+	/// </summary>
+	private int TryPreparePackages(Link4RepoOptions options) {
+		string envPkgPath = ResolveEnvPkgPath(options);
+		if (string.IsNullOrWhiteSpace(envPkgPath) || !_fileSystem.ExistsDirectory(envPkgPath)) {
+			return 0;
+		}
+
+		IReadOnlyList<string> packageNames = options.Packages == "*"
+			? []
+			: options.Packages.Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToList();
+
+		if (packageNames.Count == 0) {
+			return 0;
+		}
+
+		bool anyIncomplete = packageNames.Any(name => IsPackageIncomplete(envPkgPath, name));
+		if (!anyIncomplete) {
+			return 0;
+		}
+
+		_logger.WriteInfo("Some packages are missing or incomplete in Pkg folder — running preparation...");
+		return PreparePackagesForLinking(envPkgPath, options.RepoPath, packageNames);
 	}
 
 	#endregion

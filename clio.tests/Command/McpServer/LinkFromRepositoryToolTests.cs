@@ -3,6 +3,7 @@ using System.Linq;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
+using Clio.Package;
 using Clio.UserEnvironment;
 using Clio.Requests;
 using FluentAssertions;
@@ -131,7 +132,12 @@ public class LinkFromRepositoryToolTests {
 					Substitute.For<IFileSystem>(),
 					Substitute.For<IPackageUtilities>(),
 					Substitute.For<ILogger>()),
-				Substitute.For<IValidator<Link4RepoOptions>>()) {
+				Substitute.For<IValidator<Link4RepoOptions>>(),
+				Substitute.For<IApplicationPackageListProvider>(),
+				Substitute.For<IJsonConverter>(),
+				Substitute.For<ISysSettingsManager>(),
+				Substitute.For<IPackageLockManager>(),
+				Substitute.For<IFileDesignModePackages>()) {
 		}
 
 		public override int Execute(Link4RepoOptions options) {

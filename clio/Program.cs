@@ -287,7 +287,7 @@ internal class Program {
 					CompileConfigurationOptions opts => Resolve<CompileConfigurationCommand>(opts)
 						.Execute(opts),
 					Link2RepoOptions opts => Resolve<Link2RepoCommand>().Execute(opts),
-					Link4RepoOptions opts => Resolve<Link4RepoCommand>().Execute(opts),
+					Link4RepoOptions opts => Resolve<Link4RepoCommand>(opts).Execute(opts),
 					TurnFsmCommandOptions opts => Resolve<TurnFsmCommand>(opts).Execute(opts),
 					TurnFarmModeOptions opts => Resolve<TurnFarmModeCommand>(opts).Execute(opts),
 					SetFsmConfigOptions opts => Resolve<SetFsmConfigCommand>(opts).Execute(opts),
