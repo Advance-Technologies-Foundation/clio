@@ -254,6 +254,95 @@ public class Link4RepoCommandPreparationTests : BaseCommandTests<Link4RepoOption
 		_fileDesignModePackages.Received(1).LoadPackagesToFileSystem();
 	}
 
+	[Test]
+	[Description("When --dry-run is set with --packages, summary is printed but no mutations happen")]
+	public void Execute_Packages_DryRun_NoMutations() {
+		// Arrange
+		string envPkg = GetRootedPath("env", "Pkg");
+		string repoPath = GetRootedPath("repo");
+
+		// Pkg folder has PkgA dir but NO descriptor.json → incomplete
+		_mockFs.AddDirectory(Path.Combine(envPkg, "PkgA", "Files"));
+		_mockFs.AddDirectory(Path.Combine(repoPath, "PkgA"));
+		_mockFs.AddFile(Path.Combine(repoPath, "PkgA", "descriptor.json"), new MockFileData("{}"));
+
+		_jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(
+				Path.Combine(repoPath, "PkgA", "descriptor.json"))
+			.Returns(new PackageDescriptorDto {
+				Descriptor = new PackageDescriptor { Name = "PkgA", Maintainer = "MyCompany" }
+			});
+
+		_sysSettingsManager.GetSysSettingValueByCode("Maintainer").Returns("OldMaintainer");
+
+		Link4RepoOptions options = new() {
+			EnvPkgPath = envPkg,
+			RepoPath = repoPath,
+			Packages = "PkgA",
+			DryRun = true
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0);
+		_sysSettingsManager.DidNotReceive().UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>());
+		_packageLockManager.DidNotReceive().Unlock(Arg.Any<IEnumerable<string>>());
+		_fileDesignModePackages.DidNotReceive().LoadPackagesToFileSystem();
+		_command.CapturedSitePath.Should().BeNull("because dry-run should not create symlinks");
+	}
+
+	[Test]
+	[Description("When --skip-preparation is set, preparation is skipped and linking proceeds")]
+	public void Execute_Packages_SkipPreparation_SkipsPreparation() {
+		// Arrange
+		string envPkg = GetRootedPath("env", "Pkg");
+		string repoPath = GetRootedPath("repo");
+
+		// Pkg folder has PkgA dir but NO descriptor.json → incomplete
+		_mockFs.AddDirectory(Path.Combine(envPkg, "PkgA", "Files"));
+		_mockFs.AddDirectory(Path.Combine(repoPath, "PkgA"));
+
+		Link4RepoOptions options = new() {
+			EnvPkgPath = envPkg,
+			RepoPath = repoPath,
+			Packages = "PkgA",
+			SkipPreparation = true
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0);
+		_sysSettingsManager.DidNotReceive().GetSysSettingValueByCode(Arg.Any<string>());
+		_packageLockManager.DidNotReceive().Unlock(Arg.Any<IEnumerable<string>>());
+		_fileDesignModePackages.DidNotReceive().LoadPackagesToFileSystem();
+		_command.CapturedSitePath.Should().NotBeNull("because linking should still proceed");
+	}
+
+	[Test]
+	[Description("Validation fails when both --unlocked and --packages are provided")]
+	public void Validate_Unlocked_And_Packages_ReturnsError() {
+		// Arrange
+		var validator = new Link4RepoOptionsValidator();
+		var options = new Link4RepoOptions {
+			EnvPkgPath = GetRootedPath("env", "Pkg"),
+			RepoPath = GetRootedPath("repo"),
+			Unlocked = true,
+			Packages = "PkgA",
+			Environment = "dev"
+		};
+
+		// Act
+		var result = validator.Validate(options);
+
+		// Assert
+		result.IsValid.Should().BeFalse();
+		result.Errors.Should().Contain(e =>
+			e.ErrorMessage.Contains("mutually exclusive"));
+	}
+
 	#endregion
 
 	#region Helpers

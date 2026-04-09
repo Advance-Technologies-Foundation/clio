@@ -21,12 +21,29 @@ DESCRIPTION
     flat repo structure (repo/PackageName/) and versioned PackageStore structure
     (repo/PackageName/branch/version/).
 
+    When packages are incomplete in the Pkg folder, the --packages flow automatically
+    prepares them (Maintainer check, unlock, 2fs). Use --skip-preparation to disable
+    this behavior. --unlocked and --packages are mutually exclusive.
+
+OPTIONS
+    --dry-run             Print a summary without executing any mutations
+    --skip-preparation    Skip automatic preparation (Maintainer check, unlock, 2fs)
+    --unlocked            Query unlocked packages from the site and link only those
+    --packages            Comma-separated package names or * for all
+    --repoPath            Path to the package repository folder
+    -e / --Environment    Registered environment name
+    --envPkgPath          Direct path to the target Pkg folder
+
 EXAMPLE
     clio link-from-repository -e MyEnvironment --repoPath ./packages --packages "*"
 
     clio link-from-repository --envPkgPath "/path/to/Creatio/Terrasoft.Configuration/Pkg" --repoPath ./packages --packages "PkgA,PkgB"
 
     clio link-from-repository -e dev --repoPath /path/to/git-repo --unlocked
+
+    clio link-from-repository -e dev --repoPath /path/to/git-repo --unlocked --dry-run
+
+    clio link-from-repository -e dev --repoPath ./packages --packages "PkgA" --skip-preparation
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

@@ -26,6 +26,25 @@ only those. This requires `-e` or `-u` for API connection. Supports both flat re
 structure (`repo/PackageName/`) and versioned PackageStore structure
 (`repo/PackageName/branch/version/`).
 
+When packages are incomplete in the Pkg folder (missing or without `descriptor.json`),
+the `--packages` flow automatically prepares them: checks the `Maintainer` sys setting,
+unlocks the packages, and syncs them to the file system (2fs). Use `--skip-preparation`
+to disable this behavior and link as-is.
+
+`--unlocked` and `--packages` are mutually exclusive.
+
+## Options
+
+| Option | Description |
+|---|---|
+| `--packages` | Comma-separated list of package names, or `*` for all |
+| `--unlocked` | Query the Creatio site for unlocked packages and link only those |
+| `--dry-run` | Print a summary of what would happen without executing any mutations |
+| `--skip-preparation` | Skip the automatic preparation step (Maintainer check, unlock, 2fs) |
+| `--repoPath` | Path to the package repository folder |
+| `-e` / `--Environment` | Registered environment name |
+| `--envPkgPath` | Direct path to the target Pkg folder |
+
 ## Example
 
 ```bash
@@ -34,6 +53,12 @@ clio link-from-repository -e MyEnvironment --repoPath ./packages --packages "*"
 clio link-from-repository --envPkgPath "/path/to/Creatio/Terrasoft.Configuration/Pkg" --repoPath ./packages --packages "PkgA,PkgB"
 
 clio link-from-repository -e dev --repoPath /path/to/git-repo --unlocked
+
+# Preview what would happen without making changes
+clio link-from-repository -e dev --repoPath /path/to/git-repo --unlocked --dry-run
+
+# Link packages without automatic preparation (unlock + 2fs)
+clio link-from-repository -e dev --repoPath ./packages --packages "PkgA" --skip-preparation
 ```
 
 ## Reporting Bugs

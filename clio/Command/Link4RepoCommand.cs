@@ -51,6 +51,20 @@ public class Link4RepoOptions : EnvironmentOptions {
 		HelpText = "Query the Creatio site for unlocked packages and link only those. Requires -e or -u for API connection.")]
 	public bool Unlocked { get; set; }
 
+	/// <summary>
+	/// Gets or sets whether to run in dry-run mode (print summary without executing any mutations).
+	/// </summary>
+	[Option("dry-run", Required = false, Default = false,
+		HelpText = "Print a summary of what would happen without executing any mutations (no unlock, no Maintainer change, no 2fs, no symlinks).")]
+	public bool DryRun { get; set; }
+
+	/// <summary>
+	/// Gets or sets whether to skip the automatic preparation step in the --packages flow.
+	/// </summary>
+	[Option("skip-preparation", Required = false, Default = false,
+		HelpText = "Skip the automatic preparation step (Maintainer check, unlock, 2fs) in the --packages flow.")]
+	public bool SkipPreparation { get; set; }
+
 	internal override bool RequiredEnvironment => false;
 
 	#endregion
@@ -82,6 +96,15 @@ public class Link4RepoOptionsValidator : AbstractValidator<Link4RepoOptions> {
 
 		RuleFor(o => o)
 			.Custom((options, context) => {
+				if (options.Unlocked && !string.IsNullOrWhiteSpace(options.Packages)) {
+					context.AddFailure(new ValidationFailure {
+						ErrorCode = "ArgumentParse.Error",
+						ErrorMessage =
+							"--unlocked and --packages are mutually exclusive; use one or the other",
+						Severity = Severity.Error
+					});
+					return;
+				}
 				if (options.Unlocked && string.IsNullOrWhiteSpace(options.Environment)
 					&& string.IsNullOrWhiteSpace(options.Uri)) {
 					context.AddFailure(new ValidationFailure {
@@ -250,7 +273,8 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	/// Prepares packages for linking: verifies maintainer, unlocks packages, syncs to file system.
 	/// Called when packages in the Pkg folder are missing or incomplete.
 	/// </summary>
-	internal int PreparePackagesForLinking(string envPkgPath, string repoPath, IReadOnlyList<string> packageNames) {
+	internal int PreparePackagesForLinking(string envPkgPath, string repoPath,
+		IReadOnlyList<string> packageNames, bool dryRun = false) {
 		// 1. Read Maintainer from each package descriptor in repo
 		Dictionary<string, string> packageMaintainers = new();
 		foreach (string name in packageNames) {
@@ -277,11 +301,28 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 		}
 
 		string requiredMaintainer = distinctMaintainers.First();
-		_logger.WriteInfo($"Package Maintainer: '{requiredMaintainer}'");
 
 		// 3. Check current SysSetting Maintainer on the site
 		string currentMaintainer = _sysSettingsManager.GetSysSettingValueByCode("Maintainer");
-		if (!string.Equals(currentMaintainer, requiredMaintainer, StringComparison.OrdinalIgnoreCase)) {
+		bool maintainerNeedsUpdate = !string.Equals(currentMaintainer, requiredMaintainer, StringComparison.OrdinalIgnoreCase);
+
+		// 4. Print summary of what will happen
+		_logger.WriteWarning("Preparation required:");
+		if (maintainerNeedsUpdate) {
+			_logger.WriteWarning($"  - SysSetting 'Maintainer' will change: '{currentMaintainer}' -> '{requiredMaintainer}'");
+		}
+		_logger.WriteWarning($"  - {packageNames.Count} package(s) will be unlocked: {string.Join(", ", packageNames)}");
+		_logger.WriteWarning("  - Packages will be synced to file system (2fs)");
+
+		if (dryRun) {
+			_logger.WriteInfo("[dry-run] No changes applied.");
+			return 0;
+		}
+
+		_logger.WriteInfo("Proceeding...");
+
+		// 5. Update Maintainer if needed
+		if (maintainerNeedsUpdate) {
 			_logger.WriteInfo($"Updating SysSetting 'Maintainer' from '{currentMaintainer}' to '{requiredMaintainer}'");
 			bool updated = _sysSettingsManager.UpdateSysSetting("Maintainer", requiredMaintainer);
 			if (!updated) {
@@ -290,11 +331,11 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 			}
 		}
 
-		// 4. Unlock the packages
+		// 6. Unlock the packages
 		_logger.WriteInfo($"Unlocking packages: {string.Join(", ", packageNames)}");
 		_packageLockManager.Unlock(packageNames);
 
-		// 5. Sync packages to file system (2fs)
+		// 7. Sync packages to file system (2fs)
 		_logger.WriteInfo("Loading packages to file system (2fs)...");
 		_fileDesignModePackages.LoadPackagesToFileSystem();
 		_logger.WriteInfo("Packages synced to file system successfully.");
@@ -342,6 +383,24 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 		}
 
 		return null;
+	}
+
+	/// <summary>
+	/// Handles --unlocked with --dry-run: queries the API and prints summary without mutations.
+	/// </summary>
+	private int HandleUnlockedDryRun(Link4RepoOptions options, string envPkgPath) {
+		_logger.WriteInfo("Querying Creatio site for unlocked packages...");
+		IEnumerable<PackageInfo> unlockedPackages =
+			_applicationPackageListProvider.GetPackages("{\"isCustomer\": true}");
+		List<PackageInfo> unlockedList = unlockedPackages.ToList();
+		if (unlockedList.Count == 0) {
+			_logger.WriteInfo("[dry-run] No unlocked packages found on the site.");
+			return 0;
+		}
+		_logger.WriteInfo($"[dry-run] Would link {unlockedList.Count} unlocked package(s): " +
+			string.Join(", ", unlockedList.Select(p => p.Descriptor.Name)));
+		_logger.WriteInfo("[dry-run] No changes applied.");
+		return 0;
 	}
 
 	/// <summary>
@@ -563,6 +622,9 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 					_logger.WriteError("Could not resolve environment packages path.");
 					return 1;
 				}
+				if (options.DryRun) {
+					return HandleUnlockedDryRun(options, envPkgPath);
+				}
 				return HandleUnlockedLinking(options, envPkgPath);
 			}
 
@@ -572,6 +634,11 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 				if (prepResult != 0) {
 					return prepResult;
 				}
+			}
+
+			if (options.DryRun) {
+				_logger.WriteInfo("[dry-run] Skipping symlink creation.");
+				return 0;
 			}
 
 			return options switch {
@@ -614,6 +681,11 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	/// Returns 0 if preparation succeeded or was not needed, non-zero on error.
 	/// </summary>
 	private int TryPreparePackages(Link4RepoOptions options) {
+		if (options.SkipPreparation) {
+			_logger.WriteInfo("Skipping preparation (--skip-preparation).");
+			return 0;
+		}
+
 		string envPkgPath = ResolveEnvPkgPath(options);
 		if (string.IsNullOrWhiteSpace(envPkgPath) || !_fileSystem.ExistsDirectory(envPkgPath)) {
 			return 0;
@@ -633,7 +705,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 		}
 
 		_logger.WriteInfo("Some packages are missing or incomplete in Pkg folder — running preparation...");
-		return PreparePackagesForLinking(envPkgPath, options.RepoPath, packageNames);
+		return PreparePackagesForLinking(envPkgPath, options.RepoPath, packageNames, options.DryRun);
 	}
 
 	#endregion

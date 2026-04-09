@@ -311,6 +311,41 @@ public class Link4RepoCommandUnlockedTests : BaseCommandTests<Link4RepoOptions> 
 		_command.VersionedLinkCalls.Should().NotBeEmpty("because versioned repo should use versioned linking");
 	}
 
+	[Test]
+	[Description("When --dry-run is set with --unlocked, package list is queried but no linking happens")]
+	public void Execute_Unlocked_DryRun_NoLinking() {
+		// Arrange
+		string envPkg = GetRootedPath("env", "Pkg");
+		string repoPath = GetRootedPath("repo");
+
+		_mockFs.AddDirectory(envPkg);
+		_mockFs.AddDirectory(Path.Combine(repoPath, "PkgA"));
+		_mockFs.AddFile(Path.Combine(repoPath, "PkgA", "descriptor.json"), new MockFileData("{}"));
+
+		_packageListProvider.GetPackages(Arg.Any<string>())
+			.Returns(new List<PackageInfo> {
+				CreatePackageInfo("PkgA", "1.0.0"),
+				CreatePackageInfo("PkgB", "2.0.0")
+			});
+
+		Link4RepoOptions options = new() {
+			EnvPkgPath = envPkg,
+			RepoPath = repoPath,
+			Unlocked = true,
+			Environment = "dev",
+			DryRun = true
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because dry-run should succeed without mutations");
+		_packageListProvider.Received(1).GetPackages(Arg.Any<string>());
+		_command.CapturedSitePath.Should().BeNull("because dry-run should not create symlinks");
+		_command.VersionedLinkCalls.Should().BeEmpty("because dry-run should not link");
+	}
+
 	#endregion
 
 	#region Helpers
