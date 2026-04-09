@@ -170,6 +170,7 @@ public sealed class SchemaSyncTool(
 				Environment = args.EnvironmentName,
 				Package = args.PackageName,
 				SchemaName = op.SchemaName,
+				TitleLocalizations = op.TitleLocalizations,
 				Operations = UpdateEntitySchemaTool.SerializeOperations(op.UpdateOperations, op.SchemaName)
 			};
 			UpdateEntitySchemaCommand command = commandResolver.Resolve<UpdateEntitySchemaCommand>(options);
@@ -303,7 +304,7 @@ public sealed record SchemaSyncOperation(
 	string SchemaName,
 
 	[property: JsonPropertyName("title-localizations")]
-	[property: Description("Schema title/caption localizations for create operations. Must include en-US.")]
+	[property: Description("Schema title/caption localizations. Required for create-entity and create-lookup. Optional for update-entity to set or preserve the entity caption. Must include en-US when provided.")]
 	Dictionary<string, string>? TitleLocalizations = null,
 
 	[property: JsonPropertyName("parent-schema-name")]

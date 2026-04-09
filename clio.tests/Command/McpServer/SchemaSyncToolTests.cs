@@ -681,6 +681,67 @@ public sealed class SchemaSyncToolTests {
 			because: "the failing registration error should be returned to the caller");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Forwards entity-level title-localizations from update-entity operation to UpdateEntitySchemaCommand so the entity caption is updated")]
+	public void SchemaSync_UpdateEntity_Should_Forward_TitleLocalizations_To_UpdateEntitySchemaCommand() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				TitleLocalizations: Localizations("Todo List"),
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrEmail",
+						Type: "Email", TitleLocalizations: Localizations("Email"))
+				])]);
+
+		// Act
+		SchemaSyncResponse response = tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an update-entity with exit code 0 should succeed");
+		fakeUpdateCommand.CapturedOptions.Should().NotBeNull(
+			because: "the update command must be invoked");
+		fakeUpdateCommand.CapturedOptions!.TitleLocalizations.Should().NotBeNull(
+			because: "entity-level title-localizations must be forwarded so ModifyColumns can preserve the caption");
+		fakeUpdateCommand.CapturedOptions.TitleLocalizations!["en-US"].Should().Be("Todo List",
+			because: "the en-US caption must match the title-localizations sent by the caller");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not set TitleLocalizations on UpdateEntitySchemaCommand when update-entity has no title-localizations, so ModifyColumns can apply the caption-preservation logic without caller noise")]
+	public void SchemaSync_UpdateEntity_Without_TitleLocalizations_Should_Pass_Null_TitleLocalizations() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrEmail",
+						Type: "Email", TitleLocalizations: Localizations("Email"))
+				])]);
+
+		// Act
+		SchemaSyncResponse response = tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an update-entity without title-localizations should still succeed");
+		fakeUpdateCommand.CapturedOptions!.TitleLocalizations.Should().BeNull(
+			because: "when no entity-level title-localizations are provided, null must be forwarded so ModifyColumns applies its caption-preservation logic");
+	}
+
 	private static System.Text.Json.JsonElement ToJsonElement(string value) {
 		return System.Text.Json.JsonDocument.Parse($"\"{value}\"").RootElement.Clone();
 	}

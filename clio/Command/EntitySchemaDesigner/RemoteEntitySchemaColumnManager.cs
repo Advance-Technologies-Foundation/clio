@@ -13,7 +13,13 @@ public interface IRemoteEntitySchemaColumnManager
 	/// Applies one or more column mutations to the same remote schema and persists the result once.
 	/// </summary>
 	/// <param name="options">Ordered mutation list that targets the same package, schema, and environment.</param>
-	void ModifyColumns(IEnumerable<ModifyEntitySchemaColumnOptions> options);
+	/// <param name="entityTitleLocalizations">
+	/// Optional entity-level title localizations. When provided, the entity schema caption is updated
+	/// to these values. When absent, the existing caption is protected against corruption from the
+	/// GetSchemaDesignItem round-trip (which may return an inherited "Base object" default).
+	/// </param>
+	void ModifyColumns(IEnumerable<ModifyEntitySchemaColumnOptions> options,
+		IReadOnlyDictionary<string, string>? entityTitleLocalizations = null);
 
 	/// <summary>
 	/// Returns a structured snapshot of schema properties for the requested remote entity schema.
@@ -69,7 +75,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		ModifyColumns([options]);
 	}
 
-	public void ModifyColumns(IEnumerable<ModifyEntitySchemaColumnOptions> options) {
+	public void ModifyColumns(IEnumerable<ModifyEntitySchemaColumnOptions> options,
+		IReadOnlyDictionary<string, string>? entityTitleLocalizations = null) {
 		ArgumentNullException.ThrowIfNull(options);
 		List<ModifyEntitySchemaColumnOptions> operations = options.ToList();
 		if (operations.Count == 0) {
@@ -80,6 +87,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		PackageInfo package = ResolvePackage(rootOperation.Package);
 		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, rootOperation);
 		EnsureBatchTargetsSingleSchema(operations, rootOperation);
+		ApplyEntityCaption(schema, entityTitleLocalizations, rootOperation);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 			ApplyColumnMutation(schema, package, operation);
 		}
@@ -637,6 +645,51 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			Name = referenceSchema.Name,
 			Caption = [EntitySchemaDesignerSupport.CreateLocalizableString(referenceSchema.Caption)]
 		};
+	}
+
+	/// <summary>
+	/// Applies entity-level caption to the design schema before saving.
+	/// When <paramref name="entityTitleLocalizations"/> is provided, it is applied as an explicit rename.
+	/// When absent, protects the schema caption from being corrupted by the parent-schema default that
+	/// <c>GetSchemaDesignItem</c> may return for template-created entities whose caption has no own
+	/// culture value (only an inherited one from the parent schema).
+	/// </summary>
+	private void ApplyEntityCaption(
+		EntityDesignSchemaDto schema,
+		IReadOnlyDictionary<string, string>? entityTitleLocalizations,
+		RemoteCommandOptions options) {
+		if (entityTitleLocalizations != null) {
+			EntitySchemaDesignerSupport.ReplaceLocalizableValues(
+				schema.Caption ??= [],
+				entityTitleLocalizations);
+			return;
+		}
+		string? currentDesignCaption = EntitySchemaDesignerSupport.GetLocalizableValue(schema.Caption);
+		string? inheritedCaption = EntitySchemaDesignerSupport.GetLocalizableValue(schema.ParentSchema?.Caption);
+		bool isInheritedOrEmpty = string.IsNullOrWhiteSpace(currentDesignCaption) ||
+			string.Equals(currentDesignCaption, inheritedCaption, StringComparison.OrdinalIgnoreCase);
+		if (!isInheritedOrEmpty) {
+			return;
+		}
+		RuntimeEntitySchemaResponse runtimeResponse = _entitySchemaDesignerClient.GetRuntimeEntitySchema(
+			schema.UId, options);
+		if (!runtimeResponse.Success || runtimeResponse.Schema == null) {
+			return;
+		}
+		string? runtimeCaption = runtimeResponse.Schema.Caption != null
+			? EntitySchemaDesignerSupport.GetLocalizableValue(
+				EntitySchemaDesignerSupport.CreateLocalizableStrings(runtimeResponse.Schema.Caption))
+			: null;
+		bool runtimeCaptionIsInheritedOrEmpty = string.IsNullOrWhiteSpace(runtimeCaption) ||
+			string.Equals(runtimeCaption, inheritedCaption, StringComparison.OrdinalIgnoreCase);
+		if (runtimeCaptionIsInheritedOrEmpty) {
+			return;
+		}
+		EntitySchemaDesignerSupport.ReplaceLocalizableValues(
+			schema.Caption ??= [],
+			new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				[EntitySchemaDesignerSupport.GetCurrentCultureName()] = runtimeCaption
+			});
 	}
 
 	private PackageInfo ResolvePackage(string packageName) {

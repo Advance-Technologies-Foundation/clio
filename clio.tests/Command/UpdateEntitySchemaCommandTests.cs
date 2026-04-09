@@ -228,6 +228,56 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 			because: "semicolons inside a JSON title or default value are part of the operation payload, not separators");
 	}
 
+	[Test]
+	[Description("Passes entity-level TitleLocalizations from options to ModifyColumns when provided, so ModifyColumns can apply them to the entity schema caption.")]
+	public void Execute_PassesTitleLocalizations_ToModifyColumns_WhenProvided() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			TitleLocalizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["en-US"] = "Vehicle"
+			},
+			Operations = [
+				"""{"action":"add","column-name":"UsrColor","type":"Text","title-localizations":{"en-US":"Color"}}"""
+			]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a valid batch with entity TitleLocalizations should succeed");
+		_columnManager.Received(1).ModifyColumns(
+			Arg.Any<IEnumerable<ModifyEntitySchemaColumnOptions>>(),
+			Arg.Is<IReadOnlyDictionary<string, string>>(locs =>
+				locs != null && locs["en-US"] == "Vehicle"));
+	}
+
+	[Test]
+	[Description("Passes null TitleLocalizations to ModifyColumns when not set, so ModifyColumns applies caption-preservation logic.")]
+	public void Execute_PassesNullTitleLocalizations_ToModifyColumns_WhenNotProvided() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = [
+				"""{"action":"add","column-name":"UsrColor","type":"Text","title-localizations":{"en-US":"Color"}}"""
+			]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a valid batch without TitleLocalizations should succeed");
+		_columnManager.Received(1).ModifyColumns(
+			Arg.Any<IEnumerable<ModifyEntitySchemaColumnOptions>>(),
+			Arg.Is<IReadOnlyDictionary<string, string>>(locs => locs == null));
+	}
+
 	private sealed class CultureScope : IDisposable {
 		private readonly CultureInfo _originalCurrentCulture;
 		private readonly CultureInfo _originalCurrentUiCulture;

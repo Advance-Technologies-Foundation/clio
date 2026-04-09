@@ -118,6 +118,9 @@ internal sealed class RuntimeEntitySchemaDto
 
 	[JsonProperty("name")]
 	public string Name { get; set; }
+
+	[JsonProperty("caption")]
+	public Dictionary<string, string>? Caption { get; set; }
 }
 
 internal sealed class ManagerItemDto

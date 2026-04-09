@@ -20,6 +20,12 @@ public class UpdateEntitySchemaOptions : RemoteCommandOptions
 	[Option("operation", Required = true,
 		HelpText = "Structured operation JSON. Repeat the option for multiple values.")]
 	public IEnumerable<string> Operations { get; set; }
+
+	/// <summary>
+	/// Optional entity-level title localizations. When provided, the entity schema caption is updated
+	/// to these values during the column mutation. When absent, the existing caption is preserved.
+	/// </summary>
+	public Dictionary<string, string>? TitleLocalizations { get; set; }
 }
 
 internal sealed record UpdateEntitySchemaOperationDefinition
@@ -121,7 +127,7 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 			foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 				ModifyEntitySchemaColumnCommand.ValidateOptions(operation);
 			}
-			_columnManager.ModifyColumns(operations);
+			_columnManager.ModifyColumns(operations, options.TitleLocalizations);
 			_logger.WriteInfo("Done");
 			return 0;
 		} catch (Exception exception) {
