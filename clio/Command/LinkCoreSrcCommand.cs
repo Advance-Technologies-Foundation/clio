@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Xml;
 using Clio.Common;
@@ -377,6 +378,11 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 	private void UpdateIISPhysicalPath(LinkCoreSrcOptions options, EnvironmentSettings env)
 	{
 		_logger.WriteInfo("\n[3/4] Updating IIS's site and web app physical path...");
+		if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+		{
+			_logger.WriteInfo("Skipping IIS physical path update on macOS");
+			return;
+		}
 		// Resolve core directory (must be unique)
 		string targetFolder = GetTargetFolderName(options.Mode);
 		string coreWebHostPath = options.Mode == CreatioMode.NetCore
