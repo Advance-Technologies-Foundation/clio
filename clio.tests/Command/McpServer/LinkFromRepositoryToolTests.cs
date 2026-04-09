@@ -83,6 +83,8 @@ public class LinkFromRepositoryToolTests {
 	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryByEnvPackagePath), "envPkgPath")]
 	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryByEnvPackagePath), "repoPath")]
 	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryByEnvPackagePath), "packages")]
+	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryUnlocked), "environmentName")]
+	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryUnlocked), "repoPath")]
 	public void LinkFromRepository_Methods_Should_Expose_Required_Parameters(string methodName, string parameterName) {
 		// Arrange
 		System.Reflection.ParameterInfo parameter = typeof(LinkFromRepositoryTool)
@@ -99,10 +101,11 @@ public class LinkFromRepositoryToolTests {
 	}
 
 	[Test]
-	[Description("Marks both link-from-repository MCP methods as destructive so MCP clients can apply confirmation and safety policies before the command deletes package folders.")]
+	[Description("Marks all link-from-repository MCP methods as destructive so MCP clients can apply confirmation and safety policies before the command deletes package folders.")]
 	[Category("Unit")]
 	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryByEnvironment))]
 	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryByEnvPackagePath))]
+	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryUnlocked))]
 	public void LinkFromRepository_Methods_Should_Be_Marked_As_Destructive(string methodName) {
 		// Arrange
 		System.Reflection.MethodInfo method = typeof(LinkFromRepositoryTool).GetMethod(methodName)!;
@@ -117,6 +120,129 @@ public class LinkFromRepositoryToolTests {
 		// Assert
 		destructive.Should().BeTrue(
 			because: "link-from-repository deletes existing package directories before replacing them with symbolic links");
+	}
+
+	[Test]
+	[Description("Maps the unlocked MCP arguments into link-from-repository options with Unlocked=true and no Packages.")]
+	[Category("Unit")]
+	public void LinkFromRepositoryUnlocked_Should_Map_Arguments() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeLink4RepoCommand command = new();
+		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance);
+
+		// Act
+		CommandExecutionResult result = tool.LinkFromRepositoryUnlocked(
+			"dev",
+			@"C:\Repo");
+
+		// Assert
+		result.ExitCode.Should().Be(0);
+		command.CapturedOptions.Should().NotBeNull();
+		command.CapturedOptions!.Environment.Should().Be("dev");
+		command.CapturedOptions.RepoPath.Should().Be(@"C:\Repo");
+		command.CapturedOptions.Unlocked.Should().BeTrue(
+			because: "the unlocked MCP tool must set the Unlocked flag");
+		command.CapturedOptions.Packages.Should().BeNull(
+			because: "the unlocked flow does not require packages");
+		command.CapturedOptions.DryRun.Should().BeFalse(
+			because: "dry-run defaults to false when not specified");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Maps dry-run flag through the unlocked MCP tool.")]
+	[Category("Unit")]
+	public void LinkFromRepositoryUnlocked_DryRun_Should_Map() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeLink4RepoCommand command = new();
+		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance);
+
+		// Act
+		CommandExecutionResult result = tool.LinkFromRepositoryUnlocked(
+			"dev",
+			@"C:\Repo",
+			dryRun: true);
+
+		// Assert
+		result.ExitCode.Should().Be(0);
+		command.CapturedOptions!.DryRun.Should().BeTrue(
+			because: "the dry-run flag must be forwarded to the command");
+		command.CapturedOptions.Unlocked.Should().BeTrue();
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Maps dry-run and skip-preparation flags through the environment MCP tool.")]
+	[Category("Unit")]
+	public void LinkFromRepositoryByEnvironment_OptionalFlags_Should_Map() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeLink4RepoCommand command = new();
+		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance);
+
+		// Act
+		CommandExecutionResult result = tool.LinkFromRepositoryByEnvironment(
+			"dev",
+			@"C:\Repo",
+			"PkgA",
+			dryRun: true,
+			skipPreparation: true);
+
+		// Assert
+		result.ExitCode.Should().Be(0);
+		command.CapturedOptions!.DryRun.Should().BeTrue(
+			because: "the dry-run flag must be forwarded to the command");
+		command.CapturedOptions.SkipPreparation.Should().BeTrue(
+			because: "the skip-preparation flag must be forwarded to the command");
+		command.CapturedOptions.Packages.Should().Be("PkgA");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Maps dry-run and skip-preparation flags through the env-package-path MCP tool.")]
+	[Category("Unit")]
+	public void LinkFromRepositoryByEnvPackagePath_OptionalFlags_Should_Map() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeLink4RepoCommand command = new();
+		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance);
+
+		// Act
+		CommandExecutionResult result = tool.LinkFromRepositoryByEnvPackagePath(
+			@"C:\Creatio\Pkg",
+			@"C:\Repo",
+			"PkgB",
+			dryRun: true,
+			skipPreparation: true);
+
+		// Assert
+		result.ExitCode.Should().Be(0);
+		command.CapturedOptions!.DryRun.Should().BeTrue();
+		command.CapturedOptions.SkipPreparation.Should().BeTrue();
+		command.CapturedOptions.EnvPkgPath.Should().Be(@"C:\Creatio\Pkg");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Optional flags default to false when not provided to any MCP tool method.")]
+	[Category("Unit")]
+	public void LinkFromRepositoryByEnvironment_OptionalFlags_DefaultToFalse() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeLink4RepoCommand command = new();
+		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance);
+
+		// Act
+		tool.LinkFromRepositoryByEnvironment("dev", @"C:\Repo", "PkgA");
+
+		// Assert
+		command.CapturedOptions!.DryRun.Should().BeFalse(
+			because: "dry-run should default to false when not specified");
+		command.CapturedOptions.SkipPreparation.Should().BeFalse(
+			because: "skip-preparation should default to false when not specified");
+		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	private sealed class FakeLink4RepoCommand : Link4RepoCommand {
