@@ -27,6 +27,8 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 
 			       Canonical flow
 			       - Prefer `discover -> inspect -> mutate -> verify` for minimal edits to an existing app.
+			       - For section creation in an existing app, prefer `application-get-list -> application-get-info -> application-section-create -> application-get-info`.
+			       - For section metadata updates in an existing app, prefer `application-get-list -> application-get-info -> application-section-update`.
 			       - Prefer `page-list -> page-get -> page-sync -> page-get` as the canonical page workflow, including single-page saves when the caller wants the clio-advertised path.
 			       - Read before write, and read back after mutations when the tool or workflow allows it.
 
@@ -34,7 +36,16 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Use `application-get-list` when you do not yet know the installed application code or need to confirm candidates.
 			       - Pass MCP tool arguments at the top level; do not wrap MCP arguments inside `args`.
 			       - Use `application-get-info` after `application-get-list` to confirm the primary package and entity context for the target app.
+			       - Use `application-section-create` when the requested mutation is "add a new section to this existing app".
+			       - Use `application-section-update` when the requested mutation is "change metadata of this existing section", including fixing a broken JSON-style heading by supplying a new plain-text caption.
 			       - If `application-create` fails because the app or configuration already exists, switch to the existing-app discovery flow: call `application-get-list` to find the existing app, then `application-get-info` with the matched identifier, and continue with the inspect → mutate → verify flow.
+			       - `application-section-create` accepts `application-code` as the target-app selector.
+			       - `application-section-create` is scalar-only. Pass `caption`, `description`, and `entity-schema-name` as top-level strings, and pass `with-mobile-pages` as a top-level boolean.
+			       - Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `application-section-create`.
+			       - When reusing an existing entity schema, provide `entity-schema-name`. Otherwise omit that field and let Creatio create a new object for the section.
+			       - `application-section-update` accepts `application-code` and `section-code` as the existing-section selector pair.
+			       - `application-section-update` is a partial scalar update. Pass only the top-level fields that should change: `caption`, `description`, `icon-id`, and `icon-background`.
+			       - Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `application-section-update`.
 
 			       Inspect pages before editing
 			       - Use `page-list` to discover candidate Freedom UI page schemas in the target package or by installed `code`.
@@ -65,6 +76,8 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Enable `page-sync` `verify` only when the workflow needs explicit read-back within the same tool call. Otherwise keep the default `false` and follow with `page-get` when read-back evidence is still required.
 			       - After `page-update` or `page-sync`, read the page again with `page-get` when you need explicit read-back verification.
 			       - After `modify-entity-schema-column`, re-read the column with `get-entity-schema-column-properties` or the full schema with `get-entity-schema-properties`.
+			       - After `application-section-create`, refresh app context with `application-get-info` when you need updated primary-package entities and pages after the section is created.
+			       - `application-section-update` already returns the previous and updated section metadata, so a separate verification read is optional unless the workflow also needs broader app context.
 			       - After `schema-sync`, refresh app or schema context with `application-get-info`, `get-entity-schema-properties`, or both, depending on the workflow.
 			       - The refresh after schema mutations is essential: it verifies that changes were materialized, updates the canonical main-entity selector, and detects incomplete states such as `Database update required`. Treat the schema batch as successful only when refreshed metadata is available and no schema is left in an incomplete state.
 			       """

@@ -187,3 +187,122 @@ public sealed class ApplicationCreateTool(IApplicationCreateService applicationC
 				optionalTemplateData.AppSectionDescription);
 	}
 }
+
+/// <summary>
+/// MCP tool surface for creating a section inside an existing application.
+/// </summary>
+[McpServerToolType]
+public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateService applicationSectionCreateService) {
+	/// <summary>
+	/// Stable MCP tool name for creating sections in existing Creatio applications.
+	/// </summary>
+	internal const string ApplicationSectionCreateToolName = "application-section-create";
+
+	/// <summary>
+	/// Creates a section in an existing Creatio application and returns structured readback data.
+	/// </summary>
+	[McpServerTool(Name = ApplicationSectionCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
+		OpenWorld = false)]
+	[Description("Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, and page readback data.")]
+	public ApplicationSectionContextResponse ApplicationSectionCreate(
+		[Description("Parameters: environment-name, application-code, caption (required); description, entity-schema-name, with-mobile-pages (optional)")]
+		[Required]
+		ApplicationSectionCreateArgs args) {
+		try {
+			ValidateSectionCreateArgs(args);
+			ApplicationSectionCreateResult result = applicationSectionCreateService.CreateSection(
+				args.EnvironmentName,
+				new ApplicationSectionCreateRequest(
+					args.ApplicationCode,
+					args.Caption,
+					args.Description,
+					args.EntitySchemaName,
+					args.WithMobilePages));
+			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));
+		} catch (Exception ex) {
+			return ApplicationToolHelper.CreateSectionContextErrorResponse(ex.Message);
+		}
+	}
+
+	private static void ValidateSectionCreateArgs(ApplicationSectionCreateArgs args) {
+		if (string.IsNullOrWhiteSpace(args.ApplicationCode)) {
+			throw new ArgumentException("application-code is required.");
+		}
+
+		if (string.IsNullOrWhiteSpace(args.Caption)) {
+			throw new ArgumentException("caption is required.");
+		}
+
+		if (args.TitleLocalizations is not null ||
+			args.DescriptionLocalizations is not null ||
+			args.CaptionLocalizations is not null ||
+			args.NameLocalizations is not null) {
+			throw new ArgumentException(
+				"application-section-create is scalar-only. Do not send title-localizations, description-localizations, caption-localizations, or name-localizations.");
+		}
+	}
+}
+
+/// <summary>
+/// MCP tool surface for updating metadata of a section inside an existing application.
+/// </summary>
+[McpServerToolType]
+public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateService applicationSectionUpdateService) {
+	/// <summary>
+	/// Stable MCP tool name for updating sections in existing Creatio applications.
+	/// </summary>
+	internal const string ApplicationSectionUpdateToolName = "application-section-update";
+
+	/// <summary>
+	/// Updates metadata of a section in an existing Creatio application and returns structured before and after readback data.
+	/// </summary>
+	[McpServerTool(Name = ApplicationSectionUpdateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
+		OpenWorld = false)]
+	[Description("Updates metadata of a section inside an existing application in Creatio through backend MCP and returns structured section readback data before and after the update.")]
+	public ApplicationSectionUpdateContextResponse ApplicationSectionUpdate(
+		[Description("Parameters: environment-name, application-code, section-code (required); caption, description, icon-id, icon-background (optional partial update fields)")]
+		[Required]
+		ApplicationSectionUpdateArgs args) {
+		try {
+			ValidateSectionUpdateArgs(args);
+			ApplicationSectionUpdateResult result = applicationSectionUpdateService.UpdateSection(
+				args.EnvironmentName,
+				new ApplicationSectionUpdateRequest(
+					args.ApplicationCode,
+					args.SectionCode,
+					args.Caption,
+					args.Description,
+					args.IconId,
+					args.IconBackground));
+			return ApplicationToolHelper.CreateSectionUpdateContextResponse(ApplicationToolResultMapper.Map(result));
+		} catch (Exception ex) {
+			return ApplicationToolHelper.CreateSectionUpdateContextErrorResponse(ex.Message);
+		}
+	}
+
+	private static void ValidateSectionUpdateArgs(ApplicationSectionUpdateArgs args) {
+		if (string.IsNullOrWhiteSpace(args.ApplicationCode)) {
+			throw new ArgumentException("application-code is required.");
+		}
+
+		if (string.IsNullOrWhiteSpace(args.SectionCode)) {
+			throw new ArgumentException("section-code is required.");
+		}
+
+		if (args.TitleLocalizations is not null ||
+			args.DescriptionLocalizations is not null ||
+			args.CaptionLocalizations is not null ||
+			args.NameLocalizations is not null) {
+			throw new ArgumentException(
+				"application-section-update is scalar-only. Do not send title-localizations, description-localizations, caption-localizations, or name-localizations.");
+		}
+
+		bool hasCaption = args.Caption is not null;
+		bool hasDescription = args.Description is not null;
+		bool hasIconId = args.IconId is not null;
+		bool hasIconBackground = args.IconBackground is not null;
+		if (!hasCaption && !hasDescription && !hasIconId && !hasIconBackground) {
+			throw new ArgumentException("Provide at least one mutable field: caption, description, icon-id, or icon-background.");
+		}
+	}
+}

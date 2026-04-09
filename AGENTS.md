@@ -85,6 +85,32 @@ For every touched command, verify and update all relevant files:
 - Keep argument lists, defaults, required flags, examples, and notes aligned with current source behavior.
 - If docs are still accurate after review, explicitly state "docs reviewed, no update required" in the change summary/PR description.
 
+# Skill maintenance policy
+
+When changing any command behavior or command-related files, always review the clio skill and update it if needed.
+
+## Trigger conditions for mandatory skill review
+
+Review skill artifacts whenever any of the following is changed:
+- Command options classes (for example classes with `[Verb]`, `[Option]`, `[Value]` attributes)
+- Command handlers/execution logic (for example `*Command`, validators, mapping in `Program.cs`)
+- `clio\docs\commands\*.md` (detailed command docs)
+- `clio\help\en\*.txt` (CLI help)
+- `clio\Commands.md` (command index)
+
+## Required skill targets
+
+For every touched command, verify and update all relevant files:
+- `.github\skills\clio\references\commands-reference.md` — command section for each touched command
+- `.github\skills\clio\SKILL.md` — when-to-use triggers, workflow examples, troubleshooting table, and important notes
+
+## Update rules
+
+- New command → add a section to `commands-reference.md` under the appropriate category. If the command introduces a new capability area (for example entity schema management or Freedom UI pages), also add a numbered workflow section to `SKILL.md`.
+- Changed command options or behavior → update the matching section in `commands-reference.md` to reflect current option names, defaults, examples, and requirements.
+- Renamed canonical command or alias → update both files.
+- If skill artifacts are still accurate after review, explicitly state "Skill reviewed, no update required" in the change summary/PR description.
+
 # C# inline documentation policy
 
 When adding or changing C# code, document public API using inline XML documentation comments (`///`).

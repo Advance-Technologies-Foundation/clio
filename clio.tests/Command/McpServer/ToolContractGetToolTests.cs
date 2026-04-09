@@ -46,6 +46,8 @@ public sealed class ToolContractGetToolTests {
 		result.Tools!.Select(contract => contract.Name).Should().Contain([
 				SettingsHealthTool.ToolName,
 				ApplicationGetListTool.ApplicationGetListToolName,
+				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+				ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 				PageSyncTool.ToolName,
 				PageUpdateTool.ToolName,
 				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
@@ -194,6 +196,110 @@ public sealed class ToolContractGetToolTests {
 				SchemaSyncTool.ToolName
 			}),
 			because: "modify-entity-schema-column should still advertise schema-sync when the work expands into a multi-step ordered schema plan");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical existing-app section-create contract with selector rules, scalar validation, defaults, and preferred flow guidance.")]
+	public void ToolContractGet_Should_Return_ApplicationSectionCreate_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ApplicationSectionCreateTool.ApplicationSectionCreateToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "tool-contract-get should expose the application-section-create contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Required.Should().Contain(["environment-name", "application-code", "caption"],
+			because: "section-create requires environment-name, application-code, and caption as the minimal payload");
+		contract.InputSchema.AnyOf.Should().BeNullOrEmpty(
+			because: "section-create now uses a single required application-code selector");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "forbid-fields" &&
+				validator.Fields!.Contains("title-localizations"),
+			because: "the contract should reject localization maps on the scalar section-create tool");
+		contract.Defaults.Should().Contain(defaultValue =>
+				defaultValue.Name == "with-mobile-pages" &&
+				defaultValue.Value == "true",
+			because: "section-create should document its mobile-enabled default explicitly");
+		contract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "application-code" &&
+				alias.Alias == "app-code" &&
+				alias.Status == "rejected",
+			because: "the contract should reject legacy app-code naming for the section-create tool");
+		contract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "application-code" &&
+				alias.Alias == "application-id" &&
+				alias.Status == "rejected",
+			because: "the contract should reject the removed application-id selector explicitly");
+		contract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName
+				},
+				because: "section-create should advertise the canonical discover-inspect-mutate-verify flow for existing apps");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "section",
+			because: "the output contract should advertise the created section payload explicitly");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "entity",
+			because: "the output contract should advertise the created or targeted entity payload explicitly");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical existing-app section-update contract with selector rules, scalar partial-update validation, and preferred flow guidance.")]
+	public void ToolContractGet_Should_Return_ApplicationSectionUpdate_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "tool-contract-get should expose the application-section-update contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Required.Should().Contain(["environment-name", "application-code", "section-code"],
+			because: "section-update requires environment-name, application-code, and section-code as the selector payload");
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "caption",
+			because: "section-update should advertise caption as an optional mutable field");
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "description",
+			because: "section-update should advertise description as an optional mutable field");
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "icon-id",
+			because: "section-update should advertise icon-id as an optional mutable field");
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "icon-background",
+			because: "section-update should advertise icon-background as an optional mutable field");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "forbid-fields" &&
+				validator.Fields!.Contains("title-localizations"),
+			because: "the contract should reject localization maps on the scalar section-update tool");
+		contract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "section-code" &&
+				alias.Alias == "sectionCode" &&
+				alias.Status == "rejected",
+			because: "the contract should reject camelCase section selectors in favor of kebab-case");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "previous-section",
+			because: "section-update should return the section metadata before the update for auditability");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "section",
+			because: "section-update should return the section metadata after the update");
+		contract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName
+				},
+				because: "section-update should advertise the canonical discover-inspect-mutate flow for existing section metadata edits");
 	}
 
 	[Test]

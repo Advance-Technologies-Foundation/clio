@@ -137,6 +137,13 @@ Path to the application root folder
 
 cliogate must be installed on the target Creatio environment.
 
+## Notes
+
+- CLI flags `--default-value-source/--default-value` remain shorthand for `Const` and `None`.
+- MCP structured `default-value-config` also supports `Settings` and `SystemValue`.
+- For `SystemValue`, clio resolves Guid/alias/caption to canonical Guid before save.
+- For `Settings`, clio resolves code/name/id to canonical setting code before save.
+
 ## See also
 
 - `get-entity-schema-column-properties`

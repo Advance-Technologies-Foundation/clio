@@ -132,6 +132,8 @@ internal static class ToolContractCatalog {
 	private const string ActionFieldName = "action";
 	private const string AppCodeFieldName = "app-code";
 	private const string AppNameFieldName = "app-name";
+	private const string ApplicationCodeFieldName = "application-code";
+	private const string ApplicationIdFieldName = "application-id";
 	private const string ArrayType = "array";
 	private const string BindingNameFieldName = "binding-name";
 	private const string BooleanType = "boolean";
@@ -165,6 +167,20 @@ internal static class ToolContractCatalog {
 	private const string TemplateCodeFieldName = "template-code";
 	private const string TitleLocalizationsFieldName = "title-localizations";
 	private const string ToolSucceededDescription = "Whether the tool succeeded.";
+	private const string ApplicationNameFieldName = "application-name";
+	private const string ApplicationVersionFieldName = "application-version";
+	private const string CaptionFieldName = "caption";
+	private const string DescriptionFieldName = "description";
+	private const string IconIdFieldName = "icon-id";
+	private const string InstalledApplicationCodeDescription = "Installed application code.";
+	private const string InstalledApplicationDisplayNameDescription = "Installed application display name.";
+	private const string InstalledApplicationIdentifierDescription = "Installed application identifier.";
+	private const string InstalledApplicationVersionDescription = "Installed application version.";
+	private const string InvalidWorkflowShapeCode = "invalid-workflow-shape";
+	private const string PackageUIdFieldName = "package-u-id";
+	private const string PrimaryPackageIdentifierDescription = "Primary package identifier.";
+	private const string PrimaryPackageNameDescription = "Primary package name.";
+	private const string SectionCodeFieldName = "section-code";
 
 	private static readonly ToolErrorContract CommonErrorContract = new([
 		new ToolErrorCodeContract("tool-not-found", "Requested tool name is not registered by clio MCP."),
@@ -172,7 +188,7 @@ internal static class ToolContractCatalog {
 		new ToolErrorCodeContract("invalid-parameter-alias", "A legacy or unsupported parameter alias was used."),
 		new ToolErrorCodeContract("invalid-parameter-type", "A parameter value type does not match the tool contract."),
 		new ToolErrorCodeContract(InvalidLocalizationMapCode, "A localization map is malformed or missing en-US."),
-		new ToolErrorCodeContract("invalid-workflow-shape", "The request shape is structurally invalid for the target tool.")
+		new ToolErrorCodeContract(InvalidWorkflowShapeCode, "The request shape is structurally invalid for the target tool.")
 	]);
 
 	private static readonly IReadOnlyDictionary<string, ToolContractDefinition> Contracts =
@@ -180,6 +196,8 @@ internal static class ToolContractCatalog {
 			[ToolContractGetTool.ToolName] = BuildToolContractGet(),
 			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
+			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
+			[ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName] = BuildApplicationSectionUpdate(),
 			[ApplicationGetInfoTool.ApplicationGetInfoToolName] = BuildApplicationGetInfo(),
 			[ApplicationGetListTool.ApplicationGetListToolName] = BuildApplicationGetList(),
 			[SchemaSyncTool.ToolName] = BuildSchemaSync(),
@@ -203,6 +221,8 @@ internal static class ToolContractCatalog {
 	private static readonly string[] CanonicalToolNames = [
 		SettingsHealthTool.ToolName,
 		ApplicationCreateTool.ApplicationCreateToolName,
+		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 		ApplicationGetInfoTool.ApplicationGetInfoToolName,
 		ApplicationGetListTool.ApplicationGetListToolName,
 		SchemaSyncTool.ToolName,
@@ -382,15 +402,15 @@ internal static class ToolContractCatalog {
 					Field("code", StringType, "Application code starting with Usr."),
 					Field(TemplateCodeFieldName, StringType, "Technical template code such as AppFreedomUI."),
 					Field(IconBackgroundFieldName, StringType, "Hex color string in #RRGGBB format."),
-					Field("description", StringType, "Optional application description."),
-					Field("icon-id", StringType, "Optional icon GUID or 'auto'."),
+					Field(DescriptionFieldName, StringType, "Optional application description."),
+					Field(IconIdFieldName, StringType, "Optional icon GUID or 'auto'."),
 					Field("client-type-id", StringType, "Optional client type identifier."),
 					Field("optional-template-data-json", StringType, "Optional JSON object for advanced template configuration.")
 				],
 				Validators: [
 					new ToolContractValidator(
 						"forbid-fields",
-						"invalid-workflow-shape",
+						InvalidWorkflowShapeCode,
 						Fields: [
 							TitleLocalizationsFieldName,
 							DescriptionLocalizationsFieldName,
@@ -409,13 +429,13 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("package-u-id", StringType, "Primary package identifier."),
-				Field(PackageNameFieldName, StringType, "Primary package name."),
+				Field(PackageUIdFieldName, StringType, PrimaryPackageIdentifierDescription),
+				Field(PackageNameFieldName, StringType, PrimaryPackageNameDescription),
 				Field("canonical-main-entity-name", StringType, "Canonical main entity name."),
-				Field("application-id", StringType, "Installed application identifier."),
-				Field("application-name", StringType, "Installed application display name."),
-				Field("application-code", StringType, "Installed application code."),
-				Field("application-version", StringType, "Installed application version."),
+				Field(ApplicationIdFieldName, StringType, InstalledApplicationIdentifierDescription),
+				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
+				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
+				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
 				Field("entities", ArrayType, "Application entities."),
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using page-list item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -457,6 +477,187 @@ internal static class ToolContractCatalog {
 			[]);
 	}
 
+	private static ToolContractDefinition BuildApplicationSectionCreate() {
+		return new ToolContractDefinition(
+			ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+			"Creates a section inside an existing installed application and returns structured section, entity, and page readback data.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, ApplicationCodeFieldName, CaptionFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
+					Field(CaptionFieldName, StringType, "Section caption."),
+					Field(DescriptionFieldName, StringType, "Optional section description."),
+					Field("entity-schema-name", StringType, "Optional existing entity schema name. When provided, the section reuses that entity."),
+					Field("with-mobile-pages", BooleanType, "Create mobile pages in addition to web pages.")
+				],
+				Validators: [
+					new ToolContractValidator(
+						"forbid-fields",
+						InvalidWorkflowShapeCode,
+						Fields: [
+							TitleLocalizationsFieldName,
+							DescriptionLocalizationsFieldName,
+							"caption-localizations",
+							"name-localizations",
+							"titleLocalizations",
+							"descriptionLocalizations",
+							"captionLocalizations",
+							"nameLocalizations"
+						],
+						Context: "application-section-create stays scalar-only; localized captions belong to follow-up schema tools.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(PackageUIdFieldName, StringType, PrimaryPackageIdentifierDescription),
+				Field(PackageNameFieldName, StringType, PrimaryPackageNameDescription),
+				Field(ApplicationIdFieldName, StringType, InstalledApplicationIdentifierDescription),
+				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
+				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
+				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
+				Field("section", ObjectType, "Created section metadata."),
+				Field("entity", ObjectType, "Created or targeted entity metadata when available."),
+				Field(PagesFieldName, ArrayType, "Created page summaries using page-list item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				Alias(ParameterScope, ApplicationCodeFieldName, SelectorCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{SelectorCodeFieldName}'."),
+				Alias(ParameterScope, ApplicationCodeFieldName, AppCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{AppCodeFieldName}'."),
+				Alias(ParameterScope, ApplicationCodeFieldName, ApplicationIdFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{ApplicationIdFieldName}'."),
+				Alias(ParameterScope, "entity-schema-name", "use-existing-entity-schema", RejectedStatus, "Use 'entity-schema-name' alone to reuse an existing entity; the boolean flag is not supported.")
+			],
+			[
+				Default("with-mobile-pages", "true", "Create both web and mobile pages unless the caller explicitly disables mobile pages.")
+			],
+			[
+				Example("Create a new-object section in an existing app", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ApplicationCodeFieldName] = ExamplePackageName,
+					[CaptionFieldName] = "Orders",
+					[DescriptionFieldName] = "Order processing workspace"
+				}),
+				Example("Create a section from an existing entity with mobile pages", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ApplicationCodeFieldName] = ExamplePackageName,
+					[CaptionFieldName] = "Task statuses",
+					["entity-schema-name"] = ExampleTaskStatusSchemaName,
+					["with-mobile-pages"] = true
+				})
+			],
+			Flow(
+				[
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName
+				],
+				"Use application discovery and inspection first, then create the section, then refresh app context once for verification."),
+			[
+				Flow(
+					[
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						ApplicationSectionCreateTool.ApplicationSectionCreateToolName
+					],
+					"Use this shorter flow when the target existing app is already known and inspected.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildApplicationSectionUpdate() {
+		return new ToolContractDefinition(
+			ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+			"Updates metadata of an existing installed application section and returns structured section readback data before and after the update.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, ApplicationCodeFieldName, SectionCodeFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
+					Field(SectionCodeFieldName, StringType, "Existing section code inside the installed application."),
+					Field(CaptionFieldName, StringType, "Optional updated section caption."),
+					Field(DescriptionFieldName, StringType, "Optional updated section description."),
+					Field(IconIdFieldName, StringType, "Optional updated icon GUID."),
+					Field(IconBackgroundFieldName, StringType, "Optional updated icon background color in #RRGGBB format.")
+				],
+				Validators: [
+					new ToolContractValidator(
+						"forbid-fields",
+						InvalidWorkflowShapeCode,
+						Fields: [
+							TitleLocalizationsFieldName,
+							DescriptionLocalizationsFieldName,
+							"caption-localizations",
+							"name-localizations",
+							"titleLocalizations",
+							"descriptionLocalizations",
+							"captionLocalizations",
+							"nameLocalizations"
+						],
+						Context: "application-section-update stays scalar-only; localized captions belong to follow-up schema tools.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(PackageUIdFieldName, StringType, PrimaryPackageIdentifierDescription),
+				Field(PackageNameFieldName, StringType, PrimaryPackageNameDescription),
+				Field(ApplicationIdFieldName, StringType, InstalledApplicationIdentifierDescription),
+				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
+				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
+				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
+				Field("previous-section", ObjectType, "Section metadata before the update."),
+				Field("section", ObjectType, "Section metadata after the update."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				Alias(ParameterScope, ApplicationCodeFieldName, SelectorCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{SelectorCodeFieldName}'."),
+				Alias(ParameterScope, ApplicationCodeFieldName, AppCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{AppCodeFieldName}'."),
+				Alias(ParameterScope, SectionCodeFieldName, "sectionCode", RejectedStatus, "Use 'section-code' instead of 'sectionCode'."),
+				Alias(ParameterScope, IconIdFieldName, "iconId", RejectedStatus, "Use 'icon-id' instead of 'iconId'."),
+				Alias(ParameterScope, IconBackgroundFieldName, "iconBackground", RejectedStatus, "Use 'icon-background' instead of 'iconBackground'.")
+			],
+			[],
+			[
+				Example("Update a broken section heading with a plain-text caption", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ApplicationCodeFieldName] = ExamplePackageName,
+					[SectionCodeFieldName] = "UsrOrders",
+					[CaptionFieldName] = "Orders"
+				}),
+				Example("Update section description and icon metadata", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ApplicationCodeFieldName] = ExamplePackageName,
+					[SectionCodeFieldName] = "UsrOrders",
+					[DescriptionFieldName] = "Order processing workspace",
+					[IconIdFieldName] = "11111111-1111-1111-1111-111111111111",
+					[IconBackgroundFieldName] = "#1F5F8B"
+				})
+			],
+			Flow(
+				[
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName
+				],
+				"Use application discovery and inspection first, then update the target section metadata with a partial top-level payload."),
+			[
+				Flow(
+					[
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName
+					],
+					"Use this shorter flow when the target app is already known and inspected.")
+			],
+			[]);
+	}
+
 	private static ToolContractDefinition BuildApplicationGetInfo() {
 		return new ToolContractDefinition(
 			ApplicationGetInfoTool.ApplicationGetInfoToolName,
@@ -478,13 +679,13 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("package-u-id", StringType, "Primary package identifier."),
-				Field(PackageNameFieldName, StringType, "Primary package name."),
+				Field(PackageUIdFieldName, StringType, PrimaryPackageIdentifierDescription),
+				Field(PackageNameFieldName, StringType, PrimaryPackageNameDescription),
 				Field("canonical-main-entity-name", StringType, "Canonical main entity name."),
-				Field("application-id", StringType, "Installed application identifier."),
-				Field("application-name", StringType, "Installed application display name."),
-				Field("application-code", StringType, "Installed application code."),
-				Field("application-version", StringType, "Installed application version."),
+				Field(ApplicationIdFieldName, StringType, InstalledApplicationIdentifierDescription),
+				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
+				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
+				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
 				Field("entities", ArrayType, "Application entities."),
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using page-list item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -501,9 +702,11 @@ internal static class ToolContractCatalog {
 			Flow(
 				[
 					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				],
-				"Use after application-get-list when the target app is not fully known, or refresh again after mutations when app context must be re-read."),
+				"Use after application-get-list when the target app is not fully known, or refresh again after section or schema mutations when app context must be re-read."),
 			[],
 			[]);
 	}
@@ -540,7 +743,16 @@ internal static class ToolContractCatalog {
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				],
 				"Use when the workflow must branch into existing-app discovery."),
-			[],
+			[
+				Flow(
+					[
+						ApplicationGetListTool.ApplicationGetListToolName,
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+						ApplicationGetInfoTool.ApplicationGetInfoToolName
+					],
+					"Extend the existing-app discovery flow with section creation when the task is to add a section to an installed app.")
+			],
 			[]);
 	}
 
@@ -690,7 +902,7 @@ internal static class ToolContractCatalog {
 				Validators: [
 					new ToolContractValidator(
 						"mutually-exclusive-fields",
-						"invalid-workflow-shape",
+						InvalidWorkflowShapeCode,
 						Fields: [
 							PackageNameFieldName,
 							SelectorCodeFieldName
@@ -1126,7 +1338,7 @@ internal static class ToolContractCatalog {
 					Field("required", BooleanType, "Optional required flag."),
 					Field("default-value-source", StringType, "Legacy optional default source shorthand. Supports only Const or None."),
 					Field("default-value", StringType, "Legacy optional default value shorthand for Const."),
-					Field("default-value-config", ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence."))),
+					Field("default-value-config", ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
@@ -1158,7 +1370,7 @@ internal static class ToolContractCatalog {
 					[ColumnNameFieldName] = "UsrStartDate",
 					["default-value-config"] = new Dictionary<string, object?> {
 						["source"] = "SystemValue",
-						["value-source"] = "CurrentDateTime"
+						["value-source"] = "Current Time and Date"
 					}
 				})
 			],
@@ -1418,12 +1630,12 @@ internal static class ToolContractCatalog {
 	}
 
 	private static ToolContractAlias CaptionParameterAlias() {
-		return Alias(ParameterScope, TitleLocalizationsFieldName, "caption", RejectedStatus,
+		return Alias(ParameterScope, TitleLocalizationsFieldName, CaptionFieldName, RejectedStatus,
 			$"Use '{TitleLocalizationsFieldName}' instead of legacy scalar 'caption'.");
 	}
 
 	private static ToolContractAlias DescriptionParameterAlias() {
-		return Alias(ParameterScope, DescriptionLocalizationsFieldName, "description", RejectedStatus,
+		return Alias(ParameterScope, DescriptionLocalizationsFieldName, DescriptionFieldName, RejectedStatus,
 			$"Use '{DescriptionLocalizationsFieldName}' instead of legacy scalar 'description'.");
 	}
 

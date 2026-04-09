@@ -144,6 +144,12 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 			} catch (JsonException exception) {
 				throw new InvalidOperationException($"Operation payload at index {index} is not valid JSON.", exception);
 			}
+			string? normalizedScalarTitle = NormalizeTitle(operation.Title);
+			TitleLocalizationNormalizationResult titleNormalization =
+				EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
+					operation.TitleLocalizations,
+					normalizedScalarTitle,
+					"title-localizations");
 
 			yield return new ModifyEntitySchemaColumnOptions {
 				Environment = options.Environment,
@@ -153,8 +159,8 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 				ColumnName = operation.ColumnName,
 				NewName = operation.NewName,
 				Type = operation.Type,
-				Title = NormalizeTitle(operation.Title),
-				TitleLocalizations = operation.TitleLocalizations,
+				Title = titleNormalization.EffectiveTitle,
+				TitleLocalizations = titleNormalization.Localizations,
 				Description = operation.Description,
 				DescriptionLocalizations = operation.DescriptionLocalizations,
 				ReferenceSchemaName = operation.ReferenceSchemaName,

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace Clio.Command.McpServer.Tools;
@@ -86,3 +87,103 @@ public sealed record ApplicationOptionalTemplateDataJsonArgs(
 	bool? UseExistingEntitySchema = null,
 	bool? UseAiContentGeneration = null,
 	string? AppSectionDescription = null);
+
+/// <summary>
+/// MCP arguments for the <c>application-section-create</c> tool.
+/// </summary>
+public sealed record ApplicationSectionCreateArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("application-code")]
+	[property: Description("Installed application code.")]
+	[property: Required]
+	string ApplicationCode,
+
+	[property: JsonPropertyName("caption")]
+	[property: Description("Section caption, e.g. 'Orders'")]
+	[property: Required]
+	string Caption = "",
+
+	[property: JsonPropertyName("description")]
+	[property: Description("Optional section description")]
+	string? Description = null,
+
+	[property: JsonPropertyName("entity-schema-name")]
+	[property: Description("Optional existing entity schema name. When provided, the section reuses that entity.")]
+	string? EntitySchemaName = null,
+
+	[property: JsonPropertyName("with-mobile-pages")]
+	[property: Description("Create mobile pages in addition to web pages. Default: true.")]
+	bool WithMobilePages = true,
+
+	[property: JsonPropertyName("title-localizations")]
+	[property: Description("Rejected. application-section-create is scalar-only and does not accept localization maps.")]
+	IReadOnlyDictionary<string, string>? TitleLocalizations = null,
+
+	[property: JsonPropertyName("description-localizations")]
+	[property: Description("Rejected. application-section-create is scalar-only and does not accept localization maps.")]
+	IReadOnlyDictionary<string, string>? DescriptionLocalizations = null,
+
+	[property: JsonPropertyName("caption-localizations")]
+	[property: Description("Rejected. application-section-create is scalar-only and does not accept localization maps.")]
+	IReadOnlyDictionary<string, string>? CaptionLocalizations = null,
+
+	[property: JsonPropertyName("name-localizations")]
+	[property: Description("Rejected. application-section-create is scalar-only and does not accept localization maps.")]
+	IReadOnlyDictionary<string, string>? NameLocalizations = null
+);
+
+/// <summary>
+/// MCP arguments for the <c>application-section-update</c> tool.
+/// </summary>
+public sealed record ApplicationSectionUpdateArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("application-code")]
+	[property: Description("Installed application code.")]
+	[property: Required]
+	string ApplicationCode,
+
+	[property: JsonPropertyName("section-code")]
+	[property: Description("Existing section code inside the installed application.")]
+	[property: Required]
+	string SectionCode,
+
+	[property: JsonPropertyName("caption")]
+	[property: Description("Optional updated section caption.")]
+	string? Caption = null,
+
+	[property: JsonPropertyName("description")]
+	[property: Description("Optional updated section description.")]
+	string? Description = null,
+
+	[property: JsonPropertyName("icon-id")]
+	[property: Description("Optional updated icon GUID.")]
+	string? IconId = null,
+
+	[property: JsonPropertyName("icon-background")]
+	[property: Description("Optional updated icon background color in #RRGGBB format.")]
+	string? IconBackground = null,
+
+	[property: JsonPropertyName("title-localizations")]
+	[property: Description("Rejected. application-section-update is scalar-only and does not accept localization maps.")]
+	IReadOnlyDictionary<string, string>? TitleLocalizations = null,
+
+	[property: JsonPropertyName("description-localizations")]
+	[property: Description("Rejected. application-section-update is scalar-only and does not accept localization maps.")]
+	IReadOnlyDictionary<string, string>? DescriptionLocalizations = null,
+
+	[property: JsonPropertyName("caption-localizations")]
+	[property: Description("Rejected. application-section-update is scalar-only and does not accept localization maps.")]
+	IReadOnlyDictionary<string, string>? CaptionLocalizations = null,
+
+	[property: JsonPropertyName("name-localizations")]
+	[property: Description("Rejected. application-section-update is scalar-only and does not accept localization maps.")]
+	IReadOnlyDictionary<string, string>? NameLocalizations = null
+);

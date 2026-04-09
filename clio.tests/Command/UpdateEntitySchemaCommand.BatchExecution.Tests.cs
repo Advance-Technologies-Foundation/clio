@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
@@ -15,6 +16,7 @@ using Terrasoft.Core.Entities;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[NonParallelizable]
 internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioModuleTests
 {
 	private static readonly Guid PackageUId = Guid.Parse("11111111-1111-1111-1111-111111111111");
@@ -30,6 +32,8 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 
 	public override void Setup() {
 		base.Setup();
+		_loadedSchema = null!;
+		_savedSchema = null;
 		_command = Container.GetRequiredService<UpdateEntitySchemaCommand>();
 	}
 
@@ -100,10 +104,13 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 
 		// Act
 		int result = _command.Execute(options);
+		string? errorMessage = _logger.ReceivedCalls()
+			.Select(call => call.GetArguments().FirstOrDefault()?.ToString())
+			.LastOrDefault();
 
 		// Assert
 		result.Should().Be(0,
-			because: "valid batch updates should succeed when all operations target the same remote schema");
+			because: $"valid batch updates should succeed when all operations target the same remote schema. Latest logger message: {errorMessage}");
 		_designerClient.Received(1).SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
 		_designerClient.Received(1).SaveSchemaDbStructure(Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
 		_designerClient.Received(1).GetRuntimeEntitySchema(Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
@@ -116,6 +123,41 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 			because: "later operations in the same batch should still be applied before the single save");
 		savedColumn.DefValue!.Value.Should().Be("A;B",
 			because: "semicolons inside the second operation default value should survive parsing and batch execution");
+	}
+
+	[Test]
+	[Description("Keeps an effective title through add then modify batches when the add operation only supplies title-localizations.")]
+	public void Execute_Should_PreserveEffectiveTitle_WhenBatchAddsLocalizedColumnThenModifiesDefaultValue() {
+		// Arrange
+		using CultureScope cultureScope = new("uk-UA");
+		_loadedSchema = CreateSchema([
+			CreateGuidColumn("Id", IdColumnUId)
+		]);
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Operations = [
+				"""{"action":"add","column-name":"UsrStatus","type":"Text","title-localizations":{"en-US":"Status"}}""",
+				"""{"action":"modify","column-name":"UsrStatus","default-value-source":"Const","default-value":"Draft"}"""
+			]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "the batch should keep the localized column valid for the later modify operation in the same save");
+		EntitySchemaColumnDto savedColumn = _savedSchema!.Columns!.Single(column => column.Name == "UsrStatus");
+		savedColumn.Caption.Should().Contain(item => item.CultureName == "en-US" && item.Value == "Status",
+			because: "the saved batch should keep the canonical en-US title localization");
+		savedColumn.Caption.Should().Contain(item => item.CultureName == "uk-UA" && item.Value == "Status",
+			because: "the saved batch should synthesize a current-culture title so .NET Framework validation can pass");
+		savedColumn.DefValue.Should().NotBeNull(
+			because: "the later default-value modification should still apply after the localized add");
+		savedColumn.DefValue!.Value.Should().Be("Draft",
+			because: "the second operation in the batch should still persist its default value");
 	}
 
 	private static EntityDesignSchemaDto CreateSchema(IEnumerable<EntitySchemaColumnDto> columns) {
@@ -161,5 +203,23 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 				Value = title
 			}]
 		};
+	}
+
+	private sealed class CultureScope : IDisposable {
+		private readonly CultureInfo _originalCurrentCulture;
+		private readonly CultureInfo _originalCurrentUiCulture;
+
+		public CultureScope(string cultureName) {
+			_originalCurrentCulture = CultureInfo.CurrentCulture;
+			_originalCurrentUiCulture = CultureInfo.CurrentUICulture;
+			CultureInfo culture = CultureInfo.GetCultureInfo(cultureName);
+			CultureInfo.CurrentCulture = culture;
+			CultureInfo.CurrentUICulture = culture;
+		}
+
+		public void Dispose() {
+			CultureInfo.CurrentCulture = _originalCurrentCulture;
+			CultureInfo.CurrentUICulture = _originalCurrentUiCulture;
+		}
 	}
 }

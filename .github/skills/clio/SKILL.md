@@ -34,6 +34,9 @@ clio ver
 - User asks about **CI/CD** with Creatio, GitOps manifests, or deployment scenarios
 - User wants to execute **SQL scripts** or **service calls** against Creatio
 - User needs to set up **infrastructure** (Kubernetes, Docker) for Creatio
+- User wants to **create or modify entity schemas** (columns, types, lookups) in Creatio
+- User wants to **read or update Freedom UI pages** (page-get, page-update, page-list)
+- User wants to **manage package data bindings** (seed data for SysSettings, SysModule, custom entities)
 
 ## General Syntax
 
@@ -73,7 +76,7 @@ clio healthcheck myenv
 # Get instance info (requires cliogate)
 clio get-info -e myenv
 
-# Interactive environment manager (TUI)
+# Interactive environment manager (TUI). Aliases: gui, far
 clio env-ui
 
 # Open in browser
@@ -180,6 +183,9 @@ clio download-application MyApp -e myenv
 clio deploy-application MyApp -e source -d target
 clio install-application ./MyApp.gz -e myenv
 clio uninstall-app-remote MyApp -e myenv
+clio create-app-section --application-code UsrOrdersApp --caption "Orders" -e myenv
+clio create-app-section --application-code UsrSalesApp --caption "Accounts" --entity-schema-name Account -e myenv
+clio update-app-section --application-code UsrOrdersApp --section-code UsrOrders --caption "Orders" -e myenv
 
 # Upload license
 clio upload-license license.lic -e myenv
@@ -225,12 +231,77 @@ clio install-tide -e myenv
 # Merge workspaces
 clio merge-workspaces --workspaces path1,path2 -e myenv
 
-# Publish workspace
-clio publish-workspace --file ./output.zip --repo-path ./workspace
+# Publish workspace to ZIP archive or app hub
+clio publish-app --file ./output.zip --repo-path ./workspace
+clio publish-app --repo-path ./workspace --app-hub /hub/path --app-name MyApp -e myenv
 
 # Link to file design mode
 clio link-from-repository -e myenv --repoPath ./packages --packages "*"
 ```
+
+### 4a. Existing App Section Creation
+
+Use this flow when the app already exists in Creatio and only a new section must be added:
+
+```bash
+# Inspect installed apps first when the app code or id is unknown
+clio get-app-list -e myenv
+
+# Create a section with a new object
+clio create-app-section --application-code UsrOrdersApp --caption "Orders" -e myenv
+
+# Create a section bound to an existing entity
+clio create-app-section \
+  --application-code UsrSalesApp \
+  --caption "Accounts" \
+  --entity-schema-name Account \
+  -e myenv
+
+# Create a web-only section
+clio create-app-section \
+  --application-code UsrSalesApp \
+  --caption "Visits" \
+  --with-mobile-pages false \
+  -e myenv
+```
+
+Rules:
+- pass `--application-code` for the installed target app
+- pass `--entity-schema-name` only when reusing an existing entity
+- omit entity options to let Creatio create a new object for the new section
+
+### 4b. Existing App Section Update
+
+Use this flow when the app and section already exist in Creatio and only section metadata must change:
+
+```bash
+# Fix a broken JSON-style heading
+clio update-app-section \
+  --application-code UsrOrdersApp \
+  --section-code UsrOrders \
+  --caption "Orders" \
+  -e myenv
+
+# Update only description
+clio update-app-section \
+  --application-code UsrSalesApp \
+  --section-code AccountSection \
+  --description "Key customer accounts" \
+  -e myenv
+
+# Update only icon metadata
+clio update-app-section \
+  --application-code UsrSalesApp \
+  --section-code VisitSection \
+  --icon-id 11111111-1111-1111-1111-111111111111 \
+  --icon-background "#A1B2C3" \
+  -e myenv
+```
+
+Rules:
+- pass `--application-code` and `--section-code`
+- provide at least one mutable field: `--caption`, `--description`, `--icon-id`, or `--icon-background`
+- omit fields that must stay unchanged
 
 ### 5. Development Tools
 
@@ -330,7 +401,103 @@ clio run --file-name scenario.yaml
 clio clone-env --source Dev --target QA
 ```
 
-### 8. Infrastructure & Deployment
+### 8. Entity Schema Management
+
+Create and evolve entity schemas directly on a remote Creatio instance. Requires cliogate.
+
+```bash
+# Create entity schema with columns
+clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" \
+  --column "Make:ShortText:Manufacturer" \
+  --column "OwnerId:Lookup:Owner:Contact" \
+  -e myenv
+
+# Verify created schema
+clio get-entity-schema-properties -e myenv --package MyPackage --schema-name UsrVehicle
+
+# Add a column
+clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle \
+  --action add --column-name Year --type Integer --title "Year" -e myenv
+
+# Remove a column
+clio modify-entity-schema-column --package MyPackage --schema-name UsrVehicle \
+  --action remove --column-name ObsoleteField -e myenv
+
+# Batch operations
+clio update-entity-schema --package MyPackage --schema-name UsrVehicle \
+  --operation '{"action":"add","columnName":"Color","type":"ShortText"}' \
+  --operation '{"action":"add","columnName":"Mileage","type":"Integer"}' \
+  -e myenv
+
+# Batch default from SystemValue caption (normalized to Guid)
+clio update-entity-schema --package MyPackage --schema-name UsrVehicle \
+  --operation '{"action":"modify","column-name":"UsrStartDate","default-value-config":{"source":"SystemValue","value-source":"Current Time and Date"}}' \
+  -e myenv
+
+# Read specific column properties
+clio get-entity-schema-column-properties -e myenv --package MyPackage \
+  --schema-name UsrVehicle --column-name Make
+```
+
+Default resolution behavior for entity schema defaults:
+- `SystemValue` accepts Guid, alias, or caption and persists canonical Guid.
+- `Settings` accepts code, name, or id and persists canonical setting code.
+- `get-entity-schema-column-properties` reports canonical identifiers in `default-value-config.resolved-value-source`.
+- Ambiguous matches fail fast and require explicit Guid/code input.
+
+### 9. Freedom UI Page Management
+
+Read and update Freedom UI page schemas.
+
+```bash
+# Discover pages
+clio page-list -e myenv
+clio page-list --search-pattern FormPage --limit 20 -e myenv
+
+# Read page (get raw.body for editing)
+clio page-get --schema-name UsrTodo_FormPage -e myenv
+
+# Validate without saving
+clio page-update --schema-name UsrTodo_FormPage --body "<raw body>" --dry-run true -e myenv
+
+# Save updated page
+clio page-update --schema-name UsrTodo_FormPage --body "<edited body>" -e myenv
+
+# Save with resource string registration
+clio page-update --schema-name UsrTodo_FormPage --body "<edited body>" \
+  --resources '{"UsrDetailsTab_caption":"Details"}' -e myenv
+```
+
+For updating multiple pages in one call, use the `page-sync` MCP tool.
+
+### 10. Data Bindings
+
+Create and manage package data bindings for seed data.
+
+```bash
+# Create SysSettings binding (offline — no environment needed)
+clio create-data-binding --package MyPackage --schema SysSettings
+
+# Create binding for custom entity
+clio create-data-binding -e myenv --package MyPackage --schema UsrVehicle \
+  --values '{"Name":"Default vehicle"}'
+
+# Add or update a row
+clio add-data-binding-row --package MyPackage --binding-name SysSettings \
+  --values '{"Name":"My setting","Code":"UsrMySetting"}'
+
+# Remove a row by primary key
+clio remove-data-binding-row --package MyPackage --binding-name SysSettings \
+  --key-value 4f41bcc2-7ed0-45e8-a1fd-474918966d15
+
+# DB-first flow (saves directly to remote DB)
+clio create-data-binding-db -e myenv --package MyPackage --schema SysSettings \
+  --rows '[{"values":{"Name":"Row","Code":"UsrRow"}}]'
+clio upsert-data-binding-row-db -e myenv --package MyPackage --binding-name SysSettings \
+  --values '{"Name":"Updated","Code":"UsrRow"}'
+```
+
+### 11. Infrastructure & Deployment
 
 ```bash
 # Deploy Kubernetes infrastructure (PostgreSQL, Redis, pgAdmin)
@@ -368,13 +535,18 @@ clio update-cli
 | Compilation errors | Check `clio last-compilation-log -e <ENV>` |
 | Permission denied | Ensure administrator-level Creatio credentials |
 | Package locked | Unlock with `clio unlock-package <PKG> -e <ENV>` |
+| Entity schema command fails | Ensure cliogate is installed: `clio install-gate -e <ENV>` |
+| page-update validation error | Use `--dry-run true` first; check Freedom UI schema markers |
 
 ## Important Notes
 
 - Always verify command options with `clio <CMD> --help` — it is the authoritative source
 - Always use `-e <ENV>` to target a specific registered environment
 - For composable applications use `push-app` instead of `push-pkg`
-- cliogate package is required for many advanced features (workspace, get-info, etc.)
+- cliogate package is required for many advanced features (workspace, get-info, entity schema commands, etc.)
 - T.I.D.E. requires cliogate: install with `clio install-tide -e <ENV>`
 - Use `clio help` for full command list, `clio <CMD> --help` for command details
 - Manifest YAML files support GitOps: apps, syssettings, features, webservices
+- Entity schema commands (`create-entity-schema`, `modify-entity-schema-column`, etc.) require cliogate ≥ 2.0
+- Freedom UI page commands (`page-get`, `page-update`, `page-list`) work without cliogate
+- Data binding commands that work offline (no environment): `create-data-binding` with SysSettings/SysModule templates, `add-data-binding-row`, `remove-data-binding-row`

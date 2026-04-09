@@ -87,6 +87,12 @@ Path to the application root folder
 
 cliogate must be installed on the target Creatio environment.
 
+## Notes
+
+- `--operation` payloads can include structured `default-value-config`.
+- For `SystemValue`, clio resolves Guid/alias/caption to canonical Guid before save.
+- For `Settings`, clio resolves code/name/id to canonical setting code before save.
+
 ## See also
 
 - `modify-entity-schema-column`

@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
@@ -13,6 +15,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[NonParallelizable]
 public sealed class EntitySchemaToolTests {
 
 	[Test]
@@ -314,6 +317,43 @@ public sealed class EntitySchemaToolTests {
 			because: "the value-source should be preserved through tool mapping");
 		resolvedCommand.CapturedOptions.DefaultValueSource.Should().BeNull(
 			because: "structured default configs should not be flattened into legacy shorthand fields");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Derives the internal scalar title and current-culture localization from MCP title-localizations for mutation flows.")]
+	public void ModifyEntitySchemaColumn_Should_Derive_Title_And_CurrentCultureLocalization_From_TitleLocalizations() {
+		// Arrange
+		using CultureScope cultureScope = new("uk-UA");
+		FakeModifyEntitySchemaColumnCommand defaultCommand = new();
+		FakeModifyEntitySchemaColumnCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
+			.Returns(resolvedCommand);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			"modify",
+			"Name",
+			TitleLocalizations: Localizations("Vehicle name")));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "localized MCP mutation payloads should still map to validator-safe internal options");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive mapped mutation options");
+		resolvedCommand.CapturedOptions!.Title.Should().Be("Vehicle name",
+			because: "Clio should derive the internal scalar title from title-localizations");
+		resolvedCommand.CapturedOptions.TitleLocalizations.Should().ContainKey("en-US",
+			because: "the canonical en-US title localization must be preserved");
+		resolvedCommand.CapturedOptions.TitleLocalizations.Should().ContainKey("uk-UA",
+			because: "Clio should synthesize a current-culture title localization before save");
+		resolvedCommand.CapturedOptions.TitleLocalizations!["uk-UA"].Should().Be("Vehicle name",
+			because: "the synthesized current-culture localization should reuse the effective title value");
 	}
 
 	[Test]
@@ -628,5 +668,23 @@ public sealed class EntitySchemaToolTests {
 			result["uk-UA"] = ukUa;
 		}
 		return result;
+	}
+
+	private sealed class CultureScope : IDisposable {
+		private readonly CultureInfo _originalCurrentCulture;
+		private readonly CultureInfo _originalCurrentUiCulture;
+
+		public CultureScope(string cultureName) {
+			_originalCurrentCulture = CultureInfo.CurrentCulture;
+			_originalCurrentUiCulture = CultureInfo.CurrentUICulture;
+			CultureInfo culture = CultureInfo.GetCultureInfo(cultureName);
+			CultureInfo.CurrentCulture = culture;
+			CultureInfo.CurrentUICulture = culture;
+		}
+
+		public void Dispose() {
+			CultureInfo.CurrentCulture = _originalCurrentCulture;
+			CultureInfo.CurrentUICulture = _originalCurrentUiCulture;
+		}
 	}
 }

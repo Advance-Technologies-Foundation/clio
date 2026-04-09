@@ -21,7 +21,7 @@ public static class ApplicationPrompt {
 		string? environmentName = null) =>
 		$"""
 		 Use clio mcp server `{ApplicationGetListTool.ApplicationGetListToolName}` to return installed Creatio applications as structured JSON.
-		 Before the first application discovery or existing-app maintenance tool call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `application-get-list` and `application-get-info` so the client starts from the authoritative clio MCP contract.
+		 Before the first application discovery or existing-app maintenance tool call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `application-get-list`, `application-get-info`, and `application-section-create` so the client starts from the authoritative clio MCP contract.
 		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
 		 Pass `environment-name` when you need to target a registered clio environment explicitly.
 		 Pass tool arguments at the top level of the MCP request; do not wrap `environment-name` inside an `args` object.
@@ -43,7 +43,7 @@ public static class ApplicationPrompt {
 		string? code = null) =>
 		$"""
 		 Use clio mcp server `{ApplicationGetInfoTool.ApplicationGetInfoToolName}` to return installed application identity plus the primary package and runtime entity metadata for one installed Creatio application.
-		 If this is the first application-related MCP call in the workflow, call `{ToolContractGetTool.ToolName}` first with `tool-names` such as `application-get-list` and `application-get-info` so the client starts from the authoritative contract.
+		 If this is the first application-related MCP call in the workflow, call `{ToolContractGetTool.ToolName}` first with `tool-names` such as `application-get-list`, `application-get-info`, and `application-section-create` so the client starts from the authoritative contract.
 		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Pass exactly one identifier: `id` when you already have the installed application GUID, or `code` when you have the installed application code.
@@ -93,5 +93,73 @@ public static class ApplicationPrompt {
 		 Pass `icon-id` only when a specific icon identifier is required.
 		 Pass `client-type-id` only when a non-default Creatio client type is required.
 		 Pass `optional-template-data-json` only when the selected template requires entity-specific options such as `entitySchemaName`, `useExistingEntitySchema`, `useAIContentGeneration`, or `appSectionDescription`.
+		 """;
+
+	/// <summary>
+	/// Builds a prompt that directs the agent to create a section inside an existing Creatio application through MCP.
+	/// </summary>
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "Prompt parameters intentionally mirror the application-section-create MCP contract.")]
+	[McpServerPrompt(Name = ApplicationSectionCreateTool.ApplicationSectionCreateToolName),
+		Description("Prompt to create a section inside an existing application")]
+	public static string ApplicationSectionCreate(
+		[Description("Creatio environment name")]
+		string environmentName,
+		[Description("Installed application code")]
+		string applicationCode,
+		[Description("Section caption")]
+		string caption,
+		[Description("Optional section description")]
+		string? description = null,
+		[Description("Optional existing entity schema name")]
+		string? entitySchemaName = null,
+		[Description("Create mobile pages")]
+		bool withMobilePages = true) =>
+		$"""
+		 Use clio mcp server `{ApplicationSectionCreateTool.ApplicationSectionCreateToolName}` to create a section inside an existing installed Creatio application and return structured section, entity, and page readback data.
+		 Before the first existing-app mutation call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `application-get-list`, `application-get-info`, and `application-section-create` so the client starts from the authoritative contract and preferred flow.
+		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 Pass `environment-name` `{environmentName}` exactly as provided.
+		 Pass `application-code` `{applicationCode}` as the installed application selector.
+		 Provide `caption` as a plain scalar string.
+		 Pass all tool arguments at the top level of the MCP request; do not wrap them inside `args`.
+		 When `entity-schema-name` is provided, the section reuses that existing entity. When it is omitted, Creatio creates a new object for the section.
+		 Keep `with-mobile-pages` as a top-level boolean. When omitted it defaults to `true`.
+		 Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or other localization-map fields to `application-section-create`.
+		 If the target app is not fully known, use `{ApplicationGetListTool.ApplicationGetListToolName}` first, then `{ApplicationGetInfoTool.ApplicationGetInfoToolName}`, then `{ApplicationSectionCreateTool.ApplicationSectionCreateToolName}`.
+		 """;
+
+	/// </summary>
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "Prompt parameters intentionally mirror the application-section-update MCP contract.")]
+	[McpServerPrompt(Name = ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName),
+		Description("Prompt to update a section inside an existing application")]
+	public static string ApplicationSectionUpdate(
+		[Description("Creatio environment name")]
+		string environmentName,
+		[Description("Installed application code")]
+		string applicationCode,
+		[Description("Existing section code")]
+		string sectionCode,
+		[Description("Optional updated caption")]
+		string? caption = null,
+		[Description("Optional updated description")]
+		string? description = null,
+		[Description("Optional updated icon GUID")]
+		string? iconId = null,
+		[Description("Optional updated icon background")]
+		string? iconBackground = null) =>
+		$"""
+		 Use clio mcp server `{ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName}` to update metadata of an existing section inside an installed Creatio application and return structured section readback data before and after the update.
+		 Before the first existing-app mutation call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `application-get-list`, `application-get-info`, and `application-section-update` so the client starts from the authoritative contract and preferred flow.
+		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 Pass `environment-name` `{environmentName}` exactly as provided.
+		 Pass `application-code` `{applicationCode}` as the installed application selector.
+		 Pass `section-code` `{sectionCode}` as the existing section selector inside that application.
+		 Use `caption`, `description`, `icon-id`, and `icon-background` as optional top-level partial update fields. Omit any field that should remain unchanged.
+		 When updating a broken JSON-style section heading, provide a new plain-text `caption`.
+		 Pass all tool arguments at the top level of the MCP request; do not wrap them inside `args`.
+		 Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or other localization-map fields to `application-section-update`.
+		 If the target app is not fully known, use `{ApplicationGetListTool.ApplicationGetListToolName}` first, then `{ApplicationGetInfoTool.ApplicationGetInfoToolName}`, then `{ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName}`.
 		 """;
 }
