@@ -194,7 +194,7 @@ internal sealed class PeopleRenderer
 
 	private void DrawPlayer()
 	{
-		WriteText(PlayerX - 5, PlayerY - 3, "Andry Baker", ConsoleColor.Cyan);
+		WriteText(PlayerX - 5, PlayerY - 3, "Andrew Baker", ConsoleColor.Cyan);
 		WriteText(PlayerX - 2, PlayerY - 1, "/^^\\", ConsoleColor.White);
 		WriteText(PlayerX - 2, PlayerY, "|AB|", ConsoleColor.Cyan);
 		WriteText(PlayerX - 2, PlayerY + 1, "/==\\", ConsoleColor.White);

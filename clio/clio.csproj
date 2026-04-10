@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
 		<TargetFramework>net8.0</TargetFramework>
@@ -9,7 +9,7 @@
 		<PackageTags>cli ATF clio creatio</PackageTags>
 		<NeutralLanguage>en</NeutralLanguage>
 		<!-- Default version for local development. Will be overridden during release from tag -->
-		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.2.61</AssemblyVersion>
+		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.2.62</AssemblyVersion>
 		<FileVersion>$(AssemblyVersion)</FileVersion>
 		<Version>$(AssemblyVersion)</Version>
 		<Description>CLI interface for Creatio</Description>
