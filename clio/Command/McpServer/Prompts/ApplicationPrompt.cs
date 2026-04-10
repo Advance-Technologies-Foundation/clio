@@ -84,6 +84,8 @@ public static class ApplicationPrompt {
 		 Provide `name`, `code`, `template-code`, and `icon-background`.
 		 Pass those fields at the top level of the MCP request; do not nest them under `args`.
 		 For end-to-end app modeling guardrails, read `docs://mcp/guides/app-modeling`.
+		 `application-create` already performs an internal Data Forge enrichment step and returns optional `dataforge` diagnostics with health, coverage, warnings, and a compact context summary.
+		 Do not add a separate mandatory Data Forge preflight outside the canonical `application-create` flow unless the workflow explicitly needs standalone Data Forge inspection or remediation.
 		 For a new app with one primary record type, treat the entity returned by `application-create` as the canonical main entity and extend it instead of creating a synonym entity for the same records.
 		 `application-create` is a scalar app-shell tool. Keep `name`, `description`, and `optional-template-data-json.appSectionDescription` as plain strings.
 		 `template-code` is the technical template name, not the display name. Known values include `AppFreedomUI`, `AppFreedomUIv2`, `AppWithHomePage`, and `EmptyApp`.

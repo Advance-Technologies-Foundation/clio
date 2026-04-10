@@ -134,7 +134,7 @@ public static class EntitySchemaPrompt {
 		 prefer `schema-sync`. Seed rows create data only; model default requirements separately as
 		 `schema default` or `ui default`. For existing-app maintenance guidance, read
 		 `docs://mcp/guides/existing-app-maintenance`.
-		 Inspect current schema metadata with `get-entity-schema-properties` first. For one-column changes, prefer `modify-entity-schema-column`.
+		 Inspect current schema metadata with `get-entity-schema-properties` first. For one-column changes, prefer `modify-entity-schema-column`. `update-entity-schema` performs internal DataForge enrichment and returns an optional `dataforge` section — inspect `similar-tables` before proceeding with the batch. When adding a Lookup column (`type = Lookup`) via `modify-entity-schema-column` (which does not enrich internally) and the correct `reference-schema-name` is not certain, call `dataforge-find-tables` (Layer 3 pre-flight) first. For the full DataForge orchestration protocol, read `docs://mcp/guides/dataforge-orchestration`.
 		 """;
 
 	/// <summary>

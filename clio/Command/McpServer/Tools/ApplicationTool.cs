@@ -2,7 +2,8 @@ using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
-using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -86,7 +87,9 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 /// MCP tool surface for application creation.
 /// </summary>
 [McpServerToolType]
-public sealed class ApplicationCreateTool(IApplicationCreateService applicationCreateService) {
+public sealed class ApplicationCreateTool(
+	IApplicationCreateService applicationCreateService,
+	IApplicationCreateEnrichmentService enrichmentService) {
 	/// <summary>
 	/// Stable MCP tool name for creating Creatio applications.
 	/// </summary>
@@ -98,13 +101,17 @@ public sealed class ApplicationCreateTool(IApplicationCreateService applicationC
 	[McpServerTool(Name = ApplicationCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context.")]
-	public ApplicationContextResponse ApplicationCreate(
+	public async Task<ApplicationContextResponse> ApplicationCreate(
 		[Description("Parameters: environment-name, name, code, template-code, icon-background (all required); description, icon-id, client-type-id (optional)")]
 		[Required]
 		ApplicationCreateArgs args) {
 		try {
 			ValidateCreateArgs(args);
-			ApplicationOptionalTemplateData? optionalTemplateData = ParseOptionalTemplateData(args.OptionalTemplateDataJson);
+			ApplicationOptionalTemplateData? optionalTemplateData = ApplicationToolHelper.ParseOptionalTemplateData(args.OptionalTemplateDataJson);
+			ApplicationDataForgeResult dataForge = await enrichmentService.EnrichAsync(
+				args,
+				optionalTemplateData,
+				CancellationToken.None);
 			ApplicationInfoResult result = applicationCreateService.CreateApplication(
 				args.EnvironmentName,
 				new ApplicationCreateRequest(
@@ -116,7 +123,9 @@ public sealed class ApplicationCreateTool(IApplicationCreateService applicationC
 					args.IconBackground,
 					args.ClientTypeId,
 					optionalTemplateData));
-			return ApplicationToolHelper.CreateContextResponse(ApplicationToolResultMapper.Map(result));
+			return ApplicationToolHelper.CreateContextResponse(
+				ApplicationToolResultMapper.Map(result),
+				dataForge);
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateContextErrorResponse(ex.Message);
 		}
@@ -154,37 +163,6 @@ public sealed class ApplicationCreateTool(IApplicationCreateService applicationC
 				"icon-background is required. " +
 				"Provide a top-level #RRGGBB value such as #1F5F8B.");
 		}
-	}
-
-	private static ApplicationOptionalTemplateData? ParseOptionalTemplateData(string? optionalTemplateDataJson) {
-		if (string.IsNullOrWhiteSpace(optionalTemplateDataJson)) {
-			return null;
-		}
-
-		ApplicationOptionalTemplateDataJsonArgs? optionalTemplateData;
-		try {
-			optionalTemplateData = JsonSerializer.Deserialize<ApplicationOptionalTemplateDataJsonArgs>(
-				optionalTemplateDataJson,
-				new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-		} catch (JsonException ex) {
-			throw new ArgumentException(
-				$"Invalid optional-template-data-json format: {ex.Message}",
-				nameof(optionalTemplateDataJson),
-				ex);
-		}
-
-		if (optionalTemplateData?.UseAiContentGeneration == true) {
-			throw new ArgumentException(
-				"useAiContentGeneration=true is not supported in application-create.");
-		}
-
-		return optionalTemplateData is null
-			? null
-			: new ApplicationOptionalTemplateData(
-				optionalTemplateData.EntitySchemaName,
-				optionalTemplateData.UseExistingEntitySchema,
-				optionalTemplateData.UseAiContentGeneration,
-				optionalTemplateData.AppSectionDescription);
 	}
 }
 

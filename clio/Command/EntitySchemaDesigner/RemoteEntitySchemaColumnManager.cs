@@ -592,8 +592,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			new GetSchemaDesignItemRequestDto {
 				Name = schemaName,
 				PackageUId = packageUId,
-				UseFullHierarchy = false,
-				Cultures = [EntitySchemaDesignerSupport.GetCurrentCultureName()]
+				UseFullHierarchy = false
 			},
 			options);
 		EntityDesignSchemaDto schema = response.Schema

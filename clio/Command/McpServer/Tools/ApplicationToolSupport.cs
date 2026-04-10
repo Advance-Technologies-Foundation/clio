@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using Clio.Command;
 
 namespace Clio.Command.McpServer.Tools;
@@ -128,12 +130,47 @@ internal static class ApplicationToolHelper {
 		return new ApplicationListResponse(false, Error: message);
 	}
 
-	public static ApplicationContextResponse CreateContextResponse(ApplicationContextResponse response) {
-		return response;
+	public static ApplicationContextResponse CreateContextResponse(
+		ApplicationContextResponse response,
+		ApplicationDataForgeResult? dataForge = null) {
+		return dataForge is null
+			? response
+			: response with { DataForge = dataForge };
 	}
 
 	public static ApplicationContextResponse CreateContextErrorResponse(string message) {
 		return new ApplicationContextResponse(false, Error: message);
+	}
+
+	public static ApplicationOptionalTemplateData? ParseOptionalTemplateData(string? optionalTemplateDataJson) {
+		if (string.IsNullOrWhiteSpace(optionalTemplateDataJson)) {
+			return null;
+		}
+
+		ApplicationOptionalTemplateDataJsonArgs? optionalTemplateData;
+		try {
+			optionalTemplateData = JsonSerializer.Deserialize<ApplicationOptionalTemplateDataJsonArgs>(
+				optionalTemplateDataJson,
+				new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+		} catch (JsonException ex) {
+			throw new ArgumentException(
+				$"Invalid optional-template-data-json format: {ex.Message}",
+				nameof(optionalTemplateDataJson),
+				ex);
+		}
+
+		if (optionalTemplateData?.UseAiContentGeneration == true) {
+			throw new ArgumentException(
+				"useAiContentGeneration=true is not supported in application tools.");
+		}
+
+		return optionalTemplateData is null
+			? null
+			: new ApplicationOptionalTemplateData(
+				optionalTemplateData.EntitySchemaName,
+				optionalTemplateData.UseExistingEntitySchema,
+				optionalTemplateData.UseAiContentGeneration,
+				optionalTemplateData.AppSectionDescription);
 	}
 
 	public static ApplicationSectionContextResponse CreateSectionContextResponse(ApplicationSectionContextResponse response) {

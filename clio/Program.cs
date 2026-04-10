@@ -154,6 +154,7 @@ internal class Program {
 		typeof(ModifyEntitySchemaColumnOptions),
 		typeof(GetEntitySchemaColumnPropertiesOptions),
 		typeof(GetEntitySchemaPropertiesOptions),
+		typeof(FindEntitySchemaOptions),
 		typeof(CreateUserTaskOptions),
 		typeof(ModifyUserTaskParametersOptions),
 		typeof(DeleteSchemaOptions),
@@ -341,6 +342,8 @@ internal class Program {
 						Resolve<GetEntitySchemaColumnPropertiesCommand>(opts).Execute(opts),
 					GetEntitySchemaPropertiesOptions opts =>
 						Resolve<GetEntitySchemaPropertiesCommand>(opts).Execute(opts),
+					FindEntitySchemaOptions opts =>
+						Resolve<FindEntitySchemaCommand>(opts).Execute(opts),
 					CreateUserTaskOptions opts => Resolve<CreateUserTaskCommand>(opts).Execute(opts),
 					ModifyUserTaskParametersOptions opts => Resolve<ModifyUserTaskParametersCommand>(opts).Execute(opts),
 					DeleteSchemaOptions opts => Resolve<DeleteSchemaCommand>(opts).Execute(opts),

@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 using ATF.Repository.Providers;
 using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
+using Clio.Common.DataForge;
 using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Server;
@@ -599,9 +601,10 @@ public sealed class ApplicationToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Calls the application create service with the core-aligned required arguments and parsed optional-template-data-json.")]
-	public void ApplicationCreate_Should_Return_Structured_Success_Envelope() {
+	public async Task ApplicationCreate_Should_Return_Structured_Success_Envelope() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
 		applicationCreateService.CreateApplication(
 				"sandbox",
 				Arg.Any<ApplicationCreateRequest>())
@@ -635,10 +638,22 @@ public sealed class ApplicationToolTests {
 				ApplicationName: "Codex App",
 				ApplicationCode: "UsrCodexApp",
 				ApplicationVersion: "1.0.0"));
-		ApplicationCreateTool tool = new(applicationCreateService);
+		enrichmentService.EnrichAsync(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default)
+			.Returns(new ApplicationDataForgeResult(
+				Used: true,
+				Health: new DataForgeHealthResult(true, true, true, true, "corr-id"),
+				Status: new DataForgeMaintenanceStatusResult(true, "Ready", null),
+				Coverage: new DataForgeCoverage(true, true, true, true, true),
+				Warnings: [],
+				ContextSummary: new ApplicationDataForgeContextSummary(
+					[new SimilarTableResult("Contact", "Contact", null)],
+					[new SimilarLookupResult("lookup-id", "ContactType", "Customer", 0.98m)],
+					["Contact->Account"],
+					[new ApplicationDataForgeColumnHint("Contact", 3, 1, 1)])));
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
@@ -667,6 +682,16 @@ public sealed class ApplicationToolTests {
 				request.OptionalTemplateData.UseExistingEntitySchema == true &&
 				request.OptionalTemplateData.UseAiContentGeneration == false &&
 				request.OptionalTemplateData.AppSectionDescription == "Section description"));
+		await enrichmentService.Received(1).EnrichAsync(
+			Arg.Is<ApplicationCreateArgs>(request =>
+				request.EnvironmentName == "sandbox" &&
+				request.Name == "Codex App" &&
+				request.Code == "UsrCodexApp"),
+			Arg.Is<ApplicationOptionalTemplateData?>(templateData =>
+				templateData != null &&
+				templateData.EntitySchemaName == "UsrCodexEntity" &&
+				templateData.AppSectionDescription == "Section description"),
+			default);
 		result.Success.Should().BeTrue(
 			because: "successful create calls should be wrapped in a core-style success envelope");
 		result.Error.Should().BeNull(
@@ -684,6 +709,13 @@ public sealed class ApplicationToolTests {
 		result.Pages.Should().ContainSingle(
 			because: "application-create should return the same primary-package page summaries as application-get-info");
 		result.Pages![0].SchemaName.Should().Be("UsrCodexApp_FormPage");
+		result.DataForge.Should().NotBeNull(
+			because: "application-create should return Data Forge diagnostics together with the created application metadata");
+		result.DataForge!.Used.Should().BeTrue(
+			because: "application-create should always report that the Data Forge enrichment stage ran");
+		result.DataForge.ContextSummary!.ColumnHints.Should().ContainSingle(
+			hint => hint.TableName == "Contact" && hint.ColumnCount == 3,
+			because: "application-create should expose compact column hints instead of the full Data Forge column payload");
 	}
 
 	[Test]
@@ -720,7 +752,18 @@ public sealed class ApplicationToolTests {
 					PackageName = "Pkg",
 					ParentSchemaName = "BasePage"
 				}
-			]);
+			],
+			DataForge: new ApplicationDataForgeResult(
+				Used: true,
+				Health: new DataForgeHealthResult(true, true, true, true, "corr-id"),
+				Status: new DataForgeMaintenanceStatusResult(true, "Ready", null),
+				Coverage: new DataForgeCoverage(true, true, false, true, false),
+				Warnings: ["tables:Task App:degraded"],
+				ContextSummary: new ApplicationDataForgeContextSummary(
+					[new SimilarTableResult("Contact", "Contact", null)],
+					[],
+					["Contact->Account"],
+					[new ApplicationDataForgeColumnHint("Contact", 2, 1, 1)])));
 
 		// Act
 		string json = JsonSerializer.Serialize(response);
@@ -750,6 +793,12 @@ public sealed class ApplicationToolTests {
 			because: "column payloads should keep Clio kebab-case payload fields");
 		json.Should().Contain("\"reference-schema\":\"Contact\"",
 			because: "lookup payloads should keep Clio kebab-case payload fields");
+		json.Should().Contain("\"dataforge\"",
+			because: "application-create responses should serialize the optional Data Forge diagnostics block");
+		json.Should().Contain("\"context-summary\"",
+			because: "the Data Forge diagnostics should use a stable kebab-case context-summary field");
+		json.Should().Contain("\"column-hints\"",
+			because: "the compact Data Forge summary should expose kebab-case column hint metadata");
 	}
 
 	[Test]
@@ -821,13 +870,14 @@ public sealed class ApplicationToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns a structured error envelope when optional-template-data-json is invalid.")]
-	public void ApplicationCreate_Should_Return_Error_When_OptionalTemplateDataJson_Is_Invalid() {
+	public async Task ApplicationCreate_Should_Return_Error_When_OptionalTemplateDataJson_Is_Invalid() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
-		ApplicationCreateTool tool = new(applicationCreateService);
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
@@ -844,18 +894,20 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Match("*optional-template-data-json*",
 			because: "the create tool should reject malformed template data before calling the backend service");
 		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Returns a structured error envelope when optional-template-data-json requests AI content generation.")]
-	public void ApplicationCreate_Should_Return_Error_When_OptionalTemplateDataJson_Requests_AiContentGeneration() {
+	public async Task ApplicationCreate_Should_Return_Error_When_OptionalTemplateDataJson_Requests_AiContentGeneration() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
-		ApplicationCreateTool tool = new(applicationCreateService);
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
@@ -874,20 +926,30 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Match("*useAiContentGeneration=true*",
 			because: "the create tool should match the core behavior that rejects AI-generated template content");
 		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Returns a structured error envelope when the backend create flow fails.")]
-	public void ApplicationCreate_Should_Return_Error_When_Backend_Fails() {
+	public async Task ApplicationCreate_Should_Return_Error_When_Backend_Fails() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
 		applicationCreateService.CreateApplication("sandbox", Arg.Any<ApplicationCreateRequest>())
 			.Returns(_ => throw new InvalidOperationException("Template dependency failed."));
-		ApplicationCreateTool tool = new(applicationCreateService);
+		enrichmentService.EnrichAsync(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default)
+			.Returns(new ApplicationDataForgeResult(
+				Used: true,
+				Health: null,
+				Status: null,
+				Coverage: new DataForgeCoverage(false, false, false, false, false),
+				Warnings: ["dataforge:unavailable"],
+				ContextSummary: new ApplicationDataForgeContextSummary([], [], [], [])));
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
@@ -903,6 +965,7 @@ public sealed class ApplicationToolTests {
 			because: "backend failures should now be returned as structured error payloads");
 		result.Error.Should().Match("*Template dependency failed*",
 			because: "the create error envelope should preserve the backend diagnostics");
+		await enrichmentService.Received(1).EnrichAsync(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default);
 	}
 
 	[Test]
@@ -1162,6 +1225,10 @@ public sealed class ApplicationToolTests {
 			because: "the create prompt should mention the JSON string template-data field");
 		createPrompt.Should().Contain("docs://mcp/guides/app-modeling",
 			because: "the create prompt should point callers to the MCP-owned modeling guidance instead of relying only on consumer AGENTS instructions");
+		createPrompt.Should().Contain("internal Data Forge enrichment step",
+			because: "the create prompt should teach callers that application-create already runs the canonical Data Forge enrichment stage");
+		createPrompt.Should().Contain("Do not add a separate mandatory Data Forge preflight",
+			because: "the create prompt should prevent orchestration layers from duplicating required Data Forge logic outside application-create");
 		createPrompt.Should().Contain("canonical main entity",
 			because: "the create prompt should explain how callers should treat the template-created primary entity");
 		createPrompt.Should().Contain("scalar app-shell tool",
@@ -1217,13 +1284,14 @@ public sealed class ApplicationToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns a structured error envelope when template-code is missing from the minimal application-create shell.")]
-	public void ApplicationCreate_Should_Return_Error_When_TemplateCode_Is_Missing() {
+	public async Task ApplicationCreate_Should_Return_Error_When_TemplateCode_Is_Missing() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
-		ApplicationCreateTool tool = new(applicationCreateService);
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
@@ -1242,18 +1310,20 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Contain("AppFreedomUI",
 			because: "the validation message should point callers to a usable technical template example");
 		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Returns a structured error envelope when icon-background is missing from the minimal application-create shell.")]
-	public void ApplicationCreate_Should_Return_Error_When_IconBackground_Is_Missing() {
+	public async Task ApplicationCreate_Should_Return_Error_When_IconBackground_Is_Missing() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
-		ApplicationCreateTool tool = new(applicationCreateService);
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
@@ -1272,6 +1342,7 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Contain("#1F5F8B",
 			because: "the validation message should point callers to a valid color example");
 		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
 	}
 
 }

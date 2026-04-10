@@ -389,10 +389,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
-	[Description("Creates schema and column captions with synthesized current-culture localizations when only en-US title-localizations are provided.")]
-	public void Create_CreatesSchema_WithCurrentCultureTitleLocalizations_WhenOnlyEnUsIsProvided() {
+	[Description("Creates schema and column captions using only the explicitly provided title-localizations without synthesizing additional cultures.")]
+	public void Create_CreatesSchema_WithExplicitTitleLocalizations_WithoutCultureSynthesis() {
 		// Arrange
-		using CultureScope cultureScope = new("uk-UA");
 		string saveBody = null;
 		SetupApplicationClient((url, body) => {
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
@@ -435,14 +434,18 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		// Assert
 		JObject json = JObject.Parse(saveBody);
 		json["caption"]!.Should().Contain(token =>
-				token["cultureName"]!.Value<string>() == "uk-UA"
+				token["cultureName"]!.Value<string>() == "en-US"
 				&& token["value"]!.Value<string>() == "Vehicle",
-			because: "schema caption should include the synthesized current-culture localization");
+			because: "schema caption should include the provided en-US localization");
+		json["caption"]!.Should().HaveCount(1,
+			because: "Clio must not synthesize additional culture localizations beyond what was explicitly provided");
 		JToken savedColumn = json["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrStatus");
 		savedColumn["caption"]!.Should().Contain(token =>
-				token["cultureName"]!.Value<string>() == "uk-UA"
+				token["cultureName"]!.Value<string>() == "en-US"
 				&& token["value"]!.Value<string>() == "Status",
-			because: "column caption should include the synthesized current-culture localization");
+			because: "column caption should include the provided en-US localization");
+		savedColumn["caption"]!.Should().HaveCount(1,
+			because: "Clio must not synthesize additional culture localizations beyond what was explicitly provided");
 	}
 
 	[Test]

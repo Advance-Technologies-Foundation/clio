@@ -967,12 +967,28 @@ Default resolution:
 - `default-value-config.source = Settings` accepts code, name, or id and persists canonical setting code.
 - Ambiguous matches fail with explicit disambiguation guidance.
 
+> **DataForge enrichment** — The MCP `create-entity-schema` and `create-lookup` tools automatically query Data Forge before creating the schema and return an optional `dataforge.context-summary` section with similar tables and lookup hints. Inspect `similar-tables` to confirm no equivalent schema exists before proceeding.
+
 ### get-entity-schema-properties
 Get a human-readable summary of a remote Creatio entity schema.
 ```bash
 clio get-entity-schema-properties -e dev --package Custom --schema-name UsrVehicle
 ```
 Output includes: package, parent schema, primary columns, column counts, indexes, schema flags, and grouped own/inherited column listings.
+
+### find-entity-schema
+Find entity schemas in a Creatio environment without knowing the package name. Returns schema name, package, maintainer, and parent schema for each match. Exactly one of `--schema-name`, `--search-pattern`, or `--uid` is required. Does not require cliogate.
+```bash
+# Search by substring
+clio find-entity-schema -e dev --search-pattern Task
+
+# Exact name lookup
+clio find-entity-schema -e dev --schema-name UsrVehicle
+
+# Lookup by UId
+clio find-entity-schema -e dev --uid 117d32f9-aab9-4e3a-b13e-cfce62e15e4b
+```
+Use this command when you need to discover which package owns a schema before calling `get-entity-schema-properties` or `modify-entity-schema-column`.
 
 ### get-entity-schema-column-properties
 Get column properties from a remote Creatio entity schema.
@@ -1036,6 +1052,8 @@ Default resolution:
 - `default-value-config.source = SystemValue` accepts Guid, alias, or caption and persists canonical Guid.
 - `default-value-config.source = Settings` accepts code, name, or id and persists canonical setting code.
 - Ambiguous matches fail with explicit disambiguation guidance.
+
+> **DataForge tip** — When adding a reference (Lookup) column and the correct `reference-schema-name` is uncertain, call `dataforge-find-tables` (MCP tool) first to confirm a semantically matching schema exists.
 
 ---
 
@@ -1122,6 +1140,8 @@ clio create-data-binding-db -e dev --package Custom --schema SysSettings \
 ```
 Options: `--package` (required), `--schema` (required), `--binding-name`, `--rows` (JSON array)
 
+> **Lookup value resolution** — When a row contains reference (lookup) columns and the correct GUID is not already known, call `dataforge-find-lookups` (MCP tool) with `schema-name` set to the reference schema and a descriptive query term **before** calling this tool. Use the `lookup-id` from the best-matching result as the column value.
+
 ### add-data-binding-row
 Add or replace a row in an existing package data binding.
 ```bash
@@ -1157,6 +1177,8 @@ clio upsert-data-binding-row-db -e dev --package Custom --binding-name SysSettin
   --values '{"Name":"Updated name","Code":"UsrSetting"}'
 ```
 Options: `--package` (required), `--binding-name` (required), `--values` (JSON, required)
+
+> **Lookup value resolution** — When the row contains reference (lookup) columns and the correct GUID is not known, call `dataforge-find-lookups` (MCP tool) with `schema-name` set to the reference schema before calling this tool. Use the returned `lookup-id` as the column value.
 
 ---
 
@@ -1203,3 +1225,68 @@ clio modify-user-task-parameters UsrSendInvoice \
   --set-direction "IsError=Out|ResultMessage=Variable" -e <ENV>
 ```
 Options: `--add-parameter` (`|`-separated), `--add-parameter-item` (`|`-separated), `--remove-parameter` (`|`-separated), `--set-direction` (`|`-separated, format: `name=In|Out|Variable`), `--culture` (default: en-US)
+
+---
+
+## DataForge Orchestration
+
+DataForge is a semantic search and knowledge-graph service embedded in Creatio. clio exposes it through two surfaces:
+- **Passive enrichment** — built into write tools (`application-create`, `schema-sync`, `create-entity-schema`, `create-lookup`, `update-entity-schema`). Runs automatically before the mutation, returns a `dataforge` section alongside the result. Never blocks on failure.
+- **Active orchestration** — the AI agent calls DataForge tools explicitly, at the right points in a workflow, via the Layer 0–4 protocol below.
+
+Full guidance: `docs://mcp/guides/dataforge-orchestration` (read from the running clio MCP server).
+
+### Protocol layers
+
+**Layer 0 — Health preflight**
+Call `dataforge-health` or `dataforge-status` before a long multi-step workflow.
+- `health.liveness = true` and `health.readiness = true` → proceed normally.
+- `health.data-structure-readiness = false` or `health.lookups-readiness = false` → proceed with caution; discovery may return partial context.
+- `status.status != "Ready"` or the call throws → skip all DataForge calls for this session.
+
+**Layer 1 — Planning discovery**
+Call `dataforge-context(requirement-summary, candidate-terms, lookup-hints)` once before any write tool when creating new schemas.
+- multiple close entries in `similar-tables` with matching names/captions/descriptions → treat as a strong duplicate candidate and surface to the user.
+- `similar-lookups[].score >= 0.85` → existing lookup may already cover the concept.
+- Failure → skip Layer 1; write tools carry their own enrichment.
+
+**Layer 2 — Read auto-enrichment from write tool responses**
+After `application-create`, `schema-sync`, `create-entity-schema`, `create-lookup`, `update-entity-schema` — read the `dataforge` section returned in the response.
+Do NOT call DataForge separately before these tools; they already do it.
+
+**Layer 3 — Explicit pre-flight for tools without internal enrichment**
+Consistent failure rule: if the caller supplied the value → proceed + warn; if DataForge was the only resolution path → ask the user, do not guess.
+
+| Situation | Call | Decision rule |
+|---|---|---|
+| Adding Lookup column via `modify-entity-schema-column` with uncertain `reference-schema-name` | `dataforge-find-tables(query)` | use name/caption/description similarity as a manual confirmation step; if still ambiguous, confirm with the user |
+| Writing rows with unknown lookup GUID via `create-data-binding-db` / `upsert-data-binding-row-db` | `dataforge-find-lookups(schema-name, query)` | use the best match when `score >= 0.70`; otherwise ask the user |
+| Cross-entity FK design before multi-entity `schema-sync` | `dataforge-get-relations(source, target)` | any result helps; on failure, design the FK independently |
+| Runtime column inspection outside local package | `dataforge-get-table-columns(table-name)` | on failure, fall back to `get-entity-schema-properties` |
+
+> **Note on `modify-entity-schema-column`**: this tool permanently requires Layer 3 pre-flight for Lookup adds. It will never receive internal enrichment (single-column targeted tool; no batch semantics). Future change guard: only reconsider if the tool gains multi-column batch semantics.
+
+> **Note on `update-entity-schema`**: this tool now includes internal DataForge enrichment (same pattern as `schema-sync`). Use Layer 2 (read the `dataforge` response section) instead of a Layer 3 pre-flight for Lookup column adds.
+
+**Layer 4 — Index maintenance and stale index recovery**
+After bulk schema creation (5+ new entities): call `dataforge-update`.
+Staleness detection: `coverage.tables = false` or empty `similar-tables` for just-created schemas → call `dataforge-update`.
+Recovery when `dataforge-update` fails:
+1. Retry after 30 seconds.
+2. Check `dataforge-status`.
+3. Fall back to `dataforge-initialize` (full reindex).
+4. If all fail → warn user, proceed without DataForge this session.
+
+### MCP tools summary
+
+| Tool | Layer | Read-only | Purpose |
+|---|---|---|---|
+| `dataforge-health` | 0 | yes | Direct service health endpoints |
+| `dataforge-status` | 0 | yes | Health + Creatio maintenance status |
+| `dataforge-context` | 1 | yes | Aggregated planning discovery |
+| `dataforge-find-tables` | 3 | yes | Find semantically similar schemas |
+| `dataforge-find-lookups` | 3 | yes | Find lookup values by schema + query |
+| `dataforge-get-relations` | 3 | yes | Cypher relation paths between tables |
+| `dataforge-get-table-columns` | 3 | yes | Runtime column list for a table |
+| `dataforge-initialize` | 4 | no | Full DataForge reindex |
+| `dataforge-update` | 4 | no | Incremental DataForge index refresh |

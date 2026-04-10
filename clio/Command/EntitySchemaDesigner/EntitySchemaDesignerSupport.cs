@@ -196,11 +196,6 @@ internal static class EntitySchemaDesignerSupport
 		} else {
 			effectiveTitle = normalizedValues.Values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 		}
-
-		if (!string.IsNullOrWhiteSpace(effectiveTitle) && !normalizedValues.ContainsKey(currentCultureName)) {
-			normalizedValues[currentCultureName] = effectiveTitle;
-		}
-
 		return new TitleLocalizationNormalizationResult(normalizedValues, effectiveTitle ?? normalizedFallbackValue);
 	}
 
