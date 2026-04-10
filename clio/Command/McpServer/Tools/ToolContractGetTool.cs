@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json.Serialization;
 using ModelContextProtocol.Server;
@@ -34,6 +35,7 @@ public sealed record ToolContractGetResponse(
 	[property: JsonPropertyName("error")] ToolContractError? Error = null
 );
 
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters", Justification = "This serialized contract record mirrors the external MCP wire shape and grouping fields would make the contract harder to inspect and evolve.")]
 public sealed record ToolContractDefinition(
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("description")] string Description,
@@ -138,6 +140,7 @@ internal static class ToolContractCatalog {
 	private const string BindingNameFieldName = "binding-name";
 	private const string BooleanType = "boolean";
 	private const string ColumnNameFieldName = "column-name";
+	private const string ColumnsFieldName = "columns";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
 	private const string EnvironmentNameFieldName = "environment-name";
@@ -821,7 +824,7 @@ internal static class ToolContractCatalog {
 					Field("table-name", StringType, "Target runtime entity schema name.")),
 				OutputFields = DataForgeEnvelopeFields(
 					QueryCorrelationIdentifierDescription,
-					Field("columns", ArrayType, "Runtime column projections with `name`, `caption`, `description`, `data-type`, `required`, and `reference-schema-name`.")),
+					Field(ColumnsFieldName, ArrayType, "Runtime column projections with `name`, `caption`, `description`, `data-type`, `required`, and `reference-schema-name`.")),
 				Examples = [
 					Example("Read Contact runtime columns for a configured environment", new Dictionary<string, object?> {
 						["table-name"] = "Contact",
@@ -854,7 +857,7 @@ internal static class ToolContractCatalog {
 					Field("similar-tables", ArrayType, "Similar table results."),
 					Field("similar-lookups", ArrayType, "Similar lookup results."),
 					Field("relations", ObjectType, "Resolved relation paths keyed by source-target pair."),
-					Field("columns", ObjectType, "Resolved runtime column projections keyed by table name."),
+					Field(ColumnsFieldName, ObjectType, "Resolved runtime column projections keyed by table name."),
 					Field("coverage", ObjectType, "Coverage flags for health, tables, lookups, relations, and table-columns.")),
 				Examples = [
 					Example("Aggregate app-modeling context for a configured environment", new Dictionary<string, object?> {
@@ -1198,7 +1201,7 @@ internal static class ToolContractCatalog {
 					Field(PackageNameFieldName, StringType, "Package name to inspect."),
 					Field(SelectorCodeFieldName, StringType, "Installed application code. When provided, page-list resolves the application's primary package before querying pages."),
 					Field("search-pattern", StringType, "Optional case-insensitive schema-name filter."),
-					Field("limit", NumberType, "Optional max result count.")),
+					Field(LimitFieldName, NumberType, "Optional max result count.")),
 				Validators: [
 					new ToolContractValidator(
 						"mutually-exclusive-fields",
@@ -1327,7 +1330,7 @@ internal static class ToolContractCatalog {
 				EnvironmentPackageSchemaFields(
 					"Lookup schema name.",
 					Field(TitleLocalizationsFieldName, ObjectType, "Localization map that must include en-US."),
-					Field("columns", ArrayType, "Optional custom columns.")),
+					Field(ColumnsFieldName, ArrayType, "Optional custom columns.")),
 				Validators: [
 					RequiredLocalizationMapValidator(TitleLocalizationsFieldName)
 				]),
@@ -1359,7 +1362,7 @@ internal static class ToolContractCatalog {
 				EnvironmentPackageSchemaFields(
 					EntitySchemaNameDescription,
 					Field(TitleLocalizationsFieldName, ObjectType, "Localization map that must include en-US."),
-					Field("columns", ArrayType, "Optional initial columns."),
+					Field(ColumnsFieldName, ArrayType, "Optional initial columns."),
 					Field("parent-schema-name", StringType, "Optional parent schema name."),
 					Field("extend-parent", BooleanType, "Optional replacement-schema flag.")),
 				Validators: [
@@ -1547,7 +1550,7 @@ internal static class ToolContractCatalog {
 			StructuredResultOutput(
 				Field("name", StringType, "Schema name."),
 				Field("title", StringType, "Schema title."),
-				Field("columns", ArrayType, "Column metadata.")),
+				Field(ColumnsFieldName, ArrayType, "Column metadata.")),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(),
 			[],
@@ -1884,8 +1887,8 @@ internal static class ToolContractCatalog {
 			..leadingFields,
 			Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 			Field("uri", StringType, "Explicit Creatio URL."),
-			Field("login", StringType, "Explicit login."),
-			Field("password", StringType, "Explicit password."),
+			Field(LoginFieldName, StringType, "Explicit login."),
+			Field(PasswordFieldName, StringType, "Explicit password."),
 			Field("client-id", StringType, "Optional OAuth client id override for dataforge-service."),
 			Field("client-secret", StringType, "Optional OAuth client secret override for dataforge-service."),
 			Field("auth-app-uri", StringType, "Optional OAuth authority/application URI override."),
@@ -1897,7 +1900,7 @@ internal static class ToolContractCatalog {
 	private static IReadOnlyList<IReadOnlyList<string>> DataForgeConnectionRequirements() {
 		return [
 			[EnvironmentNameFieldName],
-			["uri", "login", "password"]
+			["uri", LoginFieldName, PasswordFieldName]
 		];
 	}
 

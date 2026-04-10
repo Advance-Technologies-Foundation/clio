@@ -320,6 +320,20 @@ Discovery: A large share of the missing GitHub docs surface was caused by filena
 Files: clio/docs/commands/*.md, .codex/workspace-diary.md
 Impact: The specific command set previously missing local help now also has matching GitHub markdown documentation pages.
 
+## 2026-04-10 00:00 – Resolve remaining PR 524 Sonar warnings
+Context: User asked to fix the SonarCloud warnings that remained relevant on pull request 524 after triage.
+Decision: Replaced remaining raw MCP field-name literals in the tool-contract catalog with shared constants, added an explicit suppression for the intentionally wide serialized `ToolContractDefinition` record, and extracted Data Forge coverage calculation helpers from `GetContextAsync` to lower method cognitive complexity without changing behavior.
+Discovery: The `RuntimeEntitySchemaReader` Sonar “unassigned property” findings were false positives caused by positional record deserialization through `System.Text.Json`, while the true actionable warnings were confined to the MCP contract file and Data Forge aggregation method.
+Files: clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Common/DataForge/DataForgeContextService.cs, .codex/workspace-diary.md
+Impact: PR 524’s remaining actionable Sonar warnings are addressed with targeted, behavior-preserving changes and focused unit-test coverage remains green.
+
+## 2026-04-10 00:20 – Backfill DataForge coverage-flag unit tests
+Context: Staged review of the Sonar warning fix found that the extracted Data Forge coverage helper branches were not fully exercised by existing tests.
+Decision: Extended `DataForgeContextServiceTests` to assert positive coverage flags in the existing success path, assert omitted-input behavior, and add a negative-path test covering false `Tables`, `Lookups`, and `Relations` coverage outcomes.
+Discovery: NSubstitute needed an explicit faulted `Task` return for async relation lookup failure; using a throwing lambda against `Returns` was ambiguous for the async overload set.
+Files: clio.tests/Common/DataForgeContextServiceTests.cs, .codex/workspace-diary.md
+Impact: The staged review finding is resolved and the extracted coverage helpers now have direct regression protection.
+
 ## 2026-02-23 - Remove CLIO004 ProcessStartInfo usage in RestoreDb
 Context: User requested addressing CLIO004 warning for direct ProcessStartInfo usage in RestoreDb.cs.
 Decision: Injected IProcessExecutor into RestoreDbCommand and replaced ExecutePgRestoreCommand low-level Process/ProcessStartInfo logic with ProcessExecutionOptions + ExecuteWithRealtimeOutputAsync, preserving debug and throttled progress logging behavior.

@@ -106,12 +106,14 @@ internal sealed class DataForgeContextService(
 
 		List<SimilarLookupResult> distinctLookups = GetDistinctLookups(similarLookups);
 
-		DataForgeCoverage coverage = new(
-			Health: true,
-			Tables: distinctTables.Count > 0 || tableTerms.Count == 0,
-			Lookups: distinctLookups.Count > 0 || lookupTerms.Count == 0,
-			Relations: relations.Count > 0 || !(request.RelationPairs?.Any() ?? false),
-			Columns: columns.Count == distinctTables.Count);
+		DataForgeCoverage coverage = CreateCoverage(
+			tableTerms,
+			lookupTerms,
+			request.RelationPairs,
+			distinctTables,
+			distinctLookups,
+			relations,
+			columns);
 
 		return new DataForgeContextAggregationResult(
 			health.CorrelationId,
@@ -123,6 +125,30 @@ internal sealed class DataForgeContextService(
 			relations,
 			columns,
 			coverage);
+	}
+
+	private static DataForgeCoverage CreateCoverage(
+		IReadOnlyCollection<string> tableTerms,
+		IReadOnlyCollection<string> lookupTerms,
+		IReadOnlyList<DataForgeRelationPair>? relationPairs,
+		IReadOnlyCollection<SimilarTableResult> distinctTables,
+		IReadOnlyCollection<SimilarLookupResult> distinctLookups,
+		IReadOnlyDictionary<string, IReadOnlyList<string>> relations,
+		IReadOnlyDictionary<string, IReadOnlyList<DataForgeColumnResult>> columns) {
+		return new DataForgeCoverage(
+			Health: true,
+			Tables: HasMatchesOrNoTerms(distinctTables.Count, tableTerms.Count),
+			Lookups: HasMatchesOrNoTerms(distinctLookups.Count, lookupTerms.Count),
+			Relations: HasResolvedRelationsOrNoPairs(relations.Count, relationPairs),
+			Columns: columns.Count == distinctTables.Count);
+	}
+
+	private static bool HasMatchesOrNoTerms(int matchCount, int termCount) {
+		return matchCount > 0 || termCount == 0;
+	}
+
+	private static bool HasResolvedRelationsOrNoPairs(int relationCount, IReadOnlyList<DataForgeRelationPair>? relationPairs) {
+		return relationCount > 0 || !(relationPairs?.Any() ?? false);
 	}
 
 	private static List<string> NormalizeTerms(IEnumerable<string>? terms, string? fallback) {
