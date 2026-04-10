@@ -147,6 +147,58 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("tool-contract-get returns explicit Data Forge contracts and keeps maintenance tools out of the default bootstrap set")]
+	public async Task ToolContractGet_Should_Handle_DataForge_Contract_Policy() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse defaultResponse = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?>());
+		ToolContractGetResponse explicitResponse = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					DataForgeTool.DataForgeHealthToolName,
+					DataForgeTool.DataForgeStatusToolName,
+					DataForgeTool.DataForgeFindTablesToolName,
+					DataForgeTool.DataForgeFindLookupsToolName,
+					DataForgeTool.DataForgeGetRelationsToolName,
+					DataForgeTool.DataForgeGetTableColumnsToolName,
+					DataForgeTool.DataForgeContextToolName,
+					DataForgeTool.DataForgeInitializeToolName,
+					DataForgeTool.DataForgeUpdateToolName
+				}
+			});
+
+		// Assert
+		defaultResponse.Success.Should().BeTrue(
+			because: "the default bootstrap lookup should succeed before the caller decides whether it needs explicit Data Forge maintenance contracts");
+		defaultResponse.Tools!.Select(tool => tool.Name).Should().Contain(DataForgeTool.DataForgeContextToolName,
+			because: "the default bootstrap set should include read-only Data Forge discovery/context contracts");
+		defaultResponse.Tools!.Select(tool => tool.Name).Should().NotContain(DataForgeTool.DataForgeInitializeToolName,
+			because: "destructive Data Forge initialize should stay out of the default bootstrap set");
+		defaultResponse.Tools!.Select(tool => tool.Name).Should().NotContain(DataForgeTool.DataForgeUpdateToolName,
+			because: "destructive Data Forge update should stay out of the default bootstrap set");
+		explicitResponse.Success.Should().BeTrue(
+			because: "explicit tool-contract-get lookup should expose the full Data Forge contract surface");
+		explicitResponse.Tools!.Select(tool => tool.Name).Should().Contain(DataForgeTool.DataForgeInitializeToolName,
+			because: "explicit lookup should still return Data Forge initialize for remediation workflows");
+		explicitResponse.Tools!.Select(tool => tool.Name).Should().Contain(DataForgeTool.DataForgeUpdateToolName,
+			because: "explicit lookup should still return Data Forge update for remediation workflows");
+		explicitResponse.Tools.Single(tool => tool.Name == DataForgeTool.DataForgeHealthToolName)
+			.Defaults.Should().Contain(definition =>
+				definition.Name == "scope" && definition.Value == "use_enrichment",
+				because: "the explicit Data Forge contract should advertise the default OAuth scope");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("tool-contract-get advertises settings-health bootstrap diagnostics contract")]
 	public async Task ToolContractGet_Should_Advertise_Settings_Health_Contract() {
 		// Arrange

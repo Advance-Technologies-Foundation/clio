@@ -26,6 +26,7 @@ internal sealed record ApplicationContextResponseEnvelope(
 	[property: JsonPropertyName("application-version")] string? ApplicationVersion,
 	[property: JsonPropertyName("entities")] IReadOnlyList<ApplicationEntityEnvelope>? Entities,
 	[property: JsonPropertyName("pages")] IReadOnlyList<ApplicationPageEnvelope>? Pages,
+	[property: JsonPropertyName("dataforge")] ApplicationDataForgeEnvelope? DataForge,
 	[property: JsonPropertyName("error")] string? Error);
 
 internal sealed record ApplicationSectionContextResponseEnvelope(
@@ -86,6 +87,56 @@ internal sealed record ApplicationSectionEnvelope(
 	[property: JsonPropertyName("icon-id")] string? IconId,
 	[property: JsonPropertyName("icon-background")] string? IconBackground,
 	[property: JsonPropertyName("client-type-id")] string? ClientTypeId);
+
+internal sealed record ApplicationDataForgeEnvelope(
+	[property: JsonPropertyName("used")] bool Used,
+	[property: JsonPropertyName("health")] DataForgeHealthEnvelope? Health,
+	[property: JsonPropertyName("status")] DataForgeStatusEnvelope? Status,
+	[property: JsonPropertyName("coverage")] DataForgeCoverageEnvelope? Coverage,
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings,
+	[property: JsonPropertyName("context-summary")] ApplicationDataForgeContextSummaryEnvelope? ContextSummary);
+
+internal sealed record DataForgeHealthEnvelope(
+	[property: JsonPropertyName("liveness")] bool Liveness,
+	[property: JsonPropertyName("readiness")] bool Readiness,
+	[property: JsonPropertyName("data-structure-readiness")] bool DataStructureReadiness,
+	[property: JsonPropertyName("lookups-readiness")] bool LookupsReadiness,
+	[property: JsonPropertyName("correlation-id")] string CorrelationId);
+
+internal sealed record DataForgeStatusEnvelope(
+	[property: JsonPropertyName("success")] bool Success,
+	[property: JsonPropertyName("status")] string Status,
+	[property: JsonPropertyName("error")] string? Error);
+
+internal sealed record DataForgeCoverageEnvelope(
+	[property: JsonPropertyName("health")] bool Health,
+	[property: JsonPropertyName("tables")] bool Tables,
+	[property: JsonPropertyName("lookups")] bool Lookups,
+	[property: JsonPropertyName("relations")] bool Relations,
+	[property: JsonPropertyName("table-columns")] bool Columns);
+
+internal sealed record ApplicationDataForgeContextSummaryEnvelope(
+	[property: JsonPropertyName("similar-tables")] IReadOnlyList<ApplicationDataForgeTableEnvelope>? SimilarTables,
+	[property: JsonPropertyName("similar-lookups")] IReadOnlyList<ApplicationDataForgeLookupEnvelope>? SimilarLookups,
+	[property: JsonPropertyName("relation-pairs")] IReadOnlyList<string>? RelationPairs,
+	[property: JsonPropertyName("column-hints")] IReadOnlyList<ApplicationDataForgeColumnHintEnvelope>? ColumnHints);
+
+internal sealed record ApplicationDataForgeTableEnvelope(
+	[property: JsonPropertyName("name")] string Name,
+	[property: JsonPropertyName("caption")] string? Caption,
+	[property: JsonPropertyName("description")] string? Description);
+
+internal sealed record ApplicationDataForgeLookupEnvelope(
+	[property: JsonPropertyName("lookup-id")] string LookupId,
+	[property: JsonPropertyName("schema-name")] string SchemaName,
+	[property: JsonPropertyName("value")] string Value,
+	[property: JsonPropertyName("score")] decimal? Score);
+
+internal sealed record ApplicationDataForgeColumnHintEnvelope(
+	[property: JsonPropertyName("table-name")] string TableName,
+	[property: JsonPropertyName("column-count")] int ColumnCount,
+	[property: JsonPropertyName("required-column-count")] int RequiredColumnCount,
+	[property: JsonPropertyName("lookup-column-count")] int LookupColumnCount);
 
 internal static class ApplicationResultParser {
 	public static ApplicationListResponseEnvelope ExtractList(CallToolResult callResult) {

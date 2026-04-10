@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Clio.Command.ProcessModel;
 using Clio.Common;
+using Clio.Common.EntitySchema;
 using Clio.Workspaces;
 using CommandLine;
 
@@ -986,56 +987,27 @@ internal sealed class DataBindingService(
 	}
 }
 
-internal sealed class DataBindingSchemaClient(IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder)
+internal sealed class DataBindingSchemaClient(IRuntimeEntitySchemaReader runtimeEntitySchemaReader)
 	: IDataBindingSchemaClient {
 	public DataBindingSchema Fetch(string schemaName) {
-		if (string.IsNullOrWhiteSpace(schemaName)) {
-			throw new InvalidOperationException("Schema name is required.");
-		}
-
-		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest);
-		string response = applicationClient.ExecutePostRequest(url, $$"""{"Name":"{{schemaName}}"}""");
-		DataBindingRuntimeSchemaResponse? schemaResponse =
-			JsonSerializer.Deserialize<DataBindingRuntimeSchemaResponse>(response, DataBindingJson.Options);
-		if (schemaResponse?.Schema?.Columns?.Items is null || !schemaResponse.Success) {
-			throw new InvalidOperationException($"Runtime schema '{schemaName}' was not returned by Creatio.");
-		}
-
-		List<DataBindingSchemaColumn> columns = schemaResponse.Schema.Columns.Items.Values
+		RuntimeEntitySchemaResult runtimeSchema = runtimeEntitySchemaReader.GetByName(schemaName);
+		List<DataBindingSchemaColumn> columns = runtimeSchema.Columns
 			.Select(column => new DataBindingSchemaColumn(
 				column.UId,
 				column.Name,
 				column.DataValueType,
 				column.ReferenceSchemaName))
 			.ToList();
-		if (schemaResponse.Schema.PrimaryColumnUId == Guid.Empty) {
+		if (runtimeSchema.PrimaryColumnUId == Guid.Empty) {
 			throw new InvalidOperationException($"Schema '{schemaName}' does not expose a primary column.");
 		}
 
 		return new DataBindingSchema(
-			schemaResponse.Schema.UId,
-			schemaResponse.Schema.Name,
-			schemaResponse.Schema.PrimaryColumnUId,
+			runtimeSchema.UId,
+			runtimeSchema.Name,
+			runtimeSchema.PrimaryColumnUId,
 			columns,
-			schemaResponse.Schema.PrimaryDisplayColumnName ??
-			ResolvePrimaryDisplayColumnName(schemaResponse.Schema));
-	}
-
-	private static string? ResolvePrimaryDisplayColumnName(DataBindingRuntimeSchemaPayload schemaPayload) {
-		if (!string.IsNullOrWhiteSpace(schemaPayload.PrimaryDisplayColumnName)) {
-			return schemaPayload.PrimaryDisplayColumnName;
-		}
-
-		if (schemaPayload.PrimaryDisplayColumnUId is Guid primaryDisplayColumnUId &&
-			schemaPayload.Columns?.Items is not null) {
-			foreach (DataBindingRuntimeSchemaColumnPayload column in schemaPayload.Columns.Items.Values) {
-				if (column.UId == primaryDisplayColumnUId) {
-					return column.Name;
-				}
-			}
-		}
-
-		return null;
+			runtimeSchema.PrimaryDisplayColumnName);
 	}
 }
 
@@ -1573,53 +1545,6 @@ internal static class DataBindingJson {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		WriteIndented = true
 	};
-}
-
-internal sealed class DataBindingRuntimeSchemaResponse {
-	[JsonPropertyName("schema")]
-	public DataBindingRuntimeSchemaPayload? Schema { get; set; }
-
-	[JsonPropertyName("success")]
-	public bool Success { get; set; }
-}
-
-internal sealed class DataBindingRuntimeSchemaPayload {
-	[JsonPropertyName("columns")]
-	public DataBindingRuntimeSchemaColumns? Columns { get; set; }
-
-	[JsonPropertyName("primaryColumnUId")]
-	public Guid PrimaryColumnUId { get; set; }
-
-	[JsonPropertyName("uId")]
-	public Guid UId { get; set; }
-
-	[JsonPropertyName("name")]
-	public string Name { get; set; } = string.Empty;
-
-	[JsonPropertyName("primaryDisplayColumnName")]
-	public string? PrimaryDisplayColumnName { get; set; }
-
-	[JsonPropertyName("primaryDisplayColumnUId")]
-	public Guid? PrimaryDisplayColumnUId { get; set; }
-}
-
-internal sealed class DataBindingRuntimeSchemaColumns {
-	[JsonPropertyName("Items")]
-	public Dictionary<Guid, DataBindingRuntimeSchemaColumnPayload> Items { get; set; } = new();
-}
-
-internal sealed class DataBindingRuntimeSchemaColumnPayload {
-	[JsonPropertyName("uId")]
-	public Guid UId { get; set; }
-
-	[JsonPropertyName("name")]
-	public string Name { get; set; } = string.Empty;
-
-	[JsonPropertyName("dataValueType")]
-	public int DataValueType { get; set; }
-
-	[JsonPropertyName("referenceSchemaName")]
-	public string? ReferenceSchemaName { get; set; }
 }
 
 internal sealed class DataBindingDescriptorFile {

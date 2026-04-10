@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -21,7 +22,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Advertises a stable MCP tool name for remote entity schema creation.")]
 	[Category("Unit")]
-	public void CreateEntitySchemaTool_Should_Advertise_Stable_Tool_Name() {
+	public async Task CreateEntitySchemaTool_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 
 		// Act
@@ -35,7 +36,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Resolves the create entity schema command for the requested environment and maps structured MCP column inputs into command options.")]
 	[Category("Unit")]
-	public void CreateEntitySchema_Should_Resolve_Command_For_Requested_Environment() {
+	public async Task CreateEntitySchema_Should_Resolve_Command_For_Requested_Environment() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
@@ -46,7 +47,7 @@ public class CreateEntitySchemaToolTests {
 		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
 			"MyPackage",
 			"UsrVehicle",
 			Localizations("Vehicle"),
@@ -85,7 +86,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Marks create-entity-schema as destructive because it mutates a remote Creatio package.")]
 	[Category("Unit")]
-	public void CreateEntitySchema_Should_Be_Marked_As_Destructive() {
+	public async Task CreateEntitySchema_Should_Be_Marked_As_Destructive() {
 		// Arrange
 		System.Reflection.MethodInfo method = typeof(CreateEntitySchemaTool)
 			.GetMethod(nameof(CreateEntitySchemaTool.CreateEntitySchema))!;
@@ -105,7 +106,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Rejects create-entity-schema column payloads that omit the required title-localizations field.")]
 	[Category("Unit")]
-	public void CreateEntitySchema_Should_Reject_Columns_Without_Title_Localizations() {
+	public async Task CreateEntitySchema_Should_Reject_Columns_Without_Title_Localizations() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
@@ -116,7 +117,7 @@ public class CreateEntitySchemaToolTests {
 		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
 			"MyPackage",
 			"UsrVehicle",
 			Localizations("Vehicle"),
@@ -140,7 +141,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Serializes advanced create-column metadata as structured JSON when the MCP caller supplies fields beyond the legacy CLI column format.")]
 	[Category("Unit")]
-	public void CreateEntitySchema_Should_Serialize_Advanced_Column_Metadata_As_Json() {
+	public async Task CreateEntitySchema_Should_Serialize_Advanced_Column_Metadata_As_Json() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
@@ -151,7 +152,7 @@ public class CreateEntitySchemaToolTests {
 		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
 			"MyPackage",
 			"UsrVehicle",
 			Localizations("Vehicle", "Транспорт"),
@@ -193,7 +194,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Serializes structured default-value-config metadata when the MCP caller supplies non-legacy default settings.")]
 	[Category("Unit")]
-	public void CreateEntitySchema_Should_Serialize_DefaultValueConfig_As_Json() {
+	public async Task CreateEntitySchema_Should_Serialize_DefaultValueConfig_As_Json() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
@@ -204,7 +205,7 @@ public class CreateEntitySchemaToolTests {
 		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
 			"MyPackage",
 			"UsrVehicle",
 			Localizations("Vehicle"),
@@ -232,7 +233,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Rejects schema title-localizations payloads that omit the required en-US value.")]
 	[Category("Unit")]
-	public void CreateEntitySchema_Should_Reject_Title_Localizations_Without_EnUs() {
+	public async Task CreateEntitySchema_Should_Reject_Title_Localizations_Without_EnUs() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
@@ -243,7 +244,7 @@ public class CreateEntitySchemaToolTests {
 		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
 			"MyPackage",
 			"UsrVehicle",
 			new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
@@ -263,7 +264,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Derives the internal schema title from MCP title-localizations and passes provided localizations through as-is without synthesizing additional cultures.")]
 	[Category("Unit")]
-	public void CreateEntitySchema_Should_Derive_Internal_Title_From_TitleLocalizations_Without_CultureSynthesis() {
+	public async Task CreateEntitySchema_Should_Derive_Internal_Title_From_TitleLocalizations_Without_CultureSynthesis() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
@@ -274,7 +275,7 @@ public class CreateEntitySchemaToolTests {
 		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
 			"MyPackage",
 			"UsrVehicle",
 			Localizations("Vehicle"),
@@ -297,7 +298,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Rejects create-column localization maps that contain empty values.")]
 	[Category("Unit")]
-	public void CreateEntitySchema_Should_Reject_Column_Title_Localizations_With_Empty_Value() {
+	public async Task CreateEntitySchema_Should_Reject_Column_Title_Localizations_With_Empty_Value() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
@@ -308,7 +309,7 @@ public class CreateEntitySchemaToolTests {
 		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
 			"MyPackage",
 			"UsrVehicle",
 			Localizations("Vehicle"),
@@ -337,7 +338,7 @@ public class CreateEntitySchemaToolTests {
 	[TestCase("File")]
 	[Description("Preserves Binary, Blob alias, Image, and File type names when MCP create-column inputs are serialized for the command layer.")]
 	[Category("Unit")]
-	public void CreateEntitySchema_Should_Preserve_BinaryLike_Type_Names_In_Column_Serialization(string typeName) {
+	public async Task CreateEntitySchema_Should_Preserve_BinaryLike_Type_Names_In_Column_Serialization(string typeName) {
 		// Arrange
 		var columns = new[] {
 			new CreateEntitySchemaColumnArgs("Payload", typeName, Localizations("Payload"))
@@ -356,7 +357,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Maps create-lookup MCP arguments into create-entity-schema command options and forces BaseLookup as the parent schema.")]
 	[Category("Unit")]
-	public void CreateLookup_Should_Resolve_Command_For_Requested_Environment() {
+	public async Task CreateLookup_Should_Resolve_Command_For_Requested_Environment() {
 		// Arrange
 		using CultureScope cultureScope = new("en-US");
 		ConsoleLogger.Instance.ClearMessages();
@@ -371,7 +372,7 @@ public class CreateEntitySchemaToolTests {
 		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateLookup(new CreateLookupArgs(
+		CommandExecutionResult result = await tool.CreateLookup(new CreateLookupArgs(
 			"MyPackage",
 			"UsrOrderStatus",
 			Localizations("Order status", "Статус замовлення"),
@@ -404,7 +405,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Rejects inherited BaseLookup columns when create-lookup callers try to redefine Name or Description.")]
 	[Category("Unit")]
-	public void CreateLookup_Should_Reject_Inherited_BaseLookup_Columns() {
+	public async Task CreateLookup_Should_Reject_Inherited_BaseLookup_Columns() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
@@ -418,7 +419,7 @@ public class CreateEntitySchemaToolTests {
 		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateLookup(new CreateLookupArgs(
+		CommandExecutionResult result = await tool.CreateLookup(new CreateLookupArgs(
 			"MyPackage",
 			"UsrOrderStatus",
 			Localizations("Order status"),
@@ -451,7 +452,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Preserves omitted optional columns when create-lookup callers only provide the required lookup schema metadata.")]
 	[Category("Unit")]
-	public void CreateLookup_Should_Preserve_Defaults_When_Columns_Are_Omitted() {
+	public async Task CreateLookup_Should_Preserve_Defaults_When_Columns_Are_Omitted() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
@@ -465,7 +466,7 @@ public class CreateEntitySchemaToolTests {
 		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateLookup(new CreateLookupArgs(
+		CommandExecutionResult result = await tool.CreateLookup(new CreateLookupArgs(
 			"MyPackage",
 			"UsrOrderStatus",
 			Localizations("Order status"),
@@ -489,7 +490,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Serializes advanced create-lookup column metadata as structured JSON so lookup creation keeps parity with create-entity-schema.")]
 	[Category("Unit")]
-	public void CreateLookup_Should_Serialize_Advanced_Column_Metadata_As_Json() {
+	public async Task CreateLookup_Should_Serialize_Advanced_Column_Metadata_As_Json() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
@@ -503,7 +504,7 @@ public class CreateEntitySchemaToolTests {
 		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateLookup(new CreateLookupArgs(
+		CommandExecutionResult result = await tool.CreateLookup(new CreateLookupArgs(
 			"MyPackage",
 			"UsrOrderStatus",
 			Localizations("Order status"),
@@ -545,7 +546,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Returns a failed MCP result when lookup creation succeeds but Lookups registration fails.")]
 	[Category("Unit")]
-	public void CreateLookup_Should_Fail_When_Lookup_Registration_Fails() {
+	public async Task CreateLookup_Should_Fail_When_Lookup_Registration_Fails() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
@@ -562,7 +563,7 @@ public class CreateEntitySchemaToolTests {
 		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateLookup(new CreateLookupArgs(
+		CommandExecutionResult result = await tool.CreateLookup(new CreateLookupArgs(
 			"MyPackage",
 			"UsrOrderStatus",
 			Localizations("Order status"),

@@ -48,11 +48,18 @@ public sealed class ToolContractGetToolTests {
 				ApplicationGetListTool.ApplicationGetListToolName,
 				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 				ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+				DataForgeTool.DataForgeHealthToolName,
+				DataForgeTool.DataForgeContextToolName,
 				PageSyncTool.ToolName,
 				PageUpdateTool.ToolName,
 				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
 			],
-			because: "the canonical contract set should include bootstrap diagnostics plus the key existing-app discovery and page mutation tools");
+			because: "the canonical contract set should include bootstrap diagnostics, read-only Data Forge discovery/context tools, and the key existing-app discovery and page mutation tools");
+		result.Tools!.Select(contract => contract.Name).Should().NotContain([
+				DataForgeTool.DataForgeInitializeToolName,
+				DataForgeTool.DataForgeUpdateToolName
+			],
+			because: "destructive Data Forge maintenance tools should stay available only through explicit contract lookup rather than the default bootstrap set");
 		result.Tools!.Select(contract => contract.Name).Should().NotContain(ToolContractGetTool.ToolName,
 			because: "tool-contract-get should not include itself in the default returned contract set");
 	}
@@ -470,6 +477,10 @@ public sealed class ToolContractGetToolTests {
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "canonical-main-entity-name",
 			because: "application-create should advertise the canonical main entity field in its response shape");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "dataforge" &&
+				field.Description.Contains("context-summary", StringComparison.Ordinal),
+			because: "application-create should advertise the built-in Data Forge diagnostics block in its response contract");
 		contract.InputSchema.Validators.Should().ContainSingle(validator =>
 				validator.Name == "forbid-fields"
 				&& validator.Fields!.Contains("title-localizations")
@@ -500,6 +511,48 @@ public sealed class ToolContractGetToolTests {
 		contract.Examples.Should().ContainSingle(example =>
 				example.Summary.Contains("top-level payload", StringComparison.Ordinal),
 			because: "application-create should advertise the minimal top-level request shape explicitly");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the full Data Forge contract surface through explicit lookup while keeping maintenance tools out of the default bootstrap set.")]
+	public void ToolContractGet_Should_Return_Full_DataForge_Surface_On_Explicit_Lookup() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		string[] requestedTools = [
+			DataForgeTool.DataForgeHealthToolName,
+			DataForgeTool.DataForgeStatusToolName,
+			DataForgeTool.DataForgeFindTablesToolName,
+			DataForgeTool.DataForgeFindLookupsToolName,
+			DataForgeTool.DataForgeGetRelationsToolName,
+			DataForgeTool.DataForgeGetTableColumnsToolName,
+			DataForgeTool.DataForgeContextToolName,
+			DataForgeTool.DataForgeInitializeToolName,
+			DataForgeTool.DataForgeUpdateToolName
+		];
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(requestedTools));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the full Data Forge surface should remain available through explicit tool-contract-get lookup");
+		result.Tools.Should().NotBeNull(
+			because: "explicit Data Forge lookup should return the requested contracts");
+		result.Tools!.Select(contract => contract.Name).Should().Equal(requestedTools,
+			because: "the response should preserve the requested Data Forge tool order");
+		result.Tools.Should().Contain(contract =>
+				contract.Name == DataForgeTool.DataForgeInitializeToolName &&
+				contract.OutputContract.Fields.Any(field => field.Name == "status"),
+			because: "the maintenance initialize contract should remain available through explicit lookup");
+		result.Tools.Should().Contain(contract =>
+				contract.Name == DataForgeTool.DataForgeUpdateToolName &&
+				contract.OutputContract.Fields.Any(field => field.Name == "status"),
+			because: "the maintenance update contract should remain available through explicit lookup");
+		result.Tools.Should().Contain(contract =>
+				contract.Name == DataForgeTool.DataForgeHealthToolName &&
+				contract.Defaults.Any(definition => definition.Name == "scope" && definition.Value == "use_enrichment"),
+			because: "Data Forge contracts should advertise the default OAuth scope through the canonical contract catalog");
 	}
 
 	[Test]

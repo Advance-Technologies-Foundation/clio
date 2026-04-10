@@ -38,6 +38,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should explain the canonical existing-section metadata update entry point");
 		article.Text.Should().Contain("Canonical new-app entity flow",
 			because: "the guide should publish the preferred new-app entity sequence as MCP-owned guidance");
+		article.Text.Should().Contain("already performs internal Data Forge enrichment",
+			because: "the guide should teach callers that application-create owns the required Data Forge logic inside clio");
+		article.Text.Should().Contain("still creates the app shell",
+			because: "the guide should document the soft-fallback semantics when Data Forge is degraded or unavailable");
 		article.Text.Should().Contain("Canonical page flow after planning a page change",
 			because: "the guide should publish the preferred page inspection and write sequence as MCP-owned guidance");
 		article.Text.Should().Contain("docs://mcp/guides/existing-app-maintenance",
@@ -54,6 +58,16 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should steer callers toward follow-up schema tools when localized captions are needed");
 		article.Text.Should().Contain("compatibility fallbacks",
 			because: "the guide should explain that single-tool mutations are fallback paths rather than the primary modeling workflow");
+		article.Text.Should().Contain("Apply the same anti-duplication rule to supporting entities",
+			because: "the guide should extend the duplicate-prevention guardrail beyond only the canonical main entity");
+		article.Text.Should().Contain("Business captions are not naming authority",
+			because: "the guide should reject minting new technical schema codes from requirement wording when runtime context already exposes an existing code");
+		article.Text.Should().Contain("blocker-level planning error",
+			because: "the guide should treat duplicate supporting-schema creation as a hard planning failure");
+		article.Text.Should().Contain("resolve the backing schema from refreshed app context",
+			because: "the guide should require page/detail workflows to inspect the existing object model before planning schema creation");
+		article.Text.Should().Contain("Do not create `UsrSupportCaseKnowledgeBase`",
+			because: "the guide should include a concrete negative example for the Support Case reuse scenario");
 		article.Text.Should().Contain("BaseLookup",
 			because: "the guide should explain lookup inheritance and display-field behavior");
 		article.Text.Should().Contain("schema default",
@@ -90,6 +104,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should include the dedicated section-update mutation path for existing apps");
 		article.Text.Should().Contain("`code`",
 			because: "the guide should steer existing-app flows toward the canonical code selector");
+		article.Text.Should().Contain("Resolve the backing schema from runtime app context before planning new schema work.",
+			because: "existing-app page/detail requests should inspect runtime package context before deciding whether new schema work is needed");
+		article.Text.Should().Contain("reuse that schema",
+			because: "the maintenance guide should require reuse of an existing supporting or link schema when it already models the needed relation");
+		article.Text.Should().Contain("page-only/object-model reuse tasks by default",
+			because: "detail/grid requests over existing data should default to page mutation rather than schema creation");
 		article.Text.Should().Contain("page-list",
 			because: "the guide should describe page discovery before inspection");
 		article.Text.Should().Contain("page-get",
@@ -138,9 +158,37 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should steer standalone lookup seeding back to MCP-native data-binding tools");
 		article.Text.Should().Contain("Read before write, and read back after mutations",
 			because: "the guide should set the canonical verification discipline for existing-app edits");
+		article.Text.Should().Contain("Absence of a tab, detail, or grid on the page does not prove the backing entity is missing",
+			because: "the guide should decouple missing UI from missing object model");
+		article.Text.Should().Contain("Do not create `UsrSupportCaseKnowledgeBase`",
+			because: "the guide should include the concrete negative example for the Support Case page-detail reuse path");
 		article.Text.Should().Contain("operations[*].type",
 			because: "the maintenance guide should explicitly document the canonical schema-sync request field");
 		article.Text.Should().Contain("operations[*].operation",
 			because: "the maintenance guide should explicitly warn callers away from the legacy request field");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns DataForge orchestration guidance that keeps exact package-local reuse checks on runtime context before DataForge fallback.")]
+	public void DataForgeOrchestrationGuidanceResource_Should_Keep_Runtime_Context_As_Primary_Source_For_Existing_App_Reuse() {
+		// Arrange
+		DataForgeOrchestrationGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = (TextResourceContents)result;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/dataforge-orchestration",
+			because: "the resource should expose a stable MCP URI for DataForge orchestration guidance");
+		article.Text.Should().Contain("DataForge is not the primary mechanism for exact package-local reuse checks",
+			because: "existing-app page/detail reuse should resolve from runtime app context before semantic discovery tools are used");
+		article.Text.Should().Contain("application-get-info",
+			because: "the guidance should point existing-app reuse checks to runtime app context");
+		article.Text.Should().Contain("page-get",
+			because: "the guidance should point existing-app reuse checks to live page inspection");
+		article.Text.Should().Contain("get-entity-schema-properties",
+			because: "the guidance should point existing-app reuse checks to schema inspection before falling back to DataForge");
 	}
 }
