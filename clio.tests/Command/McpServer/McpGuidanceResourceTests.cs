@@ -104,8 +104,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should include the dedicated section-update mutation path for existing apps");
 		article.Text.Should().Contain("`code`",
 			because: "the guide should steer existing-app flows toward the canonical code selector");
-		article.Text.Should().Contain("inspect the current object model before planning any schema mutation",
-			because: "existing-app page/detail requests should inspect package context before deciding whether new schema work is needed");
+		article.Text.Should().Contain("Resolve the backing schema from runtime app context before planning new schema work.",
+			because: "existing-app page/detail requests should inspect runtime package context before deciding whether new schema work is needed");
 		article.Text.Should().Contain("reuse that schema",
 			because: "the maintenance guide should require reuse of an existing supporting or link schema when it already models the needed relation");
 		article.Text.Should().Contain("page-only/object-model reuse tasks by default",

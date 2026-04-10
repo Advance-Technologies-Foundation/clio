@@ -1009,6 +1009,13 @@ Files: clio/clio.csproj, clio.mcp.e2e/Support/Configuration/TestConfiguration.cs
 Impact: Future test-start requests can use a direct `dotnet build ./clio/clio.csproj -c Debug --no-incremental` instead of the heavier full packaging script unless `cliogate` artifacts also need regeneration.
 
 ## 2026-03-24 14:28 – Add component-info MCP catalog and ADAC integration
+
+## 2026-04-10 16:20 – Restore full clio.tests pass after merge-related test drift
+Context: After validating tests for files changed by the latest merges, the user asked to run the full `clio.tests` project and confirm the overall suite status.
+Decision: Removed a duplicate test method from `RemoteEntitySchemaColumnManagerTests`, realigned the `CreateEntitySchemaTool` localization test with the current no-synthesis behavior, and updated `McpGuidanceResourceTests` to assert the current wording of the existing-app maintenance guidance resource.
+Discovery: The remaining full-suite failure was not a production regression but a stale exact-string assertion in `McpGuidanceResourceTests`; the guidance text now instructs callers to resolve the backing schema from runtime app context before planning new schema work.
+Files: clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs, clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, .codex/workspace-diary.md
+Impact: Future full-suite validations on this branch should start from a green `clio.tests` baseline, and merge conflict resolutions in entity-schema MCP tests can be checked against the current no-localization-synthesis contract.
 Context: User asked to execute the new plan for a curated `component-info` MCP tool in `clio` and wire the corresponding ADAC guidance so page-editing agents can inspect unfamiliar Freedom UI component types on demand.
 Decision: Added a shipped JSON component registry plus a local `component-info` MCP tool with grouped list/detail modes, updated page prompt and `mcp-server` docs to mention the new helper, and synchronized ADAC docs plus `scripts/mcp_client.py` validation so the new tool is callable from agent workflows.
 Discovery: `component-info` does not need environment resolution, so a plain local MCP tool is enough; targeted `clio.tests` passed with `--no-restore`, ADAC `unittest` passed, and `clio.mcp.e2e` remains blocked on this machine because the project targets `net10.0` while the installed SDK is `8.0.124`.

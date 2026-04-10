@@ -264,7 +264,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Derives the internal schema title from MCP title-localizations and passes provided localizations through as-is without synthesizing additional cultures.")]
 	[Category("Unit")]
-	public void CreateEntitySchema_Should_Derive_Internal_Title_From_TitleLocalizations_Without_CultureSynthesis() {
+	public async Task CreateEntitySchema_Should_Derive_Internal_Title_From_TitleLocalizations_Without_CultureSynthesis() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
