@@ -221,6 +221,7 @@ public class BindingsModule {
 		services.AddTransient<PageSyncTool>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<DataForgeTool>();
+		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();

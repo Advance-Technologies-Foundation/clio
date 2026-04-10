@@ -264,7 +264,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Derives the internal schema title and current-culture localization from MCP title-localizations without reopening the legacy title field.")]
 	[Category("Unit")]
-	public void CreateEntitySchema_Should_Derive_Internal_Title_And_CurrentCultureLocalization_From_TitleLocalizations() {
+	public async Task CreateEntitySchema_Should_Derive_Internal_Title_And_CurrentCultureLocalization_From_TitleLocalizations() {
 		// Arrange
 		using CultureScope cultureScope = new("uk-UA");
 		ConsoleLogger.Instance.ClearMessages();
@@ -312,7 +312,7 @@ public class CreateEntitySchemaToolTests {
 		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
 			"MyPackage",
 			"UsrVehicle",
 			Localizations("Vehicle"),

@@ -2200,6 +2200,13 @@ Discovery: The resource and skill reference had drifted independently, so both h
 Files: clio/Command/McpServer/Resources/DataForgeOrchestrationGuidanceResource.cs, .codex/workspace-diary.md
 Impact: Agents reading the MCP guidance resource now get the same Data Forge orchestration instructions as the skill reference, without branching on nonexistent payload fields.
 
+## 2026-04-10 12:31 – Deduplicate MCP DataForge enrichment behind a shared builder
+Context: Sonar flagged duplicated logic between application and schema DataForge enrichment services, while both mutation flows already needed the same best-effort context aggregation and compact MCP-facing summary mapping.
+Decision: Introduced `IDataForgeEnrichmentBuilder` / `DataForgeEnrichmentBuilder` as the shared best-effort aggregation layer, then rewired `ApplicationCreateEnrichmentService` and `SchemaEnrichmentService` to only normalize their inputs and delegate the common Data Forge work to the builder.
+Discovery: The bulk of the duplication was not in DataForge MCP args but in repeated context-service resolution, default config construction, degraded fallback handling, and summary compaction; extracting that logic once removed the highest-value duplication with minimal surface change.
+Files: clio/Command/McpServer/Tools/DataForgeEnrichmentBuilder.cs, clio/Command/McpServer/Tools/ApplicationCreateEnrichmentService.cs, clio/Command/McpServer/Tools/SchemaEnrichmentService.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/ApplicationCreateEnrichmentServiceTests.cs, clio.tests/Command/McpServer/SchemaEnrichmentServiceTests.cs, clio.tests/Command/McpServer/DataForgeEnrichmentBuilderTests.cs, .codex/workspace-diary.md
+Impact: `application-create` and schema mutation tools now share one DataForge enrichment path, reducing duplication and keeping fallback behavior and compact summary mapping consistent across MCP mutation flows.
+
 ## 2026-04-10 11:48 – Fix entity caption loss during column mutations
 Context: User session analysis (copilot-session-b197a4a1) showed entity caption "Об'єкт" (uk-UA) was reset after clio-schema-sync update-entity on .NET Framework environment.
 Decision: In LoadSchema, removed Cultures=[GetCurrentCultureName()] from GetSchemaDesignItemRequestDto. Sending only the current system culture (en-US) caused Creatio to return Caption filtered to that culture. When SaveSchema sent the filtered Caption back, the original uk-UA caption was overwritten. Empty Cultures=[] (default) tells Creatio to return all localizations, preserving the full round-trip.
