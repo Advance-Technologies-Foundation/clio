@@ -60,15 +60,18 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
 	private readonly ILogger _logger;
+	private readonly IApplicationUserCultureProvider _userCultureProvider;
 
 	public RemoteEntitySchemaColumnManager(IApplicationPackageListProvider applicationPackageListProvider,
 		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
-		ILogger logger) {
+		ILogger logger,
+		IApplicationUserCultureProvider userCultureProvider) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_logger = logger;
+		_userCultureProvider = userCultureProvider;
 	}
 
 	public void ModifyColumn(ModifyEntitySchemaColumnOptions options) {
@@ -78,6 +81,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	public void ModifyColumns(IEnumerable<ModifyEntitySchemaColumnOptions> options,
 		IReadOnlyDictionary<string, string>? entityTitleLocalizations = null) {
 		ArgumentNullException.ThrowIfNull(options);
+		using var _ = EntitySchemaDesignerSupport.UseUserCulture(_userCultureProvider.GetUserCultureName());
 		List<ModifyEntitySchemaColumnOptions> operations = options.ToList();
 		if (operations.Count == 0) {
 			throw new EntitySchemaDesignerException("At least one column mutation is required.");
@@ -117,6 +121,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	public EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
+		using var _ = EntitySchemaDesignerSupport.UseUserCulture(_userCultureProvider.GetUserCultureName());
 		PackageInfo package = ResolvePackage(options.Package);
 		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, options);
 		(EntitySchemaColumnDto column, string source) = FindColumnForRead(schema, options.ColumnName);
@@ -180,6 +185,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	public EntitySchemaPropertiesInfo GetSchemaProperties(GetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
+		using var _ = EntitySchemaDesignerSupport.UseUserCulture(_userCultureProvider.GetUserCultureName());
 		PackageInfo package = ResolvePackage(options.Package);
 		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, options);
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
@@ -683,20 +689,25 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (!runtimeResponse.Success || runtimeResponse.Schema == null) {
 			return;
 		}
-		string? runtimeCaption = runtimeResponse.Schema.Caption != null
-			? EntitySchemaDesignerSupport.GetLocalizableValue(
-				EntitySchemaDesignerSupport.CreateLocalizableStrings(runtimeResponse.Schema.Caption))
-			: null;
-		bool runtimeCaptionIsInheritedOrEmpty = string.IsNullOrWhiteSpace(runtimeCaption) ||
-			string.Equals(runtimeCaption, inheritedCaption, StringComparison.OrdinalIgnoreCase);
+		if (runtimeResponse.Schema.Caption == null) {
+			return;
+		}
+		Dictionary<string, string> runtimeCaptionLocalizations =
+			new(runtimeResponse.Schema.Caption, StringComparer.OrdinalIgnoreCase);
+		string currentCulture = EntitySchemaDesignerSupport.GetCurrentCultureName();
+		string? runtimeCaptionValue =
+			runtimeCaptionLocalizations.GetValueOrDefault(currentCulture)
+			?? runtimeCaptionLocalizations.GetValueOrDefault(EntitySchemaDesignerSupport.DefaultCultureName)
+			?? runtimeCaptionLocalizations.Values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+		bool runtimeCaptionIsInheritedOrEmpty = string.IsNullOrWhiteSpace(runtimeCaptionValue) ||
+			string.Equals(runtimeCaptionValue, inheritedCaption, StringComparison.OrdinalIgnoreCase);
 		if (runtimeCaptionIsInheritedOrEmpty) {
 			return;
 		}
-		EntitySchemaDesignerSupport.ReplaceLocalizableValues(
-			schema.Caption ??= [],
-			new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-				[EntitySchemaDesignerSupport.GetCurrentCultureName()] = runtimeCaption
-			});
+		if (!runtimeCaptionLocalizations.ContainsKey(EntitySchemaDesignerSupport.DefaultCultureName)) {
+			runtimeCaptionLocalizations[EntitySchemaDesignerSupport.DefaultCultureName] = runtimeCaptionValue!;
+		}
+		EntitySchemaDesignerSupport.ReplaceLocalizableValues(schema.Caption ??= [], runtimeCaptionLocalizations);
 	}
 
 	private PackageInfo ResolvePackage(string packageName) {

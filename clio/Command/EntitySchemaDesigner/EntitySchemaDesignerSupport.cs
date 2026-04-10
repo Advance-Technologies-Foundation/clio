@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using Clio.Package;
 using Terrasoft.Core.Entities;
 
@@ -21,6 +22,7 @@ internal static class EntitySchemaDesignerSupport
 	private const string FileTypeName = "file";
 	private const string ImageTypeName = "image";
 	private const string SecureTextTypeName = "secureText";
+	private static readonly AsyncLocal<string?> _resolvedUserCultureName = new();
 
 	internal static readonly Dictionary<string, int> SupportedDataValueTypes =
 		new(StringComparer.OrdinalIgnoreCase) {
@@ -118,7 +120,17 @@ internal static class EntitySchemaDesignerSupport
 			[50] = new(CurrencyUIdString)                          // Currency3
 		};
 
+	internal static IDisposable UseUserCulture(string cultureName) {
+		string? previous = _resolvedUserCultureName.Value;
+		_resolvedUserCultureName.Value = cultureName;
+		return new CultureRestoreScope(previous);
+	}
+
 	internal static string GetCurrentCultureName() {
+		string? ambient = _resolvedUserCultureName.Value;
+		if (!string.IsNullOrWhiteSpace(ambient)) {
+			return ambient;
+		}
 		string cultureName = CultureInfo.CurrentCulture.Name;
 		return string.IsNullOrWhiteSpace(cultureName) ? DefaultCultureName : cultureName;
 	}
@@ -692,5 +704,22 @@ internal static class EntitySchemaDesignerSupport
 			return value.Value;
 		}
 		throw new EntitySchemaDesignerException(errorMessage);
+	}
+
+	private sealed class CultureRestoreScope : IDisposable
+	{
+		private readonly string? _previousCultureName;
+		private bool _disposed;
+
+		internal CultureRestoreScope(string? previousCultureName) {
+			_previousCultureName = previousCultureName;
+		}
+
+		public void Dispose() {
+			if (!_disposed) {
+				_resolvedUserCultureName.Value = _previousCultureName;
+				_disposed = true;
+			}
+		}
 	}
 }

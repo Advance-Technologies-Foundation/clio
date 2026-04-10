@@ -27,6 +27,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	private IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private IRemoteEntitySchemaDesignerClient _designerClient;
 	private ILogger _logger;
+	private IApplicationUserCultureProvider _userCultureProvider;
 	private RemoteEntitySchemaColumnManager _manager;
 	private EntityDesignSchemaDto _loadedSchema;
 	private EntityDesignSchemaDto _savedSchema;
@@ -37,6 +38,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_defaultValueSourceResolver = Substitute.For<IEntitySchemaDefaultValueSourceResolver>();
 		_designerClient = Substitute.For<IRemoteEntitySchemaDesignerClient>();
 		_logger = Substitute.For<ILogger>();
+		_userCultureProvider = Substitute.For<IApplicationUserCultureProvider>();
+		_userCultureProvider.GetUserCultureName().Returns("en-US");
 		_savedSchema = null;
 		_loadedSchema = null;
 		_packageListProvider.GetPackages().Returns(new[] {
@@ -96,7 +99,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 			_packageListProvider,
 			_defaultValueSourceResolver,
 			_designerClient,
-			_logger);
+			_logger,
+			_userCultureProvider);
 	}
 
 	[Test]
@@ -203,7 +207,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	[Description("Adds the current culture title localization when add receives only en-US so .NET Framework save validation still sees an effective caption.")]
 	public void ModifyColumn_AddsOwnColumn_AddsCurrentCultureLocalization_WhenOnlyEnUsTitleLocalizationIsProvided() {
 		// Arrange
-		using CultureScope cultureScope = new("uk-UA");
+		_userCultureProvider.GetUserCultureName().Returns("uk-UA");
 		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
 		SetupLoadedSchema();
 		var options = new ModifyEntitySchemaColumnOptions {
@@ -306,6 +310,87 @@ internal class RemoteEntitySchemaColumnManagerTests
 		EntitySchemaDesignerSupport.GetLocalizableValue(savedColumn.Caption).Should().Be("UsrAssignedTo",
 			because: "empty server-returned captions must be restored to the column name before saving to avoid .NET Framework validation errors");
 	}
+
+	[Test]
+	[Description("Restores all runtime caption localizations when design caption is empty in a non-en-US culture, preventing NormalizeLocalizationMap from throwing due to a missing en-US key.")]
+	public void ModifyColumns_UsesFullRuntimeLocalizationMap_WhenDesignCaptionIsEmptyAndCultureIsNonEnUs() {
+		_userCultureProvider.GetUserCultureName().Returns("uk-UA");
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		_loadedSchema.Caption = [];
+		SetupLoadedSchema();
+		_designerClient.GetRuntimeEntitySchema(Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>())
+			.Returns(new RuntimeEntitySchemaResponse {
+				Success = true,
+				Schema = new RuntimeEntitySchemaDto {
+					UId = _loadedSchema.UId,
+					Name = "UsrVehicle",
+					Caption = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+						["en-US"] = "Vehicle",
+						["uk-UA"] = "Транспортний засіб"
+					}
+				}
+			});
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrNewColumn",
+			Type = "Text",
+			Title = "New Column"
+		};
+
+		// Act — must not throw despite uk-UA being the current culture
+		_manager.ModifyColumn(options);
+
+		// Assert: full runtime localization map stored, not just the current-culture entry
+		_savedSchema.Caption.Should().Contain(c => c.CultureName == "en-US" && c.Value == "Vehicle",
+			because: "en-US caption from runtime must be preserved when design caption is empty");
+		_savedSchema.Caption.Should().Contain(c => c.CultureName == "uk-UA" && c.Value == "Транспортний засіб",
+			because: "all runtime localizations must be restored, not only the current-culture entry");
+	}
+
+	[Test]
+	[Description("Preserves all runtime caption localizations (including translated ones) when the current culture is en-US, preventing truncation of other locales during unrelated column mutations.")]
+	public void ModifyColumns_PreservesAllRuntimeCaptionLocales_WhenDesignCaptionIsEmpty() {
+		// Arrange: default en-US culture but runtime has multiple translations.
+		// The old code collapsed runtime caption to a single scalar via GetLocalizableValue,
+		// then rebuilt { ["en-US"]: scalar } — discarding every non-en-US translation.
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		_loadedSchema.Caption = [];
+		SetupLoadedSchema();
+		_designerClient.GetRuntimeEntitySchema(Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>())
+			.Returns(new RuntimeEntitySchemaResponse {
+				Success = true,
+				Schema = new RuntimeEntitySchemaDto {
+					UId = _loadedSchema.UId,
+					Name = "UsrVehicle",
+					Caption = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+						["en-US"] = "Vehicle",
+						["uk-UA"] = "Транспортний засіб",
+						["de-DE"] = "Fahrzeug"
+					}
+				}
+			});
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrNewColumn",
+			Type = "Text",
+			Title = "New Column"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert: all three locales preserved — the old code would have kept only en-US
+		_savedSchema.Caption.Should().Contain(c => c.CultureName == "en-US" && c.Value == "Vehicle",
+			because: "en-US caption must be preserved from runtime");
+		_savedSchema.Caption.Should().Contain(c => c.CultureName == "uk-UA" && c.Value == "Транспортний засіб",
+			because: "non-current-culture localizations must not be truncated during caption restoration");
+		_savedSchema.Caption.Should().Contain(c => c.CultureName == "de-DE" && c.Value == "Fahrzeug",
+			because: "all runtime localizations must be forwarded to the saved schema, not collapsed to one language");
+	}
 	[Description("Trims caption updates when modify receives a title with surrounding spaces.")]
 	public void ModifyColumn_UpdatesCaptionWithTrimmedValue_WhenTitleContainsWhitespacePadding() {
 		// Arrange
@@ -333,7 +418,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	[Description("Replaces caption localizations with a normalized set that includes the current culture when modify receives only en-US title-localizations.")]
 	public void ModifyColumn_NormalizesTitleLocalizations_WhenOnlyEnUsTitleLocalizationIsProvided() {
 		// Arrange
-		using CultureScope cultureScope = new("uk-UA");
+		_userCultureProvider.GetUserCultureName().Returns("uk-UA");
 		EntitySchemaColumnDto statusColumn = CreateTextColumn("UsrVehicleStatus", NameColumnUId);
 		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), statusColumn]);
 		SetupLoadedSchema();
@@ -358,6 +443,41 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "modify should synthesize a current-culture title so later .NET Framework validation succeeds");
 		savedColumn.Caption.Select(item => item.CultureName).Should().OnlyHaveUniqueItems(
 			because: "title localization normalization should not duplicate cultures in the saved caption payload");
+	}
+
+	[Test]
+	[Description("Uses culture name from IApplicationUserCultureProvider rather than the current thread CultureInfo, so caption localization matches the Creatio user's language even when the machine locale differs.")]
+	public void ModifyColumn_UsesCultureFromProvider_NotThreadCulture() {
+		// Arrange: provider says uk-UA; thread culture is set to fr-FR to prove the provider wins.
+		_userCultureProvider.GetUserCultureName().Returns("uk-UA");
+		CultureInfo originalCulture = CultureInfo.CurrentCulture;
+		try {
+			CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+			_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+			SetupLoadedSchema();
+			var options = new ModifyEntitySchemaColumnOptions {
+				Package = "UsrPkg",
+				SchemaName = "UsrVehicle",
+				Action = "add",
+				ColumnName = "UsrVehicleStatus",
+				Type = "Text",
+				TitleLocalizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+					["en-US"] = "Status"
+				}
+			};
+
+			// Act
+			_manager.ModifyColumn(options);
+
+			// Assert: uk-UA must be added (from provider), not fr-FR (from thread culture)
+			EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
+			addedColumn.Caption.Should().Contain(item => item.CultureName == "uk-UA" && item.Value == "Status",
+				because: "culture must come from IApplicationUserCultureProvider (uk-UA), not the thread culture (fr-FR)");
+			addedColumn.Caption.Should().NotContain(item => item.CultureName == "fr-FR",
+				because: "thread culture fr-FR must be ignored when the provider supplies uk-UA");
+		} finally {
+			CultureInfo.CurrentCulture = originalCulture;
+		}
 	}
 
 	[Test]

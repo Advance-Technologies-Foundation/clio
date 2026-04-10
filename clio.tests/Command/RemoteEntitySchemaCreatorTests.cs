@@ -21,6 +21,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	private IApplicationClient _applicationClient;
 	private IApplicationPackageListProvider _packageListProvider;
 	private ILogger _logger;
+	private IApplicationUserCultureProvider _userCultureProvider;
 	private IRemoteEntitySchemaCreator _creator;
 	private Guid _packageUId;
 
@@ -43,9 +44,12 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_packageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_logger = Substitute.For<ILogger>();
+		_userCultureProvider = Substitute.For<IApplicationUserCultureProvider>();
+		_userCultureProvider.GetUserCultureName().Returns("en-US");
 		containerBuilder.AddTransient(_ => _applicationClient);
 		containerBuilder.AddTransient(_ => _packageListProvider);
 		containerBuilder.AddTransient(_ => _logger);
+		containerBuilder.AddTransient(_ => _userCultureProvider);
 	}
 
 	[Test]
@@ -392,7 +396,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	[Description("Creates schema and column captions with synthesized current-culture localizations when only en-US title-localizations are provided.")]
 	public void Create_CreatesSchema_WithCurrentCultureTitleLocalizations_WhenOnlyEnUsIsProvided() {
 		// Arrange
-		using CultureScope cultureScope = new("uk-UA");
+		_userCultureProvider.GetUserCultureName().Returns("uk-UA");
 		string saveBody = null;
 		SetupApplicationClient((url, body) => {
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {

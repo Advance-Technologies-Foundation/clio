@@ -30,7 +30,8 @@ public interface IApplicationInfoService
 /// </summary>
 public sealed class ApplicationInfoService(
 	ISettingsRepository settingsRepository,
-	IApplicationClientFactory applicationClientFactory)
+	IApplicationClientFactory applicationClientFactory,
+	IApplicationUserCultureProvider userCultureProvider)
 	: IApplicationInfoService
 {
 	private const string BaseObjectCaption = "Base object";
@@ -232,7 +233,7 @@ public sealed class ApplicationInfoService(
 			.ToList();
 	}
 
-	private static ApplicationEntityInfoResult LoadEntityInfo(
+	private ApplicationEntityInfoResult LoadEntityInfo(
 		IApplicationClient client,
 		ServiceUrlBuilder serviceUrlBuilder,
 		string packageUId,
@@ -240,6 +241,7 @@ public sealed class ApplicationInfoService(
 		string? canonicalMainEntityCaptionFallback,
 		ApplicationEntityRecordDto entityRow)
 	{
+		IReadOnlyList<string> preferredCultures = GetPreferredCultureNames();
 		string responseJson = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest),
 			JsonSerializer.Serialize(new { uId = entityRow.UId }));
@@ -260,7 +262,7 @@ public sealed class ApplicationInfoService(
 		List<ApplicationColumnInfoResult> columns = (response.Schema.Columns?.Items?.Values ??
 			Enumerable.Empty<RuntimeSchemaColumnDto>())
 			.Where(column => !column.IsInherited)
-			.Select(column => MapColumn(column, GetDesignColumn(designColumns, column.Name)))
+			.Select(column => MapColumn(column, GetDesignColumn(designColumns, column.Name), preferredCultures))
 			.OrderBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
 			.ToList();
 
@@ -271,13 +273,15 @@ public sealed class ApplicationInfoService(
 				string.Equals(entityName, canonicalMainEntityName, StringComparison.OrdinalIgnoreCase),
 				response.Schema.Caption,
 				designSchema?.Caption,
+				preferredCultures,
 				canonicalMainEntityCaptionFallback,
 				entityRow.Caption,
 				entityName),
 			columns);
 	}
 
-	private static ApplicationColumnInfoResult MapColumn(RuntimeSchemaColumnDto column, DesignSchemaColumnDto? designColumn)
+	private static ApplicationColumnInfoResult MapColumn(RuntimeSchemaColumnDto column, DesignSchemaColumnDto? designColumn,
+		IReadOnlyList<string> preferredCultureNames)
 	{
 		string name = !string.IsNullOrWhiteSpace(column.Name)
 			? column.Name
@@ -291,7 +295,7 @@ public sealed class ApplicationInfoService(
 
 		return new ApplicationColumnInfoResult(
 			name,
-			ResolveLocalizedText(column.Caption, designColumn?.Caption, name),
+			ResolveLocalizedText(column.Caption, designColumn?.Caption, preferredCultureNames, name),
 			DataValueTypeNames.TryGetValue(column.DataValueType, out string? dataValueTypeName)
 				? dataValueTypeName
 				: column.DataValueType.ToString(),
@@ -345,10 +349,11 @@ public sealed class ApplicationInfoService(
 	private static string ResolveLocalizedText(
 		IReadOnlyDictionary<string, string>? runtimeValues,
 		IEnumerable<DesignLocalizableStringDto>? designValues,
+		IReadOnlyList<string> preferredCultureNames,
 		params string?[] fallbacks)
 	{
-		return GetRuntimeLocalizedText(runtimeValues)
-			?? GetDesignLocalizedText(designValues)
+		return GetRuntimeLocalizedText(runtimeValues, preferredCultureNames)
+			?? GetDesignLocalizedText(designValues, preferredCultureNames)
 			?? GetFallbackText(fallbacks)
 			?? string.Empty;
 	}
@@ -357,10 +362,11 @@ public sealed class ApplicationInfoService(
 		bool isCanonicalMainEntity,
 		IReadOnlyDictionary<string, string>? runtimeValues,
 		IEnumerable<DesignLocalizableStringDto>? designValues,
+		IReadOnlyList<string> preferredCultureNames,
 		params string?[] fallbacks)
 	{
-		string? runtimeCaption = GetRuntimeLocalizedText(runtimeValues);
-		string? designCaption = GetDesignLocalizedText(designValues);
+		string? runtimeCaption = GetRuntimeLocalizedText(runtimeValues, preferredCultureNames);
+		string? designCaption = GetDesignLocalizedText(designValues, preferredCultureNames);
 		if (ShouldPreferDesignCaptionForCanonicalMainEntity(isCanonicalMainEntity, runtimeCaption, designCaption))
 		{
 			return designCaption!;
@@ -409,14 +415,15 @@ public sealed class ApplicationInfoService(
 			.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 	}
 
-	private static string? GetRuntimeLocalizedText(IReadOnlyDictionary<string, string>? localizedValues)
+	private static string? GetRuntimeLocalizedText(IReadOnlyDictionary<string, string>? localizedValues,
+		IReadOnlyList<string> preferredCultureNames)
 	{
 		if (localizedValues == null || localizedValues.Count == 0)
 		{
 			return null;
 		}
 
-		foreach (string cultureName in GetPreferredCultureNames())
+		foreach (string cultureName in preferredCultureNames)
 		{
 			if (localizedValues.TryGetValue(cultureName, out string? value) && !string.IsNullOrWhiteSpace(value))
 			{
@@ -429,7 +436,8 @@ public sealed class ApplicationInfoService(
 			.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 	}
 
-	private static string? GetDesignLocalizedText(IEnumerable<DesignLocalizableStringDto>? localizedValues)
+	private static string? GetDesignLocalizedText(IEnumerable<DesignLocalizableStringDto>? localizedValues,
+		IReadOnlyList<string> preferredCultureNames)
 	{
 		List<DesignLocalizableStringDto> values = localizedValues?
 			.Where(value => !string.IsNullOrWhiteSpace(value.CultureName) && !string.IsNullOrWhiteSpace(value.Value))
@@ -439,7 +447,7 @@ public sealed class ApplicationInfoService(
 			return null;
 		}
 
-		foreach (string cultureName in GetPreferredCultureNames())
+		foreach (string cultureName in preferredCultureNames)
 		{
 			DesignLocalizableStringDto? exactMatch = values.FirstOrDefault(value =>
 				string.Equals(value.CultureName, cultureName, StringComparison.OrdinalIgnoreCase));
@@ -452,9 +460,9 @@ public sealed class ApplicationInfoService(
 			return values[0].Value.Trim();
 	}
 
-	private static IReadOnlyList<string> GetPreferredCultureNames()
+	private IReadOnlyList<string> GetPreferredCultureNames()
 	{
-		string currentCultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
+		string currentCultureName = userCultureProvider.GetUserCultureName();
 		if (string.Equals(currentCultureName, EntitySchemaDesignerSupport.DefaultCultureName, StringComparison.OrdinalIgnoreCase))
 		{
 			return [EntitySchemaDesignerSupport.DefaultCultureName];
@@ -463,7 +471,7 @@ public sealed class ApplicationInfoService(
 		return [currentCultureName, EntitySchemaDesignerSupport.DefaultCultureName];
 	}
 
-	private static DesignSchemaDto? TryLoadDesignSchema(
+	private DesignSchemaDto? TryLoadDesignSchema(
 		IApplicationClient client,
 		ServiceUrlBuilder serviceUrlBuilder,
 		string packageUId,

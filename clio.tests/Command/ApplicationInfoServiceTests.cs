@@ -31,7 +31,9 @@ public sealed class ApplicationInfoServiceTests {
 		};
 		_settingsRepository.FindEnvironment("sandbox").Returns(_environment);
 		_applicationClientFactory.CreateEnvironmentClient(_environment).Returns(_applicationClient);
-		_sut = new ApplicationInfoService(_settingsRepository, _applicationClientFactory);
+		IApplicationUserCultureProvider userCultureProvider = Substitute.For<IApplicationUserCultureProvider>();
+		userCultureProvider.GetUserCultureName().Returns("en-US");
+		_sut = new ApplicationInfoService(_settingsRepository, _applicationClientFactory, userCultureProvider);
 	}
 
 	[Test]
