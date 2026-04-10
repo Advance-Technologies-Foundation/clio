@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.Json;
 
 namespace Clio.Common.DataForge;
@@ -134,12 +135,9 @@ public sealed class DataForgeConfigResolver(
 	}
 
 	private static string? FirstNonEmpty(params string?[] values) {
-		foreach (string? value in values) {
-			if (!string.IsNullOrWhiteSpace(value)) {
-				return value.Trim();
-			}
-		}
-
-		return null;
+		return values
+			.Where(value => !string.IsNullOrWhiteSpace(value))
+			.Select(value => value!.Trim())
+			.FirstOrDefault();
 	}
 }

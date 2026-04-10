@@ -2214,6 +2214,13 @@ Discovery: The highest-value duplication was mechanical rather than behavioral: 
 Files: clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, .codex/workspace-diary.md
 Impact: The Data Forge MCP surface keeps the same tool names and JSON fields, but its implementation is smaller, easier to update consistently, and better positioned to clear Sonar duplication checks.
 
+## 2026-04-10 17:01 – Clear Sonar code-smell fallout from DataForge contract deduplication
+Context: After the duplication cleanup, Sonar for PR 524 still flagged `ToolContractGetTool.cs` for repeated literals and a 9-parameter private helper introduced by the refactor.
+Decision: Replaced the high-traffic Data Forge and connection literals with local constants and changed `BuildDataForgeContract` to consume a `DataForgeContractDescriptor` object instead of a long parameter list.
+Discovery: The refactor-induced Sonar noise was concentrated in the helper layer rather than the MCP surface itself, so a descriptor object plus constants removed the warnings without changing any exposed tool names, field names, or payload structure.
+Files: clio/Command/McpServer/Tools/ToolContractGetTool.cs, .codex/workspace-diary.md
+Impact: The Data Forge contract catalog keeps the deduplicated implementation while avoiding the immediate Sonar maintainability warnings that the first cleanup introduced.
+
 ## 2026-04-10 11:48 – Fix entity caption loss during column mutations
 Context: User session analysis (copilot-session-b197a4a1) showed entity caption "Об'єкт" (uk-UA) was reset after clio-schema-sync update-entity on .NET Framework environment.
 Decision: In LoadSchema, removed Cultures=[GetCurrentCultureName()] from GetSchemaDesignItemRequestDto. Sending only the current system culture (en-US) caused Creatio to return Caption filtered to that culture. When SaveSchema sent the filtered Caption back, the original uk-UA caption was overwritten. Empty Cultures=[] (default) tells Creatio to return all localizations, preserving the full round-trip.
@@ -2227,3 +2234,10 @@ Decision: Added test ModifyColumn_PreservesAllEntityCultureCaptions_WhenSchemaHa
 Discovery: Unit test mock returns full _loadedSchema regardless of Cultures filter, so test does not reproduce exact server-side filtering bug, but documents expected behavior and catches future code regression that strips Caption entries.
 Files: clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs
 Impact: 42 tests pass; regression coverage for entity-level Caption round-trip preservation.
+
+## 2026-04-10 17:18 – Finish remaining Sonar warnings in Data Forge and runtime schema helpers
+Context: After the MCP contract cleanup, Sonar PR 524 still showed remaining warnings in EntitySchemaTool, DataForgeConfigResolver, DataForgeContextService, and RuntimeEntitySchemaReader.
+Decision: Removed the redundant cast, replaced the manual non-empty scan with a LINQ pipeline, split DataForge context aggregation into focused helper methods, and converted runtime-schema DTO carriers into records while preserving request serialization behavior.
+Discovery: The runtime-schema DTO cleanup changed JSON request escaping from `\"` to `\u0022`, so the request path now uses an explicit relaxed encoder to keep the existing wire format and tests stable.
+Files: clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Common/DataForge/DataForgeConfigResolver.cs, clio/Common/DataForge/DataForgeContextService.cs, clio/Common/EntitySchema/RuntimeEntitySchemaReader.cs, .codex/workspace-diary.md
+Impact: The remaining PR 524 Sonar warnings from this area are addressed without changing the external MCP surface or the runtime-schema request contract.

@@ -88,71 +88,23 @@ internal sealed class DataForgeContextService(
 		DataForgeHealthResult health = await dataForgeClient.CheckHealthAsync(configRequest, cancellationToken);
 		DataForgeMaintenanceStatusResult status = maintenanceClient.GetStatus();
 
-		List<SimilarTableResult> similarTables = [];
 		List<string> tableTerms = NormalizeTerms(request.CandidateTerms, request.RequirementSummary);
-		foreach (string term in tableTerms) {
-			try {
-				similarTables.AddRange(await dataForgeClient.FindSimilarTablesAsync(term, null, configRequest, cancellationToken));
-			}
-			catch (Exception ex) {
-				warnings.Add($"tables:{term}:{ex.Message}");
-			}
-		}
+		List<SimilarTableResult> similarTables = await FindSimilarTablesAsync(tableTerms, configRequest, warnings, cancellationToken);
 
-		List<SimilarLookupResult> similarLookups = [];
 		List<string> lookupTerms = NormalizeTerms(request.LookupHints, null);
-		foreach (string hint in lookupTerms) {
-			try {
-				similarLookups.AddRange(await dataForgeClient.FindSimilarLookupsAsync(hint, null, null, configRequest, cancellationToken));
-			}
-			catch (Exception ex) {
-				warnings.Add($"lookups:{hint}:{ex.Message}");
-			}
-		}
+		List<SimilarLookupResult> similarLookups = await FindSimilarLookupsAsync(lookupTerms, configRequest, warnings, cancellationToken);
 
-		Dictionary<string, IReadOnlyList<string>> relations = new(StringComparer.OrdinalIgnoreCase);
-		foreach (DataForgeRelationPair pair in request.RelationPairs ?? []) {
-			if (string.IsNullOrWhiteSpace(pair.SourceTable) || string.IsNullOrWhiteSpace(pair.TargetTable)) {
-				continue;
-			}
+		Dictionary<string, IReadOnlyList<string>> relations = await GetRelationsAsync(
+			request.RelationPairs,
+			configRequest,
+			warnings,
+			cancellationToken);
 
-			string key = $"{pair.SourceTable}->{pair.TargetTable}";
-			try {
-				relations[key] = await dataForgeClient.GetTableRelationshipsAsync(
-					pair.SourceTable,
-					pair.TargetTable,
-					null,
-					configRequest,
-					cancellationToken);
-			}
-			catch (Exception ex) {
-				warnings.Add($"relations:{key}:{ex.Message}");
-			}
-		}
+		List<SimilarTableResult> distinctTables = GetDistinctTables(similarTables);
 
-		List<SimilarTableResult> distinctTables = similarTables
-			.GroupBy(table => table.Name, StringComparer.OrdinalIgnoreCase)
-			.Select(group => group.First())
-			.OrderBy(table => table.Name, StringComparer.OrdinalIgnoreCase)
-			.ToList();
+		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = GetColumns(distinctTables, warnings);
 
-		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = new(StringComparer.OrdinalIgnoreCase);
-		foreach (SimilarTableResult table in distinctTables) {
-			try {
-				RuntimeEntitySchemaResult runtimeSchema = runtimeEntitySchemaReader.GetByName(table.Name);
-				columns[table.Name] = DataForgeRuntimeSchemaMapper.MapColumns(runtimeSchema);
-			}
-			catch (Exception ex) {
-				warnings.Add($"columns:{table.Name}:{ex.Message}");
-			}
-		}
-
-		List<SimilarLookupResult> distinctLookups = similarLookups
-			.GroupBy(lookup => $"{lookup.SchemaName}:{lookup.Value}", StringComparer.OrdinalIgnoreCase)
-			.Select(group => group.First())
-			.OrderBy(lookup => lookup.SchemaName, StringComparer.OrdinalIgnoreCase)
-			.ThenBy(lookup => lookup.Value, StringComparer.OrdinalIgnoreCase)
-			.ToList();
+		List<SimilarLookupResult> distinctLookups = GetDistinctLookups(similarLookups);
 
 		DataForgeCoverage coverage = new(
 			Health: true,
@@ -184,5 +136,103 @@ internal sealed class DataForgeContextService(
 		}
 
 		return values;
+	}
+
+	private async Task<List<SimilarTableResult>> FindSimilarTablesAsync(
+		IReadOnlyList<string> tableTerms,
+		DataForgeConfigRequest configRequest,
+		List<string> warnings,
+		CancellationToken cancellationToken) {
+		List<SimilarTableResult> similarTables = [];
+		foreach (string term in tableTerms) {
+			try {
+				similarTables.AddRange(await dataForgeClient.FindSimilarTablesAsync(term, null, configRequest, cancellationToken));
+			}
+			catch (Exception ex) {
+				warnings.Add($"tables:{term}:{ex.Message}");
+			}
+		}
+
+		return similarTables;
+	}
+
+	private async Task<List<SimilarLookupResult>> FindSimilarLookupsAsync(
+		IReadOnlyList<string> lookupTerms,
+		DataForgeConfigRequest configRequest,
+		List<string> warnings,
+		CancellationToken cancellationToken) {
+		List<SimilarLookupResult> similarLookups = [];
+		foreach (string hint in lookupTerms) {
+			try {
+				similarLookups.AddRange(await dataForgeClient.FindSimilarLookupsAsync(hint, null, null, configRequest, cancellationToken));
+			}
+			catch (Exception ex) {
+				warnings.Add($"lookups:{hint}:{ex.Message}");
+			}
+		}
+
+		return similarLookups;
+	}
+
+	private async Task<Dictionary<string, IReadOnlyList<string>>> GetRelationsAsync(
+		IReadOnlyList<DataForgeRelationPair>? relationPairs,
+		DataForgeConfigRequest configRequest,
+		List<string> warnings,
+		CancellationToken cancellationToken) {
+		Dictionary<string, IReadOnlyList<string>> relations = new(StringComparer.OrdinalIgnoreCase);
+		foreach (DataForgeRelationPair pair in relationPairs?.Where(HasRelationTables) ?? []) {
+			string key = $"{pair.SourceTable}->{pair.TargetTable}";
+			try {
+				relations[key] = await dataForgeClient.GetTableRelationshipsAsync(
+					pair.SourceTable,
+					pair.TargetTable,
+					null,
+					configRequest,
+					cancellationToken);
+			}
+			catch (Exception ex) {
+				warnings.Add($"relations:{key}:{ex.Message}");
+			}
+		}
+
+		return relations;
+	}
+
+	private Dictionary<string, IReadOnlyList<DataForgeColumnResult>> GetColumns(
+		IReadOnlyList<SimilarTableResult> distinctTables,
+		List<string> warnings) {
+		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = new(StringComparer.OrdinalIgnoreCase);
+		foreach (string tableName in distinctTables.Select(table => table.Name)) {
+			try {
+				RuntimeEntitySchemaResult runtimeSchema = runtimeEntitySchemaReader.GetByName(tableName);
+				columns[tableName] = DataForgeRuntimeSchemaMapper.MapColumns(runtimeSchema);
+			}
+			catch (Exception ex) {
+				warnings.Add($"columns:{tableName}:{ex.Message}");
+			}
+		}
+
+		return columns;
+	}
+
+	private static List<SimilarTableResult> GetDistinctTables(IEnumerable<SimilarTableResult> similarTables) {
+		return similarTables
+			.GroupBy(table => table.Name, StringComparer.OrdinalIgnoreCase)
+			.Select(group => group.First())
+			.OrderBy(table => table.Name, StringComparer.OrdinalIgnoreCase)
+			.ToList();
+	}
+
+	private static List<SimilarLookupResult> GetDistinctLookups(IEnumerable<SimilarLookupResult> similarLookups) {
+		return similarLookups
+			.GroupBy(lookup => $"{lookup.SchemaName}:{lookup.Value}", StringComparer.OrdinalIgnoreCase)
+			.Select(group => group.First())
+			.OrderBy(lookup => lookup.SchemaName, StringComparer.OrdinalIgnoreCase)
+			.ThenBy(lookup => lookup.Value, StringComparer.OrdinalIgnoreCase)
+			.ToList();
+	}
+
+	private static bool HasRelationTables(DataForgeRelationPair pair) {
+		return !string.IsNullOrWhiteSpace(pair.SourceTable) && !string.IsNullOrWhiteSpace(pair.TargetTable);
 	}
 }

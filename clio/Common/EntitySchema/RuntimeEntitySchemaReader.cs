@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace Clio.Common.EntitySchema;
@@ -70,7 +71,9 @@ internal sealed class RuntimeEntitySchemaReader(
 		}
 
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest);
-		string requestBody = JsonSerializer.Serialize(new RuntimeEntitySchemaRequestDto(schemaName));
+		string requestBody = JsonSerializer.Serialize(
+			new RuntimeEntitySchemaRequestDto(schemaName),
+			RuntimeEntitySchemaJson.RequestOptions);
 		string responseJson = applicationClient.ExecutePostRequest(url, requestBody);
 		RuntimeEntitySchemaResponseDto? response = JsonSerializer.Deserialize<RuntimeEntitySchemaResponseDto>(
 			responseJson,
@@ -161,41 +164,39 @@ internal sealed class RuntimeEntitySchemaReader(
 		internal static readonly JsonSerializerOptions Options = new() {
 			PropertyNameCaseInsensitive = true
 		};
+
+		internal static readonly JsonSerializerOptions RequestOptions = new() {
+			Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+		};
 	}
 
-	private sealed class RuntimeEntitySchemaResponseDto {
-		public bool Success { get; set; }
-		public RuntimeEntitySchemaPayloadDto? Schema { get; set; }
-		public RuntimeEntitySchemaErrorInfoDto? ErrorInfo { get; set; }
-	}
+	private sealed record RuntimeEntitySchemaResponseDto(
+		bool Success,
+		RuntimeEntitySchemaPayloadDto? Schema,
+		RuntimeEntitySchemaErrorInfoDto? ErrorInfo);
 
 	private sealed record RuntimeEntitySchemaRequestDto(string Name);
 
-	private sealed class RuntimeEntitySchemaErrorInfoDto {
-		public string? Message { get; set; }
-	}
+	private sealed record RuntimeEntitySchemaErrorInfoDto(string? Message);
 
-	private sealed class RuntimeEntitySchemaPayloadDto {
-		public RuntimeEntitySchemaColumnsDto? Columns { get; set; }
-		public Guid PrimaryColumnUId { get; set; }
-		public Guid UId { get; set; }
-		public string Name { get; set; } = string.Empty;
-		public string? PrimaryDisplayColumnName { get; set; }
-		public Guid? PrimaryDisplayColumnUId { get; set; }
-	}
+	private sealed record RuntimeEntitySchemaPayloadDto(
+		RuntimeEntitySchemaColumnsDto? Columns,
+		Guid PrimaryColumnUId,
+		Guid UId,
+		string Name,
+		string? PrimaryDisplayColumnName,
+		Guid? PrimaryDisplayColumnUId);
 
-	private sealed class RuntimeEntitySchemaColumnsDto {
-		public Dictionary<string, RuntimeEntitySchemaColumnDto> Items { get; set; } = new();
-	}
+	private sealed record RuntimeEntitySchemaColumnsDto(
+		Dictionary<string, RuntimeEntitySchemaColumnDto> Items);
 
-	private sealed class RuntimeEntitySchemaColumnDto {
-		public Guid UId { get; set; }
-		public string Name { get; set; } = string.Empty;
-		public JsonElement Caption { get; set; }
-		public JsonElement Description { get; set; }
-		public int DataValueType { get; set; }
-		public bool IsRequired { get; set; }
-		public bool IsInherited { get; set; }
-		public string? ReferenceSchemaName { get; set; }
-	}
+	private sealed record RuntimeEntitySchemaColumnDto(
+		Guid UId,
+		string Name,
+		JsonElement Caption,
+		JsonElement Description,
+		int DataValueType,
+		bool IsRequired,
+		bool IsInherited,
+		string? ReferenceSchemaName);
 }

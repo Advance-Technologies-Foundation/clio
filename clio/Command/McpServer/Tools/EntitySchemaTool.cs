@@ -56,7 +56,7 @@ public sealed class CreateEntitySchemaTool(
 		string? schemaName,
 		IReadOnlyDictionary<string, string>? titleLocalizations) {
 		return new[] { schemaName }
-			.Concat((IEnumerable<string>?)titleLocalizations?.Values ?? [])
+			.Concat(titleLocalizations?.Values ?? [])
 			.Where(term => !string.IsNullOrWhiteSpace(term))
 			.Select(term => term!.Trim())
 			.Distinct(StringComparer.OrdinalIgnoreCase)
