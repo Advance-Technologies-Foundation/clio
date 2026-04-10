@@ -323,10 +323,9 @@ public sealed class EntitySchemaToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Derives the internal scalar title and current-culture localization from MCP title-localizations for mutation flows.")]
-	public void ModifyEntitySchemaColumn_Should_Derive_Title_And_CurrentCultureLocalization_From_TitleLocalizations() {
+	[Description("Derives the internal scalar title from MCP title-localizations and passes provided localizations through as-is without synthesizing additional cultures.")]
+	public void ModifyEntitySchemaColumn_Should_Derive_Title_From_TitleLocalizations_Without_CultureSynthesis() {
 		// Arrange
-		using CultureScope cultureScope = new("uk-UA");
 		FakeModifyEntitySchemaColumnCommand defaultCommand = new();
 		FakeModifyEntitySchemaColumnCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -352,10 +351,8 @@ public sealed class EntitySchemaToolTests {
 			because: "Clio should derive the internal scalar title from title-localizations");
 		resolvedCommand.CapturedOptions.TitleLocalizations.Should().ContainKey("en-US",
 			because: "the canonical en-US title localization must be preserved");
-		resolvedCommand.CapturedOptions.TitleLocalizations.Should().ContainKey("uk-UA",
-			because: "Clio should synthesize a current-culture title localization before save");
-		resolvedCommand.CapturedOptions.TitleLocalizations!["uk-UA"].Should().Be("Vehicle name",
-			because: "the synthesized current-culture localization should reuse the effective title value");
+		resolvedCommand.CapturedOptions.TitleLocalizations.Should().HaveCount(1,
+			because: "Clio must not synthesize additional culture localizations beyond what was explicitly provided");
 	}
 
 	[Test]
