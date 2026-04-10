@@ -7,54 +7,136 @@ on:
       - test
   pull_request:
     types: [opened, synchronize, reopened]
+
 jobs:
-  build:
-    name: Build
+
+  # ── Detect which areas of the codebase changed ────────────────────────
+  changes:
+    name: Detect changes
+    runs-on: self-hosted
+    outputs:
+      clio-src:    ${{ steps.filter.outputs.clio-src }}
+      tests:       ${{ steps.filter.outputs.tests }}
+      mcp:         ${{ steps.filter.outputs.mcp }}
+      analyzers:   ${{ steps.filter.outputs.analyzers }}
+      cliogate:    ${{ steps.filter.outputs.cliogate }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # full history needed for accurate path diffing
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            clio-src:
+              - 'clio/**'
+              - 'Directory.Packages.props'
+            tests:
+              - 'clio.tests/**'
+            mcp:
+              - 'clio/Command/McpServer/**'
+              - 'clio.mcp.e2e/**'
+            analyzers:
+              - 'Clio.Analyzers/**'
+              - 'Clio.Analyzers.Tests/**'
+            cliogate:
+              - 'cliogate/**'
+              - 'cliogate.tests/**'
+
+  # ── Unit tests (fast gate — runs on every push) ───────────────────────
+  unit-tests:
+    name: Unit Tests
+    needs: changes
+    if: >-
+      needs.changes.outputs.clio-src == 'true' ||
+      needs.changes.outputs.tests   == 'true' ||
+      github.ref == 'refs/heads/master'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 1  # Shallow clones should be disabled for a better relevancy of analysis
-      
-      - name: Test Solution
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        shell: powershell
-        run: |
-            $ErrorActionPreference = 'Stop';
-            dotnet build-server shutdown;
-            dotnet test .\clio.tests\clio.tests.csproj --collect:"XPlat Code Coverage" -p:RunAnalyzers=false;
-            $report = Get-ChildItem -Path .\clio.tests\TestResults -Recurse -Filter coverage.cobertura.xml;
-            Copy-Item $report.FullName -Destination .\TestResults\coverage.opencover.xml -Force;
+          fetch-depth: 1
 
-      - name: Publish UnitTest Results
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: Run unit tests
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop';
-          C:\Tools\reportgenerator.exe -reports:TestResults\coverage.opencover.xml `
-          -targetdir:"D:\Projects\inetpub\wwwroot\Docs\clio\UnitTests\Html" `
-          -historydir:"D:\Projects\inetpub\wwwroot\Docs\clio\UnitTests\History" `
-          -assemblyfilters:"+Clio;-Terrasoft.*" `
-          -title:"Clio Unit Tests" `
-          -reporttypes:"Html;SonarQube;MarkdownSummaryGithub;Badges";
+          dotnet build-server shutdown;
+          dotnet test .\clio.tests\clio.tests.csproj `
+            --filter "Category!=Integration" `
+            --collect:"XPlat Code Coverage" `
+            -p:RunAnalyzers=false;
 
-#      - name: Build and analyze
-#        env:
-#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
-#          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-#          SONAR_URL: ${{ secrets.SONAR_URL }}
-#        shell: powershell
-#        run: |
-#          dotnet build-server shutdown;
-#          C:\Tools\dotnet-coverage.exe collect "dotnet test .\clio.tests\clio.tests.csproj" -f xml -o "coverage.xml";
-#          dotnet sonarscanner begin /k:"clio" `
-#          /d:sonar.host.url="${{ secrets.SONAR_URL }}" `
-#          /d:sonar.login="${{ secrets.SONAR_TOKEN }}" `
-#          /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml `
-#          /d:sonar.exclusions="clio.tests/Examples/**/*,excludeclio.tests/YAML/**/*";
-#          dotnet build .\clio\clio.csproj -c Release --no-incremental;
-#          dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}";
+      - name: Publish coverage report
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop';
+          $report = Get-ChildItem -Path .\clio.tests\TestResults -Recurse -Filter coverage.cobertura.xml;
+          if ($report) {
+            Copy-Item $report.FullName -Destination .\TestResults\coverage.opencover.xml -Force;
+            C:\Tools\reportgenerator.exe -reports:TestResults\coverage.opencover.xml `
+              -targetdir:"D:\Projects\inetpub\wwwroot\Docs\clio\UnitTests\Html" `
+              -historydir:"D:\Projects\inetpub\wwwroot\Docs\clio\UnitTests\History" `
+              -assemblyfilters:"+Clio;-Terrasoft.*" `
+              -title:"Clio Unit Tests" `
+              -reporttypes:"Html;SonarQube;MarkdownSummaryGithub;Badges";
+          }
+
+  # ── Integration tests (run on PRs and master, after unit tests pass) ──
+  integration-tests:
+    name: Integration Tests
+    needs: [changes, unit-tests]
+    if: >-
+      (needs.changes.outputs.clio-src == 'true' ||
+       needs.changes.outputs.tests   == 'true') &&
+      github.event_name == 'pull_request'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Run integration tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop';
+          dotnet test .\clio.tests\clio.tests.csproj `
+            --filter "Category=Integration" `
+            -p:RunAnalyzers=false;
+
+  # ── Analyzer tests (only when analyzer code changes) ──────────────────
+  analyzer-tests:
+    name: Analyzer Tests
+    needs: changes
+    if: needs.changes.outputs.analyzers == 'true'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Run analyzer tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop';
+          dotnet test .\Clio.Analyzers.Tests\Clio.Analyzers.Tests.csproj -p:RunAnalyzers=false;
+
+  # ── MCP E2E tests (only when MCP code changes, on PRs with label) ────
+  mcp-e2e-tests:
+    name: MCP E2E Tests
+    needs: [changes, unit-tests]
+    if: >-
+      needs.changes.outputs.mcp == 'true' &&
+      (github.event_name == 'pull_request' ||
+       github.ref == 'refs/heads/master')
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Run MCP E2E tests
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop';
+          dotnet test .\clio.mcp.e2e\clio.mcp.e2e.csproj -p:RunAnalyzers=false;
