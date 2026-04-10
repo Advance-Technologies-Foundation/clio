@@ -154,6 +154,7 @@ internal static class ToolContractCatalog {
 	private const string OperationsFieldName = "operations";
 	private const string PackageNameFieldName = "package-name";
 	private const string PagesFieldName = "pages";
+	private const string ParentSchemaNameFieldName = "parent-schema-name";
 	private const string ParameterScope = "parameter";
 	private const string ReferenceSchemaNameFieldName = "reference-schema-name";
 	private const string RegisteredEnvironmentNameDescription = "Registered clio environment name.";
@@ -181,6 +182,7 @@ internal static class ToolContractCatalog {
 	private const string PrimaryPackageIdentifierDescription = "Primary package identifier.";
 	private const string PrimaryPackageNameDescription = "Primary package name.";
 	private const string SectionCodeFieldName = "section-code";
+	private const string SearchPatternFieldName = "search-pattern";
 
 	private static readonly ToolErrorContract CommonErrorContract = new([
 		new ToolErrorCodeContract("tool-not-found", "Requested tool name is not registered by clio MCP."),
@@ -899,7 +901,7 @@ internal static class ToolContractCatalog {
 				EnvironmentOrExplicitConnectionFields(
 					Field(PackageNameFieldName, StringType, "Package name to inspect."),
 					Field(SelectorCodeFieldName, StringType, "Installed application code. When provided, page-list resolves the application's primary package before querying pages."),
-					Field("search-pattern", StringType, "Optional case-insensitive schema-name filter."),
+					Field(SearchPatternFieldName, StringType, "Optional case-insensitive schema-name filter."),
 					Field("limit", NumberType, "Optional max result count.")),
 				Validators: [
 					new ToolContractValidator(
@@ -925,7 +927,7 @@ internal static class ToolContractCatalog {
 				[
 					PackageNameParameterAlias(),
 					Alias(ParameterScope, "code", AppCodeFieldName, RejectedStatus, $"Use 'code' instead of '{AppCodeFieldName}'."),
-					Alias(ParameterScope, "search-pattern", "searchPattern", RejectedStatus, "Use 'search-pattern' instead of 'searchPattern'."),
+					Alias(ParameterScope, SearchPatternFieldName, "searchPattern", RejectedStatus, $"Use '{SearchPatternFieldName}' instead of 'searchPattern'."),
 					EnvironmentNameParameterAlias()
 				],
 			[],
@@ -1062,7 +1064,7 @@ internal static class ToolContractCatalog {
 					EntitySchemaNameDescription,
 					Field(TitleLocalizationsFieldName, ObjectType, "Localization map that must include en-US."),
 					Field("columns", ArrayType, "Optional initial columns."),
-					Field("parent-schema-name", StringType, "Optional parent schema name."),
+					Field(ParentSchemaNameFieldName, StringType, "Optional parent schema name."),
 					Field("extend-parent", BooleanType, "Optional replacement-schema flag.")),
 				Validators: [
 					RequiredLocalizationMapValidator(TitleLocalizationsFieldName)
@@ -1070,7 +1072,7 @@ internal static class ToolContractCatalog {
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
-				Alias(ParameterScope, "parent-schema-name", "parentSchemaName", RejectedStatus, "Use 'parent-schema-name' instead of 'parentSchemaName'."),
+				Alias(ParameterScope, ParentSchemaNameFieldName, "parentSchemaName", RejectedStatus, $"Use '{ParentSchemaNameFieldName}' instead of 'parentSchemaName'."),
 				Alias(ParameterScope, "extend-parent", "extendParent", RejectedStatus, "Use 'extend-parent' instead of 'extendParent'."),
 				TitleParameterAlias(),
 				CaptionParameterAlias()),
@@ -1081,7 +1083,7 @@ internal static class ToolContractCatalog {
 					[PackageNameFieldName] = ExamplePackageName,
 					[SchemaNameFieldName] = "UsrTaskComment",
 					[TitleLocalizationsFieldName] = LocalizationMap("Task Comment"),
-					["parent-schema-name"] = "BaseEntity"
+					[ParentSchemaNameFieldName] = "BaseEntity"
 				})
 			],
 			PreferSchemaSyncFlow(),
@@ -1718,26 +1720,26 @@ internal static class ToolContractCatalog {
 				[
 					Field(EnvironmentNameFieldName, StringType, "Creatio environment name."),
 					Field(SchemaNameFieldName, StringType, "Exact entity schema name to find (use instead of search-pattern or uid)."),
-					Field("search-pattern", StringType, "Case-insensitive substring to search in entity schema names."),
+					Field(SearchPatternFieldName, StringType, "Case-insensitive substring to search in entity schema names."),
 					Field("uid", StringType, "Entity schema UId (Guid) for exact lookup.")
 				],
 				[
 					[SchemaNameFieldName],
-					["search-pattern"],
+					[SearchPatternFieldName],
 					["uid"]
 				]),
 			StructuredResultOutput(
 				Field("schema-name", StringType, "Entity schema name."),
 				Field("package-name", StringType, "Package that owns the schema."),
 				Field("package-maintainer", StringType, "Package maintainer."),
-				Field("parent-schema-name", StringType, "Parent schema name, if any.")),
+				Field(ParentSchemaNameFieldName, StringType, "Parent schema name, if any.")),
 			CommonErrorContract,
 			[],
 			[],
 			[
 				Example("Search for schemas containing a substring", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
-					["search-pattern"] = "UsrTask"
+					[SearchPatternFieldName] = "UsrTask"
 				}),
 				Example("Look up a schema by exact name", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
