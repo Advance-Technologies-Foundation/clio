@@ -212,6 +212,7 @@ internal static class ToolContractCatalog {
 			[RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName] = BuildRemoveDataBindingRowDb(),
 			[GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName] = BuildGetEntitySchemaProperties(),
 			[GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName] = BuildGetEntitySchemaColumnProperties(),
+			[FindEntitySchemaTool.FindEntitySchemaToolName] = BuildFindEntitySchema(),
 			[ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName] = BuildModifyEntitySchemaColumn(),
 			[ComponentInfoTool.ToolName] = BuildComponentInfo(),
 			[PageUpdateTool.ToolName] = BuildPageUpdate(),
@@ -235,6 +236,7 @@ internal static class ToolContractCatalog {
 		CreateDataBindingDbTool.CreateDataBindingDbToolName,
 		UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName,
 		RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName,
+		FindEntitySchemaTool.FindEntitySchemaToolName,
 		GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 		GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 		ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
@@ -1705,6 +1707,51 @@ internal static class ToolContractCatalog {
 		IReadOnlyList<string> failureSignals,
 		params ToolContractField[] fields) {
 		return new ToolOutputContract("structured-envelope", successField, failureSignals, fields);
+	}
+
+	private static ToolContractDefinition BuildFindEntitySchema() {
+		return new ToolContractDefinition(
+			FindEntitySchemaTool.FindEntitySchemaToolName,
+			"Finds entity schemas in a Creatio environment by exact name, substring pattern, or UId without requiring the package name.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, "Creatio environment name."),
+					Field(SchemaNameFieldName, StringType, "Exact entity schema name to find (use instead of search-pattern or uid)."),
+					Field("search-pattern", StringType, "Case-insensitive substring to search in entity schema names."),
+					Field("uid", StringType, "Entity schema UId (Guid) for exact lookup.")
+				],
+				[
+					[SchemaNameFieldName],
+					["search-pattern"],
+					["uid"]
+				]),
+			StructuredResultOutput(
+				Field("schema-name", StringType, "Entity schema name."),
+				Field("package-name", StringType, "Package that owns the schema."),
+				Field("package-maintainer", StringType, "Package maintainer."),
+				Field("parent-schema-name", StringType, "Parent schema name, if any.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Search for schemas containing a substring", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					["search-pattern"] = "UsrTask"
+				}),
+				Example("Look up a schema by exact name", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[SchemaNameFieldName] = ExampleTaskStatusSchemaName
+				})
+			],
+			Flow(
+				[
+					FindEntitySchemaTool.FindEntitySchemaToolName,
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName
+				],
+				"Use to discover the package that owns a schema before calling get-entity-schema-properties or modify-entity-schema-column."),
+			[],
+			[]);
 	}
 
 	private static ToolOutputContract CommandExecutionOutput() {

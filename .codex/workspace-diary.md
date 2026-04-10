@@ -2001,3 +2001,10 @@ Decision: Added test ModifyColumn_PreservesAllEntityCultureCaptions_WhenSchemaHa
 Discovery: Unit test mock returns full _loadedSchema regardless of Cultures filter, so test does not reproduce exact server-side filtering bug, but documents expected behavior and catches future code regression that strips Caption entries.
 Files: clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs
 Impact: 42 tests pass; regression coverage for entity-level Caption round-trip preservation.
+
+## 2025-07-14 – find-entity-schema MCP tool + CLI command
+Context: Agents were calling get-pkg-list twice then iterating packages to find entity schemas (N+1 pattern). New tool solves this with one DataService SelectQuery.
+Decision: Single HTTP request to SysSchema via existing SelectQueryHelper (no cliogate required). Parameters: schema-name (exact), search-pattern (contains), uid (Guid exact). Returns EntitySchemaSearchResult with SchemaName, PackageName, PackageMaintainer, ParentSchemaName.
+Discovery: comparisonType=10 is Contains; SysSchema.ManagerName="EntitySchemaManager" for entity schemas; joined columns SysPackage.Name and [SysSchema:Id:Parent].Name work in DataService SelectQuery.
+Files: clio/Command/FindEntitySchemaCommand.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs (FindEntitySchemaTool + FindEntitySchemaArgs), clio/Command/McpServer/Tools/ToolContractGetTool.cs (BuildFindEntitySchema), clio/Program.cs, clio/BindingsModule.cs, clio/Wiki/WikiAnchors.txt, clio/help/en/find-entity-schema.txt, clio/docs/commands/find-entity-schema.md, clio/Commands.md, clio.tests/Command/FindEntitySchemaCommandTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, .github/skills/clio/references/commands-reference.md, .github/skills/clio/SKILL.md
+Impact: Agents can now find any entity schema in one round trip without knowing the package name. 96 unit tests green.
