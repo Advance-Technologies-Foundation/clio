@@ -152,10 +152,9 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	}
 
 	[Test]
-	[Description("Derives the internal scalar title and current-culture localization from title-localizations when batch mutations omit legacy title.")]
-	public void Execute_DerivesTitleAndCurrentCultureLocalization_FromTitleLocalizations() {
+	[Description("Derives the internal scalar title from title-localizations when batch mutations omit legacy title, without synthesizing additional cultures.")]
+	public void Execute_DerivesTitle_FromTitleLocalizations_WithoutCultureSynthesis() {
 		// Arrange
-		using CultureScope cultureScope = new("uk-UA");
 		UpdateEntitySchemaOptions options = new() {
 			Environment = "dev",
 			Package = "UsrPkg",
@@ -177,8 +176,7 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 			&& mutations.ElementAt(0).TitleLocalizations != null
 			&& mutations.ElementAt(0).TitleLocalizations!.ContainsKey("en-US")
 			&& mutations.ElementAt(0).TitleLocalizations!["en-US"] == "Status"
-			&& mutations.ElementAt(0).TitleLocalizations!.ContainsKey("uk-UA")
-			&& mutations.ElementAt(0).TitleLocalizations!["uk-UA"] == "Status"));
+			&& mutations.ElementAt(0).TitleLocalizations!.Count == 1));
 	}
 
 	[Test]

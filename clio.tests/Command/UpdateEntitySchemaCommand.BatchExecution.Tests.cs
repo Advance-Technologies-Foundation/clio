@@ -126,10 +126,9 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 	}
 
 	[Test]
-	[Description("Keeps an effective title through add then modify batches when the add operation only supplies title-localizations.")]
+	[Description("Keeps an effective title through add then modify batches when the add operation only supplies title-localizations, without synthesizing additional cultures.")]
 	public void Execute_Should_PreserveEffectiveTitle_WhenBatchAddsLocalizedColumnThenModifiesDefaultValue() {
 		// Arrange
-		using CultureScope cultureScope = new("uk-UA");
 		_loadedSchema = CreateSchema([
 			CreateGuidColumn("Id", IdColumnUId)
 		]);
@@ -152,8 +151,8 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 		EntitySchemaColumnDto savedColumn = _savedSchema!.Columns!.Single(column => column.Name == "UsrStatus");
 		savedColumn.Caption.Should().Contain(item => item.CultureName == "en-US" && item.Value == "Status",
 			because: "the saved batch should keep the canonical en-US title localization");
-		savedColumn.Caption.Should().Contain(item => item.CultureName == "uk-UA" && item.Value == "Status",
-			because: "the saved batch should synthesize a current-culture title so .NET Framework validation can pass");
+		savedColumn.Caption.Should().HaveCount(1,
+			because: "Clio must not synthesize additional culture localizations beyond what was explicitly provided");
 		savedColumn.DefValue.Should().NotBeNull(
 			because: "the later default-value modification should still apply after the localized add");
 		savedColumn.DefValue!.Value.Should().Be("Draft",
