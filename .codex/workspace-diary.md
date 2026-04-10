@@ -1987,3 +1987,17 @@ Discovery:
 - GetSettingsValueTypeCandidates missing Float dataValueType 5; added `5 => ["Decimal"]`
 Files: clio/Command/ApplicationSectionCreateCommand.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDefaultValueSourceResolver.cs, clio.tests/Command/ApplicationSectionCreateServiceTests.cs, .codex/workspace-diary.md
 Impact: PR #522 now MERGEABLE, both Codex P2 issues addressed, 15 new tests added (33 total section tests pass)
+
+## 2026-04-10 11:48 – Fix entity caption loss during column mutations
+Context: User session analysis (copilot-session-b197a4a1) showed entity caption "Об'єкт" (uk-UA) was reset after clio-schema-sync update-entity on .NET Framework environment.
+Decision: In LoadSchema, removed Cultures=[GetCurrentCultureName()] from GetSchemaDesignItemRequestDto. Sending only the current system culture (en-US) caused Creatio to return Caption filtered to that culture. When SaveSchema sent the filtered Caption back, the original uk-UA caption was overwritten. Empty Cultures=[] (default) tells Creatio to return all localizations, preserving the full round-trip.
+Discovery: GetSchemaDesignItem with Cultures=["en-US"] returns entity Caption mapped to the requested culture key only. SaveSchema then replaces ALL caption entries with the sent subset, wiping other-locale captions. Same pattern in RemoteEntitySchemaCreator is verification-only (not saved back), so no fix needed there.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs
+Impact: Column mutations (add/modify/remove) now preserve entity caption in all cultures, not just the machine current locale.
+
+## 2025-07-18 - Added regression test for multi-culture entity caption preservation
+Context: User confirmed entity had captions in ALL cultures (en-US="MyTest", uk-UA caption). Confirmed cliogate is NOT involved in EntitySchemaDesigner calls.
+Decision: Added test ModifyColumn_PreservesAllEntityCultureCaptions_WhenSchemaHasMultiCultureEntityCaption that creates schema with two Caption cultures, runs column mutation with uk-UA active, and asserts both culture entries are preserved in saved schema.
+Discovery: Unit test mock returns full _loadedSchema regardless of Cultures filter, so test does not reproduce exact server-side filtering bug, but documents expected behavior and catches future code regression that strips Caption entries.
+Files: clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs
+Impact: 42 tests pass; regression coverage for entity-level Caption round-trip preservation.
