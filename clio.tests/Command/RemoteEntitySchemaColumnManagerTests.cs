@@ -333,6 +333,38 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Preserves all entity-level caption culture entries when a column mutation is applied, so that multi-language entity titles survive the LoadSchema-SaveSchema round-trip.")]
+	public void ModifyColumn_PreservesAllEntityCultureCaptions_WhenSchemaHasMultiCultureEntityCaption() {
+		// Arrange
+		using CultureScope cultureScope = new("uk-UA");
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		_loadedSchema.Caption = [
+			new Clio.Command.EntitySchemaDesigner.LocalizableStringDto { CultureName = "en-US", Value = "MyTest" },
+			new Clio.Command.EntitySchemaDesigner.LocalizableStringDto { CultureName = "uk-UA", Value = "Об'єкт" }
+		];
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrStartDate",
+			Type = "DateTime",
+			TitleLocalizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["en-US"] = "Start date"
+			}
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_savedSchema.Caption.Should().Contain(c => c.CultureName == "en-US" && c.Value == "MyTest",
+			because: "the en-US entity caption must be preserved after a column mutation");
+		_savedSchema.Caption.Should().Contain(c => c.CultureName == "uk-UA" && c.Value == "Об'єкт",
+			because: "the uk-UA entity caption must also be preserved so that a round-trip through LoadSchema/SaveSchema does not wipe other-culture titles");
+	}
+
+	[Test]
 	[Description("Removes an own column, reassigns display column fallback, and clears other schema-level references.")]
 	public void ModifyColumn_RemovesOwnColumn_AndReassignsReferences() {
 		// Arrange
