@@ -88,6 +88,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, rootOperation);
 		EnsureBatchTargetsSingleSchema(operations, rootOperation);
 		ApplyEntityCaption(schema, entityTitleLocalizations, rootOperation);
+		RestoreEmptyColumnCaptions(schema);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 			ApplyColumnMutation(schema, package, operation);
 		}
@@ -647,13 +648,19 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		};
 	}
 
-	/// <summary>
-	/// Applies entity-level caption to the design schema before saving.
-	/// When <paramref name="entityTitleLocalizations"/> is provided, it is applied as an explicit rename.
-	/// When absent, protects the schema caption from being corrupted by the parent-schema default that
-	/// <c>GetSchemaDesignItem</c> may return for template-created entities whose caption has no own
-	/// culture value (only an inherited one from the parent schema).
-	/// </summary>
+	private static void RestoreEmptyColumnCaptions(EntityDesignSchemaDto schema) {
+		if (schema.Columns == null) {
+			return;
+		}
+		foreach (EntitySchemaColumnDto column in schema.Columns) {
+			string? currentCaption = EntitySchemaDesignerSupport.GetLocalizableValue(column.Caption);
+			if (!string.IsNullOrWhiteSpace(currentCaption)) {
+				continue;
+			}
+			column.Caption = [EntitySchemaDesignerSupport.CreateLocalizableString(column.Name)];
+		}
+	}
+
 	private void ApplyEntityCaption(
 		EntityDesignSchemaDto schema,
 		IReadOnlyDictionary<string, string>? entityTitleLocalizations,

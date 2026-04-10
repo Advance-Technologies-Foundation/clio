@@ -278,6 +278,34 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Restores the column name as caption when a server round-trip returns an empty caption, preventing .NET Framework validation errors.")]
+	public void ModifyColumns_RestoresColumnNameAsCaption_WhenServerReturnsEmptyCaption() {
+		// Arrange: a column that the server returned with an empty caption (as .NET Framework does for localization-only titles)
+		EntitySchemaColumnDto emptyCapColumn = new() {
+			UId = NameColumnUId,
+			Name = "UsrAssignedTo",
+			DataValueType = 1,
+			Caption = []
+		};
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), emptyCapColumn]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "UsrAssignedTo",
+			DefaultValueSource = "Const",
+			DefaultValue = "Draft"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrAssignedTo");
+		EntitySchemaDesignerSupport.GetLocalizableValue(savedColumn.Caption).Should().Be("UsrAssignedTo",
+			because: "empty server-returned captions must be restored to the column name before saving to avoid .NET Framework validation errors");
+	}
 	[Description("Trims caption updates when modify receives a title with surrounding spaces.")]
 	public void ModifyColumn_UpdatesCaptionWithTrimmedValue_WhenTitleContainsWhitespacePadding() {
 		// Arrange
