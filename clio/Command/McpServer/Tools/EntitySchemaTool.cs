@@ -363,8 +363,43 @@ public sealed class GetEntitySchemaPropertiesTool(
 }
 
 /// <summary>
-/// MCP tool surface for reading structured remote entity schema column properties.
+/// MCP tool surface for finding entity schemas by name, pattern, or UId.
 /// </summary>
+public sealed class FindEntitySchemaTool(
+	FindEntitySchemaCommand command,
+	ILogger logger,
+	IToolCommandResolver commandResolver)
+	: BaseTool<FindEntitySchemaOptions>(command, logger, commandResolver) {
+
+	internal const string FindEntitySchemaToolName = "find-entity-schema";
+
+	/// <summary>
+	/// Finds entity schemas by exact name, substring pattern, or UId.
+	/// </summary>
+	[McpServerTool(Name = FindEntitySchemaToolName, ReadOnly = true, Destructive = false, Idempotent = true,
+		OpenWorld = false)]
+	[Description(
+		"Searches for entity schemas in a Creatio environment without needing to know the package name. "
+		+ "Returns schema name, package, maintainer, and parent schema for each match. "
+		+ "Use 'schema-name' for exact lookup, 'search-pattern' for substring search, or 'uid' for Guid lookup.")]
+	public IReadOnlyList<EntitySchemaSearchResult> FindEntitySchema(
+		[Description(
+			"Parameters: environment-name (required); exactly one of schema-name (exact match), "
+			+ "search-pattern (case-insensitive contains), uid (Guid exact match)")]
+		[Required]
+		FindEntitySchemaArgs args) {
+		FindEntitySchemaOptions options = new() {
+			Environment = args.EnvironmentName,
+			SchemaName = args.SchemaName,
+			SearchPattern = args.SearchPattern,
+			Uid = args.Uid
+		};
+		FindEntitySchemaCommand resolvedCommand = ResolveCommand<FindEntitySchemaCommand>(options);
+		return resolvedCommand.FindSchemas(options);
+	}
+}
+
+
 public sealed class GetEntitySchemaColumnPropertiesTool(
 	GetEntitySchemaColumnPropertiesCommand command,
 	ILogger logger,
@@ -845,3 +880,26 @@ public sealed record ModifyEntitySchemaColumnArgs(
 	ReferenceSchemaName, IsRequired, Indexed, Cloneable, TrackChanges, DefaultValue,
 	DefaultValueSource, MultilineText, LocalizableText, AccentInsensitive, Masked,
 	FormatValidated, UseSeconds, SimpleLookup, Cascade, DoNotControlIntegrity);
+
+
+/// <summary>
+/// Arguments for the <c>find-entity-schema</c> MCP tool.
+/// </summary>
+public sealed record FindEntitySchemaArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Creatio environment name")]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("schema-name")]
+	[property: Description("Exact entity schema name to find (use instead of search-pattern or uid)")]
+	string? SchemaName = null,
+
+	[property: JsonPropertyName("search-pattern")]
+	[property: Description("Case-insensitive substring to search in entity schema names (use instead of schema-name or uid)")]
+	string? SearchPattern = null,
+
+	[property: JsonPropertyName("uid")]
+	[property: Description("Entity schema UId (Guid) for exact lookup (use instead of schema-name or search-pattern)")]
+	string? Uid = null
+);

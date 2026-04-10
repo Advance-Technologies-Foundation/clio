@@ -35,6 +35,7 @@ clio ver
 - User wants to execute **SQL scripts** or **service calls** against Creatio
 - User needs to set up **infrastructure** (Kubernetes, Docker) for Creatio
 - User wants to **create or modify entity schemas** (columns, types, lookups) in Creatio
+- User wants to **find or discover entity schemas** by name, pattern, or UId in Creatio
 - User wants to **read or update Freedom UI pages** (page-get, page-update, page-list)
 - User wants to **manage package data bindings** (seed data for SysSettings, SysModule, custom entities)
 
@@ -406,6 +407,11 @@ clio clone-env --source Dev --target QA
 Create and evolve entity schemas directly on a remote Creatio instance. Requires cliogate.
 
 ```bash
+# Discover which package owns a schema (no package name needed)
+clio find-entity-schema -e myenv --search-pattern Vehicle
+clio find-entity-schema -e myenv --schema-name UsrVehicle
+clio find-entity-schema -e myenv --uid 117d32f9-aab9-4e3a-b13e-cfce62e15e4b
+
 # Create entity schema with columns
 clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" \
   --column "Make:ShortText:Manufacturer" \

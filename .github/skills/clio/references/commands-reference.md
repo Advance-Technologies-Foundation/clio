@@ -976,6 +976,20 @@ clio get-entity-schema-properties -e dev --package Custom --schema-name UsrVehic
 ```
 Output includes: package, parent schema, primary columns, column counts, indexes, schema flags, and grouped own/inherited column listings.
 
+### find-entity-schema
+Find entity schemas in a Creatio environment without knowing the package name. Returns schema name, package, maintainer, and parent schema for each match. Exactly one of `--schema-name`, `--search-pattern`, or `--uid` is required. Does not require cliogate.
+```bash
+# Search by substring
+clio find-entity-schema -e dev --search-pattern Task
+
+# Exact name lookup
+clio find-entity-schema -e dev --schema-name UsrVehicle
+
+# Lookup by UId
+clio find-entity-schema -e dev --uid 117d32f9-aab9-4e3a-b13e-cfce62e15e4b
+```
+Use this command when you need to discover which package owns a schema before calling `get-entity-schema-properties` or `modify-entity-schema-column`.
+
 ### get-entity-schema-column-properties
 Get column properties from a remote Creatio entity schema.
 ```bash

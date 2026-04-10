@@ -394,6 +394,7 @@ public class BindingsModule {
 		services.AddTransient<ModifyEntitySchemaColumnCommand>();
 		services.AddTransient<GetEntitySchemaColumnPropertiesCommand>();
 		services.AddTransient<GetEntitySchemaPropertiesCommand>();
+		services.AddTransient<FindEntitySchemaCommand>();
 		services.AddTransient<CreateUserTaskCommand>();
 		services.AddTransient<ModifyUserTaskParametersCommand>();
 		services.AddTransient<DeleteSchemaCommand>();

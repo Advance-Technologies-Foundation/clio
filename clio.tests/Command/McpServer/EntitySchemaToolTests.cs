@@ -32,7 +32,8 @@ public sealed class EntitySchemaToolTests {
 			UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
 			GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
-			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
+			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+			FindEntitySchemaTool.FindEntitySchemaToolName
 		];
 
 		// Assert
@@ -42,7 +43,8 @@ public sealed class EntitySchemaToolTests {
 				"update-entity-schema",
 				"get-entity-schema-properties",
 				"get-entity-schema-column-properties",
-				"modify-entity-schema-column"
+				"modify-entity-schema-column",
+				"find-entity-schema"
 			},
 			because: "the entity schema MCP tool identifiers should remain stable for callers and tests");
 	}

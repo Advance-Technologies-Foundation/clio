@@ -11,6 +11,12 @@ namespace Clio.Command.CreatioInstallCommand;
 /// </summary>
 [Verb("deploy-creatio", Aliases = ["dc", "ic", "install-creatio"], HelpText = "Deploy Creatio from zip file")]
 public class PfInstallerOptions : EnvironmentNameOptions{
+	#region Properties: Overrides
+
+	internal override bool RequiredEnvironment => false;
+
+	#endregion
+
 	#region Fields: Private
 
 	private readonly Dictionary<string, string> _productList = new() {

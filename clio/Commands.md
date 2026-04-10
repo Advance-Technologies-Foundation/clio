@@ -291,6 +291,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`generate-process-model`](docs/commands/generate-process-model.md) - Generate process model for ATF.Repository, `gpm`
 <a id="get-entity-schema-column-properties"></a>
 - [`get-entity-schema-column-properties`](docs/commands/get-entity-schema-column-properties.md) - Get column properties from a remote Creatio entity schema
+<a id="find-entity-schema"></a>
+- [`find-entity-schema`](docs/commands/find-entity-schema.md) - Find entity schemas in a Creatio environment by name, pattern, or UId
 <a id="get-entity-schema-properties"></a>
 - [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema
 <a id="git-sync"></a>

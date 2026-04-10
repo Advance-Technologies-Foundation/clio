@@ -49,6 +49,7 @@ get-app-list:get-app-list,app-list,apps,apps-list,lia,list-apps
 get-build-info:get-build-info,bi,buildinfo
 get-entity-schema-column-properties:get-entity-schema-column-properties
 get-entity-schema-properties:get-entity-schema-properties
+find-entity-schema:find-entity-schema
 get-info:get-info,describe,describe-creatio,instance-info
 get-pkg-list:get-pkg-list,packages
 get-pkg-version:get-pkg-version,gpv
