@@ -11,9 +11,6 @@ reg-web-app - create/update a web application (website)
 ## Description
 
 Register new web application settings or update existing ones.
-When a URI is provided, clio auto-detects whether the target site uses
-`.NET Core / NET8` or `.NET Framework` and saves the resolved `IsNetCore` value
-in local settings automatically.
 When credentials are available, clio also validates the chosen route with an
 authenticated `SelectQuery` probe. Without credentials, clio falls back to
 unauthenticated health and login-marker probes and stops if the result remains

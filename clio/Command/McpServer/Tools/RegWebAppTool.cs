@@ -23,8 +23,6 @@ public class RegWebAppTool(RegAppCommand command, ILogger logger) : BaseTool<Reg
 				 
 				 This command updates clio's local environment settings. It does not modify Creatio metadata.
 				 The tool also supports setting the active environment and importing environments from IIS.
-				 When a URI is provided, clio auto-detects whether the site uses .NET Core / NET8 or .NET Framework
-				 and persists the resolved IsNetCore flag in local settings automatically.
 				 """)]
 	public CommandExecutionResult RegisterWebApp(
 		[Description("reg-web-app parameters")] [Required] RegWebAppArgs args
