@@ -18,11 +18,15 @@ public class RegAppCommandTestCase {
 
 	[Test]
 	[Category("Unit")]
-	public void Execute_CallsSettingsRepositoryToConfigure(){
+	[Description("Verifies that Execute stores credentials and uri via ConfigureEnvironment, with IsNetCore resolved by auto-detection.")]
+	public void Execute_CallsSettingsRepositoryToConfigure() {
+		// Arrange
 		IApplicationClientFactory clientFactory = Substitute.For<IApplicationClientFactory>();
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		IEnvironmentRuntimeDetectionService detectionService = Substitute.For<IEnvironmentRuntimeDetectionService>();
+		detectionService.Detect(Arg.Any<EnvironmentSettings>()).Returns(true);
 
-		RegAppCommand command = new(settingsRepository, clientFactory, null, _loggerMock);
+		RegAppCommand command = new(settingsRepository, clientFactory, null, _loggerMock, detectionService);
 		string name = "Test";
 		string login = "TestLogin";
 		string password = "TestPassword";
@@ -31,10 +35,13 @@ public class RegAppCommandTestCase {
 			EnvironmentName = name,
 			Login = login,
 			Password = password,
-			Uri = uri,
-			IsNetCore = true
+			Uri = uri
 		};
+
+		// Act
 		command.Execute(options);
+
+		// Assert
 		settingsRepository.Received(1).ConfigureEnvironment(name, Arg.Is<EnvironmentSettings>(
 			e => e.Login == login
 				&& e.Password == password
