@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using Clio.Command;
+using Clio.Common.DataForge;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -35,6 +36,7 @@ public sealed record ApplicationContextResponse(
 	[property: JsonPropertyName("application-version")] string? ApplicationVersion = null,
 	[property: JsonPropertyName("entities")] IReadOnlyList<ApplicationEntityResult>? Entities = null,
 	[property: JsonPropertyName("pages")] IReadOnlyList<PageListItem>? Pages = null,
+	[property: JsonPropertyName("dataforge")] ApplicationDataForgeResult? DataForge = null,
 	[property: JsonPropertyName("error")] string? Error = null);
 
 /// <summary>
@@ -82,6 +84,35 @@ public sealed record ApplicationSectionResult(
 	[property: JsonPropertyName("icon-id")] string? IconId,
 	[property: JsonPropertyName("icon-background")] string? IconBackground,
 	[property: JsonPropertyName("client-type-id")] string? ClientTypeId);
+
+/// <summary>
+/// Structured Data Forge enrichment diagnostics returned by <c>application-create</c>.
+/// </summary>
+public sealed record ApplicationDataForgeResult(
+	[property: JsonPropertyName("used")] bool Used,
+	[property: JsonPropertyName("health")] DataForgeHealthResult? Health,
+	[property: JsonPropertyName("status")] DataForgeMaintenanceStatusResult? Status,
+	[property: JsonPropertyName("coverage")] DataForgeCoverage? Coverage,
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings,
+	[property: JsonPropertyName("context-summary")] ApplicationDataForgeContextSummary? ContextSummary);
+
+/// <summary>
+/// Compact Data Forge context projection for app-creation responses.
+/// </summary>
+public sealed record ApplicationDataForgeContextSummary(
+	[property: JsonPropertyName("similar-tables")] IReadOnlyList<SimilarTableResult> SimilarTables,
+	[property: JsonPropertyName("similar-lookups")] IReadOnlyList<SimilarLookupResult> SimilarLookups,
+	[property: JsonPropertyName("relation-pairs")] IReadOnlyList<string> RelationPairs,
+	[property: JsonPropertyName("column-hints")] IReadOnlyList<ApplicationDataForgeColumnHint> ColumnHints);
+
+/// <summary>
+/// Per-table column summary returned inside the compact Data Forge context projection.
+/// </summary>
+public sealed record ApplicationDataForgeColumnHint(
+	[property: JsonPropertyName("table-name")] string TableName,
+	[property: JsonPropertyName("column-count")] int ColumnCount,
+	[property: JsonPropertyName("required-column-count")] int RequiredColumnCount,
+	[property: JsonPropertyName("lookup-column-count")] int LookupColumnCount);
 
 /// <summary>
 /// Structured application entity item returned by the application MCP tool family.

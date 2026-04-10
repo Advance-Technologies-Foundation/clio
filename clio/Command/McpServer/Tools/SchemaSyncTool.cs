@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -18,7 +19,8 @@ namespace Clio.Command.McpServer.Tools;
 [McpServerToolType]
 public sealed class SchemaSyncTool(
 	IToolCommandResolver commandResolver,
-	ILogger logger) {
+	ILogger logger,
+	ISchemaEnrichmentService? enrichmentService = null) {
 
 	internal const string ToolName = "schema-sync";
 	private const string CreateLookupOperationName = "create-lookup";
@@ -35,9 +37,15 @@ public sealed class SchemaSyncTool(
 		"create lookups, create entities, seed data, update entities. " +
 		"Reduces MCP round-trips and lock overhead compared to individual tool calls. " +
 		"Stops on first failure because subsequent operations may depend on earlier ones.")]
-	public SchemaSyncResponse SchemaSync(
+	public async Task<SchemaSyncResponse> SchemaSync(
 		[Description("Parameters: environment-name, package-name (required); operations array (required)")]
 		[Required] SchemaSyncArgs args) {
+		ApplicationDataForgeResult? dataForge = enrichmentService is not null
+			? await enrichmentService.EnrichAsync(
+				args.EnvironmentName,
+				CollectCandidateTerms(args),
+				CollectLookupHints(args))
+			: null;
 		var results = new List<SchemaSyncOperationResult>();
 		lock (McpToolExecutionLock.SyncRoot) {
 			bool previousPreserveMessages = logger.PreserveMessages;
@@ -70,8 +78,35 @@ public sealed class SchemaSyncTool(
 		}
 		return new SchemaSyncResponse {
 			Success = results.Count > 0 && results.All(r => r.Success),
-			Results = results
+			Results = results,
+			DataForge = dataForge
 		};
+	}
+
+	private static IReadOnlyList<string> CollectCandidateTerms(SchemaSyncArgs args) {
+		return args.Operations
+			.Where(op => !string.IsNullOrWhiteSpace(op.SchemaName))
+			.Select(op => op.SchemaName.Trim())
+			.Concat(args.Operations
+				.SelectMany(op => (IEnumerable<string>?)op.TitleLocalizations?.Values ?? [])
+				.Where(title => !string.IsNullOrWhiteSpace(title))
+				.Select(title => title.Trim()))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+	}
+
+	private static IReadOnlyList<string> CollectLookupHints(SchemaSyncArgs args) {
+		return args.Operations
+			.Where(op => string.Equals(op.Type, "create-lookup", StringComparison.Ordinal)
+				&& !string.IsNullOrWhiteSpace(op.SchemaName))
+			.Select(op => op.SchemaName.Trim())
+			.Concat(args.Operations
+				.Where(op => string.Equals(op.Type, "create-lookup", StringComparison.Ordinal))
+				.SelectMany(op => (IEnumerable<string>?)op.TitleLocalizations?.Values ?? [])
+				.Where(title => !string.IsNullOrWhiteSpace(title))
+				.Select(title => title.Trim()))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
 	}
 
 	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args, int operationIndex) {
@@ -354,6 +389,10 @@ public sealed class SchemaSyncResponse {
 
 	[JsonPropertyName("results")]
 	public IReadOnlyList<SchemaSyncOperationResult> Results { get; init; } = [];
+
+	[JsonPropertyName("dataforge")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public ApplicationDataForgeResult? DataForge { get; init; }
 }
 
 /// <summary>

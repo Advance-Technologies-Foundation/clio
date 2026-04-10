@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer.Prompts;
@@ -166,7 +167,7 @@ public sealed class EntitySchemaToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Maps structured batch MCP mutation arguments into update-entity-schema command options.")]
-	public void UpdateEntitySchema_Should_Map_All_Arguments() {
+	public async Task UpdateEntitySchema_Should_Map_All_Arguments() {
 		// Arrange
 		FakeUpdateEntitySchemaCommand defaultCommand = new();
 		FakeUpdateEntitySchemaCommand resolvedCommand = new();
@@ -176,7 +177,7 @@ public sealed class EntitySchemaToolTests {
 		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
+		CommandExecutionResult result = await tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
 			"dev",
 			"UsrPkg",
 			"UsrVehicle",

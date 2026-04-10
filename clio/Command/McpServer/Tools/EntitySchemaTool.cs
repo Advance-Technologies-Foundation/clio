@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using ModelContextProtocol.Server;
@@ -17,7 +18,8 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class CreateEntitySchemaTool(
 	CreateEntitySchemaCommand command,
 	ILogger logger,
-	IToolCommandResolver commandResolver)
+	IToolCommandResolver commandResolver,
+	ISchemaEnrichmentService? enrichmentService = null)
 	: BaseTool<CreateEntitySchemaOptions>(command, logger, commandResolver) {
 
 	internal const string CreateEntitySchemaToolName = "create-entity-schema";
@@ -33,15 +35,32 @@ public sealed class CreateEntitySchemaTool(
 				 Use this when the schema should be created directly on the target environment instead of generating
 				 local source files. The package must already exist on the target environment.
 				 """)]
-	public CommandExecutionResult CreateEntitySchema(
+	public async Task<CommandExecutionResult> CreateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name, extend-parent (optional)")] [Required] CreateEntitySchemaArgs args
 	) {
+		ApplicationDataForgeResult? dataForge = enrichmentService is not null
+			? await enrichmentService.EnrichAsync(
+				args.EnvironmentName,
+				BuildCandidateTerms(args.SchemaName, args.TitleLocalizations))
+			: null;
 		try {
 			CreateEntitySchemaOptions options = CreateOptions(args, args.ParentSchemaName, args.ExtendParent);
-			return InternalExecute<CreateEntitySchemaCommand>(options);
+			CommandExecutionResult result = InternalExecute<CreateEntitySchemaCommand>(options);
+			return result with { DataForge = dataForge };
 		} catch (Exception exception) {
-			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null);
+			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null, dataForge);
 		}
+	}
+
+	private static IReadOnlyList<string> BuildCandidateTerms(
+		string? schemaName,
+		IReadOnlyDictionary<string, string>? titleLocalizations) {
+		return new[] { schemaName }
+			.Concat((IEnumerable<string>?)titleLocalizations?.Values ?? [])
+			.Where(term => !string.IsNullOrWhiteSpace(term))
+			.Select(term => term!.Trim())
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
 	}
 
 	internal static CreateEntitySchemaOptions CreateOptions(
@@ -107,6 +126,7 @@ public sealed class CreateEntitySchemaTool(
 public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 	private readonly ILogger _logger;
 	private readonly IToolCommandResolver _commandResolver;
+	private readonly ISchemaEnrichmentService? _enrichmentService;
 
 	internal const string CreateLookupToolName = "create-lookup";
 	private const string BaseLookupParentSchemaName = "BaseLookup";
@@ -114,10 +134,12 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 	public CreateLookupTool(
 		CreateEntitySchemaCommand command,
 		ILogger logger,
-		IToolCommandResolver commandResolver)
+		IToolCommandResolver commandResolver,
+		ISchemaEnrichmentService? enrichmentService = null)
 		: base(command, logger, commandResolver) {
 		_logger = logger;
 		_commandResolver = commandResolver;
+		_enrichmentService = enrichmentService;
 	}
 
 	/// <summary>
@@ -132,9 +154,18 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 				 entity instead of a generic entity schema. BaseLookup already provides Name and Description, so do
 				 not send them as custom columns.
 				 """)]
-	public CommandExecutionResult CreateLookup(
+	public async Task<CommandExecutionResult> CreateLookup(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns (optional)")] [Required] CreateLookupArgs args
 	) {
+		IReadOnlyList<string> lookupHints = new[] { args.SchemaName }
+			.Concat((IEnumerable<string>?)args.TitleLocalizations?.Values ?? [])
+			.Where(term => !string.IsNullOrWhiteSpace(term))
+			.Select(term => term!.Trim())
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+		ApplicationDataForgeResult? dataForge = _enrichmentService is not null
+			? await _enrichmentService.EnrichAsync(args.EnvironmentName, lookupHints, lookupHints)
+			: null;
 		try {
 			ModelingGuardrails.EnsureLookupColumnsDoNotShadowInheritedBaseLookupColumns(args.Columns);
 			CreateEntitySchemaOptions options = CreateEntitySchemaTool.CreateOptions(
@@ -160,7 +191,8 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 					CommandExecutionResult returnResult = new(
 						exitCode,
 						[.. _logger.FlushAndSnapshotMessages(clearMessages: true)],
-						null);
+						null,
+						dataForge);
 					return returnResult;
 				}
 				catch (Exception exception) {
@@ -168,7 +200,8 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 					CommandExecutionResult returnResult = new(
 						exitCode > 0 ? exitCode : 1,
 						logMessages,
-						null);
+						null,
+						dataForge);
 					return returnResult;
 				}
 				finally {
@@ -176,7 +209,7 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 				}
 			}
 		} catch (Exception exception) {
-			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null);
+			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null, dataForge);
 		}
 	}
 }
@@ -187,7 +220,8 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 public sealed class UpdateEntitySchemaTool(
 	UpdateEntitySchemaCommand command,
 	ILogger logger,
-	IToolCommandResolver commandResolver)
+	IToolCommandResolver commandResolver,
+	ISchemaEnrichmentService? enrichmentService = null)
 	: BaseTool<UpdateEntitySchemaOptions>(command, logger, commandResolver) {
 
 	internal const string UpdateEntitySchemaToolName = "update-entity-schema";
@@ -198,8 +232,19 @@ public sealed class UpdateEntitySchemaTool(
 	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema.")]
-	public CommandExecutionResult UpdateEntitySchema(
+	public async Task<CommandExecutionResult> UpdateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, operations (all required)")] [Required] UpdateEntitySchemaArgs args) {
+		ApplicationDataForgeResult? dataForge = null;
+		try {
+			if (enrichmentService is not null) {
+				dataForge = await enrichmentService.EnrichAsync(
+					args.EnvironmentName,
+					BuildCandidateTerms(args),
+					BuildLookupHints(args));
+			}
+		} catch {
+			// DataForge enrichment is best-effort; failure must not block the mutation.
+		}
 		try {
 			UpdateEntitySchemaOptions options = new() {
 				Environment = args.EnvironmentName,
@@ -207,10 +252,31 @@ public sealed class UpdateEntitySchemaTool(
 				SchemaName = args.SchemaName,
 				Operations = SerializeOperations(args.Operations, args.SchemaName)
 			};
-			return InternalExecute<UpdateEntitySchemaCommand>(options);
+			CommandExecutionResult result = InternalExecute<UpdateEntitySchemaCommand>(options);
+			return result with { DataForge = dataForge };
 		} catch (Exception exception) {
-			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null);
+			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null, dataForge);
 		}
+	}
+
+	private static IReadOnlyList<string> BuildCandidateTerms(UpdateEntitySchemaArgs args) {
+		return new[] { args.SchemaName }
+			.Concat(args.Operations
+				.Where(op => string.Equals(op.Action, "add", StringComparison.OrdinalIgnoreCase)
+					&& !string.IsNullOrWhiteSpace(op.ColumnName))
+				.Select(op => op.ColumnName!.Trim()))
+			.Where(term => !string.IsNullOrWhiteSpace(term))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+	}
+
+	private static IReadOnlyList<string> BuildLookupHints(UpdateEntitySchemaArgs args) {
+		return args.Operations
+			.Where(op => string.Equals(op.Action, "add", StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrWhiteSpace(op.ReferenceSchemaName))
+			.Select(op => op.ReferenceSchemaName!.Trim())
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
 	}
 
 	internal static List<string> SerializeOperations(

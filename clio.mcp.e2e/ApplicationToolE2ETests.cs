@@ -260,6 +260,12 @@ public sealed class ApplicationToolE2ETests {
 			because: "application-create should return the created installed application identifier");
 		actResult.Result.Pages.Should().NotBeNull(
 			because: "application-create should return the primary-package page summaries together with entity context");
+		actResult.Result.DataForge.Should().NotBeNull(
+			because: "application-create should return Data Forge diagnostics together with the created application metadata");
+		actResult.Result.DataForge!.Used.Should().BeTrue(
+			because: "application-create should always report that the internal Data Forge enrichment stage ran");
+		actResult.Result.DataForge.Coverage.Should().NotBeNull(
+			because: "application-create should expose Data Forge coverage flags even when the enrichment stage is degraded");
 		ApplicationEntityEnvelope? canonicalMainEntity = actResult.Result.Entities?
 			.FirstOrDefault(entity => string.Equals(entity.Name, applicationCode, StringComparison.OrdinalIgnoreCase));
 		canonicalMainEntity.Should().NotBeNull(
@@ -389,11 +395,11 @@ public sealed class ApplicationToolE2ETests {
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		string suffix = Guid.NewGuid().ToString("N")[..8];
+		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
+		tools.Select(tool => tool.Name).Should().Contain(CreateToolName,
+			because: "the application-create MCP tool must be advertised before the end-to-end call can be executed");
 
-		// Act
-		ApplicationContextResponseEnvelope result = await ActCreateFailureAsync(
-			session,
-			cancellationTokenSource.Token,
+		Dictionary<string, object?> args = BuildCreateArgs(
 			environmentName: "sandbox",
 			name: $"Codex Invalid Localization {suffix}",
 			code: $"UsrBadLoc{suffix}",
@@ -402,6 +408,20 @@ public sealed class ApplicationToolE2ETests {
 			iconId: "11111111-1111-1111-1111-111111111111",
 			iconBackground: "#FFFFFF",
 			optionalTemplateDataJson: null);
+		args["title-localizations"] = new Dictionary<string, object?> {
+			["en-US"] = "Forbidden caption"
+		};
+
+		// Act
+		CallToolResult callResult = await session.CallToolAsync(
+			CreateToolName,
+			new Dictionary<string, object?> {
+				["args"] = args
+			},
+			cancellationTokenSource.Token);
+		callResult.IsError.Should().NotBeTrue(
+			because: $"structured application-create validation failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
+		ApplicationContextResponseEnvelope result = ApplicationResultParser.ExtractInfo(callResult);
 
 		// Assert
 		result.Success.Should().BeFalse(

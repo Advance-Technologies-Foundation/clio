@@ -31,6 +31,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - For section metadata updates in an existing app, prefer `application-get-list -> application-get-info -> application-section-update`.
 			       - Prefer `page-list -> page-get -> page-sync -> page-get` as the canonical page workflow, including single-page saves when the caller wants the clio-advertised path.
 			       - Read before write, and read back after mutations when the tool or workflow allows it.
+			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), read `docs://mcp/guides/dataforge-orchestration`.
 
 			       Discover the target app
 			       - Use `application-get-list` when you do not yet know the installed application code or need to confirm candidates.
@@ -46,7 +47,9 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - `application-section-update` accepts `application-code` and `section-code` as the existing-section selector pair.
 			       - `application-section-update` is a partial scalar update. Pass only the top-level fields that should change: `caption`, `description`, `icon-id`, and `icon-background`.
 			       - Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `application-section-update`.
-
+			        - If the target package already contains a supporting or link schema that models the required relation pair, reuse that schema. Do not create a synonym schema just because the requirement uses a different business caption.
+			        - Treat requests like "add a tab/detail/grid that shows linked records" as page-only/object-model reuse tasks by default. Create a new schema only when the inspect phase fails to find a suitable existing backing schema.
+			       
 			       Inspect pages before editing
 			       - Use `page-list` to discover candidate Freedom UI page schemas in the target package or by installed `code`.
 			       - `page-list` page items identify each page with `schema-name`, together with `uId`, `packageName`, and `parentSchemaName`.
@@ -57,6 +60,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Do not route standard field bindings through proxy attributes like `$UsrStatus` when the view model path is `PDS.UsrStatus`.
 			       - Reserve `Usr*_label` and `Usr*_caption` resource keys for custom standalone UI with explicit `resources`; do not use those shortcuts as datasource field captions.
 			       - When a page tool needs `resources`, pass a JSON object string rather than a nested object payload.
+			       - Absence of a tab, detail, or grid on the page does not prove the backing entity is missing. Resolve the backing schema from runtime app context before planning new schema work.
 
 			       Inspect schema before editing
 			       - Use `get-entity-schema-properties` for machine-readable schema inspection before planning a schema mutation.
@@ -80,6 +84,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - `application-section-update` already returns the previous and updated section metadata, so a separate verification read is optional unless the workflow also needs broader app context.
 			       - After `schema-sync`, refresh app or schema context with `application-get-info`, `get-entity-schema-properties`, or both, depending on the workflow.
 			       - The refresh after schema mutations is essential: it verifies that changes were materialized, updates the canonical main-entity selector, and detects incomplete states such as `Database update required`. Treat the schema batch as successful only when refreshed metadata is available and no schema is left in an incomplete state.
+			       - Example: if `application-get-info` or refreshed schema metadata already exposes `Support Case Knowledge Link` / `UsrSupportCaseKbLink`, a request to add a Related Knowledge detail on the Support Case form is a page mutation that reuses that schema. Do not create `UsrSupportCaseKnowledgeBase`.
 			       """
 		};
 }
