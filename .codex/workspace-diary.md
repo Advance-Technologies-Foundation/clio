@@ -2207,6 +2207,13 @@ Discovery: The bulk of the duplication was not in DataForge MCP args but in repe
 Files: clio/Command/McpServer/Tools/DataForgeEnrichmentBuilder.cs, clio/Command/McpServer/Tools/ApplicationCreateEnrichmentService.cs, clio/Command/McpServer/Tools/SchemaEnrichmentService.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/ApplicationCreateEnrichmentServiceTests.cs, clio.tests/Command/McpServer/SchemaEnrichmentServiceTests.cs, clio.tests/Command/McpServer/DataForgeEnrichmentBuilderTests.cs, .codex/workspace-diary.md
 Impact: `application-create` and schema mutation tools now share one DataForge enrichment path, reducing duplication and keeping fallback behavior and compact summary mapping consistent across MCP mutation flows.
 
+## 2026-04-10 16:44 – Reduce MCP duplication in DataForge tooling and contract catalog
+Context: Sonar flagged new-code duplication in `DataForgeTool.cs` and `ToolContractGetTool.cs`, centered on repeated Data Forge connection payloads and repeated contract-builder scaffolding.
+Decision: Introduced `DataForgeConnectionArgsBase` so all Data Forge MCP arg records inherit one shared connection payload, collapsed target-option creation to a single helper, and extracted `BuildDataForgeContract` plus `DataForgeEnvelopeFields` so the nine Data Forge contract builders reuse one contract shape.
+Discovery: The highest-value duplication was mechanical rather than behavioral: repeated connection JSON fields, repeated `CreateTargetOptions` overloads, and repeated contract catalog envelope/default/alias wiring. Collapsing those sections kept the MCP JSON contract unchanged while cutting more duplication than method-by-method micro-refactors.
+Files: clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, .codex/workspace-diary.md
+Impact: The Data Forge MCP surface keeps the same tool names and JSON fields, but its implementation is smaller, easier to update consistently, and better positioned to clear Sonar duplication checks.
+
 ## 2026-04-10 11:48 – Fix entity caption loss during column mutations
 Context: User session analysis (copilot-session-b197a4a1) showed entity caption "Об'єкт" (uk-UA) was reset after clio-schema-sync update-entity on .NET Framework environment.
 Decision: In LoadSchema, removed Cultures=[GetCurrentCultureName()] from GetSchemaDesignItemRequestDto. Sending only the current system culture (en-US) caused Creatio to return Caption filtered to that culture. When SaveSchema sent the filtered Caption back, the original uk-UA caption was overwritten. Empty Cultures=[] (default) tells Creatio to return all localizations, preserving the full round-trip.

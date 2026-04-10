@@ -676,56 +676,35 @@ internal static class ToolContractCatalog {
 	}
 
 	private static ToolContractDefinition BuildDataForgeHealth() {
-		return new ToolContractDefinition(
+		return BuildDataForgeContract(
 			DataForgeTool.DataForgeHealthToolName,
 			"Checks direct dataforge-service health endpoints for the selected Creatio target.",
-			new ToolInputSchemaContract(
-				[],
-				DataForgeConnectionFields(),
-				AnyOf: DataForgeConnectionRequirements()),
-			EnvelopeOutput(
-				SuccessFieldName,
-				[SuccessFalseSignal],
-				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("source", StringType, "Response source identifier."),
-				Field("correlation-id", StringType, "Health probe correlation identifier."),
-				Field("warnings", ArrayType, "Non-fatal warnings."),
-				Field("health", ObjectType, "Health payload with liveness/readiness and Data Forge readiness flags."),
-				Field(ErrorFieldName, ObjectType, "Structured Data Forge error payload.")),
-			CommonErrorContract,
-			DataForgeConnectionAliases(),
-			DataForgeDefaults(),
+			[],
+			DataForgeConnectionFields(),
+			DataForgeEnvelopeFields(
+				"Health probe correlation identifier.",
+				Field("health", ObjectType, "Health payload with liveness/readiness and Data Forge readiness flags.")),
+			null,
 			[
 				Example("Check Data Forge health for a configured environment", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
 			Flow([DataForgeTool.DataForgeHealthToolName], "Use before Data Forge discovery when callers need to confirm liveness/readiness for the target environment."),
-			[],
 			[]);
 	}
 
 	private static ToolContractDefinition BuildDataForgeStatus() {
-		return new ToolContractDefinition(
+		return BuildDataForgeContract(
 			DataForgeTool.DataForgeStatusToolName,
 			"Combines direct dataforge-service probes with Creatio Data Forge maintenance readiness for the selected target.",
-			new ToolInputSchemaContract(
-				[],
-				DataForgeConnectionFields(),
-				AnyOf: DataForgeConnectionRequirements()),
-			EnvelopeOutput(
-				SuccessFieldName,
-				[SuccessFalseSignal],
-				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("source", StringType, "Response source identifier."),
-				Field("correlation-id", StringType, "Health probe correlation identifier."),
-				Field("warnings", ArrayType, "Non-fatal warnings."),
+			[],
+			DataForgeConnectionFields(),
+			DataForgeEnvelopeFields(
+				"Health probe correlation identifier.",
 				Field("health", ObjectType, "Health payload with liveness/readiness and Data Forge readiness flags."),
-				Field("status", ObjectType, "Maintenance status payload."),
-				Field(ErrorFieldName, ObjectType, "Structured Data Forge error payload.")),
-			CommonErrorContract,
-			DataForgeConnectionAliases(),
-			DataForgeDefaults(),
+				Field("status", ObjectType, "Maintenance status payload.")),
+			null,
 			[
 				Example("Check Data Forge status for a configured environment", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
@@ -736,32 +715,21 @@ internal static class ToolContractCatalog {
 				Flow(
 					[DataForgeTool.DataForgeHealthToolName, DataForgeTool.DataForgeStatusToolName],
 					"Fallback when callers first want to verify direct health before reading maintenance readiness.")
-			],
-			[]);
+			]);
 	}
 
 	private static ToolContractDefinition BuildDataForgeFindTables() {
-		return new ToolContractDefinition(
+		return BuildDataForgeContract(
 			DataForgeTool.DataForgeFindTablesToolName,
 			"Finds similar Creatio tables through dataforge-service using a free-text query.",
-			new ToolInputSchemaContract(
-				["query"],
-				DataForgeConnectionFields(
-					Field("query", StringType, "Table search term."),
-					Field("limit", NumberType, "Optional result limit.")),
-				AnyOf: DataForgeConnectionRequirements()),
-			EnvelopeOutput(
-				SuccessFieldName,
-				[SuccessFalseSignal],
-				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("source", StringType, "Response source identifier."),
-				Field("correlation-id", StringType, "Query correlation identifier when available."),
-				Field("warnings", ArrayType, "Non-fatal warnings."),
-				Field("similar-tables", ArrayType, "Similar table results with `name`, `caption`, and `description`."),
-				Field(ErrorFieldName, ObjectType, "Structured Data Forge error payload.")),
-			CommonErrorContract,
-			DataForgeConnectionAliases(),
-			DataForgeDefaults(),
+			["query"],
+			DataForgeConnectionFields(
+				Field("query", StringType, "Table search term."),
+				Field("limit", NumberType, "Optional result limit.")),
+			DataForgeEnvelopeFields(
+				"Query correlation identifier when available.",
+				Field("similar-tables", ArrayType, "Similar table results with `name`, `caption`, and `description`.")),
+			null,
 			[
 				Example("Find Contact-like tables for a configured environment", new Dictionary<string, object?> {
 					["query"] = "contact",
@@ -773,36 +741,25 @@ internal static class ToolContractCatalog {
 				Flow(
 					[DataForgeTool.DataForgeStatusToolName, DataForgeTool.DataForgeFindTablesToolName],
 					"Fallback when callers want to confirm Data Forge readiness before semantic table search.")
-			],
-			[]);
+			]);
 	}
 
 	private static ToolContractDefinition BuildDataForgeFindLookups() {
-		return new ToolContractDefinition(
+		return BuildDataForgeContract(
 			DataForgeTool.DataForgeFindLookupsToolName,
 			"Finds similar Creatio lookups through dataforge-service using a free-text query and optional lookup schema selector.",
-			new ToolInputSchemaContract(
-				["query"],
-				DataForgeConnectionFields(
-					Field("query", StringType, "Lookup search term."),
-					Field(SchemaNameFieldName, StringType, "Optional lookup schema name filter."),
-					Field("limit", NumberType, "Optional result limit.")),
-				AnyOf: DataForgeConnectionRequirements()),
-			EnvelopeOutput(
-				SuccessFieldName,
-				[SuccessFalseSignal],
-				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("source", StringType, "Response source identifier."),
-				Field("correlation-id", StringType, "Query correlation identifier when available."),
-				Field("warnings", ArrayType, "Non-fatal warnings."),
-				Field("similar-lookups", ArrayType, "Similar lookup results with `lookup-id`, `schema-name`, `value`, and `score`."),
-				Field(ErrorFieldName, ObjectType, "Structured Data Forge error payload.")),
-			CommonErrorContract,
+			["query"],
+			DataForgeConnectionFields(
+				Field("query", StringType, "Lookup search term."),
+				Field(SchemaNameFieldName, StringType, "Optional lookup schema name filter."),
+				Field("limit", NumberType, "Optional result limit.")),
+			DataForgeEnvelopeFields(
+				"Query correlation identifier when available.",
+				Field("similar-lookups", ArrayType, "Similar lookup results with `lookup-id`, `schema-name`, `value`, and `score`.")),
 			[
 				..DataForgeConnectionAliases(),
 				SchemaNameParameterAlias()
 			],
-			DataForgeDefaults(),
 			[
 				Example("Find status-like lookups for a configured environment", new Dictionary<string, object?> {
 					["query"] = "status",
@@ -814,33 +771,22 @@ internal static class ToolContractCatalog {
 				Flow(
 					[DataForgeTool.DataForgeStatusToolName, DataForgeTool.DataForgeFindLookupsToolName],
 					"Fallback when callers want readiness confirmation before semantic lookup search.")
-			],
-			[]);
+			]);
 	}
 
 	private static ToolContractDefinition BuildDataForgeGetRelations() {
-		return new ToolContractDefinition(
+		return BuildDataForgeContract(
 			DataForgeTool.DataForgeGetRelationsToolName,
 			"Returns semantic relation paths between two Creatio tables.",
-			new ToolInputSchemaContract(
-				["source-table", "target-table"],
-				DataForgeConnectionFields(
-					Field("source-table", StringType, "Source table name."),
-					Field("target-table", StringType, "Target table name."),
-					Field("limit", NumberType, "Optional relation path limit.")),
-				AnyOf: DataForgeConnectionRequirements()),
-			EnvelopeOutput(
-				SuccessFieldName,
-				[SuccessFalseSignal],
-				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("source", StringType, "Response source identifier."),
-				Field("correlation-id", StringType, "Query correlation identifier when available."),
-				Field("warnings", ArrayType, "Non-fatal warnings."),
-				Field("relations", ArrayType, "Resolved relation paths as cypher-style strings."),
-				Field(ErrorFieldName, ObjectType, "Structured Data Forge error payload.")),
-			CommonErrorContract,
-			DataForgeConnectionAliases(),
-			DataForgeDefaults(),
+			["source-table", "target-table"],
+			DataForgeConnectionFields(
+				Field("source-table", StringType, "Source table name."),
+				Field("target-table", StringType, "Target table name."),
+				Field("limit", NumberType, "Optional relation path limit.")),
+			DataForgeEnvelopeFields(
+				"Query correlation identifier when available.",
+				Field("relations", ArrayType, "Resolved relation paths as cypher-style strings.")),
+			null,
 			[
 				Example("Read Contact-to-Account relations for a configured environment", new Dictionary<string, object?> {
 					["source-table"] = "Contact",
@@ -853,31 +799,20 @@ internal static class ToolContractCatalog {
 				Flow(
 					[DataForgeTool.DataForgeFindTablesToolName, DataForgeTool.DataForgeGetRelationsToolName],
 					"Fallback when callers first need similar table discovery before selecting the relation pair.")
-			],
-			[]);
+			]);
 	}
 
 	private static ToolContractDefinition BuildDataForgeGetTableColumns() {
-		return new ToolContractDefinition(
+		return BuildDataForgeContract(
 			DataForgeTool.DataForgeGetTableColumnsToolName,
 			"Reads runtime entity columns from Creatio without package context.",
-			new ToolInputSchemaContract(
-				["table-name"],
-				DataForgeConnectionFields(
-					Field("table-name", StringType, "Target runtime entity schema name.")),
-				AnyOf: DataForgeConnectionRequirements()),
-			EnvelopeOutput(
-				SuccessFieldName,
-				[SuccessFalseSignal],
-				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("source", StringType, "Response source identifier."),
-				Field("correlation-id", StringType, "Query correlation identifier when available."),
-				Field("warnings", ArrayType, "Non-fatal warnings."),
-				Field("columns", ArrayType, "Runtime column projections with `name`, `caption`, `description`, `data-type`, `required`, and `reference-schema-name`."),
-				Field(ErrorFieldName, ObjectType, "Structured Data Forge error payload.")),
-			CommonErrorContract,
-			DataForgeConnectionAliases(),
-			DataForgeDefaults(),
+			["table-name"],
+			DataForgeConnectionFields(
+				Field("table-name", StringType, "Target runtime entity schema name.")),
+			DataForgeEnvelopeFields(
+				"Query correlation identifier when available.",
+				Field("columns", ArrayType, "Runtime column projections with `name`, `caption`, `description`, `data-type`, `required`, and `reference-schema-name`.")),
+			null,
 			[
 				Example("Read Contact runtime columns for a configured environment", new Dictionary<string, object?> {
 					["table-name"] = "Contact",
@@ -889,40 +824,29 @@ internal static class ToolContractCatalog {
 				Flow(
 					[DataForgeTool.DataForgeFindTablesToolName, DataForgeTool.DataForgeGetTableColumnsToolName],
 					"Fallback when callers first need similar table discovery before reading columns.")
-			],
-			[]);
+			]);
 	}
 
 	private static ToolContractDefinition BuildDataForgeContext() {
-		return new ToolContractDefinition(
+		return BuildDataForgeContract(
 			DataForgeTool.DataForgeContextToolName,
 			"Aggregates Data Forge health, maintenance readiness, similar tables, lookups, relations, and runtime columns into one context payload.",
-			new ToolInputSchemaContract(
-				[],
-				DataForgeConnectionFields(
-					Field("requirement-summary", StringType, "Optional free-text summary used when candidate-terms are omitted."),
-					Field("candidate-terms", ArrayType, "Optional table-search terms."),
-					Field("lookup-hints", ArrayType, "Optional lookup-search hints."),
-					Field("relation-pairs", ArrayType, "Optional source-target table pairs.")),
-				AnyOf: DataForgeConnectionRequirements()),
-			EnvelopeOutput(
-				SuccessFieldName,
-				[SuccessFalseSignal],
-				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("source", StringType, "Response source identifier."),
-				Field("correlation-id", StringType, "Health probe correlation identifier."),
-				Field("warnings", ArrayType, "Non-fatal aggregation warnings."),
+			[],
+			DataForgeConnectionFields(
+				Field("requirement-summary", StringType, "Optional free-text summary used when candidate-terms are omitted."),
+				Field("candidate-terms", ArrayType, "Optional table-search terms."),
+				Field("lookup-hints", ArrayType, "Optional lookup-search hints."),
+				Field("relation-pairs", ArrayType, "Optional source-target table pairs.")),
+			DataForgeEnvelopeFields(
+				"Health probe correlation identifier.",
 				Field("health", ObjectType, "Health payload with liveness/readiness and Data Forge readiness flags."),
 				Field("status", ObjectType, "Maintenance status payload."),
 				Field("similar-tables", ArrayType, "Similar table results."),
 				Field("similar-lookups", ArrayType, "Similar lookup results."),
 				Field("relations", ObjectType, "Resolved relation paths keyed by source-target pair."),
 				Field("columns", ObjectType, "Resolved runtime column projections keyed by table name."),
-				Field("coverage", ObjectType, "Coverage flags for health, tables, lookups, relations, and table-columns."),
-				Field(ErrorFieldName, ObjectType, "Structured Data Forge error payload.")),
-			CommonErrorContract,
-			DataForgeConnectionAliases(),
-			DataForgeDefaults(),
+				Field("coverage", ObjectType, "Coverage flags for health, tables, lookups, relations, and table-columns.")),
+			null,
 			[
 				Example("Aggregate app-modeling context for a configured environment", new Dictionary<string, object?> {
 					["requirement-summary"] = "Task registry for customer follow-up",
@@ -939,68 +863,88 @@ internal static class ToolContractCatalog {
 						DataForgeTool.DataForgeContextToolName
 					],
 					"Fallback when callers want to check Data Forge readiness explicitly before aggregation.")
-			],
-			[]);
+			]);
 	}
 
 	private static ToolContractDefinition BuildDataForgeInitialize() {
-		return new ToolContractDefinition(
+		return BuildDataForgeContract(
 			DataForgeTool.DataForgeInitializeToolName,
 			"Schedules Data Forge initialize jobs through the Creatio maintenance service.",
-			new ToolInputSchemaContract(
-				[],
-				DataForgeConnectionFields(),
-				AnyOf: DataForgeConnectionRequirements()),
-			EnvelopeOutput(
-				SuccessFieldName,
-				[SuccessFalseSignal],
-				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("source", StringType, "Response source identifier."),
-				Field("correlation-id", StringType, "Mutation correlation identifier when available."),
-				Field("warnings", ArrayType, "Non-fatal warnings."),
-				Field("status", ObjectType, "Maintenance scheduling status payload."),
-				Field(ErrorFieldName, ObjectType, "Structured Data Forge error payload.")),
-			CommonErrorContract,
-			DataForgeConnectionAliases(),
-			DataForgeDefaults(),
+			[],
+			DataForgeConnectionFields(),
+			DataForgeEnvelopeFields(
+				"Mutation correlation identifier when available.",
+				Field("status", ObjectType, "Maintenance scheduling status payload.")),
+			null,
 			[
 				Example("Schedule Data Forge initialization for a configured environment", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
 			Flow([DataForgeTool.DataForgeInitializeToolName], "Use only for explicit Data Forge remediation or initial maintenance setup."),
-			[],
 			[]);
 	}
 
 	private static ToolContractDefinition BuildDataForgeUpdate() {
-		return new ToolContractDefinition(
+		return BuildDataForgeContract(
 			DataForgeTool.DataForgeUpdateToolName,
 			"Schedules Data Forge update jobs through the Creatio maintenance service.",
-			new ToolInputSchemaContract(
-				[],
-				DataForgeConnectionFields(),
-				AnyOf: DataForgeConnectionRequirements()),
-			EnvelopeOutput(
-				SuccessFieldName,
-				[SuccessFalseSignal],
-				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("source", StringType, "Response source identifier."),
-				Field("correlation-id", StringType, "Mutation correlation identifier when available."),
-				Field("warnings", ArrayType, "Non-fatal warnings."),
-				Field("status", ObjectType, "Maintenance scheduling status payload."),
-				Field(ErrorFieldName, ObjectType, "Structured Data Forge error payload.")),
-			CommonErrorContract,
-			DataForgeConnectionAliases(),
-			DataForgeDefaults(),
+			[],
+			DataForgeConnectionFields(),
+			DataForgeEnvelopeFields(
+				"Mutation correlation identifier when available.",
+				Field("status", ObjectType, "Maintenance scheduling status payload.")),
+			null,
 			[
 				Example("Schedule a Data Forge update for a configured environment", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
 			Flow([DataForgeTool.DataForgeUpdateToolName], "Use only for explicit Data Forge remediation or refresh maintenance."),
-			[],
 			[]);
+	}
+
+	private static ToolContractDefinition BuildDataForgeContract(
+		string toolName,
+		string description,
+		IReadOnlyList<string> requiredFields,
+		IReadOnlyList<ToolContractField> inputFields,
+		IReadOnlyList<ToolContractField> outputFields,
+		IReadOnlyList<ToolContractAlias>? aliases,
+		IReadOnlyList<ToolContractExample> examples,
+		ToolFlowHint preferredFlow,
+		IReadOnlyList<ToolFlowHint> fallbackFlow) {
+		return new ToolContractDefinition(
+			toolName,
+			description,
+			new ToolInputSchemaContract(
+				requiredFields,
+				inputFields,
+				AnyOf: DataForgeConnectionRequirements()),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				[..outputFields]),
+			CommonErrorContract,
+			aliases ?? DataForgeConnectionAliases(),
+			DataForgeDefaults(),
+			examples,
+			preferredFlow,
+			fallbackFlow,
+			[]);
+	}
+
+	private static IReadOnlyList<ToolContractField> DataForgeEnvelopeFields(
+		string correlationDescription,
+		params ToolContractField[] bodyFields) {
+		return [
+			Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+			Field("source", StringType, "Response source identifier."),
+			Field("correlation-id", StringType, correlationDescription),
+			Field("warnings", ArrayType, "Non-fatal warnings."),
+			..bodyFields,
+			Field(ErrorFieldName, ObjectType, "Structured Data Forge error payload.")
+		];
 	}
 
 	private static ToolContractDefinition BuildApplicationGetInfo() {

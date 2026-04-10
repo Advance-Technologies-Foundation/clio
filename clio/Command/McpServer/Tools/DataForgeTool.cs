@@ -316,60 +316,19 @@ public sealed class DataForgeTool(
 		};
 	}
 
-	private static DataForgeTargetOptions CreateTargetOptions(
-		string? environmentName,
-		string? uri,
-		string? login,
-		string? password,
-		string? clientId,
-		string? clientSecret,
-		string? authAppUri,
-		bool allowSysSettingsAuthFallback,
-		string? scope) {
+	private static DataForgeTargetOptions CreateTargetOptions(DataForgeConnectionArgsBase args) {
 		return new DataForgeTargetOptions {
-			Environment = environmentName,
-			Uri = uri,
-			Login = login,
-			Password = password,
-			ClientId = clientId,
-			ClientSecret = clientSecret,
-			AuthAppUri = authAppUri,
-			AllowSysSettingsAuthFallback = allowSysSettingsAuthFallback,
-			Scope = string.IsNullOrWhiteSpace(scope) ? DefaultDataForgeScope : scope.Trim()
+			Environment = args.EnvironmentName,
+			Uri = args.Uri,
+			Login = args.Login,
+			Password = args.Password,
+			ClientId = args.ClientId,
+			ClientSecret = args.ClientSecret,
+			AuthAppUri = args.AuthAppUri,
+			AllowSysSettingsAuthFallback = args.AllowSysSettingsAuthFallback,
+			Scope = string.IsNullOrWhiteSpace(args.Scope) ? DefaultDataForgeScope : args.Scope.Trim()
 		};
 	}
-
-	private static DataForgeTargetOptions CreateTargetOptions(DataForgeHealthArgs args) =>
-		CreateTargetOptions(args.EnvironmentName, args.Uri, args.Login, args.Password, args.ClientId,
-			args.ClientSecret, args.AuthAppUri, args.AllowSysSettingsAuthFallback, args.Scope);
-
-	private static DataForgeTargetOptions CreateTargetOptions(DataForgeStatusArgs args) =>
-		CreateTargetOptions(args.EnvironmentName, args.Uri, args.Login, args.Password, args.ClientId,
-			args.ClientSecret, args.AuthAppUri, args.AllowSysSettingsAuthFallback, args.Scope);
-
-	private static DataForgeTargetOptions CreateTargetOptions(DataForgeMaintenanceArgs args) =>
-		CreateTargetOptions(args.EnvironmentName, args.Uri, args.Login, args.Password, args.ClientId,
-			args.ClientSecret, args.AuthAppUri, args.AllowSysSettingsAuthFallback, args.Scope);
-
-	private static DataForgeTargetOptions CreateTargetOptions(DataForgeFindTablesArgs args) =>
-		CreateTargetOptions(args.EnvironmentName, args.Uri, args.Login, args.Password, args.ClientId,
-			args.ClientSecret, args.AuthAppUri, args.AllowSysSettingsAuthFallback, args.Scope);
-
-	private static DataForgeTargetOptions CreateTargetOptions(DataForgeFindLookupsArgs args) =>
-		CreateTargetOptions(args.EnvironmentName, args.Uri, args.Login, args.Password, args.ClientId,
-			args.ClientSecret, args.AuthAppUri, args.AllowSysSettingsAuthFallback, args.Scope);
-
-	private static DataForgeTargetOptions CreateTargetOptions(DataForgeGetRelationsArgs args) =>
-		CreateTargetOptions(args.EnvironmentName, args.Uri, args.Login, args.Password, args.ClientId,
-			args.ClientSecret, args.AuthAppUri, args.AllowSysSettingsAuthFallback, args.Scope);
-
-	private static DataForgeTargetOptions CreateTargetOptions(DataForgeGetTableColumnsArgs args) =>
-		CreateTargetOptions(args.EnvironmentName, args.Uri, args.Login, args.Password, args.ClientId,
-			args.ClientSecret, args.AuthAppUri, args.AllowSysSettingsAuthFallback, args.Scope);
-
-	private static DataForgeTargetOptions CreateTargetOptions(DataForgeContextArgs args) =>
-		CreateTargetOptions(args.EnvironmentName, args.Uri, args.Login, args.Password, args.ClientId,
-			args.ClientSecret, args.AuthAppUri, args.AllowSysSettingsAuthFallback, args.Scope);
 }
 
 public sealed record DataForgeRelationPairArgs(
@@ -377,111 +336,63 @@ public sealed record DataForgeRelationPairArgs(
 	[property: JsonPropertyName("target-table")] string TargetTable
 );
 
-public sealed record DataForgeHealthArgs(
-	[property: JsonPropertyName("environment-name")] string? EnvironmentName = null,
-	[property: JsonPropertyName("uri")] string? Uri = null,
-	[property: JsonPropertyName("login")] string? Login = null,
-	[property: JsonPropertyName("password")] string? Password = null,
-	[property: JsonPropertyName("client-id")] string? ClientId = null,
-	[property: JsonPropertyName("client-secret")] string? ClientSecret = null,
-	[property: JsonPropertyName("auth-app-uri")] string? AuthAppUri = null,
-	[property: JsonPropertyName("allow-syssettings-auth-fallback")] bool AllowSysSettingsAuthFallback = true,
-	[property: JsonPropertyName("scope")] string? Scope = null
-);
+/// <summary>
+/// Provides the shared Data Forge connection payload used by all Data Forge MCP tools.
+/// </summary>
+public abstract record DataForgeConnectionArgsBase {
+	[JsonPropertyName("environment-name")]
+	public string? EnvironmentName { get; init; }
 
-public sealed record DataForgeStatusArgs(
-	[property: JsonPropertyName("environment-name")] string? EnvironmentName = null,
-	[property: JsonPropertyName("uri")] string? Uri = null,
-	[property: JsonPropertyName("login")] string? Login = null,
-	[property: JsonPropertyName("password")] string? Password = null,
-	[property: JsonPropertyName("client-id")] string? ClientId = null,
-	[property: JsonPropertyName("client-secret")] string? ClientSecret = null,
-	[property: JsonPropertyName("auth-app-uri")] string? AuthAppUri = null,
-	[property: JsonPropertyName("allow-syssettings-auth-fallback")] bool AllowSysSettingsAuthFallback = true,
-	[property: JsonPropertyName("scope")] string? Scope = null
-);
+	[JsonPropertyName("uri")]
+	public string? Uri { get; init; }
 
-public sealed record DataForgeMaintenanceArgs(
-	[property: JsonPropertyName("environment-name")] string? EnvironmentName = null,
-	[property: JsonPropertyName("uri")] string? Uri = null,
-	[property: JsonPropertyName("login")] string? Login = null,
-	[property: JsonPropertyName("password")] string? Password = null,
-	[property: JsonPropertyName("client-id")] string? ClientId = null,
-	[property: JsonPropertyName("client-secret")] string? ClientSecret = null,
-	[property: JsonPropertyName("auth-app-uri")] string? AuthAppUri = null,
-	[property: JsonPropertyName("allow-syssettings-auth-fallback")] bool AllowSysSettingsAuthFallback = true,
-	[property: JsonPropertyName("scope")] string? Scope = null
-);
+	[JsonPropertyName("login")]
+	public string? Login { get; init; }
+
+	[JsonPropertyName("password")]
+	public string? Password { get; init; }
+
+	[JsonPropertyName("client-id")]
+	public string? ClientId { get; init; }
+
+	[JsonPropertyName("client-secret")]
+	public string? ClientSecret { get; init; }
+
+	[JsonPropertyName("auth-app-uri")]
+	public string? AuthAppUri { get; init; }
+
+	[JsonPropertyName("allow-syssettings-auth-fallback")]
+	public bool AllowSysSettingsAuthFallback { get; init; } = true;
+
+	[JsonPropertyName("scope")]
+	public string? Scope { get; init; }
+}
+
+public sealed record DataForgeHealthArgs : DataForgeConnectionArgsBase;
+
+public sealed record DataForgeStatusArgs : DataForgeConnectionArgsBase;
+
+public sealed record DataForgeMaintenanceArgs : DataForgeConnectionArgsBase;
 
 public sealed record DataForgeFindTablesArgs(
 	[property: JsonPropertyName("query")] string? Query,
-	[property: JsonPropertyName("limit")] int? Limit = null,
-	[property: JsonPropertyName("environment-name")] string? EnvironmentName = null,
-	[property: JsonPropertyName("uri")] string? Uri = null,
-	[property: JsonPropertyName("login")] string? Login = null,
-	[property: JsonPropertyName("password")] string? Password = null,
-	[property: JsonPropertyName("client-id")] string? ClientId = null,
-	[property: JsonPropertyName("client-secret")] string? ClientSecret = null,
-	[property: JsonPropertyName("auth-app-uri")] string? AuthAppUri = null,
-	[property: JsonPropertyName("allow-syssettings-auth-fallback")] bool AllowSysSettingsAuthFallback = true,
-	[property: JsonPropertyName("scope")] string? Scope = null
-);
+	[property: JsonPropertyName("limit")] int? Limit = null) : DataForgeConnectionArgsBase;
 
 public sealed record DataForgeFindLookupsArgs(
 	[property: JsonPropertyName("query")] string? Query,
 	[property: JsonPropertyName("schema-name")] string? SchemaName = null,
-	[property: JsonPropertyName("limit")] int? Limit = null,
-	[property: JsonPropertyName("environment-name")] string? EnvironmentName = null,
-	[property: JsonPropertyName("uri")] string? Uri = null,
-	[property: JsonPropertyName("login")] string? Login = null,
-	[property: JsonPropertyName("password")] string? Password = null,
-	[property: JsonPropertyName("client-id")] string? ClientId = null,
-	[property: JsonPropertyName("client-secret")] string? ClientSecret = null,
-	[property: JsonPropertyName("auth-app-uri")] string? AuthAppUri = null,
-	[property: JsonPropertyName("allow-syssettings-auth-fallback")] bool AllowSysSettingsAuthFallback = true,
-	[property: JsonPropertyName("scope")] string? Scope = null
-);
+	[property: JsonPropertyName("limit")] int? Limit = null) : DataForgeConnectionArgsBase;
 
 public sealed record DataForgeGetRelationsArgs(
 	[property: JsonPropertyName("source-table")] string? SourceTable,
 	[property: JsonPropertyName("target-table")] string? TargetTable,
-	[property: JsonPropertyName("limit")] int? Limit = null,
-	[property: JsonPropertyName("environment-name")] string? EnvironmentName = null,
-	[property: JsonPropertyName("uri")] string? Uri = null,
-	[property: JsonPropertyName("login")] string? Login = null,
-	[property: JsonPropertyName("password")] string? Password = null,
-	[property: JsonPropertyName("client-id")] string? ClientId = null,
-	[property: JsonPropertyName("client-secret")] string? ClientSecret = null,
-	[property: JsonPropertyName("auth-app-uri")] string? AuthAppUri = null,
-	[property: JsonPropertyName("allow-syssettings-auth-fallback")] bool AllowSysSettingsAuthFallback = true,
-	[property: JsonPropertyName("scope")] string? Scope = null
-);
+	[property: JsonPropertyName("limit")] int? Limit = null) : DataForgeConnectionArgsBase;
 
 public sealed record DataForgeGetTableColumnsArgs(
-	[property: JsonPropertyName("table-name")] string? TableName,
-	[property: JsonPropertyName("environment-name")] string? EnvironmentName = null,
-	[property: JsonPropertyName("uri")] string? Uri = null,
-	[property: JsonPropertyName("login")] string? Login = null,
-	[property: JsonPropertyName("password")] string? Password = null,
-	[property: JsonPropertyName("client-id")] string? ClientId = null,
-	[property: JsonPropertyName("client-secret")] string? ClientSecret = null,
-	[property: JsonPropertyName("auth-app-uri")] string? AuthAppUri = null,
-	[property: JsonPropertyName("allow-syssettings-auth-fallback")] bool AllowSysSettingsAuthFallback = true,
-	[property: JsonPropertyName("scope")] string? Scope = null
-);
+	[property: JsonPropertyName("table-name")] string? TableName) : DataForgeConnectionArgsBase;
 
 public sealed record DataForgeContextArgs(
 	[property: JsonPropertyName("requirement-summary")] string? RequirementSummary,
 	[property: JsonPropertyName("candidate-terms")] IReadOnlyList<string>? CandidateTerms = null,
 	[property: JsonPropertyName("lookup-hints")] IReadOnlyList<string>? LookupHints = null,
-	[property: JsonPropertyName("relation-pairs")] IReadOnlyList<DataForgeRelationPairArgs>? RelationPairs = null,
-	[property: JsonPropertyName("environment-name")] string? EnvironmentName = null,
-	[property: JsonPropertyName("uri")] string? Uri = null,
-	[property: JsonPropertyName("login")] string? Login = null,
-	[property: JsonPropertyName("password")] string? Password = null,
-	[property: JsonPropertyName("client-id")] string? ClientId = null,
-	[property: JsonPropertyName("client-secret")] string? ClientSecret = null,
-	[property: JsonPropertyName("auth-app-uri")] string? AuthAppUri = null,
-	[property: JsonPropertyName("allow-syssettings-auth-fallback")] bool AllowSysSettingsAuthFallback = true,
-	[property: JsonPropertyName("scope")] string? Scope = null
-);
+	[property: JsonPropertyName("relation-pairs")] IReadOnlyList<DataForgeRelationPairArgs>? RelationPairs = null) : DataForgeConnectionArgsBase;
