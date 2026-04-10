@@ -200,8 +200,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
-	[Description("Adds the current culture title localization when add receives only en-US so .NET Framework save validation still sees an effective caption.")]
-	public void ModifyColumn_AddsOwnColumn_AddsCurrentCultureLocalization_WhenOnlyEnUsTitleLocalizationIsProvided() {
+	[Description("Saves only the provided en-US title localization without synthesizing extra culture entries when only en-US is given.")]
+	public void ModifyColumn_AddsOwnColumn_SavesOnlyProvidedLocalizations_WhenOnlyEnUsTitleLocalizationIsProvided() {
 		// Arrange
 		using CultureScope cultureScope = new("uk-UA");
 		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
@@ -223,9 +223,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 		// Assert
 		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
 		addedColumn.Caption.Should().Contain(item => item.CultureName == "en-US" && item.Value == "Status",
-			because: "the canonical en-US title must still be preserved");
-		addedColumn.Caption.Should().Contain(item => item.CultureName == "uk-UA" && item.Value == "Status",
-			because: "Clio should synthesize the current-culture title from en-US before save");
+			because: "the provided en-US title must be saved");
+		addedColumn.Caption.Should().NotContain(item => item.CultureName == "uk-UA",
+			because: "no uk-UA entry should be synthesized when only en-US was provided");
 	}
 
 	[Test]
@@ -302,8 +302,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
-	[Description("Replaces caption localizations with a normalized set that includes the current culture when modify receives only en-US title-localizations.")]
-	public void ModifyColumn_NormalizesTitleLocalizations_WhenOnlyEnUsTitleLocalizationIsProvided() {
+	[Description("Saves only the provided en-US title localization without synthesizing extra culture entries when only en-US is given for modify.")]
+	public void ModifyColumn_SavesOnlyProvidedLocalizations_WhenOnlyEnUsTitleLocalizationIsProvided() {
 		// Arrange
 		using CultureScope cultureScope = new("uk-UA");
 		EntitySchemaColumnDto statusColumn = CreateTextColumn("UsrVehicleStatus", NameColumnUId);
@@ -325,11 +325,11 @@ internal class RemoteEntitySchemaColumnManagerTests
 		// Assert
 		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
 		savedColumn.Caption.Should().Contain(item => item.CultureName == "en-US" && item.Value == "Vehicle Status",
-			because: "modify should preserve the canonical en-US title localization");
-		savedColumn.Caption.Should().Contain(item => item.CultureName == "uk-UA" && item.Value == "Vehicle Status",
-			because: "modify should synthesize a current-culture title so later .NET Framework validation succeeds");
+			because: "the provided en-US title localization must be saved");
+		savedColumn.Caption.Should().NotContain(item => item.CultureName == "uk-UA",
+			because: "no uk-UA entry should be synthesized when only en-US was explicitly provided");
 		savedColumn.Caption.Select(item => item.CultureName).Should().OnlyHaveUniqueItems(
-			because: "title localization normalization should not duplicate cultures in the saved caption payload");
+			because: "caption must not contain duplicate culture entries");
 	}
 
 	[Test]
