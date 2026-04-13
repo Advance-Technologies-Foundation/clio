@@ -1226,11 +1226,11 @@ Options: `--package` (required), `--binding-name` (required), `--values` (JSON, 
 ## Schema & Process User Task CRUD
 
 ### delete-schema
-Delete an entity schema or process user task schema from a workspace package. Must be run from a workspace directory.
+Delete any workspace item (schema or non-schema) from a workspace package. Supports all item types: entity, client unit, source code, process, DCM, process user task, campaign, service, addon, Copilot intent, localization schemas, SQL scripts, data bindings, and assemblies. Must be run from a workspace directory.
 ```bash
 clio delete-schema UsrSendInvoice -e <ENV>
 ```
-Only schemas whose package belongs to the current local workspace can be deleted.
+Only items whose package belongs to the current local workspace can be deleted.
 
 ### add-user-task
 Create a process user task schema in a workspace package. Must be run from a workspace directory.
