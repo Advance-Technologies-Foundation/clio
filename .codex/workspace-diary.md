@@ -2301,3 +2301,23 @@ Decision: Fix infrastructure layer only (Configure() and GetEnvironmentSettings(
 Discovery: GetEnvironment(options) in ConfigurationOptions.cs already resolves settings from active env, but never writes back to options.Environment → guards fail on null. Fix is to set options.Environment = activeEnvName in the two Program.cs entry points.
 Files: clio/Program.cs (Configure, GetEnvironmentSettings)
 Impact: All CLI commands now work without -e when ActiveEnvironmentKey is configured. Execute() guards and unit tests unchanged.
+
+## 2025-07-14 – Level 2 delete-app-section cleanup committed
+
+Context: delete-app-section was hanging because it called DeleteQuery on the virtual ApplicationSection entity (no backend delete handler in Creatio). Investigation showed ApplicationSectionEventListener has NO OnDeleted handler.
+Decision: Level 2 cleanup — delete all metadata artifacts in correct FK order, keep entity schema by default, add --delete-entity-schema flag for full cleanup.
+Discovery: CS9007 with $$""" raw literals — }}  consecutive closing braces after interpolation are treated as closing delimiter. Fix: expand JSON objects to multi-line format (one } per line).
+Files: clio/Command/ApplicationSectionDeleteCommand.cs, ApplicationSectionCreateCommand.cs, McpServer/Tools/ApplicationTool.cs, ApplicationToolArgs.cs, ToolContractGetTool.cs, clio.tests/Command/DeleteAppSectionCommandTests.cs
+Impact: Fully removes SysModuleInWorkplace, SysModuleLcz, SysSchema (Freedom UI pages + mobile), SysModuleEntity, SysModule in correct order. Section can be re-created cleanly afterward.
+
+## 2025-04-13 17:30 – delete-app-section: fix schema filter for AddonSchemaManager schemas
+
+Context: After WorkspaceExplorer refactor, 2 schemas were still left behind after delete
+Decision: Broaden LoadSectionSchemas filter from StartsWith(code+"_") to StartsWith(code) to catch non-underscore schemas
+Discovery:
+  - DataService FK column paths drop Id suffix: SysModuleId column -> path SysModule
+  - SysModuleLcz has no DataService schema for Freedom UI sections (0 rows, non-critical)
+  - AddonSchemaManager schemas (UsrXxxRelatedPage, UsrXxxMobileRelatedPage) use no underscore separator
+  - DataService cannot delete SysSchema (SecurityException) — must use WorkspaceExplorerService.svc/Delete
+Files: clio/Command/ApplicationSectionDeleteCommand.cs
+Impact: delete-app-section now fully cleans up all 7 workspace schemas + SysModule + SysModuleInWorkplace
