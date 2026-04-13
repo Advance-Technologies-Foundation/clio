@@ -79,12 +79,13 @@ public class FileSystemTests
 	public void ComputesCorrectHash(string sampleFile, FileSystem.Algorithm algorithm)
 	{
 		// Arrange
+		string absoluteSampleFile = Path.Combine(TestContext.CurrentContext.TestDirectory, sampleFile);
 		string psHash;
 		var logger = Substitute.For<ILogger>();
 		if (OperatingSystem.IsWindows())
 		{
 			psHash = new ProcessExecutor(logger).Execute("pwsh.exe",
-				$"-c \"Get-FileHash {sampleFile} -Algorithm {algorithm.ToString()} | Select-Object -ExpandProperty Hash\"",
+				$"-c \"Get-FileHash {absoluteSampleFile} -Algorithm {algorithm.ToString()} | Select-Object -ExpandProperty Hash\"",
 				true, null, true);
 		}
 		else
@@ -92,18 +93,19 @@ public class FileSystemTests
 			string algo = algorithm.ToString().ToLowerInvariant();
 			string hashCmd = algo switch
 			{
-				"md5" => $"md5sum {sampleFile} | awk '{{print $1}}'",
-				"sha1" => $"sha1sum {sampleFile} | awk '{{print $1}}'",
-				"sha256" => $"sha256sum {sampleFile} | awk '{{print $1}}'",
-				"sha384" => $"sha384sum {sampleFile} | awk '{{print $1}}'",
-				"sha512" => $"sha512sum {sampleFile} | awk '{{print $1}}'",
+				"md5" => $"md5sum {absoluteSampleFile} | awk '{{print $1}}'",
+				"sha1" => $"sha1sum {absoluteSampleFile} | awk '{{print $1}}'",
+				"sha256" => $"sha256sum {absoluteSampleFile} | awk '{{print $1}}'",
+				"sha384" => $"sha384sum {absoluteSampleFile} | awk '{{print $1}}'",
+				"sha512" => $"sha512sum {absoluteSampleFile} | awk '{{print $1}}'",
 				_ => throw new NotSupportedException($"Algorithm {algorithm} not supported on this platform")
 			};
 			psHash = new ProcessExecutor(logger).Execute("/bin/bash", $"-c \"{hashCmd}\"", true, null, true).Trim();
 		}
-	
+
 		// Assert
-		new FileSystem(_msFileSystem).GetFileHash(algorithm, sampleFile).ToUpper().Should().Be(psHash.ToUpper());
+		new FileSystem(_msFileSystem).GetFileHash(algorithm, absoluteSampleFile).ToUpper().Should().Be(psHash.ToUpper(),
+			because: $"computed hash should match the OS-native hash utility for algorithm {algorithm}");
 	}
 	
 
