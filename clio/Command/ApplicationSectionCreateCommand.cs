@@ -111,6 +111,9 @@ public sealed class ApplicationSectionCreateService(
 			client,
 			environmentSettings);
 		string requestBody = JsonSerializer.Serialize(BuildInsertBody(resolvedRequest), JsonOptions);
+		if (string.IsNullOrWhiteSpace(resolvedRequest.EntitySchemaName)) {
+			CheckEntitySchemaDoesNotExist(client, environmentSettings, resolvedRequest.SectionCode, request.Caption);
+		}
 		string responseBody = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert, environmentSettings),
 			requestBody);
@@ -157,6 +160,30 @@ public sealed class ApplicationSectionCreateService(
 			iconId,
 			iconBackground,
 			request.WithMobilePages ? null : WebClientTypeId);
+	}
+
+	private void CheckEntitySchemaDoesNotExist(
+		IApplicationClient client,
+		EnvironmentSettings environmentSettings,
+		string schemaName,
+		string caption) {
+		try {
+			SysSchemaExistsResponseDto response = SelectQueryHelper.ExecuteSelectQuery<SysSchemaExistsResponseDto>(
+				client,
+				new ServiceUrlBuilder(environmentSettings),
+				SelectQueryHelper.BuildSelectQuery(
+					"SysSchema",
+					[new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name")],
+					[new SelectQueryHelper.SelectQueryFilterDefinition("Name", schemaName, SelectQueryHelper.TextDataValueType)]));
+			if (response.Rows.Count > 0) {
+				throw new InvalidOperationException(
+					$"Entity schema '{schemaName}' already exists. "
+					+ $"To create section '{caption}' reusing the existing entity, add: --entity-schema-name {schemaName}");
+			}
+		} catch (InvalidOperationException) {
+			throw;
+		} catch {
+		}
 	}
 
 	private ApplicationSectionCreateResult LoadCreatedSection(
@@ -489,6 +516,16 @@ public sealed class ApplicationSectionCreateService(
 	private sealed class ErrorInfoDto {
 		[JsonPropertyName("message")]
 		public string? Message { get; set; }
+	}
+
+	private sealed class SysSchemaExistsResponseDto : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[JsonPropertyName("rows")]
+		public List<SysSchemaNameRowDto> Rows { get; set; } = [];
+	}
+
+	private sealed class SysSchemaNameRowDto {
+		[JsonPropertyName("Name")]
+		public string? Name { get; set; }
 	}
 
 	private sealed class IconSelectQueryResponseDto {
