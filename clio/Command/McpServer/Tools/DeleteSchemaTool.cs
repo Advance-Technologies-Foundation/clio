@@ -21,8 +21,9 @@ public class DeleteSchemaTool(
 				 WorkspaceExplorerService.svc/GetWorkspaceItems, and finally submits the matching item
 				 to WorkspaceExplorerService.svc/Delete.
 
-				 Supports all Creatio schema types: entity, client unit, source code, process, DCM,
-				 process user task, campaign, service, addon, Copilot intent, and localization schemas.
+				 Supports any workspace item type, including entity, client unit, source code, process,
+				 DCM, process user task, campaign, service, addon, Copilot intent, localization schemas,
+				 as well as SQL scripts, data bindings, and assemblies.
 
 				 This operation is destructive and cannot be undone.
 				 """)]

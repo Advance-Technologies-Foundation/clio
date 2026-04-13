@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -25,7 +24,6 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 	private static readonly JsonSerializerOptions SerializerOptions = new() {
 		PropertyNameCaseInsensitive = true
 	};
-	private static readonly HashSet<int> SchemaWorkspaceItemTypes = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly IWorkspacePathBuilder _workspacePathBuilder;
@@ -97,7 +95,6 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 		WorkspaceItemsResponse response = Deserialize<WorkspaceItemsResponse>(responseJson, "GetWorkspaceItems");
 		List<WorkspaceExplorerItemDto> matches = (response.Items ?? [])
 			.Where(item => workspacePackages.Contains(item.PackageName)
-				&& SchemaWorkspaceItemTypes.Contains(item.Type)
 				&& string.Equals(item.Name, schemaName, StringComparison.OrdinalIgnoreCase))
 			.ToList();
 
