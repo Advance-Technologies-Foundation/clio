@@ -341,13 +341,38 @@ dotnet affected --from origin/master
 
 This identifies which .csproj projects are affected by changes, enabling project-level filtering.
 
-**Deliverables**:
-- [ ] Test impact matrix definition
-- [ ] Custom GitHub Action for filter generation
-- [ ] Integration with CI pipeline
-- [ ] Documentation of module boundaries
+#### 4.4 Coding agent integration (zero-manual-effort regression)
 
-**Estimated effort**: 3-5 days
+When developers use AI coding agents (Claude Code, Copilot, Cursor, etc.) for implementation, smart regression can be **fully automated at the agent level** — no extra scripts or human decisions required.
+
+**How it works:**
+
+The agent already knows which files it changed (it made the changes). Before committing, it:
+1. Derives the module trait from the changed paths using the mapping in `AGENTS.md`
+2. Runs `dotnet test --filter "Category=Unit&Module=X"` for each affected module
+3. Escalates to full suite only when infrastructure files changed
+4. Commits only after targeted tests pass
+
+This turns Phase 4 from a CI-only feature into an **inner-loop quality gate** — the agent validates its own changes before they leave the developer's machine.
+
+**Why this matters for AI-assisted development:**
+
+Without this rule, agents default to either:
+- Running the full test suite (slow, 60+ sec, discourages frequent checks), or
+- Skipping tests entirely and hoping CI catches regressions
+
+With the module mapping in `AGENTS.md`, the agent has a deterministic, low-latency feedback loop: change `PushPkgCommand.cs` → run `Module=Command` tests (< 5 sec) → commit.
+
+**Prerequisite**: Phase 1 (Module traits on all test fixtures) and the `AGENTS.md` smart regression policy must be in place. Both are complete as of Phase 1 delivery.
+
+**Deliverables**:
+- [x] Module trait mapping documented in `AGENTS.md`
+- [x] Mandatory agent behavior rule in `AGENTS.md`
+- [ ] Test impact matrix definition (for CI-side automation)
+- [ ] Custom GitHub Action for filter generation (CI side)
+- [ ] Integration with CI pipeline
+
+**Estimated effort**: 3-5 days (CI automation); coding-agent side is done
 
 ---
 
