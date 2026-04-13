@@ -121,7 +121,7 @@ public class PageToolsTests {
 		prompt.Should().Contain("`environment-name`",
 			because: "get-page prompt guidance should match the current MCP argument contract");
 		prompt.Should().Contain($"`{ComponentInfoTool.ToolName}`",
-			because: "get-page prompt guidance should direct callers to component-info for unfamiliar Freedom UI types");
+			because: "get-page prompt guidance should direct callers to get-component-info for unfamiliar Freedom UI types");
 		prompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
 			because: "get-page prompt guidance should point callers to the MCP-owned existing-app maintenance guide");
 		prompt.Should().Contain($"`{ToolContractGetTool.ToolName}`",

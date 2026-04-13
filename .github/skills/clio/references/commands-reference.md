@@ -70,12 +70,12 @@ clio ping-app <ENV>
 clio ping <ENV>
 ```
 
-### show-web-app-list
-Display registered environments. **Aliases:** `envs`, `show-web-app`
+### list-environments
+Display registered environments. **Aliases:** `show-web-app-list`, `envs`, `show-web-app`
 ```bash
-clio show-web-app-list           # Full JSON
-clio show-web-app-list --short   # Concise table
-clio show-web-app-list <ENV>     # Specific env
+clio list-environments           # Full JSON
+clio list-environments --short   # Concise table
+clio list-environments <ENV>     # Specific env
 clio envs --format table         # Table format
 clio envs --format raw           # Plain text
 ```
@@ -196,11 +196,11 @@ Extract package from .gz archive.
 clio extract-pkg-zip package.gz -d ./output
 ```
 
-### get-pkg-list
-List installed packages. **Aliases:** `packages`
+### list-packages
+List installed packages. **Aliases:** `get-pkg-list`, `packages`
 ```bash
-clio get-pkg-list -e <ENV>
-clio get-pkg-list -e <ENV> -f CustomPrefix -j  # Filter + JSON
+clio list-packages -e <ENV>
+clio list-packages -e <ENV> -f CustomPrefix -j  # Filter + JSON
 ```
 
 ### set-pkg-version / get-pkg-version

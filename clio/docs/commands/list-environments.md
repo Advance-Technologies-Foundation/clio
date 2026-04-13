@@ -1,4 +1,4 @@
-# show-web-app-list
+# list-environments
 
 ## Command Type
 
@@ -6,12 +6,12 @@
 
 ## Name
 
-show-web-app-list - Display registered Creatio environment configurations
+list-environments - Display registered Creatio environment configurations
 
 ## Synopsis
 
 ```bash
-show-web-app-list [NAME] [OPTIONS]
+list-environments [NAME] [OPTIONS]
 ```
 
 ## Aliases
@@ -91,28 +91,28 @@ Default: json
 
 ```bash
 # List all registered environments (JSON format)
-clio show-web-app-list
+clio list-environments
 
 # List all environments in short table format
-clio show-web-app-list --short
-clio show-web-app-list -s
+clio list-environments --short
+clio list-environments -s
 
 # Show specific environment details
-clio show-web-app-list production
-clio show-web-app-list --env production
+clio list-environments production
+clio list-environments --env production
 
 # Show all environments in table format
-clio show-web-app-list --format table
-clio show-web-app-list -f table
+clio list-environments --format table
+clio list-environments -f table
 
 # Show environment in raw text format
-clio show-web-app-list production --format raw
-clio show-web-app-list production --raw
+clio list-environments production --format raw
+clio list-environments production --raw
 
 # Using command aliases
-clio show-web-app-list                           # List all environments
-clio show-web-app-list production                 # Show specific environment
-clio show-web-app-list -s                # Short format
+clio list-environments                           # List all environments
+clio list-environments production                 # Show specific environment
+clio list-environments -s                # Short format
 ```
 
 ## Behavior
@@ -152,16 +152,16 @@ Security Considerations:
 ## Workflow Integration
 
     Before using other commands, check available environments:
-        clio show-web-app-list
+        clio list-environments
 
     Verify specific environment configuration:
-        clio show-web-app-list production
+        clio list-environments production
 
     Quick check of registered environments:
         clio envs -s
 
     Export environment configuration for documentation:
-        clio show-web-app-list production > production-config.json
+        clio list-environments production > production-config.json
 
 ## Troubleshooting
 
@@ -171,7 +171,7 @@ Security Considerations:
 
     Environment not found:
         - Check spelling of environment name
-        - Use 'clio show-web-app-list' to see available environments
+        - Use 'clio list-environments' to see available environments
         - Environment names are case-sensitive
 
     Invalid format specified:
@@ -190,4 +190,4 @@ ping               - Check if Creatio application is responding
 
     https://github.com/Advance-Technologies-Foundation/clio
 
-- [Clio Command Reference](../../Commands.md#show-web-app-list)
+- [Clio Command Reference](../../Commands.md#list-environments)

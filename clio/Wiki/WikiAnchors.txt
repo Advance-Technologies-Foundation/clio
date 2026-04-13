@@ -55,7 +55,7 @@ get-entity-schema-column-properties:get-entity-schema-column-properties
 get-entity-schema-properties:get-entity-schema-properties
 find-entity-schema:find-entity-schema
 get-info:get-info,describe,describe-creatio,instance-info
-get-pkg-list:get-pkg-list,packages
+list-packages:list-packages,get-pkg-list,packages
 get-pkg-version:get-pkg-version,gpv
 get-webservice-url:get-webservice-url,gwu
 git-sync:git-sync,sync
@@ -122,7 +122,7 @@ set-webservice-url:set-webservice-url,swu,webservice
 show-diff:show-diff,compare,diff
 show-local-envs:show-local-envs,localenvs
 show-package-file-content:show-package-file-content,files,show-files
-show-web-app-list:show-web-app-list,env,envs,show-web-app
+list-environments:list-environments,show-web-app-list,env,envs,show-web-app
 start:start,sc,start-creatio,start-server
 stop:stop,stop-creatio
 switch-nuget-to-dll-reference:switch-nuget-to-dll-reference,nuget2dll

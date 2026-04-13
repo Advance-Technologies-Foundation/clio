@@ -390,7 +390,7 @@ internal static class ToolContractCatalog {
 				[
 					SuccessFalseSignal
 				],
-				Field(SuccessFieldName, BooleanType, "Whether the settings-health lookup succeeded."),
+				Field(SuccessFieldName, BooleanType, "Whether the check-settings-health lookup succeeded."),
 				Field(StatusFieldName, StringType, "Bootstrap health status: healthy, repaired, degraded, or broken."),
 				Field("settings-file-path", StringType, "Absolute path to clio appsettings.json."),
 				Field("active-environment-key", StringType, "Configured ActiveEnvironmentKey before fallback resolution."),
@@ -1433,7 +1433,7 @@ internal static class ToolContractCatalog {
 						PageSyncTool.ToolName,
 						PageGetTool.ToolName
 					],
-					"Call component-info before editing when bundle.viewConfig contains unfamiliar crt.* component types."),
+					"Call get-component-info before editing when bundle.viewConfig contains unfamiliar crt.* component types."),
 				Flow(
 					[
 						PageGetTool.ToolName,

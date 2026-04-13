@@ -66,7 +66,7 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises the structured settings-health output contract for bootstrap diagnostics.")]
+	[Description("Advertises the structured check-settings-health output contract for bootstrap diagnostics.")]
 	public void ToolContractGet_Should_Advertise_Settings_Health_Contract() {
 		// Arrange
 		ToolContractGetTool tool = new();
@@ -78,7 +78,7 @@ public sealed class ToolContractGetToolTests {
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "the settings-health contract should be available through get-tool-contract");
+			because: "the check-settings-health contract should be available through get-tool-contract");
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "status",
 			because: "bootstrap diagnostics should advertise their high-level health state");

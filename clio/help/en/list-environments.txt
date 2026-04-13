@@ -2,10 +2,10 @@ COMMAND TYPE
     Configuration Management
 
 NAME
-    show-web-app-list - Display registered Creatio environment configurations
+    list-environments - Display registered Creatio environment configurations
 
 SYNOPSIS
-    show-web-app-list [NAME] [OPTIONS]
+    list-environments [NAME] [OPTIONS]
 
 ALIASES
     env, envs, show-web-app
@@ -75,22 +75,22 @@ FIELDS DISPLAYED
 
 EXAMPLES
     # List all registered environments (JSON format)
-    clio show-web-app-list
+    clio list-environments
     
     # List all environments in short table format
-    clio show-web-app-list --short
+    clio list-environments --short
     clio envs -s
     
     # Show specific environment details
-    clio show-web-app-list production
-    clio show-web-app-list --env production
+    clio list-environments production
+    clio list-environments --env production
     
     # Show all environments in table format
-    clio show-web-app-list --format table
+    clio list-environments --format table
     clio envs -f table
     
     # Show environment in raw text format
-    clio show-web-app-list production --format raw
+    clio list-environments production --format raw
     clio envs production --raw
     
     # Using command aliases
@@ -131,16 +131,16 @@ NOTES
 
 WORKFLOW INTEGRATION
     Before using other commands, check available environments:
-        clio show-web-app-list
+        clio list-environments
     
     Verify specific environment configuration:
-        clio show-web-app-list production
+        clio list-environments production
     
     Quick check of registered environments:
         clio envs -s
     
     Export environment configuration for documentation:
-        clio show-web-app-list production > production-config.json
+        clio list-environments production > production-config.json
 
 TROUBLESHOOTING
     No environments shown:
@@ -149,7 +149,7 @@ TROUBLESHOOTING
     
     Environment not found:
         - Check spelling of environment name
-        - Use 'clio show-web-app-list' to see available environments
+        - Use 'clio list-environments' to see available environments
         - Environment names are case-sensitive
     
     Invalid format specified:

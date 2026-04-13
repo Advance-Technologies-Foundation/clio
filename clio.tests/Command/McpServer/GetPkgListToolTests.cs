@@ -18,7 +18,7 @@ public sealed class GetPkgListToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises the stable MCP tool name for get-pkg-list so tests and callers reference the same production constant.")]
+	[Description("Advertises the stable MCP tool name for list-packages so tests and callers reference the same production constant.")]
 	public void GetPkgList_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(GetPkgListTool)
@@ -36,7 +36,7 @@ public sealed class GetPkgListToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Resolves a fresh get-pkg-list command for the requested environment and returns structured package data filtered by the requested search pattern.")]
+	[Description("Resolves a fresh list-packages command for the requested environment and returns structured package data filtered by the requested search pattern.")]
 	public void GetPkgList_Should_Resolve_Command_And_Return_Filtered_Structured_Result() {
 		// Arrange
 		IApplicationPackageListProvider packageListProvider = Substitute.For<IApplicationPackageListProvider>();
@@ -83,7 +83,7 @@ public sealed class GetPkgListToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Prompt guidance for get-pkg-list references the exact production tool name and keeps the optional filter visible to agents.")]
+	[Description("Prompt guidance for list-packages references the exact production tool name and keeps the optional filter visible to agents.")]
 	public void GetPkgListPrompt_Should_Mention_Tool_Name_And_Filter() {
 		// Arrange
 

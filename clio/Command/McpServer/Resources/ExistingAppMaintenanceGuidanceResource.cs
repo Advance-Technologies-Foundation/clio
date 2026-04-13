@@ -57,7 +57,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - `list-pages` page items identify each page with `schema-name`, together with `uId`, `packageName`, and `parentSchemaName`.
 			       - Use `get-page` to inspect the merged page bundle and retrieve the raw editable page body.
 			       - For writes, send the full `raw.body` string back to `sync-pages` or `update-page`; do not send `bundle` or `bundle.viewConfig` as the body payload.
-			       - Use `component-info` when `get-page` shows unfamiliar `crt.*` component types before editing nested config or child collections.
+			       - Use `get-component-info` when `get-page` shows unfamiliar `crt.*` component types before editing nested config or child collections.
 			       - For standard data-bound form fields, bind `control` or `value` directly to `$Name` or `$PDS_*` attributes and prefer datasource captions such as `$Resources.Strings.PDS_UsrStatus`.
 			       - Do not route standard field bindings through proxy attributes like `$UsrStatus` when the view model path is `PDS.UsrStatus`.
 			       - Reserve `Usr*_label` and `Usr*_caption` resource keys for custom standalone UI with explicit `resources`; do not use those shortcuts as datasource field captions.

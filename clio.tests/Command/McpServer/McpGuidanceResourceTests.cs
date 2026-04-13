@@ -118,7 +118,7 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should advertise the canonical page write path");
 		article.Text.Should().Contain("list-pages -> get-page -> sync-pages -> get-page",
 			because: "the guide should state the canonical page workflow explicitly");
-		article.Text.Should().Contain("component-info",
+		article.Text.Should().Contain("get-component-info",
 			because: "the guide should explain how callers inspect unfamiliar Freedom UI components");
 		article.Text.Should().Contain("$PDS_*",
 			because: "the guide should steer standard form fields toward direct datasource-backed bindings");

@@ -11,7 +11,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool surface for the <c>get-pkg-list</c> command.
+/// MCP tool surface for the <c>list-packages</c> command.
 /// </summary>
 public sealed class GetPkgListTool(
 	GetPkgListCommand command,
@@ -22,7 +22,7 @@ public sealed class GetPkgListTool(
 	/// <summary>
 	/// Stable MCP tool name for listing packages from a Creatio environment.
 	/// </summary>
-	internal const string GetPkgListToolName = "get-pkg-list";
+	internal const string GetPkgListToolName = "list-packages";
 
 	/// <summary>
 	/// Returns environment packages as structured MCP JSON.
@@ -31,7 +31,7 @@ public sealed class GetPkgListTool(
 		OpenWorld = false)]
 	[Description("Returns packages from the specified Creatio environment as structured JSON with package name, version, and maintainer.")]
 	public IReadOnlyList<PackageListItemResult> GetPkgList(
-		[Description("Get-pkg-list parameters")] [Required] GetPkgListArgs args) {
+		[Description("List-packages parameters")] [Required] GetPkgListArgs args) {
 		PkgListOptions options = new() {
 			Environment = args.EnvironmentName,
 			SearchPattern = args.Filter ?? string.Empty

@@ -86,10 +86,11 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="localenvs"></a>
 - [`show-local-envs`](docs/commands/show-local-envs.md) - Show local environments with filesystem and auth status, `localenvs`
 <a id="show-web-app-list"></a>
+<a id="list-environments"></a>
 <a id="env"></a>
 <a id="envs"></a>
 <a id="show-web-app"></a>
-- [`show-web-app-list`](docs/commands/show-web-app-list.md) - List registered Creatio environments, `env`, `envs`, `show-web-app`
+- [`list-environments`](docs/commands/list-environments.md) - List registered Creatio environments, `show-web-app-list`, `env`, `envs`, `show-web-app`
 <a id="uninstall-app-remote"></a>
 <a id="uninstall"></a>
 - [`uninstall-app-remote`](docs/commands/uninstall-app-remote.md) - Uninstall an application package from Creatio, `uninstall`
@@ -138,8 +139,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="compress"></a>
 - [`generate-pkg-zip`](docs/commands/generate-pkg-zip.md) - Prepare an archive of creatio package, `comp-pkg`, `compress`
 <a id="get-pkg-list"></a>
+<a id="list-packages"></a>
 <a id="packages"></a>
-- [`get-pkg-list`](docs/commands/get-pkg-list.md) - List packages in a Creatio environment, `packages`
+- [`list-packages`](docs/commands/list-packages.md) - List packages in a Creatio environment, `get-pkg-list`, `packages`
 <a id="get-pkg-version"></a>
 <a id="gpv"></a>
 - [`get-pkg-version`](docs/commands/get-pkg-version.md) - Get package version, `gpv`

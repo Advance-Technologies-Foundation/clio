@@ -50,7 +50,7 @@ public sealed class AppModelingGuidanceResource {
 			       - `create-app` already performs internal Data Forge enrichment and returns optional `dataforge` diagnostics. Do not require a separate external Data Forge preflight for the standard create flow.
 			       - If Data Forge is unavailable or partially degraded, `create-app` still creates the app shell and reports degraded enrichment through warnings and coverage flags instead of failing the whole create path.
 			       - `sync-schemas` requests use `operations[*].type`. Responses also identify each result by `type`; do not invent or send `operations[*].operation`.
-			       - Canonical page flow after planning a page change: `list-pages` -> `get-page` -> `component-info` when needed -> `sync-pages` or `update-page` -> `get-page` when explicit read-back verification is required.
+			       - Canonical page flow after planning a page change: `list-pages` -> `get-page` -> `get-component-info` when needed -> `sync-pages` or `update-page` -> `get-page` when explicit read-back verification is required.
 			       - Entity-schema mutations are DB-first. After a successful schema tool call, treat the schema as immediately usable without a compile step.
 			       - Treat single-tool entity or page mutations as compatibility fallbacks. Keep the preferred workflow in the current MCP contract unless the task is truly limited to one column, one lookup, or one page save.
 
