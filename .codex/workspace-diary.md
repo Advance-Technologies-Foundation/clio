@@ -2294,3 +2294,10 @@ Context: Raw single-line JSON output was unreadable in the terminal.
 Decision: Switch default output to ConsoleTable (Code|Caption|EntitySchemaName|Description) preceded by an application header line; add --json flag for script-friendly indented JSON. MCP tool unaffected (calls service directly).
 Files: clio/Command/ApplicationSectionGetListCommand.cs, clio.tests/Command/GetAppSectionsCommandTests.cs, clio/help/en/list-app-sections.txt (new), clio/docs/commands/list-app-sections.md (new), clio/Commands.md, .github/skills/clio/references/commands-reference.md
 Impact: Human-readable table by default; --json for piping; 4 unit tests green.
+
+## 2026-04-14 – ActiveEnvironmentKey optional -e for CLI
+Context: When ActiveEnvironmentKey is set in appsettings.json pointing to an existing env, -e was still required in practice because Execute() guards checked options.Environment directly.
+Decision: Fix infrastructure layer only (Configure() and GetEnvironmentSettings() in Program.cs) to populate options.Environment from GetDefaultEnvironmentName() before Execute() is called. MCP kept environment-required by design (user explicit decision).
+Discovery: GetEnvironment(options) in ConfigurationOptions.cs already resolves settings from active env, but never writes back to options.Environment → guards fail on null. Fix is to set options.Environment = activeEnvName in the two Program.cs entry points.
+Files: clio/Program.cs (Configure, GetEnvironmentSettings)
+Impact: All CLI commands now work without -e when ActiveEnvironmentKey is configured. Execute() guards and unit tests unchanged.
