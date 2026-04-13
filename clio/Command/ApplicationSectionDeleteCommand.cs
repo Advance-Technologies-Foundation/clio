@@ -45,6 +45,7 @@ public sealed class ApplicationSectionDeleteService(
 	: IApplicationSectionDeleteService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private const string SysModuleSchemaName = "SysModule";
+	private const string SysModuleLczSchemaName = "SysModuleLcz";
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		PropertyNameCaseInsensitive = true
@@ -78,15 +79,8 @@ public sealed class ApplicationSectionDeleteService(
 			applicationId,
 			request.SectionCode);
 		logger.WriteInfo($"Deleting section '{sectionRecord.Code}' ({sectionRecord.Id})...");
-		string requestBody = BuildDeleteQueryBody(sectionRecord.Id);
-		string responseBody = client.ExecutePostRequest(
-			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Delete, environmentSettings),
-			requestBody);
-		DeleteQueryResponseDto response = JsonSerializer.Deserialize<DeleteQueryResponseDto>(responseBody, JsonOptions)
-			?? throw new InvalidOperationException("DeleteQuery returned an empty response.");
-		if (!response.Success) {
-			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "DeleteQuery failed.");
-		}
+		string deleteUrl = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Delete, environmentSettings);
+		DeleteSection(client, deleteUrl, sectionRecord.Id);
 
 		return new ApplicationSectionDeleteResult(
 			null,
@@ -141,6 +135,55 @@ public sealed class ApplicationSectionDeleteService(
 					applicationId,
 					SelectQueryHelper.GuidDataValueType)
 			]);
+
+	private void DeleteSection(IApplicationClient client, string deleteUrl, string sectionId) {
+		logger.WriteInfo("Clearing section localizations (SysModuleLcz)...");
+		ExecuteDeleteQuery(client, deleteUrl, BuildLczDeleteQueryBody(sectionId));
+		logger.WriteInfo("Deleting SysModule record...");
+		ExecuteDeleteQuery(client, deleteUrl, BuildDeleteQueryBody(sectionId));
+	}
+
+	private void ExecuteDeleteQuery(IApplicationClient client, string deleteUrl, string requestBody) {
+		string responseBody = client.ExecutePostRequest(deleteUrl, requestBody);
+		DeleteQueryResponseDto response = JsonSerializer.Deserialize<DeleteQueryResponseDto>(responseBody, JsonOptions)
+			?? throw new InvalidOperationException("DeleteQuery returned an empty response.");
+		if (!response.Success) {
+			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "DeleteQuery failed.");
+		}
+	}
+
+	private static string BuildLczDeleteQueryBody(string sectionId) =>
+		$$"""
+		{
+		  "__type":"Terrasoft.Nui.ServiceModel.DataContract.DeleteQuery",
+		  "rootSchemaName":"{{SysModuleLczSchemaName}}",
+		  "filters":{
+		    "isEnabled":true,
+		    "filterType":6,
+		    "logicalOperation":0,
+		    "trimDateTimeParameterToDate":false,
+		    "items":{
+		      "primaryFilter":{
+		        "filterType":1,
+		        "comparisonType":3,
+		        "isEnabled":true,
+		        "trimDateTimeParameterToDate":false,
+		        "leftExpression":{
+		          "expressionType":0,
+		          "columnPath":"RecordId"
+		        },
+		        "rightExpression":{
+		          "expressionType":2,
+		          "parameter":{
+		            "dataValueType":0,
+		            "value":"{{sectionId}}"
+		          }
+		        }
+		      }
+		    }
+		  }
+		}
+		""";
 
 	private static string BuildDeleteQueryBody(string sectionId) =>
 		$$"""
