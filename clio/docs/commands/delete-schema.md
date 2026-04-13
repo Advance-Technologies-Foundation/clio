@@ -8,14 +8,16 @@
 
 delete-schema - delete a schema that belongs to the current workspace
 
-**Aliases:** `delete-schema`
-
 ## Description
 
 delete-schema removes a schema from Creatio by using Workspace Explorer
 service calls. The command first retrieves workspace items from the target
 environment, then only allows deleting schemas whose package belongs to the
 current local workspace.
+
+Supported schema types: entity, client unit, source code, process, DCM,
+process user task, campaign, service, addon, Copilot intent, and localization
+schemas.
 
 This command must be executed from a workspace directory.
 

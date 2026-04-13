@@ -25,10 +25,7 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 	private static readonly JsonSerializerOptions SerializerOptions = new() {
 		PropertyNameCaseInsensitive = true
 	};
-	private static readonly HashSet<int> SchemaWorkspaceItemTypes = [
-		3,
-		8
-	];
+	private static readonly HashSet<int> SchemaWorkspaceItemTypes = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly IWorkspacePathBuilder _workspacePathBuilder;

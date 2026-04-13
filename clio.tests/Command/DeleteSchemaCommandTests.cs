@@ -178,6 +178,98 @@ public class DeleteSchemaCommandTests : BaseCommandTests<DeleteSchemaOptions> {
 			.ExecutePostRequest(default, default, default, default, default);
 	}
 
+	[TestCase(3, "EntitySchema")]
+	[TestCase(4, "ClientUnitSchema")]
+	[TestCase(5, "SourceCodeSchema")]
+	[TestCase(6, "ProcessSchema")]
+	[TestCase(7, "DcmSchema")]
+	[TestCase(8, "ProcessUserTaskSchema")]
+	[TestCase(9, "CampaignSchema")]
+	[TestCase(10, "ServiceSchema")]
+	[TestCase(11, "AddonSchema")]
+	[TestCase(12, "CopilotIntentSchema")]
+	[TestCase(13, "LocalizationSchema")]
+	[Description("Deletes schemas of all supported Creatio schema types from a workspace package.")]
+	[Category("Unit")]
+	public void Execute_Should_Delete_Schema_Of_Any_Schema_Type(int schemaType, string schemaTypeName) {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		EnvironmentSettings settings = new() {
+			Uri = "https://localhost",
+			IsNetCore = false
+		};
+		Guid itemId = Guid.Parse("16cd93aa-c7ce-445c-9418-c46439708abe");
+		Guid itemUId = Guid.Parse("2d3946f3-28d5-4560-bb34-f13d14572e96");
+		Guid packageUId = Guid.Parse("1d07fd0e-2ca4-4d20-93b4-eb5a795ea03f");
+
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems).Returns(GetWorkspaceItemsUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeleteWorkspaceItem).Returns(DeleteUrl);
+		workspacePathBuilder.RootPath.Returns(WorkspaceRootPath);
+		workspacePathBuilder.WorkspaceSettingsPath.Returns(WorkspaceSettingsPath);
+		workspacePathBuilder.IsWorkspace.Returns(true);
+		fileSystem.ExistsDirectory(WorkspaceRootPath).Returns(true);
+		jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath).Returns(new WorkspaceSettings {
+			Packages = ["MyPackage"]
+		});
+		applicationClient.ExecutePostRequest(GetWorkspaceItemsUrl, string.Empty, Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(BuildSingleItemResponse(itemId, itemUId, packageUId, schemaType));
+		applicationClient.ExecutePostRequest(DeleteUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("""{"rowsAffected":1,"success":true,"errorInfo":null}""");
+
+		DeleteSchemaCommand command = new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder,
+			jsonConverter, fileSystem);
+		DeleteSchemaOptions options = new() { SchemaName = "UsrSchema" };
+
+		int result = command.Execute(options);
+
+		result.Should().Be(0, $"because schema type {schemaType} ({schemaTypeName}) should be deletable");
+		applicationClient.Received(1).ExecutePostRequest(DeleteUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[TestCase(0, "SqlScript")]
+	[TestCase(1, "SchemaData")]
+	[TestCase(2, "Assembly")]
+	[Description("Non-schema workspace item types (SQL scripts, data, assemblies) cannot be deleted via delete-schema.")]
+	[Category("Unit")]
+	public void Execute_Should_Return_Error_For_Non_Schema_Workspace_Items(int itemType, string itemTypeName) {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		EnvironmentSettings settings = new();
+
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems).Returns(GetWorkspaceItemsUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeleteWorkspaceItem).Returns(DeleteUrl);
+		workspacePathBuilder.RootPath.Returns(WorkspaceRootPath);
+		workspacePathBuilder.WorkspaceSettingsPath.Returns(WorkspaceSettingsPath);
+		workspacePathBuilder.IsWorkspace.Returns(true);
+		fileSystem.ExistsDirectory(WorkspaceRootPath).Returns(true);
+		jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath).Returns(new WorkspaceSettings {
+			Packages = ["MyPackage"]
+		});
+		applicationClient.ExecutePostRequest(GetWorkspaceItemsUrl, string.Empty, Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(BuildSingleItemResponse(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), itemType));
+
+		DeleteSchemaCommand command = new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder,
+			jsonConverter, fileSystem);
+		DeleteSchemaOptions options = new() { SchemaName = "UsrSchema" };
+
+		int result = command.Execute(options);
+
+		result.Should().Be(1,
+			$"because item type {itemType} ({itemTypeName}) is not a schema and should be excluded from delete-schema");
+		applicationClient.DidNotReceive()
+			.ExecutePostRequest(DeleteUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
 	[Test]
 	[Description("Deletes only schema workspace item types when non-schema items share the same name.")]
 	[Category("Unit")]
@@ -230,6 +322,27 @@ public class DeleteSchemaCommandTests : BaseCommandTests<DeleteSchemaOptions> {
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
+	}
+
+	private static string BuildSingleItemResponse(Guid itemId, Guid itemUId, Guid packageUId, int type) {
+		var response = new {
+			items = new[] {
+				new {
+					id = itemId,
+					uId = itemUId,
+					name = "UsrSchema",
+					title = "Schema",
+					packageUId,
+					packageName = "MyPackage",
+					type,
+					modifiedOn = "2026-03-07T05:50:52.434Z",
+					isChanged = true,
+					isLocked = true,
+					isReadOnly = false
+				}
+			}
+		};
+		return JsonSerializer.Serialize(response);
 	}
 
 	private static string GetWorkspaceItemsResponse(Guid itemId, Guid itemUId, Guid packageUId) {
