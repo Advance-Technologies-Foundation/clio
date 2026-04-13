@@ -17,7 +17,7 @@ public sealed class PageListTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<PageListOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "page-list";
+	internal const string ToolName = "list-pages";
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
 		["app-code"] = "code",
 		["appCode"] = "code",

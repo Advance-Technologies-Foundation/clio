@@ -24,11 +24,11 @@ public sealed class ApplicationSectionToolE2ETests {
 	private const string InfoToolName = ApplicationGetInfoTool.ApplicationGetInfoToolName;
 
 	[Test]
-	[Description("Advertises application-section-create in the MCP tool list so callers can discover the existing-app section creation tool.")]
+	[Description("Advertises create-app-section in the MCP tool list so callers can discover the existing-app section creation tool.")]
 	[AllureFeature(SectionCreateToolName)]
 	[AllureTag(SectionCreateToolName)]
 	[AllureName("Application section create tool is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that application-section-create appears in the advertised tool manifest.")]
+	[AllureDescription("Starts the real clio MCP server and verifies that create-app-section appears in the advertised tool manifest.")]
 	public async Task ApplicationSectionCreate_Should_Be_Listed_By_Mcp_Server() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -42,15 +42,15 @@ public sealed class ApplicationSectionToolE2ETests {
 
 		// Assert
 		toolNames.Should().Contain(SectionCreateToolName,
-			because: "application-section-create must be advertised so MCP callers can discover the existing-app section creation tool");
+			because: "create-app-section must be advertised so MCP callers can discover the existing-app section creation tool");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-section-create with an invalid environment, and verifies that the failure remains human-readable.")]
+	[Description("Starts the real clio MCP server, invokes create-app-section with an invalid environment, and verifies that the failure remains human-readable.")]
 	[AllureFeature(SectionCreateToolName)]
 	[AllureTag(SectionCreateToolName)]
 	[AllureName("Application section create reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call application-section-create with an unknown environment name and verifies that the tool returns a structured readable error envelope.")]
+	[AllureDescription("Uses the real clio MCP server to call create-app-section with an unknown environment name and verifies that the tool returns a structured readable error envelope.")]
 	public async Task ApplicationSectionCreate_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -74,20 +74,20 @@ public sealed class ApplicationSectionToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: $"structured application-section-create failures should be returned in the payload instead of as MCP invocation errors. Actual result: {JsonSerializer.Serialize(new { callResult.IsError, callResult.StructuredContent, callResult.Content })}");
+			because: $"structured create-app-section failures should be returned in the payload instead of as MCP invocation errors. Actual result: {JsonSerializer.Serialize(new { callResult.IsError, callResult.StructuredContent, callResult.Content })}");
 		response.Success.Should().BeFalse(
-			because: "application-section-create should fail when the requested environment does not exist");
+			because: "create-app-section should fail when the requested environment does not exist");
 		response.Error.Should().MatchRegex(
 			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
 			because: "the failure should explain that the requested environment is missing");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-section-create without application-code, and verifies that the tool returns a clear validation failure.")]
+	[Description("Starts the real clio MCP server, invokes create-app-section without application-code, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionCreateToolName)]
 	[AllureTag(SectionCreateToolName)]
 	[AllureName("Application section create rejects missing application-code")]
-	[AllureDescription("Uses the real clio MCP server to call application-section-create without application-code and verifies that the failure explains the required target-app selector.")]
+	[AllureDescription("Uses the real clio MCP server to call create-app-section without application-code and verifies that the failure explains the required target-app selector.")]
 	public async Task ApplicationSectionCreate_Should_Reject_Missing_ApplicationCode() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -96,7 +96,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
 		tools.Select(tool => tool.Name).Should().Contain(SectionCreateToolName,
-			because: "application-section-create must be advertised before the end-to-end validation calls can run");
+			because: "create-app-section must be advertised before the end-to-end validation calls can run");
 
 		// Act
 		CallToolResult missingSelectorCallResult = await session.CallToolAsync(
@@ -124,12 +124,12 @@ public sealed class ApplicationSectionToolE2ETests {
 	[AllureFeature(SectionCreateToolName)]
 	[AllureTag(SectionCreateToolName)]
 	[AllureName("Application section create returns structured readback data")]
-	[AllureDescription("Uses the real clio MCP server to discover a reachable sandbox environment and installed application, then calls application-section-create and verifies that the response contains structured section metadata plus page readback data.")]
+	[AllureDescription("Uses the real clio MCP server to discover a reachable sandbox environment and installed application, then calls create-app-section and verifies that the response contains structured section metadata plus page readback data.")]
 	public async Task ApplicationSectionCreate_Should_Return_Structured_Readback_Data() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		if (!settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run application-section-create end-to-end tests.");
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run create-app-section end-to-end tests.");
 		}
 
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -151,7 +151,7 @@ public sealed class ApplicationSectionToolE2ETests {
 				["ping-app", "-e", fallbackEnvironmentName]);
 			if (fallbackPingResult.ExitCode != 0) {
 				Assert.Ignore(
-					$"application-section-create MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
+					$"create-app-section MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
 			}
 
 			environmentName = fallbackEnvironmentName;
@@ -161,11 +161,11 @@ public sealed class ApplicationSectionToolE2ETests {
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
 		tools.Select(tool => tool.Name).Should().Contain(ListToolName,
-			because: "application-get-list must be available for the end-to-end section-create setup");
+			because: "list-apps must be available for the end-to-end section-create setup");
 		tools.Select(tool => tool.Name).Should().Contain(InfoToolName,
-			because: "application-get-info must be available for the end-to-end section-create verification flow");
+			because: "get-app-info must be available for the end-to-end section-create verification flow");
 		tools.Select(tool => tool.Name).Should().Contain(SectionCreateToolName,
-			because: "application-section-create must be available for the end-to-end mutation flow");
+			because: "create-app-section must be available for the end-to-end mutation flow");
 		CallToolResult listCallResult = await session.CallToolAsync(
 			ListToolName,
 			new Dictionary<string, object?> {
@@ -198,7 +198,7 @@ public sealed class ApplicationSectionToolE2ETests {
 
 		// Assert
 		sectionCreateCallResult.IsError.Should().NotBeTrue(
-			because: $"a valid application-section-create request should return structured readback data. Actual result: {JsonSerializer.Serialize(new { sectionCreateCallResult.IsError, sectionCreateCallResult.StructuredContent, sectionCreateCallResult.Content })}");
+			because: $"a valid create-app-section request should return structured readback data. Actual result: {JsonSerializer.Serialize(new { sectionCreateCallResult.IsError, sectionCreateCallResult.StructuredContent, sectionCreateCallResult.Content })}");
 		sectionCreateResponse.Success.Should().BeTrue(
 			because: "successful section creation should return the standard success envelope");
 		sectionCreateResponse.ApplicationCode.Should().Be(targetApplication.Code,

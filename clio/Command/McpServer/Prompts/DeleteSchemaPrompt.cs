@@ -13,7 +13,7 @@ public static class DeleteSchemaPrompt {
 	/// <summary>
 	/// Builds a prompt that directs the agent to delete a schema owned by the current workspace.
 	/// </summary>
-	[McpServerPrompt(Name = "delete-schema"), Description("Prompt to delete a workspace schema")]
+	[McpServerPrompt(Name = "delete-entity-schema"), Description("Prompt to delete a workspace schema")]
 	public static string Prompt(
 		[Required]
 		[Description("Schema name to delete")]
@@ -25,7 +25,7 @@ public static class DeleteSchemaPrompt {
 		[Description("Absolute path to the local workspace")]
 		string workspacePath) =>
 		$"""
-		 Use clio mcp server `delete-schema` destructive tool to delete schema `{schemaName}`
+		 Use clio mcp server `delete-entity-schema` destructive tool to delete schema `{schemaName}`
 		 from Creatio environment `{environmentName}` using workspace path `{workspacePath}`.
 		 Only proceed when the schema belongs to one of the packages in that workspace.
 		 """;

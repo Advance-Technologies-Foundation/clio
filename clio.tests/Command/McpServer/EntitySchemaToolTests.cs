@@ -528,7 +528,7 @@ public sealed class EntitySchemaToolTests {
 			because: "schema-read prompt guidance should reference the exact production tool name");
 		schemaPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
 			because: "schema-read prompt guidance should point callers to the existing-app maintenance guide");
-		schemaPrompt.Should().Contain("read step before `modify-entity-schema-column` or `schema-sync`",
+		schemaPrompt.Should().Contain("read step before `modify-entity-schema-column` or `sync-schemas`",
 			because: "schema-read prompt guidance should describe the canonical inspect step before mutation");
 		columnPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 			because: "column-read prompt guidance should reference the exact production tool name");
@@ -624,7 +624,7 @@ public sealed class EntitySchemaToolTests {
 			because: "update prompt guidance should advertise the supported Email aliases");
 		updatePrompt.Should().Contain("default-value-source=Const",
 			because: "update prompt guidance should still explain unsupported legacy binary default usage");
-		updatePrompt.Should().Contain("schema-sync",
+		updatePrompt.Should().Contain("sync-schemas",
 			because: "update prompt guidance should steer multi-step schema workflows toward the composite MCP tool");
 		modifyPrompt.Should().Contain("File",
 			because: "modify prompt guidance should advertise file column support");

@@ -30,11 +30,11 @@ public sealed class ApplicationToolE2ETests {
 	private const string SchemaSyncToolName = SchemaSyncTool.ToolName;
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-get-list for the configured sandbox environment, and verifies that a structured installed-application list envelope is returned.")]
+	[Description("Starts the real clio MCP server, invokes list-apps for the configured sandbox environment, and verifies that a structured installed-application list envelope is returned.")]
 	[AllureFeature(ListToolName)]
 	[AllureTag(ListToolName)]
 	[AllureName("Application get list returns structured installed applications")]
-	[AllureDescription("Uses the real clio MCP server to call application-get-list for the configured sandbox environment and verifies that the returned structured application list envelope contains usable id, name, and code fields.")]
+	[AllureDescription("Uses the real clio MCP server to call list-apps for the configured sandbox environment and verifies that the returned structured application list envelope contains usable id, name, and code fields.")]
 	public async Task ApplicationGetList_Should_Return_Structured_Applications() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -49,7 +49,7 @@ public sealed class ApplicationToolE2ETests {
 
 		// Assert
 		actResult.CallResult.IsError.Should().NotBeTrue(
-			because: $"a valid application-get-list request should return a structured MCP payload. Actual result: {DescribeCallResult(actResult.CallResult)}");
+			because: $"a valid list-apps request should return a structured MCP payload. Actual result: {DescribeCallResult(actResult.CallResult)}");
 		actResult.Result.Success.Should().BeTrue(
 			because: "successful list calls should return the core-style success envelope");
 		actResult.Result.Error.Should().BeNullOrWhiteSpace(
@@ -64,11 +64,11 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-get-info for an installed application from the sandbox environment, and verifies that a structured package/entity success envelope is returned.")]
+	[Description("Starts the real clio MCP server, invokes get-app-info for an installed application from the sandbox environment, and verifies that a structured package/entity success envelope is returned.")]
 	[AllureFeature(InfoToolName)]
 	[AllureTag(InfoToolName)]
 	[AllureName("Application get info returns structured package and entity metadata")]
-	[AllureDescription("Uses the real clio MCP server to call application-get-list, reuses the first returned application code, and verifies that application-get-info returns a package identifier plus runtime entity metadata in the core response envelope.")]
+	[AllureDescription("Uses the real clio MCP server to call list-apps, reuses the first returned application code, and verifies that get-app-info returns a package identifier plus runtime entity metadata in the core response envelope.")]
 	public async Task ApplicationGetInfo_Should_Return_Structured_Metadata() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -90,17 +90,17 @@ public sealed class ApplicationToolE2ETests {
 
 		// Assert
 		actResult.CallResult.IsError.Should().NotBeTrue(
-			because: $"a valid application-get-info request should return structured package and entity metadata. Actual result: {DescribeCallResult(actResult.CallResult)}");
+			because: $"a valid get-app-info request should return structured package and entity metadata. Actual result: {DescribeCallResult(actResult.CallResult)}");
 		actResult.Result.Success.Should().BeTrue(
 			because: "successful info calls should return the core-style success envelope");
 		actResult.Result.ApplicationCode.Should().Be(appCode,
-			because: "application-get-info should echo the installed application code that was used to resolve the target app");
+			because: "get-app-info should echo the installed application code that was used to resolve the target app");
 		actResult.Result.ApplicationId.Should().NotBeNullOrWhiteSpace(
-			because: "application-get-info should return the installed application identifier for follow-up targeting");
+			because: "get-app-info should return the installed application identifier for follow-up targeting");
 		actResult.Result.ApplicationName.Should().NotBeNullOrWhiteSpace(
-			because: "application-get-info should return the installed application display name");
+			because: "get-app-info should return the installed application display name");
 		actResult.Result.ApplicationVersion.Should().NotBeNullOrWhiteSpace(
-			because: "application-get-info should return the installed application version");
+			because: "get-app-info should return the installed application version");
 		actResult.Result.PackageUId.Should().NotBeNullOrWhiteSpace(
 			because: "the application info response should include the primary package identifier");
 		actResult.Result.PackageName.Should().NotBeNullOrWhiteSpace(
@@ -116,11 +116,11 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-get-info without identifiers, and verifies that a structured error envelope explains the exactly-one rule.")]
+	[Description("Starts the real clio MCP server, invokes get-app-info without identifiers, and verifies that a structured error envelope explains the exactly-one rule.")]
 	[AllureFeature(InfoToolName)]
 	[AllureTag(InfoToolName)]
 	[AllureName("Application get info rejects missing identifiers")]
-	[AllureDescription("Uses the real clio MCP server to call application-get-info without id or code and verifies that the tool returns a structured error envelope with clear exactly-one validation guidance.")]
+	[AllureDescription("Uses the real clio MCP server to call get-app-info without id or code and verifies that the tool returns a structured error envelope with clear exactly-one validation guidance.")]
 	public async Task ApplicationGetInfo_Should_Reject_Missing_Identifiers() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -137,17 +137,17 @@ public sealed class ApplicationToolE2ETests {
 
 		// Assert
 		result.Success.Should().BeFalse(
-			because: "application-get-info should return a structured error envelope when neither identifier is provided");
+			because: "get-app-info should return a structured error envelope when neither identifier is provided");
 		result.Error.Should().MatchRegex("(?is)(exactly one|id or code)",
 			because: "the failure should explain the exact-one identifier rule with the canonical selector names");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-get-info with both identifiers, and verifies that a structured error envelope explains the exactly-one rule.")]
+	[Description("Starts the real clio MCP server, invokes get-app-info with both identifiers, and verifies that a structured error envelope explains the exactly-one rule.")]
 	[AllureFeature(InfoToolName)]
 	[AllureTag(InfoToolName)]
 	[AllureName("Application get info rejects both identifiers")]
-	[AllureDescription("Uses the real clio MCP server to call application-get-info with both id and code and verifies that the tool returns a structured error envelope with clear exactly-one validation guidance.")]
+	[AllureDescription("Uses the real clio MCP server to call get-app-info with both id and code and verifies that the tool returns a structured error envelope with clear exactly-one validation guidance.")]
 	public async Task ApplicationGetInfo_Should_Reject_Both_Identifiers() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -169,17 +169,17 @@ public sealed class ApplicationToolE2ETests {
 
 		// Assert
 		result.Success.Should().BeFalse(
-			because: "application-get-info should return a structured error envelope when both identifiers are provided");
+			because: "get-app-info should return a structured error envelope when both identifiers are provided");
 		result.Error.Should().MatchRegex("(?is)(exactly one|id or code)",
 			because: "the failure should explain the exact-one identifier rule with the canonical selector names");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-get-info with a bad application code, and verifies that a structured error envelope reports the lookup failure.")]
+	[Description("Starts the real clio MCP server, invokes get-app-info with a bad application code, and verifies that a structured error envelope reports the lookup failure.")]
 	[AllureFeature(InfoToolName)]
 	[AllureTag(InfoToolName)]
 	[AllureName("Application get info reports unknown application failures")]
-	[AllureDescription("Uses the real clio MCP server to call application-get-info with an unknown application code and verifies that the tool returns a structured error envelope mentioning that the application was not found.")]
+	[AllureDescription("Uses the real clio MCP server to call get-app-info with an unknown application code and verifies that the tool returns a structured error envelope mentioning that the application was not found.")]
 	public async Task ApplicationGetInfo_Should_Report_Unknown_Application_Failure() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -197,23 +197,23 @@ public sealed class ApplicationToolE2ETests {
 
 		// Assert
 		result.Success.Should().BeFalse(
-			because: "application-get-info should return a structured error envelope when the requested installed application does not exist");
+			because: "get-app-info should return a structured error envelope when the requested installed application does not exist");
 		result.Error.Should().MatchRegex(
 			$"(?is)({Regex.Escape(invalidAppCode)}|application.*not.*found|not found)",
 			because: "the failure should tell a human that the requested application could not be resolved");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-create for a configured sandbox environment, and verifies that the created application is returned in the structured metadata envelope.")]
+	[Description("Starts the real clio MCP server, invokes create-app for a configured sandbox environment, and verifies that the created application is returned in the structured metadata envelope.")]
 	[AllureFeature(CreateToolName)]
 	[AllureTag(CreateToolName)]
 	[AllureName("Application create returns structured metadata")]
-	[AllureDescription("Uses the real clio MCP server to call application-create for a configured sandbox environment and verifies that the response contains the same structured metadata shape as application-get-info.")]
+	[AllureDescription("Uses the real clio MCP server to call create-app for a configured sandbox environment and verifies that the response contains the same structured metadata shape as get-app-info.")]
 	public async Task ApplicationCreate_Should_Return_Structured_Metadata() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		if (!settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run application-create end-to-end tests.");
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run create-app end-to-end tests.");
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
@@ -225,7 +225,7 @@ public sealed class ApplicationToolE2ETests {
 		if (string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationTemplateCode) ||
 			string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationIconId) ||
 			string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationIconBackground)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:ApplicationTemplateCode, ApplicationIconId, and ApplicationIconBackground to run application-create success E2E.");
+			Assert.Ignore("Configure McpE2E:Sandbox:ApplicationTemplateCode, ApplicationIconId, and ApplicationIconBackground to run create-app success E2E.");
 		}
 
 		// Act
@@ -243,33 +243,33 @@ public sealed class ApplicationToolE2ETests {
 
 		// Assert
 		actResult.CallResult.IsError.Should().NotBeTrue(
-			because: $"a valid application-create request should return structured application metadata. Actual result: {DescribeCallResult(actResult.CallResult)}");
+			because: $"a valid create-app request should return structured application metadata. Actual result: {DescribeCallResult(actResult.CallResult)}");
 		actResult.Result.Success.Should().BeTrue(
 			because: "successful create calls should return the core-style success envelope");
 		actResult.Result.PackageUId.Should().NotBeNullOrWhiteSpace(
-			because: "successful application-create calls should return the created application's primary package identifier");
+			because: "successful create-app calls should return the created application's primary package identifier");
 		actResult.Result.PackageName.Should().NotBeNullOrWhiteSpace(
-			because: "successful application-create calls should return the created application's primary package name");
+			because: "successful create-app calls should return the created application's primary package name");
 		actResult.Result.CanonicalMainEntityName.Should().Be(applicationCode,
-			because: "application-create should surface the canonical main entity explicitly for MCP clients");
+			because: "create-app should surface the canonical main entity explicitly for MCP clients");
 		actResult.Result.ApplicationCode.Should().Be(applicationCode,
-			because: "application-create should return the created installed application code in the same envelope shape as application-get-info");
+			because: "create-app should return the created installed application code in the same envelope shape as get-app-info");
 		actResult.Result.ApplicationName.Should().Be(applicationName,
-			because: "application-create should return the created installed application display name");
+			because: "create-app should return the created installed application display name");
 		actResult.Result.ApplicationId.Should().NotBeNullOrWhiteSpace(
-			because: "application-create should return the created installed application identifier");
+			because: "create-app should return the created installed application identifier");
 		actResult.Result.Pages.Should().NotBeNull(
-			because: "application-create should return the primary-package page summaries together with entity context");
+			because: "create-app should return the primary-package page summaries together with entity context");
 		actResult.Result.DataForge.Should().NotBeNull(
-			because: "application-create should return Data Forge diagnostics together with the created application metadata");
+			because: "create-app should return Data Forge diagnostics together with the created application metadata");
 		actResult.Result.DataForge!.Used.Should().BeTrue(
-			because: "application-create should always report that the internal Data Forge enrichment stage ran");
+			because: "create-app should always report that the internal Data Forge enrichment stage ran");
 		actResult.Result.DataForge.Coverage.Should().NotBeNull(
-			because: "application-create should expose Data Forge coverage flags even when the enrichment stage is degraded");
+			because: "create-app should expose Data Forge coverage flags even when the enrichment stage is degraded");
 		ApplicationEntityEnvelope? canonicalMainEntity = actResult.Result.Entities?
 			.FirstOrDefault(entity => string.Equals(entity.Name, applicationCode, StringComparison.OrdinalIgnoreCase));
 		canonicalMainEntity.Should().NotBeNull(
-			because: "successful application-create calls should include the canonical main entity payload");
+			because: "successful create-app calls should include the canonical main entity payload");
 		canonicalMainEntity!.Caption.Should().Be(applicationName,
 			because: "the canonical main entity caption should reflect the requested application name instead of the generic template fallback");
 		actResult.Result.Error.Should().BeNullOrWhiteSpace(
@@ -277,20 +277,20 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	[Test]
-	[Description("Creates an application, mutates the canonical main entity through schema-sync, and verifies application-get-info still returns the application display name instead of Base object.")]
+	[Description("Creates an application, mutates the canonical main entity through sync-schemas, and verifies get-app-info still returns the application display name instead of Base object.")]
 	[AllureFeature(CreateToolName)]
 	[AllureFeature(SchemaSyncToolName)]
 	[AllureFeature(InfoToolName)]
 	[AllureTag(CreateToolName)]
 	[AllureTag(SchemaSyncToolName)]
 	[AllureTag(InfoToolName)]
-	[AllureName("Application get info keeps canonical main entity caption after schema-sync")]
-	[AllureDescription("Uses the real clio MCP server to create an application, applies a minimal schema-sync update-entity mutation to the canonical main entity, then verifies application-get-info still returns the installed application display name instead of the generic Base object fallback.")]
+	[AllureName("Application get info keeps canonical main entity caption after sync-schemas")]
+	[AllureDescription("Uses the real clio MCP server to create an application, applies a minimal sync-schemas update-entity mutation to the canonical main entity, then verifies get-app-info still returns the installed application display name instead of the generic Base object fallback.")]
 	public async Task ApplicationGetInfo_Should_Keep_Canonical_Main_Entity_Caption_After_SchemaSync() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		if (!settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run application/schema-sync regression E2E tests.");
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run application/sync-schemas regression E2E tests.");
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
@@ -303,7 +303,7 @@ public sealed class ApplicationToolE2ETests {
 		if (string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationTemplateCode) ||
 			string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationIconId) ||
 			string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationIconBackground)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:ApplicationTemplateCode, ApplicationIconId, and ApplicationIconBackground to run application/schema-sync regression E2E.");
+			Assert.Ignore("Configure McpE2E:Sandbox:ApplicationTemplateCode, ApplicationIconId, and ApplicationIconBackground to run application/sync-schemas regression E2E.");
 		}
 
 		ApplicationInfoActResult createResult = await ActCreateAsync(
@@ -338,23 +338,23 @@ public sealed class ApplicationToolE2ETests {
 
 		// Assert
 		createResult.Result.Success.Should().BeTrue(
-			because: "the regression scenario requires a successfully created application before schema-sync mutates the canonical main entity");
+			because: "the regression scenario requires a successfully created application before sync-schemas mutates the canonical main entity");
 		schemaSyncCallResult.IsError.Should().NotBeTrue(
-			because: $"schema-sync should return a structured payload for the canonical-main-entity regression scenario. Actual result: {DescribeCallResult(schemaSyncCallResult)}");
+			because: $"sync-schemas should return a structured payload for the canonical-main-entity regression scenario. Actual result: {DescribeCallResult(schemaSyncCallResult)}");
 		schemaSyncResponse.GetProperty("success").GetBoolean().Should().BeTrue(
-			because: "the minimal schema-sync update should succeed before application-get-info readback is validated");
+			because: "the minimal sync-schemas update should succeed before get-app-info readback is validated");
 		canonicalMainEntity.Should().NotBeNull(
-			because: "application-get-info should continue to return the canonical main entity after schema-sync mutations");
+			because: "get-app-info should continue to return the canonical main entity after sync-schemas mutations");
 		canonicalMainEntity!.Caption.Should().Be(applicationName,
-			because: "the canonical main entity should keep the installed application display name instead of degrading to Base object after schema-sync");
+			because: "the canonical main entity should keep the installed application display name instead of degrading to Base object after sync-schemas");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-create with an invalid environment, and verifies that a structured error envelope reports the failure.")]
+	[Description("Starts the real clio MCP server, invokes create-app with an invalid environment, and verifies that a structured error envelope reports the failure.")]
 	[AllureFeature(CreateToolName)]
 	[AllureTag(CreateToolName)]
 	[AllureName("Application create reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call application-create with an unknown environment name and verifies that the tool returns a structured error envelope mentioning the missing environment.")]
+	[AllureDescription("Uses the real clio MCP server to call create-app with an unknown environment name and verifies that the tool returns a structured error envelope mentioning the missing environment.")]
 	public async Task ApplicationCreate_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -376,18 +376,18 @@ public sealed class ApplicationToolE2ETests {
 
 		// Assert
 		result.Success.Should().BeFalse(
-			because: "application-create should return a structured error envelope when the requested environment is not registered");
+			because: "create-app should return a structured error envelope when the requested environment is not registered");
 		result.Error.Should().MatchRegex(
 			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
 			because: "the failure should tell a human that the requested environment is not registered");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-create with forbidden localization-map fields, and verifies that validation rejects the request before any create side effect is attempted.")]
+	[Description("Starts the real clio MCP server, invokes create-app with forbidden localization-map fields, and verifies that validation rejects the request before any create side effect is attempted.")]
 	[AllureFeature(CreateToolName)]
 	[AllureTag(CreateToolName)]
 	[AllureName("Application create rejects localization map fields")]
-	[AllureDescription("Uses the real clio MCP server to call application-create with forbidden localization-map fields and verifies that the tool returns a structured validation error instead of attempting app creation.")]
+	[AllureDescription("Uses the real clio MCP server to call create-app with forbidden localization-map fields and verifies that the tool returns a structured validation error instead of attempting app creation.")]
 	public async Task ApplicationCreate_Should_Reject_Localization_Map_Fields() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -397,7 +397,7 @@ public sealed class ApplicationToolE2ETests {
 		string suffix = Guid.NewGuid().ToString("N")[..8];
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
 		tools.Select(tool => tool.Name).Should().Contain(CreateToolName,
-			because: "the application-create MCP tool must be advertised before the end-to-end call can be executed");
+			because: "the create-app MCP tool must be advertised before the end-to-end call can be executed");
 
 		Dictionary<string, object?> args = BuildCreateArgs(
 			environmentName: "sandbox",
@@ -420,27 +420,27 @@ public sealed class ApplicationToolE2ETests {
 			},
 			cancellationTokenSource.Token);
 		callResult.IsError.Should().NotBeTrue(
-			because: $"structured application-create validation failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
+			because: $"structured create-app validation failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
 		ApplicationContextResponseEnvelope result = ApplicationResultParser.ExtractInfo(callResult);
 
 		// Assert
 		result.Success.Should().BeFalse(
-			because: "application-create should reject forbidden localization maps before attempting a create");
+			because: "create-app should reject forbidden localization maps before attempting a create");
 		result.Error.Should().MatchRegex("(?is)(scalar-only|locali[sz]ation|title-localizations)",
-			because: "the failure should explain that localization maps are forbidden on application-create");
+			because: "the failure should explain that localization maps are forbidden on create-app");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-create with an invalid template payload, and verifies that a structured error envelope reports the failure.")]
+	[Description("Starts the real clio MCP server, invokes create-app with an invalid template payload, and verifies that a structured error envelope reports the failure.")]
 	[AllureFeature(CreateToolName)]
 	[AllureTag(CreateToolName)]
 	[AllureName("Application create reports invalid template failures")]
-	[AllureDescription("Uses the real clio MCP server to call application-create with a clearly invalid template code and verifies that the create request returns a structured error envelope with readable diagnostics.")]
+	[AllureDescription("Uses the real clio MCP server to call create-app with a clearly invalid template code and verifies that the create request returns a structured error envelope with readable diagnostics.")]
 	public async Task ApplicationCreate_Should_Report_Invalid_Template_Failure() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		if (!settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run application-create invalid template end-to-end tests.");
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run create-app invalid template end-to-end tests.");
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
@@ -462,18 +462,18 @@ public sealed class ApplicationToolE2ETests {
 
 		// Assert
 		result.Success.Should().BeFalse(
-			because: "application-create should return a structured error envelope when the supplied template code is invalid");
+			because: "create-app should return a structured error envelope when the supplied template code is invalid");
 		result.Error.Should().MatchRegex(
 			$"(?is)({Regex.Escape(invalidTemplateCode)}|template|dependency|failed)",
 			because: "the failure should include readable diagnostics for the invalid create payload");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-create with malformed optional-template-data-json, and verifies that a structured error envelope is returned before any create side effect is attempted.")]
+	[Description("Starts the real clio MCP server, invokes create-app with malformed optional-template-data-json, and verifies that a structured error envelope is returned before any create side effect is attempted.")]
 	[AllureFeature(CreateToolName)]
 	[AllureTag(CreateToolName)]
 	[AllureName("Application create rejects malformed template JSON")]
-	[AllureDescription("Uses the real clio MCP server to call application-create with malformed optional-template-data-json and verifies that the tool returns readable validation diagnostics in a structured error envelope.")]
+	[AllureDescription("Uses the real clio MCP server to call create-app with malformed optional-template-data-json and verifies that the tool returns readable validation diagnostics in a structured error envelope.")]
 	public async Task ApplicationCreate_Should_Reject_Malformed_OptionalTemplateDataJson() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -496,23 +496,23 @@ public sealed class ApplicationToolE2ETests {
 
 		// Assert
 		result.Success.Should().BeFalse(
-			because: "application-create should return a structured error envelope when optional-template-data-json is malformed");
+			because: "create-app should return a structured error envelope when optional-template-data-json is malformed");
 		result.Error.Should().MatchRegex(
 			"(?is)(optional-template-data-json|invalid)",
 			because: "the failure should explain that the JSON payload is invalid");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-create with icon-id set to auto, and verifies that automatic icon resolution still produces structured metadata.")]
+	[Description("Starts the real clio MCP server, invokes create-app with icon-id set to auto, and verifies that automatic icon resolution still produces structured metadata.")]
 	[AllureFeature(CreateToolName)]
 	[AllureTag(CreateToolName)]
 	[AllureName("Application create resolves auto icon ids")]
-	[AllureDescription("Uses the real clio MCP server to call application-create with icon-id='auto' and verifies that automatic icon resolution still produces structured application metadata.")]
+	[AllureDescription("Uses the real clio MCP server to call create-app with icon-id='auto' and verifies that automatic icon resolution still produces structured application metadata.")]
 	public async Task ApplicationCreate_Should_Support_Auto_IconId() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		if (!settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run application-create auto icon end-to-end tests.");
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run create-app auto icon end-to-end tests.");
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
@@ -542,11 +542,11 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	[Test]
-	[Description("Advertises application-delete in the MCP tool list so callers can discover the uninstall tool.")]
+	[Description("Advertises delete-app in the MCP tool list so callers can discover the uninstall tool.")]
 	[AllureFeature(DeleteToolName)]
 	[AllureTag(DeleteToolName)]
 	[AllureName("Application delete tool is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that application-delete appears in the advertised tool manifest.")]
+	[AllureDescription("Starts the real clio MCP server and verifies that delete-app appears in the advertised tool manifest.")]
 	public async Task ApplicationDelete_Should_Be_Listed_By_Mcp_Server() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -560,22 +560,22 @@ public sealed class ApplicationToolE2ETests {
 
 		// Assert
 		toolNames.Should().Contain(DeleteToolName,
-			because: "application-delete must be advertised so MCP callers can discover the uninstall tool");
+			because: "delete-app must be advertised so MCP callers can discover the uninstall tool");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-delete with an unknown environment, and verifies that the failure remains human-readable.")]
+	[Description("Starts the real clio MCP server, invokes delete-app with an unknown environment, and verifies that the failure remains human-readable.")]
 	[AllureFeature(DeleteToolName)]
 	[AllureTag(DeleteToolName)]
 	[AllureName("Application delete reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call application-delete with an unknown environment and verifies that the tool returns a structured readable error envelope.")]
+	[AllureDescription("Uses the real clio MCP server to call delete-app with an unknown environment and verifies that the tool returns a structured readable error envelope.")]
 	public async Task ApplicationDelete_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		string invalidEnvironmentName = $"missing-application-delete-env-{Guid.NewGuid():N}";
+		string invalidEnvironmentName = $"missing-delete-app-env-{Guid.NewGuid():N}";
 
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
@@ -591,20 +591,20 @@ public sealed class ApplicationToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: $"structured application-delete failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
+			because: $"structured delete-app failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
 		response.Success.Should().BeFalse(
-			because: "application-delete should fail when the requested environment does not exist");
+			because: "delete-app should fail when the requested environment does not exist");
 		response.Error.Should().MatchRegex(
 			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
 			because: "the failure should explain that the requested environment is missing");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-delete without environment-name or explicit connection args, and verifies that the failure explains the missing target.")]
+	[Description("Starts the real clio MCP server, invokes delete-app without environment-name or explicit connection args, and verifies that the failure explains the missing target.")]
 	[AllureFeature(DeleteToolName)]
 	[AllureTag(DeleteToolName)]
 	[AllureName("Application delete rejects missing execution target")]
-	[AllureDescription("Uses the real clio MCP server to call application-delete without environment-name or URI credentials and verifies that the tool returns readable resolver diagnostics.")]
+	[AllureDescription("Uses the real clio MCP server to call delete-app without environment-name or URI credentials and verifies that the tool returns readable resolver diagnostics.")]
 	public async Task ApplicationDelete_Should_Reject_Missing_Execution_Target() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -625,9 +625,9 @@ public sealed class ApplicationToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: $"structured application-delete failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
+			because: $"structured delete-app failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
 		response.Success.Should().BeFalse(
-			because: "application-delete should fail when the call does not identify any execution target");
+			because: "delete-app should fail when the call does not identify any execution target");
 		response.Error.Should().Contain("Either a configured environment name or an explicit URI is required",
 			because: "the failure should explain that the MCP request needs an environment-name or explicit URI");
 	}
@@ -700,12 +700,12 @@ public sealed class ApplicationToolE2ETests {
 		string? code) {
 		CallToolResult callResult = await CallInfoAsync(session, cancellationToken, environmentName, id, code);
 		callResult.IsError.Should().NotBeTrue(
-			because: $"structured application-get-info failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
+			because: $"structured get-app-info failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
 		return ApplicationResultParser.ExtractInfo(callResult);
 	}
 
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
-		Justification = "E2E helper parameters intentionally mirror the application-create MCP request shape.")]
+		Justification = "E2E helper parameters intentionally mirror the create-app MCP request shape.")]
 	private static async Task<ApplicationInfoActResult> ActCreateAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
@@ -741,7 +741,7 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
-		Justification = "E2E helper parameters intentionally mirror the application-create MCP request shape.")]
+		Justification = "E2E helper parameters intentionally mirror the create-app MCP request shape.")]
 	private static async Task<ApplicationContextResponseEnvelope> ActCreateFailureAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
@@ -765,7 +765,7 @@ public sealed class ApplicationToolE2ETests {
 			iconBackground,
 			optionalTemplateDataJson);
 		callResult.IsError.Should().NotBeTrue(
-			because: $"structured application-create failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
+			because: $"structured create-app failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
 		return ApplicationResultParser.ExtractInfo(callResult);
 	}
 
@@ -775,7 +775,7 @@ public sealed class ApplicationToolE2ETests {
 		string environmentName) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(ListToolName,
-			because: "the application-get-list MCP tool must be advertised before the end-to-end call can be executed");
+			because: "the list-apps MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			ListToolName,
@@ -795,7 +795,7 @@ public sealed class ApplicationToolE2ETests {
 		string? code) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(InfoToolName,
-			because: "the application-get-info MCP tool must be advertised before the end-to-end call can be executed");
+			because: "the get-app-info MCP tool must be advertised before the end-to-end call can be executed");
 
 		Dictionary<string, object?> args = new() {
 			["environment-name"] = environmentName
@@ -817,7 +817,7 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
-		Justification = "E2E helper parameters intentionally mirror the application-create MCP request shape.")]
+		Justification = "E2E helper parameters intentionally mirror the create-app MCP request shape.")]
 	private static async Task<CallToolResult> CallCreateAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
@@ -831,7 +831,7 @@ public sealed class ApplicationToolE2ETests {
 		string? optionalTemplateDataJson) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(CreateToolName,
-			because: "the application-create MCP tool must be advertised before the end-to-end call can be executed");
+			because: "the create-app MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			CreateToolName,
@@ -858,7 +858,7 @@ public sealed class ApplicationToolE2ETests {
 		string addedColumnName) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(SchemaSyncToolName,
-			because: "the schema-sync MCP tool must be advertised before the canonical-main-entity regression scenario can be executed");
+			because: "the sync-schemas MCP tool must be advertised before the canonical-main-entity regression scenario can be executed");
 
 		return await session.CallToolAsync(
 			SchemaSyncToolName,
@@ -891,7 +891,7 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
-		Justification = "E2E helper parameters intentionally mirror the application-create MCP request shape.")]
+		Justification = "E2E helper parameters intentionally mirror the create-app MCP request shape.")]
 	private static Dictionary<string, object?> BuildCreateArgs(
 		string environmentName,
 		string? name,

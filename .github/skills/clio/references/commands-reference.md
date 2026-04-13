@@ -1131,7 +1131,7 @@ clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
 ```
 Options: `--schema-name` (required), `--body` (required), `--dry-run`, `--resources` (JSON object)
 
-### page-sync
+### sync-pages
 Update multiple Freedom UI page schemas in one MCP call. **MCP-only tool** — not available as a standalone CLI command.
 
 Each page is processed independently; failures do not stop remaining pages. Supports client-side validation (`validate: true`, default) and read-back verification (`verify: false`, default).
@@ -1226,7 +1226,7 @@ Options: `--package` (required), `--binding-name` (required), `--values` (JSON, 
 ## Schema & Process User Task CRUD
 
 ### delete-entity-schema
-Delete a schema from a workspace package. **Alias:** `delete-schema`. Must be run from a workspace directory.
+Delete a schema from a workspace package. **Alias:** `delete-entity-schema`. Must be run from a workspace directory.
 ```bash
 clio delete-entity-schema UsrSendInvoice -e <ENV>
 ```
@@ -1272,7 +1272,7 @@ Options: `--add-parameter` (`|`-separated), `--add-parameter-item` (`|`-separate
 ## DataForge Orchestration
 
 DataForge is a semantic search and knowledge-graph service embedded in Creatio. clio exposes it through two surfaces:
-- **Passive enrichment** — built into write tools (`application-create`, `schema-sync`, `create-entity-schema`, `create-lookup`, `update-entity-schema`). Runs automatically before the mutation, returns a `dataforge` section alongside the result. Never blocks on failure.
+- **Passive enrichment** — built into write tools (`create-app`, `sync-schemas`, `create-entity-schema`, `create-lookup`, `update-entity-schema`). Runs automatically before the mutation, returns a `dataforge` section alongside the result. Never blocks on failure.
 - **Active orchestration** — the AI agent calls DataForge tools explicitly, at the right points in a workflow, via the Layer 0–4 protocol below.
 
 Full guidance: `docs://mcp/guides/dataforge-orchestration` (read from the running clio MCP server).
@@ -1292,7 +1292,7 @@ Call `dataforge-context(requirement-summary, candidate-terms, lookup-hints)` onc
 - Failure → skip Layer 1; write tools carry their own enrichment.
 
 **Layer 2 — Read auto-enrichment from write tool responses**
-After `application-create`, `schema-sync`, `create-entity-schema`, `create-lookup`, `update-entity-schema` — read the `dataforge` section returned in the response.
+After `create-app`, `sync-schemas`, `create-entity-schema`, `create-lookup`, `update-entity-schema` — read the `dataforge` section returned in the response.
 Do NOT call DataForge separately before these tools; they already do it.
 
 **Layer 3 — Explicit pre-flight for tools without internal enrichment**
@@ -1302,12 +1302,12 @@ Consistent failure rule: if the caller supplied the value → proceed + warn; if
 |---|---|---|
 | Adding Lookup column via `modify-entity-schema-column` with uncertain `reference-schema-name` | `dataforge-find-tables(query)` | use name/caption/description similarity as a manual confirmation step; if still ambiguous, confirm with the user |
 | Writing rows with unknown lookup GUID via `create-data-binding-db` / `upsert-data-binding-row-db` | `dataforge-find-lookups(schema-name, query)` | use the best match when `score >= 0.70`; otherwise ask the user |
-| Cross-entity FK design before multi-entity `schema-sync` | `dataforge-get-relations(source, target)` | any result helps; on failure, design the FK independently |
+| Cross-entity FK design before multi-entity `sync-schemas` | `dataforge-get-relations(source, target)` | any result helps; on failure, design the FK independently |
 | Runtime column inspection outside local package | `dataforge-get-table-columns(table-name)` | on failure, fall back to `get-entity-schema-properties` |
 
 > **Note on `modify-entity-schema-column`**: this tool permanently requires Layer 3 pre-flight for Lookup adds. It will never receive internal enrichment (single-column targeted tool; no batch semantics). Future change guard: only reconsider if the tool gains multi-column batch semantics.
 
-> **Note on `update-entity-schema`**: this tool now includes internal DataForge enrichment (same pattern as `schema-sync`). Use Layer 2 (read the `dataforge` response section) instead of a Layer 3 pre-flight for Lookup column adds.
+> **Note on `update-entity-schema`**: this tool now includes internal DataForge enrichment (same pattern as `sync-schemas`). Use Layer 2 (read the `dataforge` response section) instead of a Layer 3 pre-flight for Lookup column adds.
 
 **Layer 4 — Index maintenance and stale index recovery**
 After bulk schema creation (5+ new entities): call `dataforge-update`.

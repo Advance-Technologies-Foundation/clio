@@ -14,20 +14,20 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the page-get MCP tool.
+/// End-to-end tests for the get-page MCP tool.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
-[AllureFeature("page-get")]
+[AllureFeature("get-page")]
 [NonParallelizable]
 public sealed class PageGetToolE2ETests {
 	private const string ToolName = PageGetTool.ToolName;
 
 	[Test]
-	[Description("Advertises page-get MCP tool in the server tool list so callers can discover it.")]
+	[Description("Advertises get-page MCP tool in the server tool list so callers can discover it.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-get tool is advertised by the MCP server")]
-	[AllureDescription("Verifies that page-get appears in the MCP server tool manifest.")]
+	[AllureName("get-page tool is advertised by the MCP server")]
+	[AllureDescription("Verifies that get-page appears in the MCP server tool manifest.")]
 	public async Task PageGetTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -40,25 +40,25 @@ public sealed class PageGetToolE2ETests {
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "page-get must be advertised so MCP callers can discover the bundle reader");
+			because: "get-page must be advertised so MCP callers can discover the bundle reader");
 	}
 
 	[Test]
-	[Description("Returns page metadata, merged bundle, raw body, and supports dry-run page-update roundtrip for a real sandbox page.")]
+	[Description("Returns page metadata, merged bundle, raw body, and supports dry-run update-page roundtrip for a real sandbox page.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-get returns bundle and raw body for a sandbox form page")]
-	[AllureDescription("Discovers a Freedom UI form page through page-list, reads it with page-get, asserts bundle and raw content, then passes raw.body into page-update dry-run.")]
+	[AllureName("get-page returns bundle and raw body for a sandbox form page")]
+	[AllureDescription("Discovers a Freedom UI form page through list-pages, reads it with get-page, asserts bundle and raw content, then passes raw.body into update-page dry-run.")]
 	public async Task PageGetTool_Should_Return_Bundle_And_Support_DryRun_RoundTrip() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run page-get success E2E.");
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run get-page success E2E.");
 		}
 
 		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"page-get success E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+			Assert.Ignore($"get-page success E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
 		}
 
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(5));
@@ -69,10 +69,10 @@ public sealed class PageGetToolE2ETests {
 			searchPattern: "FormPage",
 			limit: 20);
 		if (!pageListResponse.Success || pageListResponse.Pages is null || pageListResponse.Pages.Count == 0) {
-			Assert.Ignore($"page-get success E2E requires at least one discoverable Freedom UI form page in '{environmentName}'.");
+			Assert.Ignore($"get-page success E2E requires at least one discoverable Freedom UI form page in '{environmentName}'.");
 		}
 		pageListResponse.Pages.Should().Contain(page => !string.IsNullOrWhiteSpace(page.ParentSchemaName),
-			because: "page-list should now expose parent schema context so callers can choose a page before page-get");
+			because: "list-pages should now expose parent schema context so callers can choose a page before get-page");
 
 		PageGetSuccessCandidate? candidate = await FindCandidateWithBundleAsync(
 			arrangeContext.Session,
@@ -80,7 +80,7 @@ public sealed class PageGetToolE2ETests {
 			environmentName!,
 			pageListResponse.Pages);
 		if (candidate is null) {
-			Assert.Ignore($"page-get success E2E requires at least one Freedom UI page with non-empty bundle.viewConfig in '{environmentName}'.");
+			Assert.Ignore($"get-page success E2E requires at least one Freedom UI page with non-empty bundle.viewConfig in '{environmentName}'.");
 		}
 
 		// Act
@@ -94,36 +94,36 @@ public sealed class PageGetToolE2ETests {
 
 		// Assert
 		candidate.Response.Success.Should().BeTrue(
-			because: "page-get should succeed for a real sandbox page");
+			because: "get-page should succeed for a real sandbox page");
 		candidate.Response.Page.Should().NotBeNull(
-			because: "page-get should return nested page metadata");
+			because: "get-page should return nested page metadata");
 		candidate.Response.Bundle.Should().NotBeNull(
-			because: "page-get should return the merged bundle block");
+			because: "get-page should return the merged bundle block");
 		candidate.Response.Bundle.ViewConfig.Should().NotBeNull(
 			because: "the selected sandbox page should expose the merged layout array");
 		candidate.Response.Bundle!.ViewConfig.Count.Should().BeGreaterThan(0,
 			because: "the selected sandbox page should expose a non-empty inherited layout");
 		candidate.Response.Raw.Should().NotBeNull(
-			because: "page-get should return the raw editable payload");
+			because: "get-page should return the raw editable payload");
 		candidate.Response.Raw.Body.Should().NotBeNullOrWhiteSpace(
-			because: "raw.body should be present for page-update round-trips");
+			because: "raw.body should be present for update-page round-trips");
 		roundTripResponse.Success.Should().BeTrue(
-			because: "page-update dry-run should accept raw.body returned by page-get");
+			because: "update-page dry-run should accept raw.body returned by get-page");
 		roundTripResponse.DryRun.Should().BeTrue(
 			because: "the round-trip regression must stay non-destructive");
 	}
 
 	[Test]
-	[Description("Reports readable failures when page-get is called with an invalid environment name.")]
+	[Description("Reports readable failures when get-page is called with an invalid environment name.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-get reports invalid environment failures")]
-	[AllureDescription("Starts the real clio MCP server, invokes page-get with an unknown environment name, and verifies that the failure remains human-readable.")]
+	[AllureName("get-page reports invalid environment failures")]
+	[AllureDescription("Starts the real clio MCP server, invokes get-page with an unknown environment name, and verifies that the failure remains human-readable.")]
 	public async Task PageGetTool_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
-		string invalidEnvironmentName = $"missing-page-get-env-{Guid.NewGuid():N}";
+		string invalidEnvironmentName = $"missing-get-page-env-{Guid.NewGuid():N}";
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -146,27 +146,27 @@ public sealed class PageGetToolE2ETests {
 
 		// Assert
 		(callResult.IsError == true || structuredFailure).Should().BeTrue(
-			because: "page-get should fail when the requested environment does not exist");
+			because: "get-page should fail when the requested environment does not exist");
 		serializedCallResult.Should().MatchRegex(
 			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found|error occurred invoking)",
 			because: "the failure should explain that the requested environment is missing");
 	}
 
 	[Test]
-	[Description("Rejects malformed resources JSON when page-update is invoked through the MCP server.")]
+	[Description("Rejects malformed resources JSON when update-page is invoked through the MCP server.")]
 	[AllureFeature(PageUpdateTool.ToolName)]
 	[AllureTag(PageUpdateTool.ToolName)]
-	[AllureName("page-update rejects malformed resources JSON in dry-run mode")]
-	[AllureDescription("Discovers a real sandbox page, reuses its raw body in page-update dry-run mode, and verifies that malformed resources JSON is rejected with a readable validation error.")]
+	[AllureName("update-page rejects malformed resources JSON in dry-run mode")]
+	[AllureDescription("Discovers a real sandbox page, reuses its raw body in update-page dry-run mode, and verifies that malformed resources JSON is rejected with a readable validation error.")]
 	public async Task PageUpdateTool_Should_Reject_Invalid_Resources_Json() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run page-update invalid resources E2E.");
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run update-page invalid resources E2E.");
 		}
 		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"page-update invalid resources E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+			Assert.Ignore($"update-page invalid resources E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
 		}
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(5));
 		PageListResponse pageListResponse = await CallPageListAsync(
@@ -176,7 +176,7 @@ public sealed class PageGetToolE2ETests {
 			searchPattern: "FormPage",
 			limit: 20);
 		if (!pageListResponse.Success || pageListResponse.Pages is null || pageListResponse.Pages.Count == 0) {
-			Assert.Ignore($"page-update invalid resources E2E requires at least one discoverable Freedom UI form page in '{environmentName}'.");
+			Assert.Ignore($"update-page invalid resources E2E requires at least one discoverable Freedom UI form page in '{environmentName}'.");
 		}
 		PageGetSuccessCandidate? candidate = await FindCandidateWithBundleAsync(
 			arrangeContext.Session,
@@ -184,7 +184,7 @@ public sealed class PageGetToolE2ETests {
 			environmentName!,
 			pageListResponse.Pages);
 		if (candidate is null) {
-			Assert.Ignore($"page-update invalid resources E2E requires at least one Freedom UI page with non-empty bundle.viewConfig in '{environmentName}'.");
+			Assert.Ignore($"update-page invalid resources E2E requires at least one Freedom UI page with non-empty bundle.viewConfig in '{environmentName}'.");
 		}
 		PageUpdateResponse response = await CallPageUpdateAsync(
 			arrangeContext.Session,
@@ -195,17 +195,17 @@ public sealed class PageGetToolE2ETests {
 			dryRun: true,
 			resources: "{\"UsrTitle\":");
 		response.Success.Should().BeFalse(
-			because: "malformed resources JSON should be rejected before page-update continues");
+			because: "malformed resources JSON should be rejected before update-page continues");
 		response.Error.Should().Contain("resources must be a valid JSON object string",
 			because: "the MCP tool should return a human-readable validation error for malformed resources");
 	}
 
 	[Test]
-	[Description("Rejects legacy page-list selector aliases before the server attempts unscoped page discovery.")]
+	[Description("Rejects legacy list-pages selector aliases before the server attempts unscoped page discovery.")]
 	[AllureFeature(PageListTool.ToolName)]
 	[AllureTag(PageListTool.ToolName)]
-	[AllureName("page-list rejects legacy app-code alias")]
-	[AllureDescription("Starts the real clio MCP server, invokes page-list with the deprecated app-code selector, and verifies that the tool returns a readable alias error instead of running an unscoped query.")]
+	[AllureName("list-pages rejects legacy app-code alias")]
+	[AllureDescription("Starts the real clio MCP server, invokes list-pages with the deprecated app-code selector, and verifies that the tool returns a readable alias error instead of running an unscoped query.")]
 	public async Task PageListTool_Should_Reject_Legacy_AppCode_Alias() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -221,7 +221,7 @@ public sealed class PageGetToolE2ETests {
 		PageListResponse response = EntitySchemaStructuredResultParser.Extract<PageListResponse>(callResult);
 
 		response.Success.Should().BeFalse(
-			because: "legacy aliases should be rejected before page-list can fall back to an unscoped query");
+			because: "legacy aliases should be rejected before list-pages can fall back to an unscoped query");
 		response.Error.Should().Be("Use 'code' instead of 'app-code'.",
 			because: "the MCP tool should direct callers to the canonical selector field");
 	}

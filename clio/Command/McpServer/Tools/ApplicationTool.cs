@@ -18,7 +18,7 @@ public sealed class ApplicationGetListTool(IApplicationListService applicationLi
 	/// <summary>
 	/// Stable MCP tool name for listing installed applications.
 	/// </summary>
-	internal const string ApplicationGetListToolName = "application-get-list";
+	internal const string ApplicationGetListToolName = "list-apps";
 
 	/// <summary>
 	/// Returns installed applications from the requested Creatio environment as structured JSON.
@@ -53,7 +53,7 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 	/// <summary>
 	/// Stable MCP tool name for reading structured application info.
 	/// </summary>
-	internal const string ApplicationGetInfoToolName = "application-get-info";
+	internal const string ApplicationGetInfoToolName = "get-app-info";
 
 	/// <summary>
 	/// Returns primary package and runtime entity metadata for an installed application.
@@ -93,7 +93,7 @@ public sealed class ApplicationCreateTool(
 	/// <summary>
 	/// Stable MCP tool name for creating Creatio applications.
 	/// </summary>
-	internal const string ApplicationCreateToolName = "application-create";
+	internal const string ApplicationCreateToolName = "create-app";
 
 	/// <summary>
 	/// Creates a Creatio application and returns the same structured payload as application-get-info.
@@ -174,7 +174,7 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 	/// <summary>
 	/// Stable MCP tool name for creating sections in existing Creatio applications.
 	/// </summary>
-	internal const string ApplicationSectionCreateToolName = "application-section-create";
+	internal const string ApplicationSectionCreateToolName = "create-app-section";
 
 	/// <summary>
 	/// Creates a section in an existing Creatio application and returns structured readback data.
@@ -229,7 +229,7 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 	/// <summary>
 	/// Stable MCP tool name for updating sections in existing Creatio applications.
 	/// </summary>
-	internal const string ApplicationSectionUpdateToolName = "application-section-update";
+	internal const string ApplicationSectionUpdateToolName = "update-app-section";
 
 	/// <summary>
 	/// Updates metadata of a section in an existing Creatio application and returns structured before and after readback data.
@@ -293,7 +293,7 @@ public sealed class ApplicationSectionDeleteTool(IApplicationSectionDeleteServic
 	/// <summary>
 	/// Stable MCP tool name for deleting sections from existing Creatio applications.
 	/// </summary>
-	internal const string ApplicationSectionDeleteToolName = "application-section-delete";
+	internal const string ApplicationSectionDeleteToolName = "delete-app-section";
 
 	/// <summary>
 	/// Deletes a section from an existing Creatio application and returns structured readback of the deleted section.
@@ -338,7 +338,7 @@ public sealed class ApplicationSectionGetListTool(IApplicationSectionGetListServ
 	/// <summary>
 	/// Stable MCP tool name for listing sections of existing Creatio applications.
 	/// </summary>
-	internal const string ApplicationSectionGetListToolName = "application-section-get-list";
+	internal const string ApplicationSectionGetListToolName = "list-app-sections";
 
 	/// <summary>
 	/// Returns all sections of an existing Creatio application.

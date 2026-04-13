@@ -28,7 +28,7 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 			       Architecture split
 			       - clio (passive): DataForge enrichment is built into selected write tools. It runs automatically before the mutation, returns a `dataforge` section alongside the result, and degrades gracefully when DataForge is unavailable. The mutation is never blocked.
 			       - ADAC / AI consumer (active): explicit orchestration — the AI agent calls DataForge tools at the right points in a workflow to gather context it cannot derive from the requirement alone.
-			       - Do not duplicate passive enrichment: tools that already enrich internally (`application-create`, `schema-sync`, `create-entity-schema`, `create-lookup`, `update-entity-schema`) run DataForge themselves. Do not add an external pre-flight for these tools.
+			       - Do not duplicate passive enrichment: tools that already enrich internally (`create-app`, `sync-schemas`, `create-entity-schema`, `create-lookup`, `update-entity-schema`) run DataForge themselves. Do not add an external pre-flight for these tools.
 
 			       Layer 0 — Health preflight
 			       When: once, at the start of a workflow that will span multiple write operations.
@@ -41,7 +41,7 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 			       Layer 1 — Planning discovery
 			       When: once per planning phase, before calling any write tool, when the task involves creating new schemas or entities.
 			       Not required for: existing-app maintenance without new schema creation; single-column modifications with an already-known schema name.
-			       - DataForge is not the primary mechanism for exact package-local reuse checks in existing-app page/detail workflows. First inspect `application-get-info`, `page-get`, and `get-entity-schema-properties`; use DataForge only when runtime context still cannot identify the relevant schema or relation.
+			       - DataForge is not the primary mechanism for exact package-local reuse checks in existing-app page/detail workflows. First inspect `get-app-info`, `get-page`, and `get-entity-schema-properties`; use DataForge only when runtime context still cannot identify the relevant schema or relation.
 			       Call: `dataforge-context` with `requirement-summary`, `candidate-terms`, `lookup-hints`, and optional `relation-pairs`.
 			       What to inspect:
 			       - multiple close entries in `similar-tables` with matching names/captions/descriptions → treat as a strong duplicate candidate; surface to user before proceeding.
@@ -51,7 +51,7 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 			       Failure behavior: if `dataforge-context` throws or returns empty → skip Layer 1 entirely; write tools carry their own auto-enrichment (Layer 2). Do not block the user request.
 
 			       Layer 2 — Read auto-enrichment from write tool responses
-			       Tools that enrich internally: `application-create`, `schema-sync`, `create-entity-schema`, `create-lookup`, `update-entity-schema`.
+			       Tools that enrich internally: `create-app`, `sync-schemas`, `create-entity-schema`, `create-lookup`, `update-entity-schema`.
 			       Rule: do not call DataForge separately before these tools. They already run it.
 			       What to inspect from the `dataforge` section:
 			       - `context-summary.similar-tables` — if multiple close matches exist for a just-created schema, the creation may have been redundant; surface as a warning.
@@ -69,7 +69,7 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 			       Tool-specific guidance:
 			       - Adding a Lookup column via `modify-entity-schema-column` with uncertain `reference-schema-name`: call `dataforge-find-tables(query: <concept>)`; use name/caption/description similarity as a manual confirmation step; if still ambiguous, confirm with the user.
 			       - Writing rows with lookup columns via `create-data-binding-db` / `upsert-data-binding-row-db` with unknown GUID: call `dataforge-find-lookups(schema-name: <refSchema>, query: <value>)`; use top-scored `lookup-id` if score >= 0.70; ask user if no match with score >= 0.70.
-			       - Cross-entity FK design before a multi-entity `schema-sync`: call `dataforge-get-relations(source-table, target-table)`; model FK along the Cypher path if one exists; if call fails or returns empty, design FK independently (no user prompt needed).
+			       - Cross-entity FK design before a multi-entity `sync-schemas`: call `dataforge-get-relations(source-table, target-table)`; model FK along the Cypher path if one exists; if call fails or returns empty, design FK independently (no user prompt needed).
 			       - Inspecting runtime columns outside a local package: call `dataforge-get-table-columns(table-name)`; if call fails, fall back to `get-entity-schema-properties`.
 
 			       Layer 4 — Index maintenance and stale index recovery

@@ -131,7 +131,7 @@ public static class EntitySchemaPrompt {
 		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
 		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
 		 normalizes it to GUID before save. For create + seed + update workflows,
-		 prefer `schema-sync`. Seed rows create data only; model default requirements separately as
+		 prefer `sync-schemas`. Seed rows create data only; model default requirements separately as
 		 `schema default` or `ui default`. For existing-app maintenance guidance, read
 		 `docs://mcp/guides/existing-app-maintenance`.
 		 Inspect current schema metadata with `get-entity-schema-properties` first. For one-column changes, prefer `modify-entity-schema-column`. `update-entity-schema` performs internal DataForge enrichment and returns an optional `dataforge` section — inspect `similar-tables` before proceeding with the batch. When adding a Lookup column (`type = Lookup`) via `modify-entity-schema-column` (which does not enrich internally) and the correct `reference-schema-name` is not certain, call `dataforge-find-tables` (Layer 3 pre-flight) first. For the full DataForge orchestration protocol, read `docs://mcp/guides/dataforge-orchestration`.
@@ -159,7 +159,7 @@ public static class EntitySchemaPrompt {
 		 machine-readable column inspection.
 		 Pass `package-name`, `schema-name`, and `environment-name` exactly as provided.
 		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
-		 Use this read step before `modify-entity-schema-column` or `schema-sync`, and read the schema again after mutation when explicit verification is needed.
+		 Use this read step before `modify-entity-schema-column` or `sync-schemas`, and read the schema again after mutation when explicit verification is needed.
 		 """;
 
 	/// <summary>

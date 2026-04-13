@@ -19,7 +19,7 @@ public sealed class ApplicationDeleteTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<UninstallAppOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "application-delete";
+	internal const string ToolName = "delete-app";
 
 	/// <summary>
 	/// Uninstalls a Creatio application by name or code.

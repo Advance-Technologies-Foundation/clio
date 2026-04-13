@@ -51,7 +51,7 @@ internal class HelpArtifactConsistencyTests {
 	[Description("The markdown command docs directory should contain canonical command files plus preserved MCP workflow docs.")]
 	public void DocsDirectory_ShouldContainOnlyCanonicalCommandFiles() {
 		CommandHelpCatalog catalog = new();
-		HashSet<string> expectedNames = [..catalog.Commands.Select(command => command.CanonicalName), "page-sync", "schema-sync"];
+		HashSet<string> expectedNames = [..catalog.Commands.Select(command => command.CanonicalName), "sync-pages", "sync-schemas"];
 		string[] actualNames = Directory.GetFiles(DocsDirectory, "*.md")
 			.Select(path => Path.GetFileNameWithoutExtension(path))
 			.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)

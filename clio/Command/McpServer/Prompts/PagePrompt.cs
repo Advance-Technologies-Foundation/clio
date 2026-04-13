@@ -19,8 +19,8 @@ public static class PagePrompt {
 		[Description("Optional Creatio environment name")] string? environmentName = null) =>
 		$"""
 		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
-		 Before the first page inspection or mutation tool call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `page-list`, `page-get`, `component-info`, `page-sync`, and `page-update` so the client starts from the authoritative page contract.
-		 Use `page-list` first when you need to discover candidate page schemas by `package-name`, `code`, or `search-pattern`.
+		 Before the first page inspection or mutation tool call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `list-pages`, `get-page`, `component-info`, `sync-pages`, and `update-page` so the client starts from the authoritative page contract.
+		 Use `list-pages` first when you need to discover candidate page schemas by `package-name`, `code`, or `search-pattern`.
 		 Use `{PageGetTool.ToolName}` with `schema-name` `{schemaName}` and `environment-name` `{environmentName ?? "<default or explicit connection args>"}` to inspect the effective merged page structure.
 		 Read layout and container hierarchy from `bundle.viewConfig`.
 		 When `bundle.viewConfig` contains unfamiliar `crt.*` types, call `{ComponentInfoTool.ToolName}` with `component-type` set to that type before editing nested config or children.
@@ -33,6 +33,6 @@ public static class PagePrompt {
 		 For standard data-bound form fields, bind `control` or `value` directly to `$Name` or `$PDS_*` attributes and prefer datasource captions like `$Resources.Strings.PDS_UsrStatus`.
 		 Do not use proxy bindings like `$UsrStatus -> PDS.UsrStatus` for standard fields, and do not rely on `#ResourceString(Usr*_label)#` shortcuts for data-bound field captions.
 		 Reserve `Usr*_label` and `Usr*_caption` resource keys for custom standalone UI that carries explicit `resources` entries.
-		 Prefer `page-list -> page-get -> page-sync -> page-get` for canonical page edits.
+		 Prefer `list-pages -> get-page -> sync-pages -> get-page` for canonical page edits.
 		 """;
 }

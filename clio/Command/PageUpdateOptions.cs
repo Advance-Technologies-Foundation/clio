@@ -211,7 +211,7 @@ namespace Clio.Command {
 			if (string.IsNullOrWhiteSpace(options.Body)) {
 				return new PageUpdateResponse {
 					Success = false,
-					Error = "body is required and must not be empty. Reuse page-get raw.body instead of bundle or viewConfig fragments."
+					Error = "body is required and must not be empty. Reuse get-page raw.body instead of bundle or viewConfig fragments."
 				};
 			}
 			var integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);

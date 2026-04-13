@@ -476,7 +476,7 @@ clio page-update --schema-name UsrTodo_FormPage --body "<edited body>" \
   --resources '{"UsrDetailsTab_caption":"Details"}' -e myenv
 ```
 
-For updating multiple pages in one call, use the `page-sync` MCP tool.
+For updating multiple pages in one call, use the `sync-pages` MCP tool.
 
 ### 10. Data Bindings
 

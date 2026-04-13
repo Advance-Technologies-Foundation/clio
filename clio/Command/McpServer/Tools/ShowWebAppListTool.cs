@@ -13,7 +13,7 @@ public sealed class ShowWebAppListTool(ShowAppListCommand command)
 	/// <summary>
 	/// Stable MCP tool name for listing registered web applications.
 	/// </summary>
-	internal const string ShowWebAppListToolName = "show-webApp-list";
+	internal const string ShowWebAppListToolName = "show-web-app-list";
 
 	/// <summary>
 	/// Returns all registered web application settings as structured MCP JSON without masking sensitive fields.

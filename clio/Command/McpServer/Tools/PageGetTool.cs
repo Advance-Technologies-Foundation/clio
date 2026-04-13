@@ -14,7 +14,7 @@ public sealed class PageGetTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<PageGetOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "page-get";
+	internal const string ToolName = "get-page";
 
 	/// <summary>
 	/// Reads a Freedom UI page as a merged bundle plus raw editable body.
@@ -43,7 +43,7 @@ public sealed class PageGetTool(
 }
 
 /// <summary>
-/// Arguments for the <c>page-get</c> MCP tool.
+/// Arguments for the <c>get-page</c> MCP tool.
 /// </summary>
 public sealed record PageGetArgs(
 	[property: JsonPropertyName("schema-name")]

@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 public sealed class ToolContractGetToolE2ETests {
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("tool-contract-get tool is advertised by the MCP server")]
+	[AllureName("get-tool-contract tool is advertised by the MCP server")]
 	public async Task ToolContractGet_Should_Be_Listed_By_Mcp_Server() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -30,12 +30,12 @@ public sealed class ToolContractGetToolE2ETests {
 
 		// Assert
 		tools.Select(tool => tool.Name).Should().Contain(ToolContractGetTool.ToolName,
-			because: "the MCP server should advertise tool-contract-get as the bootstrap contract entry point");
+			because: "the MCP server should advertise get-tool-contract as the bootstrap contract entry point");
 	}
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("tool-contract-get returns maintenance-oriented canonical flows")]
+	[AllureName("get-tool-contract returns maintenance-oriented canonical flows")]
 	public async Task ToolContractGet_Should_Return_Maintenance_Oriented_Canonical_Contracts() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -96,7 +96,7 @@ public sealed class ToolContractGetToolE2ETests {
 					PageSyncTool.ToolName,
 					PageGetTool.ToolName
 				},
-				because: "page inspection should advertise page-sync as the canonical save path");
+				because: "page inspection should advertise sync-pages as the canonical save path");
 		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
 			.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -105,7 +105,7 @@ public sealed class ToolContractGetToolE2ETests {
 					PageSyncTool.ToolName,
 					PageGetTool.ToolName
 				},
-				because: "page-sync should advertise itself as the canonical page write path");
+				because: "sync-pages should advertise itself as the canonical page write path");
 		response.Tools.Single(tool => tool.Name == PageUpdateTool.ToolName)
 			.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -113,28 +113,28 @@ public sealed class ToolContractGetToolE2ETests {
 					PageUpdateTool.ToolName,
 					PageGetTool.ToolName
 				},
-				because: "page-update should still expose a concrete fallback flow for callers that explicitly require it");
+				because: "update-page should still expose a concrete fallback flow for callers that explicitly require it");
 		response.Tools.Single(tool => tool.Name == PageUpdateTool.ToolName)
 			.Deprecations.Should().ContainSingle(deprecation =>
 				deprecation.ReplacementTools.SequenceEqual(new[] { PageSyncTool.ToolName }) &&
 				deprecation.Message.Contains("fallback"),
-				because: "page-update should advertise page-sync as the canonical replacement");
+				because: "update-page should advertise sync-pages as the canonical replacement");
 		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
 			.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "pages" &&
-				field.Description.Contains("page-get.raw.body", StringComparison.Ordinal),
-				because: "page-sync should advertise raw.body as the source of page write payloads");
+				field.Description.Contains("get-page.raw.body", StringComparison.Ordinal),
+				because: "sync-pages should advertise raw.body as the source of page write payloads");
 		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
 			.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "pages" &&
 				field.Description.Contains("verified-body", StringComparison.Ordinal) &&
 				field.Description.Contains("page", StringComparison.Ordinal),
-				because: "page-sync should advertise the richer per-page verify response through tool-contract-get");
+				because: "sync-pages should advertise the richer per-page verify response through get-tool-contract");
 		response.Tools.Single(tool => tool.Name == PageUpdateTool.ToolName)
 			.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "resources" &&
 				field.Description.Contains("JSON object string", StringComparison.Ordinal),
-				because: "page-update should clarify the concrete resources payload shape through the MCP server");
+				because: "update-page should clarify the concrete resources payload shape through the MCP server");
 		response.Tools.Single(tool => tool.Name == ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName)
 			.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -147,7 +147,7 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("tool-contract-get returns explicit Data Forge contracts and keeps maintenance tools out of the default bootstrap set")]
+	[AllureName("get-tool-contract returns explicit Data Forge contracts and keeps maintenance tools out of the default bootstrap set")]
 	public async Task ToolContractGet_Should_Handle_DataForge_Contract_Policy() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -186,7 +186,7 @@ public sealed class ToolContractGetToolE2ETests {
 		defaultResponse.Tools!.Select(tool => tool.Name).Should().NotContain(DataForgeTool.DataForgeUpdateToolName,
 			because: "destructive Data Forge update should stay out of the default bootstrap set");
 		explicitResponse.Success.Should().BeTrue(
-			because: "explicit tool-contract-get lookup should expose the full Data Forge contract surface");
+			because: "explicit get-tool-contract lookup should expose the full Data Forge contract surface");
 		explicitResponse.Tools!.Select(tool => tool.Name).Should().Contain(DataForgeTool.DataForgeInitializeToolName,
 			because: "explicit lookup should still return Data Forge initialize for remediation workflows");
 		explicitResponse.Tools!.Select(tool => tool.Name).Should().Contain(DataForgeTool.DataForgeUpdateToolName,
@@ -199,7 +199,7 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("tool-contract-get advertises settings-health bootstrap diagnostics contract")]
+	[AllureName("get-tool-contract advertises settings-health bootstrap diagnostics contract")]
 	public async Task ToolContractGet_Should_Advertise_Settings_Health_Contract() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -230,7 +230,7 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("tool-contract-get returns canonical entity-schema contracts from clio")]
+	[AllureName("get-tool-contract returns canonical entity-schema contracts from clio")]
 	public async Task ToolContractGet_Should_Return_Canonical_Entity_Schema_Surface() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -276,24 +276,24 @@ public sealed class ToolContractGetToolE2ETests {
 					SchemaSyncTool.ToolName,
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				},
-				because: "schema-sync should advertise the canonical batched schema workflow");
+				because: "sync-schemas should advertise the canonical batched schema workflow");
 		response.Tools.Single(tool => tool.Name == CreateLookupTool.CreateLookupToolName)
 			.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					SchemaSyncTool.ToolName
 				},
-				because: "create-lookup should advertise schema-sync as the preferred canonical path");
+				because: "create-lookup should advertise sync-schemas as the preferred canonical path");
 		response.Tools.Single(tool => tool.Name == CreateEntitySchemaTool.CreateEntitySchemaToolName)
 			.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					SchemaSyncTool.ToolName
 				},
-				because: "create-entity-schema should advertise schema-sync as the preferred canonical path");
+				because: "create-entity-schema should advertise sync-schemas as the preferred canonical path");
 	}
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("tool-contract-get returns canonical DB-first binding contracts from clio")]
+	[AllureName("get-tool-contract returns canonical DB-first binding contracts from clio")]
 	public async Task ToolContractGet_Should_Return_Canonical_DbFirst_Binding_Surface() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -330,11 +330,11 @@ public sealed class ToolContractGetToolE2ETests {
 				new[] {
 					SchemaSyncTool.ToolName
 				},
-				because: "create-data-binding-db should advertise schema-sync as the canonical batched path");
+				because: "create-data-binding-db should advertise sync-schemas as the canonical batched path");
 		createContract.Deprecations.Should().ContainSingle(
 			because: "create-data-binding-db should advertise its explicit fallback positioning");
 		createContract.Deprecations[0].Message.Should().Contain("seed-rows",
-			because: "the fallback guidance should direct callers to inline seed-rows inside schema-sync");
+			because: "the fallback guidance should direct callers to inline seed-rows inside sync-schemas");
 		createContract.Deprecations[0].Message.Should().Contain("direct SQL",
 			because: "the fallback guidance should keep standalone lookup seeding on the MCP surface");
 		createContract.InputSchema.Properties.Should().Contain(field =>
@@ -365,7 +365,7 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("tool-contract-get returns canonical required field name for modify-entity-schema-column")]
+	[AllureName("get-tool-contract returns canonical required field name for modify-entity-schema-column")]
 	public async Task ToolContractGet_Should_Return_Canonical_Required_Field_Name() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -398,7 +398,7 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("tool-contract-get advertises installed application identity fields for application-get-info")]
+	[AllureName("get-tool-contract advertises installed application identity fields for get-app-info")]
 	public async Task ToolContractGet_Should_Advertise_Application_Info_Identity_Fields() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -417,7 +417,7 @@ public sealed class ToolContractGetToolE2ETests {
 
 		// Assert
 		response.Success.Should().BeTrue(
-			because: "the application-get-info contract should be readable through the MCP server");
+			because: "the get-app-info contract should be readable through the MCP server");
 		ToolContractDefinition contract = response.Tools!.Single();
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "application-id",
 			because: "the contract should advertise the installed application identifier");
@@ -433,7 +433,7 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("tool-contract-get advertises page discovery selectors and raw body semantics")]
+	[AllureName("get-tool-contract advertises page discovery selectors and raw body semantics")]
 	public async Task ToolContractGet_Should_Advertise_Page_List_And_Page_Get_Metadata() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -453,33 +453,33 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "page discovery and inspection contracts should be readable through the MCP server");
 		ToolContractDefinition pageListContract = response.Tools!.Single(tool => tool.Name == PageListTool.ToolName);
 		pageListContract.InputSchema.Properties.Should().Contain(field => field.Name == "code",
-			because: "page-list should advertise code as a first-class selector");
+			because: "list-pages should advertise code as a first-class selector");
 		pageListContract.Aliases.Should().Contain(alias =>
 				alias.CanonicalName == "code"
 				&& alias.Alias == "app-code"
 				&& alias.Status == "rejected",
-			because: "page-list should advertise the legacy app-code selector as rejected");
+			because: "list-pages should advertise the legacy app-code selector as rejected");
 		pageListContract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "pages" &&
 				field.Description.Contains("schema-name", StringComparison.Ordinal),
-			because: "page-list should describe page discovery items through schema-name");
+			because: "list-pages should describe page discovery items through schema-name");
 		pageListContract.FallbackFlow.Should().Contain(flow => flow.Tools.SequenceEqual(new[] {
 				PageListTool.ToolName,
 				PageGetTool.ToolName,
 				PageUpdateTool.ToolName,
 				PageGetTool.ToolName
 			}),
-			because: "page-list should advertise a single page-update fallback sequence after discovery");
+			because: "list-pages should advertise a single update-page fallback sequence after discovery");
 		ToolContractDefinition pageGetContract = response.Tools!.Single(tool => tool.Name == PageGetTool.ToolName);
 		pageGetContract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "raw" &&
 				field.Description.Contains("raw.body", StringComparison.Ordinal),
-			because: "page-get should explicitly advertise raw.body as the editable JavaScript source");
+			because: "get-page should explicitly advertise raw.body as the editable JavaScript source");
 	}
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("tool-contract-get returns structured unknown tool suggestions")]
+	[AllureName("get-tool-contract returns structured unknown tool suggestions")]
 	public async Task ToolContractGet_Should_Return_Structured_Unknown_Tool_Suggestions() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -507,7 +507,7 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("tool-contract-get returns field-level validation errors for blank tool names")]
+	[AllureName("get-tool-contract returns field-level validation errors for blank tool names")]
 	public async Task ToolContractGet_Should_Return_Field_Level_Validation_Error() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -550,7 +550,7 @@ public sealed class ToolContractGetToolE2ETests {
 			new Dictionary<string, object?> { ["args"] = arguments },
 			cancellationToken);
 		callResult.IsError.Should().NotBeTrue(
-			because: "tool-contract-get should return a normal MCP tool result envelope for valid request shapes");
+			because: "get-tool-contract should return a normal MCP tool result envelope for valid request shapes");
 		return EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(callResult);
 	}
 
