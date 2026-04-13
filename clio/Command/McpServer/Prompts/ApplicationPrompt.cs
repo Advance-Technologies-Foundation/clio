@@ -164,4 +164,42 @@ public static class ApplicationPrompt {
 		 Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or other localization-map fields to `application-section-update`.
 		 If the target app is not fully known, use `{ApplicationGetListTool.ApplicationGetListToolName}` first, then `{ApplicationGetInfoTool.ApplicationGetInfoToolName}`, then `{ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName}`.
 		 """;
+
+	[McpServerPrompt(Name = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName),
+		Description("Prompt to delete a section from an existing application")]
+	public static string ApplicationSectionDelete(
+		[Description("Creatio environment name")]
+		string environmentName,
+		[Description("Installed application code")]
+		string applicationCode,
+		[Description("Existing section code to delete")]
+		string sectionCode) =>
+		$"""
+		 Use clio mcp server `{ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName}` to delete an existing section from an installed Creatio application and return structured readback of the deleted section.
+		 Before the first destructive call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `application-get-list`, `application-get-info`, and `application-section-delete` so the client starts from the authoritative contract and preferred flow.
+		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 Warn the user before deleting — this operation is destructive and cannot be undone.
+		 Pass `environment-name` `{environmentName}` exactly as provided.
+		 Pass `application-code` `{applicationCode}` as the installed application selector.
+		 Pass `section-code` `{sectionCode}` as the existing section code to delete inside that application.
+		 Pass all tool arguments at the top level of the MCP request; do not wrap them inside `args`.
+		 If the target app is not fully known, use `{ApplicationGetListTool.ApplicationGetListToolName}` first, then `{ApplicationGetInfoTool.ApplicationGetInfoToolName}`, then `{ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName}`.
+		 """;
+
+	[McpServerPrompt(Name = ApplicationSectionGetListTool.ApplicationSectionGetListToolName),
+		Description("Prompt to list sections of an existing application")]
+	public static string ApplicationSectionGetList(
+		[Description("Creatio environment name")]
+		string environmentName,
+		[Description("Installed application code")]
+		string applicationCode) =>
+		$"""
+		 Use clio mcp server `{ApplicationSectionGetListTool.ApplicationSectionGetListToolName}` to list all sections of an installed Creatio application and return structured section list data.
+		 Before the first existing-app read call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `application-get-list`, `application-get-info`, and `application-section-get-list` so the client starts from the authoritative contract and preferred flow.
+		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 Pass `environment-name` `{environmentName}` exactly as provided.
+		 Pass `application-code` `{applicationCode}` as the installed application selector.
+		 Pass all tool arguments at the top level of the MCP request; do not wrap them inside `args`.
+		 If the target app is not fully known, use `{ApplicationGetListTool.ApplicationGetListToolName}` first, then `{ApplicationGetInfoTool.ApplicationGetInfoToolName}`, then `{ApplicationSectionGetListTool.ApplicationSectionGetListToolName}`.
+		 """;
 }

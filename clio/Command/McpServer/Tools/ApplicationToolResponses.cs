@@ -131,3 +131,31 @@ public sealed record ApplicationColumnResult(
 	[property: JsonPropertyName("caption")] string Caption,
 	[property: JsonPropertyName("data-value-type")] string DataValueType,
 	[property: JsonPropertyName("reference-schema")] string? ReferenceSchema = null);
+
+/// <summary>
+/// Structured response from the <c>application-section-delete</c> MCP tool.
+/// </summary>
+public sealed record ApplicationSectionDeleteContextResponse(
+	[property: JsonPropertyName("success")] bool Success,
+	[property: JsonPropertyName("package-u-id")] string? PackageUId = null,
+	[property: JsonPropertyName("package-name")] string? PackageName = null,
+	[property: JsonPropertyName("application-id")] string? ApplicationId = null,
+	[property: JsonPropertyName("application-name")] string? ApplicationName = null,
+	[property: JsonPropertyName("application-code")] string? ApplicationCode = null,
+	[property: JsonPropertyName("application-version")] string? ApplicationVersion = null,
+	[property: JsonPropertyName("deleted-section")] ApplicationSectionResult? DeletedSection = null,
+	[property: JsonPropertyName("error")] string? Error = null);
+
+/// <summary>
+/// MCP response returned by the <c>application-section-get-list</c> tool.
+/// </summary>
+public sealed record ApplicationSectionListContextResponse(
+	[property: JsonPropertyName("success")] bool Success,
+	[property: JsonPropertyName("package-u-id")] string? PackageUId = null,
+	[property: JsonPropertyName("package-name")] string? PackageName = null,
+	[property: JsonPropertyName("application-id")] string? ApplicationId = null,
+	[property: JsonPropertyName("application-name")] string? ApplicationName = null,
+	[property: JsonPropertyName("application-code")] string? ApplicationCode = null,
+	[property: JsonPropertyName("application-version")] string? ApplicationVersion = null,
+	[property: JsonPropertyName("sections")] IReadOnlyList<ApplicationSectionResult>? Sections = null,
+	[property: JsonPropertyName("error")] string? Error = null);

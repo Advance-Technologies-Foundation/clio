@@ -45,6 +45,8 @@ public sealed class AppModelingGuidanceResource {
 			       - Canonical new-app entity flow: `application-create` -> `schema-sync` -> `application-get-info`.
 			       - Canonical existing-app section flow: `application-get-list` -> `application-get-info` -> `application-section-create` -> `application-get-info`.
 			       - Canonical existing-section metadata update flow: `application-get-list` -> `application-get-info` -> `application-section-update`.
+			       - Canonical section discovery flow: `application-get-list` -> `application-get-info` -> `application-section-get-list`.
+			       - Canonical section delete flow: `application-get-list` -> `application-get-info` -> `application-section-get-list` -> `application-section-delete`.
 			       - `application-create` already performs internal Data Forge enrichment and returns optional `dataforge` diagnostics. Do not require a separate external Data Forge preflight for the standard create flow.
 			       - If Data Forge is unavailable or partially degraded, `application-create` still creates the app shell and reports degraded enrichment through warnings and coverage flags instead of failing the whole create path.
 			       - `schema-sync` requests use `operations[*].type`. Responses also identify each result by `type`; do not invent or send `operations[*].operation`.

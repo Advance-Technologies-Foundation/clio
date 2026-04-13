@@ -119,6 +119,52 @@ internal static class ApplicationToolResultMapper {
 				result.Section.IconBackground,
 				result.Section.ClientTypeId));
 	}
+
+	public static ApplicationSectionDeleteContextResponse Map(ApplicationSectionDeleteResult result) {
+		return new ApplicationSectionDeleteContextResponse(
+			true,
+			result.PackageUId,
+			result.PackageName,
+			result.ApplicationId,
+			result.ApplicationName,
+			result.ApplicationCode,
+			result.ApplicationVersion,
+			new ApplicationSectionResult(
+				result.DeletedSection.Id,
+				result.DeletedSection.Code,
+				result.DeletedSection.Caption,
+				result.DeletedSection.Description,
+				result.DeletedSection.EntitySchemaName,
+				result.DeletedSection.PackageId,
+				result.DeletedSection.SectionSchemaUId,
+				result.DeletedSection.IconId,
+				result.DeletedSection.IconBackground,
+				result.DeletedSection.ClientTypeId));
+	}
+
+	public static ApplicationSectionListContextResponse Map(ApplicationSectionGetListResult result) {
+		return new ApplicationSectionListContextResponse(
+			true,
+			result.PackageUId,
+			result.PackageName,
+			result.ApplicationId,
+			result.ApplicationName,
+			result.ApplicationCode,
+			result.ApplicationVersion,
+			result.Sections
+				.Select(s => new ApplicationSectionResult(
+					s.Id,
+					s.Code,
+					s.Caption,
+					s.Description,
+					s.EntitySchemaName,
+					s.PackageId,
+					s.SectionSchemaUId,
+					s.IconId,
+					s.IconBackground,
+					s.ClientTypeId))
+				.ToList());
+	}
 }
 
 internal static class ApplicationToolHelper {
@@ -187,5 +233,21 @@ internal static class ApplicationToolHelper {
 
 	public static ApplicationSectionUpdateContextResponse CreateSectionUpdateContextErrorResponse(string message) {
 		return new ApplicationSectionUpdateContextResponse(false, Error: message);
+	}
+
+	public static ApplicationSectionDeleteContextResponse CreateSectionDeleteContextResponse(ApplicationSectionDeleteContextResponse response) {
+		return response;
+	}
+
+	public static ApplicationSectionDeleteContextResponse CreateSectionDeleteContextErrorResponse(string message) {
+		return new ApplicationSectionDeleteContextResponse(false, Error: message);
+	}
+
+	public static ApplicationSectionListContextResponse CreateSectionListContextResponse(ApplicationSectionListContextResponse response) {
+		return response;
+	}
+
+	public static ApplicationSectionListContextResponse CreateSectionListContextErrorResponse(string message) {
+		return new ApplicationSectionListContextResponse(false, Error: message);
 	}
 }

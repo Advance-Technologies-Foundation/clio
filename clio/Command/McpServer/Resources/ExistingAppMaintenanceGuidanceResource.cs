@@ -29,6 +29,8 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Prefer `discover -> inspect -> mutate -> verify` for minimal edits to an existing app.
 			       - For section creation in an existing app, prefer `application-get-list -> application-get-info -> application-section-create -> application-get-info`.
 			       - For section metadata updates in an existing app, prefer `application-get-list -> application-get-info -> application-section-update`.
+			       - For listing sections of an existing app, prefer `application-get-list -> application-get-info -> application-section-get-list`.
+			       - For deleting a section from an existing app, prefer `application-get-list -> application-get-info -> application-section-get-list -> application-section-delete`.
 			       - Prefer `page-list -> page-get -> page-sync -> page-get` as the canonical page workflow, including single-page saves when the caller wants the clio-advertised path.
 			       - Read before write, and read back after mutations when the tool or workflow allows it.
 			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), read `docs://mcp/guides/dataforge-orchestration`.

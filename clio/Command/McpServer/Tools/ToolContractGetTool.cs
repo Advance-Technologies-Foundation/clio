@@ -209,6 +209,8 @@ internal static class ToolContractCatalog {
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
 			[ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName] = BuildApplicationSectionUpdate(),
+			[ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName] = BuildApplicationSectionDelete(),
+			[ApplicationSectionGetListTool.ApplicationSectionGetListToolName] = BuildApplicationSectionGetList(),
 			[ApplicationGetInfoTool.ApplicationGetInfoToolName] = BuildApplicationGetInfo(),
 			[ApplicationGetListTool.ApplicationGetListToolName] = BuildApplicationGetList(),
 			[DataForgeTool.DataForgeHealthToolName] = BuildDataForgeHealth(),
@@ -244,6 +246,8 @@ internal static class ToolContractCatalog {
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+		ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
+		ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
 		ApplicationGetInfoTool.ApplicationGetInfoToolName,
 		ApplicationGetListTool.ApplicationGetListToolName,
 		DataForgeTool.DataForgeHealthToolName,
@@ -684,6 +688,119 @@ internal static class ToolContractCatalog {
 						ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName
 					],
 					"Use this shorter flow when the target app is already known and inspected.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildApplicationSectionDelete() {
+		return new ToolContractDefinition(
+			ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
+			"Deletes a section from an existing installed application and returns structured readback of the deleted section.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, ApplicationCodeFieldName, SectionCodeFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
+					Field(SectionCodeFieldName, StringType, "Existing section code inside the installed application.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(PackageUIdFieldName, StringType, PrimaryPackageIdentifierDescription),
+				Field(PackageNameFieldName, StringType, PrimaryPackageNameDescription),
+				Field(ApplicationIdFieldName, StringType, InstalledApplicationIdentifierDescription),
+				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
+				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
+				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
+				Field("deleted-section", ObjectType, "Deleted section metadata."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				Alias(ParameterScope, ApplicationCodeFieldName, SelectorCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{SelectorCodeFieldName}'."),
+				Alias(ParameterScope, ApplicationCodeFieldName, AppCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{AppCodeFieldName}'."),
+				Alias(ParameterScope, SectionCodeFieldName, "sectionCode", RejectedStatus, "Use 'section-code' instead of 'sectionCode'.")
+			],
+			[],
+			[
+				Example("Delete a section from an existing app", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ApplicationCodeFieldName] = ExamplePackageName,
+					[SectionCodeFieldName] = "UsrOrders"
+				})
+			],
+			Flow(
+				[
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName
+				],
+				"Use application discovery and inspection first, then delete the target section."),
+			[
+				Flow(
+					[
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName
+					],
+					"Use this shorter flow when the target app is already known and inspected.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildApplicationSectionGetList() {
+		return new ToolContractDefinition(
+			ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
+			"Returns the list of sections of an existing installed application and their metadata.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, ApplicationCodeFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(PackageUIdFieldName, StringType, PrimaryPackageIdentifierDescription),
+				Field(PackageNameFieldName, StringType, PrimaryPackageNameDescription),
+				Field(ApplicationIdFieldName, StringType, InstalledApplicationIdentifierDescription),
+				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
+				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
+				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
+				Field("sections", ArrayType, "List of section metadata objects in the application."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				Alias(ParameterScope, ApplicationCodeFieldName, SelectorCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{SelectorCodeFieldName}'."),
+				Alias(ParameterScope, ApplicationCodeFieldName, AppCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{AppCodeFieldName}'.")
+			],
+			[],
+			[
+				Example("List sections of an existing app", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ApplicationCodeFieldName] = ExamplePackageName
+				})
+			],
+			Flow(
+				[
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ApplicationSectionGetListTool.ApplicationSectionGetListToolName
+				],
+				"Use application discovery and inspection first, then list sections."),
+			[
+				Flow(
+					[
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						ApplicationSectionGetListTool.ApplicationSectionGetListToolName
+					],
+					"Use this shorter flow when the target app is already known.")
 			],
 			[]);
 	}

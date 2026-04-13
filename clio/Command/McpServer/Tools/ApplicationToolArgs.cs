@@ -137,6 +137,41 @@ public sealed record ApplicationSectionCreateArgs(
 );
 
 /// <summary>
+/// MCP arguments for the <c>application-section-delete</c> tool.
+/// </summary>
+public sealed record ApplicationSectionDeleteArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("application-code")]
+	[property: Description("Installed application code.")]
+	[property: Required]
+	string ApplicationCode,
+
+	[property: JsonPropertyName("section-code")]
+	[property: Description("Existing section code inside the installed application.")]
+	[property: Required]
+	string SectionCode
+);
+
+/// <summary>
+/// MCP arguments for the <c>application-section-get-list</c> tool.
+/// </summary>
+public sealed record ApplicationSectionGetListArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("application-code")]
+	[property: Description("Installed application code.")]
+	[property: Required]
+	string ApplicationCode
+);
+
+/// <summary>
 /// MCP arguments for the <c>application-section-update</c> tool.
 /// </summary>
 public sealed record ApplicationSectionUpdateArgs(

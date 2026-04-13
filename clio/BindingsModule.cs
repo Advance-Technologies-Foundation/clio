@@ -197,6 +197,10 @@ public class BindingsModule {
 		services.AddTransient<CreateAppSectionCommand>();
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
 		services.AddTransient<UpdateAppSectionCommand>();
+		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
+		services.AddTransient<DeleteAppSectionCommand>();
+		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
+		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
 		services.AddTransient<PageUpdateCommand>();
@@ -214,6 +218,8 @@ public class BindingsModule {
 		services.AddTransient<ApplicationCreateTool>();
 		services.AddTransient<ApplicationSectionCreateTool>();
 		services.AddTransient<ApplicationSectionUpdateTool>();
+		services.AddTransient<ApplicationSectionDeleteTool>();
+		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();
 		services.AddTransient<ToolContractGetTool>();
 		services.AddTransient<PageGetTool>();
