@@ -13,6 +13,7 @@ using Ms = System.IO.Abstractions;
 namespace Clio.Tests.Common;
 
 [TestFixture]
+[Property("Module", "Common")]
 [Category("Unit")]
 public class FileSystemTests
 {

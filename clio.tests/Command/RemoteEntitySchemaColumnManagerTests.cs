@@ -15,6 +15,8 @@ using Terrasoft.Core.Entities;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 [NonParallelizable]
 internal class RemoteEntitySchemaColumnManagerTests
 {

@@ -11,6 +11,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command {
 
 	[TestFixture]
+	[Property("Module", "Core")]
 	public class UpdateCliCommandTests : BaseCommandTests<UpdateCliOptions> {
 
 		private IAppUpdater _mockAppUpdater;

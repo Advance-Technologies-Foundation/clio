@@ -9,6 +9,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class ApplicationSectionUpdateServiceTests {
 	private ISettingsRepository _settingsRepository = null!;
 	private IApplicationClientFactory _applicationClientFactory = null!;

@@ -6,6 +6,8 @@ using NUnit.Framework;
 namespace Clio.Tests;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Core")]
 public class AppUpdaterTests {
 
 	[Test]

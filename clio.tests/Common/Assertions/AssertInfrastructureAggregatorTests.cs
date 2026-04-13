@@ -10,6 +10,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Common.Assertions;
 
 [TestFixture]
+[Property("Module", "Common")]
 public sealed class AssertInfrastructureAggregatorTests
 {
 	private IK8ContextValidator _contextValidator;

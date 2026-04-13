@@ -22,6 +22,7 @@ using YamlDotNet.Serialization;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettingsToManifestOptions>
 {
 	protected override MockFileSystem CreateFs() {

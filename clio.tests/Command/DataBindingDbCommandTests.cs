@@ -15,6 +15,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	private const string PackageName = "TestPkg";
 	private static readonly string WorkspaceRoot = Path.Combine(Path.GetTempPath(), $"clio-data-binding-db-command-{Guid.NewGuid():N}");

@@ -7,6 +7,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class ResourceStringHelperTests {
 	[Test]
 	[Description("CleanAndMerge preserves existing custom resources and registers missing body and explicit resources")]

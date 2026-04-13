@@ -12,6 +12,7 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 [Category("Unit")]
+[Property("Module", "Command")]
 public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfigurationOptions>
 {
 	private readonly IServiceUrlBuilder _serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();

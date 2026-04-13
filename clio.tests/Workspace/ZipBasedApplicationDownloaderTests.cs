@@ -14,6 +14,7 @@ namespace Clio.Tests.Workspace;
 
 [TestFixture(Category = "Unit")]
 [Description("Tests for ZipBasedApplicationDownloader class that extracts Creatio configuration from ZIP files")]
+[Property("Module", "Workspace")]
 public class ZipBasedApplicationDownloaderTests : BaseClioModuleTests
 {
 

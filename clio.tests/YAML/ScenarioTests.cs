@@ -12,6 +12,8 @@ using NUnit.Framework;
 using YamlDotNet.Serialization;
 
 [TestFixture(Author = "Kirill Krylov")]
+[Property("Module", "Core")]
+[Category("Unit")]
 [Category("YAML")]
 public class ScenarioTests
 {

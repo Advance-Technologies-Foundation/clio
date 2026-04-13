@@ -16,7 +16,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command
 {
     [TestFixture]
-    [Category("UnitTests")]
+[Property("Module", "Command")]
+    [Category("Unit")]
     public class TurnFarmModeCommandTests
     {
         private IValidator<TurnFarmModeOptions> _validator;

@@ -7,4 +7,4 @@ using NUnit.Framework;
 // that writes to Console.Out; too many parallel fixtures cause ObjectDisposedException
 // when the test host redirects Console.Out per-test.
 [assembly: Parallelizable(ParallelScope.Fixtures)]
-[assembly: LevelOfParallelism(4)]
+[assembly: LevelOfParallelism(3)]

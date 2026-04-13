@@ -10,6 +10,8 @@ using NUnit.Framework;
 namespace Clio.Tests.ModelBuilder;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "ModelBuilder")]
 internal class ModelBuilderTests
 {
 	[Test]

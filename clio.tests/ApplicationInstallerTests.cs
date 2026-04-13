@@ -11,6 +11,7 @@ using System;
 namespace Clio.Tests;
 
 [TestFixture]
+[Property("Module", "Core")]
 internal class ApplicationInstallerTests : BaseClioModuleTests
 {
 	[Test]

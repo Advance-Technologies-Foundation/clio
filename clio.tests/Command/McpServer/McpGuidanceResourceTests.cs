@@ -9,6 +9,7 @@ namespace Clio.Tests.Command.McpServer;
 /// Unit tests for MCP guidance resources that expose cross-tool modeling rules.
 /// </summary>
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class McpGuidanceResourceTests {
 	[Test]
 	[Category("Unit")]

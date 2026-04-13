@@ -7,6 +7,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class UpdateAppSectionCommandTests {
 	[Test]
 	[Description("Maps CLI options to the section-update service request and writes the structured result to the logger on success.")]

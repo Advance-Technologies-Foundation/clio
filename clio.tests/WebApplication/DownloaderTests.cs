@@ -12,6 +12,7 @@ using NUnit.Framework;
 namespace Clio.Tests.WebApplication;
 
 [TestFixture(Category = "Unit")]
+[Property("Module", "Core")]
 public class DownloaderTests : BaseClioModuleTests
 {
 

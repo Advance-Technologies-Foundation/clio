@@ -11,6 +11,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Common;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Common")]
 internal class ConsoleProgressbarTest
 {
 

@@ -9,6 +9,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public sealed class SettingsBootstrapServiceTests {
 	[Test]
 	[Category("Unit")]

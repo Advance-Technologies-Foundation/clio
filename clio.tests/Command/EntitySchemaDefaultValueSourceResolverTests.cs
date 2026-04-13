@@ -9,6 +9,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 internal sealed class EntitySchemaDefaultValueSourceResolverTests
 {
 	private IRemoteEntitySchemaDesignerClient _designerClient = null!;

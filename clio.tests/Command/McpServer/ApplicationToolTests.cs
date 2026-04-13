@@ -21,6 +21,7 @@ using Clio.UserEnvironment;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class ApplicationToolTests {
 	[Test]
 	[Category("Unit")]

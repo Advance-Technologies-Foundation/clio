@@ -13,6 +13,8 @@ using NUnit.Framework;
 using YamlDotNet.Serialization;
 
 [TestFixture(Author = "Kirill Krylov", Category = "YAML")]
+[Category("Unit")]
+[Property("Module", "Command")]
 public class ScenarioRunnerCommandTests
 {
 

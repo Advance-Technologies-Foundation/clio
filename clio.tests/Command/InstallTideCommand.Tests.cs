@@ -16,6 +16,7 @@ namespace Clio.Tests.Command;
 #region Class: InstallTideCommandTests
 
 [TestFixture]
+[Property("Module", "Command")]
 public class InstallTideCommandTests : BaseCommandTests<InstallTideCommandOptions>{
 	#region Methods: Public
 

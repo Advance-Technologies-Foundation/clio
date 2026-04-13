@@ -12,6 +12,7 @@ using NUnit.Framework;
 namespace Clio.Tests;
 
 [TestFixture]
+[Property("Module", "Core")]
 internal class EnvironmentManagerTest : BaseClioModuleTests {
 
 	private const string TestDrive = "T";
