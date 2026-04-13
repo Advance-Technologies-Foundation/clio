@@ -119,16 +119,13 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests {
 		const string timestampPattern = @"\d{14}.svg$"; // Matches the datetime format "yyyyMMddHHmmss"
 		appDescriptor.IconName.Should().MatchRegex($"{iconFileName}_{timestampPattern}");
 
-		string currentDir = Directory.GetCurrentDirectory();
+		string currentDir = TestContext.CurrentContext.TestDirectory;
 		string svgActualPath = Path.Combine(currentDir, "Examples", "SVG_Icons", "Partner.svg");
 		string actualBase64EncodedIcon = Convert.ToBase64String(File.ReadAllBytes(svgActualPath));
 
 		appDescriptor.Icon.Should().Be(actualBase64EncodedIcon,
 			"the icon in the descriptor should match the base64-encoded SVG file content");
 	}
-
-	[Test]
-	[Description("Ensures that the correct icon is set when using a zip archive.")]
 	public void SetIcon_ShouldSetCorrectIcon_WhenUsingZipArchive() {
 		// Arrange
 		string zipAppPath = Path.Combine(_tempPath, "AppZips", "MrktApolloApp.zip");
@@ -150,7 +147,7 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests {
 		appDescriptor.IconName.Should().MatchRegex($"{iconFileName}_{timestampPattern}",
 			"because the icon name should follow the expected pattern");
 
-		string currentDir = Directory.GetCurrentDirectory();
+		string currentDir = TestContext.CurrentContext.TestDirectory;
 		string svgActualPath = Path.Combine(currentDir, "Examples", "SVG_Icons", "Partner.svg");
 		string actualBase64EncodedIcon = Convert.ToBase64String(File.ReadAllBytes(svgActualPath));
 
