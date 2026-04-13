@@ -20,6 +20,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`download-application`](docs/commands/download-application.md) - Download an application package from Creatio, `dapp`, `download-app`
 <a id="get-app-hash"></a>
 - [`get-app-hash`](docs/commands/get-app-hash.md) - Calculate the hash of an application package
+<a id="create-app"></a>
+- [`create-app`](docs/commands/create-app.md) - Create a new application in Creatio
+<a id="get-app-info"></a>
+- [`get-app-info`](docs/commands/get-app-info.md) - Get information about an installed Creatio application
 <a id="list-apps"></a>
 <a id="get-app-list"></a>
 <a id="app-list"></a>
@@ -276,6 +280,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`call-service`](docs/commands/call-service.md) - Call a Creatio service endpoint, `cs`
 <a id="create-entity-schema"></a>
 - [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create an entity schema in a remote Creatio package
+<a id="create-lookup"></a>
+- [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="dataservice"></a>
 <a id="ds"></a>
 - [`dataservice`](docs/commands/dataservice.md) - Send a Creatio DataService request, `ds`

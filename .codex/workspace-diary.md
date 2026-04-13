@@ -2321,3 +2321,11 @@ Discovery:
   - DataService cannot delete SysSchema (SecurityException) — must use WorkspaceExplorerService.svc/Delete
 Files: clio/Command/ApplicationSectionDeleteCommand.cs
 Impact: delete-app-section now fully cleans up all 7 workspace schemas + SysModule + SysModuleInWorkplace
+
+## 2025-07-07 – Normalize CLI command names to verb-noun convention
+
+Context: Commands page-get/list/update, delete-schema, get-app-list used inconsistent naming patterns.
+Decision: Renamed all to canonical {verb}-{noun} pattern; old names preserved as Aliases for backward compatibility.
+Discovery: Commands.md doc links must reference canonical filenames — HasCommandIndexEntry checks (docs/commands/{canonicalName}.md). Four artifact types must all be consistent: Commands.md index entry, help txt, docs md, WikiAnchors.txt.
+Files: clio/Command/PageGetOptions.cs, PageListOptions.cs, PageUpdateOptions.cs, DeleteSchemaCommand.cs, ListInstalledApplications.cs, Commands.md, CommandHelpCatalog.cs, WikiAnchors.txt
+Impact: All future renames must update Commands.md link paths (not just anchor IDs); test ExecuteCommands_WithUnknownVerb asserts specific canonical names in suggestions.

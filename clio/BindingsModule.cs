@@ -201,6 +201,9 @@ public class BindingsModule {
 		services.AddTransient<DeleteAppSectionCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
+		services.AddTransient<CreateAppCommand>();
+		services.AddTransient<GetAppInfoCommand>();
+		services.AddTransient<CreateLookupCommand>();
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
 		services.AddTransient<PageUpdateCommand>();

@@ -20,10 +20,12 @@ compare-web-farm-node:compare-web-farm-node,check-farm,check-web-farm-node,cwf,f
 compile-configuration:compile-configuration,cc,compile-remote
 compile-package:compile-package,comp-pkg
 compressApp:compressApp,comp-app
+create-app:create-app
 create-app-section:create-app-section
 create-data-binding:create-data-binding
 create-data-binding-db:create-data-binding-db
 create-entity-schema:create-entity-schema
+create-lookup:create-lookup
 create-k8-files:create-k8-files,ck8f
 create-workspace:create-workspace,createw
 CustomizeDataProtection:CustomizeDataProtection,cdp
@@ -46,6 +48,7 @@ extract-pkg-zip:extract-pkg-zip,extract,unzip,extract-package
 generate-pkg-zip:generate-pkg-zip,comp-pkg,compress
 generate-process-model:generate-process-model,gpm
 get-app-hash:get-app-hash
+get-app-info:get-app-info
 list-apps:list-apps,get-app-list,app-list,apps,apps-list,lia
 get-build-info:get-build-info,bi,buildinfo
 get-entity-schema-column-properties:get-entity-schema-column-properties

@@ -365,6 +365,22 @@ clio list-apps -e <ENV>
 clio apps -e <ENV>
 ```
 
+### create-app
+Create a new application in Creatio.
+```bash
+clio create-app --name "My Orders App" --code UsrOrdersApp --template-code AppFreedomUIv2 -e <ENV>
+clio create-app --name "Sales" --code UsrSalesApp --template-code EmptyApp --icon-background "#1F5F8B" -e <ENV>
+```
+Options: `--name` (required), `--code` (required, starts with Usr), `--template-code` (required; known values: AppFreedomUIv2, AppFreedomUI, AppWithHomePage, EmptyApp), `--icon-background` (#RRGGBB), `--description`, `--icon-id` (GUID or 'auto').
+
+### get-app-info
+Get information about an installed Creatio application.
+```bash
+clio get-app-info --code UsrOrdersApp -e <ENV>
+clio get-app-info --code UsrOrdersApp --json -e <ENV>
+```
+Options: `--code` or `--id` (at least one required), `--json` (print raw JSON instead of table).
+
 ### create-app-section
 Create a section inside an existing installed application.
 ```bash
@@ -984,6 +1000,14 @@ Default resolution:
 - Ambiguous matches fail with explicit disambiguation guidance.
 
 > **DataForge enrichment** — The MCP `create-entity-schema` and `create-lookup` tools automatically query Data Forge before creating the schema and return an optional `dataforge.context-summary` section with similar tables and lookup hints. Inspect `similar-tables` to confirm no equivalent schema exists before proceeding.
+
+### create-lookup
+Create a lookup entity schema (inherits BaseLookup) in a remote Creatio package and register it in the lookup catalog. Requires cliogate.
+```bash
+clio create-lookup --package UsrOrdersApp --name UsrOrderStatus --title "Order Status" -e <ENV>
+clio create-lookup --package UsrSalesApp --name UsrDealType --title "Deal Type" --column "Code:ShortText:Code" -e <ENV>
+```
+Options: `--package` (required), `--name` (required, max 22 chars), `--title` (required), `--column` (repeatable, format: `name:type[:title]`; BaseLookup already provides Name and Description — do not add those).
 
 ### get-entity-schema-properties
 Get a human-readable summary of a remote Creatio entity schema.
