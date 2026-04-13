@@ -31,6 +31,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`create-app-section`](docs/commands/create-app-section.md) - Create a section inside an existing installed application
 <a id="update-app-section"></a>
 - [`update-app-section`](docs/commands/update-app-section.md) - Update metadata of a section inside an existing installed application
+<a id="list-app-sections"></a>
+- [`list-app-sections`](docs/commands/list-app-sections.md) - List sections of an existing installed application
 <a id="get-info"></a>
 <a id="describe"></a>
 <a id="describe-creatio"></a>

@@ -2276,3 +2276,21 @@ Decision: Treated the file as a meta-session that analyzes another exported Copi
 Discovery: The analyzed session itself only used two `view` actions and three assistant answers; the visible CAPI error and CLIO command failures belong to the nested file being inspected, not to the outer session. The biggest issue in the outer session is inconsistent interpretation of `find-entity-schema` output around `Test1 | Test1 (Creatio)`.
 Files: /Users/a.kravchuk/Projects/copilot-session-d6fe1629-5e8e-42c2-b7ee-6bcfce5cdb27.md, .codex/workspace-diary.md
 Impact: Future session reviews should explicitly distinguish current-session execution from quoted or viewed transcripts to avoid false incident counts and wrong root-cause conclusions.
+
+## 2025-07-16 – Implement application-section-delete (ENG-88149)
+Context: Last unimplemented AC from ENG-88149 — delete section from an installed app.
+Decision: Followed the create/update pattern: service + command + MCP tool + args/response/support + DI + contract + prompt + tests.
+Files: ApplicationSectionDeleteCommand.cs (created), ApplicationTool.cs, ApplicationToolArgs.cs, ApplicationToolResponses.cs, ApplicationToolSupport.cs, BindingsModule.cs, Program.cs, ToolContractGetTool.cs, ApplicationPrompt.cs, DeleteAppSectionCommandTests.cs
+Impact: application-section-delete MCP tool and delete-app-section CLI verb are fully wired. 3 unit tests pass.
+
+## 2025-07-17 – application-section-get-list completed
+Context: ENG-88149 — list sections of an installed Creatio application
+Decision: Reused ApplicationSectionRecord/ApplicationSectionInfoResult from create command; SelectQuery on ApplicationSection filtered by ApplicationId
+Files: clio/Command/ApplicationSectionGetListCommand.cs, clio/Command/McpServer/Tools/ApplicationTool.cs, ToolContractGetTool.cs, ApplicationPrompt.cs, guidance resources, BindingsModule.cs, Program.cs, clio.tests/Command/GetAppSectionsCommandTests.cs
+Impact: CLI list-app-sections + MCP application-section-get-list; preferred flow now includes get-list before delete/update in all guidance resources
+
+## 2026-04-13 15:06 – list-app-sections table output (UX improvement)
+Context: Raw single-line JSON output was unreadable in the terminal.
+Decision: Switch default output to ConsoleTable (Code|Caption|EntitySchemaName|Description) preceded by an application header line; add --json flag for script-friendly indented JSON. MCP tool unaffected (calls service directly).
+Files: clio/Command/ApplicationSectionGetListCommand.cs, clio.tests/Command/GetAppSectionsCommandTests.cs, clio/help/en/list-app-sections.txt (new), clio/docs/commands/list-app-sections.md (new), clio/Commands.md, .github/skills/clio/references/commands-reference.md
+Impact: Human-readable table by default; --json for piping; 4 unit tests green.

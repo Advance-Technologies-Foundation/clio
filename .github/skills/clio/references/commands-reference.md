@@ -383,6 +383,14 @@ clio update-app-section --application-code UsrSalesApp --section-code VisitSecti
 ```
 Rules: require `--application-code` and `--section-code`; provide at least one mutable field from `--caption`, `--description`, `--icon-id`, `--icon-background`; omitted fields remain unchanged; caption updates persist plain text and can repair broken JSON-style headings.
 
+### list-app-sections
+List sections of an existing installed application as a human-readable table.
+```bash
+clio list-app-sections --application-code UsrOrdersApp -e <ENV>
+clio list-app-sections --application-code UsrOrdersApp --json -e <ENV>
+```
+Rules: require `--application-code`; default output is a table with columns Code, Caption, EntitySchemaName, Description preceded by an application header line; use `--json` for indented JSON output suitable for scripting.
+
 ### upload-license
 Upload license file. **Aliases:** `license`, `loadlicense`, `load-license`
 ```bash
