@@ -44,6 +44,7 @@ public sealed class ApplicationSectionDeleteService(
 	ILogger logger)
 	: IApplicationSectionDeleteService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
+	private const string SysModuleSchemaName = "SysModule";
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		PropertyNameCaseInsensitive = true
@@ -145,7 +146,7 @@ public sealed class ApplicationSectionDeleteService(
 		$$"""
 		{
 		  "__type":"Terrasoft.Nui.ServiceModel.DataContract.DeleteQuery",
-		  "rootSchemaName":"{{ApplicationSectionSchemaName}}",
+		  "rootSchemaName":"{{SysModuleSchemaName}}",
 		  "filters":{
 		    "isEnabled":true,
 		    "filterType":6,
