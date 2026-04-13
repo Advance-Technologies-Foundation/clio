@@ -18,6 +18,10 @@ public sealed class DeleteAppSectionOptions : EnvironmentOptions {
 
 	[Option("section-code", Required = true, HelpText = "Section code inside the installed application")]
 	public string SectionCode { get; set; } = string.Empty;
+
+	[Option("delete-entity-schema", Required = false, Default = false,
+		HelpText = "When set, also deletes the entity schema. WARNING: destructive and irreversible.")]
+	public bool DeleteEntitySchema { get; set; }
 }
 
 /// <summary>
@@ -80,7 +84,7 @@ public sealed class ApplicationSectionDeleteService(
 			request.SectionCode);
 		logger.WriteInfo($"Deleting section '{sectionRecord.Code}' ({sectionRecord.Id})...");
 		string deleteUrl = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Delete, environmentSettings);
-		DeleteSection(client, deleteUrl, sectionRecord.Id);
+		DeleteSection(client, deleteUrl, sectionRecord, request.DeleteEntitySchema);
 
 		return new ApplicationSectionDeleteResult(
 			null,
@@ -125,6 +129,8 @@ public sealed class ApplicationSectionDeleteService(
 				new SelectQueryHelper.SelectQueryColumnDefinition("EntitySchemaName", "EntitySchemaName"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("PackageId", "PackageId"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("SectionSchemaUId", "SectionSchemaUId"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("CardSchemaUId", "CardSchemaUId"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("SysModuleEntityId", "SysModuleEntityId"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("LogoId", "LogoId"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("IconBackground", "IconBackground"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("ClientTypeId", "ClientTypeId")
@@ -136,11 +142,39 @@ public sealed class ApplicationSectionDeleteService(
 					SelectQueryHelper.GuidDataValueType)
 			]);
 
-	private void DeleteSection(IApplicationClient client, string deleteUrl, string sectionId) {
+	private void DeleteSection(IApplicationClient client, string deleteUrl, ApplicationSectionRecord section, bool deleteEntitySchema) {
+		logger.WriteInfo("Deleting SysModuleInWorkplace records...");
+		ExecuteDeleteQuery(client, deleteUrl, BuildSysModuleInWorkplaceDeleteQuery(section.Id));
 		logger.WriteInfo("Clearing section localizations (SysModuleLcz)...");
-		ExecuteDeleteQuery(client, deleteUrl, BuildLczDeleteQueryBody(sectionId));
+		ExecuteDeleteQuery(client, deleteUrl, BuildLczDeleteQueryBody(section.Id));
+		if (!string.IsNullOrWhiteSpace(section.SectionSchemaUId)) {
+			logger.WriteInfo("Deleting section list page schema...");
+			TryExecuteDeleteQuery(client, deleteUrl, BuildSysSchemaDeleteByUIdQuery(section.SectionSchemaUId));
+		}
+
+		if (!string.IsNullOrWhiteSpace(section.CardSchemaUId)) {
+			logger.WriteInfo("Deleting section form page schema...");
+			TryExecuteDeleteQuery(client, deleteUrl, BuildSysSchemaDeleteByUIdQuery(section.CardSchemaUId));
+		}
+
+		foreach (string suffix in (string[]) ["_MobileListPage", "_MobileFormPage", "_MobileRelatedPage", "_RelatedPage", "_Detail"]) {
+			string schemaName = section.Code + suffix;
+			logger.WriteInfo($"Deleting schema '{schemaName}'...");
+			TryExecuteDeleteQuery(client, deleteUrl, BuildSysSchemaDeleteByNameQuery(schemaName));
+		}
+
+		if (!string.IsNullOrWhiteSpace(section.SysModuleEntityId)) {
+			logger.WriteInfo("Deleting SysModuleEntity record...");
+			ExecuteDeleteQuery(client, deleteUrl, BuildSysModuleEntityDeleteQuery(section.SysModuleEntityId));
+		}
+
+		if (deleteEntitySchema && !string.IsNullOrWhiteSpace(section.EntitySchemaName)) {
+			logger.WriteInfo($"Deleting entity schema '{section.EntitySchemaName}' (--delete-entity-schema is set)...");
+			TryExecuteDeleteQuery(client, deleteUrl, BuildSysSchemaDeleteByNameQuery(section.EntitySchemaName));
+		}
+
 		logger.WriteInfo("Deleting SysModule record...");
-		ExecuteDeleteQuery(client, deleteUrl, BuildDeleteQueryBody(sectionId));
+		ExecuteDeleteQuery(client, deleteUrl, BuildDeleteQueryBody(section.Id));
 	}
 
 	private void ExecuteDeleteQuery(IApplicationClient client, string deleteUrl, string requestBody) {
@@ -151,6 +185,47 @@ public sealed class ApplicationSectionDeleteService(
 			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "DeleteQuery failed.");
 		}
 	}
+
+	private void TryExecuteDeleteQuery(IApplicationClient client, string deleteUrl, string requestBody) {
+		try {
+			ExecuteDeleteQuery(client, deleteUrl, requestBody);
+		} catch (Exception ex) {
+			logger.WriteInfo($"Warning: non-critical delete step failed and will be skipped: {ex.Message}");
+		}
+	}
+
+	private static string BuildSysModuleInWorkplaceDeleteQuery(string sectionId) =>
+		$$"""
+		{
+		  "__type":"Terrasoft.Nui.ServiceModel.DataContract.DeleteQuery",
+		  "rootSchemaName":"SysModuleInWorkplace",
+		  "filters":{
+		    "isEnabled":true,
+		    "filterType":6,
+		    "logicalOperation":0,
+		    "trimDateTimeParameterToDate":false,
+		    "items":{
+		      "primaryFilter":{
+		        "filterType":1,
+		        "comparisonType":3,
+		        "isEnabled":true,
+		        "trimDateTimeParameterToDate":false,
+		        "leftExpression":{
+		          "expressionType":0,
+		          "columnPath":"SysModuleId"
+		        },
+		        "rightExpression":{
+		          "expressionType":2,
+		          "parameter":{
+		            "dataValueType":0,
+		            "value":"{{sectionId}}"
+		          }
+		        }
+		      }
+		    }
+		  }
+		}
+		""";
 
 	private static string BuildLczDeleteQueryBody(string sectionId) =>
 		$$"""
@@ -177,6 +252,105 @@ public sealed class ApplicationSectionDeleteService(
 		          "parameter":{
 		            "dataValueType":0,
 		            "value":"{{sectionId}}"
+		          }
+		        }
+		      }
+		    }
+		  }
+		}
+		""";
+
+	private static string BuildSysSchemaDeleteByUIdQuery(string uId) =>
+		$$"""
+		{
+		  "__type":"Terrasoft.Nui.ServiceModel.DataContract.DeleteQuery",
+		  "rootSchemaName":"SysSchema",
+		  "filters":{
+		    "isEnabled":true,
+		    "filterType":6,
+		    "logicalOperation":0,
+		    "trimDateTimeParameterToDate":false,
+		    "items":{
+		      "primaryFilter":{
+		        "filterType":1,
+		        "comparisonType":3,
+		        "isEnabled":true,
+		        "trimDateTimeParameterToDate":false,
+		        "leftExpression":{
+		          "expressionType":0,
+		          "columnPath":"UId"
+		        },
+		        "rightExpression":{
+		          "expressionType":2,
+		          "parameter":{
+		            "dataValueType":0,
+		            "value":"{{uId}}"
+		          }
+		        }
+		      }
+		    }
+		  }
+		}
+		""";
+
+	private static string BuildSysSchemaDeleteByNameQuery(string name) =>
+		$$"""
+		{
+		  "__type":"Terrasoft.Nui.ServiceModel.DataContract.DeleteQuery",
+		  "rootSchemaName":"SysSchema",
+		  "filters":{
+		    "isEnabled":true,
+		    "filterType":6,
+		    "logicalOperation":0,
+		    "trimDateTimeParameterToDate":false,
+		    "items":{
+		      "primaryFilter":{
+		        "filterType":1,
+		        "comparisonType":3,
+		        "isEnabled":true,
+		        "trimDateTimeParameterToDate":false,
+		        "leftExpression":{
+		          "expressionType":0,
+		          "columnPath":"Name"
+		        },
+		        "rightExpression":{
+		          "expressionType":2,
+		          "parameter":{
+		            "dataValueType":1,
+		            "value":"{{name}}"
+		          }
+		        }
+		      }
+		    }
+		  }
+		}
+		""";
+
+	private static string BuildSysModuleEntityDeleteQuery(string sysModuleEntityId) =>
+		$$"""
+		{
+		  "__type":"Terrasoft.Nui.ServiceModel.DataContract.DeleteQuery",
+		  "rootSchemaName":"SysModuleEntity",
+		  "filters":{
+		    "isEnabled":true,
+		    "filterType":6,
+		    "logicalOperation":0,
+		    "trimDateTimeParameterToDate":false,
+		    "items":{
+		      "primaryFilter":{
+		        "filterType":1,
+		        "comparisonType":3,
+		        "isEnabled":true,
+		        "trimDateTimeParameterToDate":false,
+		        "leftExpression":{
+		          "expressionType":0,
+		          "columnPath":"Id"
+		        },
+		        "rightExpression":{
+		          "expressionType":2,
+		          "parameter":{
+		            "dataValueType":0,
+		            "value":"{{sysModuleEntityId}}"
 		          }
 		        }
 		      }
@@ -279,7 +453,8 @@ public sealed class DeleteAppSectionCommand(
 				options.Environment,
 				new ApplicationSectionDeleteRequest(
 					options.ApplicationCode,
-					options.SectionCode));
+					options.SectionCode,
+					options.DeleteEntitySchema));
 			logger.WriteInfo(JsonSerializer.Serialize(result));
 			return 0;
 		} catch (Exception exception) {
@@ -294,9 +469,11 @@ public sealed class DeleteAppSectionCommand(
 /// </summary>
 /// <param name="ApplicationCode">Installed application code.</param>
 /// <param name="SectionCode">Section code inside the installed application.</param>
+/// <param name="DeleteEntitySchema">When true, also deletes the entity schema record. WARNING: irreversible.</param>
 public sealed record ApplicationSectionDeleteRequest(
 	string ApplicationCode,
-	string SectionCode);
+	string SectionCode,
+	bool DeleteEntitySchema = false);
 
 /// <summary>
 /// Structured result for existing-app section deletion.

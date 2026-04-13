@@ -41,7 +41,8 @@ public sealed class DeleteAppSectionCommandTests {
 			"sandbox",
 			Arg.Is<ApplicationSectionDeleteRequest>(request =>
 				request.ApplicationCode == "UsrOrdersApp" &&
-				request.SectionCode == "UsrOrders"));
+				request.SectionCode == "UsrOrders" &&
+				request.DeleteEntitySchema == false));
 		logger.Received(1).WriteInfo(Arg.Is<string>(message => message.Contains("\"ApplicationId\":\"app-id\"")));
 	}
 
@@ -88,5 +89,35 @@ public sealed class DeleteAppSectionCommandTests {
 		result.Should().Be(1,
 			because: "the command should propagate service-level failures as a non-zero exit code");
 		logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("UsrMissing")));
+	}
+
+	[Test]
+	[Description("Passes delete-entity-schema=true to the service request when the CLI option is set.")]
+	public void Execute_Should_Pass_DeleteEntitySchema_Flag_To_Service() {
+		// Arrange
+		IApplicationSectionDeleteService sectionDeleteService = Substitute.For<IApplicationSectionDeleteService>();
+		ILogger logger = Substitute.For<ILogger>();
+		DeleteAppSectionCommand command = new(sectionDeleteService, logger);
+		DeleteAppSectionOptions options = new() {
+			Environment = "sandbox",
+			ApplicationCode = "UsrOrdersApp",
+			SectionCode = "UsrOrders",
+			DeleteEntitySchema = true
+		};
+		sectionDeleteService.DeleteSection("sandbox", Arg.Any<ApplicationSectionDeleteRequest>())
+			.Returns(new ApplicationSectionDeleteResult(
+				null, null, "app-id", "Orders App", "UsrOrdersApp", "8.3.0",
+				new ApplicationSectionInfoResult("section-id", "UsrOrders", "Orders", null, "UsrOrder", null, null, null, null, null)));
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "the command should succeed when all required options are provided");
+		sectionDeleteService.Received(1).DeleteSection(
+			"sandbox",
+			Arg.Is<ApplicationSectionDeleteRequest>(request =>
+				request.DeleteEntitySchema == true));
 	}
 }

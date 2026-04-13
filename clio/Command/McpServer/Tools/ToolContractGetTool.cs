@@ -191,6 +191,7 @@ internal static class ToolContractCatalog {
 	private const string PrimaryPackageIdentifierDescription = "Primary package identifier.";
 	private const string PrimaryPackageNameDescription = "Primary package name.";
 	private const string SectionCodeFieldName = "section-code";
+	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
 
 	private static readonly ToolErrorContract CommonErrorContract = new([
@@ -701,7 +702,9 @@ internal static class ToolContractCatalog {
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
-					Field(SectionCodeFieldName, StringType, "Existing section code inside the installed application.")
+					Field(SectionCodeFieldName, StringType, "Existing section code inside the installed application."),
+					Field(DeleteEntitySchemaFieldName, BooleanType,
+						"When true, also deletes the entity schema record. Requires explicit opt-in. WARNING: destructive and irreversible. Omit or set to false to keep the entity schema and its data intact.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,

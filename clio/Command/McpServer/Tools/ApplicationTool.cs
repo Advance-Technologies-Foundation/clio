@@ -311,7 +311,8 @@ public sealed class ApplicationSectionDeleteTool(IApplicationSectionDeleteServic
 				args.EnvironmentName,
 				new ApplicationSectionDeleteRequest(
 					args.ApplicationCode,
-					args.SectionCode));
+					args.SectionCode,
+					args.DeleteEntitySchema ?? false));
 			return ApplicationToolHelper.CreateSectionDeleteContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateSectionDeleteContextErrorResponse(ex.Message);

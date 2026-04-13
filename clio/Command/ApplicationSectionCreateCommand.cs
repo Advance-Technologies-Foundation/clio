@@ -636,10 +636,12 @@ public sealed record ApplicationSectionInfoResult(
 /// <param name="Description">Optional section description.</param>
 /// <param name="EntitySchemaName">Target entity schema name.</param>
 /// <param name="PackageId">Package identifier.</param>
-/// <param name="SectionSchemaUId">Generated section schema identifier.</param>
+/// <param name="SectionSchemaUId">Section list page schema UId.</param>
 /// <param name="LogoId">Icon identifier.</param>
 /// <param name="IconBackground">Icon background color.</param>
 /// <param name="ClientTypeId">Optional client type selector.</param>
+/// <param name="CardSchemaUId">Section form page schema UId.</param>
+/// <param name="SysModuleEntityId">Identifier of the associated SysModuleEntity record.</param>
 public sealed record ApplicationSectionRecord(
 	[property: JsonPropertyName("Id")] string Id,
 	[property: JsonPropertyName("ApplicationId")] string ApplicationId,
@@ -651,4 +653,6 @@ public sealed record ApplicationSectionRecord(
 	[property: JsonPropertyName("SectionSchemaUId")] string? SectionSchemaUId,
 	[property: JsonPropertyName("LogoId")] string? LogoId,
 	[property: JsonPropertyName("IconBackground")] string? IconBackground,
-	[property: JsonPropertyName("ClientTypeId")] string? ClientTypeId);
+	[property: JsonPropertyName("ClientTypeId")] string? ClientTypeId,
+	[property: JsonPropertyName("CardSchemaUId")] string? CardSchemaUId,
+	[property: JsonPropertyName("SysModuleEntityId")] string? SysModuleEntityId);

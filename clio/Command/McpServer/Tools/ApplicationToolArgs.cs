@@ -153,7 +153,11 @@ public sealed record ApplicationSectionDeleteArgs(
 	[property: JsonPropertyName("section-code")]
 	[property: Description("Existing section code inside the installed application.")]
 	[property: Required]
-	string SectionCode
+	string SectionCode,
+
+	[property: JsonPropertyName("delete-entity-schema")]
+	[property: Description("When true, also deletes the entity schema record. Requires explicit opt-in. WARNING: destructive and irreversible.")]
+	bool? DeleteEntitySchema
 );
 
 /// <summary>
