@@ -162,7 +162,7 @@ public sealed class ApplicationSectionCreateService(
 			request.WithMobilePages ? null : WebClientTypeId);
 	}
 
-	private void CheckEntitySchemaDoesNotExist(
+	private static void CheckEntitySchemaDoesNotExist(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		string schemaName,
@@ -183,6 +183,7 @@ public sealed class ApplicationSectionCreateService(
 		} catch (InvalidOperationException) {
 			throw;
 		} catch {
+			// schema existence check is best-effort; skip unexpected errors to avoid blocking section creation
 		}
 	}
 

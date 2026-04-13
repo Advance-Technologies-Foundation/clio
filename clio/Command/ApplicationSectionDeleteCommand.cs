@@ -196,7 +196,7 @@ public sealed class ApplicationSectionDeleteService(
 		}
 	}
 
-	private void ExecuteDeleteQuery(IApplicationClient client, string deleteUrl, string requestBody) {
+	private static void ExecuteDeleteQuery(IApplicationClient client, string deleteUrl, string requestBody) {
 		string responseBody = client.ExecutePostRequest(deleteUrl, requestBody);
 		DeleteQueryResponseDto response = JsonSerializer.Deserialize<DeleteQueryResponseDto>(responseBody, JsonOptions)
 			?? throw new InvalidOperationException("DeleteQuery returned an empty response.");
