@@ -7,7 +7,7 @@ namespace Clio.Command {
 	using Newtonsoft.Json;
 	using Newtonsoft.Json.Linq;
 
-	[Verb("page-list", HelpText = "List Freedom UI pages")]
+	[Verb("list-pages", Aliases = ["page-list"], HelpText = "List Freedom UI pages")]
 	public class PageListOptions : EnvironmentOptions {
 		[Option("package-name", Required = false, HelpText = "Filter by package name")]
 		public string PackageName { get; set; }

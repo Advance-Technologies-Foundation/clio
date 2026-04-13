@@ -20,13 +20,13 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`download-application`](docs/commands/download-application.md) - Download an application package from Creatio, `dapp`, `download-app`
 <a id="get-app-hash"></a>
 - [`get-app-hash`](docs/commands/get-app-hash.md) - Calculate the hash of an application package
+<a id="list-apps"></a>
 <a id="get-app-list"></a>
 <a id="app-list"></a>
 <a id="apps"></a>
 <a id="apps-list"></a>
 <a id="lia"></a>
-<a id="list-apps"></a>
-- [`get-app-list`](docs/commands/get-app-list.md) - List installed applications, `app-list`, `apps`, `apps-list`, `lia`, `list-apps`
+- [`list-apps`](docs/commands/list-apps.md) - List installed applications, `get-app-list`, `app-list`, `apps`, `apps-list`, `lia`
 <a id="create-app-section"></a>
 - [`create-app-section`](docs/commands/create-app-section.md) - Create a section inside an existing installed application
 <a id="update-app-section"></a>
@@ -279,8 +279,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="dataservice"></a>
 <a id="ds"></a>
 - [`dataservice`](docs/commands/dataservice.md) - Send a Creatio DataService request, `ds`
+<a id="delete-entity-schema"></a>
 <a id="delete-schema"></a>
-- [`delete-schema`](docs/commands/delete-schema.md) - Delete a schema from a workspace package
+- [`delete-entity-schema`](docs/commands/delete-entity-schema.md) - Delete a schema from a workspace package, `delete-schema`
 <a id="download-configuration"></a>
 <a id="dconf"></a>
 - [`download-configuration`](docs/commands/download-configuration.md) - Download configuration libraries from Creatio, `dconf`
@@ -333,12 +334,15 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="os"></a>
 <a id="settings"></a>
 - [`open-settings`](docs/commands/open-settings.md) - Open the clio settings file, `conf`, `configuration`, `os`, `settings`
+<a id="get-page"></a>
 <a id="page-get"></a>
-- [`page-get`](docs/commands/page-get.md) - Get a Freedom UI page bundle and raw schema body
+- [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle and raw schema body, `page-get`
+<a id="list-pages"></a>
 <a id="page-list"></a>
-- [`page-list`](docs/commands/page-list.md) - List Freedom UI pages
+- [`list-pages`](docs/commands/list-pages.md) - List Freedom UI pages, `page-list`
+<a id="update-page"></a>
 <a id="page-update"></a>
-- [`page-update`](docs/commands/page-update.md) - Update Freedom UI page schema body
+- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page schema body, `page-update`
 <a id="run"></a>
 <a id="run-scenario"></a>
 <a id="scenario"></a>

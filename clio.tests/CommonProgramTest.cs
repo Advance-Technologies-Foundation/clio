@@ -248,7 +248,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 			because: "the expanded unknown-command UX should show up to ten command suggestions when enough matches exist");
 		suggestionLines.Should().Equal(suggestionLines.OrderBy(line => line, StringComparer.Ordinal).ToArray(),
 			because: "the rendered suggestion list should now be sorted alphabetically for easier scanning");
-		suggestionLines.Should().Contain("  clio get-app-list",
+		suggestionLines.Should().Contain("  clio list-apps",
 			because: "the closest visible list command should be suggested");
 		suggestionLines.Should().Contain("  clio get-pkg-list",
 			because: "commands sharing the same get/list intent should be suggested");

@@ -1,8 +1,10 @@
-# get-app-list
+# list-apps
 
 ## Name
 
-get-app-list - List installed apps
+list-apps - List installed apps
+
+**Aliases:** `get-app-list`, `app-list`, `apps`, `apps-list`, `lia`
 
 ## Description
 
@@ -11,7 +13,7 @@ Displays the list of applications installed in the selected environment.
 ## Synopsis
 
 ```bash
-clio get-app-list [OPTIONS]
+clio list-apps [OPTIONS]
 ```
 
 ## Options
@@ -24,7 +26,7 @@ Target environment name
 ## Examples
 
 ```bash
-clio get-app-list -e dev
+clio list-apps -e dev
 Show applications installed in the dev environment
 ```
 
@@ -37,4 +39,4 @@ uninstall-app-remote - Remove an application from an environment
 
     https://github.com/Advance-Technologies-Foundation/clio
 
-- [Clio Command Reference](../../Commands.md#get-app-list)
+- [Clio Command Reference](../../Commands.md#list-apps)

@@ -1,4 +1,4 @@
-# delete-schema
+# delete-entity-schema
 
 ## Command Type
 
@@ -6,11 +6,13 @@
 
 ## Name
 
-delete-schema - delete a schema that belongs to the current workspace
+delete-entity-schema - delete a schema that belongs to the current workspace
+
+**Aliases:** `delete-schema`
 
 ## Description
 
-delete-schema removes a schema from Creatio by using Workspace Explorer
+delete-entity-schema removes a schema from Creatio by using Workspace Explorer
 service calls. The command first retrieves workspace items from the target
 environment, then only allows deleting schemas whose package belongs to the
 current local workspace.
@@ -20,7 +22,7 @@ This command must be executed from a workspace directory.
 ## Synopsis
 
 ```bash
-clio delete-schema <SCHEMA_NAME> -e <ENVIRONMENT_NAME>
+clio delete-entity-schema <SCHEMA_NAME> -e <ENVIRONMENT_NAME>
 ```
 
 ## Options
@@ -42,11 +44,11 @@ Schema name (pos. 0)    Schema name to delete
 ## Example
 
 ```bash
-clio delete-schema UsrSendInvoice -e docker_fix2
+clio delete-entity-schema UsrSendInvoice -e docker_fix2
 delete schema UsrSendInvoice when it belongs to one of the current
 workspace packages
 
-clio delete-schema Activity -e docker_fix2
+clio delete-entity-schema Activity -e docker_fix2
 fail when Activity is not part of the current workspace
 ```
 
@@ -54,4 +56,4 @@ fail when Activity is not part of the current workspace
 
     https://github.com/Advance-Technologies-Foundation/clio
 
-- [Clio Command Reference](../../Commands.md#delete-schema)
+- [Clio Command Reference](../../Commands.md#delete-entity-schema)

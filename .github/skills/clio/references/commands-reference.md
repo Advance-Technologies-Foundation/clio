@@ -358,10 +358,10 @@ clio publish-app --repo-path ./workspace --app-hub /hub/path --app-name MyApp -e
 clio uninstall-app-remote <APP_NAME> -e <ENV>
 ```
 
-### get-app-list
-List installed applications. **Aliases:** `apps`
+### list-apps
+List installed applications. **Aliases:** `get-app-list`, `apps`, `lia`
 ```bash
-clio get-app-list -e <ENV>
+clio list-apps -e <ENV>
 clio apps -e <ENV>
 ```
 
@@ -1076,33 +1076,33 @@ Default resolution:
 
 ## Freedom UI Page Management
 
-### page-list
-List Freedom UI page schemas in a Creatio environment.
+### list-pages
+List Freedom UI page schemas in a Creatio environment. **Alias:** `page-list`
 ```bash
-clio page-list -e <ENV>
-clio page-list --search-pattern FormPage --limit 20 -e <ENV>
-clio page-list --package-name UsrApp -e <ENV>
+clio list-pages -e <ENV>
+clio list-pages --search-pattern FormPage --limit 20 -e <ENV>
+clio list-pages --package-name UsrApp -e <ENV>
 ```
 Options: `--package-name`, `--search-pattern`, `--limit` (default: 50)
 
-### page-get
-Read a Freedom UI page as a merged bundle plus raw schema body.
+### get-page
+Read a Freedom UI page as a merged bundle plus raw schema body. **Alias:** `page-get`
 ```bash
-clio page-get --schema-name UsrTodo_FormPage -e <ENV>
+clio get-page --schema-name UsrTodo_FormPage -e <ENV>
 ```
-Returns a JSON envelope with page metadata, bundle data, and `raw.body`. Use `raw.body` as the editable payload for `page-update`.
+Returns a JSON envelope with page metadata, bundle data, and `raw.body`. Use `raw.body` as the editable payload for `update-page`.
 
-### page-update
-Update the raw schema body of a Freedom UI page.
+### update-page
+Update the raw schema body of a Freedom UI page. **Alias:** `page-update`
 ```bash
 # Dry-run validation (no save)
-clio page-update --schema-name UsrTodo_FormPage --body "<raw body>" --dry-run true -e <ENV>
+clio update-page --schema-name UsrTodo_FormPage --body "<raw body>" --dry-run true -e <ENV>
 
 # Save updated body
-clio page-update --schema-name UsrTodo_FormPage --body "<edited body>" -e <ENV>
+clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" -e <ENV>
 
 # Save with missing resource string registration
-clio page-update --schema-name UsrTodo_FormPage --body "<edited body>" \
+clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
   --resources '{"UsrDetailsTab_caption":"Details"}' -e <ENV>
 ```
 Options: `--schema-name` (required), `--body` (required), `--dry-run`, `--resources` (JSON object)
@@ -1201,10 +1201,10 @@ Options: `--package` (required), `--binding-name` (required), `--values` (JSON, 
 
 ## Schema & Process User Task CRUD
 
-### delete-schema
-Delete a schema from a workspace package. Must be run from a workspace directory.
+### delete-entity-schema
+Delete a schema from a workspace package. **Alias:** `delete-schema`. Must be run from a workspace directory.
 ```bash
-clio delete-schema UsrSendInvoice -e <ENV>
+clio delete-entity-schema UsrSendInvoice -e <ENV>
 ```
 Only schemas whose package belongs to the current local workspace can be deleted.
 

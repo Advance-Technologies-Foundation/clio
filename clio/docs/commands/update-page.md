@@ -1,4 +1,4 @@
-# page-update
+# update-page
 
 ## Command Type
 
@@ -6,15 +6,17 @@
 
 ## Name
 
-page-update - Update the raw schema body of a Freedom UI page
+update-page - Update the raw schema body of a Freedom UI page
+
+**Aliases:** `page-update`
 
 ## Description
 
-The page-update command validates and saves the raw JavaScript body of a
+The update-page command validates and saves the raw JavaScript body of a
 Freedom UI page schema. Pass the full body string directly, typically
-after reading raw.body from page-get.
+after reading raw.body from get-page.
 
-When the body contains #ResourceString(key)# macros, page-update can
+When the body contains #ResourceString(key)# macros, update-page can
 register missing child-schema localizableStrings before saving. Pass
 --resources when you need explicit captions, or let clio derive captions
 automatically for missing Usr* keys.
@@ -22,7 +24,7 @@ automatically for missing Usr* keys.
 ## Synopsis
 
 ```bash
-clio page-update [options]
+clio update-page [options]
 ```
 
 ## Options
@@ -53,13 +55,13 @@ validation
 ## Example
 
 ```bash
-clio page-update --schema-name UsrTodo_FormPage --body "<raw body>" --dry-run true -e dev
+clio update-page --schema-name UsrTodo_FormPage --body "<raw body>" --dry-run true -e dev
 validate a raw Freedom UI body without saving it
 
-clio page-update --schema-name UsrTodo_FormPage --body "<edited raw body>" -e dev
+clio update-page --schema-name UsrTodo_FormPage --body "<edited raw body>" -e dev
 save the edited raw Freedom UI body to the registered dev environment
 
-clio page-update --schema-name UsrTodo_FormPage --body "<edited raw body>" --resources "{\"UsrDetailsTab_caption\":\"Details\"}" -e dev
+clio update-page --schema-name UsrTodo_FormPage --body "<edited raw body>" --resources "{\"UsrDetailsTab_caption\":\"Details\"}" -e dev
 save the page and register the missing child-schema localizable string
 ```
 
@@ -67,4 +69,4 @@ save the page and register the missing child-schema localizable string
 
     https://github.com/Advance-Technologies-Foundation/clio
 
-- [Clio Command Reference](../../Commands.md#page-update)
+- [Clio Command Reference](../../Commands.md#update-page)

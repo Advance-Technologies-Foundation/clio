@@ -10,7 +10,7 @@ using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("delete-schema", HelpText = "Delete a schema that belongs to a package in the current workspace")]
+[Verb("delete-entity-schema", Aliases = ["delete-schema"], HelpText = "Delete a schema that belongs to a package in the current workspace")]
 public class DeleteSchemaOptions : RemoteCommandOptions {
 
 	[Value(0, MetaName = "SchemaName", Required = true, HelpText = "Schema name")]

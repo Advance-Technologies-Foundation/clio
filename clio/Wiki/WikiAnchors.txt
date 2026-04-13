@@ -31,7 +31,8 @@ dataservice:dataservice,ds
 deactivate-pkg:deactivate-pkg,deactivate-package,disable-package,dpkg
 delete-infrastructure:delete-infrastructure,di-delete,remove-infrastructure
 delete-pkg-remote:delete-pkg-remote,delete
-delete-schema:delete-schema
+delete-app-section:delete-app-section
+delete-entity-schema:delete-entity-schema,delete-schema
 delete-skill:delete-skill
 deploy-application:deploy-application,deploy-app
 deploy-creatio:deploy-creatio,dc,ic,install-creatio
@@ -45,7 +46,7 @@ extract-pkg-zip:extract-pkg-zip,extract,unzip,extract-package
 generate-pkg-zip:generate-pkg-zip,comp-pkg,compress
 generate-process-model:generate-process-model,gpm
 get-app-hash:get-app-hash
-get-app-list:get-app-list,app-list,apps,apps-list,lia,list-apps
+list-apps:list-apps,get-app-list,app-list,apps,apps-list,lia
 get-build-info:get-build-info,bi,buildinfo
 get-entity-schema-column-properties:get-entity-schema-column-properties
 get-entity-schema-properties:get-entity-schema-properties
@@ -83,9 +84,10 @@ open-k8-files:open-k8-files,cfg-k8,cfg-k8f,cfg-k8s
 open-settings:open-settings,conf,configuration,os,settings
 open-web-app:open-web-app,open
 pack-nuget-pkg:pack-nuget-pkg,pack
-page-get:page-get
-page-list:page-list
-page-update:page-update
+get-page:get-page,page-get
+list-app-sections:list-app-sections
+list-pages:list-pages,page-list
+update-page:update-page,page-update
 ping-app:ping-app,ping
 pkg-hotfix:pkg-hotfix,hf,hotfix
 pkg-to-db:pkg-to-db,2db,todb
