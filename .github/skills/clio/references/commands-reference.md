@@ -383,6 +383,14 @@ clio update-app-section --application-code UsrSalesApp --section-code VisitSecti
 ```
 Rules: require `--application-code` and `--section-code`; provide at least one mutable field from `--caption`, `--description`, `--icon-id`, `--icon-background`; omitted fields remain unchanged; caption updates persist plain text and can repair broken JSON-style headings.
 
+### delete-app-section
+Delete a section and all its metadata artifacts from an existing installed application.
+```bash
+clio delete-app-section --application-code UsrOrdersApp --section-code UsrOrders -e <ENV>
+clio delete-app-section --application-code UsrOrdersApp --section-code UsrOrders --delete-entity-schema -e <ENV>
+```
+Rules: require `--application-code` and `--section-code`; by default the underlying entity schema is preserved (data is not lost); pass `--delete-entity-schema` to also remove the entity schema; deletes SysModuleInWorkplace, SysModuleLcz, all Freedom UI page schemas and addon schemas, SysModuleEntity, and SysModule in correct FK order; destructive and cannot be undone; cliogate must be installed.
+
 ### list-app-sections
 List sections of an existing installed application as a human-readable table.
 ```bash
