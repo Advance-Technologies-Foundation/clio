@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -84,7 +86,7 @@ public sealed class ApplicationSectionDeleteService(
 			request.SectionCode);
 		logger.WriteInfo($"Deleting section '{sectionRecord.Code}' ({sectionRecord.Id})...");
 		string deleteUrl = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Delete, environmentSettings);
-		DeleteSection(client, deleteUrl, sectionRecord, request.DeleteEntitySchema);
+		DeleteSection(client, deleteUrl, environmentSettings, sectionRecord, request.DeleteEntitySchema);
 
 		return new ApplicationSectionDeleteResult(
 			null,
@@ -142,25 +144,22 @@ public sealed class ApplicationSectionDeleteService(
 					SelectQueryHelper.GuidDataValueType)
 			]);
 
-	private void DeleteSection(IApplicationClient client, string deleteUrl, ApplicationSectionRecord section, bool deleteEntitySchema) {
+	private void DeleteSection(IApplicationClient client, string deleteUrl, EnvironmentSettings environmentSettings, ApplicationSectionRecord section, bool deleteEntitySchema) {
+		logger.WriteInfo("Loading section schemas from workspace...");
+		List<WorkspaceSchemaItemDto> sectionSchemas = LoadSectionSchemas(client, environmentSettings, section);
+
 		logger.WriteInfo("Deleting SysModuleInWorkplace records...");
 		ExecuteDeleteQuery(client, deleteUrl, BuildSysModuleInWorkplaceDeleteQuery(section.Id));
 		logger.WriteInfo("Clearing section localizations (SysModuleLcz)...");
-		ExecuteDeleteQuery(client, deleteUrl, BuildLczDeleteQueryBody(section.Id));
-		if (!string.IsNullOrWhiteSpace(section.SectionSchemaUId)) {
-			logger.WriteInfo("Deleting section list page schema...");
-			TryExecuteDeleteQuery(client, deleteUrl, BuildSysSchemaDeleteByUIdQuery(section.SectionSchemaUId));
-		}
+		TryExecuteDeleteQuery(client, deleteUrl, BuildLczDeleteQueryBody(section.Id));
 
-		if (!string.IsNullOrWhiteSpace(section.CardSchemaUId)) {
-			logger.WriteInfo("Deleting section form page schema...");
-			TryExecuteDeleteQuery(client, deleteUrl, BuildSysSchemaDeleteByUIdQuery(section.CardSchemaUId));
-		}
-
-		foreach (string suffix in (string[]) ["_MobileListPage", "_MobileFormPage", "_MobileRelatedPage", "_RelatedPage", "_Detail"]) {
-			string schemaName = section.Code + suffix;
-			logger.WriteInfo($"Deleting schema '{schemaName}'...");
-			TryExecuteDeleteQuery(client, deleteUrl, BuildSysSchemaDeleteByNameQuery(schemaName));
+		string deleteSchemaUrl = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeleteWorkspaceItem, environmentSettings);
+		foreach (WorkspaceSchemaItemDto schema in sectionSchemas) {
+			if (!deleteEntitySchema && string.Equals(schema.Name, section.Code, StringComparison.OrdinalIgnoreCase)) {
+				continue;
+			}
+			logger.WriteInfo($"Deleting schema '{schema.Name}'...");
+			TryDeleteWorkspaceSchema(client, deleteSchemaUrl, schema);
 		}
 
 		if (!string.IsNullOrWhiteSpace(section.SysModuleEntityId)) {
@@ -168,13 +167,33 @@ public sealed class ApplicationSectionDeleteService(
 			ExecuteDeleteQuery(client, deleteUrl, BuildSysModuleEntityDeleteQuery(section.SysModuleEntityId));
 		}
 
-		if (deleteEntitySchema && !string.IsNullOrWhiteSpace(section.EntitySchemaName)) {
-			logger.WriteInfo($"Deleting entity schema '{section.EntitySchemaName}' (--delete-entity-schema is set)...");
-			TryExecuteDeleteQuery(client, deleteUrl, BuildSysSchemaDeleteByNameQuery(section.EntitySchemaName));
-		}
-
 		logger.WriteInfo("Deleting SysModule record...");
 		ExecuteDeleteQuery(client, deleteUrl, BuildDeleteQueryBody(section.Id));
+	}
+
+	private List<WorkspaceSchemaItemDto> LoadSectionSchemas(IApplicationClient client, EnvironmentSettings environmentSettings, ApplicationSectionRecord section) {
+		string getItemsUrl = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems, environmentSettings);
+		string responseBody = client.ExecutePostRequest(getItemsUrl, string.Empty);
+		WorkspaceItemsCollectionDto collection = JsonSerializer.Deserialize<WorkspaceItemsCollectionDto>(responseBody, JsonOptions)
+			?? throw new InvalidOperationException("GetWorkspaceItems returned an empty response.");
+		return (collection.Items ?? [])
+			.Where(item => !string.IsNullOrWhiteSpace(item.Name)
+				&& item.Name.StartsWith(section.Code, StringComparison.OrdinalIgnoreCase))
+			.ToList();
+	}
+
+	private void TryDeleteWorkspaceSchema(IApplicationClient client, string deleteUrl, WorkspaceSchemaItemDto schema) {
+		try {
+			string requestBody = JsonSerializer.Serialize(new[] { schema }, JsonOptions);
+			string responseBody = client.ExecutePostRequest(deleteUrl, requestBody);
+			DeleteQueryResponseDto response = JsonSerializer.Deserialize<DeleteQueryResponseDto>(responseBody, JsonOptions)
+				?? throw new InvalidOperationException("Delete returned an empty response.");
+			if (!response.Success) {
+				logger.WriteInfo($"Warning: failed to delete schema '{schema.Name}': {response.ErrorInfo?.Message ?? "Unknown error"}");
+			}
+		} catch (Exception ex) {
+			logger.WriteInfo($"Warning: failed to delete schema '{schema.Name}': {ex.Message}");
+		}
 	}
 
 	private void ExecuteDeleteQuery(IApplicationClient client, string deleteUrl, string requestBody) {
@@ -212,7 +231,7 @@ public sealed class ApplicationSectionDeleteService(
 		        "trimDateTimeParameterToDate":false,
 		        "leftExpression":{
 		          "expressionType":0,
-		          "columnPath":"SysModuleId"
+		          "columnPath":"SysModule"
 		        },
 		        "rightExpression":{
 		          "expressionType":2,
@@ -252,72 +271,6 @@ public sealed class ApplicationSectionDeleteService(
 		          "parameter":{
 		            "dataValueType":0,
 		            "value":"{{sectionId}}"
-		          }
-		        }
-		      }
-		    }
-		  }
-		}
-		""";
-
-	private static string BuildSysSchemaDeleteByUIdQuery(string uId) =>
-		$$"""
-		{
-		  "__type":"Terrasoft.Nui.ServiceModel.DataContract.DeleteQuery",
-		  "rootSchemaName":"SysSchema",
-		  "filters":{
-		    "isEnabled":true,
-		    "filterType":6,
-		    "logicalOperation":0,
-		    "trimDateTimeParameterToDate":false,
-		    "items":{
-		      "primaryFilter":{
-		        "filterType":1,
-		        "comparisonType":3,
-		        "isEnabled":true,
-		        "trimDateTimeParameterToDate":false,
-		        "leftExpression":{
-		          "expressionType":0,
-		          "columnPath":"UId"
-		        },
-		        "rightExpression":{
-		          "expressionType":2,
-		          "parameter":{
-		            "dataValueType":0,
-		            "value":"{{uId}}"
-		          }
-		        }
-		      }
-		    }
-		  }
-		}
-		""";
-
-	private static string BuildSysSchemaDeleteByNameQuery(string name) =>
-		$$"""
-		{
-		  "__type":"Terrasoft.Nui.ServiceModel.DataContract.DeleteQuery",
-		  "rootSchemaName":"SysSchema",
-		  "filters":{
-		    "isEnabled":true,
-		    "filterType":6,
-		    "logicalOperation":0,
-		    "trimDateTimeParameterToDate":false,
-		    "items":{
-		      "primaryFilter":{
-		        "filterType":1,
-		        "comparisonType":3,
-		        "isEnabled":true,
-		        "trimDateTimeParameterToDate":false,
-		        "leftExpression":{
-		          "expressionType":0,
-		          "columnPath":"Name"
-		        },
-		        "rightExpression":{
-		          "expressionType":2,
-		          "parameter":{
-		            "dataValueType":1,
-		            "value":"{{name}}"
 		          }
 		        }
 		      }
@@ -431,6 +384,46 @@ public sealed class ApplicationSectionDeleteService(
 	private sealed class ErrorInfoDto {
 		[JsonPropertyName("message")]
 		public string? Message { get; set; }
+	}
+
+	private sealed class WorkspaceItemsCollectionDto {
+		[JsonPropertyName("items")]
+		public System.Collections.Generic.List<WorkspaceSchemaItemDto>? Items { get; set; }
+	}
+
+	private sealed class WorkspaceSchemaItemDto {
+		[JsonPropertyName("id")]
+		public Guid Id { get; set; }
+
+		[JsonPropertyName("uId")]
+		public Guid UId { get; set; }
+
+		[JsonPropertyName("name")]
+		public string? Name { get; set; }
+
+		[JsonPropertyName("title")]
+		public string? Title { get; set; }
+
+		[JsonPropertyName("packageUId")]
+		public Guid PackageUId { get; set; }
+
+		[JsonPropertyName("packageName")]
+		public string? PackageName { get; set; }
+
+		[JsonPropertyName("type")]
+		public int Type { get; set; }
+
+		[JsonPropertyName("modifiedOn")]
+		public string? ModifiedOn { get; set; }
+
+		[JsonPropertyName("isChanged")]
+		public bool IsChanged { get; set; }
+
+		[JsonPropertyName("isLocked")]
+		public bool IsLocked { get; set; }
+
+		[JsonPropertyName("isReadOnly")]
+		public bool IsReadOnly { get; set; }
 	}
 }
 
