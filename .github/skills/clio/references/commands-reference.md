@@ -989,6 +989,7 @@ clio find-entity-schema -e dev --schema-name UsrVehicle
 clio find-entity-schema -e dev --uid 117d32f9-aab9-4e3a-b13e-cfce62e15e4b
 ```
 Use this command when you need to discover which package owns a schema before calling `get-entity-schema-properties` or `modify-entity-schema-column`.
+CLI output is labeled as `Schema: ... | Package: ... | Maintainer: ...` so logs stay unambiguous. When the same capability is consumed through MCP, use the returned `package-name` field directly for follow-up tool calls instead of parsing CLI-style text.
 
 ### get-entity-schema-column-properties
 Get column properties from a remote Creatio entity schema.

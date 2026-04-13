@@ -79,7 +79,7 @@ public sealed class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 					? string.Empty
 					: $" | Parent: {result.ParentSchemaName}";
 				_logger.WriteInfo(
-					$"{result.SchemaName} | {result.PackageName} ({result.PackageMaintainer}){parent}");
+					$"Schema: {result.SchemaName} | Package: {result.PackageName} | Maintainer: {result.PackageMaintainer}{parent}");
 			}
 			return 0;
 		} catch (Exception exception) {

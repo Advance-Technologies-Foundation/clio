@@ -445,6 +445,8 @@ clio get-entity-schema-column-properties -e myenv --package MyPackage \
   --schema-name UsrVehicle --column-name Make
 ```
 
+`find-entity-schema` CLI output is labeled as `Schema: ... | Package: ... | Maintainer: ...` so transcript parsing stays unambiguous. When the same lookup is done through MCP, read the returned `package-name` field directly for follow-up tool calls instead of parsing CLI-style text or falling back to `get-pkg-list`.
+
 Default resolution behavior for entity schema defaults:
 - `SystemValue` accepts Guid, alias, or caption and persists canonical Guid.
 - `Settings` accepts code, name, or id and persists canonical setting code.

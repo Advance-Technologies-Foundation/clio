@@ -2269,3 +2269,10 @@ Decision: Single HTTP request to SysSchema via existing SelectQueryHelper (no cl
 Discovery: comparisonType=10 is Contains; SysSchema.ManagerName="EntitySchemaManager" for entity schemas; joined columns SysPackage.Name and [SysSchema:Id:Parent].Name work in DataService SelectQuery.
 Files: clio/Command/FindEntitySchemaCommand.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs (FindEntitySchemaTool + FindEntitySchemaArgs), clio/Command/McpServer/Tools/ToolContractGetTool.cs (BuildFindEntitySchema), clio/Program.cs, clio/BindingsModule.cs, clio/Wiki/WikiAnchors.txt, clio/help/en/find-entity-schema.txt, clio/docs/commands/find-entity-schema.md, clio/Commands.md, clio.tests/Command/FindEntitySchemaCommandTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, .github/skills/clio/references/commands-reference.md, .github/skills/clio/SKILL.md
 Impact: Agents can now find any entity schema in one round trip without knowing the package name. 96 unit tests green.
+
+## 2026-04-13 13:05 – Analyzed Copilot session d6fe1629
+Context: User asked to analyze `/Users/a.kravchuk/Projects/copilot-session-d6fe1629-5e8e-42c2-b7ee-6bcfce5cdb27.md`.
+Decision: Treated the file as a meta-session that analyzes another exported Copilot session, separating outer-session facts from the nested viewed transcript.
+Discovery: The analyzed session itself only used two `view` actions and three assistant answers; the visible CAPI error and CLIO command failures belong to the nested file being inspected, not to the outer session. The biggest issue in the outer session is inconsistent interpretation of `find-entity-schema` output around `Test1 | Test1 (Creatio)`.
+Files: /Users/a.kravchuk/Projects/copilot-session-d6fe1629-5e8e-42c2-b7ee-6bcfce5cdb27.md, .codex/workspace-diary.md
+Impact: Future session reviews should explicitly distinguish current-session execution from quoted or viewed transcripts to avoid false incident counts and wrong root-cause conclusions.
