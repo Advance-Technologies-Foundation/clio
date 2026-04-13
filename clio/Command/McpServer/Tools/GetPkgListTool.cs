@@ -58,7 +58,7 @@ public sealed class GetPkgListTool(
 }
 
 /// <summary>
-/// MCP arguments for the <c>get-pkg-list</c> tool.
+/// MCP arguments for the <c>list-packages</c> tool.
 /// </summary>
 public sealed record GetPkgListArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -72,7 +72,7 @@ public sealed record GetPkgListArgs(
 );
 
 /// <summary>
-/// Structured package-list item returned by the <c>get-pkg-list</c> MCP tool.
+/// Structured package-list item returned by the <c>list-packages</c> MCP tool.
 /// </summary>
 public sealed record PackageListItemResult(
 	[property: JsonPropertyName("name")] string Name,

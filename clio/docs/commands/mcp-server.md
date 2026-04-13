@@ -23,7 +23,7 @@ Available MCP tool categories:
 - entity          Create and update entity schemas (DB-first)
 - sync-schemas     Batch entity operations in a single call
 - page            Get and update Freedom UI page schemas
-- component-info  Inspect curated Freedom UI component contracts
+- get-component-info  Inspect curated Freedom UI component contracts
 - sync-pages       Batch page operations in a single call
 - data-binding    Manage data bindings and seed data
 
@@ -50,8 +50,8 @@ Start the same MCP server using the short alias.
 Use your MCP client to call get-tool-contract {"tool-names":["list-apps","get-app-info","get-page","sync-pages"]}.
 Bootstrap an existing-app or page workflow from the authoritative contract before invoking discovery or mutation tools.
 
-Use your MCP client to call get-tool-contract {"tool-names":["get-page","component-info","sync-pages"]}.
-Bootstrap page inspection/editing and discover whether component-info is needed before mutating raw.body.
+Use your MCP client to call get-tool-contract {"tool-names":["get-page","get-component-info","sync-pages"]}.
+Bootstrap page inspection/editing and discover whether get-component-info is needed before mutating raw.body.
 ```
 
 ## Prerequisites
@@ -64,7 +64,7 @@ Bootstrap page inspection/editing and discover whether component-info is needed 
 
 - The server uses stdio transport (stdin/stdout), not HTTP
 - Environment-sensitive tools require either an "environment-name" or explicit connection args such as "uri", "login", and "password"
-- "component-info" is local and read-only, so it does not require environment or connection args
+- "get-component-info" is local and read-only, so it does not require environment or connection args
 - Start each MCP workflow with "get-tool-contract" so the client reads the authoritative clio MCP contract before the first discovery, inspection, or mutation call
 - Preferred existing-app flow starts with get-tool-contract, then list-apps -> get-app-info, then page or schema inspection, then sync-pages / modify-entity-schema-column / sync-schemas as needed
 - This repository documents the MCP server surface; it does not ship a generic stdio helper client

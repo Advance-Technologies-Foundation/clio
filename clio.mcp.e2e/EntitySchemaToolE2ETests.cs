@@ -438,7 +438,7 @@ public sealed class EntitySchemaToolE2ETests {
 	[Description("Returns structured schema search results that already include package-name for follow-up MCP calls.")]
 	[AllureTag(FindEntitySchemaTool.FindEntitySchemaToolName)]
 	[AllureName("Find entity schema returns structured package ownership")]
-	[AllureDescription("Uses the real MCP server to call find-entity-schema against the configured sandbox environment and verifies the structured response already contains package-name, package-maintainer, and schema-name fields so agents do not need a follow-up get-pkg-list call.")]
+	[AllureDescription("Uses the real MCP server to call find-entity-schema against the configured sandbox environment and verifies the structured response already contains package-name, package-maintainer, and schema-name fields so agents do not need a follow-up list-packages call.")]
 	public async Task FindEntitySchema_Should_Return_Structured_Package_Ownership() {
 		// Arrange
 		await using SandboxFindEntitySchemaArrangeContext arrangeContext = await ArrangeSandboxFindEntitySchemaAsync();
@@ -460,7 +460,7 @@ public sealed class EntitySchemaToolE2ETests {
 				string.Equals(result.SchemaName, "Contact", StringComparison.OrdinalIgnoreCase)
 				&& !string.IsNullOrWhiteSpace(result.PackageName)
 				&& result.PackageMaintainer != null,
-			because: "find-entity-schema should return package-name and package-maintainer directly so callers can chain follow-up MCP requests without get-pkg-list");
+			because: "find-entity-schema should return package-name and package-maintainer directly so callers can chain follow-up MCP requests without list-packages");
 	}
 
 	[Test]

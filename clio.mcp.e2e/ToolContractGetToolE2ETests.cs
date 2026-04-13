@@ -199,7 +199,7 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("get-tool-contract advertises settings-health bootstrap diagnostics contract")]
+	[AllureName("get-tool-contract advertises check-settings-health bootstrap diagnostics contract")]
 	public async Task ToolContractGet_Should_Advertise_Settings_Health_Contract() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -218,7 +218,7 @@ public sealed class ToolContractGetToolE2ETests {
 
 		// Assert
 		response.Success.Should().BeTrue(
-			because: "settings-health should remain discoverable through the executable clio MCP contract catalog");
+			because: "check-settings-health should remain discoverable through the executable clio MCP contract catalog");
 		ToolContractDefinition contract = response.Tools!.Single();
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "status",
 			because: "bootstrap diagnostics should expose the health status");

@@ -12,7 +12,7 @@ using Newtonsoft.Json;
 namespace Clio.Command;
 
 /// <summary>
-/// Structured environment payload used by show-web-app-list JSON projections.
+/// Structured environment payload used by list-environments JSON projections.
 /// </summary>
 public sealed record ShowWebAppSettingsResult(
 	[property: JsonProperty("name")] string Name,
@@ -36,7 +36,7 @@ public sealed record ShowWebAppSettingsResult(
 	[property: JsonProperty("dbServer")] ShowWebAppDbServerResult DbServer);
 
 /// <summary>
-/// Structured database server payload used by show-web-app-list JSON projections.
+/// Structured database server payload used by list-environments JSON projections.
 /// </summary>
 public sealed record ShowWebAppDbServerResult(
 	[property: JsonProperty("uri")] string Uri,
@@ -44,7 +44,7 @@ public sealed record ShowWebAppDbServerResult(
 	[property: JsonProperty("login")] string Login,
 	[property: JsonProperty("password")] string Password);
 
-[Verb("list-environments", Aliases = ["show-web-app-list", "env", "envs", "show-web-app"],
+[Verb("list-environments", Aliases = ["list-environments", "env", "envs", "show-web-app"],
 	HelpText = "Show the list of web applications and their settings")]
 public class AppListOptions{
 	#region Properties: Public
