@@ -76,36 +76,30 @@ public class FileSystemTests
 	[TestCase("samplefiles/sample.txt", FileSystem.Algorithm.SHA384)]
 	[TestCase("samplefiles/sample.txt", FileSystem.Algorithm.SHA512)]
 	[TestCase("samplefiles/sample.txt", FileSystem.Algorithm.MD5)]
+	[Description("Verifies that FileSystem.GetFileHash produces the same result as a direct System.Security.Cryptography hash for each supported algorithm")]
 	public void ComputesCorrectHash(string sampleFile, FileSystem.Algorithm algorithm)
 	{
 		// Arrange
 		string absoluteSampleFile = Path.Combine(TestContext.CurrentContext.TestDirectory, sampleFile);
-		string psHash;
-		var logger = Substitute.For<ILogger>();
-		if (OperatingSystem.IsWindows())
-		{
-			psHash = new ProcessExecutor(logger).Execute("pwsh.exe",
-				$"-c \"Get-FileHash {absoluteSampleFile} -Algorithm {algorithm.ToString()} | Select-Object -ExpandProperty Hash\"",
-				true, null, true);
-		}
-		else
-		{
-			string algo = algorithm.ToString().ToLowerInvariant();
-			string hashCmd = algo switch
-			{
-				"md5" => $"md5sum {absoluteSampleFile} | awk '{{print $1}}'",
-				"sha1" => $"sha1sum {absoluteSampleFile} | awk '{{print $1}}'",
-				"sha256" => $"sha256sum {absoluteSampleFile} | awk '{{print $1}}'",
-				"sha384" => $"sha384sum {absoluteSampleFile} | awk '{{print $1}}'",
-				"sha512" => $"sha512sum {absoluteSampleFile} | awk '{{print $1}}'",
-				_ => throw new NotSupportedException($"Algorithm {algorithm} not supported on this platform")
-			};
-			psHash = new ProcessExecutor(logger).Execute("/bin/bash", $"-c \"{hashCmd}\"", true, null, true).Trim();
+		using System.Security.Cryptography.HashAlgorithm hasher = algorithm switch {
+			FileSystem.Algorithm.SHA1 => System.Security.Cryptography.SHA1.Create(),
+			FileSystem.Algorithm.SHA256 => System.Security.Cryptography.SHA256.Create(),
+			FileSystem.Algorithm.SHA384 => System.Security.Cryptography.SHA384.Create(),
+			FileSystem.Algorithm.SHA512 => System.Security.Cryptography.SHA512.Create(),
+			FileSystem.Algorithm.MD5 => System.Security.Cryptography.MD5.Create(),
+			_ => throw new NotSupportedException($"Algorithm {algorithm} not supported")
+		};
+		string expectedHash;
+		using (Stream stream = _msFileSystem.File.OpenRead(absoluteSampleFile)) {
+			expectedHash = Convert.ToHexString(hasher.ComputeHash(stream));
 		}
 
+		// Act
+		string actualHash = new FileSystem(_msFileSystem).GetFileHash(algorithm, absoluteSampleFile).ToUpper();
+
 		// Assert
-		new FileSystem(_msFileSystem).GetFileHash(algorithm, absoluteSampleFile).ToUpper().Should().Be(psHash.ToUpper(),
-			because: $"computed hash should match the OS-native hash utility for algorithm {algorithm}");
+		actualHash.Should().Be(expectedHash,
+			because: $"FileSystem.GetFileHash should produce the same hash as System.Security.Cryptography for algorithm {algorithm}");
 	}
 	
 
