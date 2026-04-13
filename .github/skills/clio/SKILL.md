@@ -65,7 +65,7 @@ clio reg-web-app myenv -u https://mysite.creatio.com -l administrator -p passwor
 clio reg-web-app -a myenv
 
 # List all environments
-clio show-web-app-list --short
+clio list-environments --short
 
 # Ping to verify
 clio ping myenv
@@ -117,8 +117,8 @@ clio compile-package MyPackage -e myenv
 clio delete-pkg-remote MyPackage -e myenv
 
 # List installed packages
-clio get-pkg-list -e myenv
-clio get-pkg-list -e myenv -f CustomPrefix -j
+clio list-packages -e myenv
+clio list-packages -e myenv -f CustomPrefix -j
 
 # Compress/extract
 clio generate-pkg-zip MyPackage
@@ -445,7 +445,7 @@ clio get-entity-schema-column-properties -e myenv --package MyPackage \
   --schema-name UsrVehicle --column-name Make
 ```
 
-`find-entity-schema` CLI output is labeled as `Schema: ... | Package: ... | Maintainer: ...` so transcript parsing stays unambiguous. When the same lookup is done through MCP, read the returned `package-name` field directly for follow-up tool calls instead of parsing CLI-style text or falling back to `get-pkg-list`.
+`find-entity-schema` CLI output is labeled as `Schema: ... | Package: ... | Maintainer: ...` so transcript parsing stays unambiguous. When the same lookup is done through MCP, read the returned `package-name` field directly for follow-up tool calls instead of parsing CLI-style text or falling back to `list-packages`.
 
 Default resolution behavior for entity schema defaults:
 - `SystemValue` accepts Guid, alias, or caption and persists canonical Guid.
