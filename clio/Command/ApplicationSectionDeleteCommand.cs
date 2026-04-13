@@ -40,7 +40,8 @@ public sealed class ApplicationSectionDeleteService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
-	IApplicationInfoService applicationInfoService)
+	IApplicationInfoService applicationInfoService,
+	ILogger logger)
 	: IApplicationSectionDeleteService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -65,17 +66,17 @@ public sealed class ApplicationSectionDeleteService(
 		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
-		ApplicationInfoResult applicationInfo = applicationInfoService.GetApplicationInfo(
-			environmentName,
-			null,
-			request.ApplicationCode);
-		string applicationId = applicationInfo.ApplicationId
-			?? throw new InvalidOperationException("Application id was not returned by application-get-info.");
+		logger.WriteInfo($"Resolving application '{request.ApplicationCode}'...");
+		InstalledAppSummary appSummary = applicationInfoService.FindApplicationId(environmentName, request.ApplicationCode);
+		string applicationId = appSummary.Id;
+		logger.WriteInfo($"Application found: {appSummary.Name} ({appSummary.Code})");
+		logger.WriteInfo($"Looking up section '{request.SectionCode}'...");
 		ApplicationSectionRecord sectionRecord = GetSectionRecord(
 			client,
 			environmentSettings,
 			applicationId,
 			request.SectionCode);
+		logger.WriteInfo($"Deleting section '{sectionRecord.Code}' ({sectionRecord.Id})...");
 		string requestBody = BuildDeleteQueryBody(sectionRecord.Id);
 		string responseBody = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Delete, environmentSettings),
@@ -87,12 +88,12 @@ public sealed class ApplicationSectionDeleteService(
 		}
 
 		return new ApplicationSectionDeleteResult(
-			applicationInfo.PackageUId,
-			applicationInfo.PackageName,
+			null,
+			null,
 			applicationId,
-			applicationInfo.ApplicationName ?? string.Empty,
-			applicationInfo.ApplicationCode ?? request.ApplicationCode,
-			applicationInfo.ApplicationVersion,
+			appSummary.Name,
+			appSummary.Code,
+			appSummary.Version,
 			MapSection(sectionRecord));
 	}
 
@@ -264,8 +265,8 @@ public sealed record ApplicationSectionDeleteRequest(
 /// <param name="ApplicationVersion">Installed application version.</param>
 /// <param name="DeletedSection">Deleted section metadata.</param>
 public sealed record ApplicationSectionDeleteResult(
-	string PackageUId,
-	string PackageName,
+	string? PackageUId,
+	string? PackageName,
 	string ApplicationId,
 	string ApplicationName,
 	string ApplicationCode,

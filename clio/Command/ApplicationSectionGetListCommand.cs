@@ -43,7 +43,8 @@ public sealed class ApplicationSectionGetListService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
-	IApplicationInfoService applicationInfoService)
+	IApplicationInfoService applicationInfoService,
+	ILogger logger)
 	: IApplicationSectionGetListService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -71,20 +72,17 @@ public sealed class ApplicationSectionGetListService(
 		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
-		ApplicationInfoResult applicationInfo = applicationInfoService.GetApplicationInfo(
-			environmentName,
-			null,
-			request.ApplicationCode);
-		string applicationId = applicationInfo.ApplicationId
-			?? throw new InvalidOperationException("Application id was not returned by application-get-info.");
-		IReadOnlyList<ApplicationSectionRecord> sections = GetAllSectionRecords(client, environmentSettings, applicationId);
+		logger.WriteInfo($"Resolving application '{request.ApplicationCode}'...");
+		InstalledAppSummary appSummary = applicationInfoService.FindApplicationId(environmentName, request.ApplicationCode);
+		logger.WriteInfo($"Loading sections...");
+		IReadOnlyList<ApplicationSectionRecord> sections = GetAllSectionRecords(client, environmentSettings, appSummary.Id);
 		return new ApplicationSectionGetListResult(
-			applicationInfo.PackageUId,
-			applicationInfo.PackageName,
-			applicationId,
-			applicationInfo.ApplicationName ?? string.Empty,
-			applicationInfo.ApplicationCode ?? request.ApplicationCode,
-			applicationInfo.ApplicationVersion,
+			null,
+			null,
+			appSummary.Id,
+			appSummary.Name,
+			appSummary.Code,
+			appSummary.Version,
 			sections.Select(MapSection).ToList());
 	}
 
@@ -218,8 +216,8 @@ public sealed record ApplicationSectionGetListRequest(string ApplicationCode);
 /// <param name="ApplicationVersion">Installed application version.</param>
 /// <param name="Sections">List of section metadata records.</param>
 public sealed record ApplicationSectionGetListResult(
-	string PackageUId,
-	string PackageName,
+	string? PackageUId,
+	string? PackageName,
 	string ApplicationId,
 	string ApplicationName,
 	string ApplicationCode,
