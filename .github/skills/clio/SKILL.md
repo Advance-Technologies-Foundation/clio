@@ -36,7 +36,7 @@ clio ver
 - User needs to set up **infrastructure** (Kubernetes, Docker) for Creatio
 - User wants to **create or modify entity schemas** (columns, types, lookups) in Creatio
 - User wants to **find or discover entity schemas** by name, pattern, or UId in Creatio
-- User wants to **read or update Freedom UI pages** (page-get, page-update, page-list)
+- User wants to **read or update Freedom UI pages** (get-page, update-page, list-pages)
 - User wants to **manage package data bindings** (seed data for SysSettings, SysModule, custom entities)
 
 ## General Syntax
@@ -459,20 +459,20 @@ Read and update Freedom UI page schemas.
 
 ```bash
 # Discover pages
-clio page-list -e myenv
-clio page-list --search-pattern FormPage --limit 20 -e myenv
+clio list-pages -e myenv
+clio list-pages --search-pattern FormPage --limit 20 -e myenv
 
 # Read page (get raw.body for editing)
-clio page-get --schema-name UsrTodo_FormPage -e myenv
+clio get-page --schema-name UsrTodo_FormPage -e myenv
 
 # Validate without saving
-clio page-update --schema-name UsrTodo_FormPage --body "<raw body>" --dry-run true -e myenv
+clio update-page --schema-name UsrTodo_FormPage --body "<raw body>" --dry-run true -e myenv
 
 # Save updated page
-clio page-update --schema-name UsrTodo_FormPage --body "<edited body>" -e myenv
+clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" -e myenv
 
 # Save with resource string registration
-clio page-update --schema-name UsrTodo_FormPage --body "<edited body>" \
+clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
   --resources '{"UsrDetailsTab_caption":"Details"}' -e myenv
 ```
 
@@ -544,7 +544,7 @@ clio update-cli
 | Permission denied | Ensure administrator-level Creatio credentials |
 | Package locked | Unlock with `clio unlock-package <PKG> -e <ENV>` |
 | Entity schema command fails | Ensure cliogate is installed: `clio install-gate -e <ENV>` |
-| page-update validation error | Use `--dry-run true` first; check Freedom UI schema markers |
+| update-page validation error | Use `--dry-run true` first; check Freedom UI schema markers |
 
 ## Important Notes
 
@@ -556,5 +556,5 @@ clio update-cli
 - Use `clio help` for full command list, `clio <CMD> --help` for command details
 - Manifest YAML files support GitOps: apps, syssettings, features, webservices
 - Entity schema commands (`create-entity-schema`, `modify-entity-schema-column`, etc.) require cliogate ≥ 2.0
-- Freedom UI page commands (`page-get`, `page-update`, `page-list`) work without cliogate
+- Freedom UI page commands (`get-page`, `update-page`, `list-pages`) work without cliogate
 - Data binding commands that work offline (no environment): `create-data-binding` with SysSettings/SysModule templates, `add-data-binding-row`, `remove-data-binding-row`

@@ -146,7 +146,7 @@ public sealed class ApplicationSectionCreateService(
 		string iconId = ResolveRandomIconId(client, environmentSettings);
 		return new ResolvedApplicationSectionCreateRequest(
 			Guid.NewGuid().ToString(),
-			applicationInfo.ApplicationId ?? throw new InvalidOperationException("Application id was not returned by application-get-info."),
+			applicationInfo.ApplicationId ?? throw new InvalidOperationException("Application id was not returned by get-app-info."),
 			applicationInfo.ApplicationName ?? string.Empty,
 			applicationInfo.ApplicationCode ?? string.Empty,
 			applicationInfo.ApplicationVersion,

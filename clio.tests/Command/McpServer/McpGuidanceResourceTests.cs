@@ -39,7 +39,7 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().Contain("Canonical new-app entity flow",
 			because: "the guide should publish the preferred new-app entity sequence as MCP-owned guidance");
 		article.Text.Should().Contain("already performs internal Data Forge enrichment",
-			because: "the guide should teach callers that application-create owns the required Data Forge logic inside clio");
+			because: "the guide should teach callers that create-app owns the required Data Forge logic inside clio");
 		article.Text.Should().Contain("still creates the app shell",
 			because: "the guide should document the soft-fallback semantics when Data Forge is degraded or unavailable");
 		article.Text.Should().Contain("Canonical page flow after planning a page change",
@@ -47,9 +47,9 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().Contain("docs://mcp/guides/existing-app-maintenance",
 			because: "the creation-oriented guide should point callers to the dedicated existing-app maintenance guide for minimal edits");
 		article.Text.Should().Contain("scalar-only for app shell fields",
-			because: "the guide should state that application-create keeps shell fields as plain strings");
+			because: "the guide should state that create-app keeps shell fields as plain strings");
 		article.Text.Should().Contain("Do not send localization-map fields",
-			because: "the guide should prevent callers from mixing application-create with entity-schema localization maps");
+			because: "the guide should prevent callers from mixing create-app with entity-schema localization maps");
 		article.Text.Should().Contain("create-app-section` is scalar-only",
 			because: "the guide should state that section-create also keeps shell fields as plain scalars");
 		article.Text.Should().Contain("update-app-section` is scalar-only",

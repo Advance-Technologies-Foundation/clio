@@ -96,7 +96,7 @@ public sealed class ApplicationCreateTool(
 	internal const string ApplicationCreateToolName = "create-app";
 
 	/// <summary>
-	/// Creates a Creatio application and returns the same structured payload as application-get-info.
+	/// Creates a Creatio application and returns the same structured payload as get-app-info.
 	/// </summary>
 	[McpServerTool(Name = ApplicationCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
@@ -216,7 +216,7 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 			args.CaptionLocalizations is not null ||
 			args.NameLocalizations is not null) {
 			throw new ArgumentException(
-				"application-section-create is scalar-only. Do not send title-localizations, description-localizations, caption-localizations, or name-localizations.");
+				"create-app-section is scalar-only. Do not send title-localizations, description-localizations, caption-localizations, or name-localizations.");
 		}
 	}
 }
@@ -272,7 +272,7 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 			args.CaptionLocalizations is not null ||
 			args.NameLocalizations is not null) {
 			throw new ArgumentException(
-				"application-section-update is scalar-only. Do not send title-localizations, description-localizations, caption-localizations, or name-localizations.");
+				"update-app-section is scalar-only. Do not send title-localizations, description-localizations, caption-localizations, or name-localizations.");
 		}
 
 		bool hasCaption = args.Caption is not null;

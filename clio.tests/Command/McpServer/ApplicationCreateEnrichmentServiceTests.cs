@@ -60,7 +60,7 @@ public sealed class ApplicationCreateEnrichmentServiceTests {
 			because: "the application description should become the requirement summary when it is available");
 		capturedRequest.CandidateTerms.Should().BeEquivalentTo(
 			new[] { "Task App", "Track customer tasks", "Task registry", "UsrTask" },
-			because: "application-create should search Data Forge using the app name, description, section description, and canonical entity hint");
+			because: "create-app should search Data Forge using the app name, description, section description, and canonical entity hint");
 		capturedRequest.LookupHints.Should().BeEquivalentTo(
 			new[] { "UsrTask", "Task registry", "Task App" },
 			because: "lookup hints should prefer the entity/schema and section naming context");

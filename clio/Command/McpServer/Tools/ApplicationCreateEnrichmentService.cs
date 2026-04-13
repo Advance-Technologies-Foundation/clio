@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// Builds Data Forge enrichment metadata for <c>application-create</c> responses.
+/// Builds Data Forge enrichment metadata for <c>create-app</c> responses.
 /// </summary>
 public interface IApplicationCreateEnrichmentService {
 	/// <summary>
@@ -24,7 +24,7 @@ public interface IApplicationCreateEnrichmentService {
 }
 
 /// <summary>
-/// Default Data Forge enrichment flow for <c>application-create</c>.
+/// Default Data Forge enrichment flow for <c>create-app</c>.
 /// </summary>
 public sealed class ApplicationCreateEnrichmentService(IDataForgeEnrichmentBuilder enrichmentBuilder)
 	: IApplicationCreateEnrichmentService {
