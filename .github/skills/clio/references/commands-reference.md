@@ -1225,10 +1225,10 @@ Options: `--package` (required), `--binding-name` (required), `--values` (JSON, 
 
 ## Schema & Process User Task CRUD
 
-### delete-entity-schema
-Delete a schema from a workspace package. **Alias:** `delete-entity-schema`. Must be run from a workspace directory.
+### delete-schema
+Delete an entity schema or process user task schema from a workspace package. Must be run from a workspace directory.
 ```bash
-clio delete-entity-schema UsrSendInvoice -e <ENV>
+clio delete-schema UsrSendInvoice -e <ENV>
 ```
 Only schemas whose package belongs to the current local workspace can be deleted.
 

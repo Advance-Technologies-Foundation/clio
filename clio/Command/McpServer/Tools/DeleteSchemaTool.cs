@@ -11,16 +11,18 @@ public class DeleteSchemaTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver) : BaseTool<DeleteSchemaOptions>(command, logger, commandResolver) {
 
-	internal const string DeleteSchemaToolName = "delete-entity-schema";
+	internal const string DeleteSchemaToolName = "delete-schema";
 	[McpServerTool(Name = DeleteSchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("""
 				 Deletes a schema from a Creatio environment, but only when the schema belongs to
 				 one of the packages in the specified local workspace.
-				 
+
 				 The tool first loads workspace packages from the supplied workspace path, then queries
 				 WorkspaceExplorerService.svc/GetWorkspaceItems, and finally submits the matching item
 				 to WorkspaceExplorerService.svc/Delete.
-				 
+
+				 Supports entity schemas (object schemas) and process user task schemas.
+
 				 This operation is destructive and cannot be undone.
 				 """)]
 	public CommandExecutionResult DeleteSchema(

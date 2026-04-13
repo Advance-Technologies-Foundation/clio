@@ -285,9 +285,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="dataservice"></a>
 <a id="ds"></a>
 - [`dataservice`](docs/commands/dataservice.md) - Send a Creatio DataService request, `ds`
-<a id="delete-entity-schema"></a>
 <a id="delete-schema"></a>
-- [`delete-entity-schema`](docs/commands/delete-entity-schema.md) - Delete a schema from a workspace package, `delete-schema`
+- [`delete-schema`](docs/commands/delete-schema.md) - Delete a schema from a workspace package
 <a id="download-configuration"></a>
 <a id="dconf"></a>
 - [`download-configuration`](docs/commands/download-configuration.md) - Download configuration libraries from Creatio, `dconf`
