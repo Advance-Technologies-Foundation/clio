@@ -176,6 +176,126 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Returns failure result from upsert-data-binding-row-db when environment-name is empty, matching the DB-first command-layer validation guard.")]
+	public void UpsertDataBindingRowDb_Should_Return_Failure_Without_Environment() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpsertDataBindingRowDbCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(Container.GetRequiredService<UpsertDataBindingRowDbCommand>());
+		UpsertDataBindingRowDbTool tool = new(
+			Container.GetRequiredService<UpsertDataBindingRowDbCommand>(),
+			Container.GetRequiredService<ILogger>(),
+			commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.UpsertDataBindingRowDb(new UpsertDataBindingRowDbArgs(
+			EnvironmentName: string.Empty,
+			PackageName: PackageName,
+			BindingName: "SysSettings",
+			ValuesJson: """{"Name":"Row from db tool"}"""));
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "upsert-data-binding-row-db requires a remote environment and should fail gracefully without one");
+	}
+
+	[Test]
+	[Description("Maps upsert-data-binding-row-db arguments into the environment-aware command resolver and preserves the JSON values payload.")]
+	public void UpsertDataBindingRowDb_Should_Map_All_Arguments() {
+		// Arrange
+		FakeUpsertDataBindingRowDbCommand defaultCommand = new();
+		FakeUpsertDataBindingRowDbCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpsertDataBindingRowDbCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(resolvedCommand);
+		UpsertDataBindingRowDbTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		const string valuesJson = """{"Id":"4f41bcc2-7ed0-45e8-a1fd-474918966d15","Name":"Updated row"}""";
+
+		// Act
+		CommandExecutionResult result = tool.UpsertDataBindingRowDb(new UpsertDataBindingRowDbArgs(
+			EnvironmentName: "dev",
+			PackageName: PackageName,
+			BindingName: "UsrRemoteBinding",
+			ValuesJson: valuesJson));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "upsert-data-binding-row-db should forward a valid row payload through the resolved command");
+		defaultCommand.CapturedOptions.Should().BeNull(
+			because: "the environment-aware tool should execute the resolved command instance");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the mapped upsert options");
+		resolvedCommand.CapturedOptions!.Environment.Should().Be("dev",
+			because: "the requested environment must be preserved");
+		resolvedCommand.CapturedOptions.PackageName.Should().Be(PackageName,
+			because: "the requested package must be preserved");
+		resolvedCommand.CapturedOptions.BindingName.Should().Be("UsrRemoteBinding",
+			because: "the target binding name must be preserved");
+		resolvedCommand.CapturedOptions.ValuesJson.Should().Be(valuesJson,
+			because: "the JSON values payload must be forwarded unchanged");
+	}
+
+	[Test]
+	[Description("Returns failure result from remove-data-binding-row-db when environment-name is empty, matching the DB-first command-layer validation guard.")]
+	public void RemoveDataBindingRowDb_Should_Return_Failure_Without_Environment() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<RemoveDataBindingRowDbCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(Container.GetRequiredService<RemoveDataBindingRowDbCommand>());
+		RemoveDataBindingRowDbTool tool = new(
+			Container.GetRequiredService<RemoveDataBindingRowDbCommand>(),
+			Container.GetRequiredService<ILogger>(),
+			commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.RemoveDataBindingRowDb(new RemoveDataBindingRowDbArgs(
+			EnvironmentName: string.Empty,
+			PackageName: PackageName,
+			BindingName: "SysSettings",
+			KeyValue: ExistingRowId.ToString()));
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "remove-data-binding-row-db requires a remote environment and should fail gracefully without one");
+	}
+
+	[Test]
+	[Description("Maps remove-data-binding-row-db arguments into the environment-aware command resolver and preserves the key-value selector.")]
+	public void RemoveDataBindingRowDb_Should_Map_All_Arguments() {
+		// Arrange
+		FakeRemoveDataBindingRowDbCommand defaultCommand = new();
+		FakeRemoveDataBindingRowDbCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<RemoveDataBindingRowDbCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(resolvedCommand);
+		RemoveDataBindingRowDbTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		string keyValue = ExistingRowId.ToString();
+
+		// Act
+		CommandExecutionResult result = tool.RemoveDataBindingRowDb(new RemoveDataBindingRowDbArgs(
+			EnvironmentName: "dev",
+			PackageName: PackageName,
+			BindingName: "UsrRemoteBinding",
+			KeyValue: keyValue));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "remove-data-binding-row-db should forward a valid delete request through the resolved command");
+		defaultCommand.CapturedOptions.Should().BeNull(
+			because: "the environment-aware tool should execute the resolved command instance");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the mapped remove options");
+		resolvedCommand.CapturedOptions!.Environment.Should().Be("dev",
+			because: "the requested environment must be preserved");
+		resolvedCommand.CapturedOptions.PackageName.Should().Be(PackageName,
+			because: "the requested package must be preserved");
+		resolvedCommand.CapturedOptions.BindingName.Should().Be("UsrRemoteBinding",
+			because: "the target binding name must be preserved");
+		resolvedCommand.CapturedOptions.KeyValue.Should().Be(keyValue,
+			because: "the primary-key selector must be forwarded unchanged");
+	}
+
+	[Test]
 	[Description("Prompt guidance for DB-first data-binding tools mentions environment-name and restore-workspace for workspace sync.")]
 	public void DataBindingDbPrompt_Should_Mention_Key_Concepts() {
 		// Arrange & Act
@@ -269,4 +389,30 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 		  "success": true
 		}
 		""";
+
+	private sealed class FakeUpsertDataBindingRowDbCommand : UpsertDataBindingRowDbCommand {
+		public UpsertDataBindingRowDbOptions CapturedOptions { get; private set; }
+
+		public FakeUpsertDataBindingRowDbCommand()
+			: base(Substitute.For<IDataBindingDbService>(), Substitute.For<ILogger>()) {
+		}
+
+		public override int Execute(UpsertDataBindingRowDbOptions options) {
+			CapturedOptions = options;
+			return 0;
+		}
+	}
+
+	private sealed class FakeRemoveDataBindingRowDbCommand : RemoveDataBindingRowDbCommand {
+		public RemoveDataBindingRowDbOptions CapturedOptions { get; private set; }
+
+		public FakeRemoveDataBindingRowDbCommand()
+			: base(Substitute.For<IDataBindingDbService>(), Substitute.For<ILogger>()) {
+		}
+
+		public override int Execute(RemoveDataBindingRowDbOptions options) {
+			CapturedOptions = options;
+			return 0;
+		}
+	}
 }
