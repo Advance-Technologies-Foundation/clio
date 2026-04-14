@@ -52,6 +52,50 @@ public sealed class SchemaSyncToolE2ETests {
 	}
 
 	[Test]
+	[Description("Returns a top-level MCP invocation error when sync-schemas is called without the required args wrapper.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas returns invocation error when args wrapper is missing")]
+	[AllureDescription("Starts the real MCP server, invokes sync-schemas without the args wrapper, and verifies that MCP binding fails at the invocation layer instead of returning a structured SchemaSyncResponse payload.")]
+	public async Task SchemaSyncTool_Should_Return_Invocation_Error_When_Args_Wrapper_Is_Missing() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?>(),
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		AssertInvocationFailure(
+			callResult,
+			because: "missing args should fail during MCP binding before sync-schemas can produce a structured tool response");
+	}
+
+	[Test]
+	[Description("Returns a top-level MCP invocation error when sync-schemas args has the wrong type.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas returns invocation error when args has invalid type")]
+	[AllureDescription("Starts the real MCP server, invokes sync-schemas with args set to a string instead of an object, and verifies that MCP binding fails at the invocation layer instead of returning a structured SchemaSyncResponse payload.")]
+	public async Task SchemaSyncTool_Should_Return_Invocation_Error_When_Args_Has_Invalid_Type() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = "invalid"
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		AssertInvocationFailure(
+			callResult,
+			because: "wrong-type args should fail during MCP binding before sync-schemas can produce a structured tool response");
+	}
+
+	[Test]
 	[Description("Executes sync-schemas on a real sandbox environment and keeps each result message list aligned with its own operation.")]
 	[AllureTag(ToolName)]
 	[AllureTag(ReadSchemaToolName)]
@@ -652,6 +696,18 @@ public sealed class SchemaSyncToolE2ETests {
 					? valueElement.GetString() ?? string.Empty
 					: string.Empty)
 		];
+	}
+
+	private static void AssertInvocationFailure(CallToolResult callResult, string because) {
+		callResult.IsError.Should().BeTrue(
+			because: because);
+		callResult.StructuredContent.Should().BeNull(
+			because: "binding-layer failures should not return a structured sync-schemas payload");
+		callResult.Content.Should().NotBeNullOrEmpty(
+			because: "invocation failures should still expose human-readable diagnostics");
+		callResult.Content!.Select(content => content.ToString()).Should().Contain(message =>
+				message.Contains("An error occurred invoking 'sync-schemas'.", StringComparison.Ordinal),
+			because: "the transport-level failure should surface as the generic invocation error for the tool");
 	}
 
 	[Test]

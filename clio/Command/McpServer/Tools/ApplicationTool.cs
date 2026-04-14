@@ -163,6 +163,14 @@ public sealed class ApplicationCreateTool(
 				"icon-background is required. " +
 				"Provide a top-level #RRGGBB value such as #1F5F8B.");
 		}
+
+		if (args.TitleLocalizations is not null ||
+			args.DescriptionLocalizations is not null ||
+			args.CaptionLocalizations is not null ||
+			args.NameLocalizations is not null) {
+			throw new ArgumentException(
+				"create-app is scalar-only. Do not send title-localizations, description-localizations, caption-localizations, or name-localizations.");
+		}
 	}
 }
 

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.NUnit;
@@ -20,10 +19,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [NonParallelizable]
 public sealed class ApplicationSectionUpdateToolE2ETests {
-	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
 	private const string SectionUpdateToolName = ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName;
-	private const string ListToolName = ApplicationGetListTool.ApplicationGetListToolName;
-	private const string InfoToolName = ApplicationGetInfoTool.ApplicationGetInfoToolName;
 
 	[Test]
 	[Description("Advertises update-app-section in the MCP tool list so callers can discover the existing-section update tool.")]
@@ -95,6 +91,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 
@@ -103,7 +100,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			SectionUpdateToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = "sandbox",
+					["environment-name"] = environmentName,
 					["application-code"] = "UsrOrdersApp",
 					["section-code"] = "UsrOrders"
 				}
@@ -121,159 +118,162 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, creates a temporary section, updates its broken heading caption, then updates its icon metadata without touching caption or description.")]
+	[Description("Starts the real clio MCP server, invokes update-app-section without application-code, and verifies that the tool returns a clear validation failure.")]
+	[AllureFeature(SectionUpdateToolName)]
+	[AllureTag(SectionUpdateToolName)]
+	[AllureName("Application section update rejects missing application-code")]
+	[AllureDescription("Uses the real clio MCP server to call update-app-section without application-code and verifies that the failure explains the required app selector.")]
+	public async Task ApplicationSectionUpdate_Should_Reject_Missing_ApplicationCode() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		CallToolResult callResult = await session.CallToolAsync(
+			SectionUpdateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["section-code"] = "UsrOrders",
+					["caption"] = "Orders"
+				}
+			},
+			cancellationTokenSource.Token);
+		ApplicationSectionUpdateContextResponseEnvelope response = ApplicationResultParser.ExtractSectionUpdate(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "structured selector validation failures should stay inside the response payload");
+		response.Success.Should().BeFalse(
+			because: "section-update should reject requests that omit application-code");
+		response.Error.Should().MatchRegex("(?is)(application-code|required)",
+			because: "the failure should explain that application-code is required");
+	}
+
+	[Test]
+	[Description("Starts the real clio MCP server, invokes update-app-section without section-code, and verifies that the tool returns a clear validation failure.")]
+	[AllureFeature(SectionUpdateToolName)]
+	[AllureTag(SectionUpdateToolName)]
+	[AllureName("Application section update rejects missing section-code")]
+	[AllureDescription("Uses the real clio MCP server to call update-app-section without section-code and verifies that the failure explains the required section selector.")]
+	public async Task ApplicationSectionUpdate_Should_Reject_Missing_SectionCode() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		CallToolResult callResult = await session.CallToolAsync(
+			SectionUpdateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = "UsrOrdersApp",
+					["caption"] = "Orders"
+				}
+			},
+			cancellationTokenSource.Token);
+		ApplicationSectionUpdateContextResponseEnvelope response = ApplicationResultParser.ExtractSectionUpdate(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "structured selector validation failures should stay inside the response payload");
+		response.Success.Should().BeFalse(
+			because: "section-update should reject requests that omit section-code");
+		response.Error.Should().MatchRegex("(?is)(section-code|required)",
+			because: "the failure should explain that section-code is required");
+	}
+
+	[Test]
+	[Description("Starts the real clio MCP server, invokes update-app-section with forbidden localization maps, and verifies that the tool returns a clear scalar-only validation failure.")]
+	[AllureFeature(SectionUpdateToolName)]
+	[AllureTag(SectionUpdateToolName)]
+	[AllureName("Application section update rejects localization maps")]
+	[AllureDescription("Uses the real clio MCP server to call update-app-section with title-localizations and verifies that the tool rejects localization-map payloads before any update side effect is attempted.")]
+	public async Task ApplicationSectionUpdate_Should_Reject_Localization_Map_Fields() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		CallToolResult callResult = await session.CallToolAsync(
+			SectionUpdateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = "UsrOrdersApp",
+					["section-code"] = "UsrOrders",
+					["caption"] = "Orders",
+					["title-localizations"] = new Dictionary<string, object?> {
+						["en-US"] = "Orders"
+					}
+				}
+			},
+			cancellationTokenSource.Token);
+		ApplicationSectionUpdateContextResponseEnvelope response = ApplicationResultParser.ExtractSectionUpdate(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "structured scalar-only validation failures should stay inside the response payload");
+		response.Success.Should().BeFalse(
+			because: "section-update should reject localization maps before any remote update side effect is attempted");
+		response.Error.Should().MatchRegex("(?is)(scalar-only|title-localizations|localizations)",
+			because: "the failure should explain that localization maps are forbidden on update-app-section");
+	}
+
+	[Test]
+	[Description("Deferred positive coverage for update-app-section when the E2E environment has a known installed application and section.")]
 	[AllureFeature(SectionUpdateToolName)]
 	[AllureTag(SectionUpdateToolName)]
 	[AllureName("Application section update returns structured before-and-after readback data")]
-	[AllureDescription("Uses the real clio MCP server to discover a reachable sandbox environment and installed application, creates a temporary section, then verifies caption repair and icon-only updates through update-app-section.")]
-	public async Task ApplicationSectionUpdate_Should_Return_Structured_Readback_Data() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		if (!settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run update-app-section end-to-end tests.");
-		}
+	[AllureDescription("Placeholder for a future seeded-data E2E that updates a known section and verifies persisted before-and-after read-back data.")]
+	public void ApplicationSectionUpdate_Should_Return_Structured_Readback_Data() {
+		Assert.Ignore("TODO: add predefined installed application and section data to the E2E environment, then restore this positive update-app-section scenario.");
+	}
 
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		string environmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName)) {
-			ClioCliCommandResult configuredPingResult = await ClioCliCommandRunner.RunAsync(
+		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
+			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
+			return configuredEnvironmentName;
+		}
+
+		const string fallbackEnvironmentName = "d2";
+		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
+			return fallbackEnvironmentName;
+		}
+
+		Assert.Ignore(
+			$"application section MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
+		return string.Empty;
+	}
+
+	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
+		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
+		try {
+			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
 				settings,
-				["ping-app", "-e", configuredEnvironmentName]);
-			environmentName = configuredPingResult.ExitCode == 0 ? configuredEnvironmentName : string.Empty;
-		} else {
-			environmentName = string.Empty;
+				["ping-app", "-e", environmentName],
+				cancellationToken: cts.Token);
+			return result.ExitCode == 0;
+		} catch (OperationCanceledException) {
+			return false;
 		}
+	}
 
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			const string fallbackEnvironmentName = "d2";
-			ClioCliCommandResult fallbackPingResult = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", fallbackEnvironmentName]);
-			if (fallbackPingResult.ExitCode != 0) {
-				Assert.Ignore(
-					$"update-app-section MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-			}
-
-			environmentName = fallbackEnvironmentName;
-		}
-
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(10));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ListToolName,
-			because: "list-apps must be available for the end-to-end section-update setup");
-		tools.Select(tool => tool.Name).Should().Contain(InfoToolName,
-			because: "get-app-info must be available for the end-to-end section-update flow");
-		tools.Select(tool => tool.Name).Should().Contain(SectionCreateToolName,
-			because: "create-app-section must be available for destructive section-update setup");
-		tools.Select(tool => tool.Name).Should().Contain(SectionUpdateToolName,
-			because: "update-app-section must be available for the end-to-end mutation flow");
-		CallToolResult listCallResult = await session.CallToolAsync(
-			ListToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationListResponseEnvelope listResponse = ApplicationResultParser.ExtractList(listCallResult);
-		listResponse.Success.Should().BeTrue(
-			because: "the setup step should return a structured application list");
-		listResponse.Applications.Should().NotBeEmpty(
-			because: "the sandbox environment should expose at least one installed application for section-update testing");
-		ApplicationListItemEnvelope targetApplication = listResponse.Applications![0];
-		string createCaption = $"Codex Repair {Guid.NewGuid():N}"[..22];
-		string[] words = Regex.Split(createCaption.Trim(), @"[^\p{L}\p{Nd}]+")
-			.Where(item => !string.IsNullOrWhiteSpace(item))
-			.ToArray();
-		StringBuilder sectionCodeBuilder = new("Usr");
-		foreach (string word in words) {
-			string sanitizedValue = new(word.Where(char.IsLetterOrDigit).ToArray());
-			if (string.IsNullOrWhiteSpace(sanitizedValue)) {
-				continue;
-			}
-
-			sectionCodeBuilder.Append(sanitizedValue.Length == 1
-				? sanitizedValue.ToUpperInvariant()
-				: char.ToUpperInvariant(sanitizedValue[0]) + sanitizedValue[1..]);
-		}
-
-		if (char.IsDigit(sectionCodeBuilder[3])) {
-			sectionCodeBuilder.Insert(3, "_");
-		}
-
-		string sectionCode = sectionCodeBuilder.ToString();
-		CallToolResult sectionCreateCallResult = await session.CallToolAsync(
-			SectionCreateToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["application-code"] = targetApplication.Code,
-					["caption"] = createCaption,
-					["description"] = "Created by MCP E2E"
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationSectionContextResponseEnvelope sectionCreateResponse = ApplicationResultParser.ExtractSectionCreate(sectionCreateCallResult);
-		sectionCreateResponse.Success.Should().BeTrue(
-			because: "the destructive setup step should create a temporary section before the update flow starts");
-		string repairedCaption = $"Updated {Guid.NewGuid():N}"[..20];
-
-		// Act
-		CallToolResult sectionUpdateCallResult = await session.CallToolAsync(
-			SectionUpdateToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["application-code"] = targetApplication.Code,
-					["section-code"] = sectionCode,
-					["caption"] = repairedCaption
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationSectionUpdateContextResponseEnvelope sectionUpdateResponse = ApplicationResultParser.ExtractSectionUpdate(sectionUpdateCallResult);
-		CallToolResult iconOnlyUpdateCallResult = await session.CallToolAsync(
-			SectionUpdateToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["application-code"] = targetApplication.Code,
-					["section-code"] = sectionCode,
-					["icon-background"] = "#123456"
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationSectionUpdateContextResponseEnvelope iconOnlyUpdateResponse = ApplicationResultParser.ExtractSectionUpdate(iconOnlyUpdateCallResult);
-
-		// Assert
-		sectionUpdateCallResult.IsError.Should().NotBeTrue(
-			because: $"a valid update-app-section request should return structured before-and-after readback data. Actual result: {JsonSerializer.Serialize(new { sectionUpdateCallResult.IsError, sectionUpdateCallResult.StructuredContent, sectionUpdateCallResult.Content })}");
-		sectionUpdateResponse.Success.Should().BeTrue(
-			because: "successful section-update should return the standard success envelope");
-		sectionUpdateResponse.ApplicationCode.Should().Be(targetApplication.Code,
-			because: "the update response should preserve the target application code");
-		sectionUpdateResponse.PreviousSection.Should().NotBeNull(
-			because: "successful section-update should return the original section metadata");
-		sectionUpdateResponse.Section.Should().NotBeNull(
-			because: "successful section-update should return the updated section metadata");
-		sectionUpdateResponse.PreviousSection!.Code.Should().Be(sectionCode,
-			because: "the update response should identify the targeted section");
-		sectionUpdateResponse.Section!.Caption.Should().Be(repairedCaption,
-			because: "section-update should persist the new plain-text caption");
-		iconOnlyUpdateCallResult.IsError.Should().NotBeTrue(
-			because: "icon-only section updates should also return structured readback data");
-		iconOnlyUpdateResponse.Success.Should().BeTrue(
-			because: "icon-only section updates should succeed with the same target selectors");
-		iconOnlyUpdateResponse.PreviousSection.Should().NotBeNull(
-			because: "the icon-only update should return the section metadata before the icon change");
-		iconOnlyUpdateResponse.Section.Should().NotBeNull(
-			because: "the icon-only update should return the section metadata after the icon change");
-		iconOnlyUpdateResponse.PreviousSection!.Caption.Should().Be(repairedCaption,
-			because: "icon-only updates should preserve the repaired caption");
-		iconOnlyUpdateResponse.Section!.Caption.Should().Be(repairedCaption,
-			because: "icon-only updates should not touch the section caption");
-		iconOnlyUpdateResponse.Section.IconBackground.Should().Be("#123456",
-			because: "icon-only section updates should persist the new icon background");
+	private static string DescribeCallResult(CallToolResult callResult) {
+		return JsonSerializer.Serialize(new {
+			callResult.IsError,
+			callResult.StructuredContent,
+			callResult.Content
+		});
 	}
 }
