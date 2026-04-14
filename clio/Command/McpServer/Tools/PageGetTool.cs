@@ -20,8 +20,8 @@ public sealed class PageGetTool(
 	/// Reads a Freedom UI page as a merged bundle plus raw editable body.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Get a Freedom UI page bundle plus raw schema body")]
-	public PageGetResponse GetPage([Description("Parameters: schema-name (required); environment-name, uri, login, password (optional)")] [Required] PageGetArgs args) {
+	[Description("Get a Freedom UI page bundle plus raw schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	public PageGetResponse GetPage([Description("Parameters: schema-name (required); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageGetArgs args) {
 		PageGetOptions options = new() {
 			SchemaName = args.SchemaName,
 			Environment = args.EnvironmentName,
@@ -52,10 +52,16 @@ public sealed record PageGetArgs(
 	string SchemaName,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
 	string? EnvironmentName,
 
-	[property: JsonPropertyName("uri")] string? Uri,
-	[property: JsonPropertyName("login")] string? Login,
-	[property: JsonPropertyName("password")] string? Password
+	[property: JsonPropertyName("uri")]
+	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
+	string? Uri,
+	[property: JsonPropertyName("login")]
+	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
+	string? Login,
+	[property: JsonPropertyName("password")]
+	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
+	string? Password
 );

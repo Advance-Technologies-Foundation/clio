@@ -47,7 +47,7 @@ public class ToolCommandResolver(
 		if (!string.IsNullOrWhiteSpace(options.Environment)) {
 			if (!bootstrapReport.CanExecuteEnvTools) {
 				throw new InvalidOperationException(
-					$"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath} or use explicit uri/login/password.");
+					$"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath}. Explicit uri/login/password remains available only as an emergency fallback.");
 			}
 			if (!settingsRepository.IsEnvironmentExists(options.Environment)) {
 				throw new InvalidOperationException(
@@ -63,10 +63,10 @@ public class ToolCommandResolver(
 			if (string.IsNullOrWhiteSpace(settings.Uri)) {
 				if (!bootstrapReport.CanExecuteEnvTools) {
 					throw new InvalidOperationException(
-						$"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath} or provide explicit uri/login/password.");
+						$"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath}. Explicit uri/login/password remains available only as an emergency fallback.");
 				}
 				throw new InvalidOperationException(
-					"Either a configured environment name or an explicit URI is required for MCP command execution.");
+					"Either a configured environment name or an explicit URI is required for MCP command execution. Prefer a registered environment name; use explicit URI credentials only as a bootstrap or emergency fallback.");
 			}
 		}
 		string cacheKey = BuildCacheKey(options, settings);
