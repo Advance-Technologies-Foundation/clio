@@ -35,9 +35,17 @@ internal static class ClioCliCommandRunner {
 
 		using Process process = new() { StartInfo = startInfo };
 		process.Start();
-		Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-		Task<string> stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-		await process.WaitForExitAsync(cancellationToken);
+		Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
+		Task<string> stderrTask = process.StandardError.ReadToEndAsync(CancellationToken.None);
+		try {
+			await process.WaitForExitAsync(cancellationToken);
+		} catch (OperationCanceledException) {
+			if (!process.HasExited) {
+				process.Kill(entireProcessTree: true);
+				await process.WaitForExitAsync(CancellationToken.None);
+			}
+			throw;
+		}
 
 		return new ClioCliCommandResult(
 			process.ExitCode,
