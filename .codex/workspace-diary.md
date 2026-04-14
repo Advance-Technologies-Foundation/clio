@@ -2329,3 +2329,124 @@ Decision: Renamed all to canonical {verb}-{noun} pattern; old names preserved as
 Discovery: Commands.md doc links must reference canonical filenames — HasCommandIndexEntry checks (docs/commands/{canonicalName}.md). Four artifact types must all be consistent: Commands.md index entry, help txt, docs md, WikiAnchors.txt.
 Files: clio/Command/PageGetOptions.cs, PageListOptions.cs, PageUpdateOptions.cs, DeleteSchemaCommand.cs, ListInstalledApplications.cs, Commands.md, CommandHelpCatalog.cs, WikiAnchors.txt
 Impact: All future renames must update Commands.md link paths (not just anchor IDs); test ExecuteCommands_WithUnknownVerb asserts specific canonical names in suggestions.
+
+## 2026-04-14 17:24 – Updated ENG-88322 MCP regression spec tool names after PR #527
+Context: User requested only document update to align MCP tool names in the regression-analysis spec with latest merged rename commit.
+Decision: Created a new updated copy of the attached spec in Downloads and replaced renamed tool identifiers with current canonical MCP names from commit ca0d987c.
+Discovery: Renamed scoped tools now include get-tool-contract, list-apps, get-app-info, create-app, create-app-section, update-app-section, list-pages, get-page, sync-pages, update-page, and sync-schemas.
+Files: C:\Users\m.dymytrova\Downloads\mcp-tests-regression-analysis-spec-updated.md, .codex/workspace-diary.md
+Impact: Stand-up and implementation planning now reference current MCP tool names, reducing confusion when creating follow-up tests.
+
+## 2026-04-14 18:35 – Added get-tool-contract malformed-envelope E2E coverage
+Context: ENG-88322 follow-up required verifying and hardening `get-tool-contract` against MCP transport-envelope regressions.
+Decision: Added two E2E tests for missing `args` and wrong-type `args`, asserting top-level invocation failure instead of structured `ToolContractGetResponse`.
+Discovery: Local `clio.exe` confirms the boundary split: valid `args` returns structured contract content, while malformed transport envelopes surface as `CallToolResult.IsError == true` with generic invocation diagnostics.
+Files: clio.mcp.e2e/ToolContractGetToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The `get-tool-contract` suite now protects both tool-level validation behavior and MCP binding-layer failure behavior.
+## 2026-04-14 19:05 – Strengthened list-apps / get-app-info regression tests
+Context: Continued ENG-88322 implementation from the updated MCP regression spec, starting with the least destructive application tools.
+Decision: Strengthened `list-apps` contract coverage by preserving application IDs in unit assertions and added an E2E cross-tool contract test that reuses a `list-apps` item with `get-app-info` by `id`.
+Discovery: Local verification is partially blocked by baseline issues outside this patch: `clio.tests` currently fails to build because of an existing `ModelContextProtocol.Core` version mismatch, and `ApplicationToolE2ETests` requires sandbox environment configuration that is not present in the local MCP E2E settings.
+Files: clio.tests/Command/McpServer/ApplicationToolTests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Regression coverage now explicitly protects the `list-apps` -> `get-app-info` selector handoff and the `get-app-info` positive `id` branch once sandbox-backed E2E runs are available.
+
+## 2026-04-14 19:32 – Hardened page MCP regression coverage for list-pages and update-page
+Context: Continued ENG-88322 implementation for the renamed page MCP tools after validating the updated regression-analysis spec.
+Decision: Added a positive sandbox-backed `list-pages` E2E, introduced a dedicated `PageUpdateToolE2ETests` suite for tool discovery and structured failure behavior, and kept `sync-pages` unchanged because its unit and E2E validation matrix already covers the main non-destructive regression cases better than the other page tools.
+Discovery: `update-page` resolves the target environment before dry-run resource/content validation, so malformed-resource and proxy-binding E2E checks still require a reachable sandbox environment and must skip cleanly when it is not configured.
+Files: clio.mcp.e2e/PageGetToolE2ETests.cs, clio.mcp.e2e/PageUpdateToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Page-tool regression coverage now protects positive `list-pages` selection flow and dedicated `update-page` contract behavior without over-investing in duplicate `sync-pages` coverage.
+
+## 2026-04-14 19:48 – Hardened sync-schemas transport-contract coverage
+Context: Continued ENG-88322 MCP regression work for the renamed `sync-schemas` tool after the page-tool slice.
+Decision: Kept existing unit and structured E2E business-flow coverage intact and added only malformed-envelope E2E checks for missing `args` and wrong-type `args`.
+Discovery: The updated regression spec slightly overstated the remaining contract gap for `sync-schemas`; the suite already asserted structured success/failure envelopes and message alignment, and the real missing slice was invocation-level MCP binding failure behavior.
+Files: clio.mcp.e2e/SchemaSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: sync-schemas now protects both structured tool-level failures and top-level MCP transport failures without duplicating existing schema-operation regression coverage.
+
+## 2026-04-14 20:07 – Relaxed list-pages parent-schema assertion for real environments
+Context: Enabling the real sandbox environment for page MCP E2E removed skips and exposed a false assumption in the new list-pages success test.
+Decision: Updated the E2E contract to require non-empty schema and package for every returned page while treating parent schema as optional per item and only requiring it to appear for some results.
+Discovery: Real Creatio page listings legitimately include pages without a parent schema, including MobileActivityPreviewPage, BaseModalBoxPage, and PortalMainPageModule, so asserting ParentSchemaName for every row creates false failures.
+Files: clio.mcp.e2e/PageGetToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The list-pages suite now reflects the real MCP contract and can run reliably against configured sandbox environments without masking genuine regressions.
+
+## 2026-04-14 20:32 – Expanded entity-schema MCP regression coverage for create/update/modify/read tools
+Context: Continued ENG-88322 refactoring for create-entity-schema, update-entity-schema, modify-entity-schema-column, get-entity-schema-properties, and get-entity-schema-column-properties after unblocking sandbox-backed E2E runs.
+Decision: Added focused unit coverage for create-entity-schema argument contract, create-lookup mapping/registration, and lookup-flag mapping in update/modify tools; added deterministic non-destructive E2E reads for Contact schema and Contact.Name column instead of relying only on destructive create flows.
+Discovery: The entity-schema E2E read contract can be validated quickly against built-in Contact metadata, while unit execution in clio.tests remains blocked by the existing ModelContextProtocol.Core version conflict unrelated to this change.
+Files: clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Regression coverage now protects stable read contracts and key lookup-flag mapping branches even when destructive entity-schema tests or the clio.tests baseline are unavailable.
+
+## 2026-04-14 18:05 – Expanded DB-first MCP regression coverage
+Context: Continued ENG-88322 MCP regression refactoring for database-backed data-binding tools after configuring the d2 Creatio environment.
+Decision: Increase regression value with deterministic unit coverage for upsert/remove argument mapping and deterministic E2E coverage for empty-environment failures plus malformed MCP envelope failures.
+Discovery: For DB-first tools, the most stable regression signal comes from structured no-environment failures and top-level invocation failures on malformed envelopes; clio.tests verification remains blocked by the existing ModelContextProtocol.Core version conflict.
+Files: clio.tests/Command/McpServer/DataBindingDbToolTests.cs, clio.mcp.e2e/DataBindingDbToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Future MCP refactoring can treat these tools as covered for contract-level negative paths without depending on destructive backend setup.
+## 2026-04-14 18:32 – Audited no-code-assistent MCP dependencies against ENG-88322 coverage
+Context: After finishing the spec-driven MCP regression refactoring, we needed to check whether consumer-facing tools used by no-code-assistent were omitted from the original analysis.
+Decision: Treat no-code-assistent scripts, skills, and context docs as the consumer scope, then compare those tool references with existing clio MCP unit and E2E suites.
+Discovery: The main active consumer flow is get-tool-contract, list-apps, get-app-info, create-app, sync-schemas, get-entity-schema-properties, get-entity-schema-column-properties, create-data-binding-db, list-pages, get-page, sync-pages, and fallback update-page. Two genuine omissions from the original regression analysis are list-app-sections and delete-app-section; both exist in clio MCP and are referenced by no-code-assistent, but currently have no MCP unit or E2E coverage. get-component-info is also consumer-relevant but already has dedicated unit and E2E coverage, so it was omitted from the spec but not from actual test coverage.
+Files: C:\Projects\no-code-assistent\scripts\mcp_client.py, C:\Projects\no-code-assistent\scripts\mcp_schema_sync.py, C:\Projects\no-code-assistent\scripts\mcp_page_sync.py, C:\Projects\no-code-assistent\context\essentials.md, clio\Command\McpServer\Tools\ApplicationTool.cs, clio.tests\Command\McpServer\ApplicationToolTests.cs, clio.mcp.e2e\ApplicationSectionToolE2ETests.cs, clio.tests\Command\McpServer\ComponentInfoToolTests.cs, clio.mcp.e2e\ComponentInfoToolE2ETests.cs, .codex\workspace-diary.md
+Impact: The remaining consumer-scoped regression gap is concentrated on installed-app section discovery and deletion flows rather than the already-covered page/entity contract helpers.
+## 2026-04-14 18:58 – Added section-maintenance MCP coverage for no-code-assistent flows
+Context: The consumer-scope audit showed that list-app-sections and delete-app-section were referenced by no-code-assistent but missing from the ENG-88322 regression refactoring.
+Decision: Added MCP unit coverage for stable tool names, success mapping, and required-selector validation; added E2E coverage for tool advertisement plus deterministic invalid-environment and missing-selector failures, and added positive installed-app flows that skip cleanly when the target environment exposes no installed apps.
+Discovery: The configured d2 environment currently returns an empty installed-app list through list-apps, so positive list-app-sections and delete-app-section E2E scenarios cannot choose a valid application target and must skip until an environment with installed apps is available.
+Files: clio.tests/Command/McpServer/ApplicationToolTests.cs, clio.mcp.e2e/Support/Results/ApplicationEnvelope.cs, clio.mcp.e2e/ApplicationSectionMaintenanceToolE2ETests.cs, .codex/workspace-diary.md
+Impact: no-code-assistent now has regression protection for section discovery and deletion contracts, and the remaining positive-path gap is explicitly isolated to environment data availability rather than missing tests.
+
+## 2026-04-14 22:18 – Fixed stale MCP package restore and reran filtered MCP unit suite
+Context: After ENG-88322 MCP test refactoring, filtered unit verification was blocked by clio.tests compiling against stale ModelContextProtocol.Core 1.0.0 assets while the repo now centrally pins 1.2.0.
+Decision: Deleted clio.tests obj/bin, restored clio.tests and clio against current central package versions, verified project.assets.json resolves ModelContextProtocol.Core 1.2.0, then reran the changed MCP unit fixtures.
+Discovery: The version mismatch was not caused by the refactoring itself; it came from stale no-restore assets. After a clean restore, the filtered ApplicationToolTests, EntitySchemaToolTests, and DataBindingDbToolTests suite passed fully.
+Files: clio.tests/obj/project.assets.json, .codex/last-clio-tests-run.log, .codex/workspace-diary.md
+Impact: Future MCP verification should avoid --no-restore after central package version bumps, and the changed MCP unit suites are now confirmed green on the current dependency baseline.
+
+
+## 2026-04-14 22:32 – Split application selector E2E into empty-safe contract and follow-up branches
+Context: Regression review for ENG-88322 found that application MCP selector tests dereferenced list-apps results before checking whether the environment actually exposed installed applications.
+Decision: Split the list-apps coverage into an always-valid contract test for empty and non-empty environments and a separate list-apps -> get-app-info by id follow-up test that skips with a clear reason when no installed applications exist; reused the same helper for other get-app-info tests that depended on the first listed application.
+Discovery: The configured d2 environment still exposes zero installed applications through list-apps, so selector follow-up tests must skip cleanly there instead of failing with index/null assumptions. The broader ApplicationToolE2ETests suite still contains an unrelated create-app localization-map test that assumes a configured sandbox environment name.
+Files: clio.mcp.e2e/ApplicationToolE2ETests.cs, .codex/last-application-e2e-run.log, .codex/workspace-diary.md
+Impact: Application MCP selector coverage now matches valid empty and non-empty environment states and produces clearer regression signals on environments without installed applications.
+
+
+## 2026-04-14 23:25 – Fixed create-app localization-map validation gap
+Context: The ApplicationCreate_Should_Reject_Localization_Map_Fields E2E was failing with a null-reference after environment resolution was corrected, indicating a product-level validation gap rather than a bad test.
+Decision: Aligned create-app with its documented MCP contract and with the section-tool pattern by rejecting any present localization-map field in ValidateCreateArgs, correcting the create-app argument descriptions, and adding focused unit coverage to prevent regressions before the E2E boundary.
+Discovery: create-app already documented and prompted callers not to send localization maps, but ApplicationCreateArgs omitted those properties and ValidateCreateArgs never rejected them, so requests fell through into enrichment/create logic and surfaced as Object reference not set to an instance of an object.
+Files: clio/Command/McpServer/Tools/ApplicationTool.cs, clio/Command/McpServer/Tools/ApplicationToolArgs.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, .codex/workspace-diary.md
+Impact: create-app now returns a deterministic structured validation error for forbidden localization maps, unit coverage enforces the contract before side effects, and the existing E2E remains a valid client-facing regression check.
+
+## 2026-04-14 23:58 – Finished remaining ENG-88322 regression-strengthening slice
+Context: Implemented the remaining suggested test improvements for create-app-section, update-app-section, get-page, sync-pages, update-entity-schema, and modify-entity-schema-column after the earlier MCP regression audit marked them as only partially aligned.
+Decision: Strengthened existing suites in place rather than creating new fixtures: added deterministic validation-only E2E cases for section create/update, added persisted read-back verification through list-app-sections, added a stable get-page metadata-contract test plus candidate-driven round-trip selection, added a best-effort no-op sync-pages verify flow, and extended entity-schema unit coverage for mixed operation ordering and omitted optional flags.
+Discovery: Real page mutation flows are more environment-sensitive than page reads: in d2, readable pages exist but not every page supports dry-run update-page or full sync-pages save-and-verify. Candidate-driven selection makes get-page robust, while sync-pages still legitimately skips when no verifiable page is available. The new entity-schema ordering test also needed materialization because Operations is IEnumerable rather than indexable.
+Files: clio.mcp.e2e/ApplicationSectionToolE2ETests.cs, clio.mcp.e2e/ApplicationSectionUpdateToolE2ETests.cs, clio.mcp.e2e/PageGetToolE2ETests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, .codex/workspace-diary.md
+Impact: The remaining partially covered MCP tools now have stronger deterministic regression checks and persisted read-back assertions, with the only residual gap being environment availability for a full sync-pages verify candidate.
+
+## 2026-04-15 00:18 – Removed env-data-dependent MCP E2E cases and re-evaluated regression matrix
+Context: After strengthening the remaining ENG-88322 tools, we decided the runnable matrix must not assume installed apps exist or that arbitrary discovered pages are editable in the target environment.
+Decision: Deleted positive E2E tests that depended on installed-app discovery or broad page discovery, kept deterministic contract/validation tests, and documented the resulting split between tools that are sufficient now and tools that would become sufficient once a seeded test app/page dataset exists.
+Discovery: The earlier skips were not MCP-surface blockers; they came from relying on environment data that is not guaranteed. After removing those discovery-dependent positives, the affected application/section/page E2E suites run cleanly on the current reachable environment, with remaining skips tied only to the destructive-test toggle.
+Files: clio.mcp.e2e/ApplicationToolE2ETests.cs, clio.mcp.e2e/ApplicationSectionMaintenanceToolE2ETests.cs, clio.mcp.e2e/ApplicationSectionToolE2ETests.cs, clio.mcp.e2e/ApplicationSectionUpdateToolE2ETests.cs, clio.mcp.e2e/PageGetToolE2ETests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, spec/mcp-tests-regression-analysis/mcp-tests-regression-analysis-reevaluated-matrix.md, .codex/workspace-diary.md
+Impact: Future MCP regression work can target seeded-data positives explicitly without confusing them with baseline contract coverage that should run on any reachable environment.
+
+## 2026-04-14 18:55 – Restore env-data-dependent E2E tests as ignored placeholders
+Context: The MCP regression matrix still needed visibility of installed-app and page-discovery positive scenarios, but the shared test env may legitimately have zero installed apps and no predefined editable page data.
+Decision: Restored the previously removed E2E positives as explicit `Assert.Ignore(...)` placeholders with TODO guidance instead of deleting them, while keeping the deterministic baseline suite runnable on any reachable environment.
+Discovery: Application and page positive scenarios should remain tracked in code, but must not be baseline assertions until the environment guarantees predefined app/page fixtures.
+Impact: Future work can re-enable these tests when seeded test data exists without losing visibility of the intended high-value scenarios.
+
+## 2026-04-15 00:35 – Restored minimal discovery-backed MCP positives
+Context: We wanted to avoid unconditional ignores for all env-data-dependent MCP E2E positives while still keeping the suite runnable on generic environments with zero installed apps or no known editable page fixtures.
+Decision: Re-enabled only the safe read-only discovery-backed tests: list-apps structured item validation, get-app-info positive metadata read, list-apps to get-app-info handoff, list-app-sections positive envelope read, list-pages positive listing, and get-page positive metadata read. Kept page round-trip/update/sync mutation scenarios as ignored placeholders because they still require stronger page fixture guarantees.
+Discovery: The configured reachable environment is sufficient for these six discovery-backed tests today; they all passed without requiring hardcoded app or page names. The right fallback remains Assert.Ignore with explicit TODO text when installed apps or pages are absent.
+Impact: The regression matrix now retains meaningful execution on environments that already expose installed apps/pages, while still degrading cleanly to explicit TODO ignores when seeded data is missing.
+
+## 2026-04-15 01:05 – Verified ENG-88322 coverage state against Jira and provided environment
+Context: Final validation pass compared the implemented MCP regression refactoring with ENG-88322 and reran unit and E2E verification against the provided reachable environment.
+Decision: Treat the refactoring as substantially complete for Step 2 high-value missing coverage, but not fully green at whole-suite level because three positive real-environment tests still fail on the provided environment: two create-data-binding-db success flows and one schema-sync default-value configuration flow. The reevaluated regression matrix remains the source of truth for which tools are sufficient now versus which benefit from predefined seeded data.
+Discovery: Filtered unit tests for ApplicationToolTests, EntitySchemaToolTests, and DataBindingDbToolTests pass with --no-build. Discovery-backed app/page MCP E2E tests, tool-contract transport tests, entity-schema read-contract tests, and deterministic DB-first negative/transport tests all pass. A broader changed-E2E run still reports failures in DataBindingDbToolE2ETests.CreateDataBindingDb_Should_Succeed_On_Real_Environment, DataBindingDbToolE2ETests.CreateDataBindingDb_Should_Skip_Duplicate_Name_On_Rerun, and SchemaSyncToolE2ETests.SchemaSyncTool_Should_Apply_Structured_DefaultValueConfig_On_UpdateEntity on the provided env.
