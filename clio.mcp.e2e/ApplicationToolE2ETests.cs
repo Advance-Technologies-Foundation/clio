@@ -658,10 +658,16 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
+		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
+		try {
+			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+				settings,
+				["ping-app", "-e", environmentName],
+				cancellationToken: cts.Token);
+			return result.ExitCode == 0;
+		} catch (OperationCanceledException) {
+			return false;
+		}
 	}
 
 	private static async Task<ApplicationListActResult> ActListAsync(
