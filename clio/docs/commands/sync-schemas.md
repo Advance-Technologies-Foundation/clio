@@ -1,4 +1,4 @@
-# schema-sync
+# sync-schemas
 
 Executes a batch of schema operations in a single MCP call: create lookups, create entities,
 seed data, update entities. Reduces MCP round-trips, lock acquisitions, and sleep overhead
@@ -8,7 +8,7 @@ compared to calling each operation individually.
 
 ## When to Use
 
-Use `schema-sync` instead of sequential calls to `create-lookup`, `create-data-binding-db`,
+Use `sync-schemas` instead of sequential calls to `create-lookup`, `create-data-binding-db`,
 and `update-entity-schema` when you need to set up multiple related schemas in one step.
 A typical scenario is bootstrapping a new application with lookup tables, seed data, and
 entity column references.

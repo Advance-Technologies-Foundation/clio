@@ -2269,3 +2269,63 @@ Decision: Single HTTP request to SysSchema via existing SelectQueryHelper (no cl
 Discovery: comparisonType=10 is Contains; SysSchema.ManagerName="EntitySchemaManager" for entity schemas; joined columns SysPackage.Name and [SysSchema:Id:Parent].Name work in DataService SelectQuery.
 Files: clio/Command/FindEntitySchemaCommand.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs (FindEntitySchemaTool + FindEntitySchemaArgs), clio/Command/McpServer/Tools/ToolContractGetTool.cs (BuildFindEntitySchema), clio/Program.cs, clio/BindingsModule.cs, clio/Wiki/WikiAnchors.txt, clio/help/en/find-entity-schema.txt, clio/docs/commands/find-entity-schema.md, clio/Commands.md, clio.tests/Command/FindEntitySchemaCommandTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, .github/skills/clio/references/commands-reference.md, .github/skills/clio/SKILL.md
 Impact: Agents can now find any entity schema in one round trip without knowing the package name. 96 unit tests green.
+
+## 2026-04-13 13:05 – Analyzed Copilot session d6fe1629
+Context: User asked to analyze `/Users/a.kravchuk/Projects/copilot-session-d6fe1629-5e8e-42c2-b7ee-6bcfce5cdb27.md`.
+Decision: Treated the file as a meta-session that analyzes another exported Copilot session, separating outer-session facts from the nested viewed transcript.
+Discovery: The analyzed session itself only used two `view` actions and three assistant answers; the visible CAPI error and CLIO command failures belong to the nested file being inspected, not to the outer session. The biggest issue in the outer session is inconsistent interpretation of `find-entity-schema` output around `Test1 | Test1 (Creatio)`.
+Files: /Users/a.kravchuk/Projects/copilot-session-d6fe1629-5e8e-42c2-b7ee-6bcfce5cdb27.md, .codex/workspace-diary.md
+Impact: Future session reviews should explicitly distinguish current-session execution from quoted or viewed transcripts to avoid false incident counts and wrong root-cause conclusions.
+
+## 2025-07-16 – Implement application-section-delete (ENG-88149)
+Context: Last unimplemented AC from ENG-88149 — delete section from an installed app.
+Decision: Followed the create/update pattern: service + command + MCP tool + args/response/support + DI + contract + prompt + tests.
+Files: ApplicationSectionDeleteCommand.cs (created), ApplicationTool.cs, ApplicationToolArgs.cs, ApplicationToolResponses.cs, ApplicationToolSupport.cs, BindingsModule.cs, Program.cs, ToolContractGetTool.cs, ApplicationPrompt.cs, DeleteAppSectionCommandTests.cs
+Impact: application-section-delete MCP tool and delete-app-section CLI verb are fully wired. 3 unit tests pass.
+
+## 2025-07-17 – application-section-get-list completed
+Context: ENG-88149 — list sections of an installed Creatio application
+Decision: Reused ApplicationSectionRecord/ApplicationSectionInfoResult from create command; SelectQuery on ApplicationSection filtered by ApplicationId
+Files: clio/Command/ApplicationSectionGetListCommand.cs, clio/Command/McpServer/Tools/ApplicationTool.cs, ToolContractGetTool.cs, ApplicationPrompt.cs, guidance resources, BindingsModule.cs, Program.cs, clio.tests/Command/GetAppSectionsCommandTests.cs
+Impact: CLI list-app-sections + MCP application-section-get-list; preferred flow now includes get-list before delete/update in all guidance resources
+
+## 2026-04-13 15:06 – list-app-sections table output (UX improvement)
+Context: Raw single-line JSON output was unreadable in the terminal.
+Decision: Switch default output to ConsoleTable (Code|Caption|EntitySchemaName|Description) preceded by an application header line; add --json flag for script-friendly indented JSON. MCP tool unaffected (calls service directly).
+Files: clio/Command/ApplicationSectionGetListCommand.cs, clio.tests/Command/GetAppSectionsCommandTests.cs, clio/help/en/list-app-sections.txt (new), clio/docs/commands/list-app-sections.md (new), clio/Commands.md, .github/skills/clio/references/commands-reference.md
+Impact: Human-readable table by default; --json for piping; 4 unit tests green.
+
+## 2026-04-14 – ActiveEnvironmentKey optional -e for CLI
+Context: When ActiveEnvironmentKey is set in appsettings.json pointing to an existing env, -e was still required in practice because Execute() guards checked options.Environment directly.
+Decision: Fix infrastructure layer only (Configure() and GetEnvironmentSettings() in Program.cs) to populate options.Environment from GetDefaultEnvironmentName() before Execute() is called. MCP kept environment-required by design (user explicit decision).
+Discovery: GetEnvironment(options) in ConfigurationOptions.cs already resolves settings from active env, but never writes back to options.Environment → guards fail on null. Fix is to set options.Environment = activeEnvName in the two Program.cs entry points.
+Files: clio/Program.cs (Configure, GetEnvironmentSettings)
+Impact: All CLI commands now work without -e when ActiveEnvironmentKey is configured. Execute() guards and unit tests unchanged.
+
+## 2025-07-14 – Level 2 delete-app-section cleanup committed
+
+Context: delete-app-section was hanging because it called DeleteQuery on the virtual ApplicationSection entity (no backend delete handler in Creatio). Investigation showed ApplicationSectionEventListener has NO OnDeleted handler.
+Decision: Level 2 cleanup — delete all metadata artifacts in correct FK order, keep entity schema by default, add --delete-entity-schema flag for full cleanup.
+Discovery: CS9007 with $$""" raw literals — }}  consecutive closing braces after interpolation are treated as closing delimiter. Fix: expand JSON objects to multi-line format (one } per line).
+Files: clio/Command/ApplicationSectionDeleteCommand.cs, ApplicationSectionCreateCommand.cs, McpServer/Tools/ApplicationTool.cs, ApplicationToolArgs.cs, ToolContractGetTool.cs, clio.tests/Command/DeleteAppSectionCommandTests.cs
+Impact: Fully removes SysModuleInWorkplace, SysModuleLcz, SysSchema (Freedom UI pages + mobile), SysModuleEntity, SysModule in correct order. Section can be re-created cleanly afterward.
+
+## 2025-04-13 17:30 – delete-app-section: fix schema filter for AddonSchemaManager schemas
+
+Context: After WorkspaceExplorer refactor, 2 schemas were still left behind after delete
+Decision: Broaden LoadSectionSchemas filter from StartsWith(code+"_") to StartsWith(code) to catch non-underscore schemas
+Discovery:
+  - DataService FK column paths drop Id suffix: SysModuleId column -> path SysModule
+  - SysModuleLcz has no DataService schema for Freedom UI sections (0 rows, non-critical)
+  - AddonSchemaManager schemas (UsrXxxRelatedPage, UsrXxxMobileRelatedPage) use no underscore separator
+  - DataService cannot delete SysSchema (SecurityException) — must use WorkspaceExplorerService.svc/Delete
+Files: clio/Command/ApplicationSectionDeleteCommand.cs
+Impact: delete-app-section now fully cleans up all 7 workspace schemas + SysModule + SysModuleInWorkplace
+
+## 2025-07-07 – Normalize CLI command names to verb-noun convention
+
+Context: Commands page-get/list/update, delete-schema, get-app-list used inconsistent naming patterns.
+Decision: Renamed all to canonical {verb}-{noun} pattern; old names preserved as Aliases for backward compatibility.
+Discovery: Commands.md doc links must reference canonical filenames — HasCommandIndexEntry checks (docs/commands/{canonicalName}.md). Four artifact types must all be consistent: Commands.md index entry, help txt, docs md, WikiAnchors.txt.
+Files: clio/Command/PageGetOptions.cs, PageListOptions.cs, PageUpdateOptions.cs, DeleteSchemaCommand.cs, ListInstalledApplications.cs, Commands.md, CommandHelpCatalog.cs, WikiAnchors.txt
+Impact: All future renames must update Commands.md link paths (not just anchor IDs); test ExecuteCommands_WithUnknownVerb asserts specific canonical names in suggestions.

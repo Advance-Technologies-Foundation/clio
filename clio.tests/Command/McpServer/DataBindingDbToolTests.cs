@@ -190,8 +190,8 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 			because: "the create prompt should highlight the required environment-name argument");
 		createPrompt.Should().Contain("restore-workspace",
 			because: "the create prompt should guide users to restore-workspace for syncing");
-		createPrompt.Should().Contain("schema-sync",
-			because: "the create prompt should advertise schema-sync as the canonical batched path");
+		createPrompt.Should().Contain("sync-schemas",
+			because: "the create prompt should advertise sync-schemas as the canonical batched path");
 		createPrompt.Should().Contain("explicit fallback",
 			because: "the create prompt should frame create-data-binding-db as explicit fallback or standalone work");
 		createPrompt.Should().Contain("prefer this tool over dropping to direct SQL commands",

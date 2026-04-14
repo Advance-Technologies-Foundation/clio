@@ -102,6 +102,10 @@ public sealed class ApplicationSectionCreateServiceTests {
 			.Returns("""{"success":true,"rows":[{"Id":"11111111-1111-1111-1111-111111111111"}]}""");
 		_applicationClient.ExecutePostRequest(
 			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
 				body.Contains("\"ClientTypeId\"", StringComparison.Ordinal) &&
 				body.Contains("\"LogoId\"", StringComparison.Ordinal) &&

@@ -1,4 +1,4 @@
-# page-sync
+# sync-pages
 
 Updates multiple Freedom UI page schemas in a single MCP call. For each page: validates the
 body client-side (optional), saves to Creatio, and verifies the update (optional). Continues
@@ -8,7 +8,7 @@ processing remaining pages on failure.
 
 ## When to Use
 
-Use `page-sync` instead of sequential calls to `page-update` when you need to save multiple
+Use `sync-pages` instead of sequential calls to `update-page` when you need to save multiple
 page schemas at once. A typical scenario is updating both a form page and a list page for
 a single application entity.
 
@@ -104,14 +104,14 @@ being sent to Creatio:
 Validation failures prevent the page from being saved and are reported in the response.
 This replaces the need for separate dry-run calls.
 
-When a page body contains `#ResourceString(key)#` macros, `page-sync` forwards each page's
-optional `resources` JSON object string to `page-update`. The response returns
+When a page body contains `#ResourceString(key)#` macros, `sync-pages` forwards each page's
+optional `resources` JSON object string to `update-page`. The response returns
 `resources-registered` for each page so callers can see how many child-schema resources
 were added during save.
 
 When `verify` is `true`, each successful page result also returns:
 
-- `page` — the same metadata shape as `page-get.page`
+- `page` — the same metadata shape as `get-page.page`
 - `verified-body` — the raw body read back from Creatio after save
 
 ## Error Handling
@@ -121,6 +121,6 @@ Pages are independent, so **processing continues** even if one page fails. The o
 
 ## See Also
 
-- `page-update` — update a single Freedom UI page raw body
-- `page-get` — read a Freedom UI page bundle plus raw body
-- `page-list` — list Freedom UI pages
+- `update-page` — update a single Freedom UI page raw body
+- `get-page` — read a Freedom UI page bundle plus raw body
+- `list-pages` — list Freedom UI pages

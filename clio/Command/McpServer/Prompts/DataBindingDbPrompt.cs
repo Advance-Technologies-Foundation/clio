@@ -24,7 +24,7 @@ public static class DataBindingDbPrompt {
 		$"""
 		 Use clio mcp server `{CreateDataBindingDbTool.CreateDataBindingDbToolName}` to create a DB-first data binding
 		 for schema `{schemaName}` in package `{packageName}` on environment `{environmentName}`.
-		 Prefer `schema-sync` with inline `seed-rows` as the canonical batched path. Use
+		 Prefer `sync-schemas` with inline `seed-rows` as the canonical batched path. Use
 		 `{CreateDataBindingDbTool.CreateDataBindingDbToolName}` only for explicit fallback or standalone binding work.
 		 When the task is standalone lookup seeding in an MCP workflow, prefer this tool over dropping to direct SQL commands.
 		 Pass `environment-name` `{environmentName}` exactly as provided.

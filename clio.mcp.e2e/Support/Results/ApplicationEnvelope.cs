@@ -144,7 +144,7 @@ internal static class ApplicationResultParser {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse application-get-list MCP result.");
+		throw new InvalidOperationException("Could not parse list-apps MCP result.");
 	}
 
 	public static ApplicationContextResponseEnvelope ExtractInfo(CallToolResult callResult) {
@@ -152,7 +152,7 @@ internal static class ApplicationResultParser {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse application-get-info MCP result.");
+		throw new InvalidOperationException("Could not parse get-app-info MCP result.");
 	}
 
 	public static ApplicationDeleteResponseEnvelope ExtractDelete(CallToolResult callResult) {
@@ -160,7 +160,7 @@ internal static class ApplicationResultParser {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse application-delete MCP result.");
+		throw new InvalidOperationException("Could not parse delete-app MCP result.");
 	}
 
 	public static ApplicationSectionContextResponseEnvelope ExtractSectionCreate(CallToolResult callResult) {
@@ -168,7 +168,7 @@ internal static class ApplicationResultParser {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse application-section-create MCP result.");
+		throw new InvalidOperationException("Could not parse create-app-section MCP result.");
 	}
 
 	public static ApplicationSectionUpdateContextResponseEnvelope ExtractSectionUpdate(CallToolResult callResult) {
@@ -176,7 +176,7 @@ internal static class ApplicationResultParser {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse application-section-update MCP result.");
+		throw new InvalidOperationException("Could not parse update-app-section MCP result.");
 	}
 
 	private static bool TryExtract<T>(CallToolResult callResult, Func<T?, bool> validator, out T? result) {

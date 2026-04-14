@@ -68,7 +68,7 @@ public class ProgramTestCase : BaseClioModuleTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Builds the bootstrap container for show-web-app-list without requiring a valid active environment in appsettings.json.")]
+	[Description("Builds the bootstrap container for list-environments without requiring a valid active environment in appsettings.json.")]
 	public void Resolve_Should_Not_Throw_For_ShowAppListCommand_When_Active_Environment_Key_Is_Invalid() {
 		// Arrange
 		Program.Container = null;
@@ -79,7 +79,7 @@ public class ProgramTestCase : BaseClioModuleTests
 
 		// Assert
 		act.Should().NotThrow(
-			because: "show-web-app-list should run from the bootstrap profile even when ActiveEnvironmentKey is stale");
+			because: "list-environments should run from the bootstrap profile even when ActiveEnvironmentKey is stale");
 	}
 
 	[Test]

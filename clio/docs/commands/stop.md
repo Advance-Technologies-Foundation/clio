@@ -211,7 +211,7 @@ sudo may be required for systemd/launchd service operations
 
     Can't find process to stop:
         Verify environment is actually running: clio hosts
-        Check EnvironmentPath is correct: clio show-web-app-list
+        Check EnvironmentPath is correct: clio list-environments
         Process may be running under different user account
 
 ## Related Commands

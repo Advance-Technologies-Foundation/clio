@@ -11,9 +11,9 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class ShowWebAppListTool(ShowAppListCommand command)
 {
 	/// <summary>
-	/// Stable MCP tool name for listing registered web applications.
+	/// Stable MCP tool name for listing registered clio environments.
 	/// </summary>
-	internal const string ShowWebAppListToolName = "show-webApp-list";
+	internal const string ShowWebAppListToolName = "list-environments";
 
 	/// <summary>
 	/// Returns all registered web application settings as structured MCP JSON without masking sensitive fields.

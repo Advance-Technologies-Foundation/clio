@@ -14,7 +14,7 @@ public sealed class PageUpdateTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "page-update";
+	internal const string ToolName = "update-page";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update Freedom UI page schema body")]
@@ -49,7 +49,7 @@ public sealed record PageUpdateArgs(
 	string SchemaName,
 
 	[property: JsonPropertyName("body")]
-	[property: Description("Full JavaScript page body with markers. Reuse page-get raw.body.")]
+	[property: Description("Full JavaScript page body with markers. Reuse get-page raw.body.")]
 	[property: Required]
 	string Body,
 

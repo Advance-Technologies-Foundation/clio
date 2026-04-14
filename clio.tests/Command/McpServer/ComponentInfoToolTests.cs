@@ -147,7 +147,7 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
-	[Description("Advertises the stable MCP tool name for component-info so callers and tests share the same production identifier.")]
+	[Description("Advertises the stable MCP tool name for get-component-info so callers and tests share the same production identifier.")]
 	public void ComponentInfoTool_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 
@@ -155,12 +155,12 @@ public sealed class ComponentInfoToolTests {
 		string toolName = ComponentInfoTool.ToolName;
 
 		// Assert
-		toolName.Should().Be("component-info",
+		toolName.Should().Be("get-component-info",
 			because: "the MCP tool name must stay centralized on the production tool type");
 	}
 
 	[Test]
-	[Description("Serializes component-info arguments using kebab-case field names.")]
+	[Description("Serializes get-component-info arguments using kebab-case field names.")]
 	public void ComponentInfoArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
 		// Arrange
 		ComponentInfoArgs args = new("crt.TabContainer", "tab");
@@ -170,11 +170,11 @@ public sealed class ComponentInfoToolTests {
 
 		// Assert
 		json.Should().Contain("\"component-type\":\"crt.TabContainer\"",
-			because: "component-info should expose the normalized component-type request field");
+			because: "get-component-info should expose the normalized component-type request field");
 		json.Should().Contain("\"search\":\"tab\"",
-			because: "component-info should expose the optional search request field");
+			because: "get-component-info should expose the optional search request field");
 		json.Should().NotContain("\"componentType\"",
-			because: "component-info should not serialize removed camelCase request fields");
+			because: "get-component-info should not serialize removed camelCase request fields");
 	}
 
 	[Test]

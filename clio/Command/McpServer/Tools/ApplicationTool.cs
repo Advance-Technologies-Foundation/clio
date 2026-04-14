@@ -18,7 +18,7 @@ public sealed class ApplicationGetListTool(IApplicationListService applicationLi
 	/// <summary>
 	/// Stable MCP tool name for listing installed applications.
 	/// </summary>
-	internal const string ApplicationGetListToolName = "application-get-list";
+	internal const string ApplicationGetListToolName = "list-apps";
 
 	/// <summary>
 	/// Returns installed applications from the requested Creatio environment as structured JSON.
@@ -53,7 +53,7 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 	/// <summary>
 	/// Stable MCP tool name for reading structured application info.
 	/// </summary>
-	internal const string ApplicationGetInfoToolName = "application-get-info";
+	internal const string ApplicationGetInfoToolName = "get-app-info";
 
 	/// <summary>
 	/// Returns primary package and runtime entity metadata for an installed application.
@@ -93,10 +93,10 @@ public sealed class ApplicationCreateTool(
 	/// <summary>
 	/// Stable MCP tool name for creating Creatio applications.
 	/// </summary>
-	internal const string ApplicationCreateToolName = "application-create";
+	internal const string ApplicationCreateToolName = "create-app";
 
 	/// <summary>
-	/// Creates a Creatio application and returns the same structured payload as application-get-info.
+	/// Creates a Creatio application and returns the same structured payload as get-app-info.
 	/// </summary>
 	[McpServerTool(Name = ApplicationCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
@@ -174,7 +174,7 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 	/// <summary>
 	/// Stable MCP tool name for creating sections in existing Creatio applications.
 	/// </summary>
-	internal const string ApplicationSectionCreateToolName = "application-section-create";
+	internal const string ApplicationSectionCreateToolName = "create-app-section";
 
 	/// <summary>
 	/// Creates a section in an existing Creatio application and returns structured readback data.
@@ -216,7 +216,7 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 			args.CaptionLocalizations is not null ||
 			args.NameLocalizations is not null) {
 			throw new ArgumentException(
-				"application-section-create is scalar-only. Do not send title-localizations, description-localizations, caption-localizations, or name-localizations.");
+				"create-app-section is scalar-only. Do not send title-localizations, description-localizations, caption-localizations, or name-localizations.");
 		}
 	}
 }
@@ -229,7 +229,7 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 	/// <summary>
 	/// Stable MCP tool name for updating sections in existing Creatio applications.
 	/// </summary>
-	internal const string ApplicationSectionUpdateToolName = "application-section-update";
+	internal const string ApplicationSectionUpdateToolName = "update-app-section";
 
 	/// <summary>
 	/// Updates metadata of a section in an existing Creatio application and returns structured before and after readback data.
@@ -272,7 +272,7 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 			args.CaptionLocalizations is not null ||
 			args.NameLocalizations is not null) {
 			throw new ArgumentException(
-				"application-section-update is scalar-only. Do not send title-localizations, description-localizations, caption-localizations, or name-localizations.");
+				"update-app-section is scalar-only. Do not send title-localizations, description-localizations, caption-localizations, or name-localizations.");
 		}
 
 		bool hasCaption = args.Caption is not null;
@@ -281,6 +281,86 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 		bool hasIconBackground = args.IconBackground is not null;
 		if (!hasCaption && !hasDescription && !hasIconId && !hasIconBackground) {
 			throw new ArgumentException("Provide at least one mutable field: caption, description, icon-id, or icon-background.");
+		}
+	}
+}
+
+/// <summary>
+/// MCP tool surface for deleting a section from an existing application.
+/// </summary>
+[McpServerToolType]
+public sealed class ApplicationSectionDeleteTool(IApplicationSectionDeleteService applicationSectionDeleteService) {
+	/// <summary>
+	/// Stable MCP tool name for deleting sections from existing Creatio applications.
+	/// </summary>
+	internal const string ApplicationSectionDeleteToolName = "delete-app-section";
+
+	/// <summary>
+	/// Deletes a section from an existing Creatio application and returns structured readback of the deleted section.
+	/// </summary>
+	[McpServerTool(Name = ApplicationSectionDeleteToolName, ReadOnly = false, Destructive = true, Idempotent = false,
+		OpenWorld = false)]
+	[Description("Deletes a section from an existing application in Creatio through backend MCP and returns structured deleted-section readback data.")]
+	public ApplicationSectionDeleteContextResponse ApplicationSectionDelete(
+		[Description("Parameters: environment-name, application-code, section-code (all required)")]
+		[Required]
+		ApplicationSectionDeleteArgs args) {
+		try {
+			ValidateSectionDeleteArgs(args);
+			ApplicationSectionDeleteResult result = applicationSectionDeleteService.DeleteSection(
+				args.EnvironmentName,
+				new ApplicationSectionDeleteRequest(
+					args.ApplicationCode,
+					args.SectionCode,
+					args.DeleteEntitySchema ?? false));
+			return ApplicationToolHelper.CreateSectionDeleteContextResponse(ApplicationToolResultMapper.Map(result));
+		} catch (Exception ex) {
+			return ApplicationToolHelper.CreateSectionDeleteContextErrorResponse(ex.Message);
+		}
+	}
+
+	private static void ValidateSectionDeleteArgs(ApplicationSectionDeleteArgs args) {
+		if (string.IsNullOrWhiteSpace(args.ApplicationCode)) {
+			throw new ArgumentException("application-code is required.");
+		}
+
+		if (string.IsNullOrWhiteSpace(args.SectionCode)) {
+			throw new ArgumentException("section-code is required.");
+		}
+	}
+}
+
+/// <summary>
+/// MCP tool surface for listing sections of an existing Creatio application.
+/// </summary>
+[McpServerToolType]
+public sealed class ApplicationSectionGetListTool(IApplicationSectionGetListService applicationSectionGetListService) {
+	/// <summary>
+	/// Stable MCP tool name for listing sections of existing Creatio applications.
+	/// </summary>
+	internal const string ApplicationSectionGetListToolName = "list-app-sections";
+
+	/// <summary>
+	/// Returns all sections of an existing Creatio application.
+	/// </summary>
+	[McpServerTool(Name = ApplicationSectionGetListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
+		OpenWorld = false)]
+	[Description("Gets the list of sections inside an existing application in Creatio through backend MCP and returns structured section list data.")]
+	public ApplicationSectionListContextResponse ApplicationSectionGetList(
+		[Description("Parameters: environment-name, application-code (both required)")]
+		[Required]
+		ApplicationSectionGetListArgs args) {
+		try {
+			if (string.IsNullOrWhiteSpace(args.ApplicationCode)) {
+				throw new ArgumentException("application-code is required.");
+			}
+
+			ApplicationSectionGetListResult result = applicationSectionGetListService.GetSections(
+				args.EnvironmentName,
+				new ApplicationSectionGetListRequest(args.ApplicationCode));
+			return ApplicationToolHelper.CreateSectionListContextResponse(ApplicationToolResultMapper.Map(result));
+		} catch (Exception ex) {
+			return ApplicationToolHelper.CreateSectionListContextErrorResponse(ex.Message);
 		}
 	}
 }

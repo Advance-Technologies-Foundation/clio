@@ -16,7 +16,7 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises a stable MCP tool name for page-sync")]
+	[Description("Advertises a stable MCP tool name for sync-pages")]
 	public void PageSyncTool_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 
@@ -24,13 +24,13 @@ public sealed class PageSyncToolTests {
 		string toolName = PageSyncTool.ToolName;
 
 		// Assert
-		toolName.Should().Be("page-sync",
-			because: "the page-sync MCP tool identifier must remain stable for callers");
+		toolName.Should().Be("sync-pages",
+			because: "the sync-pages MCP tool identifier must remain stable for callers");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Marks page-sync as destructive and not read-only")]
+	[Description("Marks sync-pages as destructive and not read-only")]
 	public void PageSyncTool_Should_Advertise_Safety_Metadata() {
 		// Arrange
 		var method = typeof(PageSyncTool).GetMethod(nameof(PageSyncTool.SyncPages))!;
@@ -45,9 +45,9 @@ public sealed class PageSyncToolTests {
 
 		// Assert
 		readOnly.Should().BeFalse(
-			because: "page-sync mutates remote page schemas and should not be marked read-only");
+			because: "sync-pages mutates remote page schemas and should not be marked read-only");
 		destructive.Should().BeTrue(
-			because: "page-sync modifies remote page schemas and should warn clients");
+			because: "sync-pages modifies remote page schemas and should warn clients");
 	}
 
 	[Test]
@@ -247,11 +247,11 @@ public sealed class PageSyncToolTests {
 		PageSyncResponse response = tool.SyncPages(args);
 
 		response.Success.Should().BeFalse(
-			because: "page-sync should block the known broken proxy field pattern before save");
+			because: "sync-pages should block the known broken proxy field pattern before save");
 		response.Pages[0].Success.Should().BeFalse(
 			because: "the page should fail semantic validation");
 		response.Pages[0].Validation.Should().NotBeNull(
-			because: "page-sync should return validation details for blocked field bindings");
+			because: "sync-pages should return validation details for blocked field bindings");
 		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
 			because: "semantic field validation contributes to the content-ok decision");
 		response.Pages[0].Error.Should().Contain("$UsrStatus")
@@ -288,12 +288,12 @@ public sealed class PageSyncToolTests {
 		response.Pages[0].Validation.Should().NotBeNull(
 			because: "validation details should still be returned on successful guarded saves");
 		response.Pages[0].Validation!.Warnings.Should().ContainSingle(warning => warning.Contains("UsrStatus_caption"),
-			because: "page-sync should surface the softer caption guidance as a warning");
+			because: "sync-pages should surface the softer caption guidance as a warning");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Passes page resources through page-sync and returns the registered resource count from page-update.")]
+	[Description("Passes page resources through sync-pages and returns the registered resource count from update-page.")]
 	public void SyncPages_Should_Surface_Registered_Resources() {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
@@ -344,14 +344,14 @@ public sealed class PageSyncToolTests {
 
 		// Assert
 		response.Success.Should().BeTrue(
-			because: "page-sync should forward resources into page-update and keep the successful response");
+			because: "sync-pages should forward resources into update-page and keep the successful response");
 		response.Pages[0].ResourcesRegistered.Should().Be(1,
-			because: "the page-sync response should preserve the number of resources registered by page-update");
+			because: "the sync-pages response should preserve the number of resources registered by update-page");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Serializes page-sync request and response resource fields using the documented MCP names.")]
+	[Description("Serializes sync-pages request and response resource fields using the documented MCP names.")]
 	public void PageSync_Should_Serialize_Resource_Fields() {
 		// Arrange
 		PageSyncArgs args = new(
@@ -384,13 +384,13 @@ public sealed class PageSyncToolTests {
 
 		// Assert
 		serializedArgs.Should().Contain("\"resources\":\"{\\u0022UsrTitle\\u0022:\\u0022Title\\u0022}\"",
-			because: "page-sync should include the optional page resources payload when it is provided");
+			because: "sync-pages should include the optional page resources payload when it is provided");
 		serializedResponse.Should().Contain("\"resources-registered\":1",
-			because: "page-sync should serialize the registered-resource count using the documented MCP field name");
+			because: "sync-pages should serialize the registered-resource count using the documented MCP field name");
 		serializedResponse.Should().Contain("\"page\":{",
-			because: "page-sync should serialize read-back page metadata when it is present");
+			because: "sync-pages should serialize read-back page metadata when it is present");
 		serializedResponse.Should().Contain("\"verified-body\":\"define(\\u0027VerifiedPage\\u0027, function() { return {}; });\"",
-			because: "page-sync should serialize the verified raw body using the documented MCP field name");
+			because: "sync-pages should serialize the verified raw body using the documented MCP field name");
 	}
 
 	[Test]
@@ -431,7 +431,7 @@ public sealed class PageSyncToolTests {
 		response.Pages[0].Page.ParentSchemaName.Should().Be("BaseModulePage",
 			because: "the read-back page metadata should preserve the parent schema");
 		response.Pages[0].VerifiedBody.Should().Be(ValidPageBody,
-			because: "verify=true should surface the raw body returned by the read-back page-get");
+			because: "verify=true should surface the raw body returned by the read-back get-page");
 	}
 
 	[Test]

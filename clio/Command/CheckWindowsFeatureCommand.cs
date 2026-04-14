@@ -9,7 +9,7 @@ using CommandLine;
 
 namespace Clio.Command;
 
-[Verb("check-windows-features", Aliases = ["checkw", "checks", "checkf", "cf", "check-windows-features"]
+[Verb("check-windows-features", Aliases = ["checkw", "checks", "checkf", "cf"]
 	, HelpText = "Check windows for the required components")]
 public class CheckWindowsFeaturesOptions{ }
 

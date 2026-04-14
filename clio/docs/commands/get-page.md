@@ -1,4 +1,4 @@
-# page-get
+# get-page
 
 ## Command Type
 
@@ -6,19 +6,21 @@
 
 ## Name
 
-page-get - Read a Freedom UI page as a merged bundle plus raw schema body
+get-page - Read a Freedom UI page as a merged bundle plus raw schema body
+
+**Aliases:** `page-get`
 
 ## Description
 
-The page-get command resolves the requested Freedom UI page, loads its full
+The get-page command resolves the requested Freedom UI page, loads its full
 designer hierarchy, builds the effective merged bundle, and returns a JSON
 envelope with nested page metadata, bundle data, and raw.body. Use raw.body
-as the editable payload for page-update.
+as the editable payload for update-page.
 
 ## Synopsis
 
 ```bash
-clio page-get [options]
+clio get-page [options]
 ```
 
 ## Options
@@ -40,10 +42,10 @@ clio page-get [options]
 ## Example
 
 ```bash
-clio page-get --schema-name UsrTodo_FormPage -e dev
+clio get-page --schema-name UsrTodo_FormPage -e dev
 return the merged Freedom UI bundle and raw body for UsrTodo_FormPage
 
-clio page-get --schema-name UsrTodo_FormPage -u https://my-creatio -l Supervisor -p Supervisor
+clio get-page --schema-name UsrTodo_FormPage -u https://my-creatio -l Supervisor -p Supervisor
 read a Freedom UI page using direct connection arguments
 ```
 
@@ -51,4 +53,4 @@ read a Freedom UI page using direct connection arguments
 
     https://github.com/Advance-Technologies-Foundation/clio
 
-- [Clio Command Reference](../../Commands.md#page-get)
+- [Clio Command Reference](../../Commands.md#get-page)

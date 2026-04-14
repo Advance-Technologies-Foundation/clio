@@ -22,7 +22,7 @@ public sealed class SchemaSyncTool(
 	ILogger logger,
 	ISchemaEnrichmentService? enrichmentService = null) {
 
-	internal const string ToolName = "schema-sync";
+	internal const string ToolName = "sync-schemas";
 	private const string CreateLookupOperationName = "create-lookup";
 	private const string CreateEntityOperationName = "create-entity";
 	private const string UpdateEntityOperationName = "update-entity";
@@ -137,7 +137,7 @@ public sealed class SchemaSyncTool(
 				Type = SeedDataOperationName,
 				SchemaName = op.SchemaName,
 				Success = false,
-				Error = $"schema-sync operations[{operationIndex}] seed-rows validation failed: each row must contain a non-null 'values' object."
+				Error = $"sync-schemas operations[{operationIndex}] seed-rows validation failed: each row must contain a non-null 'values' object."
 			};
 			return true;
 		}
@@ -274,13 +274,13 @@ public sealed class SchemaSyncTool(
 			if (op.ExtensionData?.TryGetValue("operation", out JsonElement legacyOperation) == true &&
 				legacyOperation.ValueKind == JsonValueKind.String) {
 				string legacyOperationName = legacyOperation.GetString() ?? string.Empty;
-				return $"schema-sync operations[{operationIndex}] uses unsupported request field 'operation'. Send 'type': '{legacyOperationName}' instead.";
+				return $"sync-schemas operations[{operationIndex}] uses unsupported request field 'operation'. Send 'type': '{legacyOperationName}' instead.";
 			}
-			return $"schema-sync operations[{operationIndex}] is missing required field 'type'.";
+			return $"sync-schemas operations[{operationIndex}] is missing required field 'type'.";
 		}
 
 		string supportedTypes = string.Join(", ", CreateLookupOperationName, CreateEntityOperationName, UpdateEntityOperationName);
-		return $"schema-sync operations[{operationIndex}].type '{op.Type}' is invalid. Supported values: {supportedTypes}.";
+		return $"sync-schemas operations[{operationIndex}].type '{op.Type}' is invalid. Supported values: {supportedTypes}.";
 	}
 
 	private static string? BuildOperationError(string operationName, int exitCode, IReadOnlyList<LogMessage> messages) {
@@ -304,7 +304,7 @@ public sealed class SchemaSyncTool(
 }
 
 /// <summary>
-/// Top-level arguments for the <c>schema-sync</c> MCP tool.
+/// Top-level arguments for the <c>sync-schemas</c> MCP tool.
 /// </summary>
 public sealed record SchemaSyncArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -324,7 +324,7 @@ public sealed record SchemaSyncArgs(
 );
 
 /// <summary>
-/// A single schema operation within a <c>schema-sync</c> batch.
+/// A single schema operation within a <c>sync-schemas</c> batch.
 /// </summary>
 public sealed record SchemaSyncOperation(
 	[property: JsonPropertyName("type")]
@@ -370,7 +370,7 @@ public sealed record SchemaSyncOperation(
 }
 
 /// <summary>
-/// A seed row for the <c>schema-sync</c> tool.
+/// A seed row for the <c>sync-schemas</c> tool.
 /// </summary>
 public sealed record SchemaSyncSeedRow(
 	[property: JsonPropertyName("values")]
@@ -380,7 +380,7 @@ public sealed record SchemaSyncSeedRow(
 );
 
 /// <summary>
-/// Response from the <c>schema-sync</c> MCP tool.
+/// Response from the <c>sync-schemas</c> MCP tool.
 /// </summary>
 public sealed class SchemaSyncResponse {
 
@@ -396,7 +396,7 @@ public sealed class SchemaSyncResponse {
 }
 
 /// <summary>
-/// Result of a single operation within a <c>schema-sync</c> batch.
+/// Result of a single operation within a <c>sync-schemas</c> batch.
 /// </summary>
 public sealed class SchemaSyncOperationResult {
 

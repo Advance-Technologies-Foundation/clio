@@ -111,6 +111,9 @@ public sealed class ApplicationSectionCreateService(
 			client,
 			environmentSettings);
 		string requestBody = JsonSerializer.Serialize(BuildInsertBody(resolvedRequest), JsonOptions);
+		if (string.IsNullOrWhiteSpace(resolvedRequest.EntitySchemaName)) {
+			CheckEntitySchemaDoesNotExist(client, environmentSettings, resolvedRequest.SectionCode, request.Caption);
+		}
 		string responseBody = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert, environmentSettings),
 			requestBody);
@@ -143,7 +146,7 @@ public sealed class ApplicationSectionCreateService(
 		string iconId = ResolveRandomIconId(client, environmentSettings);
 		return new ResolvedApplicationSectionCreateRequest(
 			Guid.NewGuid().ToString(),
-			applicationInfo.ApplicationId ?? throw new InvalidOperationException("Application id was not returned by application-get-info."),
+			applicationInfo.ApplicationId ?? throw new InvalidOperationException("Application id was not returned by get-app-info."),
 			applicationInfo.ApplicationName ?? string.Empty,
 			applicationInfo.ApplicationCode ?? string.Empty,
 			applicationInfo.ApplicationVersion,
@@ -157,6 +160,31 @@ public sealed class ApplicationSectionCreateService(
 			iconId,
 			iconBackground,
 			request.WithMobilePages ? null : WebClientTypeId);
+	}
+
+	private static void CheckEntitySchemaDoesNotExist(
+		IApplicationClient client,
+		EnvironmentSettings environmentSettings,
+		string schemaName,
+		string caption) {
+		try {
+			SysSchemaExistsResponseDto response = SelectQueryHelper.ExecuteSelectQuery<SysSchemaExistsResponseDto>(
+				client,
+				new ServiceUrlBuilder(environmentSettings),
+				SelectQueryHelper.BuildSelectQuery(
+					"SysSchema",
+					[new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name")],
+					[new SelectQueryHelper.SelectQueryFilterDefinition("Name", schemaName, SelectQueryHelper.TextDataValueType)]));
+			if (response.Rows.Count > 0) {
+				throw new InvalidOperationException(
+					$"Entity schema '{schemaName}' already exists. "
+					+ $"To create section '{caption}' reusing the existing entity, add: --entity-schema-name {schemaName}");
+			}
+		} catch (InvalidOperationException) {
+			throw;
+		} catch {
+			// schema existence check is best-effort; skip unexpected errors to avoid blocking section creation
+		}
 	}
 
 	private ApplicationSectionCreateResult LoadCreatedSection(
@@ -491,6 +519,16 @@ public sealed class ApplicationSectionCreateService(
 		public string? Message { get; set; }
 	}
 
+	private sealed class SysSchemaExistsResponseDto : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[JsonPropertyName("rows")]
+		public List<SysSchemaNameRowDto> Rows { get; set; } = [];
+	}
+
+	private sealed class SysSchemaNameRowDto {
+		[JsonPropertyName("Name")]
+		public string? Name { get; set; }
+	}
+
 	private sealed class IconSelectQueryResponseDto {
 		[JsonPropertyName("success")]
 		public bool Success { get; set; }
@@ -636,10 +674,12 @@ public sealed record ApplicationSectionInfoResult(
 /// <param name="Description">Optional section description.</param>
 /// <param name="EntitySchemaName">Target entity schema name.</param>
 /// <param name="PackageId">Package identifier.</param>
-/// <param name="SectionSchemaUId">Generated section schema identifier.</param>
+/// <param name="SectionSchemaUId">Section list page schema UId.</param>
 /// <param name="LogoId">Icon identifier.</param>
 /// <param name="IconBackground">Icon background color.</param>
 /// <param name="ClientTypeId">Optional client type selector.</param>
+/// <param name="CardSchemaUId">Section form page schema UId.</param>
+/// <param name="SysModuleEntityId">Identifier of the associated SysModuleEntity record.</param>
 public sealed record ApplicationSectionRecord(
 	[property: JsonPropertyName("Id")] string Id,
 	[property: JsonPropertyName("ApplicationId")] string ApplicationId,
@@ -651,4 +691,6 @@ public sealed record ApplicationSectionRecord(
 	[property: JsonPropertyName("SectionSchemaUId")] string? SectionSchemaUId,
 	[property: JsonPropertyName("LogoId")] string? LogoId,
 	[property: JsonPropertyName("IconBackground")] string? IconBackground,
-	[property: JsonPropertyName("ClientTypeId")] string? ClientTypeId);
+	[property: JsonPropertyName("ClientTypeId")] string? ClientTypeId,
+	[property: JsonPropertyName("CardSchemaUId")] string? CardSchemaUId,
+	[property: JsonPropertyName("SysModuleEntityId")] string? SysModuleEntityId);

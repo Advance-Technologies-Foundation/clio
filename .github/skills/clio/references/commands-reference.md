@@ -69,12 +69,12 @@ clio ping-app <ENV>
 clio ping <ENV>
 ```
 
-### show-web-app-list
-Display registered environments. **Aliases:** `envs`, `show-web-app`
+### list-environments
+Display registered environments. **Aliases:** `show-web-app-list`, `envs`, `show-web-app`
 ```bash
-clio show-web-app-list           # Full JSON
-clio show-web-app-list --short   # Concise table
-clio show-web-app-list <ENV>     # Specific env
+clio list-environments           # Full JSON
+clio list-environments --short   # Concise table
+clio list-environments <ENV>     # Specific env
 clio envs --format table         # Table format
 clio envs --format raw           # Plain text
 ```
@@ -195,11 +195,11 @@ Extract package from .gz archive.
 clio extract-pkg-zip package.gz -d ./output
 ```
 
-### get-pkg-list
-List installed packages. **Aliases:** `packages`
+### list-packages
+List installed packages. **Aliases:** `get-pkg-list`, `packages`
 ```bash
-clio get-pkg-list -e <ENV>
-clio get-pkg-list -e <ENV> -f CustomPrefix -j  # Filter + JSON
+clio list-packages -e <ENV>
+clio list-packages -e <ENV> -f CustomPrefix -j  # Filter + JSON
 ```
 
 ### set-pkg-version / get-pkg-version
@@ -357,12 +357,28 @@ clio publish-app --repo-path ./workspace --app-hub /hub/path --app-name MyApp -e
 clio uninstall-app-remote <APP_NAME> -e <ENV>
 ```
 
-### get-app-list
-List installed applications. **Aliases:** `apps`
+### list-apps
+List installed applications. **Aliases:** `get-app-list`, `apps`, `lia`
 ```bash
-clio get-app-list -e <ENV>
+clio list-apps -e <ENV>
 clio apps -e <ENV>
 ```
+
+### create-app
+Create a new application in Creatio.
+```bash
+clio create-app --name "My Orders App" --code UsrOrdersApp --template-code AppFreedomUIv2 -e <ENV>
+clio create-app --name "Sales" --code UsrSalesApp --template-code EmptyApp --icon-background "#1F5F8B" -e <ENV>
+```
+Options: `--name` (required), `--code` (required, starts with Usr), `--template-code` (required; known values: AppFreedomUIv2, AppFreedomUI, AppWithHomePage, EmptyApp), `--icon-background` (#RRGGBB), `--description`, `--icon-id` (GUID or 'auto').
+
+### get-app-info
+Get information about an installed Creatio application.
+```bash
+clio get-app-info --code UsrOrdersApp -e <ENV>
+clio get-app-info --code UsrOrdersApp --json -e <ENV>
+```
+Options: `--code` or `--id` (at least one required), `--json` (print raw JSON instead of table).
 
 ### create-app-section
 Create a section inside an existing installed application.
@@ -381,6 +397,22 @@ clio update-app-section --application-code UsrSalesApp --section-code AccountSec
 clio update-app-section --application-code UsrSalesApp --section-code VisitSection --icon-id 11111111-1111-1111-1111-111111111111 --icon-background "#A1B2C3" -e <ENV>
 ```
 Rules: require `--application-code` and `--section-code`; provide at least one mutable field from `--caption`, `--description`, `--icon-id`, `--icon-background`; omitted fields remain unchanged; caption updates persist plain text and can repair broken JSON-style headings.
+
+### delete-app-section
+Delete a section and all its metadata artifacts from an existing installed application.
+```bash
+clio delete-app-section --application-code UsrOrdersApp --section-code UsrOrders -e <ENV>
+clio delete-app-section --application-code UsrOrdersApp --section-code UsrOrders --delete-entity-schema -e <ENV>
+```
+Rules: require `--application-code` and `--section-code`; by default the underlying entity schema is preserved (data is not lost); pass `--delete-entity-schema` to also remove the entity schema; deletes SysModuleInWorkplace, SysModuleLcz, all Freedom UI page schemas and addon schemas, SysModuleEntity, and SysModule in correct FK order; destructive and cannot be undone; cliogate must be installed.
+
+### list-app-sections
+List sections of an existing installed application as a human-readable table.
+```bash
+clio list-app-sections --application-code UsrOrdersApp -e <ENV>
+clio list-app-sections --application-code UsrOrdersApp --json -e <ENV>
+```
+Rules: require `--application-code`; default output is a table with columns Code, Caption, EntitySchemaName, Description preceded by an application header line; use `--json` for indented JSON output suitable for scripting.
 
 ### upload-license
 Upload license file. **Aliases:** `license`, `loadlicense`, `load-license`
@@ -968,6 +1000,14 @@ Default resolution:
 
 > **DataForge enrichment** — The MCP `create-entity-schema` and `create-lookup` tools automatically query Data Forge before creating the schema and return an optional `dataforge.context-summary` section with similar tables and lookup hints. Inspect `similar-tables` to confirm no equivalent schema exists before proceeding.
 
+### create-lookup
+Create a lookup entity schema (inherits BaseLookup) in a remote Creatio package and register it in the lookup catalog. Requires cliogate.
+```bash
+clio create-lookup --package UsrOrdersApp --name UsrOrderStatus --title "Order Status" -e <ENV>
+clio create-lookup --package UsrSalesApp --name UsrDealType --title "Deal Type" --column "Code:ShortText:Code" -e <ENV>
+```
+Options: `--package` (required), `--name` (required, max 22 chars), `--title` (required), `--column` (repeatable, format: `name:type[:title]`; BaseLookup already provides Name and Description — do not add those).
+
 ### get-entity-schema-properties
 Get a human-readable summary of a remote Creatio entity schema.
 ```bash
@@ -988,6 +1028,7 @@ clio find-entity-schema -e dev --schema-name UsrVehicle
 clio find-entity-schema -e dev --uid 117d32f9-aab9-4e3a-b13e-cfce62e15e4b
 ```
 Use this command when you need to discover which package owns a schema before calling `get-entity-schema-properties` or `modify-entity-schema-column`.
+CLI output is labeled as `Schema: ... | Package: ... | Maintainer: ...` so logs stay unambiguous. When the same capability is consumed through MCP, use the returned `package-name` field directly for follow-up tool calls instead of parsing CLI-style text.
 
 ### get-entity-schema-column-properties
 Get column properties from a remote Creatio entity schema.
@@ -1058,38 +1099,38 @@ Default resolution:
 
 ## Freedom UI Page Management
 
-### page-list
-List Freedom UI page schemas in a Creatio environment.
+### list-pages
+List Freedom UI page schemas in a Creatio environment. **Alias:** `page-list`
 ```bash
-clio page-list -e <ENV>
-clio page-list --search-pattern FormPage --limit 20 -e <ENV>
-clio page-list --package-name UsrApp -e <ENV>
+clio list-pages -e <ENV>
+clio list-pages --search-pattern FormPage --limit 20 -e <ENV>
+clio list-pages --package-name UsrApp -e <ENV>
 ```
 Options: `--package-name`, `--search-pattern`, `--limit` (default: 50)
 
-### page-get
-Read a Freedom UI page as a merged bundle plus raw schema body.
+### get-page
+Read a Freedom UI page as a merged bundle plus raw schema body. **Alias:** `page-get`
 ```bash
-clio page-get --schema-name UsrTodo_FormPage -e <ENV>
+clio get-page --schema-name UsrTodo_FormPage -e <ENV>
 ```
-Returns a JSON envelope with page metadata, bundle data, and `raw.body`. Use `raw.body` as the editable payload for `page-update`.
+Returns a JSON envelope with page metadata, bundle data, and `raw.body`. Use `raw.body` as the editable payload for `update-page`.
 
-### page-update
-Update the raw schema body of a Freedom UI page.
+### update-page
+Update the raw schema body of a Freedom UI page. **Alias:** `page-update`
 ```bash
 # Dry-run validation (no save)
-clio page-update --schema-name UsrTodo_FormPage --body "<raw body>" --dry-run true -e <ENV>
+clio update-page --schema-name UsrTodo_FormPage --body "<raw body>" --dry-run true -e <ENV>
 
 # Save updated body
-clio page-update --schema-name UsrTodo_FormPage --body "<edited body>" -e <ENV>
+clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" -e <ENV>
 
 # Save with missing resource string registration
-clio page-update --schema-name UsrTodo_FormPage --body "<edited body>" \
+clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
   --resources '{"UsrDetailsTab_caption":"Details"}' -e <ENV>
 ```
 Options: `--schema-name` (required), `--body` (required), `--dry-run`, `--resources` (JSON object)
 
-### page-sync
+### sync-pages
 Update multiple Freedom UI page schemas in one MCP call. **MCP-only tool** — not available as a standalone CLI command.
 
 Each page is processed independently; failures do not stop remaining pages. Supports client-side validation (`validate: true`, default) and read-back verification (`verify: false`, default).
@@ -1184,11 +1225,11 @@ Options: `--package` (required), `--binding-name` (required), `--values` (JSON, 
 ## Schema & Process User Task CRUD
 
 ### delete-schema
-Delete a schema from a workspace package. Must be run from a workspace directory.
+Delete any workspace item (schema or non-schema) from a workspace package. Supports all item types: entity, client unit, source code, process, DCM, process user task, campaign, service, addon, Copilot intent, localization schemas, SQL scripts, data bindings, and assemblies. Must be run from a workspace directory.
 ```bash
 clio delete-schema UsrSendInvoice -e <ENV>
 ```
-Only schemas whose package belongs to the current local workspace can be deleted.
+Only items whose package belongs to the current local workspace can be deleted.
 
 ### add-user-task
 Create a process user task schema in a workspace package. Must be run from a workspace directory.
@@ -1230,7 +1271,7 @@ Options: `--add-parameter` (`|`-separated), `--add-parameter-item` (`|`-separate
 ## DataForge Orchestration
 
 DataForge is a semantic search and knowledge-graph service embedded in Creatio. clio exposes it through two surfaces:
-- **Passive enrichment** — built into write tools (`application-create`, `schema-sync`, `create-entity-schema`, `create-lookup`, `update-entity-schema`). Runs automatically before the mutation, returns a `dataforge` section alongside the result. Never blocks on failure.
+- **Passive enrichment** — built into write tools (`create-app`, `sync-schemas`, `create-entity-schema`, `create-lookup`, `update-entity-schema`). Runs automatically before the mutation, returns a `dataforge` section alongside the result. Never blocks on failure.
 - **Active orchestration** — the AI agent calls DataForge tools explicitly, at the right points in a workflow, via the Layer 0–4 protocol below.
 
 Full guidance: `docs://mcp/guides/dataforge-orchestration` (read from the running clio MCP server).
@@ -1250,7 +1291,7 @@ Call `dataforge-context(requirement-summary, candidate-terms, lookup-hints)` onc
 - Failure → skip Layer 1; write tools carry their own enrichment.
 
 **Layer 2 — Read auto-enrichment from write tool responses**
-After `application-create`, `schema-sync`, `create-entity-schema`, `create-lookup`, `update-entity-schema` — read the `dataforge` section returned in the response.
+After `create-app`, `sync-schemas`, `create-entity-schema`, `create-lookup`, `update-entity-schema` — read the `dataforge` section returned in the response.
 Do NOT call DataForge separately before these tools; they already do it.
 
 **Layer 3 — Explicit pre-flight for tools without internal enrichment**
@@ -1260,12 +1301,12 @@ Consistent failure rule: if the caller supplied the value → proceed + warn; if
 |---|---|---|
 | Adding Lookup column via `modify-entity-schema-column` with uncertain `reference-schema-name` | `dataforge-find-tables(query)` | use name/caption/description similarity as a manual confirmation step; if still ambiguous, confirm with the user |
 | Writing rows with unknown lookup GUID via `create-data-binding-db` / `upsert-data-binding-row-db` | `dataforge-find-lookups(schema-name, query)` | use the best match when `score >= 0.70`; otherwise ask the user |
-| Cross-entity FK design before multi-entity `schema-sync` | `dataforge-get-relations(source, target)` | any result helps; on failure, design the FK independently |
+| Cross-entity FK design before multi-entity `sync-schemas` | `dataforge-get-relations(source, target)` | any result helps; on failure, design the FK independently |
 | Runtime column inspection outside local package | `dataforge-get-table-columns(table-name)` | on failure, fall back to `get-entity-schema-properties` |
 
 > **Note on `modify-entity-schema-column`**: this tool permanently requires Layer 3 pre-flight for Lookup adds. It will never receive internal enrichment (single-column targeted tool; no batch semantics). Future change guard: only reconsider if the tool gains multi-column batch semantics.
 
-> **Note on `update-entity-schema`**: this tool now includes internal DataForge enrichment (same pattern as `schema-sync`). Use Layer 2 (read the `dataforge` response section) instead of a Layer 3 pre-flight for Lookup column adds.
+> **Note on `update-entity-schema`**: this tool now includes internal DataForge enrichment (same pattern as `sync-schemas`). Use Layer 2 (read the `dataforge` response section) instead of a Layer 3 pre-flight for Lookup column adds.
 
 **Layer 4 — Index maintenance and stale index recovery**
 After bulk schema creation (5+ new entities): call `dataforge-update`.

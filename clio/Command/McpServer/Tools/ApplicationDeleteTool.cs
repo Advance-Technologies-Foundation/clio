@@ -19,7 +19,7 @@ public sealed class ApplicationDeleteTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<UninstallAppOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "application-delete";
+	internal const string ToolName = "delete-app";
 
 	/// <summary>
 	/// Uninstalls a Creatio application by name or code.
@@ -77,7 +77,7 @@ public sealed class ApplicationDeleteTool(
 }
 
 /// <summary>
-/// Arguments for the <c>application-delete</c> MCP tool.
+/// Arguments for the <c>delete-app</c> MCP tool.
 /// </summary>
 public sealed record ApplicationDeleteArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -95,7 +95,7 @@ public sealed record ApplicationDeleteArgs(
 );
 
 /// <summary>
-/// Structured response from the <c>application-delete</c> MCP tool.
+/// Structured response from the <c>delete-app</c> MCP tool.
 /// </summary>
 public sealed class ApplicationDeleteResponse {
 	[JsonPropertyName("success")]

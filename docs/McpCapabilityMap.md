@@ -64,8 +64,8 @@ Many tools accept `environment-name` and resolve a target from local clio settin
 
 Typical examples:
 
-- `page-get`
-- `application-get-list`
+- `get-page`
+- `list-apps`
 - `push-workspace`
 - `compile-creatio`
 - `restore-db-by-environment`
@@ -76,9 +76,9 @@ Some tools accept direct connection arguments such as `uri`, `login`, and `passw
 
 Typical examples:
 
-- `page-get`
-- `page-update`
-- `application-delete`
+- `get-page`
+- `update-page`
+- `delete-app`
 - `clear-redis-db-by-credentials`
 - `restart-by-credentials`
 
@@ -122,14 +122,14 @@ The external AI sees two broad response styles.
 
 Structured domain responses:
 
-- `page-get`
-- `page-list`
-- `page-sync`
+- `get-page`
+- `list-pages`
+- `sync-pages`
 - `component-info`
-- `application-get-list`
-- `application-get-info`
-- `application-create`
-- `application-delete`
+- `list-apps`
+- `get-app-info`
+- `create-app`
+- `delete-app`
 - `assert-infrastructure`
 - `show-passing-infrastructure`
 - `get-entity-schema-properties`
@@ -160,13 +160,13 @@ Implication for external AI:
 
 This is one of the strongest and most AI-friendly parts of the MCP surface.
 
-- `page-list`
+- `list-pages`
   Discover candidate Freedom UI pages by package or schema pattern.
-- `page-get`
+- `get-page`
   Read a page as a merged bundle plus raw editable JavaScript body.
-- `page-update`
+- `update-page`
   Write a full page body back to Creatio, optionally in `dry-run` mode.
-- `page-sync`
+- `sync-pages`
   Save many pages in one call with optional validation and optional read-back verification.
 - `component-info`
   Inspect a shipped local catalog of Freedom UI component contracts, grouped by category or returned in detail mode.
@@ -181,21 +181,21 @@ What an external AI can practically do here:
 
 What makes this area especially good for AI:
 
-- `page-get` returns both high-level bundle data and raw editable body
-- `page-sync` includes client-side validation and optional verification
+- `get-page` returns both high-level bundle data and raw editable body
+- `sync-pages` includes client-side validation and optional verification
 - `component-info` is local, deterministic, and does not require a live Creatio target
 
 ### 2. Application Lifecycle In Creatio
 
 This area gives the AI a clean application-level view of the platform.
 
-- `application-get-list`
+- `list-apps`
   Return installed applications as structured JSON.
-- `application-get-info`
+- `get-app-info`
   Return application context, packages, and related metadata for a single installed app.
-- `application-create`
+- `create-app`
   Create a Creatio application and return its structured context.
-- `application-delete`
+- `delete-app`
   Uninstall an application by name or code.
 - `install-application`
   Install an application package into a target environment.
@@ -220,7 +220,7 @@ This is the second major design-oriented surface after page tools.
 - `modify-entity-schema-column`
 - `get-entity-schema-properties`
 - `get-entity-schema-column-properties`
-- `schema-sync`
+- `sync-schemas`
 
 What an external AI can practically do here:
 
@@ -230,7 +230,7 @@ What an external AI can practically do here:
 - mutate one column or a whole schema batch
 - execute composite schema changes in one call
 
-Why `schema-sync` matters:
+Why `sync-schemas` matters:
 
 - it reduces round trips
 - it batches create/update/seed actions
@@ -397,12 +397,12 @@ The `50` prompts do not add new execution power, but they materially change how 
 
 The prompt layer acts as embedded operating guidance:
 
-- page prompts teach a workflow: `tool-contract-get` -> `page-list` -> `page-get` -> `component-info` -> `page-update` or `page-sync`
+- page prompts teach a workflow: `get-tool-contract` -> `list-pages` -> `get-page` -> `component-info` -> `update-page` or `sync-pages`
 - deployment prompts teach a workflow: `assert-infrastructure` -> `show-passing-infrastructure` -> `find-empty-iis-port` -> `deploy-creatio`
 - FSM prompts encode the operational rule that mode changes should be followed by full compilation
 - workspace prompts tell the AI when absolute local paths are required
 - help lookup prompt teaches the AI how to read CLI help through resources
-- schema and application prompts now point to a shared modeling guide for DB-first app creation, lookup design, defaults, batch-first workflows, and contract bootstrap through `tool-contract-get`
+- schema and application prompts now point to a shared modeling guide for DB-first app creation, lookup design, defaults, batch-first workflows, and contract bootstrap through `get-tool-contract`
 
 Important observation:
 
@@ -439,17 +439,17 @@ Good MCP-level candidates:
 
 - transport and invocation contract such as stdio-only execution, exact discovered tool names, and kebab-case JSON argument naming
 - DB-first semantics for schema tools, including the fact that successful schema mutations are immediately usable without a compile step
-- batch-first workflow guidance such as preferring `schema-sync` and `page-sync` when the plan is already known
-- application modeling rules tied directly to tool behavior, especially that `application-create` typically returns the canonical main entity for single-record-type apps
+- batch-first workflow guidance such as preferring `sync-schemas` and `sync-pages` when the plan is already known
+- application modeling rules tied directly to tool behavior, especially that `create-app` typically returns the canonical main entity for single-record-type apps
 - lookup modeling rules tied directly to `create-lookup`, especially `BaseLookup` inheritance, inherited `Name` / `Description`, and `Name` as the display field
 - default-value semantics that are tool-domain specific, such as seed rows not satisfying a `defaults to X` requirement without explicit schema or UI defaults
-- page-editing workflow guidance tied to MCP tools, for example `tool-contract-get` -> `page-list` -> `page-get` -> `component-info` -> `page-update` or `page-sync`
+- page-editing workflow guidance tied to MCP tools, for example `get-tool-contract` -> `list-pages` -> `get-page` -> `component-info` -> `update-page` or `sync-pages`
 
 Guidance that should stay outside clio MCP:
 
 - business-analysis flow, approval gates, and required plan document formats
 - repository-specific artifact layout such as `output/<AppName>/...`
-- consumer-specific evidence rules, page-sync plan embedding, and final-report formatting
+- consumer-specific evidence rules, sync-pages plan embedding, and final-report formatting
 - repository naming policies that are not universally true for clio users, such as enforcing one custom prefix for every package, page, entity, and column
 - orchestration-only concerns such as stale workflow state handling, internal script usage, and when the user should or should not see implementation internals
 
@@ -542,7 +542,7 @@ If you are integrating another AI client with this MCP, the most reliable mental
 1. Treat `clio` MCP as a domain-specific Creatio operations API, not as a generic automation substrate.
 2. Start with discovery and group tools into page, schema, workspace, application, infra, and runtime buckets.
 3. Prefer the structured read tools before mutating anything.
-4. Prefer batch tools such as `schema-sync` and `page-sync` when the workflow is already known.
+4. Prefer batch tools such as `sync-schemas` and `sync-pages` when the workflow is already known.
 5. Use prompts as recipes, not just as help text.
 6. Use resources both for CLI help and for stable cross-tool modeling guidance such as `docs://mcp/guides/app-modeling`.
 7. Expect destructive power and local-machine side effects in many tools.
@@ -554,7 +554,7 @@ The current surface is especially well shaped for these workflows:
 - Freedom UI editing
   Discover a page, inspect it, inspect unfamiliar component contracts, then save the new raw body.
 - Entity and lookup delivery
-  Read schema state, apply column updates, or batch multiple schema actions through `schema-sync`.
+  Read schema state, apply column updates, or batch multiple schema actions through `sync-schemas`.
 - Workspace delivery
   Create a workspace, add a package, hydrate configuration, push changes, and restore when needed.
 - Deployment preflight

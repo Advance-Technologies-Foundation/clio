@@ -20,17 +20,25 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`download-application`](docs/commands/download-application.md) - Download an application package from Creatio, `dapp`, `download-app`
 <a id="get-app-hash"></a>
 - [`get-app-hash`](docs/commands/get-app-hash.md) - Calculate the hash of an application package
+<a id="create-app"></a>
+- [`create-app`](docs/commands/create-app.md) - Create a new application in Creatio
+<a id="get-app-info"></a>
+- [`get-app-info`](docs/commands/get-app-info.md) - Get information about an installed Creatio application
+<a id="list-apps"></a>
 <a id="get-app-list"></a>
 <a id="app-list"></a>
 <a id="apps"></a>
 <a id="apps-list"></a>
 <a id="lia"></a>
-<a id="list-apps"></a>
-- [`get-app-list`](docs/commands/get-app-list.md) - List installed applications, `app-list`, `apps`, `apps-list`, `lia`, `list-apps`
+- [`list-apps`](docs/commands/list-apps.md) - List installed applications, `get-app-list`, `app-list`, `apps`, `apps-list`, `lia`
 <a id="create-app-section"></a>
 - [`create-app-section`](docs/commands/create-app-section.md) - Create a section inside an existing installed application
 <a id="update-app-section"></a>
 - [`update-app-section`](docs/commands/update-app-section.md) - Update metadata of a section inside an existing installed application
+<a id="delete-app-section"></a>
+- [`delete-app-section`](docs/commands/delete-app-section.md) - Delete a section and its artifacts from an existing installed application
+<a id="list-app-sections"></a>
+- [`list-app-sections`](docs/commands/list-app-sections.md) - List sections of an existing installed application
 <a id="get-info"></a>
 <a id="describe"></a>
 <a id="describe-creatio"></a>
@@ -78,10 +86,11 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="localenvs"></a>
 - [`show-local-envs`](docs/commands/show-local-envs.md) - Show local environments with filesystem and auth status, `localenvs`
 <a id="show-web-app-list"></a>
+<a id="list-environments"></a>
 <a id="env"></a>
 <a id="envs"></a>
 <a id="show-web-app"></a>
-- [`show-web-app-list`](docs/commands/show-web-app-list.md) - List registered Creatio environments, `env`, `envs`, `show-web-app`
+- [`list-environments`](docs/commands/list-environments.md) - List registered Creatio environments, `show-web-app-list`, `env`, `envs`, `show-web-app`
 <a id="uninstall-app-remote"></a>
 <a id="uninstall"></a>
 - [`uninstall-app-remote`](docs/commands/uninstall-app-remote.md) - Uninstall an application package from Creatio, `uninstall`
@@ -130,8 +139,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="compress"></a>
 - [`generate-pkg-zip`](docs/commands/generate-pkg-zip.md) - Prepare an archive of creatio package, `comp-pkg`, `compress`
 <a id="get-pkg-list"></a>
+<a id="list-packages"></a>
 <a id="packages"></a>
-- [`get-pkg-list`](docs/commands/get-pkg-list.md) - List packages in a Creatio environment, `packages`
+- [`list-packages`](docs/commands/list-packages.md) - List packages in a Creatio environment, `get-pkg-list`, `packages`
 <a id="get-pkg-version"></a>
 <a id="gpv"></a>
 - [`get-pkg-version`](docs/commands/get-pkg-version.md) - Get package version, `gpv`
@@ -272,6 +282,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`call-service`](docs/commands/call-service.md) - Call a Creatio service endpoint, `cs`
 <a id="create-entity-schema"></a>
 - [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create an entity schema in a remote Creatio package
+<a id="create-lookup"></a>
+- [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="dataservice"></a>
 <a id="ds"></a>
 - [`dataservice`](docs/commands/dataservice.md) - Send a Creatio DataService request, `ds`
@@ -329,12 +341,15 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="os"></a>
 <a id="settings"></a>
 - [`open-settings`](docs/commands/open-settings.md) - Open the clio settings file, `conf`, `configuration`, `os`, `settings`
+<a id="get-page"></a>
 <a id="page-get"></a>
-- [`page-get`](docs/commands/page-get.md) - Get a Freedom UI page bundle and raw schema body
+- [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle and raw schema body, `page-get`
+<a id="list-pages"></a>
 <a id="page-list"></a>
-- [`page-list`](docs/commands/page-list.md) - List Freedom UI pages
+- [`list-pages`](docs/commands/list-pages.md) - List Freedom UI pages, `page-list`
+<a id="update-page"></a>
 <a id="page-update"></a>
-- [`page-update`](docs/commands/page-update.md) - Update Freedom UI page schema body
+- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page schema body, `page-update`
 <a id="run"></a>
 <a id="run-scenario"></a>
 <a id="scenario"></a>

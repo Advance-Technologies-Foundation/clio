@@ -61,7 +61,7 @@ clio find-entity-schema -e dev --uid 117d32f9-aab9-4e3a-b13e-cfce62e15e4b
 Each result line uses the format:
 
 ```
-SchemaName | PackageName (Maintainer) | Parent: ParentSchemaName
+Schema: SchemaName | Package: PackageName | Maintainer: PackageMaintainer | Parent: ParentSchemaName
 ```
 
 The `| Parent: …` suffix is omitted when there is no parent.
@@ -70,6 +70,8 @@ The `| Parent: …` suffix is omitted when there is no parent.
 
 - A single DataService request is used — no N+1 package enumeration.
 - The search does not require cliogate to be installed.
+- The CLI output is labeled for easier log and AI parsing. Read the `Package:` segment directly instead of inferring ownership from the maintainer text.
+- The MCP tool already returns structured `package-name`, `package-maintainer`, and `parent-schema-name` fields. MCP callers should use those fields directly instead of parsing CLI-style text.
 - Use `get-entity-schema-properties` with the discovered `--package` to read full schema details.
 
 ## See also

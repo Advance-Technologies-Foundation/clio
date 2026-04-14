@@ -1,4 +1,4 @@
-# get-pkg-list
+# list-packages
 
 ## Command Type
 
@@ -6,12 +6,12 @@
 
 ## Name
 
-get-pkg-list - Get list of packages installed in Creatio environment
+list-packages - Get list of packages installed in Creatio environment
 
 ## Synopsis
 
 ```bash
-get-pkg-list [OPTIONS]
+list-packages [OPTIONS]
 ```
 
 ## Description
@@ -52,19 +52,19 @@ Standard environment options are also available:
 
 ```bash
 # Get all packages from registered environment
-clio get-pkg-list -e MyEnvironment
+clio list-packages -e MyEnvironment
 
 # Get packages with "clio" in the name
-clio get-pkg-list -e MyEnvironment -f clio
+clio list-packages -e MyEnvironment -f clio
 
 # Get packages in JSON format for automation
-clio get-pkg-list -e MyEnvironment -j
+clio list-packages -e MyEnvironment -j
 
 # Filter and return as JSON
-clio get-pkg-list -e MyEnvironment -f Custom -j
+clio list-packages -e MyEnvironment -f Custom -j
 
 # Using short form alias
-clio get-pkg-list -e MyEnvironment
+clio list-packages -e MyEnvironment
 ```
 
 ## Aliases
@@ -90,4 +90,4 @@ Returns an array of package objects with detailed information
 
 pull-pkg, push-pkg, delete-pkg-remote, new-pkg
 
-- [Clio Command Reference](../../Commands.md#get-pkg-list)
+- [Clio Command Reference](../../Commands.md#list-packages)

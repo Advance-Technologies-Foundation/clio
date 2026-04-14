@@ -55,7 +55,7 @@ Commands:
   get-entity-schema-column-properties  Get column properties from a remote Creatio entity schema
   get-entity-schema-properties         Get properties from a remote Creatio entity schema
   get-info                             Show system information for a Creatio instance, describe, describe-creatio, instance-info
-  get-pkg-list                         List packages in a Creatio environment, packages
+  list-packages                        List packages in a Creatio environment, get-pkg-list, packages
   get-pkg-version                      Get package version, gpv
   get-webservice-url                   Show the configured base URL for a web service, gwu
   git-sync                             Syncs environment with Git repository, sync
@@ -121,7 +121,7 @@ Commands:
   show-diff                            Compare settings between two Creatio environments, compare, diff
   show-local-envs                      Show local environments with filesystem and auth status, localenvs
   show-package-file-content            Show files that belong to a package, files, show-files
-  show-web-app-list                    List registered Creatio environments, env, envs, show-web-app
+  list-environments                    List registered Creatio environments, show-web-app-list, env, envs, show-web-app
   start                                Start local Creatio application, sc, start-creatio, start-server
   stop                                 Stop Creatio application(s) and remove services, stop-creatio
   switch-nuget-to-dll-reference        Switches nuget references to dll references in csproj files, nuget2dll

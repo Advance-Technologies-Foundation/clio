@@ -123,7 +123,7 @@ internal class FindEntitySchemaCommandTests : BaseCommandTests<FindEntitySchemaO
 	}
 
 	[Test]
-	[Description("Execute returns 0 and logs one line per result when matching schemas are found.")]
+	[Description("Execute returns 0 and logs labeled schema ownership fields when matching schemas are found.")]
 	public void Execute_ReturnsZeroAndLogsResults_WhenSchemasFound() {
 		// Arrange
 		FindEntitySchemaOptions options = new() { SearchPattern = "UsrTask" };
@@ -139,7 +139,29 @@ internal class FindEntitySchemaCommandTests : BaseCommandTests<FindEntitySchemaO
 
 		// Assert
 		exitCode.Should().Be(0, "command succeeds when results are found");
-		_logger.Received(1).WriteInfo(Arg.Is<string>(s => s.Contains("UsrTask")));
+		_logger.Received(1).WriteInfo(Arg.Is<string>(s =>
+			s == "Schema: UsrTask | Package: UsrTaskApp | Maintainer: Advance | Parent: BaseEntity"));
+	}
+
+	[Test]
+	[Description("Execute omits the parent segment when a matching schema has no parent schema name.")]
+	public void Execute_OmitsParentSegment_WhenSchemaHasNoParent() {
+		// Arrange
+		FindEntitySchemaOptions options = new() { SchemaName = "UsrTask" };
+		string json = BuildSuccessJson([
+			new FindSchemaRow("UsrTask", "aaa", "UsrTaskApp", "Advance", "")
+		]);
+		_applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(json);
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, "command succeeds when a matching schema without parent is found");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(s =>
+			s == "Schema: UsrTask | Package: UsrTaskApp | Maintainer: Advance"));
 	}
 
 	[Test]

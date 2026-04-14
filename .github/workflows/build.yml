@@ -125,6 +125,7 @@ jobs:
   mcp-e2e-tests:
     name: MCP E2E Tests
     needs: [changes, unit-tests]
+    timeout-minutes: 30
     if: >-
       needs.changes.outputs.mcp == 'true' &&
       (github.event_name == 'pull_request' ||

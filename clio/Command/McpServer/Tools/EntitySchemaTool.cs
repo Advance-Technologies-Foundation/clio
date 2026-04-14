@@ -381,6 +381,7 @@ public sealed class FindEntitySchemaTool(
 	[Description(
 		"Searches for entity schemas in a Creatio environment without needing to know the package name. "
 		+ "Returns schema name, package, maintainer, and parent schema for each match. "
+		+ "Use the returned 'package-name' field directly for follow-up MCP calls. "
 		+ "Use 'schema-name' for exact lookup, 'search-pattern' for substring search, or 'uid' for Guid lookup.")]
 	public IReadOnlyList<EntitySchemaSearchResult> FindEntitySchema(
 		[Description(

@@ -11,7 +11,7 @@ namespace Clio.Command.McpServer.Tools;
 
 [McpServerToolType]
 public sealed class ToolContractGetTool {
-	internal const string ToolName = "tool-contract-get";
+	internal const string ToolName = "get-tool-contract";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Returns the authoritative clio MCP executable contract for discovery, inspection, and mutation tools, including parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints.")]
@@ -191,6 +191,7 @@ internal static class ToolContractCatalog {
 	private const string PrimaryPackageIdentifierDescription = "Primary package identifier.";
 	private const string PrimaryPackageNameDescription = "Primary package name.";
 	private const string SectionCodeFieldName = "section-code";
+	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
 
 	private static readonly ToolErrorContract CommonErrorContract = new([
@@ -209,6 +210,8 @@ internal static class ToolContractCatalog {
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
 			[ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName] = BuildApplicationSectionUpdate(),
+			[ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName] = BuildApplicationSectionDelete(),
+			[ApplicationSectionGetListTool.ApplicationSectionGetListToolName] = BuildApplicationSectionGetList(),
 			[ApplicationGetInfoTool.ApplicationGetInfoToolName] = BuildApplicationGetInfo(),
 			[ApplicationGetListTool.ApplicationGetListToolName] = BuildApplicationGetList(),
 			[DataForgeTool.DataForgeHealthToolName] = BuildDataForgeHealth(),
@@ -244,6 +247,8 @@ internal static class ToolContractCatalog {
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+		ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
+		ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
 		ApplicationGetInfoTool.ApplicationGetInfoToolName,
 		ApplicationGetListTool.ApplicationGetListToolName,
 		DataForgeTool.DataForgeHealthToolName,
@@ -364,11 +369,11 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				Example("Return the canonical clio MCP contract set", new Dictionary<string, object?>()),
-				Example("Return the contract for application-get-list, page-update, and modify-entity-schema-column", new Dictionary<string, object?> {
-					["tool-names"] = new[] { "application-get-list", "page-update", "modify-entity-schema-column" }
+				Example("Return the contract for list-apps, update-page, and modify-entity-schema-column", new Dictionary<string, object?> {
+					["tool-names"] = new[] { "list-apps", "update-page", "modify-entity-schema-column" }
 				})
 			],
-			Flow(["tool-contract-get"], "Use before execution when the caller needs authoritative clio MCP metadata or must choose the next discovery, inspection, or mutation step."),
+			Flow(["get-tool-contract"], "Use before execution when the caller needs authoritative clio MCP metadata or must choose the next discovery, inspection, or mutation step."),
 			[],
 			[]);
 	}
@@ -385,7 +390,7 @@ internal static class ToolContractCatalog {
 				[
 					SuccessFalseSignal
 				],
-				Field(SuccessFieldName, BooleanType, "Whether the settings-health lookup succeeded."),
+				Field(SuccessFieldName, BooleanType, "Whether the check-settings-health lookup succeeded."),
 				Field(StatusFieldName, StringType, "Bootstrap health status: healthy, repaired, degraded, or broken."),
 				Field("settings-file-path", StringType, "Absolute path to clio appsettings.json."),
 				Field("active-environment-key", StringType, "Configured ActiveEnvironmentKey before fallback resolution."),
@@ -414,7 +419,7 @@ internal static class ToolContractCatalog {
 						SettingsHealthTool.ToolName,
 						ToolContractGetTool.ToolName
 					],
-					"Follow with tool-contract-get when the caller must choose a bootstrap-safe recovery or inspection tool.")
+					"Follow with get-tool-contract when the caller must choose a bootstrap-safe recovery or inspection tool.")
 			],
 			[]);
 	}
@@ -450,7 +455,7 @@ internal static class ToolContractCatalog {
 							"nameLocalizations",
 							"appSectionDescriptionLocalizations"
 						],
-						Context: "application-create stays scalar-only; localized captions belong to follow-up schema tools.")
+						Context: "create-app stays scalar-only; localized captions belong to follow-up schema tools.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -466,7 +471,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
 				Field("entities", ArrayType, "Application entities."),
-				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using page-list item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
+				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field("dataforge", ObjectType, "Optional Data Forge enrichment diagnostics including health/status/coverage, warnings, and a compact context-summary."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
@@ -495,7 +500,7 @@ internal static class ToolContractCatalog {
 					SchemaSyncTool.ToolName,
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				],
-				"Use this direct create flow for simple greenfield app shells. application-create performs built-in Data Forge enrichment, then schema-sync handles entity mutations, and application-get-info refreshes the resulting app context."),
+				"Use this direct create flow for simple greenfield app shells. create-app performs built-in Data Forge enrichment, then sync-schemas handles entity mutations, and get-app-info refreshes the resulting app context."),
 			[
 				Flow(
 					[
@@ -535,7 +540,7 @@ internal static class ToolContractCatalog {
 							"captionLocalizations",
 							"nameLocalizations"
 						],
-						Context: "application-section-create stays scalar-only; localized captions belong to follow-up schema tools.")
+						Context: "create-app-section stays scalar-only; localized captions belong to follow-up schema tools.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -551,7 +556,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
 				Field("section", ObjectType, "Created section metadata."),
 				Field("entity", ObjectType, "Created or targeted entity metadata when available."),
-				Field(PagesFieldName, ArrayType, "Created page summaries using page-list item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
+				Field(PagesFieldName, ArrayType, "Created page summaries using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -627,7 +632,7 @@ internal static class ToolContractCatalog {
 							"captionLocalizations",
 							"nameLocalizations"
 						],
-						Context: "application-section-update stays scalar-only; localized captions belong to follow-up schema tools.")
+						Context: "update-app-section stays scalar-only; localized captions belong to follow-up schema tools.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -684,6 +689,121 @@ internal static class ToolContractCatalog {
 						ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName
 					],
 					"Use this shorter flow when the target app is already known and inspected.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildApplicationSectionDelete() {
+		return new ToolContractDefinition(
+			ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
+			"Deletes a section from an existing installed application and returns structured readback of the deleted section.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, ApplicationCodeFieldName, SectionCodeFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
+					Field(SectionCodeFieldName, StringType, "Existing section code inside the installed application."),
+					Field(DeleteEntitySchemaFieldName, BooleanType,
+						"When true, also deletes the entity schema record. Requires explicit opt-in. WARNING: destructive and irreversible. Omit or set to false to keep the entity schema and its data intact.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(PackageUIdFieldName, StringType, PrimaryPackageIdentifierDescription),
+				Field(PackageNameFieldName, StringType, PrimaryPackageNameDescription),
+				Field(ApplicationIdFieldName, StringType, InstalledApplicationIdentifierDescription),
+				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
+				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
+				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
+				Field("deleted-section", ObjectType, "Deleted section metadata."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				Alias(ParameterScope, ApplicationCodeFieldName, SelectorCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{SelectorCodeFieldName}'."),
+				Alias(ParameterScope, ApplicationCodeFieldName, AppCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{AppCodeFieldName}'."),
+				Alias(ParameterScope, SectionCodeFieldName, "sectionCode", RejectedStatus, "Use 'section-code' instead of 'sectionCode'.")
+			],
+			[],
+			[
+				Example("Delete a section from an existing app", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ApplicationCodeFieldName] = ExamplePackageName,
+					[SectionCodeFieldName] = "UsrOrders"
+				})
+			],
+			Flow(
+				[
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName
+				],
+				"Use application discovery and inspection first, then delete the target section."),
+			[
+				Flow(
+					[
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName
+					],
+					"Use this shorter flow when the target app is already known and inspected.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildApplicationSectionGetList() {
+		return new ToolContractDefinition(
+			ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
+			"Returns the list of sections of an existing installed application and their metadata.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, ApplicationCodeFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(PackageUIdFieldName, StringType, PrimaryPackageIdentifierDescription),
+				Field(PackageNameFieldName, StringType, PrimaryPackageNameDescription),
+				Field(ApplicationIdFieldName, StringType, InstalledApplicationIdentifierDescription),
+				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
+				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
+				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
+				Field("sections", ArrayType, "List of section metadata objects in the application."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				Alias(ParameterScope, ApplicationCodeFieldName, SelectorCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{SelectorCodeFieldName}'."),
+				Alias(ParameterScope, ApplicationCodeFieldName, AppCodeFieldName, RejectedStatus, $"Use '{ApplicationCodeFieldName}' instead of '{AppCodeFieldName}'.")
+			],
+			[],
+			[
+				Example("List sections of an existing app", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ApplicationCodeFieldName] = ExamplePackageName
+				})
+			],
+			Flow(
+				[
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ApplicationSectionGetListTool.ApplicationSectionGetListToolName
+				],
+				"Use application discovery and inspection first, then list sections."),
+			[
+				Flow(
+					[
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						ApplicationSectionGetListTool.ApplicationSectionGetListToolName
+					],
+					"Use this shorter flow when the target app is already known.")
 			],
 			[]);
 	}
@@ -994,7 +1114,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
 				Field("entities", ArrayType, "Application entities."),
-				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using page-list item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
+				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -1013,7 +1133,7 @@ internal static class ToolContractCatalog {
 					ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				],
-				"Use after application-get-list when the target app is not fully known, or refresh again after section or schema mutations when app context must be re-read."),
+				"Use after list-apps when the target app is not fully known, or refresh again after section or schema mutations when app context must be re-read."),
 			[],
 			[]);
 	}
@@ -1073,7 +1193,7 @@ internal static class ToolContractCatalog {
 					Field(OperationsFieldName, ArrayType, "Ordered schema operations.")),
 				Validators: [
 					new ToolContractValidator(
-						"schema-sync-operations-localizations",
+						"sync-schemas-operations-localizations",
 						InvalidLocalizationMapCode,
 						Field: OperationsFieldName)
 				]),
@@ -1082,7 +1202,7 @@ internal static class ToolContractCatalog {
 				[
 					SuccessFalseSignal
 				],
-				Field(SuccessFieldName, BooleanType, "Whether every schema-sync operation succeeded."),
+				Field(SuccessFieldName, BooleanType, "Whether every sync-schemas operation succeeded."),
 				Field("results", ArrayType, "Per-operation execution results keyed by canonical `type`.")
 			),
 			CommonErrorContract,
@@ -1142,7 +1262,7 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PagesFieldName, ArrayType, "Page update requests built from `page-get.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string."),
+					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string."),
 					Field("validate", BooleanType, "Run client-side validation before save."),
 					Field("verify", BooleanType, "Read the page back after save.")
 				]),
@@ -1161,12 +1281,12 @@ internal static class ToolContractCatalog {
 				Default("verify", "false", "Read-back verification is optional and disabled by default.")
 			],
 			[
-				Example("Validate and save one page body copied from page-get raw.body", new Dictionary<string, object?> {
+				Example("Validate and save one page body copied from get-page raw.body", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PagesFieldName] = new object[] {
 						new Dictionary<string, object?> {
 							[SchemaNameFieldName] = "UsrTaskApp_FormPage",
-							["body"] = "/* raw.body returned by page-get */ define(...)",
+							["body"] = "/* raw.body returned by get-page */ define(...)",
 							["resources"] = "{\"PDS_Name\":\"Title\"}"
 						}
 					},
@@ -1203,7 +1323,7 @@ internal static class ToolContractCatalog {
 				[],
 				EnvironmentOrExplicitConnectionFields(
 					Field(PackageNameFieldName, StringType, "Package name to inspect."),
-					Field(SelectorCodeFieldName, StringType, "Installed application code. When provided, page-list resolves the application's primary package before querying pages."),
+					Field(SelectorCodeFieldName, StringType, "Installed application code. When provided, list-pages resolves the application's primary package before querying pages."),
 					Field(SearchPatternFieldName, StringType, "Optional case-insensitive schema-name filter."),
 					Field("limit", NumberType, "Optional max result count.")),
 				Validators: [
@@ -1214,7 +1334,7 @@ internal static class ToolContractCatalog {
 							PackageNameFieldName,
 							SelectorCodeFieldName
 						],
-						Context: "page-list accepts package-name or code, not both."),
+						Context: "list-pages accepts package-name or code, not both."),
 				],
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
@@ -1282,7 +1402,7 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field("page", ObjectType, "Page metadata carrying schema and package identity such as schemaName, schemaUId, packageName, packageUId, and parentSchemaName."),
 				Field("bundle", ObjectType, "Merged page bundle."),
-				Field("raw", ObjectType, "Raw editable payload. The JavaScript source to edit and round-trip through page-update/page-sync is `raw.body`."),
+				Field("raw", ObjectType, "Raw editable payload. The JavaScript source to edit and round-trip through update-page/sync-pages is `raw.body`."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -1304,7 +1424,7 @@ internal static class ToolContractCatalog {
 					PageSyncTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Use after page-list to inspect `raw.body` before following the canonical page write path and to read back after saving."),
+				"Use after list-pages to inspect `raw.body` before following the canonical page write path and to read back after saving."),
 			[
 				Flow(
 					[
@@ -1313,7 +1433,7 @@ internal static class ToolContractCatalog {
 						PageSyncTool.ToolName,
 						PageGetTool.ToolName
 					],
-					"Call component-info before editing when bundle.viewConfig contains unfamiliar crt.* component types."),
+					"Call get-component-info before editing when bundle.viewConfig contains unfamiliar crt.* component types."),
 				Flow(
 					[
 						PageGetTool.ToolName,
@@ -1449,7 +1569,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCreateDataBindingDb() {
 		return new ToolContractDefinition(
 			CreateDataBindingDbTool.CreateDataBindingDbToolName,
-			"Creates or updates a DB-first package data binding and optionally applies rows immediately as an explicit fallback or standalone path outside a batched schema-sync flow, including standalone lookup seeding when direct SQL is not the right MCP path.",
+			"Creates or updates a DB-first package data binding and optionally applies rows immediately as an explicit fallback or standalone path outside a batched sync-schemas flow, including standalone lookup seeding when direct SQL is not the right MCP path.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName],
 				EnvironmentPackageSchemaFields(
@@ -1469,11 +1589,11 @@ internal static class ToolContractCatalog {
 					["rows"] = "[{\"values\":{\"Name\":\"New\"}},{\"values\":{\"Name\":\"In Progress\"}}]"
 				})
 			],
-			Flow([SchemaSyncTool.ToolName], "Prefer inline seed-rows inside schema-sync when the flow can stay batched."),
+			Flow([SchemaSyncTool.ToolName], "Prefer inline seed-rows inside sync-schemas when the flow can stay batched."),
 			[],
 			[
 				new ToolDeprecation(
-					"Prefer schema-sync with inline seed-rows as the canonical batched path. Keep create-data-binding-db for explicit fallback or standalone binding work, and prefer it over direct SQL when MCP callers still need lookup seed rows.",
+					"Prefer sync-schemas with inline seed-rows as the canonical batched path. Keep create-data-binding-db for explicit fallback or standalone binding work, and prefer it over direct SQL when MCP callers still need lookup seed rows.",
 					[
 						SchemaSyncTool.ToolName
 					])
@@ -1579,7 +1699,7 @@ internal static class ToolContractCatalog {
 						SchemaSyncTool.ToolName,
 						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName
 					],
-					"Fallback when the schema change is part of a larger ordered schema-sync workflow.")
+					"Fallback when the schema change is part of a larger ordered sync-schemas workflow.")
 			],
 			[]);
 	}
@@ -1623,7 +1743,7 @@ internal static class ToolContractCatalog {
 						SchemaSyncTool.ToolName,
 						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName
 					],
-					"Fallback when the requested work expands into a larger ordered schema-sync plan.")
+					"Fallback when the requested work expands into a larger ordered sync-schemas plan.")
 			],
 			[]);
 	}
@@ -1733,7 +1853,7 @@ internal static class ToolContractCatalog {
 					["component-type"] = "crt.TabContainer"
 				})
 			],
-			Flow([ComponentInfoTool.ToolName], "Use after page-get when bundle.viewConfig contains unfamiliar crt.* component types."),
+			Flow([ComponentInfoTool.ToolName], "Use after get-page when bundle.viewConfig contains unfamiliar crt.* component types."),
 			[],
 			[]);
 	}
@@ -1741,12 +1861,12 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageUpdate() {
 		return new ToolContractDefinition(
 			PageUpdateTool.ToolName,
-			"Fallback single-page save path for a full Freedom UI page body copied from `page-get.raw.body` when the workflow explicitly requires dry-run or legacy save behavior.",
+			"Fallback single-page save path for a full Freedom UI page body copied from `get-page.raw.body` when the workflow explicitly requires dry-run or legacy save behavior.",
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName, "body"],
 				EnvironmentOrExplicitConnectionFields(
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
-					Field("body", StringType, "Full page body with all marker pairs. Reuse `page-get.raw.body` rather than `bundle` or `bundle.viewConfig`."),
+					Field("body", StringType, "Full page body with all marker pairs. Reuse `get-page.raw.body` rather than `bundle` or `bundle.viewConfig`."),
 					Field("dry-run", BooleanType, "Validate without saving."),
 					Field("resources", StringType, "Optional JSON object string of resource strings.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
@@ -1770,9 +1890,9 @@ internal static class ToolContractCatalog {
 			],
 			[],
 			[
-				Example("Dry-run validate one page body copied from page-get raw.body", new Dictionary<string, object?> {
+				Example("Dry-run validate one page body copied from get-page raw.body", new Dictionary<string, object?> {
 					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
-					["body"] = "/* raw.body returned by page-get */ define(...)",
+					["body"] = "/* raw.body returned by get-page */ define(...)",
 					["resources"] = "{\"UsrDetailsTab_caption\":\"Details\"}",
 					["dry-run"] = true,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
@@ -1784,7 +1904,7 @@ internal static class ToolContractCatalog {
 					PageUpdateTool.ToolName,
 					PageGetTool.ToolName
 				],
-				"Use only when the workflow explicitly requires single-page dry-run or legacy save behavior after reading the raw body with page-get."),
+				"Use only when the workflow explicitly requires single-page dry-run or legacy save behavior after reading the raw body with get-page."),
 			[
 				Flow(
 					[
@@ -1801,11 +1921,11 @@ internal static class ToolContractCatalog {
 						PageSyncTool.ToolName,
 						PageGetTool.ToolName
 					],
-					"Fallback when the workflow expands into a multi-page save or ordered page-sync plan.")
+					"Fallback when the workflow expands into a multi-page save or ordered sync-pages plan.")
 			],
 			[
 				new ToolDeprecation(
-					"Prefer page-sync as the canonical page write path. Keep page-update only as a fallback for single-page dry-run or legacy save workflows.",
+					"Prefer sync-pages as the canonical page write path. Keep update-page only as a fallback for single-page dry-run or legacy save workflows.",
 					[
 						PageSyncTool.ToolName
 					])
@@ -2030,13 +2150,13 @@ internal static class ToolContractCatalog {
 	}
 
 	private static ToolFlowHint PreferSchemaSyncFlow() {
-		return Flow([SchemaSyncTool.ToolName], "Prefer schema-sync for ordered multi-step entity work.");
+		return Flow([SchemaSyncTool.ToolName], "Prefer sync-schemas for ordered multi-step entity work.");
 	}
 
 	private static IReadOnlyList<ToolDeprecation> PreferSchemaSyncDeprecations(string toolName) {
 		return [
 			new ToolDeprecation(
-				$"Prefer schema-sync as the canonical entity mutation path. Keep {toolName} for explicit fallback or isolated operations.",
+				$"Prefer sync-schemas as the canonical entity mutation path. Keep {toolName} for explicit fallback or isolated operations.",
 				[
 					SchemaSyncTool.ToolName
 				])

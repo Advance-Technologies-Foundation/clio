@@ -37,7 +37,9 @@ EXAMPLES
     clio find-entity-schema -e dev --uid 117d32f9-aab9-4e3a-b13e-cfce62e15e4b
 
 NOTES
-    - output is one line per match: SchemaName | PackageName (Maintainer) | Parent: ParentName
+    - output is one line per match: Schema: SchemaName | Package: PackageName | Maintainer: Maintainer | Parent: ParentName
+    - CLI output is labeled for safer human and AI parsing; read the Package field directly
+    - MCP callers should use the structured package-name field instead of parsing the CLI text form
     - requires no knowledge of the owning package name
     - does not require cliogate
 
