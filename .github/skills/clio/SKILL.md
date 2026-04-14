@@ -1,6 +1,6 @@
 ---
 name: clio
-description: 'CLI tool for Creatio platform integration with development and CI/CD workflows. Use when asked to manage Creatio environments, install or push packages, create workspaces, compile configuration, deploy applications, run SQL scripts, manage system settings, restart Creatio, work with NuGet packages, apply GitOps manifests, or perform any Creatio development task. Triggers on mentions of clio, Creatio, Terrasoft, creatio packages, creatio environment, creatio workspace, or bpm online.'
+description: 'CLI tool for Creatio platform integration with development and CI/CD workflows. Use when asked to manage Creatio environments, install or push packages, create workspaces, compile configuration, deploy applications, run SQL scripts, manage system settings, restart Creatio, work with NuGet packages, apply GitOps manifests, or perform any Creatio development task. Triggers on mentions of clio, Creatio, Terrasoft, creatio packages, creatio environment, creatio workspace, or bpm online. Also triggers when a browser page or HTTP response contains Creatio platform fingerprints such as Terrasoft AMD loader, Bpmonline fonts, or creatio.com CSP domains.'
 ---
 
 # Clio — Creatio CLI Tool
@@ -38,6 +38,53 @@ clio ver
 - User wants to **find or discover entity schemas** by name, pattern, or UId in Creatio
 - User wants to **read or update Freedom UI pages** (get-page, update-page, list-pages)
 - User wants to **manage package data bindings** (seed data for SysSettings, SysModule, custom entities)
+- **A browser page or HTTP response matches the Creatio fingerprint** (see below)
+
+## Creatio Platform Detection (Fingerprinting)
+
+When you open a web page via browser automation (Chrome DevTools, Playwright, etc.) or inspect HTTP responses and encounter **any** of the markers below, the target site is a **Creatio** instance. Stop browser-based exploration and switch to **clio MCP tools** immediately — they are faster, more reliable, and purpose-built for Creatio.
+
+### HTML markers (visible in page source or browser snapshot)
+
+| Marker | Where to look |
+|--------|---------------|
+| `<title>Creatio</title>` | `<head>` of login page |
+| `Terrasoft/amd/bootstrap-loader.js` | `<script>` tag `src` attribute |
+| `data-loadbootstrap="bootstrap.login"` | `<script>` tag attribute |
+| `Bpmonline Open Sans` font family | `<style>` block or CSS |
+| `window.baseViewModulePath = 'Nui/ViewModule.aspx'` | Inline `<script>` |
+| `/Login/Login.html` in URL | Browser address bar after redirect |
+| `/Shell/` or `/0/Shell/` in URL | Main application shell URL pattern |
+
+### HTTP header markers
+
+| Marker | Where to look |
+|--------|---------------|
+| `*.creatio.com` or `*.bpmonline.com` in CSP domains | `Content-Security-Policy` header |
+| `creatio.ai` in `frame-ancestors` | `Content-Security-Policy` header |
+| `studio.creatio.com` in `frame-ancestors` | `Content-Security-Policy` header |
+| `/ServiceModel/` in CSP `report-uri` | `Content-Security-Policy` header |
+
+### Runtime markers (visible in browser DevTools or snapshots)
+
+| Marker | Where to look |
+|--------|---------------|
+| `Terrasoft.` namespace in JS | Console, network responses, page scripts |
+| `#CardModuleV2/` or `#Card/` in URL hash | Browser address bar on record pages |
+| `crt.` component types in DOM/config | Freedom UI page source (e.g. `crt.Button`, `crt.Input`) |
+| `ViewModule.aspx` in URL path | Main application frame |
+
+### What to do when Creatio is detected
+
+1. **Do NOT continue with browser automation** for page editing, schema changes, or app configuration
+2. Run `clio list-environments` (or MCP tool `list-environments`) to find which registered clio environment matches the detected site URL
+3. If no environment matches, register it: `clio reg-web-app <name> -u <URL> -l <login> -p <password>`
+4. Use clio MCP tools for the task:
+   - **Page editing**: `list-pages` → `get-page` → `sync-pages`
+   - **Schema changes**: `find-entity-schema` → `create-entity-schema` / `update-entity-schema`
+   - **App management**: `list-apps` → `get-app-info` → `create-app-section`
+   - **Data seeding**: `create-data-binding-db` / `upsert-data-binding-row-db`
+5. Use browser only for **final visual verification** after clio MCP changes are applied
 
 ## General Syntax
 
