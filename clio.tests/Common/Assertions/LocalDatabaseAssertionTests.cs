@@ -11,6 +11,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Common.Assertions;
 
 [TestFixture]
+[Property("Module", "Common")]
 [Category("Unit")]
 public class LocalDatabaseAssertionTests
 {

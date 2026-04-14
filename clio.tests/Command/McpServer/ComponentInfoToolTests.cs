@@ -12,6 +12,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "McpServer")]
 public sealed class ComponentInfoToolTests {
 	private static readonly string RegistryRoot = GetRootedPath("clio");
 	private static readonly string RegistryPath = Path.Combine(RegistryRoot, "Command", "McpServer", "Data", "ComponentRegistry.json");

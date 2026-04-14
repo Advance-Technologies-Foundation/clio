@@ -16,6 +16,7 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 [NonParallelizable]
+[Property("Module", "Command")]
 internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 {
 	private IApplicationClient _applicationClient;

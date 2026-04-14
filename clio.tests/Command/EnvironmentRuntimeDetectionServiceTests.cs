@@ -14,6 +14,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class EnvironmentRuntimeDetectionServiceTests {
 	private const string BaseUri = "http://localhost:5007";
 

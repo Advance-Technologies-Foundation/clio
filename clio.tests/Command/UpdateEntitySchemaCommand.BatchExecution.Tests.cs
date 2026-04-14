@@ -17,6 +17,7 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 [NonParallelizable]
+[Property("Module", "Command")]
 internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioModuleTests
 {
 	private static readonly Guid PackageUId = Guid.Parse("11111111-1111-1111-1111-111111111111");

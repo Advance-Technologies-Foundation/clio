@@ -16,8 +16,8 @@ namespace Clio
 			[Option('l', "Login", Required = false, HelpText = "User login (administrator permission required)")]
 			public string Login { get; set; }
 
-			[Option('i', "IsNetCore", Required = false, HelpText = "Override runtime auto-detection: true for .NET Core / NET8, false for .NET Framework", Default = null)]
-			public bool? IsNetCore { get; set; }
+			[Option('i', "IsNetCore", Required = false, HelpText = "Use .NET Core application", Hidden = true)]
+		public bool? IsNetCore { get; set; }
 
 			[Option('e', "Environment", Required = false, HelpText = "Environment name")]
 			public string Environment { get; set; }

@@ -11,6 +11,7 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
+[Property("Module", "Command")]
 public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompilationLogOptions> {
 
 	#region Fields: Private

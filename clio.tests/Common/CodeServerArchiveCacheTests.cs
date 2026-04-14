@@ -12,6 +12,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Common;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Common")]
 public class CodeServerArchiveCacheTests {
 	[Test]
 	[Description("EnsureArchiveAvailable should close the temporary download stream before moving the archive into the cache location.")]

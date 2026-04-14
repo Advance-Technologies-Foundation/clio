@@ -10,6 +10,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class ApplicationSectionCreateServiceTests {
 	private ISettingsRepository _settingsRepository = null!;
 	private IApplicationClientFactory _applicationClientFactory = null!;
@@ -247,6 +249,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 }
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class CreateAppSectionOptionsTests {
 
 	[Test]

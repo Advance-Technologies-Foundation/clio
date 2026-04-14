@@ -13,7 +13,8 @@ using mockFs = System.IO.Abstractions;
 namespace Clio.Tests.Common;
 
 [TestFixture]
-[Category("UnitTests")]
+[Property("Module", "Common")]
+[Category("Unit")]
 public class SysSettingsManagerTests
 {
 

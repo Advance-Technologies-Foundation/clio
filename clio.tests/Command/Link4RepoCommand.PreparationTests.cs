@@ -17,6 +17,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class Link4RepoCommandPreparationTests : BaseCommandTests<Link4RepoOptions> {
 
 	#region Fields: Private

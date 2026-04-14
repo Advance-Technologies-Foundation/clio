@@ -7,6 +7,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Common;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Common")]
 public class CompilationLogParserTestFixture {
 
 	

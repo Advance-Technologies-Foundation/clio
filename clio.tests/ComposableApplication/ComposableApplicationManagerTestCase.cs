@@ -19,6 +19,7 @@ using IZipFile = Clio.Common.IZipFile;
 
 namespace Clio.Tests.ComposableApplication;
 
+[Property("Module", "Core")]
 public class ComposableApplicationManagerTestCase : BaseClioModuleTests {
 
 	#region Constants: Private

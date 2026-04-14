@@ -7,6 +7,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Package;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Package")]
 public class PackageMutatorTestCase : BasePackageOperationTestCase
 {
 	#region Fields: Private

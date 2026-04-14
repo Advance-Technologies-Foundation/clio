@@ -12,6 +12,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.ApplicationCommand;
 
 // TODO - Extract manager aseertion to ComposibleApp tests
+[Property("Module", "ApplicationCommand")]
 internal class SetApplicationVersionCommandTest: BaseCommandTests<SetApplicationVersionOption>
 {
 	private static string mockPackageFolderPath = Path.Combine("C:", "MockPackageFolder");

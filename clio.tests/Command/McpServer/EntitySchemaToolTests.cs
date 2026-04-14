@@ -16,6 +16,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 [NonParallelizable]
 public sealed class EntitySchemaToolTests {
 

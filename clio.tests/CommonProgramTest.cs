@@ -13,6 +13,7 @@ namespace Clio.Tests;
 
 [TestFixture]
 [NonParallelizable]
+[Property("Module", "Core")]
 internal class CommonProgramTest : BaseClioModuleTests{
 	private TextWriter _originalConsoleError;
 	private TextWriter _originalConsoleOut;

@@ -12,18 +12,23 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public sealed class InstallSkillsCommandDocTests : BaseCommandTests<InstallSkillsOptions> {
 }
 
 [TestFixture]
+[Property("Module", "Command")]
 public sealed class UpdateSkillCommandDocTests : BaseCommandTests<UpdateSkillOptions> {
 }
 
 [TestFixture]
+[Property("Module", "Command")]
 public sealed class DeleteSkillCommandDocTests : BaseCommandTests<DeleteSkillOptions> {
 }
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class SkillManagementServiceTests {
 	private MockFileSystem _mockFileSystem = null!;
 	private Clio.Common.IFileSystem _fileSystem = null!;

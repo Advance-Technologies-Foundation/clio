@@ -7,6 +7,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Common;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Common")]
 [Description("Unit tests for DockerTemplatePathProvider")]
 public class DockerTemplatePathProviderTests {
 	private MockFileSystem _mockFileSystem = null!;

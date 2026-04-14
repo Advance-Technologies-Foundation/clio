@@ -151,7 +151,7 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 					return 1;
 				}
 
-				logger.WriteInfo(output);
+				logger.WriteDebug(output.Trim());
 				return 0;
 			}
 		} catch (Exception e) {
@@ -199,6 +199,43 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 		} catch (Exception e) {
 			logger.WriteError($"Error verifying installation: {e.Message}");
 			return false;
+		}
+	}
+
+	/// <inheritdoc/>
+	public string GetUpdateType(string currentVersion, string latestVersion) {
+		try {
+			var current = new Version(currentVersion);
+			var latest = new Version(latestVersion);
+			if (latest.Major != current.Major) return "MAJOR";
+			if (latest.Minor != current.Minor) return "minor";
+			if (latest.Build != current.Build) return "patch";
+			return "build";
+		} catch {
+			return "update";
+		}
+	}
+
+	/// <inheritdoc/>
+	public async Task<string> GetReleaseNotesAsync(string version) {
+		try {
+			using HttpClient client = new();
+			client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+			client.DefaultRequestHeaders.UserAgent.TryParseAdd("clio");
+
+			string url = $"https://api.github.com/repos/Advance-Technologies-Foundation/clio/releases/tags/{version}";
+			using HttpResponseMessage response = await client.GetAsync(url);
+
+			if (!response.IsSuccessStatusCode) {
+				return null;
+			}
+
+			string json = await response.Content.ReadAsStringAsync();
+			JsonObject jsonDoc = (JsonObject)JsonNode.Parse(json);
+			string body = jsonDoc["body"]?.ToString();
+			return string.IsNullOrWhiteSpace(body) ? null : body.Trim();
+		} catch {
+			return null;
 		}
 	}
 
@@ -303,6 +340,17 @@ public interface IAppUpdater {
 	/// <param name="expectedVersion">Expected version string to verify</param>
 	/// <returns>True if verification successful, false otherwise</returns>
 	Task<bool> VerifyInstallationAsync(string expectedVersion);
+
+	/// <summary>
+	/// Determines the type of version change (MAJOR, minor, patch, build).
+	/// </summary>
+	string GetUpdateType(string currentVersion, string latestVersion);
+
+	/// <summary>
+	/// Fetches release notes from GitHub for the specified version tag.
+	/// </summary>
+	/// <returns>Release notes body or null if not available</returns>
+	Task<string> GetReleaseNotesAsync(string version);
 
 	#endregion
 

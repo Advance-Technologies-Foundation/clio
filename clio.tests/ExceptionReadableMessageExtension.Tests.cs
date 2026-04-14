@@ -6,6 +6,7 @@ using NUnit.Framework;
 namespace Clio.Tests;
 
 [TestFixture]
+[Property("Module", "Core")]
 [Category("Unit")]
 public class ExceptionReadableMessageExtensionTestCase
 {

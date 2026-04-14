@@ -6,6 +6,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "McpServer")]
 public class SchemaValidationServiceTests {
 
 	private const string ValidListPageBody =

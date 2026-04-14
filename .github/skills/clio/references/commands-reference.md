@@ -16,7 +16,6 @@ clio <COMMAND> [arguments] [command_options]
 | `-u, --uri` | Application URI |
 | `-l, --Login` | User login |
 | `-p, --Password` | User password |
-| `-i, --IsNetCore` | Use .NET Core application |
 | `-m, --Maintainer` | Maintainer name |
 | `--clientId` | OAuth client ID |
 | `--clientSecret` | OAuth client secret |

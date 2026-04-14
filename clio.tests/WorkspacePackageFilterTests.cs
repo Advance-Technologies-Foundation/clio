@@ -13,6 +13,8 @@ using NUnit.Framework;
 namespace Clio.Tests;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Core")]
 [Description("Tests for workspace package filtering functionality")]
 public class WorkspacePackageFilterTests{
 	#region Fields: Private

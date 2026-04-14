@@ -18,6 +18,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 	private const string PackageName = "TestPkg";
 	private static readonly string WorkspaceRoot = Path.Combine(Path.GetTempPath(), $"clio-data-binding-db-tool-{Guid.NewGuid():N}");

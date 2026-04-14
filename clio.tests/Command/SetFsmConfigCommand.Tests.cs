@@ -19,6 +19,7 @@ namespace Clio.Tests.Command;
 ///  Unit tests for <see cref="SetFsmConfigCommand" />.
 /// </summary>
 [TestFixture]
+[Property("Module", "Command")]
 public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 
 	#region Setup/Teardown

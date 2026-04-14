@@ -6,6 +6,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class PageJsonPathDiffApplierTests {
 	[Test]
 	[Description("Apply resolves nested aliases inside objects and arrays when path operations target _id values")]

@@ -9,6 +9,8 @@ using NUnit.Framework;
 namespace Clio.Tests;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Core")]
 internal class HelpArtifactConsistencyTests {
 	private static readonly string RepositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
 	private static readonly string HelpDirectory = Path.Combine(RepositoryRoot, "clio", "help", "en");

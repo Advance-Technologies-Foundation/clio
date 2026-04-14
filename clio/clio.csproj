@@ -8,10 +8,10 @@
 		<Authors>creatio rnd team</Authors>
 		<PackageTags>cli ATF clio creatio</PackageTags>
 		<NeutralLanguage>en</NeutralLanguage>
-		<!-- Default version for local development. Will be overridden during release from tag -->
-		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.2.64</AssemblyVersion>
-		<FileVersion>$(AssemblyVersion)</FileVersion>
-		<Version>$(AssemblyVersion)</Version>
+		<!-- Fallback for environments without git tags; overridden by SetVersionFromGitTag target or CI /p:AssemblyVersion -->
+		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">0.0.0.0</AssemblyVersion>
+		<FileVersion Condition="'$(FileVersion)' == ''">$(AssemblyVersion)</FileVersion>
+		<Version Condition="'$(Version)' == ''">$(AssemblyVersion)</Version>
 		<Description>CLI interface for Creatio</Description>
 		<PackageLicense>MIT</PackageLicense>
 		<RepositoryUrl>https://github.com/Advance-Technologies-Foundation/clio</RepositoryUrl>
@@ -173,5 +173,23 @@
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" />
 		<PackageReference Include="Microsoft.Data.SqlClient" />
 	</ItemGroup>
-	
+
+	<!-- Reads the latest X.Y.Z.W git tag for local builds. Skipped when CI provides /p:AssemblyVersion. -->
+	<Target Name="SetVersionFromGitTag"
+	        BeforeTargets="GenerateAssemblyInfo;GenerateNuspec"
+	        Condition="'$(AssemblyVersion)' == '0.0.0.0'">
+		<Exec Command="git describe --tags --abbrev=0 --match &quot;[0-9]*.[0-9]*.[0-9]*.[0-9]*&quot;"
+		      ConsoleToMSBuild="true"
+		      IgnoreExitCode="true">
+			<Output TaskParameter="ConsoleOutput" PropertyName="_GitTagRaw"/>
+			<Output TaskParameter="ExitCode" PropertyName="_GitTagExitCode"/>
+		</Exec>
+		<PropertyGroup Condition="'$(_GitTagExitCode)' == '0' and '$(_GitTagRaw)' != ''">
+			<AssemblyVersion>$(_GitTagRaw.Trim())</AssemblyVersion>
+			<FileVersion>$(_GitTagRaw.Trim())</FileVersion>
+			<Version>$(_GitTagRaw.Trim())</Version>
+			<InformationalVersion>$(_GitTagRaw.Trim())</InformationalVersion>
+		</PropertyGroup>
+	</Target>
+
 </Project>

@@ -9,8 +9,9 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
-[Category("UnitTests")]
+[Category("Unit")]
 [TestFixture]
+[Property("Module", "Command")]
 internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 {
 

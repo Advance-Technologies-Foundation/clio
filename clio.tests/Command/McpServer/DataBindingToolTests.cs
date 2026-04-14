@@ -18,6 +18,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class DataBindingToolTests : BaseClioModuleTests {
 	private MockFileSystem _mockFileSystem = null!;
 	private string _workspaceRoot = null!;

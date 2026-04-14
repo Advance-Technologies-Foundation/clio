@@ -6,7 +6,9 @@ using FluentAssertions;
 namespace Clio.Tests
 {
     [TestFixture]
-    [Description("Checks mask matching logic for package ignore feature")] 
+    [Category("Unit")]
+    [Property("Module", "Core")]
+    [Description("Checks mask matching logic for package ignore feature")]
     public class PackageIgnoreMatcherTests
     {
         [Test]

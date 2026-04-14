@@ -15,6 +15,7 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 [NonParallelizable]
+[Property("Module", "Command")]
 internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 {
 	private UpdateEntitySchemaCommand _command;

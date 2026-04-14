@@ -10,6 +10,7 @@ using NUnit.Framework;
 namespace Clio.Tests;
 
 [TestFixture]
+[Property("Module", "Core")]
 internal class CommandHelpRendererTests : BaseClioModuleTests {
 	private string _helpDirectory;
 	private CommandHelpRenderer _exportRenderer;

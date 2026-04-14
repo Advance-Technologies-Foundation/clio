@@ -5,6 +5,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 internal sealed class EntitySchemaDesignerSupportTests {
 	[TestCase("Binary", 13)]
 	[TestCase("Blob", 13)]

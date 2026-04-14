@@ -12,6 +12,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 internal class ExternalLinkCommandMediatorIntegrationTests : BaseCommandTests<ExternalLinkOptions> {
 	private readonly ILogger _logger = Substitute.For<ILogger>();
 	private readonly SpyRegAppCommand _regAppCommand = new();

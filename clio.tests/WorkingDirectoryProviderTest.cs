@@ -14,6 +14,8 @@ using ConsoleLogger = Clio.Common.ConsoleLogger;
 namespace Clio.Tests;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Core")]
 internal class WorkingDirectoryProviderTest
 {
 	[Test]

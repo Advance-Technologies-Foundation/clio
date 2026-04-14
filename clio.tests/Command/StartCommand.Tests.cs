@@ -14,6 +14,7 @@ using IFileSystem = Clio.Common.IFileSystem;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class StartCommandTestCase : BaseCommandTests<StartOptions>
 {
 	private ISettingsRepository _settingsRepository;
