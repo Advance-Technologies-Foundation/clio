@@ -2329,3 +2329,25 @@ Decision: Renamed all to canonical {verb}-{noun} pattern; old names preserved as
 Discovery: Commands.md doc links must reference canonical filenames — HasCommandIndexEntry checks (docs/commands/{canonicalName}.md). Four artifact types must all be consistent: Commands.md index entry, help txt, docs md, WikiAnchors.txt.
 Files: clio/Command/PageGetOptions.cs, PageListOptions.cs, PageUpdateOptions.cs, DeleteSchemaCommand.cs, ListInstalledApplications.cs, Commands.md, CommandHelpCatalog.cs, WikiAnchors.txt
 Impact: All future renames must update Commands.md link paths (not just anchor IDs); test ExecuteCommands_WithUnknownVerb asserts specific canonical names in suggestions.
+
+## 2026-04-14 07:17 – PR #527 merged: MCP tool naming + CLI UX improvements
+
+Context: Long CI debugging session to get PR #527 merged into master.
+Decision: Merged via --admin with UNSTABLE status (Integration Tests pre-existing, MCP E2E timeout).
+Discovery: GitHub evaluates workflow from the MERGE COMMIT (base+head), not just HEAD branch — explains why complex 5-job workflow ran even though our branch had the simple one. MCP E2E tests: 141 tests x 30s CanReachEnvironmentAsync timeout = ~70 min total when sandbox unreachable. Need OneTimeSetUp refactor. Integration test Execute_CreatesNewPackageInFileSystem is pre-existing failure on Windows CI (templates not found), not caused by our changes. Process zombie fix: process.Kill(entireProcessTree: true) must be called on OperationCanceledException from WaitForExitAsync.
+Files: .github/workflows/build.yml (added timeout-minutes: 30 to mcp-e2e-tests job), clio.mcp.e2e/Support/Configuration/ClioCliCommandRunner.cs
+Impact: PR merged. Next: refactor MCP E2E CanReachEnvironmentAsync to OneTimeSetUp pattern to fix timeout issue.
+
+## 2026-04-14 16:05 – MCP URL fallback vs registered environments
+Context: Investigated why an agent used direct `uri/login/password` instead of registering a new clio environment before operating on a page.
+Decision: Keep the finding at analysis level for now: URL-based MCP execution is an intentional fallback in `ToolCommandResolver`, but it creates ambiguous agent behavior when working tools expose both `environment-name` and direct connection args.
+Discovery: `ToolCommandResolver.Resolve()` explicitly allows either a registered environment or explicit URI credentials, and unit tests lock that in as desired behavior when bootstrap is broken. Direct connection args are currently exposed by `PageGetTool`, `PageListTool`, `PageUpdateTool`, `ApplicationDeleteTool`, and `DataForgeTool`, while `reg-web-app` exists specifically for persistent environment registration.
+Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio.tests/Command/McpServer/ToolCommandResolverTests.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Tools/RegWebAppTool.cs, .codex/workspace-diary.md
+Impact: Future fix should likely prefer or require `environment-name` for normal work tools while preserving URL-based access only for bootstrap/break-glass scenarios.
+
+## 2026-04-14 16:24 – Soft MCP guidance toward registered environments
+Context: User approved the soft variant instead of removing URL-based MCP execution entirely.
+Decision: Kept `uri/login/password` compatibility in MCP tools, but changed resolver diagnostics, tool descriptions, and prompts to make `environment-name` the standard path and `reg-web-app` the preferred bootstrap step.
+Discovery: Wording-only MCP surface changes were enough to steer agent behavior without changing payload shape or execution paths. Existing E2E assertions still matched because they only depended on the preserved leading resolver text.
+Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageListTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Prompts/RegWebAppPrompt.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, .codex/workspace-diary.md
+Impact: Agents should now prefer registering environments and using `environment-name`, while direct credentials stay available only as a documented emergency fallback.

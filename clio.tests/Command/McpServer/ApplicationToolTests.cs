@@ -1090,7 +1090,7 @@ public sealed class ApplicationToolTests {
 		commandResolver
 			.When(resolver => resolver.Resolve<UninstallAppCommand>(Arg.Any<EnvironmentOptions>()))
 			.Do(_ => throw new InvalidOperationException(
-				"Either a configured environment name or an explicit URI is required for MCP command execution."));
+				"Either a configured environment name or an explicit URI is required for MCP command execution. Prefer a registered environment name; use explicit URI credentials only as a bootstrap or emergency fallback."));
 		ApplicationDeleteTool tool = new(startupCommand, logger, commandResolver);
 
 		// Act
@@ -1104,7 +1104,7 @@ public sealed class ApplicationToolTests {
 		// Assert
 		response.Success.Should().BeFalse(
 			because: "delete-app should return a structured failure when no execution target can be resolved");
-		response.Error.Should().Be("Either a configured environment name or an explicit URI is required for MCP command execution.",
+		response.Error.Should().Be("Either a configured environment name or an explicit URI is required for MCP command execution. Prefer a registered environment name; use explicit URI credentials only as a bootstrap or emergency fallback.",
 			because: "the error payload should preserve the human-readable resolver diagnostics");
 		response.Error.Should().NotContain("ErrorMessage",
 			because: "the error payload should contain the log text instead of the log message type name");
@@ -1190,6 +1190,10 @@ public sealed class ApplicationToolTests {
 			because: "the list prompt should bootstrap the workflow from the authoritative MCP contract before the first application call");
 		listPrompt.Should().Contain("`environment-name`",
 			because: "the list prompt should keep the normalized environment argument visible");
+		listPrompt.Should().Contain("call `reg-web-app` first",
+			because: "the list prompt should guide callers toward registering an environment before normal MCP work");
+		listPrompt.Should().Contain("emergency recovery flow",
+			because: "the list prompt should keep direct connection args in an emergency-only role");
 		listPrompt.Should().Contain("do not wrap `environment-name` inside an `args` object",
 			because: "the list prompt should explicitly reject the request shape that caused the analyzed session failure");
 		listPrompt.Should().NotContain("`app-id`",

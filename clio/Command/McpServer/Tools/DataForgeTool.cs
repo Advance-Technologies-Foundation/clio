@@ -33,9 +33,9 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeHealthToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Checks direct health endpoints of dataforge-service.")]
+	[Description("Checks direct health endpoints of dataforge-service. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public async Task<DataForgeHealthResponse> GetHealth(
-		[Description("Parameters: environment-name or explicit connection args.")]
+		[Description("Parameters: environment-name preferred; uri/login/password and OAuth direct connection args emergency fallback only.")]
 		[Required]
 		DataForgeHealthArgs args) {
 		try {
@@ -56,9 +56,9 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeStatusToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Combines direct dataforge-service health with Creatio DataForge maintenance status.")]
+	[Description("Combines direct dataforge-service health with Creatio DataForge maintenance status. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public async Task<DataForgeStatusResponse> GetStatus(
-		[Description("Parameters: environment-name or explicit connection args.")]
+		[Description("Parameters: environment-name preferred; uri/login/password and OAuth direct connection args emergency fallback only.")]
 		[Required]
 		DataForgeStatusArgs args) {
 		try {
@@ -84,7 +84,7 @@ public sealed class DataForgeTool(
 		OpenWorld = false)]
 	[Description("Finds similar tables through dataforge-service similarDetails endpoint.")]
 	public async Task<DataForgeFindTablesResponse> FindTables(
-		[Description("Parameters: query (required), optional limit, plus target connection args.")]
+		[Description("Parameters: query (required), optional limit, plus target connection args. Prefer environment-name; direct connection args are emergency fallback only.")]
 		[Required]
 		DataForgeFindTablesArgs args) {
 		try {
@@ -111,7 +111,7 @@ public sealed class DataForgeTool(
 		OpenWorld = false)]
 	[Description("Finds similar lookups through dataforge-service.")]
 	public async Task<DataForgeFindLookupsResponse> FindLookups(
-		[Description("Parameters: query (required), optional schema-name, optional limit, plus target connection args.")]
+		[Description("Parameters: query (required), optional schema-name, optional limit, plus target connection args. Prefer environment-name; direct connection args are emergency fallback only.")]
 		[Required]
 		DataForgeFindLookupsArgs args) {
 		try {
@@ -139,7 +139,7 @@ public sealed class DataForgeTool(
 		OpenWorld = false)]
 	[Description("Retrieves cypher relation paths between two tables through dataforge-service.")]
 	public async Task<DataForgeRelationsResponse> GetRelations(
-		[Description("Parameters: source-table, target-table (required), optional limit, plus target connection args.")]
+		[Description("Parameters: source-table, target-table (required), optional limit, plus target connection args. Prefer environment-name; direct connection args are emergency fallback only.")]
 		[Required]
 		DataForgeGetRelationsArgs args) {
 		try {
@@ -168,7 +168,7 @@ public sealed class DataForgeTool(
 		OpenWorld = false)]
 	[Description("Reads runtime entity columns from Creatio without requiring package context.")]
 	public DataForgeColumnsResponse GetTableColumns(
-		[Description("Parameters: table-name (required), plus target connection args.")]
+		[Description("Parameters: table-name (required), plus target connection args. Prefer environment-name; direct connection args are emergency fallback only.")]
 		[Required]
 		DataForgeGetTableColumnsArgs args) {
 		try {
@@ -193,7 +193,7 @@ public sealed class DataForgeTool(
 		OpenWorld = false)]
 	[Description("Aggregates tables, lookups, relations, columns, and service status for DataForge-assisted context reads.")]
 	public async Task<DataForgeContextResponse> GetContext(
-		[Description("Parameters: requirement-summary/candidate-terms/lookup-hints/relation-pairs plus target connection args.")]
+		[Description("Parameters: requirement-summary/candidate-terms/lookup-hints/relation-pairs plus target connection args. Prefer environment-name; direct connection args are emergency fallback only.")]
 		[Required]
 		DataForgeContextArgs args) {
 		try {
@@ -238,9 +238,9 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeInitializeToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Schedules DataForge initialize jobs through Creatio maintenance service.")]
+	[Description("Schedules DataForge initialize jobs through Creatio maintenance service. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public DataForgeMaintenanceResponse Initialize(
-		[Description("Parameters: environment-name or explicit connection args.")]
+		[Description("Parameters: environment-name preferred; uri/login/password and OAuth direct connection args emergency fallback only.")]
 		[Required]
 		DataForgeMaintenanceArgs args) {
 		try {
@@ -261,9 +261,9 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeUpdateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Schedules DataForge update jobs through Creatio maintenance service.")]
+	[Description("Schedules DataForge update jobs through Creatio maintenance service. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public DataForgeMaintenanceResponse Update(
-		[Description("Parameters: environment-name or explicit connection args.")]
+		[Description("Parameters: environment-name preferred; uri/login/password and OAuth direct connection args emergency fallback only.")]
 		[Required]
 		DataForgeMaintenanceArgs args) {
 		try {
@@ -341,24 +341,31 @@ public sealed record DataForgeRelationPairArgs(
 /// </summary>
 public abstract record DataForgeConnectionArgsBase {
 	[JsonPropertyName("environment-name")]
+	[Description("Registered clio environment name. Preferred for normal MCP work.")]
 	public string? EnvironmentName { get; init; }
 
 	[JsonPropertyName("uri")]
+	[Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
 	public string? Uri { get; init; }
 
 	[JsonPropertyName("login")]
+	[Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
 	public string? Login { get; init; }
 
 	[JsonPropertyName("password")]
+	[Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
 	public string? Password { get; init; }
 
 	[JsonPropertyName("client-id")]
+	[Description("OAuth client id for direct connection mode. Emergency fallback only.")]
 	public string? ClientId { get; init; }
 
 	[JsonPropertyName("client-secret")]
+	[Description("OAuth client secret for direct connection mode. Emergency fallback only.")]
 	public string? ClientSecret { get; init; }
 
 	[JsonPropertyName("auth-app-uri")]
+	[Description("OAuth application URI for direct connection mode. Emergency fallback only.")]
 	public string? AuthAppUri { get; init; }
 
 	[JsonPropertyName("allow-syssettings-auth-fallback")]
