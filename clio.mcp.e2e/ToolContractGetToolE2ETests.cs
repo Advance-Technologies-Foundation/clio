@@ -381,6 +381,52 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("tool-contract-get advertises business-rule-create validation and workflow guidance")]
+	public async Task ToolContractGet_Should_Advertise_Object_Business_Rule_Create_Contract() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					BusinessRuleCreateTool.BusinessRuleCreateToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the new business-rule mutation tool should be discoverable through tool-contract-get");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "entity-schema-name", "rule"],
+			because: "object-business-rule creation requires environment package entity and rule payload");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "forbid-fields" &&
+				validator.Field == "rule.name",
+			because: "the contract should reject public rule.name because clio generates it internally");
+		contract.Defaults.Should().Contain(defaultValue =>
+				defaultValue.Name == "rule.enabled" &&
+				defaultValue.Value == "true",
+			because: "the contract should advertise the enabled default for omitted requests");
+		contract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "entity-schema-name" &&
+				alias.Alias == "entitySchemaName" &&
+				alias.Status == "rejected",
+			because: "the contract should reject camelCase entity schema aliases");
+		contract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+					BusinessRuleCreateTool.BusinessRuleCreateToolName
+				},
+				because: "the contract should advertise schema inspection before destructive business-rule creation");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("tool-contract-get advertises page discovery selectors and raw body semantics")]
 	public async Task ToolContractGet_Should_Advertise_Page_List_And_Page_Get_Metadata() {
 		McpE2ESettings settings = TestConfiguration.Load();

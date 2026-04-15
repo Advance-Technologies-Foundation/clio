@@ -48,6 +48,7 @@ public sealed class ToolContractGetToolTests {
 				ApplicationGetListTool.ApplicationGetListToolName,
 				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 				ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+				BusinessRuleCreateTool.BusinessRuleCreateToolName,
 				PageSyncTool.ToolName,
 				PageUpdateTool.ToolName,
 				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
@@ -55,6 +56,47 @@ public sealed class ToolContractGetToolTests {
 			because: "the canonical contract set should include bootstrap diagnostics plus the key existing-app discovery and page mutation tools");
 		result.Tools!.Select(contract => contract.Name).Should().NotContain(ToolContractGetTool.ToolName,
 			because: "tool-contract-get should not include itself in the default returned contract set");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical business-rule-create contract with generated-name rejection and object-rule workflow guidance.")]
+	public void ToolContractGet_Should_Return_BusinessRuleCreate_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			BusinessRuleCreateTool.BusinessRuleCreateToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "tool-contract-get should expose the business-rule-create contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "entity-schema-name", "rule"],
+			because: "business-rule creation requires environment package entity and rule payload");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "forbid-fields" &&
+				validator.Field == "rule.name",
+			because: "the contract should explicitly reject public rule.name");
+		contract.Defaults.Should().Contain(defaultValue =>
+				defaultValue.Name == "rule.enabled" &&
+				defaultValue.Value == "true",
+			because: "the contract should document the enabled default explicitly");
+		contract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "entity-schema-name" &&
+				alias.Alias == "entitySchemaName" &&
+				alias.Status == "rejected",
+			because: "the contract should reject camelCase entity schema naming");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "rule",
+			because: "the output contract should advertise the created rule summary");
+		contract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+					BusinessRuleCreateTool.BusinessRuleCreateToolName
+				},
+				because: "the contract should advertise schema inspection before destructive rule creation");
 	}
 
 	[Test]
