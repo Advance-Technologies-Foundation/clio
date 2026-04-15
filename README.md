@@ -97,6 +97,9 @@ docker run -it --rm clio reg-web-app -help
 ## Commands Reference
 [Explore clio commands](clio/Commands.md)
 
+## Contributing
+See [CONTRIBUTING.md](CONTRIBUTING.md) for build setup, test targets, code style, and PR workflow.
+
 ## MCP Server
 
 Clio supports Model Context Protocol (MCP) for integration with AI assistants.
