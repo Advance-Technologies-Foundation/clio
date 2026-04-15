@@ -180,6 +180,7 @@ internal static class ToolContractCatalog {
 	private const string PackageUIdFieldName = "package-u-id";
 	private const string PrimaryPackageIdentifierDescription = "Primary package identifier.";
 	private const string PrimaryPackageNameDescription = "Primary package name.";
+	private const string RuleFieldName = "rule";
 	private const string SectionCodeFieldName = "section-code";
 
 	private static readonly ToolErrorContract CommonErrorContract = new([
@@ -198,6 +199,7 @@ internal static class ToolContractCatalog {
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
 			[ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName] = BuildApplicationSectionUpdate(),
+			[BusinessRuleCreateTool.BusinessRuleCreateToolName] = BuildObjectBusinessRuleCreate(),
 			[ApplicationGetInfoTool.ApplicationGetInfoToolName] = BuildApplicationGetInfo(),
 			[ApplicationGetListTool.ApplicationGetListToolName] = BuildApplicationGetList(),
 			[SchemaSyncTool.ToolName] = BuildSchemaSync(),
@@ -223,6 +225,7 @@ internal static class ToolContractCatalog {
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+		BusinessRuleCreateTool.BusinessRuleCreateToolName,
 		ApplicationGetInfoTool.ApplicationGetInfoToolName,
 		ApplicationGetListTool.ApplicationGetListToolName,
 		SchemaSyncTool.ToolName,
@@ -752,6 +755,103 @@ internal static class ToolContractCatalog {
 						ApplicationGetInfoTool.ApplicationGetInfoToolName
 					],
 					"Extend the existing-app discovery flow with section creation when the task is to add a section to an installed app.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildObjectBusinessRuleCreate() {
+		return new ToolContractDefinition(
+			BusinessRuleCreateTool.BusinessRuleCreateToolName,
+			"Creates an object-level Freedom UI business rule by editing the entity BusinessRule add-on and returns structured readback for the created rule.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, PackageNameFieldName, "entity-schema-name", RuleFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType, "Target package name."),
+					Field("entity-schema-name", StringType, "Target entity schema name."),
+					Field(RuleFieldName, ObjectType, "Structured business-rule definition with caption, optional enabled, one top-level if group, and one or more then actions.")
+				],
+				Validators: [
+					new ToolContractValidator("forbid-fields", "forbidden-field", "rule.name",
+						Context: "Generated automatically by clio; do not send it."),
+					new ToolContractValidator("enum", "unsupported-operator", "rule.if.operator",
+						Context: "Supported values: AND, OR."),
+					new ToolContractValidator("enum", "unsupported-comparison", "rule.if.conditions[*].comparison",
+						Context: "Supported values: equal, not-equal."),
+					new ToolContractValidator("enum", "unsupported-action", "rule.then[*].action",
+						Context: "Supported values: make-editable, make-read-only, make-required, make-optional.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(PackageUIdFieldName, StringType, PrimaryPackageIdentifierDescription),
+				Field(PackageNameFieldName, StringType, PrimaryPackageNameDescription),
+				Field("entity-schema-u-id", StringType, "Entity schema identifier."),
+				Field("entity-schema-name", StringType, "Entity schema name."),
+				Field(RuleFieldName, ObjectType, "Created rule summary."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				EnvironmentNameParameterAlias(),
+				PackageNameParameterAlias(),
+				Alias(ParameterScope, "entity-schema-name", "entitySchemaName", RejectedStatus,
+					"Use 'entity-schema-name' instead of 'entitySchemaName'."),
+				Alias(ParameterScope, RuleFieldName, "rule.name", RejectedStatus,
+					"Do not send 'rule.name'. clio generates the internal business-rule name automatically.")
+			],
+			[
+				Default("rule.enabled", "true", "Business rules are enabled by default when the field is omitted.")
+			],
+			[
+				Example("Create a required-field rule when status is Draft", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					["entity-schema-name"] = ExamplePackageName,
+					[RuleFieldName] = new Dictionary<string, object?> {
+						["caption"] = "Require owner for drafts",
+						["if"] = new Dictionary<string, object?> {
+							["operator"] = "AND",
+							["conditions"] = new[] {
+								new Dictionary<string, object?> {
+									["left"] = new Dictionary<string, object?> {
+										["kind"] = "attribute",
+										["path"] = "UsrStatus"
+									},
+									["comparison"] = "equal",
+									["right"] = new Dictionary<string, object?> {
+										["kind"] = "constant",
+										["value"] = "Draft"
+									}
+								}
+							}
+						},
+						["then"] = new[] {
+							new Dictionary<string, object?> {
+								["action"] = "make-required",
+								["targets"] = new[] { "Owner" }
+							}
+						}
+					}
+				})
+			],
+			Flow(
+				[
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+					BusinessRuleCreateTool.BusinessRuleCreateToolName
+				],
+				"Use after inspecting the deployed entity schema so referenced attributes can be chosen from the current model."),
+			[
+				Flow(
+					[
+						ApplicationGetListTool.ApplicationGetListToolName,
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						BusinessRuleCreateTool.BusinessRuleCreateToolName
+					],
+					"Fallback when the package or entity context must be discovered from an existing application first.")
 			],
 			[]);
 	}
