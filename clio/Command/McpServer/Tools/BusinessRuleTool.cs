@@ -67,24 +67,36 @@ public sealed class BusinessRuleCreateTool(IBusinessRuleService businessRuleServ
 			rule.Caption,
 			rule.Enabled,
 			new BusinessRuleConditionGroup(
-				rule.ConditionGroup.Operator,
-				rule.ConditionGroup.Conditions.ConvertAll(condition =>
+				rule.Condition.LogicalOperation,
+				rule.Condition.Conditions.ConvertAll(condition =>
 					new BusinessRuleCondition(
-						MapOperand(condition.Left),
-						condition.Comparison,
-						MapOperand(condition.Right)))),
+						MapOperand(condition.LeftExpression),
+						condition.ComparisonType,
+						MapOperand(condition.RightExpression)))),
 			rule.Actions.ConvertAll(action =>
 				new BusinessRuleAction(
-					action.Action,
-					action.Targets)));
+					action.Type,
+					action.Items)));
 	}
 
-	private static BusinessRuleOperand MapOperand(BusinessRuleOperandArgs operand) {
+	private static BusinessRuleOperand MapOperand(BusinessRuleExpressionArgs operand) {
 		return new BusinessRuleOperand(
-			operand.Kind,
+			MapExpressionKind(operand.Type),
 			operand.Path,
 			operand.Value,
 			operand.DataValueTypeName);
+	}
+
+	private static string MapExpressionKind(string expressionType) {
+		if (string.Equals(expressionType, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
+			return "attribute";
+		}
+
+		if (string.Equals(expressionType, "ConstValue", StringComparison.OrdinalIgnoreCase)) {
+			return "constant";
+		}
+
+		return expressionType;
 	}
 }
 
@@ -122,12 +134,12 @@ public sealed record BusinessRuleArgs(
 	[property: Required]
 	string Caption,
 
-	[property: JsonPropertyName("if")]
-	[property: Description("Top-level condition group. Supports one group with operator AND or OR.")]
+	[property: JsonPropertyName("condition")]
+	[property: Description("Top-level condition group in the target architecture contract. Supports one group with logicalOperation AND or OR.")]
 	[property: Required]
-	BusinessRuleConditionGroupArgs ConditionGroup,
+	BusinessRuleConditionGroupArgs Condition,
 
-	[property: JsonPropertyName("then")]
+	[property: JsonPropertyName("actions")]
 	[property: Description("One or more actions to execute when the condition group matches.")]
 	[property: Required]
 	List<BusinessRuleActionArgs> Actions
@@ -142,10 +154,10 @@ public sealed record BusinessRuleArgs(
 /// Structured top-level condition group accepted by the MCP tool.
 /// </summary>
 public sealed record BusinessRuleConditionGroupArgs(
-	[property: JsonPropertyName("operator")]
+	[property: JsonPropertyName("logicalOperation")]
 	[property: Description("Logical operator for the top-level condition group. Supported values: AND, OR.")]
 	[property: Required]
-	string Operator,
+	string LogicalOperation,
 
 	[property: JsonPropertyName("conditions")]
 	[property: Description("Leaf conditions evaluated by the top-level condition group.")]
@@ -157,37 +169,37 @@ public sealed record BusinessRuleConditionGroupArgs(
 /// Structured leaf condition accepted by the MCP tool.
 /// </summary>
 public sealed record BusinessRuleConditionArgs(
-	[property: JsonPropertyName("left")]
-	[property: Description("Left operand. Must be an attribute reference.")]
+	[property: JsonPropertyName("leftExpression")]
+	[property: Description("Left expression. Must be an attribute reference with type AttributeValue.")]
 	[property: Required]
-	BusinessRuleOperandArgs Left,
+	BusinessRuleExpressionArgs LeftExpression,
 
-	[property: JsonPropertyName("comparison")]
+	[property: JsonPropertyName("comparisonType")]
 	[property: Description("Condition comparison. Supported values: equal, not-equal.")]
 	[property: Required]
-	string Comparison,
+	string ComparisonType,
 
-	[property: JsonPropertyName("right")]
-	[property: Description("Right operand. Supports attribute or constant.")]
+	[property: JsonPropertyName("rightExpression")]
+	[property: Description("Right expression. Supports AttributeValue or ConstValue.")]
 	[property: Required]
-	BusinessRuleOperandArgs Right
+	BusinessRuleExpressionArgs RightExpression
 );
 
 /// <summary>
-/// Structured operand accepted by the MCP tool.
+/// Structured expression accepted by the MCP tool.
 /// </summary>
-public sealed record BusinessRuleOperandArgs(
-	[property: JsonPropertyName("kind")]
-	[property: Description("Operand kind. Supported values: attribute, constant.")]
+public sealed record BusinessRuleExpressionArgs(
+	[property: JsonPropertyName("type")]
+	[property: Description("Expression type. Supported values: AttributeValue, ConstValue.")]
 	[property: Required]
-	string Kind
+	string Type
 ) {
 	[property: JsonPropertyName("path")]
-	[property: Description("Attribute path when kind is attribute.")]
+	[property: Description("Attribute path when type is AttributeValue.")]
 	public string? Path { get; init; }
 
 	[property: JsonPropertyName("value")]
-	[property: Description("Constant value when kind is constant.")]
+	[property: Description("Constant value when type is ConstValue.")]
 	public System.Text.Json.JsonElement? Value { get; init; }
 
 	[property: JsonPropertyName("dataValueTypeName")]
@@ -199,15 +211,15 @@ public sealed record BusinessRuleOperandArgs(
 /// Structured action accepted by the MCP tool.
 /// </summary>
 public sealed record BusinessRuleActionArgs(
-	[property: JsonPropertyName("action")]
+	[property: JsonPropertyName("type")]
 	[property: Description("Business-rule action. Supported values: make-editable, make-read-only, make-required, make-optional.")]
 	[property: Required]
-	string Action,
+	string Type,
 
-	[property: JsonPropertyName("targets")]
+	[property: JsonPropertyName("items")]
 	[property: Description("One or more target attributes affected by the action.")]
 	[property: Required]
-	List<string> Targets
+	List<string> Items
 );
 
 /// <summary>

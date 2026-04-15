@@ -71,7 +71,7 @@ internal static class BusinessRuleToDtoConverter {
 		EntityColumnDescriptor leftDescriptor = ResolveAttributeDescriptor(
 			columnIndex,
 			condition.Left.Path!,
-			"rule.if.conditions[*].left.path");
+			"rule.condition.conditions[*].leftExpression.path");
 		return new BusinessRuleConditionMetadataDto {
 			TypeName = BusinessRuleConditionTypeName,
 			UId = Guid.NewGuid().ToString(),
@@ -91,7 +91,7 @@ internal static class BusinessRuleToDtoConverter {
 			EntityColumnDescriptor rightDescriptor = ResolveAttributeDescriptor(
 				columnIndex,
 				right.Path!,
-				"rule.if.conditions[*].right.path");
+				"rule.condition.conditions[*].rightExpression.path");
 			return BuildAttributeExpression(rightDescriptor, right.Path!);
 		}
 

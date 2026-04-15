@@ -26,11 +26,11 @@ internal static class BusinessRuleValidator {
 		}
 
 		if (request.Rule.ConditionGroup is null) {
-			throw new ArgumentException("rule.if is required.");
+			throw new ArgumentException("rule.condition is required.");
 		}
 
 		if (request.Rule.Actions is null || request.Rule.Actions.Count == 0) {
-			throw new ArgumentException("rule.then must contain at least one action.");
+			throw new ArgumentException("rule.actions must contain at least one action.");
 		}
 	}
 
@@ -38,16 +38,16 @@ internal static class BusinessRuleValidator {
 		BusinessRule rule,
 		IReadOnlyDictionary<string, EntityColumnDescriptor> columnIndex) {
 		if (string.IsNullOrWhiteSpace(rule.ConditionGroup.Operator)) {
-			throw new ArgumentException("rule.if.operator is required.");
+			throw new ArgumentException("rule.condition.logicalOperation is required.");
 		}
 
 		if (!string.Equals(rule.ConditionGroup.Operator, "AND", StringComparison.OrdinalIgnoreCase)
 			&& !string.Equals(rule.ConditionGroup.Operator, "OR", StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException($"Unsupported rule.if.operator '{rule.ConditionGroup.Operator}'. Use AND or OR.");
+			throw new ArgumentException($"Unsupported rule.condition.logicalOperation '{rule.ConditionGroup.Operator}'. Use AND or OR.");
 		}
 
 		if (rule.ConditionGroup.Conditions is null || rule.ConditionGroup.Conditions.Count == 0) {
-			throw new ArgumentException("rule.if.conditions must contain at least one condition.");
+			throw new ArgumentException("rule.condition.conditions must contain at least one condition.");
 		}
 
 		foreach (BusinessRuleCondition condition in rule.ConditionGroup.Conditions) {
@@ -63,57 +63,57 @@ internal static class BusinessRuleValidator {
 		BusinessRuleCondition condition,
 		IReadOnlyDictionary<string, EntityColumnDescriptor> columnIndex) {
 		if (condition.Left is null || !string.Equals(condition.Left.Kind, "attribute", StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException("rule.if.conditions[*].left.kind must be 'attribute'.");
+			throw new ArgumentException("rule.condition.conditions[*].leftExpression.type must be 'AttributeValue'.");
 		}
 
 		if (string.IsNullOrWhiteSpace(condition.Left.Path)) {
-			throw new ArgumentException("rule.if.conditions[*].left.path is required.");
+			throw new ArgumentException("rule.condition.conditions[*].leftExpression.path is required.");
 		}
 
 		EntityColumnDescriptor leftDescriptor = ResolveAttributeDescriptor(
 			columnIndex,
 			condition.Left.Path,
-			"rule.if.conditions[*].left.path");
+			"rule.condition.conditions[*].leftExpression.path");
 
 		if (!string.Equals(condition.Comparison, "equal", StringComparison.OrdinalIgnoreCase)
 			&& !string.Equals(condition.Comparison, "not-equal", StringComparison.OrdinalIgnoreCase)) {
 			throw new ArgumentException(
-				$"Unsupported rule.if.conditions[*].comparison '{condition.Comparison}'. Supported values: equal, not-equal.");
+				$"Unsupported rule.condition.conditions[*].comparisonType '{condition.Comparison}'. Supported values: equal, not-equal.");
 		}
 
 		if (condition.Right is null) {
-			throw new ArgumentException("rule.if.conditions[*].right is required.");
+			throw new ArgumentException("rule.condition.conditions[*].rightExpression is required.");
 		}
 
 		if (string.Equals(condition.Right.Kind, "attribute", StringComparison.OrdinalIgnoreCase)) {
 			if (string.IsNullOrWhiteSpace(condition.Right.Path)) {
-				throw new ArgumentException("rule.if.conditions[*].right.path is required when right.kind is 'attribute'.");
+				throw new ArgumentException("rule.condition.conditions[*].rightExpression.path is required when rightExpression.type is 'AttributeValue'.");
 			}
 
 			EntityColumnDescriptor rightDescriptor = ResolveAttributeDescriptor(
 				columnIndex,
 				condition.Right.Path,
-				"rule.if.conditions[*].right.path");
+				"rule.condition.conditions[*].rightExpression.path");
 			ValidateExplicitDataValueType(condition.Right.DataValueTypeName, rightDescriptor.DataValueTypeName,
-				"rule.if.conditions[*].right.dataValueTypeName");
+				"rule.condition.conditions[*].rightExpression.dataValueTypeName");
 			return;
 		}
 
 		if (!string.Equals(condition.Right.Kind, "constant", StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException("rule.if.conditions[*].right.kind must be 'attribute' or 'constant'.");
+			throw new ArgumentException("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue' or 'ConstValue'.");
 		}
 
 		if (condition.Right.Value is null) {
-			throw new ArgumentException("rule.if.conditions[*].right.value is required when right.kind is 'constant'.");
+			throw new ArgumentException("rule.condition.conditions[*].rightExpression.value is required when rightExpression.type is 'ConstValue'.");
 		}
 
 		ValidateExplicitDataValueType(condition.Right.DataValueTypeName, leftDescriptor.DataValueTypeName,
-			"rule.if.conditions[*].right.dataValueTypeName");
+			"rule.condition.conditions[*].rightExpression.dataValueTypeName");
 		if (string.Equals(leftDescriptor.DataValueTypeName, "Lookup", StringComparison.OrdinalIgnoreCase)) {
 			object? rawValue = ConvertJsonElement(condition.Right.Value.Value);
 			if (rawValue is not string guidString || !Guid.TryParse(guidString, out _)) {
 				throw new ArgumentException(
-					"rule.if.conditions[*].right.value must be a GUID string when the left attribute is a Lookup.");
+					"rule.condition.conditions[*].rightExpression.value must be a GUID string when the left attribute is a Lookup.");
 			}
 		}
 	}
@@ -123,24 +123,24 @@ internal static class BusinessRuleValidator {
 		IReadOnlyDictionary<string, EntityColumnDescriptor> columnIndex) {
 		string normalizedAction = NormalizeActionName(action.Action);
 		if (normalizedAction.Length == 0) {
-			throw new ArgumentException("rule.then[*].action is required.");
+			throw new ArgumentException("rule.actions[*].type is required.");
 		}
 
 		if (!SupportedActionTypeNames.ContainsKey(normalizedAction)) {
 			throw new ArgumentException(
-				$"Unsupported rule.then[*].action '{action.Action}'. Supported values: make-editable, make-read-only, make-required, make-optional.");
+				$"Unsupported rule.actions[*].type '{action.Action}'. Supported values: make-editable, make-read-only, make-required, make-optional.");
 		}
 
 		if (action.Targets is null || action.Targets.Count == 0) {
-			throw new ArgumentException("rule.then[*].targets must contain at least one attribute.");
+			throw new ArgumentException("rule.actions[*].items must contain at least one attribute.");
 		}
 
 		foreach (string target in action.Targets) {
 			if (string.IsNullOrWhiteSpace(target)) {
-				throw new ArgumentException("rule.then[*].targets cannot contain empty attribute names.");
+				throw new ArgumentException("rule.actions[*].items cannot contain empty attribute names.");
 			}
 
-			ResolveAttributeDescriptor(columnIndex, target, "rule.then[*].targets");
+			ResolveAttributeDescriptor(columnIndex, target, "rule.actions[*].items");
 		}
 	}
 

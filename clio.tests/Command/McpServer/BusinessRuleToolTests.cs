@@ -51,9 +51,9 @@ public sealed class BusinessRuleToolTests {
 					"AND",
 					[
 						new BusinessRuleConditionArgs(
-							new BusinessRuleOperandArgs("attribute") { Path = "Status" },
+							new BusinessRuleExpressionArgs("AttributeValue") { Path = "Status" },
 							"equal",
-							new BusinessRuleOperandArgs("constant") {
+							new BusinessRuleExpressionArgs("ConstValue") {
 								Value = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("\"Draft\"")
 						})
 					]),
@@ -110,9 +110,9 @@ public sealed class BusinessRuleToolTests {
 					"AND",
 					[
 						new BusinessRuleConditionArgs(
-							new BusinessRuleOperandArgs("attribute") { Path = "Status" },
+							new BusinessRuleExpressionArgs("AttributeValue") { Path = "Status" },
 							"equal",
-							new BusinessRuleOperandArgs("constant") {
+							new BusinessRuleExpressionArgs("ConstValue") {
 								Value = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("\"Draft\"")
 							})
 					]),

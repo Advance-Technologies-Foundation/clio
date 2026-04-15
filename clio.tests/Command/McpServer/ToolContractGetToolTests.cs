@@ -60,7 +60,7 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the canonical business-rule-create contract with generated-name rejection and object-rule workflow guidance.")]
+	[Description("Returns the canonical business-rule-create contract with generated-name rejection, actual response fields, and object-rule workflow guidance.")]
 	public void ToolContractGet_Should_Return_BusinessRuleCreate_Contract() {
 		// Arrange
 		ToolContractGetTool tool = new();
@@ -80,6 +80,18 @@ public sealed class ToolContractGetToolTests {
 				validator.Name == "forbid-fields" &&
 				validator.Field == "rule.name",
 			because: "the contract should explicitly reject public rule.name");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "enum" &&
+				validator.Field == "rule.condition.logicalOperation",
+			because: "the contract should validate the target architecture logicalOperation field");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "enum" &&
+				validator.Field == "rule.condition.conditions[*].comparisonType",
+			because: "the contract should validate target-architecture comparisonType fields");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "enum" &&
+				validator.Field == "rule.actions[*].type",
+			because: "the contract should validate target-architecture action type fields");
 		contract.Defaults.Should().Contain(defaultValue =>
 				defaultValue.Name == "rule.enabled" &&
 				defaultValue.Value == "true",
@@ -89,8 +101,14 @@ public sealed class ToolContractGetToolTests {
 				alias.Alias == "entitySchemaName" &&
 				alias.Status == "rejected",
 			because: "the contract should reject camelCase entity schema naming");
-		contract.OutputContract.Fields.Should().Contain(field => field.Name == "rule",
-			because: "the output contract should advertise the created rule summary");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "rule-name",
+			because: "the output contract should advertise the generated internal rule name that the tool actually returns");
+		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "rule",
+			because: "tool-contract-get should not advertise a structured rule payload that business-rule-create does not return");
+		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "package-u-id",
+			because: "tool-contract-get should not advertise package identifiers that the business-rule-create tool does not return");
+		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "entity-schema-u-id",
+			because: "tool-contract-get should not advertise entity identifiers that the business-rule-create tool does not return");
 		contract.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,

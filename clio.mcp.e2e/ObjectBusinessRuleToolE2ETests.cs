@@ -47,7 +47,7 @@ public sealed class BusinessRuleToolE2ETests {
 			arrangeContext.EnvironmentName,
 			arrangeContext.PackageName,
 			TargetEntitySchemaName,
-			response.Rule!.Id);
+			response.RuleName!);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
@@ -58,18 +58,12 @@ public sealed class BusinessRuleToolE2ETests {
 			because: "the response should report the target package");
 		response.EntitySchemaName.Should().Be(TargetEntitySchemaName,
 			because: "the response should report the target entity schema");
-		response.Rule.Should().NotBeNull(
-			because: "the response should include created rule readback");
-		response.Rule!.Name.Should().StartWith("BusinessRule_",
+		response.RuleName.Should().StartWith("BusinessRule_",
 			because: "the tool should generate an internal business-rule name automatically");
-		response.Rule!.Caption.Should().Be(caption,
-			because: "the created rule readback should preserve the requested caption");
-		response.Rule.ActionCount.Should().Be(1,
-			because: "the end-to-end request creates exactly one action in the THEN block");
-		response.Rule.TriggerNames.Should().Contain("Name",
-			because: "the trigger readback should be derived from the condition attribute");
 		snapshot.RuleCaption.Should().Be(caption,
 			because: "the persisted add-on metadata should contain the created rule");
+		snapshot.RuleName.Should().Be(response.RuleName,
+			because: "the persisted add-on metadata should contain the generated internal rule name returned by the tool");
 		snapshot.TriggerNames.Should().Contain("Name",
 			because: "the persisted rule should include the expected trigger");
 		snapshot.ResourceCaption.Should().Be(caption,
@@ -100,8 +94,8 @@ public sealed class BusinessRuleToolE2ETests {
 			because: "invalid environment handling should be surfaced as a structured tool failure");
 		response.Success.Should().BeFalse(
 			because: "the tool should fail when the requested environment is missing");
-		response.Rule.Should().BeNull(
-			because: "failed business-rule creation should not return created-rule readback");
+		response.RuleName.Should().BeNull(
+			because: "failed business-rule creation should not return a generated rule name");
 		response.Error.Should().NotBeNullOrWhiteSpace(
 			because: "the failure should include a readable diagnostic");
 		response.Error.Should().Contain(arrangeContext.EnvironmentName,
@@ -168,32 +162,32 @@ public sealed class BusinessRuleToolE2ETests {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
-					["entity-schema-name"] = entitySchemaName,
-					["rule"] = new Dictionary<string, object?> {
-						["caption"] = caption,
-						["if"] = new Dictionary<string, object?> {
-							["operator"] = "AND",
-							["conditions"] = new[] {
-								new Dictionary<string, object?> {
-									["left"] = new Dictionary<string, object?> {
-										["kind"] = "attribute",
-										["path"] = "Name"
-									},
-									["comparison"] = "equal",
-									["right"] = new Dictionary<string, object?> {
-										["kind"] = "constant",
-										["value"] = caption
+						["entity-schema-name"] = entitySchemaName,
+						["rule"] = new Dictionary<string, object?> {
+							["caption"] = caption,
+							["condition"] = new Dictionary<string, object?> {
+								["logicalOperation"] = "AND",
+								["conditions"] = new[] {
+									new Dictionary<string, object?> {
+										["leftExpression"] = new Dictionary<string, object?> {
+											["type"] = "AttributeValue",
+											["path"] = "Name"
+										},
+										["comparisonType"] = "equal",
+										["rightExpression"] = new Dictionary<string, object?> {
+											["type"] = "ConstValue",
+											["value"] = caption
+										}
 									}
 								}
-							}
-						},
-						["then"] = new[] {
-							new Dictionary<string, object?> {
-								["action"] = "make-required",
-								["targets"] = new[] { "JobTitle" }
+							},
+							["actions"] = new[] {
+								new Dictionary<string, object?> {
+									["type"] = "make-required",
+									["items"] = new[] { "JobTitle" }
+								}
 							}
 						}
-					}
 				}
 			},
 			cancellationToken);
@@ -203,7 +197,7 @@ public sealed class BusinessRuleToolE2ETests {
 		string environmentName,
 		string packageName,
 		string entitySchemaName,
-		string ruleId) {
+		string ruleName) {
 		EnvironmentSettings environment = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
 		IApplicationClient client = new CreatioClientAdapter(
 			environment.Uri!,
@@ -228,11 +222,13 @@ public sealed class BusinessRuleToolE2ETests {
 		using JsonDocument metaDataDocument = JsonDocument.Parse(metaData);
 		JsonElement createdRule = metaDataDocument.RootElement.GetProperty("rules")
 			.EnumerateArray()
-			.Single(rule => string.Equals(rule.GetProperty("uId").GetString(), ruleId, StringComparison.Ordinal));
+			.Single(rule => string.Equals(rule.GetProperty("name").GetString(), ruleName, StringComparison.Ordinal));
+		string ruleId = createdRule.GetProperty("uId").GetString()!;
 		JsonElement resource = response.RootElement.GetProperty("schema").GetProperty("resources")
 			.EnumerateArray()
 			.Single(item => string.Equals(item.GetProperty("key").GetString(), $"AddonConfig.Rules.{ruleId}.Caption", StringComparison.Ordinal));
 		return new AddonBusinessRuleSnapshot(
+			createdRule.GetProperty("name").GetString()!,
 			createdRule.GetProperty("caption").GetString()!,
 			createdRule.GetProperty("triggers").EnumerateArray()
 				.Select(trigger => trigger.GetProperty("name").GetString()!)
@@ -406,6 +402,7 @@ public sealed class BusinessRuleToolE2ETests {
 	}
 
 	private sealed record AddonBusinessRuleSnapshot(
+		string RuleName,
 		string RuleCaption,
 		IReadOnlyList<string> TriggerNames,
 		string ResourceCaption);

@@ -20,8 +20,10 @@ Object-level rule creation must:
       - GUID
       - date/time
    - support comparison types:
+   - currently implemented:
       - equal
       - not equal
+   - planned but not yet implemented:
       - is filled in
       - is not filled in
       - greater than

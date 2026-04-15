@@ -762,23 +762,23 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildObjectBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			BusinessRuleCreateTool.BusinessRuleCreateToolName,
-			"Creates an object-level Freedom UI business rule by editing the entity BusinessRule add-on and returns structured readback for the created rule.",
+			"Creates an object-level Freedom UI business rule by editing the entity BusinessRule add-on and returns the generated internal rule name plus target package/entity echo fields.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, "entity-schema-name", RuleFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name."),
 					Field("entity-schema-name", StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured business-rule definition with caption, optional enabled, one top-level if group, and one or more then actions.")
+					Field(RuleFieldName, ObjectType, "Structured business-rule definition with caption, optional enabled, one top-level condition group, and one or more actions.")
 				],
 				Validators: [
 					new ToolContractValidator("forbid-fields", "forbidden-field", "rule.name",
 						Context: "Generated automatically by clio; do not send it."),
-					new ToolContractValidator("enum", "unsupported-operator", "rule.if.operator",
+					new ToolContractValidator("enum", "unsupported-operator", "rule.condition.logicalOperation",
 						Context: "Supported values: AND, OR."),
-					new ToolContractValidator("enum", "unsupported-comparison", "rule.if.conditions[*].comparison",
+					new ToolContractValidator("enum", "unsupported-comparison", "rule.condition.conditions[*].comparisonType",
 						Context: "Supported values: equal, not-equal."),
-					new ToolContractValidator("enum", "unsupported-action", "rule.then[*].action",
+					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
 						Context: "Supported values: make-editable, make-read-only, make-required, make-optional.")
 				]),
 			EnvelopeOutput(
@@ -787,11 +787,9 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field(PackageUIdFieldName, StringType, PrimaryPackageIdentifierDescription),
 				Field(PackageNameFieldName, StringType, PrimaryPackageNameDescription),
-				Field("entity-schema-u-id", StringType, "Entity schema identifier."),
 				Field("entity-schema-name", StringType, "Entity schema name."),
-				Field(RuleFieldName, ObjectType, "Created rule summary."),
+				Field("rule-name", StringType, "Generated internal business-rule name."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -810,29 +808,29 @@ internal static class ToolContractCatalog {
 				Example("Create a required-field rule when status is Draft", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName,
-					["entity-schema-name"] = ExamplePackageName,
+					["entity-schema-name"] = "UsrTask",
 					[RuleFieldName] = new Dictionary<string, object?> {
 						["caption"] = "Require owner for drafts",
-						["if"] = new Dictionary<string, object?> {
-							["operator"] = "AND",
+						["condition"] = new Dictionary<string, object?> {
+							["logicalOperation"] = "AND",
 							["conditions"] = new[] {
 								new Dictionary<string, object?> {
-									["left"] = new Dictionary<string, object?> {
-										["kind"] = "attribute",
+									["leftExpression"] = new Dictionary<string, object?> {
+										["type"] = "AttributeValue",
 										["path"] = "UsrStatus"
 									},
-									["comparison"] = "equal",
-									["right"] = new Dictionary<string, object?> {
-										["kind"] = "constant",
+									["comparisonType"] = "equal",
+									["rightExpression"] = new Dictionary<string, object?> {
+										["type"] = "ConstValue",
 										["value"] = "Draft"
 									}
 								}
 							}
 						},
-						["then"] = new[] {
+						["actions"] = new[] {
 							new Dictionary<string, object?> {
-								["action"] = "make-required",
-								["targets"] = new[] { "Owner" }
+								["type"] = "make-required",
+								["items"] = new[] { "Owner" }
 							}
 						}
 					}
