@@ -25,7 +25,7 @@ The feature is expected to scale across two dimensions:
 
 The current feature support is limited to:
 
-- create object-level business rule - [object-business-rule-create.md](./object-business-rule-create.md)
+- create object-level business rule - [object-business-rule-create-spec.md](./object-business-rule-create-spec.md)
 
 
 ## Architecture
