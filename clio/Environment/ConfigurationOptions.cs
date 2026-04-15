@@ -480,7 +480,11 @@ namespace Clio
 				streamWriter.WriteLine($"\"appsetting file path: {AppSettingsFilePath}\"");
 				serializer.Serialize(streamWriter, _settings);
 			} else {
-				serializer.Serialize(streamWriter, _settings.Environments[environment]);
+				string actualKey = FindEnvironmentKey(environment);
+				if (actualKey == null) {
+					throw new KeyNotFoundException($"Environment '{environment}' not found");
+				}
+				serializer.Serialize(streamWriter, _settings.Environments[actualKey]);
 			}
 		}
 
@@ -495,13 +499,23 @@ namespace Clio
 				throw new InvalidOperationException(
 					$"Active environment is not configured. Repair {AppSettingsFilePath} or register an environment.");
 			}
-			if (!_settings.Environments.TryGetValue(name, out EnvironmentSettings environment)) {
-				environment = new EnvironmentSettings();
-				_settings.Environments[name] = environment;
+			string actualKey = FindEnvironmentKey(name);
+			if (actualKey != null) {
+				return _settings.Environments[actualKey];
 			}
+			// Create new environment if it doesn't exist
+			var environment = new EnvironmentSettings();
+			_settings.Environments[name] = environment;
 			return environment;
 		}
 
+
+		private string FindEnvironmentKey(string name) {
+			if (string.IsNullOrWhiteSpace(name)) {
+				return null;
+			}
+			return _settings.Environments.Keys.FirstOrDefault(key => string.Equals(key, name, StringComparison.OrdinalIgnoreCase));
+		}
 
 		public EnvironmentSettings FindEnvironment(string name = null) {
 			EnsureSettingsCollections();
@@ -513,7 +527,8 @@ namespace Clio
 				}
 				return null;
 			}
-			if (_settings.Environments.TryGetValue(name, out EnvironmentSettings environment)) {
+			string actualKey = FindEnvironmentKey(name);
+			if (actualKey != null && _settings.Environments.TryGetValue(actualKey, out EnvironmentSettings environment)) {
 				return environment;
 			}
 			return null;
@@ -541,7 +556,12 @@ namespace Clio
 
 		public bool IsEnvironmentExists(string name) {
 			EnsureSettingsCollections();
-			return !string.IsNullOrWhiteSpace(name) && _settings.Environments.ContainsKey(name);
+			return !string.IsNullOrWhiteSpace(name) && FindEnvironmentKey(name) != null;
+		}
+
+		public string GetActualEnvironmentName(string name) {
+			EnsureSettingsCollections();
+			return FindEnvironmentKey(name);
 		}
 
 		public string FindEnvironmentNameByUri(string uri) {
@@ -580,13 +600,15 @@ namespace Clio
 
 		public void RemoveEnvironment(string environment) {
 			EnsureSettingsCollections();
-			if (_settings.Environments.Remove(environment)) {
-				if (string.Equals(_settings.ActiveEnvironmentKey, environment, StringComparison.OrdinalIgnoreCase)) {
+			string actualKey = FindEnvironmentKey(environment);
+			if (actualKey == null) {
+				throw new KeyNotFoundException($"Application \"{environment}\" not found");
+			}
+			if (_settings.Environments.Remove(actualKey)) {
+				if (string.Equals(_settings.ActiveEnvironmentKey, actualKey, StringComparison.OrdinalIgnoreCase)) {
 					_settings.ActiveEnvironmentKey = _settings.Environments.Keys.FirstOrDefault();
 				}
 				Save();
-			} else {
-				throw new KeyNotFoundException($"Application \"{environment}\" not found");
 			}
 		}
 

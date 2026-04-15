@@ -266,18 +266,21 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 					return 1;
 				}
 
+				// Get the actual environment name with correct casing
+				string actualEnvironmentName = settingsRepository.GetActualEnvironmentName(environmentName) ?? environmentName;
+
 				switch (format.ToLower()) {
 					case "json":
-						OutputAsJson(environment, environmentName);
+						OutputAsJson(environment, actualEnvironmentName);
 						break;
 					case "table":
 						// For a single environment, output as raw in table-like format
-						logger.WriteLine($"Environment: {environmentName}");
+						logger.WriteLine($"Environment: {actualEnvironmentName}");
 						logger.WriteLine(new string('-', 50));
 						OutputAsRaw(environment);
 						break;
 					case "raw":
-						OutputAsRaw(environment, environmentName);
+						OutputAsRaw(environment, actualEnvironmentName);
 						break;
 					default:
 						logger.WriteWarning($"Unknown format: {format}. Use: json, table, or raw");
