@@ -13,18 +13,18 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class BusinessRuleToolTests {
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises a stable MCP tool name for business-rule-create.")]
+	[Description("Advertises a stable MCP tool name for create-entity-business-rule.")]
 	public void BusinessRuleCreate_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 
 		// Act
-		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(BusinessRuleCreateTool)
-			.GetMethod(nameof(BusinessRuleCreateTool.BusinessRuleCreate))!
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(CreateEntityBusinessRuleTool)
+			.GetMethod(nameof(CreateEntityBusinessRuleTool.BusinessRuleCreate))!
 			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
 			.Single();
 
 		// Assert
-		attribute.Name.Should().Be(BusinessRuleCreateTool.BusinessRuleCreateToolName,
+		attribute.Name.Should().Be(CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
 			because: "the MCP tool name must stay stable for callers and tests");
 		attribute.ReadOnly.Should().BeFalse(
 			because: "creating business rules mutates remote Creatio metadata");
@@ -40,7 +40,7 @@ public sealed class BusinessRuleToolTests {
 		IBusinessRuleService service = Substitute.For<IBusinessRuleService>();
 		service.Create("dev", Arg.Any<BusinessRuleCreateRequest>())
 			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
-		BusinessRuleCreateTool tool = new(service);
+		CreateEntityBusinessRuleTool tool = new(service);
 		BusinessRuleCreateArgs args = new(
 			"dev",
 			"UsrPkg",
@@ -99,7 +99,7 @@ public sealed class BusinessRuleToolTests {
 		IBusinessRuleService service = Substitute.For<IBusinessRuleService>();
 		service.Create("dev", Arg.Any<BusinessRuleCreateRequest>())
 			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
-		BusinessRuleCreateTool tool = new(service);
+		CreateEntityBusinessRuleTool tool = new(service);
 		BusinessRuleCreateArgs args = new(
 			"dev",
 			"UsrPkg",

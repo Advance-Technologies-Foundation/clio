@@ -10,7 +10,7 @@ The feature is expected to scale across two dimensions:
 
 ### Scopes
 
-- object-level business rules
+- entity-level business rules
 - page-level business rules
 
 ### Operations
@@ -25,7 +25,7 @@ The feature is expected to scale across two dimensions:
 
 The current feature support is limited to:
 
-- create object-level business rule - [object-business-rule-create-spec.md](./object-business-rule-create-spec.md)
+- create entity-level business rule - [create-entity-business-rule-spec.md](./create-entity-business-rule-spec.md)
 
 
 ## Architecture

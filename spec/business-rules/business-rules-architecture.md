@@ -2,9 +2,7 @@
 
 ## Scope
 
-This document describes the current internal architecture for the `business-rules` feature, with focus on the first supported capability:
-
-- create rule behavior
+This document describes the current internal architecture for the `business-rules` feature.
 
 ## Component Diagram
 
@@ -12,7 +10,7 @@ This document describes the current internal architecture for the `business-rule
 flowchart LR
     subgraph Clio["clio"]
         subgraph MCP["mcp"]
-            Tool["BusinessRuleCreateTool"]
+            Tool["CreateEntityBusinessRuleTool"]
         end
 
         subgraph Core["Business Rule Core"]
@@ -33,29 +31,6 @@ flowchart LR
     Service -->|"load/save add-on"| Addon
 ```
 
-## Persistence Approach
-
-Object business rules are persisted through the entity-schema add-on authoring flow used by Freedom UI.
-
-High-level flow:
-
-1. Resolve the target environment, package, and entity schema.
-2. Validate condition attributes and action target attributes against the target schema.
-3. Load the editable `BusinessRule` add-on through `AddonSchemaDesignerService.svc/GetSchema`.
-4. Deserialize the returned add-on `metaData`.
-5. Append the new rule and update add-on resources.
-6. Save the updated add-on through `AddonSchemaDesignerService.svc/SaveSchema`.
-
-The implementation writes to the editable business-rule add-on layer rather than modifying unrelated schema content directly.
-
-## Runtime Endpoints vs Authoring Endpoints
-
-Runtime endpoints are not the authoring mechanism for this feature:
-
-- `BusinessRulesManagerService.svc/GetBusinessRules` is for runtime rule loading.
-- `BusinessRulesEngineService.svc/Execute` is for runtime execution.
-
-Authoring is performed through add-on load and save operations.
 
 ## MCP Payload Example
 
@@ -218,12 +193,11 @@ Authoring is performed through add-on load and save operations.
 - Persist business rules through `AddonSchemaDesignerService.svc`, not runtime business-rule endpoints.
 - Separate `BusinessRuleValidator` from `BusinessRuleService` so validation stays testable and reusable.
 - Keep `BusinessRuleToDtoConvertor` isolated so MCP request DTOs do not become the persistence model.
-- Start with `BusinessRuleCreateTool`, but keep the service structure extensible for additional tools later.
+- Start with `CreateEntityBusinessRuleTool`, but keep the service structure extensible for additional tools later.
 
 ## Related Docs
 
 - Entry point: [README.md](C:/Projects/clio/spec/business-rules/README.md)
 - Product spec: [business-rules-spec.md](C:/Projects/clio/spec/business-rules/business-rules-spec.md)
-- Verification: [object-business-rule-create-qa.md](C:/Projects/clio/spec/business-rules/capabilities/object-business-rule-create-qa.md)
-- Capability doc: [object-business-rule-create.md](C:/Projects/clio/spec/business-rules/capabilities/object-business-rule-create.md)
+- Capability doc: [create-entity-business-rule-spec.md](C:/Projects/clio/spec/business-rules/create-entity-business-rule-spec.md)
 - Previous design note: [design.md](C:/Projects/clio/spec/business-rules/design.md)

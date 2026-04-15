@@ -11,20 +11,20 @@ using static Clio.Command.BusinessRules.BusinessRuleConstants;
 namespace Clio.Command.BusinessRules;
 
 /// <summary>
-/// Creates object-level Freedom UI business rules through the entity add-on authoring flow.
+/// Creates entity-level Freedom UI business rules through the entity add-on authoring flow.
 /// </summary>
 public interface IBusinessRuleService {
 	/// <summary>
-	/// Creates an object business rule in the requested package and environment.
+	/// Creates an entity business rule in the requested package and environment.
 	/// </summary>
 	/// <param name="environmentName">Registered clio environment name.</param>
-	/// <param name="request">Structured object business-rule request.</param>
+	/// <param name="request">Structured entity business-rule request.</param>
 	/// <returns>Structured information about the created business rule.</returns>
 	BusinessRuleCreateResult Create(string environmentName, BusinessRuleCreateRequest request);
 }
 
 /// <summary>
-/// Structured request for object business-rule creation.
+/// Structured request for entity business-rule creation.
 /// </summary>
 public sealed record BusinessRuleCreateRequest(
 	string PackageName,
@@ -33,12 +33,12 @@ public sealed record BusinessRuleCreateRequest(
 );
 
 /// <summary>
-/// Structured result for object business-rule creation.
+/// Structured result for entity business-rule creation.
 /// </summary>
 public sealed record BusinessRuleCreateResult(string RuleName);
 
 /// <summary>
-/// Default object business-rule creator backed by <c>AddonSchemaDesignerService.svc</c>.
+/// Default entity business-rule creator backed by <c>AddonSchemaDesignerService.svc</c>.
 /// </summary>
 public sealed class BusinessRuleService(
 	ISettingsRepository settingsRepository,

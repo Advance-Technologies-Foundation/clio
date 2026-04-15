@@ -48,7 +48,7 @@ public sealed class ToolContractGetToolTests {
 				ApplicationGetListTool.ApplicationGetListToolName,
 				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 				ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
-				BusinessRuleCreateTool.BusinessRuleCreateToolName,
+				CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
 				PageSyncTool.ToolName,
 				PageUpdateTool.ToolName,
 				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
@@ -60,22 +60,22 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the canonical business-rule-create contract with generated-name rejection, actual response fields, and object-rule workflow guidance.")]
+	[Description("Returns the canonical create-entity-business-rule contract with generated-name rejection, actual response fields, and entity-rule workflow guidance.")]
 	public void ToolContractGet_Should_Return_BusinessRuleCreate_Contract() {
 		// Arrange
 		ToolContractGetTool tool = new();
 
 		// Act
 		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
-			BusinessRuleCreateTool.BusinessRuleCreateToolName
+			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 		]));
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "tool-contract-get should expose the business-rule-create contract");
+			because: "tool-contract-get should expose the create-entity-business-rule contract");
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "entity-schema-name", "rule"],
-			because: "business-rule creation requires environment package entity and rule payload");
+			because: "entity-business-rule creation requires environment package entity and rule payload");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "forbid-fields" &&
 				validator.Field == "rule.name",
@@ -104,15 +104,15 @@ public sealed class ToolContractGetToolTests {
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "rule-name",
 			because: "the output contract should advertise the generated internal rule name that the tool actually returns");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "rule",
-			because: "tool-contract-get should not advertise a structured rule payload that business-rule-create does not return");
+			because: "tool-contract-get should not advertise a structured rule payload that create-entity-business-rule does not return");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "package-u-id",
-			because: "tool-contract-get should not advertise package identifiers that the business-rule-create tool does not return");
+			because: "tool-contract-get should not advertise package identifiers that the create-entity-business-rule tool does not return");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "entity-schema-u-id",
-			because: "tool-contract-get should not advertise entity identifiers that the business-rule-create tool does not return");
+			because: "tool-contract-get should not advertise entity identifiers that the create-entity-business-rule tool does not return");
 		contract.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
-					BusinessRuleCreateTool.BusinessRuleCreateToolName
+					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				},
 				because: "the contract should advertise schema inspection before destructive rule creation");
 	}

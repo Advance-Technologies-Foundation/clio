@@ -381,8 +381,8 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("tool-contract-get advertises business-rule-create validation, actual response fields, and workflow guidance")]
-	public async Task ToolContractGet_Should_Advertise_Object_Business_Rule_Create_Contract() {
+	[AllureName("tool-contract-get advertises create-entity-business-rule validation, actual response fields, and workflow guidance")]
+	public async Task ToolContractGet_Should_Advertise_Entity_Business_Rule_Create_Contract() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -394,7 +394,7 @@ public sealed class ToolContractGetToolE2ETests {
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
 				["tool-names"] = new[] {
-					BusinessRuleCreateTool.BusinessRuleCreateToolName
+					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				}
 			});
 
@@ -403,7 +403,7 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "the new business-rule mutation tool should be discoverable through tool-contract-get");
 		ToolContractDefinition contract = response.Tools!.Single();
 		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "entity-schema-name", "rule"],
-			because: "object-business-rule creation requires environment package entity and rule payload");
+			because: "entity-business-rule creation requires environment package entity and rule payload");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "forbid-fields" &&
 				validator.Field == "rule.name",
@@ -430,7 +430,7 @@ public sealed class ToolContractGetToolE2ETests {
 				alias.Status == "rejected",
 			because: "the contract should reject camelCase entity schema aliases");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "rule-name",
-			because: "the published contract should match the actual business-rule-create success payload");
+			because: "the published contract should match the actual create-entity-business-rule success payload");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "rule",
 			because: "the contract should not advertise a structured rule object that the tool does not return today");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "package-u-id",
@@ -440,7 +440,7 @@ public sealed class ToolContractGetToolE2ETests {
 		contract.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
-					BusinessRuleCreateTool.BusinessRuleCreateToolName
+					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				},
 				because: "the contract should advertise schema inspection before destructive business-rule creation");
 	}

@@ -10,22 +10,22 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool surface for object-level Freedom UI business-rule creation.
+/// MCP tool surface for entity-level Freedom UI business-rule creation.
 /// </summary>
 [McpServerToolType]
-public sealed class BusinessRuleCreateTool(IBusinessRuleService businessRuleService) {
+public sealed class CreateEntityBusinessRuleTool(IBusinessRuleService businessRuleService) {
 
 	/// <summary>
-	/// Stable MCP tool name for object business-rule creation.
+	/// Stable MCP tool name for entity business-rule creation.
 	/// </summary>
-	internal const string BusinessRuleCreateToolName = "business-rule-create";
+	internal const string BusinessRuleCreateToolName = "create-entity-business-rule";
 
 	/// <summary>
-	/// Creates an object-level Freedom UI business rule in the requested package and entity schema.
+	/// Creates an entity-level Freedom UI business rule in the requested package and entity schema.
 	/// </summary>
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Creates an object-level Freedom UI business rule by editing the entity BusinessRule add-on through backend MCP.")]
+	[Description("Creates an entity-level Freedom UI business rule by editing the entity BusinessRule add-on through backend MCP.")]
 	public BusinessRuleCreateResponse BusinessRuleCreate(
 		[Description("Parameters: environment-name, package-name, entity-schema-name, rule (all required)")]
 		[Required]
@@ -101,7 +101,7 @@ public sealed class BusinessRuleCreateTool(IBusinessRuleService businessRuleServ
 }
 
 /// <summary>
-/// Arguments for the <c>business-rule-create</c> MCP tool.
+/// Arguments for the <c>create-entity-business-rule</c> MCP tool.
 /// </summary>
 public sealed record BusinessRuleCreateArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -120,7 +120,7 @@ public sealed record BusinessRuleCreateArgs(
 	string EntitySchemaName,
 
 	[property: JsonPropertyName("rule")]
-	[property: Description("Structured object business-rule definition.")]
+	[property: Description("Structured entity business-rule definition.")]
 	[property: Required]
 	BusinessRuleArgs Rule
 );
@@ -223,7 +223,7 @@ public sealed record BusinessRuleActionArgs(
 );
 
 /// <summary>
-/// Structured object business-rule creation envelope.
+/// Structured entity business-rule creation envelope.
 /// </summary>
 public sealed record BusinessRuleCreateResponse(
 	[property: JsonPropertyName("success")] bool Success,

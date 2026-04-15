@@ -1,14 +1,14 @@
-# object-business-rule-create
+# create-entity-business-rule
 
 ## Purpose
 
-This capability defines behavior specific to creating object-level business rules.
+This capability defines behavior specific to creating entity-level business rules.
 
 ## Behavior
 
-Object-level rule creation must:
+Entity-level rule creation must:
 
-- create a new editable rule for the selected object
+- create a new editable rule for the selected entity
 - conditions
    - support left and right expression types:
       - attribute
@@ -45,14 +45,14 @@ Object-level rule creation must:
 
 ## Validation
 
-Object-level rule creation must reject the request when:
+Entity-level rule creation must reject the request when:
 
-- object does not exist
+- entity does not exist
 - caption is missing or empty
 - the condition group is empty
 - an action has no targets
 - the request uses an unsupported action type
 - the request uses an unsupported condition shape
-- a referenced condition attribute does not exist in the target object scope
-- a referenced action target does not exist in the target object scope
+- a referenced condition attribute does not exist in the target entity scope
+- a referenced action target does not exist in the target entity scope
 - persistence fails

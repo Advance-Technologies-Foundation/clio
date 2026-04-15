@@ -51,7 +51,7 @@ public sealed class BusinessRuleServiceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Appends a new object business rule, preserves existing editable rules, and writes the generated caption resource back through the add-on designer service.")]
+	[Description("Appends a new entity business rule, preserves existing editable rules, and writes the generated caption resource back through the add-on designer service.")]
 	public void Create_Should_Append_Rule_And_Save_Addon_Metadata() {
 		// Arrange
 		BusinessRuleCreateRequest request = new(

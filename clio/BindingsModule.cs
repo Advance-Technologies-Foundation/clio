@@ -214,7 +214,7 @@ public class BindingsModule {
 		services.AddTransient<ApplicationCreateTool>();
 		services.AddTransient<ApplicationSectionCreateTool>();
 		services.AddTransient<ApplicationSectionUpdateTool>();
-		services.AddTransient<BusinessRuleCreateTool>();
+		services.AddTransient<CreateEntityBusinessRuleTool>();
 		services.AddTransient<ApplicationDeleteTool>();
 		services.AddTransient<ToolContractGetTool>();
 		services.AddTransient<PageGetTool>();

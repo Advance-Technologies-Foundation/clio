@@ -14,21 +14,21 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the object business-rule MCP tool.
+/// End-to-end tests for the entity business-rule MCP tool.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
-[AllureFeature("business-rule-create")]
+[AllureFeature("create-entity-business-rule")]
 [NonParallelizable]
-public sealed class BusinessRuleToolE2ETests {
-	private const string ToolName = BusinessRuleCreateTool.BusinessRuleCreateToolName;
+public sealed class EntityBusinessRuleToolE2ETests {
+	private const string ToolName = CreateEntityBusinessRuleTool.BusinessRuleCreateToolName;
 	private const string TargetEntitySchemaName = "Contact";
 
 	[Test]
-	[Description("Creates an object-level business rule through the real MCP server and verifies the rule persisted in the BusinessRule add-on payload.")]
+	[Description("Creates an entity-level business rule through the real MCP server and verifies the rule persisted in the BusinessRule add-on payload.")]
 	[AllureTag(ToolName)]
-	[AllureName("Object business-rule MCP tool persists rule metadata in add-on designer storage")]
-	[AllureDescription("Arranges a unique sandbox package through the real CLI, calls business-rule-create through the real MCP server, then fetches the Contact BusinessRule add-on directly from Creatio and verifies the created rule and caption resource were persisted without removing unrelated rules.")]
+	[AllureName("Entity business-rule MCP tool persists rule metadata in add-on designer storage")]
+	[AllureDescription("Arranges a unique sandbox package through the real CLI, calls create-entity-business-rule through the real MCP server, then fetches the Contact BusinessRule add-on directly from Creatio and verifies the created rule and caption resource were persisted without removing unrelated rules.")]
 	public async Task BusinessRuleCreate_Should_Persist_Rule_Into_Addon_Metadata() {
 		// Arrange
 		await using SandboxPackageArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
@@ -73,8 +73,8 @@ public sealed class BusinessRuleToolE2ETests {
 	[Test]
 	[Description("Returns a readable structured failure when the target environment name is invalid.")]
 	[AllureTag(ToolName)]
-	[AllureName("Object business-rule MCP tool reports invalid environment failures readably")]
-	[AllureDescription("Starts the real MCP server and calls business-rule-create with a missing environment name, then verifies the tool returns a readable structured failure and does not hide the problem behind an opaque transport error.")]
+	[AllureName("Entity business-rule MCP tool reports invalid environment failures readably")]
+	[AllureDescription("Starts the real MCP server and calls create-entity-business-rule with a missing environment name, then verifies the tool returns a readable structured failure and does not hide the problem behind an opaque transport error.")]
 	public async Task BusinessRuleCreate_Should_Report_Invalid_Environment_Readably() {
 		// Arrange
 		await using InvalidEnvironmentArrangeContext arrangeContext = await ArrangeInvalidEnvironmentAsync();
@@ -102,16 +102,16 @@ public sealed class BusinessRuleToolE2ETests {
 			because: "the error should identify the missing environment");
 	}
 
-	[AllureStep("Arrange sandbox package for object business-rule MCP tests")]
+	[AllureStep("Arrange sandbox package for entity business-rule MCP tests")]
 	private static async Task<SandboxPackageArrangeContext> ArrangeSandboxPackageAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		if (!settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive object business-rule MCP end-to-end tests.");
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive entity business-rule MCP end-to-end tests.");
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-object-business-rule-mcp-e2e-{Guid.NewGuid():N}");
+		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-entity-business-rule-mcp-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(rootDirectory);
 		string workspaceName = $"workspace-{Guid.NewGuid():N}";
 		string workspacePath = Path.Combine(rootDirectory, workspaceName);
@@ -125,7 +125,7 @@ public sealed class BusinessRuleToolE2ETests {
 				cancellationTokenSource.Token);
 		} catch (Exception ex) {
 			Assert.Ignore(
-				$"Skipping destructive object business-rule MCP end-to-end test because cliogate could not be installed or verified for '{settings.Sandbox.EnvironmentName}'. {ex.Message}");
+				$"Skipping destructive entity business-rule MCP end-to-end test because cliogate could not be installed or verified for '{settings.Sandbox.EnvironmentName}'. {ex.Message}");
 		}
 
 		await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationTokenSource.Token);
@@ -136,7 +136,7 @@ public sealed class BusinessRuleToolE2ETests {
 		return new SandboxPackageArrangeContext(rootDirectory, settings.Sandbox.EnvironmentName!, packageName, session, cancellationTokenSource);
 	}
 
-	[AllureStep("Arrange invalid-environment MCP session for object business-rule tool")]
+	[AllureStep("Arrange invalid-environment MCP session for entity business-rule tool")]
 	private static async Task<InvalidEnvironmentArrangeContext> ArrangeInvalidEnvironmentAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -154,7 +154,7 @@ public sealed class BusinessRuleToolE2ETests {
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the business-rule-create MCP tool must be advertised before the end-to-end call can be executed");
+			because: "the create-entity-business-rule MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			ToolName,

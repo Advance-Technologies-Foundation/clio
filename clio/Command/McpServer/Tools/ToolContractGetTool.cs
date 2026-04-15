@@ -199,7 +199,7 @@ internal static class ToolContractCatalog {
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
 			[ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName] = BuildApplicationSectionUpdate(),
-			[BusinessRuleCreateTool.BusinessRuleCreateToolName] = BuildObjectBusinessRuleCreate(),
+			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate(),
 			[ApplicationGetInfoTool.ApplicationGetInfoToolName] = BuildApplicationGetInfo(),
 			[ApplicationGetListTool.ApplicationGetListToolName] = BuildApplicationGetList(),
 			[SchemaSyncTool.ToolName] = BuildSchemaSync(),
@@ -225,7 +225,7 @@ internal static class ToolContractCatalog {
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
-		BusinessRuleCreateTool.BusinessRuleCreateToolName,
+		CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
 		ApplicationGetInfoTool.ApplicationGetInfoToolName,
 		ApplicationGetListTool.ApplicationGetListToolName,
 		SchemaSyncTool.ToolName,
@@ -759,17 +759,17 @@ internal static class ToolContractCatalog {
 			[]);
 	}
 
-	private static ToolContractDefinition BuildObjectBusinessRuleCreate() {
+	private static ToolContractDefinition BuildEntityBusinessRuleCreate() {
 		return new ToolContractDefinition(
-			BusinessRuleCreateTool.BusinessRuleCreateToolName,
-			"Creates an object-level Freedom UI business rule by editing the entity BusinessRule add-on and returns the generated internal rule name plus target package/entity echo fields.",
+			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
+			"Creates an entity-level Freedom UI business rule by editing the entity BusinessRule add-on and returns the generated internal rule name plus target package/entity echo fields.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, "entity-schema-name", RuleFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name."),
 					Field("entity-schema-name", StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured business-rule definition with caption, optional enabled, one top-level condition group, and one or more actions.")
+				Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, optional enabled, one top-level condition group, and one or more actions.")
 				],
 				Validators: [
 					new ToolContractValidator("forbid-fields", "forbidden-field", "rule.name",
@@ -839,7 +839,7 @@ internal static class ToolContractCatalog {
 			Flow(
 				[
 					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
-					BusinessRuleCreateTool.BusinessRuleCreateToolName
+					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				],
 				"Use after inspecting the deployed entity schema so referenced attributes can be chosen from the current model."),
 			[
@@ -847,7 +847,7 @@ internal static class ToolContractCatalog {
 					[
 						ApplicationGetListTool.ApplicationGetListToolName,
 						ApplicationGetInfoTool.ApplicationGetInfoToolName,
-						BusinessRuleCreateTool.BusinessRuleCreateToolName
+					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 					],
 					"Fallback when the package or entity context must be discovered from an existing application first.")
 			],

@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace Clio.Command.BusinessRules;
 
 /// <summary>
-/// Structured object business-rule definition.
+/// Structured entity business-rule definition.
 /// </summary>
 public sealed record BusinessRule(
 	string Caption,
