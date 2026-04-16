@@ -252,7 +252,6 @@ public sealed class EntityBusinessRuleToolE2ETests {
 									["comparisonType"] = "equal",
 									["rightExpression"] = new Dictionary<string, object?> {
 										["type"] = "Const",
-										["referenceSchemaName"] = "Contact",
 										["value"] = new Dictionary<string, object?> {
 											["value"] = "11111111-1111-1111-1111-111111111111",
 											["displayValue"] = "John Best"

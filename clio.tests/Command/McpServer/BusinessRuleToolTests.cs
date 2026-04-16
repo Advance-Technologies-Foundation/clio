@@ -214,7 +214,6 @@ public sealed class BusinessRuleToolTests {
 							new BusinessRuleAttributeExpressionArgs("AttributeValue") { Path = "Owner" },
 							"equal",
 							new BusinessRuleValueExpressionArgs("Const") {
-								ReferenceSchemaName = "Contact",
 								Value = JsonSerializer.Deserialize<JsonElement>(
 									$$"""{"value":"{{ownerId}}","displayValue":"John Best"}""")
 							})
@@ -259,7 +258,6 @@ public sealed class BusinessRuleToolTests {
 		          "comparisonType": "equal",
 		          "rightExpression": {
 		            "type": "Const",
-		            "referenceSchemaName": "Contact",
 		            "value": "11111111-1111-1111-1111-111111111111"
 		          }
 		        }
@@ -285,8 +283,6 @@ public sealed class BusinessRuleToolTests {
 			because: "path-based operands should deserialize into the attribute-expression subclass");
 		args.Rule.Condition.Conditions[0].RightExpression.Should().BeOfType<BusinessRuleValueExpressionArgs>(
 			because: "lookup constants should deserialize into the value-expression subclass");
-		((BusinessRuleValueExpressionArgs)args.Rule.Condition.Conditions[0].RightExpression).ReferenceSchemaName.Should().Be("Contact",
-			because: "lookup constant payloads should preserve their reference schema name");
 		((BusinessRuleValueExpressionArgs)args.Rule.Condition.Conditions[0].RightExpression).Value.HasValue.Should().BeTrue(
 			because: "lookup constant payloads should preserve the GUID string value for downstream validation");
 		((BusinessRuleValueExpressionArgs)args.Rule.Condition.Conditions[0].RightExpression).Value!.Value.ValueKind.Should().Be(JsonValueKind.String,

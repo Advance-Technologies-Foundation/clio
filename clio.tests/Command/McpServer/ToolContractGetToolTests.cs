@@ -125,12 +125,11 @@ public sealed class ToolContractGetToolTests {
 			&& conditions.Single() is Dictionary<string, object?> predicate
 			&& predicate.TryGetValue("rightExpression", out object? rightExpressionValue)
 			&& rightExpressionValue is Dictionary<string, object?> rightExpression
-			&& rightExpression.TryGetValue("referenceSchemaName", out object? referenceSchemaName)
-			&& referenceSchemaName?.ToString() == "Contact"
 			&& rightExpression.TryGetValue("value", out object? lookupValueObject)
-			&& lookupValueObject?.ToString() == "00000000-0000-0000-0000-000000000001");
+			&& lookupValueObject?.ToString() == "00000000-0000-0000-0000-000000000001"
+			&& !rightExpression.ContainsKey("referenceSchemaName"));
 		hasLookupExample.Should().BeTrue(
-			because: "the contract should document that lookup constants must be passed as raw GUID strings");
+			because: "the contract should document that lookup constants are passed as raw GUID strings without referenceSchemaName");
 	}
 
 	[Test]

@@ -852,7 +852,6 @@ internal static class ToolContractCatalog {
 									["comparisonType"] = "equal",
 									["rightExpression"] = new Dictionary<string, object?> {
 										["type"] = "Const",
-										["referenceSchemaName"] = "Contact",
 										["value"] = "00000000-0000-0000-0000-000000000001"
 									}
 								}

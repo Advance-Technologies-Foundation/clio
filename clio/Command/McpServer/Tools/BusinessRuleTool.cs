@@ -189,7 +189,7 @@ public sealed record BusinessRuleConditionArgs(
 	string ComparisonType,
 
 	[property: JsonPropertyName("rightExpression")]
-	[property: Description("Right expression. Supports AttributeValue, scalar Const, or lookup Const payloads.")]
+	[property: Description("Right expression. Supports AttributeValue or Const. For lookup constants pass only a GUID string; reference schema is resolved automatically.")]
 	[property: Required]
 	BusinessRuleExpressionArgs RightExpression
 );
@@ -203,11 +203,7 @@ public abstract record BusinessRuleExpressionArgs(
 	[property: Description("Expression type. Supported values: AttributeValue, Const.")]
 	[property: Required]
 	string Type
-) {
-	[JsonPropertyName("referenceSchemaName")]
-	[Description("Optional lookup reference schema name.")]
-	public string? ReferenceSchemaName { get; init; }
-}
+) { }
 
 /// <summary>
 /// Structured attribute expression accepted by the MCP tool.
@@ -227,7 +223,7 @@ public sealed record BusinessRuleValueExpressionArgs(
 	string Type
 ) : BusinessRuleExpressionArgs(Type) {
 	[JsonPropertyName("value")]
-	[Description("Constant value when type is Const. For lookup constants pass a GUID string.")]
+	[Description("Constant value when type is Const. For lookup constants pass a GUID string; do not pass referenceSchemaName.")]
 	public System.Text.Json.JsonElement? Value { get; init; }
 }
 
