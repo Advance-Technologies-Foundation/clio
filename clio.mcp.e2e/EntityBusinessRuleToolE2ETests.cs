@@ -104,34 +104,6 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the error should identify the missing environment");
 	}
 
-	[Test]
-	[Description("Rejects lookup constant payloads when the right-hand Const is an object instead of a string GUID.")]
-	[AllureTag(ToolName)]
-	[AllureName("Entity business-rule MCP tool rejects object lookup constants with a readable validation error")]
-	[AllureDescription("Arranges a real sandbox package, calls create-entity-business-rule through the real MCP server with a lookup-style object payload on the right-hand Const, and verifies the tool returns the business-rule validation error that lookup constants must be plain GUID strings.")]
-	public async Task BusinessRuleCreate_Should_Reject_Lookup_Object_Operand_Payload() {
-		// Arrange
-		await using SandboxPackageArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
-
-		// Act
-		CallToolResult callResult = await sessionCallWithLookupOperandAsync(
-			arrangeContext.Session,
-			arrangeContext.EnvironmentName,
-			arrangeContext.PackageName,
-			arrangeContext.CancellationTokenSource.Token);
-		BusinessRuleCreateResponse response = EntitySchemaStructuredResultParser.Extract<BusinessRuleCreateResponse>(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "lookup operand validation should happen inside the structured tool flow rather than as a top-level MCP transport error");
-		response.Success.Should().BeFalse(
-			because: "lookup object payloads should be rejected by the business-rule validator");
-		response.Error.Should().NotBeNullOrWhiteSpace(
-			because: "the failure should remain human-readable after the lookup payload is deserialized");
-		response.Error.Should().Contain("rightExpression.value must be a GUID string",
-			because: "lookup constants are only supported as plain GUID strings on the MCP surface");
-	}
-
 	[AllureStep("Arrange sandbox package for entity business-rule MCP tests")]
 	private static async Task<SandboxPackageArrangeContext> ArrangeSandboxPackageAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();

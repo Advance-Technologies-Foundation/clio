@@ -189,7 +189,7 @@ public sealed record BusinessRuleConditionArgs(
 	string ComparisonType,
 
 	[property: JsonPropertyName("rightExpression")]
-	[property: Description("Right expression. Supports AttributeValue or Const. For lookup constants pass only a GUID string; reference schema is resolved automatically.")]
+	[property: Description("Right expression. Supports AttributeValue or Const. For lookup constants pass only a GUID string")]
 	[property: Required]
 	BusinessRuleExpressionArgs RightExpression
 );
@@ -223,7 +223,7 @@ public sealed record BusinessRuleValueExpressionArgs(
 	string Type
 ) : BusinessRuleExpressionArgs(Type) {
 	[JsonPropertyName("value")]
-	[Description("Constant value when type is Const. For lookup constants pass a GUID string; do not pass referenceSchemaName.")]
+	[Description("Constant value when type is Const. For lookup constants pass a GUID string.")]
 	public System.Text.Json.JsonElement? Value { get; init; }
 }
 
