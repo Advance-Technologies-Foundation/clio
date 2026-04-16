@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
@@ -115,6 +116,21 @@ public sealed class ToolContractGetToolTests {
 					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				},
 				because: "the contract should advertise schema inspection before destructive rule creation");
+		bool hasLookupExample = contract.Examples.Any(example =>
+			example.Arguments["rule"] is Dictionary<string, object?> rule
+			&& rule.TryGetValue("condition", out object? conditionValue)
+			&& conditionValue is Dictionary<string, object?> condition
+			&& condition.TryGetValue("conditions", out object? conditionsValue)
+			&& conditionsValue is object[] conditions
+			&& conditions.Single() is Dictionary<string, object?> predicate
+			&& predicate.TryGetValue("rightExpression", out object? rightExpressionValue)
+			&& rightExpressionValue is Dictionary<string, object?> rightExpression
+			&& rightExpression.TryGetValue("referenceSchemaName", out object? referenceSchemaName)
+			&& referenceSchemaName?.ToString() == "Contact"
+			&& rightExpression.TryGetValue("value", out object? lookupValueObject)
+			&& lookupValueObject?.ToString() == "00000000-0000-0000-0000-000000000001");
+		hasLookupExample.Should().BeTrue(
+			because: "the contract should document that lookup constants must be passed as raw GUID strings");
 	}
 
 	[Test]

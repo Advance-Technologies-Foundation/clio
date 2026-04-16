@@ -104,6 +104,34 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the error should identify the missing environment");
 	}
 
+	[Test]
+	[Description("Rejects lookup constant payloads when the right-hand Const is an object instead of a string GUID.")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tool rejects object lookup constants with a readable validation error")]
+	[AllureDescription("Arranges a real sandbox package, calls create-entity-business-rule through the real MCP server with a lookup-style object payload on the right-hand Const, and verifies the tool returns the business-rule validation error that lookup constants must be plain GUID strings.")]
+	public async Task BusinessRuleCreate_Should_Reject_Lookup_Object_Operand_Payload() {
+		// Arrange
+		await using SandboxPackageArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+
+		// Act
+		CallToolResult callResult = await sessionCallWithLookupOperandAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.CancellationTokenSource.Token);
+		BusinessRuleCreateResponse response = EntitySchemaStructuredResultParser.Extract<BusinessRuleCreateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "lookup operand validation should happen inside the structured tool flow rather than as a top-level MCP transport error");
+		response.Success.Should().BeFalse(
+			because: "lookup object payloads should be rejected by the business-rule validator");
+		response.Error.Should().NotBeNullOrWhiteSpace(
+			because: "the failure should remain human-readable after the lookup payload is deserialized");
+		response.Error.Should().Contain("rightExpression.value must be a GUID string",
+			because: "lookup constants are only supported as plain GUID strings on the MCP surface");
+	}
+
 	[AllureStep("Arrange sandbox package for entity business-rule MCP tests")]
 	private static async Task<SandboxPackageArrangeContext> ArrangeSandboxPackageAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -190,6 +218,56 @@ public sealed class EntityBusinessRuleToolE2ETests {
 								}
 							}
 						}
+				}
+			},
+			cancellationToken);
+	}
+
+	private static async Task<CallToolResult> sessionCallWithLookupOperandAsync(
+		McpServerSession session,
+		string environmentName,
+		string packageName,
+		CancellationToken cancellationToken) {
+		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
+		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+			because: "the create-entity-business-rule MCP tool must be advertised before the end-to-end call can be executed");
+
+		return await session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["entity-schema-name"] = TargetEntitySchemaName,
+					["rule"] = new Dictionary<string, object?> {
+						["caption"] = "Lookup rule",
+						["condition"] = new Dictionary<string, object?> {
+							["logicalOperation"] = "AND",
+							["conditions"] = new[] {
+								new Dictionary<string, object?> {
+									["leftExpression"] = new Dictionary<string, object?> {
+										["type"] = "AttributeValue",
+										["path"] = "Owner"
+									},
+									["comparisonType"] = "equal",
+									["rightExpression"] = new Dictionary<string, object?> {
+										["type"] = "Const",
+										["referenceSchemaName"] = "Contact",
+										["value"] = new Dictionary<string, object?> {
+											["value"] = "11111111-1111-1111-1111-111111111111",
+											["displayValue"] = "John Best"
+										}
+									}
+								}
+							}
+						},
+						["actions"] = new[] {
+							new Dictionary<string, object?> {
+								["type"] = "make-required",
+								["items"] = new[] { "JobTitle" }
+							}
+						}
+					}
 				}
 			},
 			cancellationToken);

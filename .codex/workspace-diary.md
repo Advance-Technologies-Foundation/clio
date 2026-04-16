@@ -1987,3 +1987,31 @@ Discovery:
 - GetSettingsValueTypeCandidates missing Float dataValueType 5; added `5 => ["Decimal"]`
 Files: clio/Command/ApplicationSectionCreateCommand.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDefaultValueSourceResolver.cs, clio.tests/Command/ApplicationSectionCreateServiceTests.cs, .codex/workspace-diary.md
 Impact: PR #522 now MERGEABLE, both Codex P2 issues addressed, 15 new tests added (33 total section tests pass)
+
+## 2026-04-16 14:18 – Lookup operands in BusinessRuleTool
+Context: The MCP `create-entity-business-rule` flow needed to accept lookup constant operands when creating entity business rules without introducing `scopeId` or `dataValueType`.
+Decision: Extended the MCP expression args into a small typed hierarchy, added lookup-value normalization that extracts the nested GUID from `{ value, displayValue }`, and updated contract examples plus MCP tests instead of changing the downstream business-rule service shape.
+Discovery: The existing business-rule service path already accepts lookup constants as plain GUID strings; the missing piece was MCP-side deserialization and normalization. Tool-contract tests also need object-graph assertions instead of string matching because examples are stored as nested dictionaries.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\BusinessRuleTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\ToolContractGetTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\BusinessRuleToolTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\ToolContractGetToolTests.cs, C:\Projects\clio\clio.mcp.e2e\EntityBusinessRuleToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: MCP callers can now submit lookup operands for business-rule creation using either a GUID string or a `{ value, displayValue }` payload, and the change is covered by unit and MCP E2E verification.
+
+## 2026-04-16 14:43 - Fix lookup GUID validation for wrapped payloads
+Context: Lookup business-rule creation still threw validation errors for valid GUIDs when the right operand arrived as a wrapped JSON object instead of a bare string.
+Decision: Added recursive lookup GUID extraction helpers, switched validator to accept either a GUID string or an object containing a GUID `value`, and normalized converter output back to the raw GUID string before persisting metadata.
+Discovery: The exception was caused by `ConvertJsonElement` returning a `JsonNode` for object payloads, so the old validator only worked for plain JSON strings even though MCP and callers commonly send nested lookup shapes.
+Files: C:\Projects\clio\clio\Command\BusinessRules\BusinessRuleHelpers.cs, C:\Projects\clio\clio\Command\BusinessRules\BusinessRuleValidator.cs, C:\Projects\clio\clio\Command\BusinessRules\BusinessRuleToDtoConverter.cs, C:\Projects\clio\clio.tests\Command\BusinessRuleServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Lookup operands now validate and persist correctly for both plain GUID strings and wrapped `{ value, displayValue }` payloads, removing the false negative seen during rule creation.
+
+## 2026-04-16 15:18 - Tighten lookup constants to plain GUID strings only
+Context: The lookup operand contract needed to become explicit: when the left side is a lookup attribute, the right-hand `ConstValue.value` must be a string GUID and object payloads must be rejected.
+Decision: Removed MCP-side lookup object normalization, restored strict validator semantics for lookup constants, reverted contract examples to raw GUID strings, and added positive/negative coverage so lookup strings still work while object payloads fail readably.
+Discovery: Direct service tests use `BusinessRuleOperand.Value` as the final `JsonElement`, so negative coverage must pass the object payload itself, not an extra `{ Value = ... }` wrapper. The fixture also needed to reset captured save payload state between tests to avoid false failures.
+Files: C:\Projects\clio\clio\Command\BusinessRules\BusinessRuleHelpers.cs, C:\Projects\clio\clio\Command\BusinessRules\BusinessRuleValidator.cs, C:\Projects\clio\clio\Command\BusinessRules\BusinessRuleToDtoConverter.cs, C:\Projects\clio\clio\Command\McpServer\Tools\BusinessRuleTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\ToolContractGetTool.cs, C:\Projects\clio\clio.tests\Command\BusinessRuleServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\BusinessRuleToolTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\ToolContractGetToolTests.cs, C:\Projects\clio\clio.mcp.e2e\EntityBusinessRuleToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `create-entity-business-rule` now treats lookup constants as string-only on both the business-rule service path and MCP surface, callers get a clear validation error for object payloads, and tests cover both accepted GUID strings and rejected object values.
+
+## 2026-04-16 15:41 - Align business-rule MCP payloads with Const rename
+Context: After a branch update, the business-rule expression type name for constants changed from `ConstValue` to `Const`, but some MCP examples and tests still used the old literal.
+Decision: Kept the strict lookup-string validation unchanged and updated the remaining business-rule MCP contract example, unit tests, and MCP E2E payloads/descriptions to use `Const` consistently.
+Discovery: Production business-rule code already mapped and emitted `Const`; the incompatibility was limited to stale MCP example/test payloads that could falsely suggest the old contract still worked.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\ToolContractGetTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\BusinessRuleToolTests.cs, C:\Projects\clio\clio.mcp.e2e\EntityBusinessRuleToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Business-rule MCP docs, unit coverage, and end-to-end coverage now match the post-merge `Const` contract, which reduces future confusion during rule payload construction and validation debugging.

@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Text.Json;
 using Clio;
 using Clio.Command;
 using Clio.Command.BusinessRules;
@@ -56,10 +57,10 @@ public sealed class BusinessRuleToolTests {
 					"AND",
 					[
 						new BusinessRuleConditionArgs(
-							new BusinessRuleExpressionArgs("AttributeValue") { Path = "Status" },
+							new BusinessRuleAttributeExpressionArgs("AttributeValue") { Path = "Status" },
 							"equal",
-							new BusinessRuleExpressionArgs("Const") {
-								Value = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("\"Draft\"")
+							new BusinessRuleValueExpressionArgs("Const") {
+								Value = JsonSerializer.Deserialize<JsonElement>("\"Draft\"")
 						})
 					]),
 				[
@@ -120,10 +121,10 @@ public sealed class BusinessRuleToolTests {
 					"AND",
 					[
 						new BusinessRuleConditionArgs(
-							new BusinessRuleExpressionArgs("AttributeValue") { Path = "Status" },
+							new BusinessRuleAttributeExpressionArgs("AttributeValue") { Path = "Status" },
 							"equal",
-							new BusinessRuleExpressionArgs("Const") {
-								Value = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("\"Draft\"")
+							new BusinessRuleValueExpressionArgs("Const") {
+								Value = JsonSerializer.Deserialize<JsonElement>("\"Draft\"")
 							})
 					]),
 				[
@@ -165,10 +166,10 @@ public sealed class BusinessRuleToolTests {
 					"AND",
 					[
 						new BusinessRuleConditionArgs(
-							new BusinessRuleExpressionArgs("AttributeValue") { Path = "Status" },
+							new BusinessRuleAttributeExpressionArgs("AttributeValue") { Path = "Status" },
 							"equal",
-							new BusinessRuleExpressionArgs("Const") {
-								Value = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("\"Draft\"")
+							new BusinessRuleValueExpressionArgs("Const") {
+								Value = JsonSerializer.Deserialize<JsonElement>("\"Draft\"")
 							})
 					]),
 				[
@@ -186,5 +187,109 @@ public sealed class BusinessRuleToolTests {
 			&& options.Environment == "dev"
 			&& string.IsNullOrWhiteSpace(options.Uri)));
 	}
-	
+
+	[Test]
+	[Category("Unit")]
+	[Description("Preserves invalid lookup object payloads so the service layer can reject non-string lookup constants explicitly.")]
+	public void BusinessRuleCreate_Should_Preserve_Lookup_Operand_Object_For_Service_Validation() {
+		// Arrange
+		IBusinessRuleService service = Substitute.For<IBusinessRuleService>();
+		CreateEntityBusinessRuleCommand command = new(service, Substitute.For<ILogger>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntityBusinessRuleCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		service.Create("dev", Arg.Any<BusinessRuleCreateRequest>())
+			.Returns(new BusinessRuleCreateResult("BusinessRule_7654321"));
+		CreateEntityBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		const string ownerId = "11111111-1111-1111-1111-111111111111";
+		BusinessRuleCreateArgs args = new(
+			"dev",
+			"UsrPkg",
+			"UsrOrder",
+			new BusinessRuleArgs(
+				"Require status for owner",
+				new BusinessRuleConditionGroupArgs(
+					"AND",
+					[
+						new BusinessRuleConditionArgs(
+							new BusinessRuleAttributeExpressionArgs("AttributeValue") { Path = "Owner" },
+							"equal",
+							new BusinessRuleValueExpressionArgs("Const") {
+								ReferenceSchemaName = "Contact",
+								Value = JsonSerializer.Deserialize<JsonElement>(
+									$$"""{"value":"{{ownerId}}","displayValue":"John Best"}""")
+							})
+					]),
+				[
+					new BusinessRuleActionArgs("make-required", ["Status"])
+				]));
+
+		// Act
+		BusinessRuleCreateResponse result = tool.BusinessRuleCreate(args);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the MCP adapter should forward payloads as-is and let the business-rule validator enforce lookup type rules");
+		service.Received(1).Create(
+			"dev",
+			Arg.Is<BusinessRuleCreateRequest>(request =>
+				request.Rule.ConditionGroup.Conditions[0].Right.Value.HasValue
+				&& request.Rule.ConditionGroup.Conditions[0].Right.Value.Value.ValueKind == JsonValueKind.Object));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Deserializes lookup constant expressions into the value-expression subclass while preserving a string GUID value.")]
+	public void BusinessRuleCreate_Should_Deserialize_Lookup_Value_Expression_From_Json() {
+		// Arrange
+		string payload = """
+		{
+		  "environment-name": "dev",
+		  "package-name": "UsrPkg",
+		  "entity-schema-name": "UsrOrder",
+		  "rule": {
+		    "caption": "Require status for owner",
+		    "condition": {
+		      "logicalOperation": "AND",
+		      "conditions": [
+		        {
+		          "leftExpression": {
+		            "type": "AttributeValue",
+		            "path": "Owner"
+		          },
+		          "comparisonType": "equal",
+		          "rightExpression": {
+		            "type": "Const",
+		            "referenceSchemaName": "Contact",
+		            "value": "11111111-1111-1111-1111-111111111111"
+		          }
+		        }
+		      ]
+		    },
+		    "actions": [
+		      {
+		        "type": "make-required",
+		        "items": [ "Status" ]
+		      }
+		    ]
+		  }
+		}
+		""";
+
+		// Act
+		BusinessRuleCreateArgs? args = JsonSerializer.Deserialize<BusinessRuleCreateArgs>(payload);
+
+		// Assert
+		args.Should().NotBeNull(
+			because: "the business-rule MCP payload should deserialize from JSON");
+		args!.Rule.Condition.Conditions[0].LeftExpression.Should().BeOfType<BusinessRuleAttributeExpressionArgs>(
+			because: "path-based operands should deserialize into the attribute-expression subclass");
+		args.Rule.Condition.Conditions[0].RightExpression.Should().BeOfType<BusinessRuleValueExpressionArgs>(
+			because: "lookup constants should deserialize into the value-expression subclass");
+		((BusinessRuleValueExpressionArgs)args.Rule.Condition.Conditions[0].RightExpression).ReferenceSchemaName.Should().Be("Contact",
+			because: "lookup constant payloads should preserve their reference schema name");
+		((BusinessRuleValueExpressionArgs)args.Rule.Condition.Conditions[0].RightExpression).Value.HasValue.Should().BeTrue(
+			because: "lookup constant payloads should preserve the GUID string value for downstream validation");
+		((BusinessRuleValueExpressionArgs)args.Rule.Condition.Conditions[0].RightExpression).Value!.Value.ValueKind.Should().Be(JsonValueKind.String,
+			because: "lookup constants are only supported as string GUIDs on the MCP surface");
+	}
 }
