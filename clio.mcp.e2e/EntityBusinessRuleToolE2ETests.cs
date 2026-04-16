@@ -98,6 +98,8 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "failed business-rule creation should not return a generated rule name");
 		response.Error.Should().NotBeNullOrWhiteSpace(
 			because: "the failure should include a readable diagnostic");
+		response.Error.Should().Contain("Environment with key",
+			because: "the environment-aware resolver should surface the missing registered environment explicitly");
 		response.Error.Should().Contain(arrangeContext.EnvironmentName,
 			because: "the error should identify the missing environment");
 	}

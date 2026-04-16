@@ -184,28 +184,38 @@ internal sealed class BusinessRuleTriggerMetadataDto {
 }
 
 internal abstract class BusinessRuleExpressionMetadataDto {
+	// AddonSchemaDesignerService reads business-rule metadata sequentially and parses `value`
+	// according to the already-read `dataValueTypeName`. Keep base expression fields ordered
+	// ahead of derived payload fields to avoid numeric constants being treated as default Text.
+	[JsonPropertyOrder(0)]
 	[JsonPropertyName("typeName")]
 	public string TypeName { get; set; } = string.Empty;
 
+	[JsonPropertyOrder(1)]
 	[JsonPropertyName("uId")]
 	public string UId { get; set; } = string.Empty;
 
+	[JsonPropertyOrder(2)]
 	[JsonPropertyName("type")]
 	public string Type { get; set; } = string.Empty;
 
+	[JsonPropertyOrder(3)]
 	[JsonPropertyName("dataValueTypeName")]
 	public string? DataValueTypeName { get; set; }
 
+	[JsonPropertyOrder(4)]
 	[JsonPropertyName("referenceSchemaName")]
 	public string? ReferenceSchemaName { get; set; }
 }
 
 internal sealed class BusinessRuleAttributeExpressionMetadataDto : BusinessRuleExpressionMetadataDto {
+	[JsonPropertyOrder(5)]
 	[JsonPropertyName("path")]
 	public string Path { get; set; } = string.Empty;
 }
 
 internal sealed class BusinessRuleValueExpressionMetadataDto : BusinessRuleExpressionMetadataDto {
+	[JsonPropertyOrder(5)]
 	[JsonPropertyName("value")]
 	public object? Value { get; set; }
 }

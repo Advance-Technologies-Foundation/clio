@@ -14,6 +14,7 @@ flowchart LR
         end
 
         subgraph Core["Business Rule Core"]
+            Command["CreateEntityBusinessRuleCommand"]
             Service["BusinessRuleService"]
             Validator["BusinessRuleValidator"]
             Convertor["BusinessRuleToDtoConvertor"]
@@ -24,7 +25,8 @@ flowchart LR
         Addon["AddonSchemaDesignerService.svc"]
     end
 
-    Tool -->|"rule"| Service
+    Tool -->|"options"| Command
+    Command -->|"request"| Service
     Service -->|"rule"| Validator
     Service -->|"rule"| Convertor
     Convertor -->|"dto"| Service
@@ -191,6 +193,7 @@ flowchart LR
 ## Key Design Decisions
 
 - Persist business rules through `AddonSchemaDesignerService.svc`, not runtime business-rule endpoints.
+- Route MCP execution through `CreateEntityBusinessRuleCommand` so environment-specific dependencies are resolved per request through the standard command pipeline.
 - Separate `BusinessRuleValidator` from `BusinessRuleService` so validation stays testable and reusable.
 - Keep `BusinessRuleToDtoConvertor` isolated so MCP request DTOs do not become the persistence model.
 - Start with `CreateEntityBusinessRuleTool`, but keep the service structure extensible for additional tools later.

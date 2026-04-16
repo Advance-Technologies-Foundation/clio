@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.BusinessRules;
+using Clio.Common;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -13,7 +14,11 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for entity-level Freedom UI business-rule creation.
 /// </summary>
 [McpServerToolType]
-public sealed class CreateEntityBusinessRuleTool(IBusinessRuleService businessRuleService) {
+public sealed class CreateEntityBusinessRuleTool(
+	CreateEntityBusinessRuleCommand command,
+	ILogger logger,
+	IToolCommandResolver commandResolver)
+	: BaseTool<CreateEntityBusinessRuleOptions>(command, logger, commandResolver) {
 
 	/// <summary>
 	/// Stable MCP tool name for entity business-rule creation.
@@ -31,35 +36,22 @@ public sealed class CreateEntityBusinessRuleTool(IBusinessRuleService businessRu
 		[Required]
 		BusinessRuleCreateArgs args) {
 		try {
-			ValidateArgs(args);
-			BusinessRuleCreateResult result = businessRuleService.Create(
-				args.EnvironmentName,
-				new BusinessRuleCreateRequest(
-					args.PackageName,
-					args.EntitySchemaName,
-					MapRule(args.Rule)));
+			CreateEntityBusinessRuleOptions options = CreateOptions(args);
+			CreateEntityBusinessRuleCommand resolvedCommand = ResolveCommand<CreateEntityBusinessRuleCommand>(options);
+			BusinessRuleCreateResult result = resolvedCommand.Create(options);
 			return BusinessRuleToolSupport.CreateResponse(BusinessRuleToolResultMapper.Map(args, result));
 		} catch (Exception ex) {
 			return BusinessRuleToolSupport.CreateErrorResponse(ex.Message);
 		}
 	}
 
-	private static void ValidateArgs(BusinessRuleCreateArgs args) {
-		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
-			throw new ArgumentException("environment-name is required.");
-		}
-
-		if (string.IsNullOrWhiteSpace(args.PackageName)) {
-			throw new ArgumentException("package-name is required.");
-		}
-
-		if (string.IsNullOrWhiteSpace(args.EntitySchemaName)) {
-			throw new ArgumentException("entity-schema-name is required.");
-		}
-
-		if (args.Rule is null) {
-			throw new ArgumentException("rule is required.");
-		}
+	internal static CreateEntityBusinessRuleOptions CreateOptions(BusinessRuleCreateArgs args) {
+		return new CreateEntityBusinessRuleOptions {
+			EnvironmentName = args.EnvironmentName,
+			PackageName = args.PackageName,
+			EntitySchemaName = args.EntitySchemaName,
+			Rule = MapRule(args.Rule)
+		};
 	}
 
 	private static BusinessRule MapRule(BusinessRuleArgs rule) {

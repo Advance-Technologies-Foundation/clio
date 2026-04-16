@@ -197,6 +197,7 @@ public class BindingsModule {
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
 		services.AddTransient<UpdateAppSectionCommand>();
 		services.AddTransient<IBusinessRuleService, BusinessRuleService>();
+		services.AddTransient<CreateEntityBusinessRuleCommand>();
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
 		services.AddTransient<PageUpdateCommand>();

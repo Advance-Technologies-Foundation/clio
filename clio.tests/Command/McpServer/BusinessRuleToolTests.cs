@@ -1,7 +1,9 @@
 using System.Linq;
+using Clio;
 using Clio.Command;
 using Clio.Command.BusinessRules;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Server;
 using NSubstitute;
@@ -38,9 +40,12 @@ public sealed class BusinessRuleToolTests {
 	public void BusinessRuleCreate_Should_Map_Arguments_And_Return_Structured_Response() {
 		// Arrange
 		IBusinessRuleService service = Substitute.For<IBusinessRuleService>();
+		CreateEntityBusinessRuleCommand command = new(service, Substitute.For<ILogger>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntityBusinessRuleCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
 		service.Create("dev", Arg.Any<BusinessRuleCreateRequest>())
 			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
-		CreateEntityBusinessRuleTool tool = new(service);
+		CreateEntityBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
 		BusinessRuleCreateArgs args = new(
 			"dev",
 			"UsrPkg",
@@ -74,6 +79,8 @@ public sealed class BusinessRuleToolTests {
 			because: "the response should echo the entity schema name from the request args");
 		result.RuleName.Should().Be("BusinessRule_1234567",
 			because: "the response should report the generated rule name returned by the service");
+		commandResolver.Received(1).Resolve<CreateEntityBusinessRuleCommand>(Arg.Is<EnvironmentOptions>(options =>
+			options.Environment == "dev"));
 		service.Received(1).Create(
 			"dev",
 			Arg.Is<BusinessRuleCreateRequest>(request =>
@@ -97,9 +104,12 @@ public sealed class BusinessRuleToolTests {
 	public void BusinessRuleCreate_Should_Preserve_Omitted_Enabled_Default() {
 		// Arrange
 		IBusinessRuleService service = Substitute.For<IBusinessRuleService>();
+		CreateEntityBusinessRuleCommand command = new(service, Substitute.For<ILogger>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntityBusinessRuleCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
 		service.Create("dev", Arg.Any<BusinessRuleCreateRequest>())
 			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
-		CreateEntityBusinessRuleTool tool = new(service);
+		CreateEntityBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
 		BusinessRuleCreateArgs args = new(
 			"dev",
 			"UsrPkg",
@@ -126,9 +136,55 @@ public sealed class BusinessRuleToolTests {
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "omitting rule.enabled should still allow valid requests to succeed");
+		commandResolver.Received(1).Resolve<CreateEntityBusinessRuleCommand>(Arg.Is<EnvironmentOptions>(options =>
+			options.Environment == "dev"));
 		service.Received(1).Create(
 			"dev",
 			Arg.Is<BusinessRuleCreateRequest>(request => request.Rule.Enabled == null));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves the business-rule command from the payload environment so nested dependencies use the requested MCP target.")]
+	public void BusinessRuleCreate_Should_Resolve_Command_From_Requested_Environment() {
+		// Arrange
+		IBusinessRuleService service = Substitute.For<IBusinessRuleService>();
+		CreateEntityBusinessRuleCommand command = new(service, Substitute.For<ILogger>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntityBusinessRuleCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		service.Create("dev", Arg.Any<BusinessRuleCreateRequest>())
+			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
+		CreateEntityBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		BusinessRuleCreateArgs args = new(
+			"dev",
+			"UsrPkg",
+			"UsrOrder",
+			new BusinessRuleArgs(
+				"Require owner for drafts",
+				new BusinessRuleConditionGroupArgs(
+					"AND",
+					[
+						new BusinessRuleConditionArgs(
+							new BusinessRuleExpressionArgs("AttributeValue") { Path = "Status" },
+							"equal",
+							new BusinessRuleExpressionArgs("ConstValue") {
+								Value = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("\"Draft\"")
+							})
+					]),
+				[
+					new BusinessRuleActionArgs("make-required", ["Owner"])
+				]));
+
+		// Act
+		BusinessRuleCreateResponse result = tool.BusinessRuleCreate(args);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the environment-aware resolver should return a command instance for the requested MCP environment");
+		commandResolver.Received(1).Resolve<CreateEntityBusinessRuleCommand>(Arg.Is<EnvironmentOptions>(options =>
+			options is CreateEntityBusinessRuleOptions
+			&& options.Environment == "dev"
+			&& string.IsNullOrWhiteSpace(options.Uri)));
 	}
 	
 }

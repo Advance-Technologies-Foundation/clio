@@ -160,6 +160,64 @@ public sealed class BusinessRuleServiceTests {
 			Arg.Any<int>());
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Serializes integer constant expressions with dataValueTypeName before value so AddonSchemaDesignerService can parse numeric constants without treating them as text.")]
+	public void Create_Should_Serialize_Integer_Constant_After_DataValueTypeName() {
+		// Arrange
+		BusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			new BusinessRule(
+				"Readonly amount when status is 5",
+				true,
+				new BusinessRuleConditionGroup(
+					"AND",
+					[
+						new BusinessRuleCondition(
+							new BusinessRuleOperand("attribute", "Amount", null, null),
+							"equal",
+							new BusinessRuleOperand("constant", null, JsonSerializer.Deserialize<JsonElement>("5"), null))
+					]),
+				[
+					new BusinessRuleAction("make-read-only", ["Amount"])
+				]));
+
+		// Act
+		_service.Create("dev", request);
+
+		// Assert
+		_savedAddonRequestBody.Should().NotBeNullOrWhiteSpace(
+			because: "the updated add-on payload should be captured for save");
+		using JsonDocument saveRequest = JsonDocument.Parse(_savedAddonRequestBody!);
+		using JsonDocument metaData = JsonDocument.Parse(saveRequest.RootElement.GetProperty("metaData").GetString()!);
+		string rightExpressionJson = metaData.RootElement
+			.GetProperty("rules")[1]
+			.GetProperty("cases")[0]
+			.GetProperty("condition")
+			.GetProperty("conditions")[0]
+			.GetProperty("rightExpression")
+			.GetRawText();
+
+		rightExpressionJson.IndexOf("\"dataValueTypeName\"", StringComparison.Ordinal).Should().BeGreaterThan(-1,
+			because: "integer constant expressions should declare their business-rule data type");
+		rightExpressionJson.IndexOf("\"value\"", StringComparison.Ordinal).Should().BeGreaterThan(-1,
+			because: "integer constant expressions should persist the comparison value");
+		rightExpressionJson.IndexOf("\"dataValueTypeName\"", StringComparison.Ordinal).Should()
+			.BeLessThan(rightExpressionJson.IndexOf("\"value\"", StringComparison.Ordinal),
+				because: "AddonSchemaDesignerService reads metadata sequentially and needs dataValueTypeName before value to avoid treating numeric tokens as text");
+		metaData.RootElement
+			.GetProperty("rules")[1]
+			.GetProperty("cases")[0]
+			.GetProperty("condition")
+			.GetProperty("conditions")[0]
+			.GetProperty("rightExpression")
+			.GetProperty("value")
+			.GetInt32()
+			.Should()
+			.Be(5, because: "the numeric constant should remain a JSON number after reordering");
+	}
+
 	private string BuildResponse(string url, string requestBody) {
 		if (url.Contains("SelectQuery", StringComparison.Ordinal)) {
 			if (requestBody.Contains("\"SysPackage\"", StringComparison.Ordinal)) {
