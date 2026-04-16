@@ -28,6 +28,7 @@ namespace Clio.Command {
 		private const string FilterTypeKey = "filterType";
 		private const string ItemsKey = "items";
 		private const string ExpressionKey = "expression";
+		private const int ContainsComparisonType = 10;
 
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -64,8 +65,9 @@ namespace Clio.Command {
 				if (!string.IsNullOrWhiteSpace(packageName)) {
 					filters[ItemsKey]["PackageName"] = BuildComparisonFilter("SysPackage.Name", packageName, 1, 3);
 				}
-				if (!string.IsNullOrWhiteSpace(options.SearchPattern)) {
-					filters[ItemsKey]["Name"] = BuildComparisonFilter("Name", options.SearchPattern, 1, 11);
+				string nameFilter = options.SearchPattern?.Trim('*', ' ') ?? string.Empty;
+				if (!string.IsNullOrWhiteSpace(nameFilter)) {
+					filters[ItemsKey]["Name"] = BuildComparisonFilter("Name", nameFilter, 1, ContainsComparisonType);
 				}
 				var selectQuery = new JObject {
 					["rootSchemaName"] = "SysSchema",

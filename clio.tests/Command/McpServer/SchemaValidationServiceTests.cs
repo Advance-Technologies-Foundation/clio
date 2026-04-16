@@ -369,6 +369,53 @@ public class SchemaValidationServiceTests {
 		result.Warnings.Should().BeEmpty();
 	}
 
+	[Test]
+	[Description("Label referencing $Resources.Strings.KEY warns when KEY is absent from explicit resources")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyMissingFromExplicitResources_ReturnsWarning() {
+		string body = BuildDiffBackedPageBody(
+			"[{\"operation\":\"insert\",\"name\":\"PDS_UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.PDS_UsrName\",\"control\":\"$PDS_UsrName\"}}]",
+			"[{\"operation\":\"merge\",\"values\":{\"PDS_UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(
+			body,
+			new Dictionary<string, string> { ["PDS_UsrRequesterName"] = "Requester Name" });
+
+		result.IsValid.Should().BeTrue("because a missing label resource is a recoverable issue, not a hard failure");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().ContainSingle(w => w.Contains("PDS_UsrName") && w.Contains("render blank"),
+			"because the validator should surface that the label key is absent from the provided resources");
+	}
+
+	[Test]
+	[Description("Label referencing $Resources.Strings.KEY passes when KEY is present in explicit resources")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyPresentInExplicitResources_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"[{\"operation\":\"insert\",\"name\":\"PDS_UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.PDS_UsrName\",\"control\":\"$PDS_UsrName\"}}]",
+			"[{\"operation\":\"merge\",\"values\":{\"PDS_UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(
+			body,
+			new Dictionary<string, string> { ["PDS_UsrName"] = "Request Subject" });
+
+		result.IsValid.Should().BeTrue("because the label resource key is explicitly registered");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Label referencing $Resources.Strings.KEY is not warned when no explicit resources are provided")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyWithoutExplicitResources_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"[{\"operation\":\"insert\",\"name\":\"PDS_UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.PDS_UsrName\",\"control\":\"$PDS_UsrName\"}}]",
+			"[{\"operation\":\"merge\",\"values\":{\"PDS_UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
+
+		result.IsValid.Should().BeTrue("because without explicit resources the validator cannot determine if the key is registered on the site");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().BeEmpty();
+	}
+
 	private static string BuildDiffBackedPageBody(string viewConfigDiff, string viewModelConfigDiff) {
 		return
 			"define(\"TestPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +

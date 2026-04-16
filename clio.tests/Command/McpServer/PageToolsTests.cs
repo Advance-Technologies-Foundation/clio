@@ -122,6 +122,10 @@ public class PageToolsTests {
 			because: "page guidance should mention code as a valid discovery selector for list-pages");
 		prompt.Should().Contain("`environment-name`",
 			because: "get-page prompt guidance should match the current MCP argument contract");
+		prompt.Should().Contain("call `reg-web-app` first",
+			because: "page guidance should prefer registering the environment instead of normalizing direct URL credentials into the workflow");
+		prompt.Should().Contain("emergency recovery flow",
+			because: "page guidance should keep direct connection args in a fallback-only role");
 		prompt.Should().Contain($"`{ComponentInfoTool.ToolName}`",
 			because: "get-page prompt guidance should direct callers to get-component-info for unfamiliar Freedom UI types");
 		prompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",

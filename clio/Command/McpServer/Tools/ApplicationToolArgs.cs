@@ -76,7 +76,23 @@ public sealed record ApplicationCreateArgs(
 
 	[property: JsonPropertyName("optional-template-data-json")]
 	[property: Description("Optional JSON object: {useExistingEntitySchema, entitySchemaName, appSectionDescription, useAIContentGeneration}")]
-	string? OptionalTemplateDataJson = null
+	string? OptionalTemplateDataJson = null,
+
+	[property: JsonPropertyName("title-localizations")]
+	[property: Description("Rejected. create-app is scalar-only and does not accept localization maps.")]
+	IReadOnlyDictionary<string, string>? TitleLocalizations = null,
+
+	[property: JsonPropertyName("description-localizations")]
+	[property: Description("Rejected. create-app is scalar-only and does not accept localization maps.")]
+	IReadOnlyDictionary<string, string>? DescriptionLocalizations = null,
+
+	[property: JsonPropertyName("caption-localizations")]
+	[property: Description("Rejected. create-app is scalar-only and does not accept localization maps.")]
+	IReadOnlyDictionary<string, string>? CaptionLocalizations = null,
+
+	[property: JsonPropertyName("name-localizations")]
+	[property: Description("Rejected. create-app is scalar-only and does not accept localization maps.")]
+	IReadOnlyDictionary<string, string>? NameLocalizations = null
 );
 
 /// <summary>

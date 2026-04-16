@@ -135,6 +135,51 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	[Test]
+	[Description("Creates a remote lookup schema through MCP without custom columns and verifies BaseLookup inheritance plus registration side effects.")]
+	[AllureTag(CreateLookupToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("Create lookup MCP tool creates a BaseLookup schema when columns are omitted")]
+	[AllureDescription("Arranges a unique package in the sandbox environment through the real CLI, then exercises create-lookup without the optional columns argument and verifies real remote side effects plus BaseLookup inheritance and canonical lookup registration.")]
+	public async Task CreateLookup_Should_Create_BaseLookup_Schema_When_Columns_Are_Omitted() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateLookupWithoutCustomColumnsAsync(arrangeContext);
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+		LookupRegistrationSnapshot registrationSnapshot = LookupRegistrationProbe.Read(
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName);
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"create-lookup should succeed when callers omit the optional custom columns collection");
+		AssertIncludesInfoMessage(createResult,
+			"successful lookup creation without custom columns should still emit progress output");
+		schemaProperties.Name.Should().Be(arrangeContext.SchemaName,
+			because: "the created lookup should still be readable through the structured schema properties tool");
+		schemaProperties.ParentSchemaName.Should().Be("BaseLookup",
+			because: "create-lookup should force BaseLookup inheritance even when no custom columns are supplied");
+		schemaProperties.Columns.Should().NotBeNullOrEmpty(
+			because: "lookup schema readback should still expose inherited columns when no custom columns were requested");
+		schemaProperties.Columns!.Should().Contain(column => column.Source == "inherited",
+			because: "BaseLookup-derived schemas should still expose inherited base columns in the read model");
+		schemaProperties.Columns!.Should().NotContain(column => column.Name == arrangeContext.LookupColumnName,
+			because: "omitting columns should not synthesize the custom test-only lookup column from the other create-lookup scenario");
+		registrationSnapshot.LookupRowCount.Should().Be(1,
+			because: "create-lookup should still register the schema exactly once in the Lookup entity when no custom columns are provided");
+		registrationSnapshot.LookupRowTitle.Should().Be("Order status",
+			because: "the Lookup registration row should still reuse the requested business caption");
+		registrationSnapshot.BindingCount.Should().Be(1,
+			because: "create-lookup should still create exactly one canonical package schema data binding");
+		registrationSnapshot.BindingEntitySchemaName.Should().Be("Lookup",
+			because: "the package schema data binding should still target the Lookup entity");
+		registrationSnapshot.BoundRecordIds.Should().Equal([registrationSnapshot.LookupRowId!],
+			because: "the canonical Lookup binding should still point only to the created registration row");
+	}
+
+	[Test]
 	[Description("Adds Binary, Image, and File columns through update-entity-schema and verifies friendly type names through structured readback.")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(UpdateToolName)]
@@ -435,6 +480,77 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	[Test]
+	[Description("Returns stable structured schema metadata for Contact so callers can inspect existing schemas without destructive setup.")]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("Get entity schema properties returns stable structured metadata for Contact")]
+	[AllureDescription("Uses the real MCP server to call get-entity-schema-properties against the configured sandbox environment for the built-in Contact schema and verifies key output fields are populated for inspection workflows.")]
+	public async Task GetEntitySchemaProperties_Should_Return_Stable_Contact_Metadata() {
+		// Arrange
+		await using SandboxFindEntitySchemaArrangeContext arrangeContext = await ArrangeSandboxFindEntitySchemaAsync();
+
+		// Act
+		CallToolResult callResult = await CallGetSchemaPropertiesAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			"CrtCoreBase",
+			"Contact",
+			arrangeContext.CancellationTokenSource.Token);
+		EntitySchemaPropertiesInfo properties = EntitySchemaStructuredResultParser.Extract<EntitySchemaPropertiesInfo>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "get-entity-schema-properties should return structured MCP data for a valid sandbox environment");
+		properties.Name.Should().Be("Contact",
+			because: "the structured schema readback should identify the requested built-in schema");
+		properties.PackageName.Should().NotBeNullOrWhiteSpace(
+			because: "schema readback should expose package ownership for follow-up maintenance decisions");
+		properties.ParentSchemaName.Should().NotBeNullOrWhiteSpace(
+			because: "schema readback should expose inheritance context for existing-schema inspection");
+		properties.PrimaryColumnName.Should().NotBeNullOrWhiteSpace(
+			because: "schema readback should expose the primary key column");
+		properties.PrimaryDisplayColumnName.Should().NotBeNullOrWhiteSpace(
+			because: "schema readback should expose the primary display column");
+		properties.Columns.Should().NotBeNullOrEmpty(
+			because: "schema readback should expose nested columns for follow-up property inspection");
+		properties.Columns!.Should().Contain(column => column.Name == "Name",
+			because: "the built-in Contact schema should expose the Name column in the nested read model");
+	}
+
+	[Test]
+	[Description("Returns stable structured column metadata for Contact.Name so callers can inspect existing columns without destructive setup.")]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("Get entity schema column properties returns stable metadata for Contact.Name")]
+	[AllureDescription("Uses the real MCP server to call get-entity-schema-column-properties against the configured sandbox environment for Contact.Name and verifies key output fields are populated for column inspection workflows.")]
+	public async Task GetEntitySchemaColumnProperties_Should_Return_Stable_ContactName_Metadata() {
+		// Arrange
+		await using SandboxFindEntitySchemaArrangeContext arrangeContext = await ArrangeSandboxFindEntitySchemaAsync();
+
+		// Act
+		CallToolResult callResult = await CallGetColumnPropertiesAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			"CrtCoreBase",
+			"Contact",
+			"Name",
+			arrangeContext.CancellationTokenSource.Token);
+		EntitySchemaColumnPropertiesInfo properties = EntitySchemaStructuredResultParser.Extract<EntitySchemaColumnPropertiesInfo>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "get-entity-schema-column-properties should return structured MCP data for a valid sandbox environment");
+		properties.SchemaName.Should().Be("Contact",
+			because: "the structured column readback should identify the requested schema");
+		properties.ColumnName.Should().Be("Name",
+			because: "the structured column readback should identify the requested column");
+		properties.Source.Should().NotBeNullOrWhiteSpace(
+			because: "column readback should expose whether the column is inherited or own");
+		properties.Title.Should().NotBeNullOrWhiteSpace(
+			because: "column readback should expose the business caption");
+		properties.Type.Should().NotBeNullOrWhiteSpace(
+			because: "column readback should expose the normalized friendly type name");
+	}
+
+	[Test]
 	[Description("Returns structured schema search results that already include package-name for follow-up MCP calls.")]
 	[AllureTag(FindEntitySchemaTool.FindEntitySchemaToolName)]
 	[AllureName("Find entity schema returns structured package ownership")]
@@ -642,6 +758,17 @@ public sealed class EntitySchemaToolE2ETests {
 					["title-localizations"] = BuildLocalizations("Sort order")
 				}
 			]);
+		return McpCommandExecutionParser.Extract(callResult);
+	}
+
+	[AllureStep("Act by invoking create-lookup through MCP without custom columns")]
+	private static async Task<CommandExecutionEnvelope> ActCreateLookupWithoutCustomColumnsAsync(EntitySchemaArrangeContext arrangeContext) {
+		CallToolResult callResult = await CallCreateLookupAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName,
+			arrangeContext.CancellationTokenSource.Token);
 		return McpCommandExecutionParser.Extract(callResult);
 	}
 

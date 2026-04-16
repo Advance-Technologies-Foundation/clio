@@ -23,6 +23,8 @@ public static class ApplicationPrompt {
 		 Use clio mcp server `{ApplicationGetListTool.ApplicationGetListToolName}` to return installed Creatio applications as structured JSON.
 		 Before the first application discovery or existing-app maintenance tool call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `list-apps`, `get-app-info`, and `create-app-section` so the client starts from the authoritative clio MCP contract.
 		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 Prefer a registered clio environment for application work. If the target site is not registered yet, call `reg-web-app` first and then continue with `environment-name`.
+		 Use direct connection args only on tools that still expose them, and only when local bootstrap is broken or you are in an emergency recovery flow.
 		 Pass `environment-name` when you need to target a registered clio environment explicitly.
 		 Pass tool arguments at the top level of the MCP request; do not wrap `environment-name` inside an `args` object.
 		 Do not pass application filters; this tool always returns the full installed application list for the selected environment.
