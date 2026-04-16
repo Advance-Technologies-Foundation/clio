@@ -2352,6 +2352,13 @@ Discovery: Wording-only MCP surface changes were enough to steer agent behavior 
 Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageListTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Prompts/RegWebAppPrompt.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, .codex/workspace-diary.md
 Impact: Agents should now prefer registering environments and using `environment-name`, while direct credentials stay available only as a documented emergency fallback.
 
+## 2026-04-14 16:40 – Local clio version fallback investigation
+Context: User asked why local clio builds now show version `0.0.0.0`.
+Decision: Confirmed the recent versioning change and verified current local build behavior before concluding.
+Discovery: Commit `7d5a2985` on 2026-04-13 replaced the hardcoded `AssemblyVersion` in `clio/clio.csproj` with a git-tag-based target. `0.0.0.0` is now only the fallback when `git describe --tags --abbrev=0 --match "[0-9]*.[0-9]*.[0-9]*.[0-9]*"` cannot resolve a tag. In this checkout, `dotnet build clio/clio.csproj -c Debug` resolves `8.0.2.66`, so the fallback is environment-specific rather than a repo-wide regression.
+Files: clio/clio.csproj, .codex/workspace-diary.md
+Impact: Future investigations of unexpected local version `0.0.0.0` should first verify tag availability and `git` visibility in the actual build environment.
+
 ## 2026-04-14 07:17 – PR #527 merged: MCP tool naming + CLI UX improvements
 
 Context: Long CI debugging session to get PR #527 merged into master.
