@@ -167,6 +167,17 @@ public class ProgramTestCase : BaseClioModuleTests
 			because: "dconf --build uses a local zip file and must not attempt OAuth authentication at startup");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("createw must not connect to env even when default env has OAuth credentials.")]
+	public void Resolve_Should_Not_Throw_For_CreateWorkspaceCommand_When_Default_Env_Has_OAuth() {
+		Program.Container = null;
+		AddOAuthDefaultEnvironmentFixture();
+		Action act = () => Program.Resolve<CreateWorkspaceCommand>(new CreateWorkspaceCommandOptions(), false);
+		act.Should().NotThrow(
+			because: "createw creates a local workspace and must not attempt OAuth authentication at startup");
+	}
+
 	private void AddWrongActiveEnvironmentFixture() {
 		string filePath = Path.Combine(Environment.CurrentDirectory, SettingsRepository.AppSettingsFile);
 		FileSystem.AddFile(filePath, new MockFileData(File

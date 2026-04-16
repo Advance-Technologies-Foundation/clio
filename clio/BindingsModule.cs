@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Command;
 using Clio.Command.ApplicationCommand;
@@ -110,11 +111,12 @@ public class BindingsModule {
 
 		if (activeSettings is not null) {
 			services.AddSingleton(activeSettings);
-			services.AddTransient<IDataProvider>(_ => string.IsNullOrEmpty(activeSettings.ClientId)
-				? new RemoteDataProvider(activeSettings.Uri, activeSettings.Login, activeSettings.Password,
-					activeSettings.IsNetCore)
-				: new RemoteDataProvider(activeSettings.Uri, activeSettings.AuthAppUri, activeSettings.ClientId,
-					activeSettings.ClientSecret, activeSettings.IsNetCore));
+			services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() =>
+				string.IsNullOrEmpty(activeSettings.ClientId)
+					? new RemoteDataProvider(activeSettings.Uri, activeSettings.Login, activeSettings.Password,
+						activeSettings.IsNetCore)
+					: new RemoteDataProvider(activeSettings.Uri, activeSettings.AuthAppUri, activeSettings.ClientId,
+						activeSettings.ClientSecret, activeSettings.IsNetCore)));
 			Lazy<CreatioClient> lazyCreatioClient = new(() => string.IsNullOrEmpty(activeSettings.ClientId)
 				? new CreatioClient(activeSettings.Uri ?? "http://localhost", activeSettings.Login ?? "Supervisor",
 					activeSettings.Password ?? "Supervisor", true, activeSettings.IsNetCore)
@@ -552,6 +554,17 @@ public class BindingsModule {
 	}
 
 	#endregion
+
+	private sealed class LazyDataProvider : IDataProvider {
+		private readonly Lazy<IDataProvider> _lazy;
+		internal LazyDataProvider(Func<IDataProvider> factory) => _lazy = new(factory);
+		public IDefaultValuesResponse GetDefaultValues(string entitySchemaName) => _lazy.Value.GetDefaultValues(entitySchemaName);
+		public IItemsResponse GetItems(ISelectQuery selectQuery) => _lazy.Value.GetItems(selectQuery);
+		public IExecuteResponse BatchExecute(List<IBaseQuery> queries) => _lazy.Value.BatchExecute(queries);
+		public T GetSysSettingValue<T>(string sysSettingCode) => _lazy.Value.GetSysSettingValue<T>(sysSettingCode);
+		public bool GetFeatureEnabled(string featureCode) => _lazy.Value.GetFeatureEnabled(featureCode);
+		public IExecuteProcessResponse ExecuteProcess(IExecuteProcessRequest request) => _lazy.Value.ExecuteProcess(request);
+	}
 
 }
 #pragma warning restore CLIO001 // Non-nullable field is uninitialized.
