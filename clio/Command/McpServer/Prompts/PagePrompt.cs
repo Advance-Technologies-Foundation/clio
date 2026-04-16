@@ -19,6 +19,9 @@ public static class PagePrompt {
 		[Description("Optional Creatio environment name")] string? environmentName = null) =>
 		$"""
 		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 If the page-body task edits `handlers`, read `docs://mcp/guides/page-schema-handlers`.
+		 If the page-body task edits `converters`, read `docs://mcp/guides/page-schema-converters`.
+		 If the page-body task edits `validators`, read `docs://mcp/guides/page-schema-validators`.
 		 Before the first page inspection or mutation tool call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `list-pages`, `get-page`, `get-component-info`, `sync-pages`, and `update-page` so the client starts from the authoritative page contract.
 		 Use `list-pages` first when you need to discover candidate page schemas by `package-name`, `code`, or `search-pattern`. Skip `list-pages` entirely when the exact schema name is already known — call `get-page` directly with that schema name.
 		 Prefer a registered clio environment for page work. If the target site is not registered yet, call `reg-web-app` first and then continue with `environment-name`.
@@ -31,8 +34,10 @@ public static class PagePrompt {
 		 When you need to edit the page, take the JavaScript payload from `raw.body`, modify that raw body, and send it through `{PageSyncTool.ToolName}` as the canonical page write path.
 		 Keep `{PageSyncTool.ToolName}` `validate` at its default `true`, and enable `verify` only when the workflow needs explicit server read-back inside the same tool call.
 		 Pass `resources` as a valid JSON object string when the edited body contains `#ResourceString(key)#` macros that need child-schema localizable strings; do not send a nested object payload there.
+		 Keep `handlers` for request-chain and lifecycle logic, `converters` for value transformation, and `validators` for field-value validation.
 		 Use `{PageUpdateTool.ToolName}` only as a fallback for single-page dry-run or legacy save workflows.
 		 For standard data-bound form fields, bind `control` or `value` directly to `$Name` or `$PDS_*` attributes and prefer datasource captions like `$Resources.Strings.PDS_UsrStatus`.
+		 For display-only transformations such as an extra label that shows an existing field in uppercase, lowercase, or formatted text, prefer a converter plus binding like `$UsrName | usr.ToUpperCase` instead of adding a handler.
 		 Do not use proxy bindings like `$UsrStatus -> PDS.UsrStatus` for standard fields, and do not rely on `#ResourceString(Usr*_label)#` shortcuts for data-bound field captions.
 		 Reserve `Usr*_label` and `Usr*_caption` resource keys for custom standalone UI that carries explicit `resources` entries.
 		 Prefer `list-pages -> get-page -> sync-pages -> get-page` for canonical page edits.

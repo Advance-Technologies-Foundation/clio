@@ -92,7 +92,10 @@ public static class SchemaValidationService
 
 	private static readonly string[] JsonObjectMarkers = {
 		SchemaViewModelConfig,
-		"SCHEMA_MODEL_CONFIG",
+		"SCHEMA_MODEL_CONFIG"
+	};
+
+	private static readonly string[] JavaScriptObjectMarkers = {
 		"SCHEMA_CONVERTERS",
 		"SCHEMA_VALIDATORS"
 	};
@@ -138,7 +141,10 @@ public static class SchemaValidationService
 		if (!ValidateMarkers(jsBody, JsonArrayMarkers, result)) {
 			return result;
 		}
-		ValidateMarkers(jsBody, JsonObjectMarkers, result);
+		if (!ValidateMarkers(jsBody, JsonObjectMarkers, result)) {
+			return result;
+		}
+		ValidateJavaScriptObjectMarkers(jsBody, JavaScriptObjectMarkers, result);
 		return result;
 	}
 
@@ -165,6 +171,43 @@ public static class SchemaValidationService
 		}
 		result.IsValid = false;
 		result.Errors.Add($"Invalid JSON in {marker}: {errorMessage}");
+		return false;
+	}
+
+	private static void ValidateJavaScriptObjectMarkers(
+		string jsBody,
+		IEnumerable<string> markers,
+		SchemaValidationResult result) {
+		foreach (string marker in markers) {
+			if (!PageSchemaSectionReader.TryRead(jsBody, out string content, marker)) {
+				continue;
+			}
+			if (!TryValidateJavaScriptObjectSection(content, marker, result)) {
+				return;
+			}
+		}
+	}
+
+	private static bool TryValidateJavaScriptObjectSection(
+		string content,
+		string marker,
+		SchemaValidationResult result) {
+		string trimmedContent = content.Trim();
+		if (string.IsNullOrWhiteSpace(trimmedContent) ||
+		    !trimmedContent.StartsWith("{", StringComparison.Ordinal) ||
+		    !trimmedContent.EndsWith("}", StringComparison.Ordinal)) {
+			result.IsValid = false;
+			result.Errors.Add($"Invalid JavaScript object section in {marker}: section must remain an object literal.");
+			return false;
+		}
+
+		SchemaValidationResult syntaxResult = ValidateJsSyntax($"const __clioSection = {trimmedContent};");
+		if (syntaxResult.IsValid) {
+			return true;
+		}
+
+		result.IsValid = false;
+		result.Errors.Add($"Invalid JavaScript object section in {marker}: {string.Join("; ", syntaxResult.Errors)}");
 		return false;
 	}
 

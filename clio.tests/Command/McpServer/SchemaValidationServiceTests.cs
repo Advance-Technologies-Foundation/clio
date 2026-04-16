@@ -179,7 +179,7 @@ public class SchemaValidationServiceTests {
 	[Description("Valid list page body passes marker content validation")]
 	public void ValidateMarkerContent_ValidListPageBody_ReturnsValid() {
 		var result = SchemaValidationService.ValidateMarkerContent(ValidListPageBody);
-		result.IsValid.Should().BeTrue("because all marker sections contain valid JSON");
+		result.IsValid.Should().BeTrue("because all marker sections contain valid structured content");
 		result.Errors.Should().BeEmpty();
 	}
 
@@ -187,7 +187,7 @@ public class SchemaValidationServiceTests {
 	[Description("Valid form page body passes marker content validation")]
 	public void ValidateMarkerContent_ValidFormPageBody_ReturnsValid() {
 		var result = SchemaValidationService.ValidateMarkerContent(ValidFormPageBody);
-		result.IsValid.Should().BeTrue("because all marker sections contain valid JSON");
+		result.IsValid.Should().BeTrue("because all marker sections contain valid structured content");
 		result.Errors.Should().BeEmpty();
 	}
 
@@ -226,14 +226,39 @@ public class SchemaValidationServiceTests {
 	}
 
 	[Test]
-	[Description("Body with malformed JSON in converters fails content validation")]
-	public void ValidateMarkerContent_MalformedConverters_ReturnsInvalid() {
+	[Description("Body with JavaScript converter functions passes content validation")]
+	public void ValidateMarkerContent_JavaScriptConverters_ReturnsValid() {
 		string body = ValidFormPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{\"key\": }/**SCHEMA_CONVERTERS*/");
+			"/**SCHEMA_CONVERTERS*/{ \"usr.ToUpperCase\": function(value) { return value?.toUpperCase() ?? \"\"; } }/**SCHEMA_CONVERTERS*/");
 		var result = SchemaValidationService.ValidateMarkerContent(body);
-		result.IsValid.Should().BeFalse("because the converters section contains malformed JSON");
-		result.Errors.Should().ContainMatch("*SCHEMA_CONVERTERS*");
+
+		result.IsValid.Should().BeTrue("because converters are authored as JavaScript object sections and may contain functions");
+		result.Errors.Should().BeEmpty("because function-based converter sections should not be rejected as non-JSON");
+	}
+
+	[Test]
+	[Description("Body with JavaScript validator functions passes content validation")]
+	public void ValidateMarkerContent_JavaScriptValidators_ReturnsValid() {
+		string body = ValidFormPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"usr.ValidateFieldValue\": { \"validator\": function(config) { return function(control) { return control.value !== config.invalidName ? null : { \"usr.ValidateFieldValue\": { message: config.message } }; }; }, \"params\": [{ \"name\": \"invalidName\" }, { \"name\": \"message\" }], \"async\": false } }/**SCHEMA_VALIDATORS*/");
+		var result = SchemaValidationService.ValidateMarkerContent(body);
+
+		result.IsValid.Should().BeTrue("because validators are authored as JavaScript object sections and may contain functions");
+		result.Errors.Should().BeEmpty("because function-based validator sections should not be rejected as non-JSON");
+	}
+
+	[Test]
+	[Description("Body with non-object converters section fails content validation")]
+	public void ValidateMarkerContent_NonObjectConverters_ReturnsInvalid() {
+		string body = ValidFormPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/[\"usr.ToUpperCase\"]/**SCHEMA_CONVERTERS*/");
+		var result = SchemaValidationService.ValidateMarkerContent(body);
+		result.IsValid.Should().BeFalse("because converters must remain an object-literal section");
+		result.Errors.Should().ContainMatch("*SCHEMA_CONVERTERS*",
+			because: "the error should identify the broken converter marker section");
 	}
 
 	[Test]

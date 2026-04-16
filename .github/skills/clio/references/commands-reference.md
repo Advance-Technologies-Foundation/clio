@@ -1115,6 +1115,11 @@ clio get-page --schema-name UsrTodo_FormPage -e <ENV>
 ```
 Returns a JSON envelope with page metadata, bundle data, and `raw.body`. Use `raw.body` as the editable payload for `update-page`.
 
+For MCP-guided page-body authoring, read the clio runtime guides instead of relying on repository-local notes from another workspace:
+- `docs://mcp/guides/page-schema-handlers`
+- `docs://mcp/guides/page-schema-converters`
+- `docs://mcp/guides/page-schema-validators`
+
 ### update-page
 Update the raw schema body of a Freedom UI page. **Alias:** `page-update`
 ```bash
@@ -1134,6 +1139,8 @@ Options: `--schema-name` (required), `--body` (required), `--dry-run`, `--resour
 Update multiple Freedom UI page schemas in one MCP call. **MCP-only tool** — not available as a standalone CLI command.
 
 Each page is processed independently; failures do not stop remaining pages. Supports client-side validation (`validate: true`, default) and read-back verification (`verify: false`, default).
+
+Client-side validation keeps JSON-backed markers strict, but treats `SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` as JavaScript object sections so function-based entries remain valid.
 
 Input:
 ```json

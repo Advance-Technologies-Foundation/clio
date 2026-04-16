@@ -30,6 +30,9 @@ Available MCP tool categories:
 Available MCP guidance resources:
 - docs://mcp/guides/app-modeling
 - docs://mcp/guides/existing-app-maintenance
+- docs://mcp/guides/page-schema-handlers
+- docs://mcp/guides/page-schema-converters
+- docs://mcp/guides/page-schema-validators
 
 ## Synopsis
 
@@ -67,6 +70,7 @@ Bootstrap page inspection/editing and discover whether get-component-info is nee
 - "get-component-info" is local and read-only, so it does not require environment or connection args
 - Start each MCP workflow with "get-tool-contract" so the client reads the authoritative clio MCP contract before the first discovery, inspection, or mutation call
 - Preferred existing-app flow starts with get-tool-contract, then list-apps -> get-app-info, then page or schema inspection, then sync-pages / modify-entity-schema-column / sync-schemas as needed
+- For Freedom UI page-body work, read the dedicated clio MCP guidance resources for handlers, converters, and validators instead of relying on external repository notes
 - This repository documents the MCP server surface; it does not ship a generic stdio helper client
 - If you use an external MCP client wrapper, follow that wrapper's own parsing and transport guarantees
 - Boolean parameters must be JSON booleans (true/false), not strings

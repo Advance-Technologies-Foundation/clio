@@ -130,6 +130,12 @@ public class PageToolsTests {
 			because: "get-page prompt guidance should direct callers to get-component-info for unfamiliar Freedom UI types");
 		prompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
 			because: "get-page prompt guidance should point callers to the MCP-owned existing-app maintenance guide");
+		prompt.Should().Contain("docs://mcp/guides/page-schema-handlers",
+			because: "get-page prompt guidance should point handler edits to the dedicated clio-owned handler guide");
+		prompt.Should().Contain("docs://mcp/guides/page-schema-converters",
+			because: "get-page prompt guidance should point converter edits to the dedicated clio-owned converter guide");
+		prompt.Should().Contain("docs://mcp/guides/page-schema-validators",
+			because: "get-page prompt guidance should point validator edits to the dedicated clio-owned validator guide");
 		prompt.Should().Contain($"`{ToolContractGetTool.ToolName}`",
 			because: "get-page prompt guidance should bootstrap page workflows from the authoritative MCP contract before the first page tool call");
 		prompt.Should().Contain($"`{PageSyncTool.ToolName}`",
@@ -158,6 +164,10 @@ public class PageToolsTests {
 			because: "page guidance should explicitly reject the payload shape that caused the analyzed session failure");
 		prompt.Should().Contain("do not send a nested object payload",
 			because: "page guidance should explicitly reject non-string resources payloads");
+		prompt.Should().Contain("Keep `handlers` for request-chain and lifecycle logic, `converters` for value transformation, and `validators` for field-value validation",
+			because: "page guidance should explicitly separate handler converter and validator responsibilities");
+		prompt.Should().Contain("$UsrName | usr.ToUpperCase",
+			because: "page guidance should steer uppercase display-label scenarios to converter bindings instead of handlers");
 		prompt.Should().NotContain("Use `sync-pages` only when you need to save multiple pages in one workflow.",
 			because: "sync-pages should no longer be presented as a multi-page-only path");
 		prompt.Should().NotContain("`schemaName`",

@@ -171,6 +171,128 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns handler guidance that keeps Freedom UI request-chain logic inside clio-owned page-body instructions.")]
+	public void PageSchemaHandlersGuidanceResource_Should_Return_Canonical_Handler_Guide() {
+		// Arrange
+		PageSchemaHandlersGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = (TextResourceContents)result;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/page-schema-handlers",
+			because: "the handler guide should expose a stable MCP URI for handler authoring guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the handler guide should be discoverable as plain text");
+		article.Text.Should().Contain("raw.body",
+			because: "handler guidance should keep deployed page edits anchored to the raw page body returned by get-page");
+		article.Text.Should().Contain("SCHEMA_HANDLERS",
+			because: "handler guidance should point callers to the marker-delimited handler section");
+		article.Text.Should().Contain("request.$context.executeRequest(...)",
+			because: "handler guidance should describe the canonical way to launch secondary requests from a handler");
+		article.Text.Should().Contain("next?.handle(request)",
+			because: "handler guidance should explain how the request chain continues");
+		article.Text.Should().Contain("setAttributePropertyValue(...)",
+			because: "handler guidance should steer dynamic UI state to the supported context API");
+		article.Text.Should().Contain("@CrtRequestHandler",
+			because: "handler guidance should document the public frontend-source registration pattern alongside page-body editing");
+		article.Text.Should().Contain("HttpClientService",
+			because: "handler guidance should list the main public sdk services available to handler authors");
+		article.Text.Should().Contain("Do not use a handler for pure display transformation tasks such as \"add a label that shows Name in uppercase\"",
+			because: "handler guidance should explicitly reject using handlers for uppercase display-label scenarios");
+		article.Text.Should().Contain("https://academy.creatio.com/docs/8.x/dev/development-on-creatio-platform/front-end-development/freedom-ui/client-schema-freedomui/overview",
+			because: "handler guidance should link to the relevant Academy overview for deeper reference");
+		article.Text.Should().Contain("docs://mcp/guides/page-schema-converters",
+			because: "handler guidance should redirect value-transformation work to the converter guide");
+		article.Text.Should().Contain("docs://mcp/guides/page-schema-validators",
+			because: "handler guidance should redirect field-validation work to the validator guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns converter guidance that keeps value transformation separate from handlers and validators in clio MCP page editing.")]
+	public void PageSchemaConvertersGuidanceResource_Should_Return_Canonical_Converter_Guide() {
+		// Arrange
+		PageSchemaConvertersGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = (TextResourceContents)result;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/page-schema-converters",
+			because: "the converter guide should expose a stable MCP URI for converter authoring guidance");
+		article.Text.Should().Contain("SCHEMA_CONVERTERS",
+			because: "converter guidance should point callers to the marker-delimited converter section");
+		article.Text.Should().Contain("value transformation",
+			because: "converter guidance should define the intended responsibility of converters");
+		article.Text.Should().Contain("usr.ToUpperCase",
+			because: "converter guidance should include a concrete Academy-style converter example");
+		article.Text.Should().Contain("$UsrName | usr.ToUpperCase",
+			because: "converter guidance should show how a page binding references the converter");
+		article.Text.Should().Contain("add another label that shows Name in uppercase",
+			because: "converter guidance should directly cover the uppercase display-label scenario that previously drifted to handlers");
+		article.Text.Should().Contain("UsrUppercaseNameLabel",
+			because: "converter guidance should include a copyable mini diff for the uppercase label scenario");
+		article.Text.Should().Contain("\"type\": \"crt.Label\"",
+			because: "converter guidance should show the label component shape used in the cookbook diff");
+		article.Text.Should().Contain("parentName",
+			because: "converter guidance should show that the inserted label must be positioned in the live container hierarchy");
+		article.Text.Should().Contain("@CrtConverter",
+			because: "converter guidance should document the public frontend-source registration pattern");
+		article.Text.Should().Contain("Converter<V, R>",
+			because: "converter guidance should point to the public converter contract in the devkit API");
+		article.Text.Should().Contain("implement-the-field-value-conversion",
+			because: "converter guidance should include the Academy field-value conversion example link");
+		article.Text.Should().Contain("save interception",
+			because: "converter guidance should explicitly reject side-effect responsibilities");
+		article.Text.Should().Contain("Do not introduce a handler that writes a second attribute only to display an uppercase",
+			because: "converter guidance should explicitly reject handler-based shadow-attribute solutions for pure display conversion");
+		article.Text.Should().Contain("docs://mcp/guides/page-schema-handlers",
+			because: "converter guidance should redirect lifecycle and request-chain logic to handlers");
+		article.Text.Should().Contain("docs://mcp/guides/page-schema-validators",
+			because: "converter guidance should redirect validation work to validators");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns validator guidance that keeps field validation separate from converters and handlers in clio MCP page editing.")]
+	public void PageSchemaValidatorsGuidanceResource_Should_Return_Canonical_Validator_Guide() {
+		// Arrange
+		PageSchemaValidatorsGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = (TextResourceContents)result;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/page-schema-validators",
+			because: "the validator guide should expose a stable MCP URI for validator authoring guidance");
+		article.Text.Should().Contain("SCHEMA_VALIDATORS",
+			because: "validator guidance should point callers to the marker-delimited validator section");
+		article.Text.Should().Contain("field-value validation",
+			because: "validator guidance should define the intended responsibility of validators");
+		article.Text.Should().Contain("usr.ValidateFieldValue",
+			because: "validator guidance should include a concrete page-body validator example");
+		article.Text.Should().Contain("\"validator\": function",
+			because: "validator guidance should show the runtime page-body validator function shape");
+		article.Text.Should().Contain("@CrtValidator",
+			because: "validator guidance should document the public frontend-source registration pattern");
+		article.Text.Should().Contain("BaseValidator",
+			because: "validator guidance should point to the main public validator base type in the devkit API");
+		article.Text.Should().Contain("implement-the-field-value-validation",
+			because: "validator guidance should include the Academy field-value validation example link");
+		article.Text.Should().Contain("setAttributePropertyValue(...)",
+			because: "validator guidance should redirect dynamic UI state rules to the supported handler-side API");
+		article.Text.Should().Contain("docs://mcp/guides/page-schema-handlers",
+			because: "validator guidance should redirect request-chain and dynamic UI state logic to handlers");
+		article.Text.Should().Contain("docs://mcp/guides/page-schema-converters",
+			because: "validator guidance should redirect value transformation work to converters");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns DataForge orchestration guidance that keeps exact package-local reuse checks on runtime context before DataForge fallback.")]
 	public void DataForgeOrchestrationGuidanceResource_Should_Keep_Runtime_Context_As_Primary_Source_For_Existing_App_Reuse() {
 		// Arrange
