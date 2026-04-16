@@ -1261,6 +1261,36 @@ internal static class ToolContractCatalog {
 							}
 						}
 					}
+				}),
+				Example("Create a required-field rule when owner equals a lookup constant", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					["entity-schema-name"] = "UsrTask",
+					[RuleFieldName] = new Dictionary<string, object?> {
+						["caption"] = "Require status for a specific owner",
+						["condition"] = new Dictionary<string, object?> {
+							["logicalOperation"] = "AND",
+							["conditions"] = new[] {
+								new Dictionary<string, object?> {
+									["leftExpression"] = new Dictionary<string, object?> {
+										["type"] = "AttributeValue",
+										["path"] = "Owner"
+									},
+									["comparisonType"] = "equal",
+									["rightExpression"] = new Dictionary<string, object?> {
+										["type"] = "Const",
+										["value"] = "00000000-0000-0000-0000-000000000001"
+									}
+								}
+							}
+						},
+						["actions"] = new[] {
+							new Dictionary<string, object?> {
+								["type"] = "make-required",
+								["items"] = new[] { "Status" }
+							}
+						}
+					}
 				})
 			],
 			Flow(

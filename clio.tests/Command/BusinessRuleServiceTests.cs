@@ -25,6 +25,7 @@ public sealed class BusinessRuleServiceTests {
 
 	[SetUp]
 	public void SetUp() {
+		_savedAddonRequestBody = null;
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		_applicationClient = Substitute.For<IApplicationClient>();
@@ -261,6 +262,59 @@ public sealed class BusinessRuleServiceTests {
 			because: "constant values should inherit the actual column runtime type rather than defaulting to Text");
 		condition.GetProperty("rightExpression").GetProperty("value").GetBoolean().Should().BeTrue(
 			because: "boolean constants should remain booleans in the persisted add-on metadata");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts lookup constant payloads when the right-hand constant is a plain GUID string and persists it as-is.")]
+	public void Create_Should_Persist_Lookup_Constant_Guid_String() {
+		// Arrange
+		const string ownerId = "e0be1264-f36b-1410-fa98-00155d043204";
+		BusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			new BusinessRule(
+				"Require status for owner",
+				true,
+				new BusinessRuleConditionGroup(
+					"AND",
+					[
+						new BusinessRuleCondition(
+							new BusinessRuleOperand("attribute", "Owner", null, null),
+							"equal",
+							new BusinessRuleOperand(
+								"constant",
+								null,
+								JsonSerializer.Deserialize<JsonElement>($"\"{ownerId}\""),
+								null))
+					]),
+				[
+					new BusinessRuleAction("make-required", ["Status"])
+				]));
+
+		// Act
+		BusinessRuleCreateResult result = _service.Create("dev", request);
+
+		// Assert
+		result.RuleName.Should().StartWith("BusinessRule_",
+			because: "the service should create a rule when lookup constants are passed as plain GUID strings");
+		_savedAddonRequestBody.Should().NotBeNullOrWhiteSpace(
+			because: "a valid lookup constant should be persisted into the add-on payload");
+		using JsonDocument saveRequest = JsonDocument.Parse(_savedAddonRequestBody!);
+		using JsonDocument metaData = JsonDocument.Parse(saveRequest.RootElement.GetProperty("metaData").GetString()!);
+		JsonElement rightExpression = metaData.RootElement
+			.GetProperty("rules")[1]
+			.GetProperty("cases")[0]
+			.GetProperty("condition")
+			.GetProperty("conditions")[0]
+			.GetProperty("rightExpression");
+
+		rightExpression.GetProperty("dataValueTypeName").GetString().Should().Be("Lookup",
+			because: "lookup constants should keep the lookup runtime type in persisted metadata");
+		rightExpression.GetProperty("referenceSchemaName").GetString().Should().Be("Contact",
+			because: "lookup constants should preserve the reference schema name for the designer metadata");
+		rightExpression.GetProperty("value").GetString().Should().Be(ownerId,
+			because: "the saved metadata should contain the same raw GUID string that was provided in the request");
 	}
 
 	private string BuildResponse(string url, string requestBody) {

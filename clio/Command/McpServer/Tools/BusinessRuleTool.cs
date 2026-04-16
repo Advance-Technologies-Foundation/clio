@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.BusinessRules;
@@ -72,11 +73,27 @@ public sealed class CreateEntityBusinessRuleTool(
 	}
 
 	private static BusinessRuleOperand MapOperand(BusinessRuleExpressionArgs operand) {
+		if (operand is BusinessRuleAttributeExpressionArgs attributeOperand) {
+			return new BusinessRuleOperand(
+				MapExpressionKind(attributeOperand.Type),
+				attributeOperand.Path,
+				null,
+				null);
+		}
+
+		if (operand is BusinessRuleValueExpressionArgs valueOperand) {
+			return new BusinessRuleOperand(
+				MapExpressionKind(valueOperand.Type),
+				null,
+				valueOperand.Value?.Clone(),
+				null);
+		}
+
 		return new BusinessRuleOperand(
 			MapExpressionKind(operand.Type),
-			operand.Path,
-			operand.Value,
-			operand.DataValueTypeName);
+			null,
+			null,
+			null);
 	}
 
 	private static string MapExpressionKind(string expressionType) {
@@ -172,31 +189,38 @@ public sealed record BusinessRuleConditionArgs(
 	string ComparisonType,
 
 	[property: JsonPropertyName("rightExpression")]
-	[property: Description("Right expression. Supports AttributeValue or Const.")]
+	[property: Description("Right expression. Supports AttributeValue or Const. For lookup constants pass only a GUID string")]
 	[property: Required]
 	BusinessRuleExpressionArgs RightExpression
 );
 
 /// <summary>
-/// Structured expression accepted by the MCP tool.
+/// Base structured expression accepted by the MCP tool.
 /// </summary>
-public sealed record BusinessRuleExpressionArgs(
+[JsonConverter(typeof(BusinessRuleExpressionArgsJsonConverter))]
+public abstract record BusinessRuleExpressionArgs(
 	[property: JsonPropertyName("type")]
 	[property: Description("Expression type. Supported values: AttributeValue, Const.")]
 	[property: Required]
 	string Type
-) {
-	[property: JsonPropertyName("path")]
-	[property: Description("Attribute path when type is AttributeValue.")]
+) { }
+
+/// <summary>
+/// Structured attribute expression accepted by the MCP tool.
+/// </summary>
+public sealed record BusinessRuleAttributeExpressionArgs() : BusinessRuleExpressionArgs("AttributeValue") {
+	[JsonPropertyName("path")]
+	[Description("Attribute path when type is AttributeValue.")]
 	public string? Path { get; init; }
+}
 
-	[property: JsonPropertyName("value")]
-	[property: Description("Constant value when type is Const.")]
+/// <summary>
+/// Structured constant expression accepted by the MCP tool.
+/// </summary>
+public sealed record BusinessRuleValueExpressionArgs() : BusinessRuleExpressionArgs("Const") {
+	[JsonPropertyName("value")]
+	[Description("Constant value when type is Const. For lookup constants pass a GUID string.")]
 	public System.Text.Json.JsonElement? Value { get; init; }
-
-	[property: JsonPropertyName("dataValueTypeName")]
-	[property: Description("Optional explicit data type. Must match the referenced attribute type when provided.")]
-	public string? DataValueTypeName { get; init; }
 }
 
 /// <summary>
@@ -242,5 +266,21 @@ internal static class BusinessRuleToolSupport {
 
 	public static BusinessRuleCreateResponse CreateErrorResponse(string message) {
 		return new BusinessRuleCreateResponse(false, Error: message);
+	}
+}
+
+internal sealed class BusinessRuleExpressionArgsJsonConverter : JsonConverter<BusinessRuleExpressionArgs> {
+	public override BusinessRuleExpressionArgs? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) {
+		using JsonDocument document = JsonDocument.ParseValue(ref reader);
+		string rawJson = document.RootElement.GetRawText();
+		if (document.RootElement.TryGetProperty("path", out _)) {
+			return JsonSerializer.Deserialize<BusinessRuleAttributeExpressionArgs>(rawJson, options);
+		}
+
+		return JsonSerializer.Deserialize<BusinessRuleValueExpressionArgs>(rawJson, options);
+	}
+
+	public override void Write(Utf8JsonWriter writer, BusinessRuleExpressionArgs value, JsonSerializerOptions options) {
+		JsonSerializer.Serialize(writer, value, value.GetType(), options);
 	}
 }

@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Text.Json;
 using Clio;
 using Clio.Command;
 using Clio.Command.BusinessRules;
@@ -56,10 +57,10 @@ public sealed class BusinessRuleToolTests {
 					"AND",
 					[
 						new BusinessRuleConditionArgs(
-							new BusinessRuleExpressionArgs("AttributeValue") { Path = "Status" },
+							new BusinessRuleAttributeExpressionArgs { Path = "Status" },
 							"equal",
-							new BusinessRuleExpressionArgs("Const") {
-								Value = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("\"Draft\"")
+							new BusinessRuleValueExpressionArgs {
+								Value = JsonSerializer.Deserialize<JsonElement>("\"Draft\"")
 						})
 					]),
 				[
@@ -120,10 +121,10 @@ public sealed class BusinessRuleToolTests {
 					"AND",
 					[
 						new BusinessRuleConditionArgs(
-							new BusinessRuleExpressionArgs("AttributeValue") { Path = "Status" },
+							new BusinessRuleAttributeExpressionArgs { Path = "Status" },
 							"equal",
-							new BusinessRuleExpressionArgs("Const") {
-								Value = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("\"Draft\"")
+							new BusinessRuleValueExpressionArgs {
+								Value = JsonSerializer.Deserialize<JsonElement>("\"Draft\"")
 							})
 					]),
 				[
@@ -165,10 +166,10 @@ public sealed class BusinessRuleToolTests {
 					"AND",
 					[
 						new BusinessRuleConditionArgs(
-							new BusinessRuleExpressionArgs("AttributeValue") { Path = "Status" },
+							new BusinessRuleAttributeExpressionArgs { Path = "Status" },
 							"equal",
-							new BusinessRuleExpressionArgs("Const") {
-								Value = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("\"Draft\"")
+							new BusinessRuleValueExpressionArgs {
+								Value = JsonSerializer.Deserialize<JsonElement>("\"Draft\"")
 							})
 					]),
 				[
@@ -187,4 +188,58 @@ public sealed class BusinessRuleToolTests {
 			&& string.IsNullOrWhiteSpace(options.Uri)));
 	}
 	
+
+	[Test]
+	[Category("Unit")]
+	[Description("Deserializes lookup constant expressions into the value-expression subclass while preserving a string GUID value.")]
+	public void BusinessRuleCreate_Should_Deserialize_Lookup_Value_Expression_From_Json() {
+		// Arrange
+		string payload = """
+		{
+		  "environment-name": "dev",
+		  "package-name": "UsrPkg",
+		  "entity-schema-name": "UsrOrder",
+		  "rule": {
+		    "caption": "Require status for owner",
+		    "condition": {
+		      "logicalOperation": "AND",
+		      "conditions": [
+		        {
+		          "leftExpression": {
+		            "type": "AttributeValue",
+		            "path": "Owner"
+		          },
+		          "comparisonType": "equal",
+		          "rightExpression": {
+		            "type": "Const",
+		            "value": "11111111-1111-1111-1111-111111111111"
+		          }
+		        }
+		      ]
+		    },
+		    "actions": [
+		      {
+		        "type": "make-required",
+		        "items": [ "Status" ]
+		      }
+		    ]
+		  }
+		}
+		""";
+
+		// Act
+		BusinessRuleCreateArgs? args = JsonSerializer.Deserialize<BusinessRuleCreateArgs>(payload);
+
+		// Assert
+		args.Should().NotBeNull(
+			because: "the business-rule MCP payload should deserialize from JSON");
+		args!.Rule.Condition.Conditions[0].LeftExpression.Should().BeOfType<BusinessRuleAttributeExpressionArgs>(
+			because: "path-based operands should deserialize into the attribute-expression subclass");
+		args.Rule.Condition.Conditions[0].RightExpression.Should().BeOfType<BusinessRuleValueExpressionArgs>(
+			because: "lookup constants should deserialize into the value-expression subclass");
+		((BusinessRuleValueExpressionArgs)args.Rule.Condition.Conditions[0].RightExpression).Value.HasValue.Should().BeTrue(
+			because: "lookup constant payloads should preserve the GUID string value for downstream validation");
+		((BusinessRuleValueExpressionArgs)args.Rule.Condition.Conditions[0].RightExpression).Value!.Value.ValueKind.Should().Be(JsonValueKind.String,
+			because: "lookup constants are only supported as string GUIDs on the MCP surface");
+	}
 }

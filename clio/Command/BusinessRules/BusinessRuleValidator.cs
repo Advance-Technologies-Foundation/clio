@@ -110,8 +110,9 @@ internal static class BusinessRuleValidator {
 		ValidateExplicitDataValueType(condition.Right.DataValueTypeName, leftDescriptor.DataValueTypeName,
 			"rule.condition.conditions[*].rightExpression.dataValueTypeName");
 		if (string.Equals(leftDescriptor.DataValueTypeName, "Lookup", StringComparison.OrdinalIgnoreCase)) {
-			object? rawValue = ConvertJsonElement(condition.Right.Value.Value);
-			if (rawValue is not string guidString || !Guid.TryParse(guidString, out _)) {
+			JsonElement rawValue = condition.Right.Value.Value;
+			if (rawValue.ValueKind != JsonValueKind.String
+				|| !Guid.TryParse(rawValue.GetString(), out _)) {
 				throw new ArgumentException(
 					"rule.condition.conditions[*].rightExpression.value must be a GUID string when the left attribute is a Lookup.");
 			}
