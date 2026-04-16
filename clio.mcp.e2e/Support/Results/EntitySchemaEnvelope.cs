@@ -29,10 +29,6 @@ internal static class EntitySchemaStructuredResultParser {
 	}
 
 	private static bool TryExtractEnvelope<T>(JsonElement element, out T? envelope) {
-		if (TryDeserializeEnvelope(element, out envelope)) {
-			return true;
-		}
-
 		if (element.ValueKind == JsonValueKind.Array) {
 			foreach (JsonElement item in element.EnumerateArray()) {
 				if (TryGetTextPayload(item, out string? textPayload) &&
@@ -51,6 +47,10 @@ internal static class EntitySchemaStructuredResultParser {
 				TryDeserializeEnvelope(parsedPayload, out envelope)) {
 				return true;
 			}
+		}
+
+		if (TryDeserializeEnvelope(element, out envelope)) {
+			return true;
 		}
 
 		envelope = default;

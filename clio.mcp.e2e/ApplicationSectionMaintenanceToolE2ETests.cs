@@ -262,7 +262,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 	[AllureName("Application section delete removes a created section from the section list")]
 	[AllureDescription("Placeholder for a future seeded-data E2E that creates, lists, deletes, and re-lists a section in a known installed application.")]
 	public void ApplicationSectionDelete_Should_Remove_Created_Section_From_Section_List() {
-		Assert.Ignore("TODO: add predefined installed application data to the E2E environment, then restore this positive delete-app-section lifecycle scenario.");
+		Assert.Ignore("TODO: ENG-88547 add predefined installed application data to the E2E environment, then restore this positive delete-app-section lifecycle scenario.");
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
@@ -313,7 +313,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			return installedApplication;
 		}
 
-		Assert.Ignore("TODO: add predefined installed application data to the E2E environment.");
+		Assert.Ignore("TODO: ENG-88547 add predefined installed application data to the E2E environment.");
 		return null!;
 	}
 
