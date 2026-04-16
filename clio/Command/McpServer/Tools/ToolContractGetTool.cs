@@ -211,7 +211,6 @@ internal static class ToolContractCatalog {
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
 			[ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName] = BuildApplicationSectionUpdate(),
-			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate(),
 			[ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName] = BuildApplicationSectionDelete(),
 			[ApplicationSectionGetListTool.ApplicationSectionGetListToolName] = BuildApplicationSectionGetList(),
 			[ApplicationGetInfoTool.ApplicationGetInfoToolName] = BuildApplicationGetInfo(),
@@ -241,7 +240,8 @@ internal static class ToolContractCatalog {
 			[ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName] = BuildModifyEntitySchemaColumn(),
 			[ComponentInfoTool.ToolName] = BuildComponentInfo(),
 			[PageUpdateTool.ToolName] = BuildPageUpdate(),
-			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete()
+			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete(),
+			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
@@ -1189,18 +1189,16 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildEntityBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates an entity-level Freedom UI business rule by editing the entity BusinessRule add-on and returns the generated internal rule name plus target package/entity echo fields.",
+			"Creates an entity-level Freedom UI business rule.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, "entity-schema-name", RuleFieldName],
+				["environmentName", "packageName", "entitySchemaName", RuleFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PackageNameFieldName, StringType, "Target package name."),
-					Field("entity-schema-name", StringType, "Target entity schema name."),
-				Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, optional enabled, one top-level condition group, and one or more actions.")
+					Field("environmentName", StringType, RegisteredEnvironmentNameDescription),
+					Field("packageName", StringType, "Target package name."),
+					Field("entitySchemaName", StringType, "Target entity schema name."),
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, optional enabled, one top-level condition group, and one or more actions.")
 				],
 				Validators: [
-					new ToolContractValidator("forbid-fields", "forbidden-field", "rule.name",
-						Context: "Generated automatically by clio; do not send it."),
 					new ToolContractValidator("enum", "unsupported-operator", "rule.condition.logicalOperation",
 						Context: "Supported values: AND, OR."),
 					new ToolContractValidator("enum", "unsupported-comparison", "rule.condition.conditions[*].comparisonType",
@@ -1213,59 +1211,27 @@ internal static class ToolContractCatalog {
 				[
 					SuccessFalseSignal
 				],
-				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field(PackageNameFieldName, StringType, PrimaryPackageNameDescription),
-				Field("entity-schema-name", StringType, "Entity schema name."),
-				Field("rule-name", StringType, "Generated internal business-rule name."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription)
+				Field("exit-code", NumberType, "Command exit code. 0 = success, non-zero = failure."),
+				Field("execution-log-messages", ArrayType, "Command output log messages."),
+				Field("log-file-path", StringType, "Optional path to the generated database operation log file.")
 			),
 			CommonErrorContract,
 			[
-				EnvironmentNameParameterAlias(),
-				PackageNameParameterAlias(),
-				Alias(ParameterScope, "entity-schema-name", "entitySchemaName", RejectedStatus,
-					"Use 'entity-schema-name' instead of 'entitySchemaName'."),
+				Alias(ParameterScope, "environmentName", EnvironmentNameFieldName, RejectedStatus,
+					$"Use 'environmentName' instead of '{EnvironmentNameFieldName}'."),
+				Alias(ParameterScope, "packageName", PackageNameFieldName, RejectedStatus,
+					$"Use 'packageName' instead of '{PackageNameFieldName}'."),
+				Alias(ParameterScope, "entitySchemaName", "entity-schema-name", RejectedStatus,
+					"Use 'entitySchemaName' instead of 'entity-schema-name'."),
 				Alias(ParameterScope, RuleFieldName, "rule.name", RejectedStatus,
 					"Do not send 'rule.name'. clio generates the internal business-rule name automatically.")
 			],
+			[],
 			[
-				Default("rule.enabled", "true", "Business rules are enabled by default when the field is omitted.")
-			],
-			[
-				Example("Create a required-field rule when status is Draft", new Dictionary<string, object?> {
-					[EnvironmentNameFieldName] = ExampleEnvironmentName,
-					[PackageNameFieldName] = ExamplePackageName,
-					["entity-schema-name"] = "UsrTask",
-					[RuleFieldName] = new Dictionary<string, object?> {
-						["caption"] = "Require owner for drafts",
-						["condition"] = new Dictionary<string, object?> {
-							["logicalOperation"] = "AND",
-							["conditions"] = new[] {
-								new Dictionary<string, object?> {
-									["leftExpression"] = new Dictionary<string, object?> {
-										["type"] = "AttributeValue",
-										["path"] = "UsrStatus"
-									},
-									["comparisonType"] = "equal",
-									["rightExpression"] = new Dictionary<string, object?> {
-										["type"] = "Const",
-										["value"] = "Draft"
-									}
-								}
-							}
-						},
-						["actions"] = new[] {
-							new Dictionary<string, object?> {
-								["type"] = "make-required",
-								["items"] = new[] { "Owner" }
-							}
-						}
-					}
-				}),
 				Example("Create a required-field rule when owner equals a lookup constant", new Dictionary<string, object?> {
-					[EnvironmentNameFieldName] = ExampleEnvironmentName,
-					[PackageNameFieldName] = ExamplePackageName,
-					["entity-schema-name"] = "UsrTask",
+					["environmentName"] = ExampleEnvironmentName,
+					["packageName"] = ExamplePackageName,
+					["entitySchemaName"] = "UsrTask",
 					[RuleFieldName] = new Dictionary<string, object?> {
 						["caption"] = "Require status for a specific owner",
 						["condition"] = new Dictionary<string, object?> {

@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
-using Clio.Command.BusinessRules;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -42,28 +41,22 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			TargetEntitySchemaName,
 			caption,
 			arrangeContext.CancellationTokenSource.Token);
-		BusinessRuleCreateResponse response = EntitySchemaStructuredResultParser.Extract<BusinessRuleCreateResponse>(callResult);
-		AddonBusinessRuleSnapshot snapshot = FetchAddonSnapshot(
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		AddonBusinessRuleSnapshot snapshot = FetchAddonSnapshotByCaption(
 			arrangeContext.EnvironmentName,
 			arrangeContext.PackageName,
 			TargetEntitySchemaName,
-			response.RuleName!);
+			caption);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "successful business-rule creation should return a structured MCP envelope rather than a top-level tool error");
-		response.Success.Should().BeTrue(
-			because: "the real MCP tool should report success for a valid sandbox package and entity");
-		response.PackageName.Should().Be(arrangeContext.PackageName,
-			because: "the response should report the target package");
-		response.EntitySchemaName.Should().Be(TargetEntitySchemaName,
-			because: "the response should report the target entity schema");
-		response.RuleName.Should().StartWith("BusinessRule_",
-			because: "the tool should generate an internal business-rule name automatically");
+		execution.ExitCode.Should().Be(0,
+			because: "the real MCP tool should report success exit code for a valid sandbox package and entity");
 		snapshot.RuleCaption.Should().Be(caption,
 			because: "the persisted add-on metadata should contain the created rule");
-		snapshot.RuleName.Should().Be(response.RuleName,
-			because: "the persisted add-on metadata should contain the generated internal rule name returned by the tool");
+		snapshot.RuleName.Should().StartWith("BusinessRule_",
+			because: "the tool should generate an internal business-rule name automatically");
 		snapshot.TriggerNames.Should().Contain("Name",
 			because: "the persisted rule should include the expected trigger");
 		snapshot.ResourceCaption.Should().Be(caption,
@@ -87,20 +80,21 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			TargetEntitySchemaName,
 			"Broken rule",
 			arrangeContext.CancellationTokenSource.Token);
-		BusinessRuleCreateResponse response = EntitySchemaStructuredResultParser.Extract<BusinessRuleCreateResponse>(callResult);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "invalid environment handling should be surfaced as a structured tool failure");
-		response.Success.Should().BeFalse(
+		execution.ExitCode.Should().NotBe(0,
 			because: "the tool should fail when the requested environment is missing");
-		response.RuleName.Should().BeNull(
-			because: "failed business-rule creation should not return a generated rule name");
-		response.Error.Should().NotBeNullOrWhiteSpace(
+		string combinedOutput = string.Join(
+			Environment.NewLine,
+			(execution.Output ?? []).Select(message => $"{message.MessageType}: {message.Value}"));
+		combinedOutput.Should().NotBeNullOrWhiteSpace(
 			because: "the failure should include a readable diagnostic");
-		response.Error.Should().Contain("Environment with key",
+		combinedOutput.Should().Contain("Environment with key",
 			because: "the environment-aware resolver should surface the missing registered environment explicitly");
-		response.Error.Should().Contain(arrangeContext.EnvironmentName,
+		combinedOutput.Should().Contain(arrangeContext.EnvironmentName,
 			because: "the error should identify the missing environment");
 	}
 
@@ -161,45 +155,43 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		return await session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["package-name"] = packageName,
-						["entity-schema-name"] = entitySchemaName,
-						["rule"] = new Dictionary<string, object?> {
-							["caption"] = caption,
-							["condition"] = new Dictionary<string, object?> {
-								["logicalOperation"] = "AND",
-								["conditions"] = new[] {
-									new Dictionary<string, object?> {
-										["leftExpression"] = new Dictionary<string, object?> {
-											["type"] = "AttributeValue",
-											["path"] = "Name"
-										},
-										["comparisonType"] = "equal",
-										["rightExpression"] = new Dictionary<string, object?> {
-											["type"] = "Const",
-											["value"] = caption
-										}
-									}
-								}
-							},
-							["actions"] = new[] {
-								new Dictionary<string, object?> {
-									["type"] = "make-required",
-									["items"] = new[] { "JobTitle" }
+				["environmentName"] = environmentName,
+				["packageName"] = packageName,
+				["entitySchemaName"] = entitySchemaName,
+				["rule"] = new Dictionary<string, object?> {
+					["caption"] = caption,
+					["condition"] = new Dictionary<string, object?> {
+						["logicalOperation"] = "AND",
+						["conditions"] = new[] {
+							new Dictionary<string, object?> {
+								["leftExpression"] = new Dictionary<string, object?> {
+									["type"] = "AttributeValue",
+									["path"] = "Name"
+								},
+								["comparisonType"] = "equal",
+								["rightExpression"] = new Dictionary<string, object?> {
+									["type"] = "Const",
+									["value"] = caption
 								}
 							}
 						}
+					},
+					["actions"] = new[] {
+						new Dictionary<string, object?> {
+							["type"] = "make-required",
+							["items"] = new[] { "JobTitle" }
+						}
+					}
 				}
 			},
 			cancellationToken);
 	}
 
-	private static AddonBusinessRuleSnapshot FetchAddonSnapshot(
+	private static AddonBusinessRuleSnapshot FetchAddonSnapshotByCaption(
 		string environmentName,
 		string packageName,
 		string entitySchemaName,
-		string ruleName) {
+		string caption) {
 		EnvironmentSettings environment = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
 		IApplicationClient client = new CreatioClientAdapter(
 			environment.Uri!,
@@ -224,7 +216,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		using JsonDocument metaDataDocument = JsonDocument.Parse(metaData);
 		JsonElement createdRule = metaDataDocument.RootElement.GetProperty("rules")
 			.EnumerateArray()
-			.Single(rule => string.Equals(rule.GetProperty("name").GetString(), ruleName, StringComparison.Ordinal));
+			.Single(rule => string.Equals(rule.GetProperty("caption").GetString(), caption, StringComparison.Ordinal));
 		string ruleId = createdRule.GetProperty("uId").GetString()!;
 		JsonElement resource = response.RootElement.GetProperty("schema").GetProperty("resources")
 			.EnumerateArray()

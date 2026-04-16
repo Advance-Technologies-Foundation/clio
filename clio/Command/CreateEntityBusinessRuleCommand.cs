@@ -32,26 +32,17 @@ public sealed class CreateEntityBusinessRuleCommand(
 	ILogger logger)
 	: Command<CreateEntityBusinessRuleOptions> {
 
-	/// <summary>
-	/// Executes the business-rule creation flow and returns the generated rule metadata.
-	/// </summary>
-	/// <param name="options">Environment-scoped business-rule options.</param>
-	/// <returns>Structured information about the created business rule.</returns>
-	public BusinessRuleCreateResult Create(CreateEntityBusinessRuleOptions options) {
-		ArgumentNullException.ThrowIfNull(options);
-		Validate(options);
-		return businessRuleService.Create(
-			options.Environment,
-			new BusinessRuleCreateRequest(
-				options.PackageName,
-				options.EntitySchemaName,
-				options.Rule));
-	}
-
 	/// <inheritdoc />
 	public override int Execute(CreateEntityBusinessRuleOptions options) {
+		ArgumentNullException.ThrowIfNull(options);
 		try {
-			_ = Create(options);
+			Validate(options);
+			businessRuleService.Create(
+				options.Environment,
+				new BusinessRuleCreateRequest(
+					options.PackageName,
+					options.EntitySchemaName,
+					options.Rule));
 			logger.WriteInfo("Done");
 			return 0;
 		} catch (Exception exception) {

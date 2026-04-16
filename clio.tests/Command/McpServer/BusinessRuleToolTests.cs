@@ -1,5 +1,7 @@
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
+using System.ComponentModel.DataAnnotations;
 using Clio;
 using Clio.Command;
 using Clio.Command.BusinessRules;
@@ -37,8 +39,8 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Maps the MCP payload into the business-rule create service request and returns the structured response envelope.")]
-	public void BusinessRuleCreate_Should_Map_Arguments_And_Return_Structured_Response() {
+	[Description("Maps the MCP payload into the business-rule create service request and returns a success exit code.")]
+	public void BusinessRuleCreate_Should_Map_Arguments_And_Return_Success_Exit_Code() {
 		// Arrange
 		IBusinessRuleService service = Substitute.For<IBusinessRuleService>();
 		CreateEntityBusinessRuleCommand command = new(service, Substitute.For<ILogger>());
@@ -47,39 +49,28 @@ public sealed class BusinessRuleToolTests {
 		service.Create("dev", Arg.Any<BusinessRuleCreateRequest>())
 			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
 		CreateEntityBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
-		BusinessRuleCreateArgs args = new(
-			"dev",
-			"UsrPkg",
-			"UsrOrder",
-			new BusinessRuleArgs(
-				"Require owner for drafts",
-				new BusinessRuleConditionGroupArgs(
-					"AND",
-					[
-						new BusinessRuleConditionArgs(
-							new BusinessRuleAttributeExpressionArgs { Path = "Status" },
-							"equal",
-							new BusinessRuleValueExpressionArgs {
-								Value = JsonSerializer.Deserialize<JsonElement>("\"Draft\"")
-						})
-					]),
+		BusinessRule rule = new(
+			"Require owner for drafts",
+			new BusinessRuleConditionGroup(
+				"AND",
 				[
-					new BusinessRuleActionArgs("make-required", ["Owner", "Amount"]),
-					new BusinessRuleActionArgs("make-read-only", ["Status"])
-				]));
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null,
+							JsonSerializer.Deserialize<JsonElement>("\"Draft\"")))
+				]),
+			[
+				new BusinessRuleAction("make-required", ["Owner", "Amount"]),
+				new BusinessRuleAction("make-read-only", ["Status"])
+			]);
 
 		// Act
-		BusinessRuleCreateResponse result = tool.BusinessRuleCreate(args);
+		CommandExecutionResult result = tool.BusinessRuleCreate("dev", "UsrPkg", "UsrOrder", rule);
 
 		// Assert
-		result.Success.Should().BeTrue(
-			because: "a successful service call should be wrapped into a structured success envelope");
-		result.PackageName.Should().Be("UsrPkg",
-			because: "the response should echo the package name from the request args");
-		result.EntitySchemaName.Should().Be("UsrOrder",
-			because: "the response should echo the entity schema name from the request args");
-		result.RuleName.Should().Be("BusinessRule_1234567",
-			because: "the response should report the generated rule name returned by the service");
+		result.ExitCode.Should().Be(0,
+			because: "a successful service call should return the standard success exit code");
 		commandResolver.Received(1).Resolve<CreateEntityBusinessRuleCommand>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "dev"));
 		service.Received(1).Create(
@@ -88,60 +79,14 @@ public sealed class BusinessRuleToolTests {
 				request.PackageName == "UsrPkg"
 				&& request.EntitySchemaName == "UsrOrder"
 				&& request.Rule.Caption == "Require owner for drafts"
-				&& request.Rule.Enabled == null
-				&& request.Rule.ConditionGroup.Operator == "AND"
+				&& request.Rule.Condition.LogicalOperation == "AND"
 				&& request.Rule.Actions.Count == 2
-				&& request.Rule.Actions[0].Action == "make-required"
-				&& request.Rule.Actions[0].Targets.Count == 2
-				&& request.Rule.Actions[0].Targets[0] == "Owner"
-				&& request.Rule.Actions[0].Targets[1] == "Amount"
-				&& request.Rule.Actions[1].Targets.Count == 1
-				&& request.Rule.Actions[1].Targets[0] == "Status"));
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Preserves omitted optional enabled on the MCP surface so the service can apply its documented default.")]
-	public void BusinessRuleCreate_Should_Preserve_Omitted_Enabled_Default() {
-		// Arrange
-		IBusinessRuleService service = Substitute.For<IBusinessRuleService>();
-		CreateEntityBusinessRuleCommand command = new(service, Substitute.For<ILogger>());
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<CreateEntityBusinessRuleCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
-		service.Create("dev", Arg.Any<BusinessRuleCreateRequest>())
-			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
-		CreateEntityBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
-		BusinessRuleCreateArgs args = new(
-			"dev",
-			"UsrPkg",
-			"UsrOrder",
-			new BusinessRuleArgs(
-				"Require owner for drafts",
-				new BusinessRuleConditionGroupArgs(
-					"AND",
-					[
-						new BusinessRuleConditionArgs(
-							new BusinessRuleAttributeExpressionArgs { Path = "Status" },
-							"equal",
-							new BusinessRuleValueExpressionArgs {
-								Value = JsonSerializer.Deserialize<JsonElement>("\"Draft\"")
-							})
-					]),
-				[
-					new BusinessRuleActionArgs("make-required", ["Owner"])
-				]));
-
-		// Act
-		BusinessRuleCreateResponse result = tool.BusinessRuleCreate(args);
-
-		// Assert
-		result.Success.Should().BeTrue(
-			because: "omitting rule.enabled should still allow valid requests to succeed");
-		commandResolver.Received(1).Resolve<CreateEntityBusinessRuleCommand>(Arg.Is<EnvironmentOptions>(options =>
-			options.Environment == "dev"));
-		service.Received(1).Create(
-			"dev",
-			Arg.Is<BusinessRuleCreateRequest>(request => request.Rule.Enabled == null));
+				&& request.Rule.Actions[0].Type == "make-required"
+				&& request.Rule.Actions[0].Items.Count == 2
+				&& request.Rule.Actions[0].Items[0] == "Owner"
+				&& request.Rule.Actions[0].Items[1] == "Amount"
+				&& request.Rule.Actions[1].Items.Count == 1
+				&& request.Rule.Actions[1].Items[0] == "Status"));
 	}
 
 	[Test]
@@ -156,43 +101,59 @@ public sealed class BusinessRuleToolTests {
 		service.Create("dev", Arg.Any<BusinessRuleCreateRequest>())
 			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
 		CreateEntityBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
-		BusinessRuleCreateArgs args = new(
-			"dev",
-			"UsrPkg",
-			"UsrOrder",
-			new BusinessRuleArgs(
-				"Require owner for drafts",
-				new BusinessRuleConditionGroupArgs(
-					"AND",
-					[
-						new BusinessRuleConditionArgs(
-							new BusinessRuleAttributeExpressionArgs { Path = "Status" },
-							"equal",
-							new BusinessRuleValueExpressionArgs {
-								Value = JsonSerializer.Deserialize<JsonElement>("\"Draft\"")
-							})
-					]),
+		BusinessRule rule = new(
+			"Require owner for drafts",
+			new BusinessRuleConditionGroup(
+				"AND",
 				[
-					new BusinessRuleActionArgs("make-required", ["Owner"])
-				]));
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null,
+							JsonSerializer.Deserialize<JsonElement>("\"Draft\"")))
+				]),
+			[
+				new BusinessRuleAction("make-required", ["Owner"])
+			]);
 
 		// Act
-		BusinessRuleCreateResponse result = tool.BusinessRuleCreate(args);
+		CommandExecutionResult result = tool.BusinessRuleCreate("dev", "UsrPkg", "UsrOrder", rule);
 
 		// Assert
-		result.Success.Should().BeTrue(
+		result.ExitCode.Should().Be(0,
 			because: "the environment-aware resolver should return a command instance for the requested MCP environment");
 		commandResolver.Received(1).Resolve<CreateEntityBusinessRuleCommand>(Arg.Is<EnvironmentOptions>(options =>
 			options is CreateEntityBusinessRuleOptions
 			&& options.Environment == "dev"
 			&& string.IsNullOrWhiteSpace(options.Uri)));
 	}
-	
 
 	[Test]
 	[Category("Unit")]
-	[Description("Deserializes lookup constant expressions into the value-expression subclass while preserving a string GUID value.")]
-	public void BusinessRuleCreate_Should_Deserialize_Lookup_Value_Expression_From_Json() {
+	[Description("Marks each top-level create-entity-business-rule MCP parameter as required so the MCP contract advertises the direct tool shape clearly.")]
+	[TestCase("environmentName")]
+	[TestCase("packageName")]
+	[TestCase("entitySchemaName")]
+	[TestCase("rule")]
+	public void BusinessRuleCreate_Should_Expose_Required_Top_Level_Parameters(string parameterName) {
+		// Arrange
+		ParameterInfo parameter = typeof(CreateEntityBusinessRuleTool)
+			.GetMethod(nameof(CreateEntityBusinessRuleTool.BusinessRuleCreate))!
+			.GetParameters()
+			.Single(candidate => candidate.Name == parameterName);
+
+		// Act
+		object[] requiredAttributes = parameter.GetCustomAttributes(typeof(RequiredAttribute), inherit: false);
+
+		// Assert
+		requiredAttributes.Should().ContainSingle(
+			because: "the MCP tool should expose direct required parameters instead of a single outer args envelope");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Deserializes the direct-parameter business-rule payload and preserves lookup constants as string GUID values.")]
+	public void BusinessRuleCreate_Should_Deserialize_Direct_Parameter_Payload_With_Lookup_Value_Expression() {
 		// Arrange
 		string payload = """
 		{
@@ -228,18 +189,26 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		BusinessRuleCreateArgs? args = JsonSerializer.Deserialize<BusinessRuleCreateArgs>(payload);
+		BusinessRuleToolPayload? payloadArgs = JsonSerializer.Deserialize<BusinessRuleToolPayload>(payload);
 
 		// Assert
-		args.Should().NotBeNull(
-			because: "the business-rule MCP payload should deserialize from JSON");
-		args!.Rule.Condition.Conditions[0].LeftExpression.Should().BeOfType<BusinessRuleAttributeExpressionArgs>(
-			because: "path-based operands should deserialize into the attribute-expression subclass");
-		args.Rule.Condition.Conditions[0].RightExpression.Should().BeOfType<BusinessRuleValueExpressionArgs>(
-			because: "lookup constants should deserialize into the value-expression subclass");
-		((BusinessRuleValueExpressionArgs)args.Rule.Condition.Conditions[0].RightExpression).Value.HasValue.Should().BeTrue(
+		payloadArgs.Should().NotBeNull(
+			because: "the direct-parameter business-rule payload should deserialize from JSON");
+		payloadArgs!.Rule.Condition.Conditions[0].LeftExpression.Type.Should().Be("AttributeValue",
+			because: "path-based operands should preserve the AttributeValue type");
+		payloadArgs.Rule.Condition.Conditions[0].LeftExpression.Path.Should().Be("Owner",
+			because: "the attribute path should be preserved after deserialization");
+		payloadArgs.Rule.Condition.Conditions[0].RightExpression.Type.Should().Be("Const",
+			because: "constant operands should preserve the Const type");
+		payloadArgs.Rule.Condition.Conditions[0].RightExpression.Value.HasValue.Should().BeTrue(
 			because: "lookup constant payloads should preserve the GUID string value for downstream validation");
-		((BusinessRuleValueExpressionArgs)args.Rule.Condition.Conditions[0].RightExpression).Value!.Value.ValueKind.Should().Be(JsonValueKind.String,
+		payloadArgs.Rule.Condition.Conditions[0].RightExpression.Value!.Value.ValueKind.Should().Be(JsonValueKind.String,
 			because: "lookup constants are only supported as string GUIDs on the MCP surface");
 	}
+
+	private sealed record BusinessRuleToolPayload(
+		[property: System.Text.Json.Serialization.JsonPropertyName("environment-name")] string EnvironmentName,
+		[property: System.Text.Json.Serialization.JsonPropertyName("package-name")] string PackageName,
+		[property: System.Text.Json.Serialization.JsonPropertyName("entity-schema-name")] string EntitySchemaName,
+		[property: System.Text.Json.Serialization.JsonPropertyName("rule")] BusinessRule Rule);
 }

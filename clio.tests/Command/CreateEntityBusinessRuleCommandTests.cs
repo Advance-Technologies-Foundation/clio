@@ -22,14 +22,13 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 			EntitySchemaName = "UsrOrder",
 			Rule = new BusinessRule(
 				"Require owner for drafts",
-				null,
 				new BusinessRuleConditionGroup(
 					"AND",
 					[
 						new BusinessRuleCondition(
-							new BusinessRuleOperand("attribute", "Status", null, null),
+							new BusinessRuleExpression("AttributeValue", "Status", null),
 							"equal",
-							new BusinessRuleOperand("constant", null, System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("\"Draft\""), null))
+							new BusinessRuleExpression("Const", null, System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("\"Draft\"")))
 					]),
 				[
 					new BusinessRuleAction("make-required", ["Owner"])
@@ -51,8 +50,8 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 				&& request.EntitySchemaName == "UsrOrder"
 				&& request.Rule.Caption == "Require owner for drafts"
 				&& request.Rule.Actions.Count == 1
-				&& request.Rule.Actions[0].Targets.Count == 1
-				&& request.Rule.Actions[0].Targets[0] == "Owner"));
+				&& request.Rule.Actions[0].Items.Count == 1
+				&& request.Rule.Actions[0].Items[0] == "Owner"));
 		logger.Received(1).WriteInfo("Done");
 	}
 
@@ -70,7 +69,6 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 			EntitySchemaName = "UsrOrder",
 			Rule = new BusinessRule(
 				"Require owner for drafts",
-				null,
 				new BusinessRuleConditionGroup("AND", []),
 				[])
 		});

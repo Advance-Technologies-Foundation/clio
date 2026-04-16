@@ -38,28 +38,23 @@ flowchart LR
 
 ```json
 {
-  "environment-name": "CreatioSrc",
-  "package-name": "DevPkg",
-  "entity-schema-name": "Contact",
-  "rule": {
-    "caption": "Readonly Name",
-    "condition": {
-      "logicalOperation": "AND",
-      "conditions": [
-        {
-          "leftExpression": { "type": "AttributeValue", "path": "Name" },
-          "comparisonType": "equal",
-          "rightExpression": { "type": "Const", "value": "Readonly" }
-        }
-      ]
-    },
-    "actions": [
+  "caption": "Readonly Name",
+  "condition": {
+    "logicalOperation": "AND",
+    "conditions": [
       {
-        "type": "make-read-only",
-        "items": ["Name"]
+        "leftExpression": { "type": "AttributeValue", "path": "Name" },
+        "comparisonType": "equal",
+        "rightExpression": { "type": "Const", "value": "Readonly" }
       }
     ]
-  }
+  },
+  "actions": [
+    {
+      "type": "make-read-only",
+      "items": ["Name"]
+    }
+  ]
 }
 ```
 

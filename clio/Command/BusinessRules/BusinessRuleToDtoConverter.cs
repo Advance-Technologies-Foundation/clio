@@ -31,12 +31,12 @@ internal static class BusinessRuleToDtoConverter {
 		BusinessRule rule) {
 		string ruleUId = Guid.NewGuid().ToString();
 		BusinessRuleCaseMetadataDto @case = BuildCase(columnIndex, rule);
-		List<BusinessRuleTriggerMetadataDto> triggers = BuildTriggers(rule.ConditionGroup.Conditions);
+		List<BusinessRuleTriggerMetadataDto> triggers = BuildTriggers(rule.Condition.Conditions);
 		return new BusinessRuleMetadataDto {
 			TypeName = BusinessRuleTypeName,
 			UId = ruleUId,
 			Name = GenerateBusinessRuleName(),
-			Enabled = rule.Enabled ?? true,
+			Enabled = true,
 			Caption = rule.Caption.Trim(),
 			Cases = [@case],
 			Triggers = triggers
@@ -49,7 +49,7 @@ internal static class BusinessRuleToDtoConverter {
 		return new BusinessRuleCaseMetadataDto {
 			TypeName = BusinessRuleCaseTypeName,
 			UId = Guid.NewGuid().ToString(),
-			Condition = BuildConditionGroup(columnIndex, rule.ConditionGroup),
+			Condition = BuildConditionGroup(columnIndex, rule.Condition),
 			Actions = rule.Actions.Select(BuildAction).ToList()
 		};
 	}
@@ -60,7 +60,7 @@ internal static class BusinessRuleToDtoConverter {
 		return new BusinessRuleGroupConditionMetadataDto {
 			TypeName = BusinessRuleGroupConditionTypeName,
 			UId = Guid.NewGuid().ToString(),
-			LogicalOperation = string.Equals(group.Operator, "OR", StringComparison.OrdinalIgnoreCase) ? LogicalOr : LogicalAnd,
+			LogicalOperation = string.Equals(group.LogicalOperation, "OR", StringComparison.OrdinalIgnoreCase) ? LogicalOr : LogicalAnd,
 			Conditions = group.Conditions.Select(condition => BuildCondition(columnIndex, condition)).ToList()
 		};
 	}
@@ -70,24 +70,24 @@ internal static class BusinessRuleToDtoConverter {
 		BusinessRuleCondition condition) {
 		EntityColumnDescriptor leftDescriptor = ResolveAttributeDescriptor(
 			columnIndex,
-			condition.Left.Path!,
+			condition.LeftExpression.Path!,
 			"rule.condition.conditions[*].leftExpression.path");
 		return new BusinessRuleConditionMetadataDto {
 			TypeName = BusinessRuleConditionTypeName,
 			UId = Guid.NewGuid().ToString(),
-			ComparisonType = string.Equals(condition.Comparison, "not-equal", StringComparison.OrdinalIgnoreCase)
+			ComparisonType = string.Equals(condition.ComparisonType, "not-equal", StringComparison.OrdinalIgnoreCase)
 				? ComparisonNotEqual
 				: ComparisonEqual,
-			LeftExpression = BuildAttributeExpression(leftDescriptor, condition.Left.Path!),
-			RightExpression = BuildRightExpression(columnIndex, condition.Right, leftDescriptor)
+			LeftExpression = BuildAttributeExpression(leftDescriptor, condition.LeftExpression.Path!),
+			RightExpression = BuildRightExpression(columnIndex, condition.RightExpression, leftDescriptor)
 		};
 	}
 
 	private static BusinessRuleExpressionMetadataDto BuildRightExpression(
 		IReadOnlyDictionary<string, EntityColumnDescriptor> columnIndex,
-		BusinessRuleOperand right,
+		BusinessRuleExpression right,
 		EntityColumnDescriptor leftDescriptor) {
-		if (string.Equals(right.Kind, "attribute", StringComparison.OrdinalIgnoreCase)) {
+		if (string.Equals(right.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
 			EntityColumnDescriptor rightDescriptor = ResolveAttributeDescriptor(
 				columnIndex,
 				right.Path!,
@@ -121,12 +121,12 @@ internal static class BusinessRuleToDtoConverter {
 	}
 
 	private static FieldSelectionBusinessRuleActionMetadataDto BuildAction(BusinessRuleAction action) {
-		string normalizedAction = NormalizeActionName(action.Action);
+		string normalizedAction = NormalizeActionName(action.Type);
 		return new FieldSelectionBusinessRuleActionMetadataDto {
 			TypeName = SupportedActionTypeNames[normalizedAction],
 			UId = Guid.NewGuid().ToString(),
 			Enabled = true,
-			Items = string.Join(",", action.Targets.Select(target => target.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+			Items = string.Join(",", action.Items.Select(target => target.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
 		};
 	}
 
@@ -145,10 +145,10 @@ internal static class BusinessRuleToDtoConverter {
 	}
 
 	private static IEnumerable<string> EnumerateTriggerNames(BusinessRuleCondition condition) {
-		yield return condition.Left.Path!.Trim();
-		if (string.Equals(condition.Right.Kind, "attribute", StringComparison.OrdinalIgnoreCase)
-			&& !string.IsNullOrWhiteSpace(condition.Right.Path)) {
-			yield return condition.Right.Path.Trim();
+		yield return condition.LeftExpression.Path!.Trim();
+		if (string.Equals(condition.RightExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)
+			&& !string.IsNullOrWhiteSpace(condition.RightExpression.Path)) {
+			yield return condition.RightExpression.Path.Trim();
 		}
 	}
 

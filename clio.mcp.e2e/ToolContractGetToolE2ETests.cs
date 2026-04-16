@@ -454,13 +454,10 @@ public sealed class ToolContractGetToolE2ETests {
 		response.Success.Should().BeTrue(
 			because: "the new business-rule mutation tool should be discoverable through tool-contract-get");
 		ToolContractDefinition contract = response.Tools!.Single();
-		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "entity-schema-name", "rule"],
+		contract.InputSchema.Required.Should().Contain(["environmentName", "packageName", "entitySchemaName", "rule"],
 			because: "entity-business-rule creation requires environment package entity and rule payload");
 		contract.InputSchema.Validators.Should().Contain(validator =>
-				validator.Name == "forbid-fields" &&
-				validator.Field == "rule.name",
-			because: "the contract should reject public rule.name because clio generates it internally");
-		contract.InputSchema.Validators.Should().Contain(validator =>
+
 				validator.Name == "enum" &&
 				validator.Field == "rule.condition.logicalOperation",
 			because: "the contract should advertise the target architecture logicalOperation field");
@@ -472,15 +469,13 @@ public sealed class ToolContractGetToolE2ETests {
 				validator.Name == "enum" &&
 				validator.Field == "rule.actions[*].type",
 			because: "the contract should advertise the target architecture action field");
-		contract.Defaults.Should().Contain(defaultValue =>
-				defaultValue.Name == "rule.enabled" &&
-				defaultValue.Value == "true",
-			because: "the contract should advertise the enabled default for omitted requests");
+		contract.Defaults.Should().BeEmpty(
+			because: "the contract should not have defaults after enabled was removed");
 		contract.Aliases.Should().Contain(alias =>
-				alias.CanonicalName == "entity-schema-name" &&
-				alias.Alias == "entitySchemaName" &&
+				alias.CanonicalName == "entitySchemaName" &&
+				alias.Alias == "entity-schema-name" &&
 				alias.Status == "rejected",
-			because: "the contract should reject camelCase entity schema aliases");
+			because: "the contract should reject stale kebab-case entity schema aliases now that runtime binding is camelCase");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "rule-name",
 			because: "the published contract should match the actual create-entity-business-rule success payload");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "rule",

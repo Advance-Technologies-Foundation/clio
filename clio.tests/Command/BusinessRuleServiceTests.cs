@@ -60,14 +60,13 @@ public sealed class BusinessRuleServiceTests {
 			"UsrOrder",
 			new BusinessRule(
 				"Require owner for drafts",
-				null,
 				new BusinessRuleConditionGroup(
 					"AND",
 					[
 						new BusinessRuleCondition(
-							new BusinessRuleOperand("attribute", "Status", null, null),
+							new BusinessRuleExpression("AttributeValue", "Status", null),
 							"equal",
-							new BusinessRuleOperand("constant", null, JsonSerializer.Deserialize<JsonElement>("\"Draft\""), null))
+								new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"Draft\"")))
 					]),
 				[
 					new BusinessRuleAction("make-required", ["Owner", "Amount"]),
@@ -133,14 +132,13 @@ public sealed class BusinessRuleServiceTests {
 			"UsrOrder",
 			new BusinessRule(
 				"Invalid rule",
-				true,
 				new BusinessRuleConditionGroup(
 					"AND",
 					[
 						new BusinessRuleCondition(
-							new BusinessRuleOperand("attribute", "MissingStatus", null, null),
+							new BusinessRuleExpression("AttributeValue", "MissingStatus", null),
 							"equal",
-							new BusinessRuleOperand("constant", null, JsonSerializer.Deserialize<JsonElement>("\"Draft\""), null))
+								new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"Draft\"")))
 					]),
 				[
 					new BusinessRuleAction("make-required", ["Owner"])
@@ -171,14 +169,13 @@ public sealed class BusinessRuleServiceTests {
 			"UsrOrder",
 			new BusinessRule(
 				"Readonly amount when status is 5",
-				true,
 				new BusinessRuleConditionGroup(
 					"AND",
 					[
 						new BusinessRuleCondition(
-							new BusinessRuleOperand("attribute", "Amount", null, null),
+							new BusinessRuleExpression("AttributeValue", "Amount", null),
 							"equal",
-							new BusinessRuleOperand("constant", null, JsonSerializer.Deserialize<JsonElement>("5"), null))
+								new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("5")))
 					]),
 				[
 					new BusinessRuleAction("make-read-only", ["Amount"])
@@ -229,14 +226,13 @@ public sealed class BusinessRuleServiceTests {
 			"UsrOrder",
 			new BusinessRule(
 				"Readonly amount when completed",
-				true,
 				new BusinessRuleConditionGroup(
 					"AND",
 					[
 						new BusinessRuleCondition(
-							new BusinessRuleOperand("attribute", "Completed", null, null),
+							new BusinessRuleExpression("AttributeValue", "Completed", null),
 							"equal",
-							new BusinessRuleOperand("constant", null, JsonSerializer.Deserialize<JsonElement>("true"), null))
+								new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("true")))
 					]),
 				[
 					new BusinessRuleAction("make-read-only", ["Amount"])
@@ -275,18 +271,16 @@ public sealed class BusinessRuleServiceTests {
 			"UsrOrder",
 			new BusinessRule(
 				"Require status for owner",
-				true,
 				new BusinessRuleConditionGroup(
 					"AND",
 					[
 						new BusinessRuleCondition(
-							new BusinessRuleOperand("attribute", "Owner", null, null),
+							new BusinessRuleExpression("AttributeValue", "Owner", null),
 							"equal",
-							new BusinessRuleOperand(
-								"constant",
+							new BusinessRuleExpression(
+								"Const",
 								null,
-								JsonSerializer.Deserialize<JsonElement>($"\"{ownerId}\""),
-								null))
+									JsonSerializer.Deserialize<JsonElement>($"\"{ownerId}\"")))
 					]),
 				[
 					new BusinessRuleAction("make-required", ["Status"])
