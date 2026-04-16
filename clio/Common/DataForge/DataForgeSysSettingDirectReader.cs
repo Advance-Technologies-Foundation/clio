@@ -40,7 +40,6 @@ public sealed class DataForgeSysSettingDirectReader(IDataProvider dataProvider) 
 			SysSettings? sysSetting = context
 				.Models<SysSettings>()
 				.Where(s => s.Code == code)
-				.ToList()
 				.FirstOrDefault();
 
 			if (sysSetting is null) {
@@ -57,7 +56,6 @@ public sealed class DataForgeSysSettingDirectReader(IDataProvider dataProvider) 
 			SysSettingsValue? sysSettingValue = context
 				.Models<SysSettingsValue>()
 				.Where(v => v.SysSettingsId == sysSetting.Id)
-				.ToList()
 				.OrderByDescending(v => v.SysAdminUnitId == AllUsersId)
 				.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v.TextValue));
 

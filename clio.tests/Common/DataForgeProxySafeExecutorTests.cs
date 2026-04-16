@@ -33,8 +33,8 @@ public sealed class DataForgeProxySafeExecutorTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Proxy env vars are cleared during execution and restored after.")]
-	public async Task ExecuteAsync_Should_Clear_And_Restore_Proxy_Env_Vars() {
+	[Description("Poisoned loopback proxy env vars are cleared during execution and restored after.")]
+	public async Task ExecuteAsync_Should_Clear_And_Restore_Poisoned_Proxy_Env_Vars() {
 		// Arrange
 		Environment.SetEnvironmentVariable("HTTP_PROXY", "http://127.0.0.1:9");
 		Environment.SetEnvironmentVariable("HTTPS_PROXY", "http://127.0.0.1:9");
@@ -63,6 +63,40 @@ public sealed class DataForgeProxySafeExecutorTests {
 			because: "HTTPS_PROXY should be restored after execution");
 		Environment.GetEnvironmentVariable("ALL_PROXY").Should().Be("http://127.0.0.1:9",
 			because: "ALL_PROXY should be restored after execution");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Valid non-loopback proxy env vars remain enabled during execution so corporate proxies keep working.")]
+	public async Task ExecuteAsync_Should_Keep_Valid_Proxy_Env_Vars() {
+		// Arrange
+		Environment.SetEnvironmentVariable("HTTP_PROXY", "http://proxy.corp.example:8080");
+		Environment.SetEnvironmentVariable("HTTPS_PROXY", "http://proxy.corp.example:8080");
+		Environment.SetEnvironmentVariable("ALL_PROXY", "http://proxy.corp.example:8080");
+
+		string? httpProxyDuringExec = null;
+		string? httpsProxyDuringExec = null;
+		string? allProxyDuringExec = null;
+		string? noProxyDuringExec = null;
+
+		// Act
+		await _executor.ExecuteAsync(async () => {
+			httpProxyDuringExec = Environment.GetEnvironmentVariable("HTTP_PROXY");
+			httpsProxyDuringExec = Environment.GetEnvironmentVariable("HTTPS_PROXY");
+			allProxyDuringExec = Environment.GetEnvironmentVariable("ALL_PROXY");
+			noProxyDuringExec = Environment.GetEnvironmentVariable("NO_PROXY");
+			return await Task.FromResult("ok");
+		}, "dataforge.example.com");
+
+		// Assert
+		httpProxyDuringExec.Should().Be("http://proxy.corp.example:8080",
+			because: "valid corporate HTTP proxies must remain available during Data Forge execution");
+		httpsProxyDuringExec.Should().Be("http://proxy.corp.example:8080",
+			because: "valid corporate HTTPS proxies must remain available during Data Forge execution");
+		allProxyDuringExec.Should().Be("http://proxy.corp.example:8080",
+			because: "valid corporate ALL_PROXY settings must remain available during Data Forge execution");
+		noProxyDuringExec.Should().Be("dataforge.example.com",
+			because: "the target host should still be bypassed explicitly through NO_PROXY");
 	}
 
 	[Test]
