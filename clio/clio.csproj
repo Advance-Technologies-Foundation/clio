@@ -176,7 +176,7 @@
 
 	<!-- Reads the latest X.Y.Z.W git tag for local builds. Skipped when CI provides /p:AssemblyVersion. -->
 	<Target Name="SetVersionFromGitTag"
-	        BeforeTargets="GenerateAssemblyInfo;GenerateNuspec"
+	        BeforeTargets="GetAssemblyAttributes;GenerateNuspec"
 	        Condition="'$(AssemblyVersion)' == '0.0.0.0'">
 		<Exec Command="git describe --tags --abbrev=0 --match &quot;[0-9]*.[0-9]*.[0-9]*.[0-9]*&quot;"
 		      ConsoleToMSBuild="true"
