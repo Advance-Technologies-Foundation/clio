@@ -32,6 +32,7 @@ public sealed class SchemaSyncToolE2ETests {
 	private const string ToolName = SchemaSyncTool.ToolName;
 	private const string ReadSchemaToolName = GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName;
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
+	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
 
 	[Test]
 	[Description("Advertises sync-schemas MCP tool in the server tool list so callers can discover and invoke it.")]
@@ -302,14 +303,16 @@ public sealed class SchemaSyncToolE2ETests {
 			because: "the structured column readback should preserve the DateTime type created by sync-schemas");
 		columnProperties.DefaultValueSource.Should().Be("SystemValue",
 			because: "legacy summary fields should expose the resolved system-value source for sync-schemas updates");
-		columnProperties.DefaultValue.Should().Be("CurrentDateTime",
-			because: "legacy summary fields should expose the resolved system value name for sync-schemas updates");
+		columnProperties.DefaultValue.Should().Be(CurrentDateTimeSystemValueUId,
+			because: "legacy summary fields should expose the canonical resolved system value guid for sync-schemas updates");
 		columnProperties.DefaultValueConfig.Should().NotBeNull(
 			because: "structured column readback should expose default-value-config metadata for sync-schemas updates");
 		columnProperties.DefaultValueConfig!.Source.Should().Be("SystemValue",
 			because: "the structured default value config should preserve the resolved system-value source");
-		columnProperties.DefaultValueConfig.ValueSource.Should().Be("CurrentDateTime",
-			because: "the structured default value config should preserve the system value name");
+		columnProperties.DefaultValueConfig.ValueSource.Should().Be(CurrentDateTimeSystemValueUId,
+			because: "the structured default value config should preserve the canonical system value guid");
+		columnProperties.DefaultValueConfig.ResolvedValueSource.Should().Be(CurrentDateTimeSystemValueUId,
+			because: "structured default value readback should include the resolved system value guid");
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireEnvironment) {

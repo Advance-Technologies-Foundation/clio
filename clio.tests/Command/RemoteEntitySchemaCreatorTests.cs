@@ -22,6 +22,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	private IApplicationClient _applicationClient;
 	private IApplicationPackageListProvider _packageListProvider;
 	private ILogger _logger;
+	private ISysSettingsManager _sysSettingsManager;
 	private IRemoteEntitySchemaCreator _creator;
 	private Guid _packageUId;
 
@@ -36,6 +37,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 				UId = _packageUId
 			}, string.Empty, Enumerable.Empty<string>())
 		});
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns("\"Usr\"");
 	}
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder)
@@ -44,13 +46,15 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_packageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_logger = Substitute.For<ILogger>();
+		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		containerBuilder.AddTransient(_ => _applicationClient);
 		containerBuilder.AddTransient(_ => _packageListProvider);
 		containerBuilder.AddTransient(_ => _logger);
+		containerBuilder.AddTransient(_ => _sysSettingsManager);
 	}
 
 	[Test]
-	[Description("Creates a root entity schema, auto-adds Id when needed, and persists the requested text column metadata.")]
+	[Description("Creates a root entity schema, auto-adds the prefixed primary column from SchemaNamePrefix when needed, and persists the requested text column metadata.")]
 	public void Create_CreatesSchemaWithoutParent_AndShapesSavePayload()
 	{
 		string saveBody = null;
@@ -110,10 +114,65 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		json["name"]!.Value<string>().Should().Be("UsrVehicle");
 		json["caption"]![0]!["value"]!.Value<string>().Should().Be("Vehicle");
 		Guid.Parse(json["package"]!["uId"]!.Value<string>()!).Should().Be(_packageUId);
-		json["primaryColumn"]!["name"]!.Value<string>().Should().Be("Id");
-		json["primaryDisplayColumn"]!["name"]!.Value<string>().Should().Be("Name");
-		json["columns"]!.Select(column => column["name"]!.Value<string>()).Should().Contain(["Id", "Name"]);
-		json["columns"]!.Single(column => column["name"]!.Value<string>() == "Id")["type"]!.Value<int>().Should().Be(0);
+		json["primaryColumn"]!["name"]!.Value<string>().Should().Be("UsrId",
+			because: "the generated primary GUID column should use the configured SchemaNamePrefix");
+		json["primaryDisplayColumn"]!["name"]!.Value<string>().Should().Be("Name",
+			because: "the first text column should become the primary display column");
+		json["columns"]!.Select(column => column["name"]!.Value<string>()).Should().Contain(["UsrId", "Name"],
+			because: "the saved schema should include the generated prefixed primary column and the requested text column");
+		json["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrId")["type"]!.Value<int>().Should().Be(0,
+			because: "the generated prefixed primary column should remain a guid column");
+	}
+
+	[Test]
+	[Description("Falls back to the legacy Id primary column name when SchemaNamePrefix is empty.")]
+	public void Create_CreatesSchemaWithoutParent_AndFallsBackToLegacyPrimaryColumnName_WhenSchemaNamePrefixIsEmpty()
+	{
+		// Arrange
+		string saveBody = null;
+		bool saveDbStructureCalled = false;
+		bool runtimeVerifyCalled = false;
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns(string.Empty);
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				saveDbStructureCalled = true;
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				runtimeVerifyCalled = true;
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		JObject json = JObject.Parse(saveBody);
+		json["primaryColumn"]!["name"]!.Value<string>().Should().Be("Id",
+			because: "empty SchemaNamePrefix should preserve the legacy primary column name");
+		json["columns"]!.Select(column => column["name"]!.Value<string>()).Should().Contain("Id",
+			because: "the generated schema should keep the legacy primary column name when no prefix is configured");
+		saveDbStructureCalled.Should().BeTrue(
+			because: "entity creation must still materialize DB structure when the prefix is empty");
+		runtimeVerifyCalled.Should().BeTrue(
+			because: "entity creation must still verify runtime availability when the prefix is empty");
 	}
 
 	[Test]

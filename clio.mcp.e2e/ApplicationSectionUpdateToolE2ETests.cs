@@ -236,7 +236,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 	[AllureName("Application section update returns structured before-and-after readback data")]
 	[AllureDescription("Placeholder for a future seeded-data E2E that updates a known section and verifies persisted before-and-after read-back data.")]
 	public void ApplicationSectionUpdate_Should_Return_Structured_Readback_Data() {
-		Assert.Ignore("TODO: add predefined installed application and section data to the E2E environment, then restore this positive update-app-section scenario.");
+		Assert.Ignore("TODO: ENG-88547 add predefined installed application and section data to the E2E environment, then restore this positive update-app-section scenario.");
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {

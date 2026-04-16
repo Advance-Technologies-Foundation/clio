@@ -2450,3 +2450,45 @@ Impact: The regression matrix now retains meaningful execution on environments t
 Context: Final validation pass compared the implemented MCP regression refactoring with ENG-88322 and reran unit and E2E verification against the provided reachable environment.
 Decision: Treat the refactoring as substantially complete for Step 2 high-value missing coverage, but not fully green at whole-suite level because three positive real-environment tests still fail on the provided environment: two create-data-binding-db success flows and one schema-sync default-value configuration flow. The reevaluated regression matrix remains the source of truth for which tools are sufficient now versus which benefit from predefined seeded data.
 Discovery: Filtered unit tests for ApplicationToolTests, EntitySchemaToolTests, and DataBindingDbToolTests pass with --no-build. Discovery-backed app/page MCP E2E tests, tool-contract transport tests, entity-schema read-contract tests, and deterministic DB-first negative/transport tests all pass. A broader changed-E2E run still reports failures in DataBindingDbToolE2ETests.CreateDataBindingDb_Should_Succeed_On_Real_Environment, DataBindingDbToolE2ETests.CreateDataBindingDb_Should_Skip_Duplicate_Name_On_Rerun, and SchemaSyncToolE2ETests.SchemaSyncTool_Should_Apply_Structured_DefaultValueConfig_On_UpdateEntity on the provided env.
+
+## 2026-04-16 16:18 – Tagged predefined-environment MCP E2E placeholders with ENG-88547
+Context: Deferred installed-application and predefined-page scenarios needed a stable tracking reference in ignored tests.
+Decision: Updated the TODO ignore messages to use `TODO: ENG-88547 add predefined installed ...` wording consistently.
+Discovery: The affected changes are assertion-message only in application, section, and page E2E fixtures.
+Files: clio.mcp.e2e/ApplicationSectionMaintenanceToolE2ETests.cs, clio.mcp.e2e/ApplicationSectionToolE2ETests.cs, clio.mcp.e2e/ApplicationSectionUpdateToolE2ETests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs, clio.mcp.e2e/PageGetToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Deferred environment-dependent tests now point directly to ENG-88547 from test output.
+
+## 2026-04-16 18:10 – Fixed entity-schema MCP text-envelope parsing
+Context: `find-entity-schema` returns JSON inside MCP text content, but the E2E parser was deserializing the outer `{ type, text }` envelope first.
+Decision: Reordered `EntitySchemaStructuredResultParser.TryExtractEnvelope` to unwrap JSON carried in text payloads before attempting direct deserialization of the current element.
+Discovery: The tool response itself was correct; the failure was in test-side parsing of MCP text envelopes.
+Files: clio.mcp.e2e/Support/Results/EntitySchemaEnvelope.cs, .codex/workspace-diary.md
+Impact: Entity-schema E2Es now bind the actual MCP payload instead of null-filled placeholder records from the content envelope.
+
+## 2026-04-16 19:34 – Made DB-binding E2Es provision a remote package and use a writable target schema
+Context: Positive `create-data-binding-db` E2Es were blocked first by missing remote package state and then by insert permissions on `SysSettings`.
+Decision: Updated DB-binding arrange flow to run `push-workspace` after `add-package`, and changed the positive scenarios to target `Lookup` with `Name`-only rows.
+Discovery: These tests require the package to exist remotely, but they do not need the stronger package-editability contract required by schema-designer flows.
+Files: clio.mcp.e2e/DataBindingDbToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The DB-binding E2Es now exercise the intended create and rerun flows on the current stand.
+
+## 2026-04-16 20:05 – Aligned lookup registration probe with runtime schema and package identifiers
+Context: Lookup-registration verification depended on brittle metadata query shapes and could fail before asserting the actual side effects.
+Decision: Changed `LookupRegistrationProbe` to resolve schema identity through `RuntimeEntitySchemaRequest`, resolve package identity through `SysPackage.UId`, and query binding rows via stable UId filters.
+Discovery: The probe is test-only, but verifying lookup registration by runtime schema/package UIds is more reliable than probing by metadata names on the current stand.
+Files: clio.mcp.e2e/Support/Creatio/LookupRegistrationProbe.cs, .codex/workspace-diary.md
+Impact: Lookup-registration assertions now reflect real side effects instead of probe-query fragility.
+
+## 2026-04-16 20:37 – Updated schema-sync default-value E2E to canonical system value GUID
+Context: The structured default-value `sync-schemas` E2E still expected the legacy alias `CurrentDateTime` even though the readback contract returns canonical system-value GUIDs.
+Decision: Changed the test to assert the canonical `CurrentDateTime` GUID in both summary fields and `default-value-config` readback.
+Discovery: `sync-schemas` already applies the default correctly; the failure was a stale test expectation.
+Files: clio.mcp.e2e/SchemaSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The schema-sync E2E now matches the established entity-schema readback contract and no longer reports a false regression.
+
+## 2026-04-16 20:50 – Applied SchemaNamePrefix-aware primary column generation for root entity creation
+Context: Entity-schema creation on the target stand rejected the implicit root GUID column when it was generated as `Id`.
+Decision: Updated `RemoteEntitySchemaCreator` to read `SchemaNamePrefix` through `ISysSettingsManager` and generate `<prefix>Id` for the implicit primary GUID column, with fallback to legacy `Id` when the setting is empty or unavailable.
+Discovery: The shared create-entity path used by standalone entity-schema commands and `sync-schemas` depends on this generated primary column name; the environment expects the configured prefix.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, .codex/workspace-diary.md
+Impact: Root entity creation now follows the runtime prefix contract instead of assuming legacy `Id`.
