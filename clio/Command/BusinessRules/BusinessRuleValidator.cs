@@ -100,11 +100,11 @@ internal static class BusinessRuleValidator {
 		}
 
 		if (!string.Equals(condition.Right.Kind, "constant", StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue' or 'ConstValue'.");
+			throw new ArgumentException("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue' or 'Const'.");
 		}
 
 		if (condition.Right.Value is null) {
-			throw new ArgumentException("rule.condition.conditions[*].rightExpression.value is required when rightExpression.type is 'ConstValue'.");
+			throw new ArgumentException("rule.condition.conditions[*].rightExpression.value is required when rightExpression.type is 'Const'.");
 		}
 
 		ValidateExplicitDataValueType(condition.Right.DataValueTypeName, leftDescriptor.DataValueTypeName,

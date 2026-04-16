@@ -84,7 +84,7 @@ public sealed class CreateEntityBusinessRuleTool(
 			return "attribute";
 		}
 
-		if (string.Equals(expressionType, "ConstValue", StringComparison.OrdinalIgnoreCase)) {
+		if (string.Equals(expressionType, "Const", StringComparison.OrdinalIgnoreCase)) {
 			return "constant";
 		}
 
@@ -172,7 +172,7 @@ public sealed record BusinessRuleConditionArgs(
 	string ComparisonType,
 
 	[property: JsonPropertyName("rightExpression")]
-	[property: Description("Right expression. Supports AttributeValue or ConstValue.")]
+	[property: Description("Right expression. Supports AttributeValue or Const.")]
 	[property: Required]
 	BusinessRuleExpressionArgs RightExpression
 );
@@ -182,7 +182,7 @@ public sealed record BusinessRuleConditionArgs(
 /// </summary>
 public sealed record BusinessRuleExpressionArgs(
 	[property: JsonPropertyName("type")]
-	[property: Description("Expression type. Supported values: AttributeValue, ConstValue.")]
+	[property: Description("Expression type. Supported values: AttributeValue, Const.")]
 	[property: Required]
 	string Type
 ) {
@@ -191,7 +191,7 @@ public sealed record BusinessRuleExpressionArgs(
 	public string? Path { get; init; }
 
 	[property: JsonPropertyName("value")]
-	[property: Description("Constant value when type is ConstValue.")]
+	[property: Description("Constant value when type is Const.")]
 	public System.Text.Json.JsonElement? Value { get; init; }
 
 	[property: JsonPropertyName("dataValueTypeName")]

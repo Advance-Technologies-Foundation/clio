@@ -177,7 +177,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 										},
 										["comparisonType"] = "equal",
 										["rightExpression"] = new Dictionary<string, object?> {
-											["type"] = "ConstValue",
+											["type"] = "Const",
 											["value"] = caption
 										}
 									}

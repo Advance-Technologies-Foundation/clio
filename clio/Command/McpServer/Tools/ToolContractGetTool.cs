@@ -821,7 +821,7 @@ internal static class ToolContractCatalog {
 									},
 									["comparisonType"] = "equal",
 									["rightExpression"] = new Dictionary<string, object?> {
-										["type"] = "ConstValue",
+										["type"] = "Const",
 										["value"] = "Draft"
 									}
 								}

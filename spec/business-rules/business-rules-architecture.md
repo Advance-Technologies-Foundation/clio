@@ -49,7 +49,7 @@ flowchart LR
         {
           "leftExpression": { "type": "AttributeValue", "path": "Name" },
           "comparisonType": "equal",
-          "rightExpression": { "type": "ConstValue", "value": "Readonly" }
+          "rightExpression": { "type": "Const", "value": "Readonly" }
         }
       ]
     },
@@ -95,7 +95,7 @@ flowchart LR
                 "rightExpression": {
                   "typeName": "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleValueExpression",
                   "uId": "81b8b8ea-36fa-447a-85d5-bf7e13649628",
-                  "type": "",
+                  "type": "Const",
                   "value": "Readonly"
                 },
                 "comparisonType": 2
