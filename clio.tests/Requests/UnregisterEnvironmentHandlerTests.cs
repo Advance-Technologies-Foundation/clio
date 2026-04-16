@@ -9,6 +9,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Requests;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Requests")]
 public class UnregisterEnvironmentHandlerTests {
 	[Test]
 	[Description("Maps the UnregisterEnvironment deep-link query parameter into UnregAppOptions and forwards it to UnregAppCommand.")]

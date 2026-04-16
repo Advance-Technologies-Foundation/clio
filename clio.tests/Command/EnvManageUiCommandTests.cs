@@ -14,6 +14,7 @@ namespace Clio.Tests.Command;
 [TestFixture]
 [Category("Unit")]
 [Description("Tests for EnvManageUiCommand - Interactive environment management")]
+[Property("Module", "Command")]
 public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 {
 	#region Fields: Private

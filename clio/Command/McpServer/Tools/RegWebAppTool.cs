@@ -23,8 +23,6 @@ public class RegWebAppTool(RegAppCommand command, ILogger logger) : BaseTool<Reg
 				 
 				 This command updates clio's local environment settings. It does not modify Creatio metadata.
 				 The tool also supports setting the active environment and importing environments from IIS.
-				 When `is-net-core` is omitted during URL-based registration, clio auto-detects whether the site uses
-				 .NET Core / NET8 or .NET Framework and persists the resolved `IsNetCore` flag in local settings.
 				 """)]
 	public CommandExecutionResult RegisterWebApp(
 		[Description("reg-web-app parameters")] [Required] RegWebAppArgs args
@@ -48,7 +46,6 @@ public class RegWebAppTool(RegAppCommand command, ILogger logger) : BaseTool<Reg
 			ActiveEnvironment = args.ActiveEnvironment,
 			FromIis = args.AddFromIis,
 			Host = args.Host,
-			IsNetCore = args.IsNetCore,
 			DevMode = args.DeveloperModeEnabled?.ToString(),
 			Safe = args.Safe?.ToString(),
 			ClientId = args.ClientId,
@@ -100,10 +97,6 @@ public record RegWebAppArgs(
 	[property:JsonPropertyName("host")]
 	[Description("Remote host name to scan when `add-from-iis` is true. Defaults to localhost in the command.")]
 	string Host = null,
-
-	[property:JsonPropertyName("is-net-core")]
-	[Description("Optional runtime override. Omit to let clio auto-detect .NET Core / NET8 versus .NET Framework from the site URL.")]
-	bool? IsNetCore = null,
 
 	[property:JsonPropertyName("developer-mode-enabled")]
 	[Description("Developer mode flag stored in the local environment configuration.")]

@@ -12,6 +12,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Requests;
 
 [TestFixture]
+[Property("Module", "Requests")]
 internal class MediatorPipelineIntegrationTests : BaseClioModuleTests {
 	[Test]
 	[Description("Applies ValidationBehaviour to mediator requests and rejects invalid scenario handler input before the handler runs.")]

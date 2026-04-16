@@ -11,7 +11,8 @@ using NUnit.Framework;
 
 namespace Clio.Tests;
 
-[TestFixture(Category = "UnitTests")]
+[TestFixture(Category = "Unit")]
+[Property("Module", "Core")]
 internal class ApplicationPackageListProviderTest
 {
 	private IApplicationClient _applicationClient;

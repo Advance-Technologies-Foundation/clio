@@ -9,6 +9,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public sealed class InstallApplicationCommandTests : BaseCommandTests<InstallApplicationOptions> {
 	private IApplicationInstaller _applicationInstaller;
 	private ILogger _logger;

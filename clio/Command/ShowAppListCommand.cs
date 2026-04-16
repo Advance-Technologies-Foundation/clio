@@ -12,10 +12,11 @@ using Newtonsoft.Json;
 namespace Clio.Command;
 
 /// <summary>
-/// Structured environment payload used by show-web-app-list JSON projections.
+/// Structured environment payload used by list-environments JSON projections.
 /// </summary>
 public sealed record ShowWebAppSettingsResult(
 	[property: JsonProperty("name")] string Name,
+	[property: JsonProperty("isActive")] bool IsActive,
 	[property: JsonProperty("uri")] string Uri,
 	[property: JsonProperty("dbName")] string DbName,
 	[property: JsonProperty("backupFilePath")] string BackupFilePath,
@@ -36,7 +37,7 @@ public sealed record ShowWebAppSettingsResult(
 	[property: JsonProperty("dbServer")] ShowWebAppDbServerResult DbServer);
 
 /// <summary>
-/// Structured database server payload used by show-web-app-list JSON projections.
+/// Structured database server payload used by list-environments JSON projections.
 /// </summary>
 public sealed record ShowWebAppDbServerResult(
 	[property: JsonProperty("uri")] string Uri,
@@ -44,7 +45,7 @@ public sealed record ShowWebAppDbServerResult(
 	[property: JsonProperty("login")] string Login,
 	[property: JsonProperty("password")] string Password);
 
-[Verb("show-web-app-list", Aliases = ["env", "envs", "show-web-app"],
+[Verb("list-environments", Aliases = ["show-web-app-list", "env", "envs", "show-web-app"],
 	HelpText = "Show the list of web applications and their settings")]
 public class AppListOptions{
 	#region Properties: Public
@@ -126,7 +127,8 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 	private ShowWebAppSettingsResult BuildEnvironmentResult(
 		EnvironmentSettings environment,
 		string environmentName,
-		bool maskSensitiveData) {
+		bool maskSensitiveData,
+		bool isActive = false) {
 		ShowWebAppDbServerResult dbServer = environment.DbServer == null
 			? null
 			: new ShowWebAppDbServerResult(
@@ -137,6 +139,7 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 
 		return new ShowWebAppSettingsResult(
 			environmentName,
+			isActive,
 			environment.Uri,
 			environment.DbName,
 			environment.BackupFilePath,
@@ -237,9 +240,14 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 	/// <param name="maskSensitiveData">Whether password and client secret fields should be masked.</param>
 	/// <returns>The registered environments ordered by name.</returns>
 	public IReadOnlyList<ShowWebAppSettingsResult> GetAllWebAppSettings(bool maskSensitiveData) {
+		string activeEnvironmentName = settingsRepository.GetDefaultEnvironmentName();
 		return settingsRepository.GetAllEnvironments()
 			.OrderBy(environment => environment.Key, StringComparer.OrdinalIgnoreCase)
-			.Select(environment => BuildEnvironmentResult(environment.Value, environment.Key, maskSensitiveData))
+			.Select(environment => BuildEnvironmentResult(
+				environment.Value,
+				environment.Key,
+				maskSensitiveData,
+				string.Equals(environment.Key, activeEnvironmentName, StringComparison.OrdinalIgnoreCase)))
 			.ToList();
 	}
 
@@ -266,18 +274,21 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 					return 1;
 				}
 
+				// Get the actual environment name with correct casing
+				string actualEnvironmentName = settingsRepository.GetActualEnvironmentName(environmentName) ?? environmentName;
+
 				switch (format.ToLower()) {
 					case "json":
-						OutputAsJson(environment, environmentName);
+						OutputAsJson(environment, actualEnvironmentName);
 						break;
 					case "table":
 						// For a single environment, output as raw in table-like format
-						logger.WriteLine($"Environment: {environmentName}");
+						logger.WriteLine($"Environment: {actualEnvironmentName}");
 						logger.WriteLine(new string('-', 50));
 						OutputAsRaw(environment);
 						break;
 					case "raw":
-						OutputAsRaw(environment, environmentName);
+						OutputAsRaw(environment, actualEnvironmentName);
 						break;
 					default:
 						logger.WriteWarning($"Unknown format: {format}. Use: json, table, or raw");

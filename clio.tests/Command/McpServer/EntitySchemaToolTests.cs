@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer.Prompts;
@@ -15,6 +16,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 [NonParallelizable]
 public sealed class EntitySchemaToolTests {
 
@@ -31,7 +33,8 @@ public sealed class EntitySchemaToolTests {
 			UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
 			GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
-			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
+			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+			FindEntitySchemaTool.FindEntitySchemaToolName
 		];
 
 		// Assert
@@ -41,7 +44,8 @@ public sealed class EntitySchemaToolTests {
 				"update-entity-schema",
 				"get-entity-schema-properties",
 				"get-entity-schema-column-properties",
-				"modify-entity-schema-column"
+				"modify-entity-schema-column",
+				"find-entity-schema"
 			},
 			because: "the entity schema MCP tool identifiers should remain stable for callers and tests");
 	}
@@ -166,7 +170,7 @@ public sealed class EntitySchemaToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Maps structured batch MCP mutation arguments into update-entity-schema command options.")]
-	public void UpdateEntitySchema_Should_Map_All_Arguments() {
+	public async Task UpdateEntitySchema_Should_Map_All_Arguments() {
 		// Arrange
 		FakeUpdateEntitySchemaCommand defaultCommand = new();
 		FakeUpdateEntitySchemaCommand resolvedCommand = new();
@@ -176,7 +180,7 @@ public sealed class EntitySchemaToolTests {
 		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
+		CommandExecutionResult result = await tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
 			"dev",
 			"UsrPkg",
 			"UsrVehicle",
@@ -321,10 +325,9 @@ public sealed class EntitySchemaToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Derives the internal scalar title and current-culture localization from MCP title-localizations for mutation flows.")]
-	public void ModifyEntitySchemaColumn_Should_Derive_Title_And_CurrentCultureLocalization_From_TitleLocalizations() {
+	[Description("Derives the internal scalar title from MCP title-localizations and passes provided localizations through as-is without synthesizing additional cultures.")]
+	public void ModifyEntitySchemaColumn_Should_Derive_Title_From_TitleLocalizations_Without_CultureSynthesis() {
 		// Arrange
-		using CultureScope cultureScope = new("uk-UA");
 		FakeModifyEntitySchemaColumnCommand defaultCommand = new();
 		FakeModifyEntitySchemaColumnCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -350,10 +353,8 @@ public sealed class EntitySchemaToolTests {
 			because: "Clio should derive the internal scalar title from title-localizations");
 		resolvedCommand.CapturedOptions.TitleLocalizations.Should().ContainKey("en-US",
 			because: "the canonical en-US title localization must be preserved");
-		resolvedCommand.CapturedOptions.TitleLocalizations.Should().ContainKey("uk-UA",
-			because: "Clio should synthesize a current-culture title localization before save");
-		resolvedCommand.CapturedOptions.TitleLocalizations!["uk-UA"].Should().Be("Vehicle name",
-			because: "the synthesized current-culture localization should reuse the effective title value");
+		resolvedCommand.CapturedOptions.TitleLocalizations.Should().HaveCount(1,
+			because: "Clio must not synthesize additional culture localizations beyond what was explicitly provided");
 	}
 
 	[Test]
@@ -528,7 +529,7 @@ public sealed class EntitySchemaToolTests {
 			because: "schema-read prompt guidance should reference the exact production tool name");
 		schemaPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
 			because: "schema-read prompt guidance should point callers to the existing-app maintenance guide");
-		schemaPrompt.Should().Contain("read step before `modify-entity-schema-column` or `schema-sync`",
+		schemaPrompt.Should().Contain("read step before `modify-entity-schema-column` or `sync-schemas`",
 			because: "schema-read prompt guidance should describe the canonical inspect step before mutation");
 		columnPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 			because: "column-read prompt guidance should reference the exact production tool name");
@@ -624,7 +625,7 @@ public sealed class EntitySchemaToolTests {
 			because: "update prompt guidance should advertise the supported Email aliases");
 		updatePrompt.Should().Contain("default-value-source=Const",
 			because: "update prompt guidance should still explain unsupported legacy binary default usage");
-		updatePrompt.Should().Contain("schema-sync",
+		updatePrompt.Should().Contain("sync-schemas",
 			because: "update prompt guidance should steer multi-step schema workflows toward the composite MCP tool");
 		modifyPrompt.Should().Contain("File",
 			because: "modify prompt guidance should advertise file column support");

@@ -12,9 +12,10 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
-[Category("UnitTests")]
+[Category("Unit")]
 [Author("GitHub Copilot", "copilot@github.com")]
 [Description("Tests for OpenAppCommand - verifies opening web applications in browsers across different platforms")]
+[Property("Module", "Command")]
 public class OpenAppCommandTests : BaseCommandTests<OpenAppOptions>{
 	#region Fields: Private
 

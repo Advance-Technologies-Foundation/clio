@@ -11,6 +11,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Validators;
 
 [TestFixture(Category = "UnitTests")]
+[Property("Module", "Validators")]
 public class UninstallCreatioCommandOptionsValidatorTestFixture : BaseClioModuleTests
 {
 

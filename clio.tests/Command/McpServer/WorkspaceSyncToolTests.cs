@@ -17,6 +17,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class WorkspaceSyncToolTests {
 
 	[Test]

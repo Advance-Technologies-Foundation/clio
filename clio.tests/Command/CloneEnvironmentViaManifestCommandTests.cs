@@ -17,6 +17,7 @@ using Common.Logging.Configuration;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironmentOptions>
 {
 	[Test]

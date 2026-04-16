@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using Clio.Command;
 
 namespace Clio.Command.McpServer.Tools;
@@ -117,6 +119,52 @@ internal static class ApplicationToolResultMapper {
 				result.Section.IconBackground,
 				result.Section.ClientTypeId));
 	}
+
+	public static ApplicationSectionDeleteContextResponse Map(ApplicationSectionDeleteResult result) {
+		return new ApplicationSectionDeleteContextResponse(
+			true,
+			result.PackageUId,
+			result.PackageName,
+			result.ApplicationId,
+			result.ApplicationName,
+			result.ApplicationCode,
+			result.ApplicationVersion,
+			new ApplicationSectionResult(
+				result.DeletedSection.Id,
+				result.DeletedSection.Code,
+				result.DeletedSection.Caption,
+				result.DeletedSection.Description,
+				result.DeletedSection.EntitySchemaName,
+				result.DeletedSection.PackageId,
+				result.DeletedSection.SectionSchemaUId,
+				result.DeletedSection.IconId,
+				result.DeletedSection.IconBackground,
+				result.DeletedSection.ClientTypeId));
+	}
+
+	public static ApplicationSectionListContextResponse Map(ApplicationSectionGetListResult result) {
+		return new ApplicationSectionListContextResponse(
+			true,
+			result.PackageUId,
+			result.PackageName,
+			result.ApplicationId,
+			result.ApplicationName,
+			result.ApplicationCode,
+			result.ApplicationVersion,
+			result.Sections
+				.Select(s => new ApplicationSectionResult(
+					s.Id,
+					s.Code,
+					s.Caption,
+					s.Description,
+					s.EntitySchemaName,
+					s.PackageId,
+					s.SectionSchemaUId,
+					s.IconId,
+					s.IconBackground,
+					s.ClientTypeId))
+				.ToList());
+	}
 }
 
 internal static class ApplicationToolHelper {
@@ -128,12 +176,47 @@ internal static class ApplicationToolHelper {
 		return new ApplicationListResponse(false, Error: message);
 	}
 
-	public static ApplicationContextResponse CreateContextResponse(ApplicationContextResponse response) {
-		return response;
+	public static ApplicationContextResponse CreateContextResponse(
+		ApplicationContextResponse response,
+		ApplicationDataForgeResult? dataForge = null) {
+		return dataForge is null
+			? response
+			: response with { DataForge = dataForge };
 	}
 
 	public static ApplicationContextResponse CreateContextErrorResponse(string message) {
 		return new ApplicationContextResponse(false, Error: message);
+	}
+
+	public static ApplicationOptionalTemplateData? ParseOptionalTemplateData(string? optionalTemplateDataJson) {
+		if (string.IsNullOrWhiteSpace(optionalTemplateDataJson)) {
+			return null;
+		}
+
+		ApplicationOptionalTemplateDataJsonArgs? optionalTemplateData;
+		try {
+			optionalTemplateData = JsonSerializer.Deserialize<ApplicationOptionalTemplateDataJsonArgs>(
+				optionalTemplateDataJson,
+				new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+		} catch (JsonException ex) {
+			throw new ArgumentException(
+				$"Invalid optional-template-data-json format: {ex.Message}",
+				nameof(optionalTemplateDataJson),
+				ex);
+		}
+
+		if (optionalTemplateData?.UseAiContentGeneration == true) {
+			throw new ArgumentException(
+				"useAiContentGeneration=true is not supported in application tools.");
+		}
+
+		return optionalTemplateData is null
+			? null
+			: new ApplicationOptionalTemplateData(
+				optionalTemplateData.EntitySchemaName,
+				optionalTemplateData.UseExistingEntitySchema,
+				optionalTemplateData.UseAiContentGeneration,
+				optionalTemplateData.AppSectionDescription);
 	}
 
 	public static ApplicationSectionContextResponse CreateSectionContextResponse(ApplicationSectionContextResponse response) {
@@ -150,5 +233,21 @@ internal static class ApplicationToolHelper {
 
 	public static ApplicationSectionUpdateContextResponse CreateSectionUpdateContextErrorResponse(string message) {
 		return new ApplicationSectionUpdateContextResponse(false, Error: message);
+	}
+
+	public static ApplicationSectionDeleteContextResponse CreateSectionDeleteContextResponse(ApplicationSectionDeleteContextResponse response) {
+		return response;
+	}
+
+	public static ApplicationSectionDeleteContextResponse CreateSectionDeleteContextErrorResponse(string message) {
+		return new ApplicationSectionDeleteContextResponse(false, Error: message);
+	}
+
+	public static ApplicationSectionListContextResponse CreateSectionListContextResponse(ApplicationSectionListContextResponse response) {
+		return response;
+	}
+
+	public static ApplicationSectionListContextResponse CreateSectionListContextErrorResponse(string message) {
+		return new ApplicationSectionListContextResponse(false, Error: message);
 	}
 }

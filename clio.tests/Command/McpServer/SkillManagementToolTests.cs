@@ -15,6 +15,7 @@ using System.IO.Abstractions.TestingHelpers;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class SkillManagementToolTests {
 	[Test]
 	[Category("Unit")]

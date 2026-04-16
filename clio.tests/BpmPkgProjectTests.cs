@@ -4,6 +4,8 @@ using System.Xml.Linq;
 
 namespace Clio.Tests;
 
+[Category("Unit")]
+[Property("Module", "Core")]
 public class CreatioPkgProjectTests
 {
 	[SetUp]

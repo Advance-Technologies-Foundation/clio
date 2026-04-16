@@ -9,7 +9,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
-[Category("UnitTests")]
+[Category("Unit")]
+[Property("Module", "Command")]
 internal class UnlockPackageCommandTests : BaseCommandTests<UnlockPackageOptions>{
 	#region Fields: Private
 

@@ -110,6 +110,11 @@ internal class Program {
 		typeof(InstallApplicationOptions),
 		typeof(CreateAppSectionOptions),
 		typeof(UpdateAppSectionOptions),
+		typeof(DeleteAppSectionOptions),
+		typeof(ApplicationSectionGetListOptions),
+		typeof(CreateAppOptions),
+		typeof(GetAppInfoOptions),
+		typeof(CreateLookupOptions),
 		typeof(PageListOptions),
 		typeof(PageGetOptions),
 		typeof(PageUpdateOptions),
@@ -154,6 +159,7 @@ internal class Program {
 		typeof(ModifyEntitySchemaColumnOptions),
 		typeof(GetEntitySchemaColumnPropertiesOptions),
 		typeof(GetEntitySchemaPropertiesOptions),
+		typeof(FindEntitySchemaOptions),
 		typeof(CreateUserTaskOptions),
 		typeof(ModifyUserTaskParametersOptions),
 		typeof(DeleteSchemaOptions),
@@ -226,6 +232,11 @@ internal class Program {
 					InstallApplicationOptions opts => Resolve<InstallApplicationCommand>(opts).Execute(opts),
 					CreateAppSectionOptions opts => Resolve<CreateAppSectionCommand>(opts).Execute(opts),
 					UpdateAppSectionOptions opts => Resolve<UpdateAppSectionCommand>(opts).Execute(opts),
+					DeleteAppSectionOptions opts => Resolve<DeleteAppSectionCommand>(opts).Execute(opts),
+					ApplicationSectionGetListOptions opts => Resolve<GetAppSectionsCommand>(opts).Execute(opts),
+					CreateAppOptions opts => Resolve<CreateAppCommand>(opts).Execute(opts),
+					GetAppInfoOptions opts => Resolve<GetAppInfoCommand>(opts).Execute(opts),
+					CreateLookupOptions opts => Resolve<CreateLookupCommand>(opts).Execute(opts),
 					DeletePkgOptions opts => Resolve<DeletePackageCommand>(opts).Execute(opts),
 					ReferenceOptions opts => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator())
 						.Execute(opts),
@@ -341,6 +352,8 @@ internal class Program {
 						Resolve<GetEntitySchemaColumnPropertiesCommand>(opts).Execute(opts),
 					GetEntitySchemaPropertiesOptions opts =>
 						Resolve<GetEntitySchemaPropertiesCommand>(opts).Execute(opts),
+					FindEntitySchemaOptions opts =>
+						Resolve<FindEntitySchemaCommand>(opts).Execute(opts),
 					CreateUserTaskOptions opts => Resolve<CreateUserTaskCommand>(opts).Execute(opts),
 					ModifyUserTaskParametersOptions opts => Resolve<ModifyUserTaskParametersCommand>(opts).Execute(opts),
 					DeleteSchemaOptions opts => Resolve<DeleteSchemaCommand>(opts).Execute(opts),
@@ -461,6 +474,12 @@ internal class Program {
 	/// <exception cref="ArgumentException">Thrown when the environment doesn't exist and checkEnvExist is true</exception>
 	private static void Configure(EnvironmentOptions options, bool checkEnvExist = false){
 		SettingsRepository settingsRepository = new();
+		if (string.IsNullOrWhiteSpace(options.Environment)) {
+			string activeEnvName = settingsRepository.GetDefaultEnvironmentName();
+			if (!string.IsNullOrWhiteSpace(activeEnvName) && settingsRepository.IsEnvironmentExists(activeEnvName)) {
+				options.Environment = activeEnvName;
+			}
+		}
 		CreatioEnvironment.EnvironmentName = options.Environment;
 		if (checkEnvExist) {
 			bool isEnvironmentExists = settingsRepository.IsEnvironmentExists(options.Environment);
@@ -637,6 +656,12 @@ internal class Program {
 	/// <returns>Environment settings</returns>
 	private static EnvironmentSettings GetEnvironmentSettings(EnvironmentOptions options){
 		SettingsRepository settingsRepository = new();
+		if (string.IsNullOrWhiteSpace(options.Environment)) {
+			string activeEnvName = settingsRepository.GetDefaultEnvironmentName();
+			if (!string.IsNullOrWhiteSpace(activeEnvName) && settingsRepository.IsEnvironmentExists(activeEnvName)) {
+				options.Environment = activeEnvName;
+			}
+		}
 		return settingsRepository.GetEnvironment(options);
 	}
 

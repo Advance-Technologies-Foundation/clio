@@ -14,6 +14,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public class LinkFromRepositoryToolTests {
 
 	[Test]

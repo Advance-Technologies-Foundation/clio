@@ -8,6 +8,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Utilities;
 
 [TestFixture]
+[Property("Module", "Core")]
 public class WebBrowserTests
 {
 	#region Fields: Private

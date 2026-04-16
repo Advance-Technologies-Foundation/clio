@@ -4,7 +4,8 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
-[Category("UnitTests")]
+[Category("Unit")]
+[Property("Module", "Command")]
 [Platform(Include = "Win")]
 [Description("Tests for NetFrameworkVersionChecker")]
 public class NetFrameworkVersionCheckerTests
@@ -47,7 +48,7 @@ public class NetFrameworkVersionCheckerTests
 		string version = _sut.GetInstalledVersion();
 
 		// Assert
-		version.Should().MatchRegex(@"^(\d+\.\d+(\.\d+)?.*|Not installed|Unable to determine)$", 
+		version.Should().MatchRegex(@"^(\d+\.\d+(\.\d+)?.*|Not installed|Unable to determine)$",
 			"because the version should be in a valid format");
 	}
 

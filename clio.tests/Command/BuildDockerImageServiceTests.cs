@@ -12,6 +12,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public class BuildDockerImageServiceTests {
 	private ICodeServerArchiveCache _codeServerArchiveCache = null!;
 	private IContainerRegistryPreflightService _containerRegistryPreflightService = null!;

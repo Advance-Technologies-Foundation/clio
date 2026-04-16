@@ -9,10 +9,11 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class ToolContractGetToolTests {
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises a stable MCP tool name for tool-contract-get.")]
+	[Description("Advertises a stable MCP tool name for get-tool-contract.")]
 	public void ToolContractGet_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 
@@ -50,13 +51,20 @@ public sealed class ToolContractGetToolTests {
 				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 				ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 				CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
+				DataForgeTool.DataForgeHealthToolName,
+				DataForgeTool.DataForgeContextToolName,
 				PageSyncTool.ToolName,
 				PageUpdateTool.ToolName,
 				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
 			],
-			because: "the canonical contract set should include bootstrap diagnostics plus the key existing-app discovery and page mutation tools");
+			because: "the canonical contract set should include bootstrap diagnostics, read-only Data Forge discovery/context tools, and the key existing-app discovery and page mutation tools");
+		result.Tools!.Select(contract => contract.Name).Should().NotContain([
+				DataForgeTool.DataForgeInitializeToolName,
+				DataForgeTool.DataForgeUpdateToolName
+			],
+			because: "destructive Data Forge maintenance tools should stay available only through explicit contract lookup rather than the default bootstrap set");
 		result.Tools!.Select(contract => contract.Name).Should().NotContain(ToolContractGetTool.ToolName,
-			because: "tool-contract-get should not include itself in the default returned contract set");
+			because: "get-tool-contract should not include itself in the default returned contract set");
 	}
 
 	[Test]
@@ -134,7 +142,7 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises the structured settings-health output contract for bootstrap diagnostics.")]
+	[Description("Advertises the structured check-settings-health output contract for bootstrap diagnostics.")]
 	public void ToolContractGet_Should_Advertise_Settings_Health_Contract() {
 		// Arrange
 		ToolContractGetTool tool = new();
@@ -146,7 +154,7 @@ public sealed class ToolContractGetToolTests {
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "the settings-health contract should be available through tool-contract-get");
+			because: "the check-settings-health contract should be available through get-tool-contract");
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "status",
 			because: "bootstrap diagnostics should advertise their high-level health state");
@@ -188,7 +196,7 @@ public sealed class ToolContractGetToolTests {
 				because: "application discovery should flow into application inspection for existing-app edits");
 		applicationListContract.Examples.Should().ContainSingle(example =>
 				example.Arguments.Keys.SequenceEqual(new[] { "environment-name" }),
-			because: "application-get-list should advertise the minimal top-level payload explicitly");
+			because: "list-apps should advertise the minimal top-level payload explicitly");
 		ToolContractDefinition pageListContract = contracts.Single(contract => contract.Name == PageListTool.ToolName);
 			pageListContract.PreferredFlow.Tools.Should().Equal(
 					new[] {
@@ -197,19 +205,19 @@ public sealed class ToolContractGetToolTests {
 						PageSyncTool.ToolName,
 						PageGetTool.ToolName
 					},
-					because: "page-list should advertise the canonical clio page workflow after discovery");
+					because: "list-pages should advertise the canonical clio page workflow after discovery");
 			pageListContract.Aliases.Should().Contain(alias =>
 					alias.CanonicalName == "code"
 					&& alias.Alias == "app-code"
 					&& alias.Status == "rejected",
-				because: "page-list should reject the legacy app-code selector through the canonical contract");
+				because: "list-pages should reject the legacy app-code selector through the canonical contract");
 			pageListContract.FallbackFlow.Should().Contain(flow => flow.Tools.SequenceEqual(new[] {
 					PageListTool.ToolName,
 					PageGetTool.ToolName,
 					PageUpdateTool.ToolName,
 					PageGetTool.ToolName
 				}),
-				because: "page-list should keep the legacy page-update fallback as a single-save sequence after discovery");
+				because: "list-pages should keep the legacy update-page fallback as a single-save sequence after discovery");
 			ToolContractDefinition pageGetContract = contracts.Single(contract => contract.Name == PageGetTool.ToolName);
 		pageGetContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -218,7 +226,7 @@ public sealed class ToolContractGetToolTests {
 					PageSyncTool.ToolName,
 					PageGetTool.ToolName
 				},
-				because: "page-get should advertise page-sync as the canonical save path after inspection");
+				because: "get-page should advertise sync-pages as the canonical save path after inspection");
 		ToolContractDefinition pageSyncContract = contracts.Single(contract => contract.Name == PageSyncTool.ToolName);
 		pageSyncContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -227,7 +235,7 @@ public sealed class ToolContractGetToolTests {
 					PageSyncTool.ToolName,
 					PageGetTool.ToolName
 				},
-				because: "page-sync should advertise itself as the canonical page write path");
+				because: "sync-pages should advertise itself as the canonical page write path");
 		ToolContractDefinition pageUpdateContract = contracts.Single(contract => contract.Name == PageUpdateTool.ToolName);
 		pageUpdateContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -235,30 +243,30 @@ public sealed class ToolContractGetToolTests {
 					PageUpdateTool.ToolName,
 					PageGetTool.ToolName
 				},
-				because: "page-update still needs a concrete fallback flow for callers that explicitly require it");
+				because: "update-page still needs a concrete fallback flow for callers that explicitly require it");
 		pageUpdateContract.Deprecations.Should().ContainSingle(deprecation =>
 				deprecation.ReplacementTools.SequenceEqual(new[] { PageSyncTool.ToolName }) &&
 				deprecation.Message.Contains("fallback"),
-			because: "page-update should advertise page-sync as the canonical replacement");
+			because: "update-page should advertise sync-pages as the canonical replacement");
 		pageUpdateContract.FallbackFlow.Should().Contain(flow => flow.Tools.SequenceEqual(new[] {
 				PageListTool.ToolName,
 				PageGetTool.ToolName,
 				PageSyncTool.ToolName,
 				PageGetTool.ToolName
 			}),
-			because: "page-update should point callers back to the canonical page-sync workflow");
+			because: "update-page should point callers back to the canonical sync-pages workflow");
 		pageSyncContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "pages" &&
-				field.Description.Contains("page-get.raw.body"),
-			because: "page-sync should advertise raw.body as the source of page write payloads");
+				field.Description.Contains("get-page.raw.body"),
+			because: "sync-pages should advertise raw.body as the source of page write payloads");
 		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "body" &&
-				field.Description.Contains("page-get.raw.body"),
-			because: "page-update should advertise raw.body as the source of fallback single-page saves");
+				field.Description.Contains("get-page.raw.body"),
+			because: "update-page should advertise raw.body as the source of fallback single-page saves");
 		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "resources" &&
 				field.Description.Contains("JSON object string"),
-			because: "page-update should clarify the concrete resources payload shape");
+			because: "update-page should clarify the concrete resources payload shape");
 		ToolContractDefinition modifyColumnContract = contracts.Single(contract => contract.Name == ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName);
 		modifyColumnContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
@@ -270,7 +278,7 @@ public sealed class ToolContractGetToolTests {
 		modifyColumnContract.FallbackFlow.Should().Contain(flow => flow.Tools.SequenceEqual(new[] {
 				SchemaSyncTool.ToolName
 			}),
-			because: "modify-entity-schema-column should still advertise schema-sync when the work expands into a multi-step ordered schema plan");
+			because: "modify-entity-schema-column should still advertise sync-schemas when the work expands into a multi-step ordered schema plan");
 	}
 
 	[Test]
@@ -287,7 +295,7 @@ public sealed class ToolContractGetToolTests {
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "tool-contract-get should expose the application-section-create contract");
+			because: "get-tool-contract should expose the create-app-section contract");
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.Name.Should().Be(ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 			because: "the requested tool contract should be returned verbatim");
@@ -341,7 +349,7 @@ public sealed class ToolContractGetToolTests {
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "tool-contract-get should expose the application-section-update contract");
+			because: "get-tool-contract should expose the update-app-section contract");
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.Name.Should().Be(ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 			because: "the requested tool contract should be returned verbatim");
@@ -398,7 +406,7 @@ public sealed class ToolContractGetToolTests {
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "tool-contract-get should expose the full canonical entity/schema MCP surface from clio");
+			because: "get-tool-contract should expose the full canonical entity/schema MCP surface from clio");
 		result.Tools.Should().NotBeNull(
 			because: "successful canonical surface lookup should include contract definitions");
 		result.Tools!.Select(contract => contract.Name).Should().BeEquivalentTo(requestedTools,
@@ -416,15 +424,15 @@ public sealed class ToolContractGetToolTests {
 					SchemaSyncTool.ToolName,
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				}),
-			because: "schema-sync should advertise the canonical batched entity workflow");
+			because: "sync-schemas should advertise the canonical batched entity workflow");
 		result.Tools.Should().Contain(contract =>
 				contract.Name == CreateLookupTool.CreateLookupToolName
 				&& contract.PreferredFlow.Tools.SequenceEqual(new[] { SchemaSyncTool.ToolName }),
-			because: "create-lookup should advertise schema-sync as the preferred canonical path");
+			because: "create-lookup should advertise sync-schemas as the preferred canonical path");
 		result.Tools.Should().Contain(contract =>
 				contract.Name == CreateEntitySchemaTool.CreateEntitySchemaToolName
 				&& contract.PreferredFlow.Tools.SequenceEqual(new[] { SchemaSyncTool.ToolName }),
-			because: "create-entity-schema should advertise schema-sync as the preferred canonical path");
+			because: "create-entity-schema should advertise sync-schemas as the preferred canonical path");
 		result.Tools.Should().Contain(contract =>
 				contract.Name == UpdateEntitySchemaTool.UpdateEntitySchemaToolName
 				&& contract.PreferredFlow.Tools.SequenceEqual(new[] {
@@ -464,13 +472,13 @@ public sealed class ToolContractGetToolTests {
 				new[] {
 					SchemaSyncTool.ToolName
 				},
-				because: "create-data-binding-db should advertise schema-sync as the canonical batched path");
+				because: "create-data-binding-db should advertise sync-schemas as the canonical batched path");
 		createContract.Deprecations.Should().ContainSingle(
 			because: "create-data-binding-db should advertise that it is a fallback or standalone path");
 		createContract.Deprecations[0].Message.Should().Contain("fallback",
 			because: "the deprecation guidance should explicitly frame create-data-binding-db as a fallback");
 		createContract.Deprecations[0].Message.Should().Contain("seed-rows",
-			because: "the deprecation guidance should point callers at inline seed-rows inside schema-sync");
+			because: "the deprecation guidance should point callers at inline seed-rows inside sync-schemas");
 		createContract.Deprecations[0].Message.Should().Contain("direct SQL",
 			because: "the deprecation guidance should keep standalone lookup seeding on the MCP surface");
 		createContract.InputSchema.Properties.Should().Contain(field =>
@@ -503,7 +511,7 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises enriched application-get-info output fields for installed application identity.")]
+	[Description("Advertises enriched get-app-info output fields for installed application identity.")]
 	public void ToolContractGet_Should_Advertise_Application_Info_Identity_Fields() {
 		// Arrange
 		ToolContractGetTool tool = new();
@@ -515,7 +523,7 @@ public sealed class ToolContractGetToolTests {
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "the application-get-info contract should be available through tool-contract-get");
+			because: "the get-app-info contract should be available through get-tool-contract");
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "application-id",
 			because: "the contract should advertise the installed application identifier");
@@ -529,7 +537,7 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises the canonical application-create validators aliases and preferred flow through tool-contract-get.")]
+	[Description("Advertises the canonical create-app validators aliases and preferred flow through get-tool-contract.")]
 	public void ToolContractGet_Should_Advertise_Application_Create_Canonical_Rules() {
 		// Arrange
 		ToolContractGetTool tool = new();
@@ -541,40 +549,86 @@ public sealed class ToolContractGetToolTests {
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "the application-create contract should be available through tool-contract-get");
+			because: "the create-app contract should be available through get-tool-contract");
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "canonical-main-entity-name",
-			because: "application-create should advertise the canonical main entity field in its response shape");
+			because: "create-app should advertise the canonical main entity field in its response shape");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "dataforge" &&
+				field.Description.Contains("context-summary", StringComparison.Ordinal),
+			because: "create-app should advertise the built-in Data Forge diagnostics block in its response contract");
 		contract.InputSchema.Validators.Should().ContainSingle(validator =>
 				validator.Name == "forbid-fields"
 				&& validator.Fields!.Contains("title-localizations")
 				&& validator.Fields.Contains("descriptionLocalizations"),
-			because: "application-create should advertise forbidden localization maps through the canonical contract");
+			because: "create-app should advertise forbidden localization maps through the canonical contract");
 		contract.Aliases.Should().Contain(alias =>
 				alias.CanonicalName == "code"
 				&& alias.Alias == "app-code"
 				&& alias.Status == "rejected",
-			because: "application-create should reject legacy alias parameters through the canonical contract");
+			because: "create-app should reject legacy alias parameters through the canonical contract");
 		contract.Aliases.Should().Contain(alias =>
 				alias.CanonicalName == "name"
 				&& alias.Alias == "app-name"
 				&& alias.Status == "rejected",
-			because: "application-create should reject legacy alias parameters through the canonical contract");
+			because: "create-app should reject legacy alias parameters through the canonical contract");
 		contract.PreferredFlow.Tools.Should().Equal(
 			new[] {
 				ApplicationCreateTool.ApplicationCreateToolName,
 				SchemaSyncTool.ToolName,
 				ApplicationGetInfoTool.ApplicationGetInfoToolName
 			},
-			because: "application-create should advertise the canonical create -> schema-sync -> refresh flow");
+			because: "create-app should advertise the canonical create -> sync-schemas -> refresh flow");
 		contract.FallbackFlow.Should().Contain(flow => flow.Tools.SequenceEqual(new[] {
 				ApplicationGetListTool.ApplicationGetListToolName,
 				ApplicationGetInfoTool.ApplicationGetInfoToolName
 			}),
-			because: "application-create should advertise the canonical existing-app fallback flow");
+			because: "create-app should advertise the canonical existing-app fallback flow");
 		contract.Examples.Should().ContainSingle(example =>
 				example.Summary.Contains("top-level payload", StringComparison.Ordinal),
-			because: "application-create should advertise the minimal top-level request shape explicitly");
+			because: "create-app should advertise the minimal top-level request shape explicitly");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the full Data Forge contract surface through explicit lookup while keeping maintenance tools out of the default bootstrap set.")]
+	public void ToolContractGet_Should_Return_Full_DataForge_Surface_On_Explicit_Lookup() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		string[] requestedTools = [
+			DataForgeTool.DataForgeHealthToolName,
+			DataForgeTool.DataForgeStatusToolName,
+			DataForgeTool.DataForgeFindTablesToolName,
+			DataForgeTool.DataForgeFindLookupsToolName,
+			DataForgeTool.DataForgeGetRelationsToolName,
+			DataForgeTool.DataForgeGetTableColumnsToolName,
+			DataForgeTool.DataForgeContextToolName,
+			DataForgeTool.DataForgeInitializeToolName,
+			DataForgeTool.DataForgeUpdateToolName
+		];
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(requestedTools));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the full Data Forge surface should remain available through explicit get-tool-contract lookup");
+		result.Tools.Should().NotBeNull(
+			because: "explicit Data Forge lookup should return the requested contracts");
+		result.Tools!.Select(contract => contract.Name).Should().Equal(requestedTools,
+			because: "the response should preserve the requested Data Forge tool order");
+		result.Tools.Should().Contain(contract =>
+				contract.Name == DataForgeTool.DataForgeInitializeToolName &&
+				contract.OutputContract.Fields.Any(field => field.Name == "status"),
+			because: "the maintenance initialize contract should remain available through explicit lookup");
+		result.Tools.Should().Contain(contract =>
+				contract.Name == DataForgeTool.DataForgeUpdateToolName &&
+				contract.OutputContract.Fields.Any(field => field.Name == "status"),
+			because: "the maintenance update contract should remain available through explicit lookup");
+		result.Tools.Should().Contain(contract =>
+				contract.Name == DataForgeTool.DataForgeHealthToolName &&
+				contract.Defaults.Any(definition => definition.Name == "scope" && definition.Value == "use_enrichment"),
+			because: "Data Forge contracts should advertise the default OAuth scope through the canonical contract catalog");
 	}
 
 	[Test]

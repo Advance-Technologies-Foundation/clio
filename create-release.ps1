@@ -148,37 +148,6 @@ function Get-NextVersion {
     return "$major.$minor.$patch.$build"
 }
 
-function Update-ProjectVersion {
-    param([string]$version)
-    
-    $csprojPath = "clio/clio.csproj"
-    
-    if (-not (Test-Path $csprojPath)) {
-        Write-Host "⚠️  Warning: Could not find $csprojPath" -ForegroundColor Yellow
-        return $false
-    }
-    
-    try {
-        $content = Get-Content $csprojPath -Raw
-        $pattern = '(<AssemblyVersion Condition="[^"]*">)([^<]+)(</AssemblyVersion>)'
-        $replacement = "`${1}$version`${3}"
-        
-        if ($content -match $pattern) {
-            $newContent = $content -replace $pattern, $replacement
-            Set-Content $csprojPath -Value $newContent -NoNewline
-            Write-Host "✅ Updated version in $csprojPath to $version" -ForegroundColor Green
-            return $true
-        }
-        else {
-            Write-Host "⚠️  Warning: Could not find AssemblyVersion pattern in $csprojPath" -ForegroundColor Yellow
-            return $false
-        }
-    }
-    catch {
-        Write-Host "❌ Error updating version in $csprojPath`: $_" -ForegroundColor Red
-        return $false
-    }
-}
 
 function New-ReleaseTag {
     param(
@@ -197,10 +166,6 @@ function New-ReleaseTag {
     }
     
     try {
-        # Update project version first
-        Write-Host "🔧 Step 4: Updating project version..." -ForegroundColor Cyan
-        Update-ProjectVersion $version
-        
         # Create tag
         git tag $version
         if ($LASTEXITCODE -ne 0) {

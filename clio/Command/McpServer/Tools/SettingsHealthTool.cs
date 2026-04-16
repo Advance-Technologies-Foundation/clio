@@ -9,7 +9,7 @@ namespace Clio.Command.McpServer.Tools;
 
 [McpServerToolType]
 public sealed class SettingsHealthTool(ISettingsBootstrapService settingsBootstrapService) {
-	internal const string ToolName = "settings-health";
+	internal const string ToolName = "check-settings-health";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Reports the clio bootstrap health for appsettings.json, including auto-repairs, active environment resolution, and whether environment-scoped tools can execute.")]

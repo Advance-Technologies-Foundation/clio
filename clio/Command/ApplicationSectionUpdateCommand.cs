@@ -86,7 +86,7 @@ public sealed class ApplicationSectionUpdateService(
 			null,
 			request.ApplicationCode);
 		string applicationId = applicationInfo.ApplicationId
-			?? throw new InvalidOperationException("Application id was not returned by application-get-info.");
+			?? throw new InvalidOperationException("Application id was not returned by get-app-info.");
 		ApplicationSectionRecord previousSection = GetSectionRecord(
 			client,
 			environmentSettings,

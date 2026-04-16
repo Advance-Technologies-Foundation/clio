@@ -10,6 +10,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 internal class UnregisterCommandTests : BaseCommandTests<UnregisterOptions>{
 	#region Fields: Private
 

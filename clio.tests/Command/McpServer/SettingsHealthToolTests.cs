@@ -9,10 +9,11 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class SettingsHealthToolTests {
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises a stable MCP tool name for settings-health.")]
+	[Description("Advertises a stable MCP tool name for check-settings-health.")]
 	public void SettingsHealth_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 
@@ -24,12 +25,12 @@ public sealed class SettingsHealthToolTests {
 
 		// Assert
 		attribute.Name.Should().Be(SettingsHealthTool.ToolName,
-			because: "the settings-health tool name must stay stable for bootstrap diagnostics");
+			because: "the check-settings-health tool name must stay stable for bootstrap diagnostics");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Projects the bootstrap report into the structured settings-health MCP payload.")]
+	[Description("Projects the bootstrap report into the structured check-settings-health MCP payload.")]
 	public void SettingsHealth_Should_Return_Structured_Bootstrap_Report() {
 		// Arrange
 		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();

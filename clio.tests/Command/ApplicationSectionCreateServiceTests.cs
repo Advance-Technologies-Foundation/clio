@@ -10,6 +10,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class ApplicationSectionCreateServiceTests {
 	private ISettingsRepository _settingsRepository = null!;
 	private IApplicationClientFactory _applicationClientFactory = null!;
@@ -98,6 +100,10 @@ public sealed class ApplicationSectionCreateServiceTests {
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysAppIcons\"", StringComparison.Ordinal)))
 			.Returns("""{"success":true,"rows":[{"Id":"11111111-1111-1111-1111-111111111111"}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
 		_applicationClient.ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
@@ -243,6 +249,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 }
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class CreateAppSectionOptionsTests {
 
 	[Test]

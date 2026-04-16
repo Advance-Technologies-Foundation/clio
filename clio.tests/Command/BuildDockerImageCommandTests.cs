@@ -8,6 +8,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class BuildDockerImageCommandTests : BaseCommandTests<BuildDockerImageOptions> {
 	private BuildDockerImageCommand _command = null!;
 	private IBuildDockerImageService _service = null!;

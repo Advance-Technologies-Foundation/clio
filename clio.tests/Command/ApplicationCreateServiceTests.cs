@@ -10,6 +10,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class ApplicationCreateServiceTests {
 	private ISettingsRepository _settingsRepository = null!;
 	private IApplicationClientFactory _applicationClientFactory = null!;
@@ -479,7 +481,7 @@ public sealed class ApplicationCreateServiceTests {
 	}
 
 	[Test]
-	[Description("Polls application-get-info by application code when the CreateApp request times out and returns the first successful structured result.")]
+	[Description("Polls get-app-info by application code when the CreateApp request times out and returns the first successful structured result.")]
 	public void CreateApplication_Should_Poll_ApplicationInfo_When_CreateApp_Times_Out() {
 		// Arrange
 		ApplicationInfoResult expectedResult = new("pkg-uid", "PrimaryPkg", []);
@@ -499,12 +501,12 @@ public sealed class ApplicationCreateServiceTests {
 
 		// Assert
 		result.Should().Be(expectedResult,
-			because: "timeout recovery should return the created application once application-get-info can resolve it");
+			because: "timeout recovery should return the created application once get-app-info can resolve it");
 		_applicationInfoService.Received(3).GetApplicationInfo("sandbox", null, "UsrCodexApp");
 	}
 
 	[Test]
-	[Description("Fails cleanly when CreateApp times out and the created application never becomes visible through application-get-info polling.")]
+	[Description("Fails cleanly when CreateApp times out and the created application never becomes visible through get-app-info polling.")]
 	public void CreateApplication_Should_Throw_When_Timeout_Recovery_Does_Not_Find_Application() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(

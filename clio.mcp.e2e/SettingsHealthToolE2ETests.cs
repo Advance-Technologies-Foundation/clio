@@ -17,7 +17,7 @@ namespace Clio.Mcp.E2E;
 public sealed class SettingsHealthToolE2ETests {
 	[Test]
 	[AllureTag(SettingsHealthTool.ToolName)]
-	[AllureName("settings-health reports repaired bootstrap status when ActiveEnvironmentKey is stale")]
+	[AllureName("check-settings-health reports repaired bootstrap status when ActiveEnvironmentKey is stale")]
 	public async Task SettingsHealth_Should_Report_Repaired_Status_When_Active_Environment_Key_Is_Invalid() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -40,9 +40,9 @@ public sealed class SettingsHealthToolE2ETests {
 
 		// Assert
 		tools.Select(tool => tool.Name).Should().Contain(SettingsHealthTool.ToolName,
-			because: "the repaired bootstrap server should advertise the settings-health diagnostics tool");
+			because: "the repaired bootstrap server should advertise the check-settings-health diagnostics tool");
 		callResult.IsError.Should().NotBeTrue(
-			because: "settings-health should return a normal MCP tool result envelope");
+			because: "check-settings-health should return a normal MCP tool result envelope");
 		result.SettingsFilePath.Should().Be(settingsOverride.AppSettingsPath,
 			because: "the MCP diagnostics tool should report the same appsettings.json path that the E2E fixture overwrote");
 		result.Status.Should().Be("repaired",

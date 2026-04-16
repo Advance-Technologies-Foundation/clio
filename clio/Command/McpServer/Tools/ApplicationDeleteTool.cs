@@ -19,7 +19,7 @@ public sealed class ApplicationDeleteTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<UninstallAppOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "application-delete";
+	internal const string ToolName = "delete-app";
 
 	/// <summary>
 	/// Uninstalls a Creatio application by name or code.
@@ -27,9 +27,9 @@ public sealed class ApplicationDeleteTool(
 	/// <param name="args">MCP arguments describing the target application and connection.</param>
 	/// <returns>A structured response that reports whether the uninstall completed successfully.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
-	[Description("Uninstall (delete) a Creatio application by name or code")]
+	[Description("Uninstall (delete) a Creatio application by name or code. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public ApplicationDeleteResponse DeleteApplication(
-		[Description("Parameters: app-name (required); environment-name, uri, login, password (optional, provide environment-name or explicit connection args)")]
+		[Description("Parameters: app-name (required); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]
 		ApplicationDeleteArgs args) {
 		try {
@@ -77,11 +77,11 @@ public sealed class ApplicationDeleteTool(
 }
 
 /// <summary>
-/// Arguments for the <c>application-delete</c> MCP tool.
+/// Arguments for the <c>delete-app</c> MCP tool.
 /// </summary>
 public sealed record ApplicationDeleteArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'. Optional when uri, login, and password are provided explicitly.")]
+	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
 	string? EnvironmentName,
 
 	[property: JsonPropertyName("app-name")]
@@ -89,13 +89,19 @@ public sealed record ApplicationDeleteArgs(
 	[property: Required]
 	string AppName,
 
-	[property: JsonPropertyName("uri")] string? Uri = null,
-	[property: JsonPropertyName("login")] string? Login = null,
-	[property: JsonPropertyName("password")] string? Password = null
+	[property: JsonPropertyName("uri")]
+	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
+	string? Uri = null,
+	[property: JsonPropertyName("login")]
+	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
+	string? Login = null,
+	[property: JsonPropertyName("password")]
+	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
+	string? Password = null
 );
 
 /// <summary>
-/// Structured response from the <c>application-delete</c> MCP tool.
+/// Structured response from the <c>delete-app</c> MCP tool.
 /// </summary>
 public sealed class ApplicationDeleteResponse {
 	[JsonPropertyName("success")]

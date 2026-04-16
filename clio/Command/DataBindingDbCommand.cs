@@ -169,7 +169,7 @@ public interface IDataBindingDbService {
 	void RemoveRow(RemoveDataBindingRowDbOptions options);
 }
 
-internal interface ILookupRegistrationService {
+public interface ILookupRegistrationService {
 	void EnsureLookupRegistration(string packageName, string lookupSchemaName, string lookupTitle);
 }
 

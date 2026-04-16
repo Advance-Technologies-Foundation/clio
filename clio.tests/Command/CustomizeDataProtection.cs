@@ -17,6 +17,7 @@ namespace Clio.Tests.Command;
 
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
 [TestFixture]
+[Property("Module", "Command")]
 internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeDataProtectionCommandOptions> {
 
 	#region Fields: Private

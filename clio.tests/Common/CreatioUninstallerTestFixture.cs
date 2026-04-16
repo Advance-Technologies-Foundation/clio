@@ -15,6 +15,7 @@ using ILogger = Clio.Common.ILogger;
 
 namespace Clio.Tests.Common;
 
+[Property("Module", "Common")]
 public class CreatioUninstallerTestFixture : BaseClioModuleTests
 {
 

@@ -55,9 +55,9 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the maintenance guide should be returned as plain text").Subject;
 		article.Uri.Should().Be(ExistingAppMaintenanceUri,
 			because: "the returned article should preserve the stable maintenance guidance URI");
-		article.Text.Should().Contain("application-get-list",
+		article.Text.Should().Contain("list-apps",
 			because: "the article should explain how to discover the target installed application");
-		article.Text.Should().Contain("page-update",
+		article.Text.Should().Contain("update-page",
 			because: "the article should describe the minimal page mutation path");
 		article.Text.Should().Contain("do not wrap MCP arguments inside `args`",
 			because: "the article should explicitly reject the request wrapper that caused the analyzed session failure");

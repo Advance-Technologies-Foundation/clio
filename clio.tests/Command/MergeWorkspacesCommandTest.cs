@@ -12,6 +12,8 @@ using System.IO;
 namespace Clio.Tests.Command
 {
     [TestFixture]
+    [Category("Unit")]
+    [Property("Module", "Command")]
     internal class MergeWorkspacesCommandTest
     {
         #region Fields: Private

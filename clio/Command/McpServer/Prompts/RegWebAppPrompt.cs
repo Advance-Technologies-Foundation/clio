@@ -37,8 +37,9 @@ public static class RegWebAppPrompt {
 		 for environment `{environmentName}`.
 		 Include URI `{uri ?? "<not provided>"}`, login `{login ?? "<not provided>"}`, and
 		 password `{(string.IsNullOrWhiteSpace(password) ? "<not provided>" : "<provided>")}`.
-		 Set `check-login` to `{checkLogin}`. Omit `is-net-core` during normal URL-based registration
-		 so clio can auto-detect the runtime; pass it only when you need to override detection.
+		 Set `check-login` to `{checkLogin}`. When a URI is provided, clio automatically
+		 detects whether the site uses .NET Core / NET8 or .NET Framework — no runtime hint is needed.
+		 After registration, prefer passing `environment-name` to other MCP tools instead of repeating direct connection args.
 		 If you need to inspect registered environments first,
 		 use `ShowWebAppList`. If you need command syntax details, use `docs://help/command/reg-web-app`.
 		 """;

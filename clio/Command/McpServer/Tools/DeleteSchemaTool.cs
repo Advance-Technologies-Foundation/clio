@@ -16,11 +16,15 @@ public class DeleteSchemaTool(
 	[Description("""
 				 Deletes a schema from a Creatio environment, but only when the schema belongs to
 				 one of the packages in the specified local workspace.
-				 
+
 				 The tool first loads workspace packages from the supplied workspace path, then queries
 				 WorkspaceExplorerService.svc/GetWorkspaceItems, and finally submits the matching item
 				 to WorkspaceExplorerService.svc/Delete.
-				 
+
+				 Supports any workspace item type, including entity, client unit, source code, process,
+				 DCM, process user task, campaign, service, addon, Copilot intent, localization schemas,
+				 as well as SQL scripts, data bindings, and assemblies.
+
 				 This operation is destructive and cannot be undone.
 				 """)]
 	public CommandExecutionResult DeleteSchema(

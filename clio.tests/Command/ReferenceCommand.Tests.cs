@@ -9,6 +9,8 @@ namespace Clio.Tests.Command;
 
 [Ignore("Not passing in github runner")]
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public class ReferenceCommandTestCase
 {
 	[Test, Category("Unit")]

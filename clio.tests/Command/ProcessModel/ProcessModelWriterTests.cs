@@ -9,6 +9,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.ProcessModel;
 
 [TestFixture]
+[Property("Module", "ProcessModel")]
 [Category("Unit")]
 public sealed class ProcessModelWriterTests {
 

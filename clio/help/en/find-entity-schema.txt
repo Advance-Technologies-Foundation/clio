@@ -1,0 +1,50 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    find-entity-schema - Find entity schemas in a Creatio environment by name, pattern, or UId
+
+SYNOPSIS
+    clio find-entity-schema [OPTIONS]
+
+DESCRIPTION
+    Searches for entity schemas in the remote Creatio environment using a single
+    DataService query on SysSchema. Accepts an exact schema name, a case-insensitive
+    substring pattern, or a UId for lookup. Returns schema name, owning package,
+    package maintainer, and parent schema for each match.
+
+    Exactly one of --schema-name, --search-pattern, or --uid must be provided.
+
+OPTIONS
+    --schema-name          Exact entity schema name to find
+    --search-pattern       Case-insensitive substring to search in schema names
+    --uid                  Entity schema UId (Guid)
+
+    Environment options are also available:
+    -e, --Environment      Environment name from the registered configuration
+    -u, --uri              Application URI
+    -l, --Login            User login
+    -p, --Password         User password
+
+EXAMPLES
+    # Find all schemas whose name contains "Task"
+    clio find-entity-schema -e dev --search-pattern Task
+
+    # Look up a schema by exact name
+    clio find-entity-schema -e dev --schema-name UsrVehicle
+
+    # Look up a schema by UId
+    clio find-entity-schema -e dev --uid 117d32f9-aab9-4e3a-b13e-cfce62e15e4b
+
+NOTES
+    - output is one line per match: Schema: SchemaName | Package: PackageName | Maintainer: Maintainer | Parent: ParentName
+    - CLI output is labeled for safer human and AI parsing; read the Package field directly
+    - MCP callers should use the structured package-name field instead of parsing the CLI text form
+    - requires no knowledge of the owning package name
+    - does not require cliogate
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    get-entity-schema-properties, modify-entity-schema-column
