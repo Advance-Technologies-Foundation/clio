@@ -218,6 +218,51 @@ public sealed class BusinessRuleServiceTests {
 			.Be(5, because: "the numeric constant should remain a JSON number after reordering");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Maps boolean entity columns from designer responses that use type so business-rule constants are serialized as Boolean instead of defaulting to Text.")]
+	public void Create_Should_Map_Boolean_Column_Type_From_Type_Field() {
+		// Arrange
+		BusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			new BusinessRule(
+				"Readonly amount when completed",
+				true,
+				new BusinessRuleConditionGroup(
+					"AND",
+					[
+						new BusinessRuleCondition(
+							new BusinessRuleOperand("attribute", "Completed", null, null),
+							"equal",
+							new BusinessRuleOperand("constant", null, JsonSerializer.Deserialize<JsonElement>("true"), null))
+					]),
+				[
+					new BusinessRuleAction("make-read-only", ["Amount"])
+				]));
+
+		// Act
+		_service.Create("dev", request);
+
+		// Assert
+		_savedAddonRequestBody.Should().NotBeNullOrWhiteSpace(
+			because: "the service should persist the updated add-on payload");
+		using JsonDocument saveRequest = JsonDocument.Parse(_savedAddonRequestBody!);
+		using JsonDocument metaData = JsonDocument.Parse(saveRequest.RootElement.GetProperty("metaData").GetString()!);
+		JsonElement condition = metaData.RootElement
+			.GetProperty("rules")[1]
+			.GetProperty("cases")[0]
+			.GetProperty("condition")
+			.GetProperty("conditions")[0];
+
+		condition.GetProperty("leftExpression").GetProperty("dataValueTypeName").GetString().Should().Be("Boolean",
+			because: "designer responses send boolean column metadata under type and the business-rule mapper should preserve that runtime type");
+		condition.GetProperty("rightExpression").GetProperty("dataValueTypeName").GetString().Should().Be("Boolean",
+			because: "constant values should inherit the actual column runtime type rather than defaulting to Text");
+		condition.GetProperty("rightExpression").GetProperty("value").GetBoolean().Should().BeTrue(
+			because: "boolean constants should remain booleans in the persisted add-on metadata");
+	}
+
 	private string BuildResponse(string url, string requestBody) {
 		if (url.Contains("SelectQuery", StringComparison.Ordinal)) {
 			if (requestBody.Contains("\"SysPackage\"", StringComparison.Ordinal)) {
@@ -239,6 +284,7 @@ public sealed class BusinessRuleServiceTests {
 			    "package": { "uId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "name": "UsrPkg" },
 			    "columns": [
 			      { "uId": "10000000-0000-0000-0000-000000000001", "name": "Status", "type": 1 },
+			      { "uId": "10000000-0000-0000-0000-000000000004", "name": "Completed", "type": 12 },
 			      { "uId": "10000000-0000-0000-0000-000000000002", "name": "Owner", "type": 10, "referenceSchema": { "name": "Contact", "primaryDisplayColumn": { "name": "Name" } } },
 			      { "uId": "10000000-0000-0000-0000-000000000003", "name": "Amount", "type": 6 }
 			    ],
