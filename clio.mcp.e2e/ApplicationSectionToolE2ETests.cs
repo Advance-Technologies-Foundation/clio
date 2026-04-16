@@ -20,8 +20,6 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ApplicationSectionToolE2ETests {
 	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
-	private const string ListToolName = ApplicationGetListTool.ApplicationGetListToolName;
-	private const string InfoToolName = ApplicationGetInfoTool.ApplicationGetInfoToolName;
 
 	[Test]
 	[Description("Advertises create-app-section in the MCP tool list so callers can discover the existing-app section creation tool.")]
@@ -92,6 +90,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
@@ -103,7 +102,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			SectionCreateToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = "sandbox",
+					["environment-name"] = environmentName,
 					["caption"] = "Orders"
 				}
 			},
@@ -120,100 +119,124 @@ public sealed class ApplicationSectionToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, creates a section in a reachable sandbox environment, and verifies that structured section, entity, and page readback data is returned.")]
+	[Description("Starts the real clio MCP server, invokes create-app-section without caption, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionCreateToolName)]
 	[AllureTag(SectionCreateToolName)]
-	[AllureName("Application section create returns structured readback data")]
-	[AllureDescription("Uses the real clio MCP server to discover a reachable sandbox environment and installed application, then calls create-app-section and verifies that the response contains structured section metadata plus page readback data.")]
-	public async Task ApplicationSectionCreate_Should_Return_Structured_Readback_Data() {
+	[AllureName("Application section create rejects missing caption")]
+	[AllureDescription("Uses the real clio MCP server to call create-app-section without caption and verifies that the failure explains the required scalar caption contract.")]
+	public async Task ApplicationSectionCreate_Should_Reject_Missing_Caption() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
-		if (!settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run create-app-section end-to-end tests.");
-		}
-
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		string environmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName)) {
-			ClioCliCommandResult configuredPingResult = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", configuredEnvironmentName]);
-			environmentName = configuredPingResult.ExitCode == 0 ? configuredEnvironmentName : string.Empty;
-		} else {
-			environmentName = string.Empty;
-		}
-
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			const string fallbackEnvironmentName = "d2";
-			ClioCliCommandResult fallbackPingResult = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", fallbackEnvironmentName]);
-			if (fallbackPingResult.ExitCode != 0) {
-				Assert.Ignore(
-					$"create-app-section MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-			}
-
-			environmentName = fallbackEnvironmentName;
-		}
-
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(10));
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ListToolName,
-			because: "list-apps must be available for the end-to-end section-create setup");
-		tools.Select(tool => tool.Name).Should().Contain(InfoToolName,
-			because: "get-app-info must be available for the end-to-end section-create verification flow");
-		tools.Select(tool => tool.Name).Should().Contain(SectionCreateToolName,
-			because: "create-app-section must be available for the end-to-end mutation flow");
-		CallToolResult listCallResult = await session.CallToolAsync(
-			ListToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationListResponseEnvelope listResponse = ApplicationResultParser.ExtractList(listCallResult);
-		listResponse.Success.Should().BeTrue(
-			because: "the setup step should return a structured application list");
-		listResponse.Applications.Should().NotBeEmpty(
-			because: "the sandbox environment should expose at least one installed application for section-create testing");
-		ApplicationListItemEnvelope targetApplication = listResponse.Applications![0];
-		string sectionCaption = $"Codex Section {Guid.NewGuid():N}"[..22];
 
 		// Act
-		CallToolResult sectionCreateCallResult = await session.CallToolAsync(
+		CallToolResult callResult = await session.CallToolAsync(
 			SectionCreateToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = environmentName,
-					["application-code"] = targetApplication.Code,
-					["caption"] = sectionCaption,
-					["description"] = "Created by MCP E2E"
+					["application-code"] = "UsrOrdersApp"
 				}
 			},
 			cancellationTokenSource.Token);
-		ApplicationSectionContextResponseEnvelope sectionCreateResponse = ApplicationResultParser.ExtractSectionCreate(sectionCreateCallResult);
+		ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
 
 		// Assert
-		sectionCreateCallResult.IsError.Should().NotBeTrue(
-			because: $"a valid create-app-section request should return structured readback data. Actual result: {JsonSerializer.Serialize(new { sectionCreateCallResult.IsError, sectionCreateCallResult.StructuredContent, sectionCreateCallResult.Content })}");
-		sectionCreateResponse.Success.Should().BeTrue(
-			because: "successful section creation should return the standard success envelope");
-		sectionCreateResponse.ApplicationCode.Should().Be(targetApplication.Code,
-			because: "the create response should preserve the target application code");
-		sectionCreateResponse.Section.Should().NotBeNull(
-			because: "successful section creation should return section metadata");
-		sectionCreateResponse.Section!.Caption.Should().Be(sectionCaption,
-			because: "the section readback should preserve the requested section caption");
-		sectionCreateResponse.Section.Code.Should().NotBeNullOrWhiteSpace(
-			because: "the section readback should include the generated section code");
-		sectionCreateResponse.PackageName.Should().NotBeNullOrWhiteSpace(
-			because: "the create response should include the target primary package");
-		sectionCreateResponse.Pages.Should().NotBeNull(
-			because: "the create response should include page readback data even when the created page set is empty");
-		sectionCreateResponse.Error.Should().BeNullOrWhiteSpace(
-			because: "successful section creation should not return an error payload");
+		callResult.IsError.Should().NotBeTrue(
+			because: "structured caption validation failures should stay inside the response payload");
+		response.Success.Should().BeFalse(
+			because: "section-create should reject requests that omit caption");
+		response.Error.Should().MatchRegex("(?is)(caption|required)",
+			because: "the failure should explain that caption is required");
+	}
+
+	[Test]
+	[Description("Starts the real clio MCP server, invokes create-app-section with forbidden localization maps, and verifies that the tool returns a clear scalar-only validation failure.")]
+	[AllureFeature(SectionCreateToolName)]
+	[AllureTag(SectionCreateToolName)]
+	[AllureName("Application section create rejects localization maps")]
+	[AllureDescription("Uses the real clio MCP server to call create-app-section with title-localizations and verifies that the tool rejects localization-map payloads before any create side effect is attempted.")]
+	public async Task ApplicationSectionCreate_Should_Reject_Localization_Map_Fields() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		CallToolResult callResult = await session.CallToolAsync(
+			SectionCreateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = "UsrOrdersApp",
+					["caption"] = "Orders",
+					["title-localizations"] = new Dictionary<string, object?> {
+						["en-US"] = "Orders"
+					}
+				}
+			},
+			cancellationTokenSource.Token);
+		ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "structured scalar-only validation failures should stay inside the response payload");
+		response.Success.Should().BeFalse(
+			because: "section-create should reject localization maps before any remote create side effect is attempted");
+		response.Error.Should().MatchRegex("(?is)(scalar-only|title-localizations|localizations)",
+			because: "the failure should explain that localization maps are forbidden on create-app-section");
+	}
+
+	[Test]
+	[Description("Deferred positive coverage for create-app-section when the E2E environment has a known installed application.")]
+	[AllureFeature(SectionCreateToolName)]
+	[AllureTag(SectionCreateToolName)]
+	[AllureName("Application section create returns structured readback data")]
+	[AllureDescription("Placeholder for a future seeded-data E2E that creates a section in a known installed application and verifies persisted read-back data.")]
+	public void ApplicationSectionCreate_Should_Return_Structured_Readback_Data() {
+		Assert.Ignore("TODO: ENG-88547 add predefined installed application data to the E2E environment, then restore this positive create-app-section read-back scenario.");
+	}
+
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
+		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
+		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
+			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
+			return configuredEnvironmentName;
+		}
+
+		const string fallbackEnvironmentName = "d2";
+		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
+			return fallbackEnvironmentName;
+		}
+
+		Assert.Ignore(
+			$"application section MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
+		return string.Empty;
+	}
+
+	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
+		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
+		try {
+			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+				settings,
+				["ping-app", "-e", environmentName],
+				cancellationToken: cts.Token);
+			return result.ExitCode == 0;
+		} catch (OperationCanceledException) {
+			return false;
+		}
+	}
+
+	private static string DescribeCallResult(CallToolResult callResult) {
+		return JsonSerializer.Serialize(new {
+			callResult.IsError,
+			callResult.StructuredContent,
+			callResult.Content
+		});
 	}
 }

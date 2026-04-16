@@ -54,6 +54,28 @@ internal sealed record ApplicationSectionUpdateContextResponseEnvelope(
 	[property: JsonPropertyName("section")] ApplicationSectionEnvelope? Section,
 	[property: JsonPropertyName("error")] string? Error);
 
+internal sealed record ApplicationSectionDeleteContextResponseEnvelope(
+	[property: JsonPropertyName("success")] bool Success,
+	[property: JsonPropertyName("package-u-id")] string? PackageUId,
+	[property: JsonPropertyName("package-name")] string? PackageName,
+	[property: JsonPropertyName("application-id")] string? ApplicationId,
+	[property: JsonPropertyName("application-name")] string? ApplicationName,
+	[property: JsonPropertyName("application-code")] string? ApplicationCode,
+	[property: JsonPropertyName("application-version")] string? ApplicationVersion,
+	[property: JsonPropertyName("deleted-section")] ApplicationSectionEnvelope? DeletedSection,
+	[property: JsonPropertyName("error")] string? Error);
+
+internal sealed record ApplicationSectionListContextResponseEnvelope(
+	[property: JsonPropertyName("success")] bool Success,
+	[property: JsonPropertyName("package-u-id")] string? PackageUId,
+	[property: JsonPropertyName("package-name")] string? PackageName,
+	[property: JsonPropertyName("application-id")] string? ApplicationId,
+	[property: JsonPropertyName("application-name")] string? ApplicationName,
+	[property: JsonPropertyName("application-code")] string? ApplicationCode,
+	[property: JsonPropertyName("application-version")] string? ApplicationVersion,
+	[property: JsonPropertyName("sections")] IReadOnlyList<ApplicationSectionEnvelope>? Sections,
+	[property: JsonPropertyName("error")] string? Error);
+
 internal sealed record ApplicationDeleteResponseEnvelope(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("error")] string? Error);
@@ -179,6 +201,22 @@ internal static class ApplicationResultParser {
 		throw new InvalidOperationException("Could not parse update-app-section MCP result.");
 	}
 
+	public static ApplicationSectionDeleteContextResponseEnvelope ExtractSectionDelete(CallToolResult callResult) {
+		if (TryExtract(callResult, IsValidSectionDeleteContextEnvelope, out ApplicationSectionDeleteContextResponseEnvelope? envelope)) {
+			return envelope!;
+		}
+
+		throw new InvalidOperationException("Could not parse delete-app-section MCP result.");
+	}
+
+	public static ApplicationSectionListContextResponseEnvelope ExtractSectionList(CallToolResult callResult) {
+		if (TryExtract(callResult, IsValidSectionListContextEnvelope, out ApplicationSectionListContextResponseEnvelope? envelope)) {
+			return envelope!;
+		}
+
+		throw new InvalidOperationException("Could not parse list-app-sections MCP result.");
+	}
+
 	private static bool TryExtract<T>(CallToolResult callResult, Func<T?, bool> validator, out T? result) {
 		if (TrySerializeToJsonElement(callResult.StructuredContent, out JsonElement structuredContent) &&
 			TryDeserialize(structuredContent, validator, out result)) {
@@ -267,6 +305,16 @@ internal static class ApplicationResultParser {
 	}
 
 	private static bool IsValidSectionUpdateContextEnvelope(ApplicationSectionUpdateContextResponseEnvelope? envelope) {
+		return envelope is not null &&
+			(envelope.Success || !string.IsNullOrWhiteSpace(envelope.Error));
+	}
+
+	private static bool IsValidSectionDeleteContextEnvelope(ApplicationSectionDeleteContextResponseEnvelope? envelope) {
+		return envelope is not null &&
+			(envelope.Success || !string.IsNullOrWhiteSpace(envelope.Error));
+	}
+
+	private static bool IsValidSectionListContextEnvelope(ApplicationSectionListContextResponseEnvelope? envelope) {
 		return envelope is not null &&
 			(envelope.Success || !string.IsNullOrWhiteSpace(envelope.Error));
 	}
