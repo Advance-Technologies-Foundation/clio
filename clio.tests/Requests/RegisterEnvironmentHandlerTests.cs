@@ -12,6 +12,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Requests;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Requests")]
 public class RegisterEnvironmentHandlerTests {
 	[Test]
 	[Description("Maps the RegisterEnvironment deep-link query parameters into RegAppOptions and forwards them to RegAppCommand.")]

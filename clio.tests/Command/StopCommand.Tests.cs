@@ -13,6 +13,7 @@ using IFileSystem = Clio.Common.IFileSystem;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class StopCommandTestCase : BaseCommandTests<StopOptions>
 {
 	private ISettingsRepository _settingsRepository;

@@ -17,7 +17,7 @@ public sealed class PageListTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<PageListOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "page-list";
+	internal const string ToolName = "list-pages";
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
 		["app-code"] = "code",
 		["appCode"] = "code",
@@ -27,8 +27,8 @@ public sealed class PageListTool(
 	};
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("List Freedom UI pages in Creatio with package and parent schema context")]
-	public PageListResponse ListPages([Description("Parameters: package-name, code, search-pattern, limit, environment-name (all optional)")] [Required] PageListArgs args) {
+	[Description("List Freedom UI pages in Creatio with package and parent schema context. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	public PageListResponse ListPages([Description("Parameters: package-name, code, search-pattern, limit (optional); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageListArgs args) {
 		string? legacyAliasError = GetLegacyAliasError(args);
 		if (!string.IsNullOrWhiteSpace(legacyAliasError)) {
 			return new PageListResponse { Success = false, Error = legacyAliasError };
@@ -87,12 +87,18 @@ public sealed record PageListArgs(
 	int? Limit,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
 	string? EnvironmentName,
 
-	[property: JsonPropertyName("uri")] string? Uri,
-	[property: JsonPropertyName("login")] string? Login,
-	[property: JsonPropertyName("password")] string? Password
+	[property: JsonPropertyName("uri")]
+	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
+	string? Uri,
+	[property: JsonPropertyName("login")]
+	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
+	string? Login,
+	[property: JsonPropertyName("password")]
+	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
+	string? Password
 ) {
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement>? ExtensionData { get; init; }

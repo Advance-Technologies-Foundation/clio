@@ -6,6 +6,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.ApplicationCommand;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "ApplicationCommand")]
 public class CompileConfigurationOptionsTestFixture {
 
 	[Test]

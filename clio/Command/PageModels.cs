@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 using Newtonsoft.Json;
 
 /// <summary>
-/// Represents a page item returned by <c>page-list</c>.
+/// Represents a page item returned by <c>list-pages</c>.
 /// </summary>
 [DataContract]
 public sealed class PageListItem {
@@ -45,7 +45,7 @@ public sealed class PageListItem {
 }
 
 /// <summary>
-/// Represents the <c>page-list</c> response envelope.
+/// Represents the <c>list-pages</c> response envelope.
 /// </summary>
 [DataContract]
 public sealed class PageListResponse {
@@ -83,7 +83,7 @@ public sealed class PageListResponse {
 }
 
 /// <summary>
-/// Represents the <c>page-get</c> response envelope.
+/// Represents the <c>get-page</c> response envelope.
 /// </summary>
 public sealed class PageGetResponse {
 	/// <summary>
@@ -337,7 +337,7 @@ public sealed class PageParameterInfo {
 }
 
 /// <summary>
-/// Represents the <c>page-update</c> response envelope.
+/// Represents the <c>update-page</c> response envelope.
 /// </summary>
 [DataContract]
 public sealed class PageUpdateResponse {

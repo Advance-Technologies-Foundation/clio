@@ -6,6 +6,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Common.IIS;
 
 [TestFixture]
+[Property("Module", "Common")]
 [Category("Unit")]
 public class StubIISAppPoolManagerTests
 {

@@ -7,9 +7,9 @@ using Clio.Common;
 using CommandLine;
 
 /// <summary>
-/// Options for the <c>page-get</c> command.
+/// Options for the <c>get-page</c> command.
 /// </summary>
-[Verb("page-get", HelpText = "Get a Freedom UI page bundle and raw schema body")]
+[Verb("get-page", Aliases = ["page-get"], HelpText = "Get a Freedom UI page bundle and raw schema body")]
 public class PageGetOptions : EnvironmentOptions {
 	/// <summary>
 	/// Gets or sets the schema name to fetch.

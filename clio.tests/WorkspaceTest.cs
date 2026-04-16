@@ -17,6 +17,7 @@ using NSubstitute;
 namespace Clio.Tests;
 
 [TestFixture]
+[Property("Module", "Core")]
 internal class WorkspaceTest : BaseClioModuleTests
 {
 	// private BindingsModule _bindingModule;

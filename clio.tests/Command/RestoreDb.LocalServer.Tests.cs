@@ -15,8 +15,9 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
-[Category("UnitTests")]
+[Category("Unit")]
 [TestFixture]
+[Property("Module", "Command")]
 public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOptions>
 {
 	private ILogger _logger;

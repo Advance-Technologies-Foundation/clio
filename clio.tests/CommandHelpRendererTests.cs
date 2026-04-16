@@ -10,6 +10,7 @@ using NUnit.Framework;
 namespace Clio.Tests;
 
 [TestFixture]
+[Property("Module", "Core")]
 internal class CommandHelpRendererTests : BaseClioModuleTests {
 	private string _helpDirectory;
 	private CommandHelpRenderer _exportRenderer;
@@ -133,7 +134,7 @@ EXAMPLE
 
 		output.Should().Contain("Register a Creatio environment\u001b[90m · cfg, reg\u001b[0m",
 			because: "runtime help should keep aliases beside the description with lower visual emphasis");
-		output.Should().Contain("List registered Creatio environments\u001b[90m · env, envs, show-web-app\u001b[0m",
+		output.Should().Contain("List registered Creatio environments\u001b[90m · env, envs, show-web-app, show-web-app-list\u001b[0m",
 			because: "runtime help should colorize longer alias suffixes too");
 		output.Should().Contain("Compare file content across web farm nodes\u001b[90m · check-farm, check-web-farm-node, cwf, farm-check\u001b[0m",
 			because: "runtime help should keep long alias groups on the same physical line");

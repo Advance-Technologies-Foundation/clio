@@ -10,7 +10,7 @@ namespace Clio.Command
 
 	#region Class: PkgListOptions
 
-	[Verb("get-pkg-list", Aliases = ["packages"], HelpText = "Get environments packages")]
+	[Verb("list-packages", Aliases = ["get-pkg-list", "packages"], HelpText = "Get environments packages")]
 	public class PkgListOptions : EnvironmentNameOptions
 	{
 

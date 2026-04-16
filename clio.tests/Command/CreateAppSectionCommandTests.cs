@@ -7,6 +7,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class CreateAppSectionCommandTests {
 	[Test]
 	[Description("Maps CLI options to the section-create service request and writes the structured result to the logger on success.")]

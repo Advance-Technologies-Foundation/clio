@@ -8,6 +8,8 @@ using NSubstitute;
 using NUnit.Framework;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public class HealthCheckCommandTestCase
 {
 	private EnvironmentSettings _environmentSettings;

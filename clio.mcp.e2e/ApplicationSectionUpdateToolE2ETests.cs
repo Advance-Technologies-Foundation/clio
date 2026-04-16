@@ -26,11 +26,11 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 	private const string InfoToolName = ApplicationGetInfoTool.ApplicationGetInfoToolName;
 
 	[Test]
-	[Description("Advertises application-section-update in the MCP tool list so callers can discover the existing-section update tool.")]
+	[Description("Advertises update-app-section in the MCP tool list so callers can discover the existing-section update tool.")]
 	[AllureFeature(SectionUpdateToolName)]
 	[AllureTag(SectionUpdateToolName)]
 	[AllureName("Application section update tool is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that application-section-update appears in the advertised tool manifest.")]
+	[AllureDescription("Starts the real clio MCP server and verifies that update-app-section appears in the advertised tool manifest.")]
 	public async Task ApplicationSectionUpdate_Should_Be_Listed_By_Mcp_Server() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -44,15 +44,15 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 
 		// Assert
 		toolNames.Should().Contain(SectionUpdateToolName,
-			because: "application-section-update must be advertised so MCP callers can discover the existing-section update tool");
+			because: "update-app-section must be advertised so MCP callers can discover the existing-section update tool");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-section-update with an invalid environment, and verifies that the failure remains human-readable.")]
+	[Description("Starts the real clio MCP server, invokes update-app-section with an invalid environment, and verifies that the failure remains human-readable.")]
 	[AllureFeature(SectionUpdateToolName)]
 	[AllureTag(SectionUpdateToolName)]
 	[AllureName("Application section update reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call application-section-update with an unknown environment name and verifies that the tool returns a structured readable error envelope.")]
+	[AllureDescription("Uses the real clio MCP server to call update-app-section with an unknown environment name and verifies that the tool returns a structured readable error envelope.")]
 	public async Task ApplicationSectionUpdate_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -77,20 +77,20 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: $"structured application-section-update failures should be returned in the payload instead of as MCP invocation errors. Actual result: {JsonSerializer.Serialize(new { callResult.IsError, callResult.StructuredContent, callResult.Content })}");
+			because: $"structured update-app-section failures should be returned in the payload instead of as MCP invocation errors. Actual result: {JsonSerializer.Serialize(new { callResult.IsError, callResult.StructuredContent, callResult.Content })}");
 		response.Success.Should().BeFalse(
-			because: "application-section-update should fail when the requested environment does not exist");
+			because: "update-app-section should fail when the requested environment does not exist");
 		response.Error.Should().MatchRegex(
 			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
 			because: "the failure should explain that the requested environment is missing");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes application-section-update without mutable fields, and verifies that the tool returns a clear validation failure.")]
+	[Description("Starts the real clio MCP server, invokes update-app-section without mutable fields, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionUpdateToolName)]
 	[AllureTag(SectionUpdateToolName)]
 	[AllureName("Application section update rejects empty partial updates")]
-	[AllureDescription("Uses the real clio MCP server to call application-section-update without any mutable fields and verifies that the failure explains the partial-update contract.")]
+	[AllureDescription("Uses the real clio MCP server to call update-app-section without any mutable fields and verifies that the failure explains the partial-update contract.")]
 	public async Task ApplicationSectionUpdate_Should_Reject_Request_Without_Mutable_Fields() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -125,12 +125,12 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 	[AllureFeature(SectionUpdateToolName)]
 	[AllureTag(SectionUpdateToolName)]
 	[AllureName("Application section update returns structured before-and-after readback data")]
-	[AllureDescription("Uses the real clio MCP server to discover a reachable sandbox environment and installed application, creates a temporary section, then verifies caption repair and icon-only updates through application-section-update.")]
+	[AllureDescription("Uses the real clio MCP server to discover a reachable sandbox environment and installed application, creates a temporary section, then verifies caption repair and icon-only updates through update-app-section.")]
 	public async Task ApplicationSectionUpdate_Should_Return_Structured_Readback_Data() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		if (!settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run application-section-update end-to-end tests.");
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run update-app-section end-to-end tests.");
 		}
 
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -152,7 +152,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 				["ping-app", "-e", fallbackEnvironmentName]);
 			if (fallbackPingResult.ExitCode != 0) {
 				Assert.Ignore(
-					$"application-section-update MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
+					$"update-app-section MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
 			}
 
 			environmentName = fallbackEnvironmentName;
@@ -162,13 +162,13 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
 		tools.Select(tool => tool.Name).Should().Contain(ListToolName,
-			because: "application-get-list must be available for the end-to-end section-update setup");
+			because: "list-apps must be available for the end-to-end section-update setup");
 		tools.Select(tool => tool.Name).Should().Contain(InfoToolName,
-			because: "application-get-info must be available for the end-to-end section-update flow");
+			because: "get-app-info must be available for the end-to-end section-update flow");
 		tools.Select(tool => tool.Name).Should().Contain(SectionCreateToolName,
-			because: "application-section-create must be available for destructive section-update setup");
+			because: "create-app-section must be available for destructive section-update setup");
 		tools.Select(tool => tool.Name).Should().Contain(SectionUpdateToolName,
-			because: "application-section-update must be available for the end-to-end mutation flow");
+			because: "update-app-section must be available for the end-to-end mutation flow");
 		CallToolResult listCallResult = await session.CallToolAsync(
 			ListToolName,
 			new Dictionary<string, object?> {
@@ -248,7 +248,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 
 		// Assert
 		sectionUpdateCallResult.IsError.Should().NotBeTrue(
-			because: $"a valid application-section-update request should return structured before-and-after readback data. Actual result: {JsonSerializer.Serialize(new { sectionUpdateCallResult.IsError, sectionUpdateCallResult.StructuredContent, sectionUpdateCallResult.Content })}");
+			because: $"a valid update-app-section request should return structured before-and-after readback data. Actual result: {JsonSerializer.Serialize(new { sectionUpdateCallResult.IsError, sectionUpdateCallResult.StructuredContent, sectionUpdateCallResult.Content })}");
 		sectionUpdateResponse.Success.Should().BeTrue(
 			because: "successful section-update should return the standard success envelope");
 		sectionUpdateResponse.ApplicationCode.Should().Be(targetApplication.Code,

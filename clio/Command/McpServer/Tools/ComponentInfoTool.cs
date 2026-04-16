@@ -16,7 +16,7 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class ComponentInfoTool(IComponentInfoCatalog catalog) {
 	private static readonly string[] CategoryOrder = ["containers", "fields", "interactive", "display"];
 
-	internal const string ToolName = "component-info";
+	internal const string ToolName = "get-component-info";
 
 	/// <summary>
 	/// Returns grouped component summaries or full metadata for a specific component type.
@@ -107,7 +107,7 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog) {
 }
 
 /// <summary>
-/// Arguments for the <c>component-info</c> MCP tool.
+/// Arguments for the <c>get-component-info</c> MCP tool.
 /// </summary>
 public sealed record ComponentInfoArgs(
 	[property: JsonPropertyName("component-type")]
@@ -120,7 +120,7 @@ public sealed record ComponentInfoArgs(
 );
 
 /// <summary>
-/// Structured response from the <c>component-info</c> MCP tool.
+/// Structured response from the <c>get-component-info</c> MCP tool.
 /// </summary>
 public sealed class ComponentInfoResponse {
 	/// <summary>
@@ -213,7 +213,7 @@ public sealed class ComponentInfoResponse {
 }
 
 /// <summary>
-/// Grouped list response entry for the <c>component-info</c> tool.
+/// Grouped list response entry for the <c>get-component-info</c> tool.
 /// </summary>
 public sealed class ComponentInfoGroup {
 	/// <summary>

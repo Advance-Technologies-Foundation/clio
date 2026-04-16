@@ -8,6 +8,7 @@ using System.Linq;
 
 namespace Clio.Tests.Command;
 
+[Property("Module", "Command")]
 public class WindowsFeatureManagerTestFixture : BaseClioModuleTests
 {
 

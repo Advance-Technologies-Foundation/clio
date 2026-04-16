@@ -7,8 +7,9 @@ using NUnit.Framework;
 namespace Clio.Tests.Common.db;
 
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
-[Category("UnitTests")]
+[Category("Unit")]
 [TestFixture]
+[Property("Module", "Common")]
 public class BackupFileDetectorTests
 {
 	private IFileSystem _fileSystem;

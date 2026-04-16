@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -433,6 +434,69 @@ public sealed class EntitySchemaToolE2ETests {
 			"unknown environment names should fail before remote lookup creation starts");
 	}
 
+	[Test]
+	[Description("Returns structured schema search results that already include package-name for follow-up MCP calls.")]
+	[AllureTag(FindEntitySchemaTool.FindEntitySchemaToolName)]
+	[AllureName("Find entity schema returns structured package ownership")]
+	[AllureDescription("Uses the real MCP server to call find-entity-schema against the configured sandbox environment and verifies the structured response already contains package-name, package-maintainer, and schema-name fields so agents do not need a follow-up list-packages call.")]
+	public async Task FindEntitySchema_Should_Return_Structured_Package_Ownership() {
+		// Arrange
+		await using SandboxFindEntitySchemaArrangeContext arrangeContext = await ArrangeSandboxFindEntitySchemaAsync();
+
+		// Act
+		CallToolResult callResult = await CallFindEntitySchemaAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			schemaName: "Contact",
+			cancellationToken: arrangeContext.CancellationTokenSource.Token);
+		EntitySchemaSearchResult[] results = EntitySchemaStructuredResultParser.Extract<EntitySchemaSearchResult[]>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "find-entity-schema should return structured MCP data for a valid sandbox environment");
+		results.Should().NotBeEmpty(
+			because: "the sandbox environment should expose the Contact schema for exact lookup");
+		results.Should().Contain(result =>
+				string.Equals(result.SchemaName, "Contact", StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrWhiteSpace(result.PackageName)
+				&& result.PackageMaintainer != null,
+			because: "find-entity-schema should return package-name and package-maintainer directly so callers can chain follow-up MCP requests without list-packages");
+	}
+
+	[Test]
+	[Description("Reports a readable failure when find-entity-schema is invoked with an unknown environment name.")]
+	[AllureTag(FindEntitySchemaTool.FindEntitySchemaToolName)]
+	[AllureName("Find entity schema reports invalid environment failures")]
+	[AllureDescription("Uses the real MCP server to call find-entity-schema with a guaranteed-missing environment name and verifies the failure is surfaced to the caller.")]
+	public async Task FindEntitySchema_Should_Report_Invalid_Environment() {
+		// Arrange
+		await using InvalidEnvironmentArrangeContext arrangeContext = await ArrangeInvalidEnvironmentAsync();
+
+		// Act
+		CallToolResult callResult = await CallFindEntitySchemaAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			schemaName: "Contact",
+			cancellationToken: arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		AssertTopLevelFailure(callResult, arrangeContext.EnvironmentName,
+			"unknown environment names should be reported before any schema search is executed");
+	}
+
+	[AllureStep("Arrange sandbox MCP session for non-destructive find-entity-schema checks")]
+	private static async Task<SandboxFindEntitySchemaArrangeContext> ArrangeSandboxFindEntitySchemaAsync() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		TestConfiguration.EnsureSandboxIsConfigured(settings);
+		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
+		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		return new SandboxFindEntitySchemaArrangeContext(
+			settings.Sandbox.EnvironmentName!,
+			session,
+			cancellationTokenSource);
+	}
+
 	[AllureStep("Arrange sandbox package and MCP session for entity schema tools")]
 	private static async Task<EntitySchemaArrangeContext> ArrangeSandboxPackageAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -780,6 +844,30 @@ public sealed class EntitySchemaToolE2ETests {
 					["columns"] = columns
 				}
 			},
+			cancellationToken);
+	}
+
+	private static async Task<CallToolResult> CallFindEntitySchemaAsync(
+		McpServerSession session,
+		string environmentName,
+		CancellationToken cancellationToken,
+		string? schemaName = null,
+		string? searchPattern = null,
+		string? uid = null) {
+		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
+		tools.Select(tool => tool.Name).Should().Contain(FindEntitySchemaTool.FindEntitySchemaToolName,
+			because: "the find-entity-schema MCP tool must be advertised before the end-to-end call can be executed");
+
+		Dictionary<string, object?> args = new() {
+			["environment-name"] = environmentName
+		};
+		if (schemaName != null) args["schema-name"] = schemaName;
+		if (searchPattern != null) args["search-pattern"] = searchPattern;
+		if (uid != null) args["uid"] = uid;
+
+		return await session.CallToolAsync(
+			FindEntitySchemaTool.FindEntitySchemaToolName,
+			new Dictionary<string, object?> { ["args"] = args },
 			cancellationToken);
 	}
 
@@ -1212,6 +1300,16 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	private sealed record InvalidEnvironmentArrangeContext(
+		string EnvironmentName,
+		McpServerSession Session,
+		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
+		public async ValueTask DisposeAsync() {
+			await Session.DisposeAsync();
+			CancellationTokenSource.Dispose();
+		}
+	}
+
+	private sealed record SandboxFindEntitySchemaArrangeContext(
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {

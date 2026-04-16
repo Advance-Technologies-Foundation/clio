@@ -154,25 +154,6 @@ get_next_version() {
     echo "$major.$minor.$patch.$next_build"
 }
 
-update_project_version() {
-    local version=$1
-    local csproj_path="clio/clio.csproj"
-    
-    if [[ ! -f "$csproj_path" ]]; then
-        echo -e "${YELLOW}⚠️  Warning: Could not find $csproj_path${NC}"
-        return 1
-    fi
-    
-    # Use sed to update the AssemblyVersion
-    if sed -i.bak "s|<AssemblyVersion Condition=\"[^\"]*\">[^<]*</AssemblyVersion>|<AssemblyVersion Condition=\"'\$(AssemblyVersion)' == ''\">$version</AssemblyVersion>|g" "$csproj_path"; then
-        rm -f "$csproj_path.bak"
-        echo -e "${GREEN}✅ Updated version in $csproj_path to $version${NC}"
-        return 0
-    else
-        echo -e "${RED}❌ Error updating version in $csproj_path${NC}"
-        return 1
-    fi
-}
 
 create_release_tag() {
     local version=$1
@@ -188,10 +169,6 @@ create_release_tag() {
             return 1
         fi
     fi
-    
-    # Update project version first
-    echo -e "${CYAN}🔧 Step 4: Updating project version...${NC}"
-    update_project_version "$version"
     
     # Create tag
     if ! git tag "$version"; then

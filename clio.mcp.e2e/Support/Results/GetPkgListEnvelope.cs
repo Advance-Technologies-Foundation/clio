@@ -21,7 +21,7 @@ internal static class GetPkgListResultParser {
 			return contentEnvelopes!;
 		}
 
-		throw new InvalidOperationException("Could not parse get-pkg-list MCP result.");
+		throw new InvalidOperationException("Could not parse list-packages MCP result.");
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element) {

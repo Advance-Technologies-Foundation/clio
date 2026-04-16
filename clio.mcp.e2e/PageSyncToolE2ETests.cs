@@ -20,11 +20,11 @@ using NUnit.Framework;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the page-sync composite MCP tool.
+/// End-to-end tests for the sync-pages composite MCP tool.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
-[AllureFeature("page-sync")]
+[AllureFeature("sync-pages")]
 [NonParallelizable]
 public sealed class PageSyncToolE2ETests {
 
@@ -39,10 +39,10 @@ public sealed class PageSyncToolE2ETests {
 		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 	[Test]
-	[Description("Advertises page-sync MCP tool in the server tool list so callers can discover and invoke it.")]
+	[Description("Advertises sync-pages MCP tool in the server tool list so callers can discover and invoke it.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-sync tool is advertised by the MCP server")]
-	[AllureDescription("Verifies that page-sync appears in the MCP server tool manifest.")]
+	[AllureName("sync-pages tool is advertised by the MCP server")]
+	[AllureDescription("Verifies that sync-pages appears in the MCP server tool manifest.")]
 	public async Task PageSyncTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync();
@@ -53,17 +53,17 @@ public sealed class PageSyncToolE2ETests {
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "page-sync must be advertised so MCP clients can discover the composite tool");
+			because: "sync-pages must be advertised so MCP clients can discover the composite tool");
 	}
 
 	[Test]
-	[Description("Reports readable failures when page-sync is called with an invalid environment name.")]
+	[Description("Reports readable failures when sync-pages is called with an invalid environment name.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-sync reports invalid environment failures")]
-	[AllureDescription("Starts the real clio MCP server, invokes page-sync with an unknown environment name, and verifies that the failure stays human-readable.")]
+	[AllureName("sync-pages reports invalid environment failures")]
+	[AllureDescription("Starts the real clio MCP server, invokes sync-pages with an unknown environment name, and verifies that the failure stays human-readable.")]
 	public async Task PageSyncTool_Should_Report_Invalid_Environment_Failure() {
 		await using ArrangeContext context = await ArrangeAsync();
-		string invalidEnvironmentName = $"missing-page-sync-env-{Guid.NewGuid():N}";
+		string invalidEnvironmentName = $"missing-sync-pages-env-{Guid.NewGuid():N}";
 
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			ToolName,
@@ -89,7 +89,7 @@ public sealed class PageSyncToolE2ETests {
 		});
 
 		(callResult.IsError == true || structuredFailure).Should().BeTrue(
-			because: "page-sync should fail when the requested environment does not exist");
+			because: "sync-pages should fail when the requested environment does not exist");
 		serializedCallResult.Should().MatchRegex(
 			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found|error occurred invoking)",
 			because: "the failure should explain that the requested environment is missing");
@@ -98,18 +98,18 @@ public sealed class PageSyncToolE2ETests {
 	[Test]
 	[Description("Rejects an invalid page body through the real MCP server before any remote save is attempted.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-sync rejects invalid body during client-side validation")]
-	[AllureDescription("Uses a reachable sandbox environment, sends an invalid page body through page-sync, and verifies that validation fails without requiring a real page save.")]
+	[AllureName("sync-pages rejects invalid body during client-side validation")]
+	[AllureDescription("Uses a reachable sandbox environment, sends an invalid page body through sync-pages, and verifies that validation fails without requiring a real page save.")]
 	public async Task PageSyncTool_Should_Reject_Invalid_Page_Body_When_Validation_Is_Enabled() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run page-sync validation E2E.");
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages validation E2E.");
 		}
 
 		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"page-sync validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+			Assert.Ignore($"sync-pages validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
 		}
 
 		await using ArrangeContext context = await ArrangeAsync();
@@ -149,17 +149,17 @@ public sealed class PageSyncToolE2ETests {
 	[Test]
 	[Description("Keeps JavaScript handlers out of JSON content validation failures.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-sync ignores handler JavaScript during content validation")]
+	[AllureName("sync-pages ignores handler JavaScript during content validation")]
 	[AllureDescription("Uses a reachable sandbox environment, sends a page body with JavaScript handlers plus a malformed JSON-backed marker, and verifies that validation reports the real JSON marker instead of the handler block.")]
 	public async Task PageSyncTool_Should_Not_Report_Handler_Marker_As_Invalid_Json() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run page-sync validation E2E.");
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages validation E2E.");
 		}
 		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"page-sync validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+			Assert.Ignore($"sync-pages validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
 		}
 
 		await using ArrangeContext context = await ArrangeAsync();
@@ -192,7 +192,7 @@ public sealed class PageSyncToolE2ETests {
 		response.Success.Should().BeFalse(
 			because: "the malformed JSON-backed marker should still fail validation");
 		response.Pages[0].Validation.Should().NotBeNull(
-			because: "page-sync should return validation details for the rejected body");
+			because: "sync-pages should return validation details for the rejected body");
 		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
 			because: "viewConfigDiff contains invalid JSON-like content");
 		response.Pages[0].Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
@@ -204,17 +204,17 @@ public sealed class PageSyncToolE2ETests {
 	[Test]
 	[Description("Rejects proxy standard field bindings through the real MCP server before any remote save is attempted.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-sync rejects proxy field bindings during semantic validation")]
+	[AllureName("sync-pages rejects proxy field bindings during semantic validation")]
 	[AllureDescription("Uses a reachable sandbox environment, sends a page body with a standard field bound through a proxy Usr attribute, and verifies that semantic validation blocks the save with a structured response.")]
 	public async Task PageSyncTool_Should_Reject_Proxy_Field_Bindings_Before_Save() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run page-sync semantic validation E2E.");
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages semantic validation E2E.");
 		}
 		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"page-sync semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
 		}
 
 		await using ArrangeContext context = await ArrangeAsync();
@@ -270,7 +270,7 @@ public sealed class PageSyncToolE2ETests {
 	private static async Task<ArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-page-sync-e2e-{Guid.NewGuid():N}");
+		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-sync-pages-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(rootDirectory);
 		string workspaceName = $"workspace-{Guid.NewGuid():N}";
 		string workspacePath = Path.Combine(rootDirectory, workspaceName);

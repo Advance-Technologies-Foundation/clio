@@ -35,9 +35,17 @@ internal static class ClioCliCommandRunner {
 
 		using Process process = new() { StartInfo = startInfo };
 		process.Start();
-		Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-		Task<string> stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-		await process.WaitForExitAsync(cancellationToken);
+		Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
+		Task<string> stderrTask = process.StandardError.ReadToEndAsync(CancellationToken.None);
+		try {
+			await process.WaitForExitAsync(cancellationToken);
+		} catch (OperationCanceledException) {
+			if (!process.HasExited) {
+				process.Kill(entireProcessTree: true);
+				await process.WaitForExitAsync(CancellationToken.None);
+			}
+			throw;
+		}
 
 		return new ClioCliCommandResult(
 			process.ExitCode,
@@ -72,7 +80,7 @@ internal static class ClioCliCommandRunner {
 
 		ClioCliCommandResult getPkgListResult = await RunAsync(
 			settings,
-			["get-pkg-list", "-e", environmentName, "--Json", "true"],
+			["list-packages", "-e", environmentName, "--Json", "true"],
 			cancellationToken: cancellationToken);
 		bool cliogateAlreadyAvailable =
 			getPkgListResult.ExitCode == 0 &&
@@ -80,7 +88,7 @@ internal static class ClioCliCommandRunner {
 			success;
 		cliogateAlreadyAvailable.Should().BeTrue(
 			because:
-			$"the arrange step must either install cliogate successfully or confirm that get-pkg-list already works. install stderr: {installResult.StandardError}. install stdout: {installResult.StandardOutput}. verification stdout: {getPkgListResult.StandardOutput}. verification stderr: {getPkgListResult.StandardError}");
+			$"the arrange step must either install cliogate successfully or confirm that list-packages already works. install stderr: {installResult.StandardError}. install stdout: {installResult.StandardOutput}. verification stdout: {getPkgListResult.StandardOutput}. verification stderr: {getPkgListResult.StandardError}");
 		await WaitForCliogateReadinessAsync(settings, environmentName, cancellationToken);
 	}
 
@@ -92,7 +100,7 @@ internal static class ClioCliCommandRunner {
 		for (int attempt = 0; attempt < CliogateReadinessAttempts; attempt++) {
 			lastResult = await RunAsync(
 				settings,
-				["get-pkg-list", "-e", environmentName, "--Json", "true"],
+				["list-packages", "-e", environmentName, "--Json", "true"],
 				cancellationToken: cancellationToken);
 			if (lastResult.ExitCode == 0 &&
 				TryReadSuccessFlag(lastResult.StandardOutput, out bool success) &&
@@ -112,7 +120,7 @@ internal static class ClioCliCommandRunner {
 			$"cliogate should become ready before destructive MCP tests proceed. stdout: {lastResult.StandardOutput}. stderr: {lastResult.StandardError}");
 		TryReadSuccessFlag(lastResult.StandardOutput, out bool finalSuccess).Should().BeTrue(
 			because:
-			$"cliogate readiness polling should end only after get-pkg-list reports success. stdout: {lastResult.StandardOutput}. stderr: {lastResult.StandardError}");
+			$"cliogate readiness polling should end only after list-packages reports success. stdout: {lastResult.StandardOutput}. stderr: {lastResult.StandardError}");
 		finalSuccess.Should().BeTrue(
 			because:
 			$"cliogate should become ready before destructive MCP tests proceed. stdout: {lastResult.StandardOutput}. stderr: {lastResult.StandardError}");

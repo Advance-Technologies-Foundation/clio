@@ -13,6 +13,7 @@ namespace Clio.Tests;
 
 [TestFixture]
 [NonParallelizable]
+[Property("Module", "Core")]
 internal class CommonProgramTest : BaseClioModuleTests{
 	private TextWriter _originalConsoleError;
 	private TextWriter _originalConsoleOut;
@@ -248,9 +249,9 @@ internal class CommonProgramTest : BaseClioModuleTests{
 			because: "the expanded unknown-command UX should show up to ten command suggestions when enough matches exist");
 		suggestionLines.Should().Equal(suggestionLines.OrderBy(line => line, StringComparer.Ordinal).ToArray(),
 			because: "the rendered suggestion list should now be sorted alphabetically for easier scanning");
-		suggestionLines.Should().Contain("  clio get-app-list",
+		suggestionLines.Should().Contain("  clio list-apps",
 			because: "the closest visible list command should be suggested");
-		suggestionLines.Should().Contain("  clio get-pkg-list",
+		suggestionLines.Should().Contain("  clio list-packages",
 			because: "commands sharing the same get/list intent should be suggested");
 		outputLines.Should().Contain("See all commands: clio help",
 			because: "the user should get a generic recovery path after an unknown command");
@@ -273,7 +274,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 			.Where(line => line.StartsWith("  clio ", StringComparison.Ordinal))
 			.ToArray();
 
-		suggestionLines.Should().Contain("  clio show-web-app-list",
+		suggestionLines.Should().Contain("  clio list-environments",
 			because: "alias similarity should still surface the environment listing command while output stays canonical");
 		suggestionLines.Should().Equal(suggestionLines.OrderBy(line => line, StringComparer.Ordinal).ToArray(),
 			because: "alias-driven suggestions should follow the same alphabetical rendering as every other unknown command");

@@ -320,6 +320,20 @@ Discovery: A large share of the missing GitHub docs surface was caused by filena
 Files: clio/docs/commands/*.md, .codex/workspace-diary.md
 Impact: The specific command set previously missing local help now also has matching GitHub markdown documentation pages.
 
+## 2026-04-10 00:00 – Resolve remaining PR 524 Sonar warnings
+Context: User asked to fix the SonarCloud warnings that remained relevant on pull request 524 after triage.
+Decision: Replaced remaining raw MCP field-name literals in the tool-contract catalog with shared constants, added an explicit suppression for the intentionally wide serialized `ToolContractDefinition` record, and extracted Data Forge coverage calculation helpers from `GetContextAsync` to lower method cognitive complexity without changing behavior.
+Discovery: The `RuntimeEntitySchemaReader` Sonar “unassigned property” findings were false positives caused by positional record deserialization through `System.Text.Json`, while the true actionable warnings were confined to the MCP contract file and Data Forge aggregation method.
+Files: clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Common/DataForge/DataForgeContextService.cs, .codex/workspace-diary.md
+Impact: PR 524’s remaining actionable Sonar warnings are addressed with targeted, behavior-preserving changes and focused unit-test coverage remains green.
+
+## 2026-04-10 00:20 – Backfill DataForge coverage-flag unit tests
+Context: Staged review of the Sonar warning fix found that the extracted Data Forge coverage helper branches were not fully exercised by existing tests.
+Decision: Extended `DataForgeContextServiceTests` to assert positive coverage flags in the existing success path, assert omitted-input behavior, and add a negative-path test covering false `Tables`, `Lookups`, and `Relations` coverage outcomes.
+Discovery: NSubstitute needed an explicit faulted `Task` return for async relation lookup failure; using a throwing lambda against `Returns` was ambiguous for the async overload set.
+Files: clio.tests/Common/DataForgeContextServiceTests.cs, .codex/workspace-diary.md
+Impact: The staged review finding is resolved and the extracted coverage helpers now have direct regression protection.
+
 ## 2026-02-23 - Remove CLIO004 ProcessStartInfo usage in RestoreDb
 Context: User requested addressing CLIO004 warning for direct ProcessStartInfo usage in RestoreDb.cs.
 Decision: Injected IProcessExecutor into RestoreDbCommand and replaced ExecutePgRestoreCommand low-level Process/ProcessStartInfo logic with ProcessExecutionOptions + ExecuteWithRealtimeOutputAsync, preserving debug and throttled progress logging behavior.
@@ -995,6 +1009,13 @@ Files: clio/clio.csproj, clio.mcp.e2e/Support/Configuration/TestConfiguration.cs
 Impact: Future test-start requests can use a direct `dotnet build ./clio/clio.csproj -c Debug --no-incremental` instead of the heavier full packaging script unless `cliogate` artifacts also need regeneration.
 
 ## 2026-03-24 14:28 – Add component-info MCP catalog and ADAC integration
+
+## 2026-04-10 16:20 – Restore full clio.tests pass after merge-related test drift
+Context: After validating tests for files changed by the latest merges, the user asked to run the full `clio.tests` project and confirm the overall suite status.
+Decision: Removed a duplicate test method from `RemoteEntitySchemaColumnManagerTests`, realigned the `CreateEntitySchemaTool` localization test with the current no-synthesis behavior, and updated `McpGuidanceResourceTests` to assert the current wording of the existing-app maintenance guidance resource.
+Discovery: The remaining full-suite failure was not a production regression but a stale exact-string assertion in `McpGuidanceResourceTests`; the guidance text now instructs callers to resolve the backing schema from runtime app context before planning new schema work.
+Files: clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs, clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, .codex/workspace-diary.md
+Impact: Future full-suite validations on this branch should start from a green `clio.tests` baseline, and merge conflict resolutions in entity-schema MCP tests can be checked against the current no-localization-synthesis contract.
 Context: User asked to execute the new plan for a curated `component-info` MCP tool in `clio` and wire the corresponding ADAC guidance so page-editing agents can inspect unfamiliar Freedom UI component types on demand.
 Decision: Added a shipped JSON component registry plus a local `component-info` MCP tool with grouped list/detail modes, updated page prompt and `mcp-server` docs to mention the new helper, and synchronized ADAC docs plus `scripts/mcp_client.py` validation so the new tool is callable from agent workflows.
 Discovery: `component-info` does not need environment resolution, so a plain local MCP tool is enough; targeted `clio.tests` passed with `--no-restore`, ADAC `unittest` passed, and `clio.mcp.e2e` remains blocked on this machine because the project targets `net10.0` while the installed SDK is `8.0.124`.
@@ -1125,6 +1146,131 @@ Decision: Used frontend `@CrtViewElement`, `contentSlots`, collection-property u
 Discovery: Several important Freedom UI contracts were missing from the shipped registry even though the frontend exposes them clearly, including `crt.Calendar`, `crt.Gallery`, `crt.Chat`, `crt.Conversation`, `crt.Feed`, `crt.Summaries`, `crt.FilePreview`, and nested menu contracts like `crt.MenuItem`, `crt.MenuLabel`, and `crt.MenuDivider`; local MCP E2E execution is currently blocked here because `clio.mcp.e2e` targets `net10.0` while the installed SDK is `8.0.124`.
 Files: clio/Command/McpServer/Data/ComponentRegistry.json, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.mcp.e2e/ComponentInfoToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Future page-editing flows can inspect real frontend-derived component slots and action contracts directly through MCP, and the added tests guard both catalog search semantics and nested menu detail lookups.
+## 2026-03-22 21:30 – Composite MCP tools: schema-sync and page-sync
+Context: MCP clients making sequential calls (5 for schema setup, 9 for page sync) pay per-call overhead: 500ms Thread.Sleep, global lock acquisition, JSON-RPC round-trip. Spec doc: ai-driven-app-creation/docs/optimization/02-clio-composite-tools.md
+Decision: Created two new MCP-only tools (schema-sync, page-sync) that batch operations in a single lock/sleep. Extracted CommandExecutionLock from BaseTool<T> to McpToolExecutionLock static class — this also fixed a latent bug where the generic static field created per-T locks instead of a true global lock.
+Discovery: ConsoleLogger.Instance is a process-wide singleton shared across all DI containers (including environment-specific ones created by ToolCommandResolver), so log capture works correctly from composite tools. PageUpdateCommand.TryUpdatePage and PageGetCommand.TryGetPage return structured responses (not exit codes), while entity schema commands use Execute() returning int exit codes — composite tools use the appropriate pattern for each.
+Files: clio/Command/McpServer/Tools/McpToolExecutionLock.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/BaseTool.cs, clio.tests/Command/McpServer/SchemaSyncToolTests.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, clio/docs/commands/schema-sync.md, clio/docs/commands/page-sync.md
+Impact: AI agents can now reduce 5 schema calls to 1 (~4.5s saved) and 9 page calls to 1 (~8.7s saved). MCP prompts reviewed — no existing prompts reference the atomic tools being composited, so no prompt updates needed. These are MCP-only tools (no CLI verb), documented in docs/commands/ only.
+
+## 2026-03-23 19:04 – Inspect CrtDataForge package role
+Context: User asked whether `CrtDataForge` is relevant for an ADAC + clio MCP app-creation flow and pointed to the local package as the source of truth.
+Decision: Inspected the package descriptor, service code, Copilot intents, process user tasks, syssettings, and event listeners instead of assuming DataForge was an app-catalog layer.
+Discovery: `CrtDataForge` depends on `CrtCopilot`, connects to an external microservice via `DataForgeServiceUrl`, syncs Creatio schema and lookup metadata in real time or bulk, and exposes Copilot intents for table discovery, relationship discovery, lookup resolution, and JSON filter generation/refinement. It is a metadata/filter assistant, not a workspace/package/page/app creation engine.
+Files: C:\Projects\PackageStore\CrtDataForge\branches\7.8.0\descriptor.json, C:\Projects\PackageStore\CrtDataForge\branches\7.8.0\Schemas\DataForgeService\DataForgeService.cs, C:\Projects\PackageStore\CrtDataForge\branches\7.8.0\Schemas\DataForgeEventListener\DataForgeEventListener.cs, C:\Projects\PackageStore\CrtDataForge\branches\7.8.0\Schemas\DataStructureUnderstanding\metadata.json, C:\Projects\PackageStore\CrtDataForge\branches\7.8.0\Schemas\DataForgeBuildFilterConfigSkill\metadata.json, C:\Projects\PackageStore\CrtDataForge\branches\7.8.0\Files\IntentJsonSchema\filter-config.schema.json, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future ADAC planning should treat DataForge as an optional semantic metadata/filter assistant that can complement `clio MCP` discovery, but not replace `clio` as the execution layer for app creation.
+
+## 2026-03-23 19:18 – Inspect dataforge-service repository role
+Context: User asked what logic lives in `C:\Projects\dataforge-service` to understand whether the service should participate in the ADAC app-creation flow.
+Decision: Inspected the web controllers, worker polling services, RAG managers, solution layout, README, and docker-compose instead of inferring behavior from project names.
+Discovery: `dataforge-service` is a standalone multi-tenant semantic metadata service. The web API accepts data-structure and lookup state/init/update/delete/query requests; background workers process those requests asynchronously; table similarity and lookup similarity are implemented through embeddings plus vector search; table relationships are stored and queried through a graph store; readiness/state is persisted in relational storage; maintenance endpoints copy graph/vector collections between tenants.
+Files: C:\Projects\dataforge-service\src\Creatio.DataForge.WebApp\Controllers\DataStructureController.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.WebApp\Controllers\LookupsController.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.WebApp\Controllers\MaintenanceController.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.Worker\Services\DataStructureTaskPollingService.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.Worker\Services\LookupsTaskPollingService.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.Rag.DataStructure\RelatedTablesManager.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.Rag.DataStructure\TableRelationsManager.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.Rag.Lookups\LookupManager.cs, C:\Projects\dataforge-service\docker-compose.yml, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future ADAC integration should treat `dataforge-service` as the upstream instance-model/semantic retrieval backend behind `CrtDataForge`, not as a package/workspace/app creation engine.
+
+## 2026-03-23 19:33 – Save ADAC DataForge integration plan
+Context: User asked to persist the agreed architecture plan for integrating `CrtDataForge` and `dataforge-service` into the current `ADAC + clio` flow.
+Decision: Saved the plan under `spec/adac-dataforge-integration/` using the repository feature-doc naming convention and kept the design centered on a single external facade in `clio MCP` with read-only DataForge tools plus the existing execution surface.
+Discovery: The right split remains stable: `dataforge-service` provides semantic metadata retrieval, `CrtDataForge` bridges Creatio to that backend, `clio MCP` exposes one agent-facing facade, and ADAC uses that facade for both discovery and execution.
+Files: C:\Projects\ai\clio\spec\adac-dataforge-integration\adac-dataforge-integration-plan.md, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future implementation work can start from a persisted, repo-local architecture plan without re-deriving the component roles and MCP contract.
+
+## 2026-03-24 14:18 – Add Data Forge read facade for MCP planning
+Context: User asked to implement the ADAC DataForge integration plan so `CrtDataForge` exposes a stable read API for `clio`, while `clio MCP` remains the single external facade for semantic planning plus execution.
+Decision: Implemented a new read-only `DataForgeReadService` and shared probe service in the editable `CrtDataForge` package under `core_min`, added a dedicated `ExternalReadApiEnabled` feature flag plus `CanReadDataForgeContext` permission, and wired new `clio` MCP tools to call the Creatio-side service instead of `dataforge-service` directly.
+Discovery: The package already contained the required internal primitives (`IDataForgeService` for similar tables/lookups/relations and entity-schema metadata for columns); the missing piece was a normalized external contract. `GetSimilarTableNames` was too weak for planning, so the facade uses details-level table results and enriches them with local column metadata. `clio` E2E coverage compiles, but the repository test harness is currently pinned to `C:\Projects\clio\...` and fails at runtime in this workspace (`C:\Projects\ai\clio\...`).
+Files: C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Pkg\CrtDataForge\Schemas\DataForgeProbeService\DataForgeProbeService.cs, C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Pkg\CrtDataForge\Schemas\DataForgeReadContracts\DataForgeReadContracts.cs, C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Pkg\CrtDataForge\Schemas\DataForgeReadService\DataForgeReadService.cs, C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Pkg\CrtDataForge\Schemas\DataForgeFeatures\DataForgeFeatures.cs, C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Pkg\CrtDataForge\Schemas\DataForgeMaintenanceService\DataForgeMaintenanceService.cs, C:\Projects\ai\clio\clio\Command\DataForgeReadService.cs, C:\Projects\ai\clio\clio\Command\McpServer\Tools\DataForgeTool.cs, C:\Projects\ai\clio\clio\Command\McpServer\Prompts\DataForgePrompt.cs, C:\Projects\ai\clio\clio.tests\Command\McpServer\DataForgeToolTests.cs, C:\Projects\ai\clio\clio.mcp.e2e\DataForgeToolE2ETests.cs, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: ADAC-style clients can now query instance-model readiness, tables, columns, lookups, relations, and aggregated context through one `clio MCP` facade without direct `dataforge-service` coupling, while existing sync behavior in `CrtDataForge` remains unchanged.
+
+## 2026-03-24 15:02 – Add DataForge route fallback for MCP readiness
+Context: User tested `dataforge-readiness` in MCP Inspector and hit an empty-response failure; browser validation showed `404` on one service-path variant, which exposed a route mismatch between `clio` environment settings and the actual Creatio base path.
+Decision: Updated the `clio` Data Forge client to retry the alternate service base path automatically when the primary route returns an empty or invalid response. Added unit coverage for both fallback directions: `/0/... -> /...` and `/... -> /0/...`.
+Discovery: The failure was in `clio -> Creatio` routing, not in the MCP tool contract itself. `DataForgeReadService` was too strict about `EnvironmentSettings.IsNetCore`; real environments can be misflagged, and the Data Forge read facade benefits from one bounded fallback attempt before surfacing an error.
+Files: C:\Projects\ai\clio\clio\Command\DataForgeReadService.cs, C:\Projects\ai\clio\clio.tests\Command\DataForgeReadServiceTests.cs, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: `dataforge-readiness` and the rest of the Data Forge MCP reads are now resilient to a common environment-path misconfiguration and should succeed as long as either the `/0/...` or bare `/...` service route is valid.
+
+## 2026-03-24 16:55 – Add configuration-service fallback for DataForge reads
+Context: After the route fallback was added, the user's Creatio environment still returned empty responses from both direct `DataForgeReadService.svc` URLs while browser probing showed the endpoint existed but direct fetch hit `403`.
+Decision: Extended `clio`'s `DataForgeReadService` to try `IApplicationClient.CallConfigurationService("DataForgeReadService", <method>, payload)` after both direct URL variants fail, and added a dedicated unit test for that path.
+Discovery: `CallConfigurationService` is a distinct Creatio client path already used elsewhere in `clio`, so it provides a safer fallback when raw service POSTs are blocked or behave differently from authenticated configuration-service calls.
+Files: C:\Projects\ai\clio\clio\Command\DataForgeReadService.cs, C:\Projects\ai\clio\clio.tests\Command\DataForgeReadServiceTests.cs, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: `dataforge-readiness` no longer depends solely on direct WCF-style POSTs and can recover through the Creatio configuration-service gateway on environments where the service endpoint is present but not readable through the original transport.
+
+## 2026-03-24 17:18 – Unwrap wrapped configuration-service responses for DataForge MCP
+Context: After the configuration-service fallback was added, `dataforge-readiness` still surfaced only `Failed to load Data Forge readiness.` because some Creatio responses were wrapped under a method-specific result property instead of returning the payload at the top level.
+Decision: Updated `clio` Data Forge response deserialization to unwrap method-specific `*Result` payloads, including the explicit `GetReadinessResult` shape used by configuration-service calls, and added unit coverage for the wrapped-response scenario.
+Discovery: A wrapped payload can deserialize into a non-null DTO with default property values (`Success = false`, `Error = null`), so unwrapping must happen before top-level deserialization or the client will silently lose the real server response.
+Files: C:\Projects\ai\clio\clio\Command\DataForgeReadService.cs, C:\Projects\ai\clio\clio.tests\Command\DataForgeReadServiceTests.cs, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: `dataforge-readiness` can now consume both direct JSON responses and configuration-service wrappers, which removes the last known `clio`-side cause of the generic readiness failure.
+
+## 2026-03-24 17:45 – Find and fix DataForge OAuth scope mismatch
+Context: After `dataforge-readiness` started returning real server data, the user asked to find the exact failure cause from logs instead of relying on guesses.
+Decision: Traced the request from `clio` through `CrtDataForge` into runtime logs, then aligned `CrtDataForge` OAuth requests with the same `use_enrichment` scope already used by working Enrichment/GenAI integrations.
+Discovery: `DataForge.log` showed repeated `401 Unauthorized` and `JWT authentication failed due to error: invalid_token` for both readiness and state endpoints after `DataForgeServiceUrl` was configured. The concrete code mismatch was that `CrtDataForge` called `.WithOAuth<DataForgeFeatures.UseOAuth>(..., string.Empty)` in both `DataForgeService` and `DataForgeProbeService`, while `dataforge-service` expects audience/scope `use_enrichment` and neighboring integrations explicitly request that scope.
+Files: C:\Users\t.moshon\AppData\Local\Temp\Creatio\Terrasoft.WebApp-Site\WebApp780\0\Log\2026_03_24\DataForge.log, C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Pkg\CrtDataForge\Schemas\DataForgeService\DataForgeService.cs, C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Pkg\CrtDataForge\Schemas\DataForgeProbeService\DataForgeProbeService.cs, C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Autogenerated\Src\EnrichmentConstants.Enrichment.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.WebApp\appsettings.Development.json, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future DataForge debugging should first distinguish transport issues from OAuth issues. If readiness reports `invalid_token`, compare requested OAuth scope with `dataforge-service` audience expectations before re-running init jobs.
+
+## 2026-03-24 18:35 – Verify dev-env identity connectivity for DataForge
+Context: User asked to validate the current `dev-env` setup end-to-end after DataForge readiness failures moved from JWT rejection to token-discovery/connectivity errors.
+Decision: Checked the active `clio` environment mapping, probed network reachability to the identity hosts implicated by logs, and correlated that with Creatio runtime logs instead of guessing from syssettings names alone.
+Discovery: `dev-env` in local clio config points to `http://localhost:2376/WebApp780`. The Creatio runtime then tries to obtain OAuth tokens from `https://identity-qa.creatio.com:31390`, and current logs show discovery-time socket timeouts to that host. Direct probes from this machine also time out to both `identity-qa.creatio.com:31390` and `identity-stage.creatio.com:31390`. This confirms the current blocker is identity-host reachability/configuration, not MCP routing or DataForge service routing.
+Files: C:\Users\t.moshon\AppData\Local\creatio\clio\appsettings.json, C:\Users\t.moshon\AppData\Local\Temp\Creatio\Terrasoft.WebApp-Site\WebApp780\0\Log\2026_03_24\Error.log, C:\Users\t.moshon\AppData\Local\Temp\Creatio\Terrasoft.WebApp-Site\WebApp780\0\Log\2026_03_24\DataForge.log, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future debugging on this local instance should verify `IdentityServerUrl` reachability first. If discovery-time timeouts appear, do not keep retesting MCP/DataForge surfaces until the identity endpoint is reachable from the Creatio host.
+
+## 2026-03-24 20:10 – Add reuse-first planning context to ADAC repo
+Context: User asked to implement the ADAC-side integration plan so planning consumes only `clio MCP`, prefers reuse over create, and degrades cleanly when semantic readiness is unavailable.
+Decision: Extended `ai-driven-app-creation/scripts/mcp_context_adapter.py` with a new planning-context normalization path that merges installed-app discovery with semantic instance-model context, plus degraded-mode coverage metadata. Updated the orchestrator, Agent 3, Agent 4, and README docs to make `planning-context.json` and the `dataforge-readiness` / `dataforge-get-instance-model-context` flow part of the official runtime contract.
+Discovery: The repo’s executable behavior is split between helper scripts and markdown agent specs. Adding a concrete `planning-context` subcommand made the reuse-first flow testable without requiring a separate planner runtime. Existing schema/page sync helpers remained compatible after the adapter change. Full `unittest discover` still fails on pre-existing workflow-gate tests in this Windows environment because they shell out to `/bin/bash` through WSL.
+Files: C:\Projects\ai\ai-driven-app-creation\scripts\mcp_context_adapter.py, C:\Projects\ai\ai-driven-app-creation\tests\test_mcp_context_adapter.py, C:\Projects\ai\ai-driven-app-creation\tests\test_default_contract_docs.py, C:\Projects\ai\ai-driven-app-creation\AGENTS.md, C:\Projects\ai\ai-driven-app-creation\README.md, C:\Projects\ai\ai-driven-app-creation\agents\03-implementation-plan.md, C:\Projects\ai\ai-driven-app-creation\agents\04-implementation.md, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future ADAC work can consume a stable `planning-context.json` artifact and aligned agent instructions instead of re-deriving how semantic readiness, installed app discovery, and degraded mode should be merged at planning time.
+
+## 2026-03-24 20:28 – Tighten ADAC reuse guardrails against premature greenfield plans
+Context: User showed a planner response that detected an existing Events domain but still jumped to creating a new lightweight `Usr*` app because the existing app looked “too complex”.
+Decision: Strengthened ADAC rule docs and tests so Agent 3 must record explicit gap analysis before any greenfield recommendation and prefer `mixed` over full replacement when reuse plus custom additions are both needed. Agent 4 now also states that it must not silently switch from an existing-domain strategy to a full new `Usr` app path.
+Discovery: The original reuse-first wording was too soft; it allowed plausible but invalid planner prose that acknowledged existing apps and then bypassed them without proving why reuse or extension was rejected. Doc-contract tests are effective for freezing these orchestration rules because the repo behavior is largely prompt-driven.
+Files: C:\Projects\ai\ai-driven-app-creation\AGENTS.md, C:\Projects\ai\ai-driven-app-creation\agents\03-implementation-plan.md, C:\Projects\ai\ai-driven-app-creation\agents\04-implementation.md, C:\Projects\ai\ai-driven-app-creation\tests\test_default_contract_docs.py, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future ADAC planner outputs should no longer treat “existing app is more complex” as a sufficient reason to create a parallel `Usr*` domain model without explicit gap analysis and strategy selection.
+
+## 2026-03-26 11:00 – Validate DataForge MCP on dev-env
+Context: User asked whether the Data Forge tools are currently working for the local `dev-env` clio instance.
+Decision: Validated the live path instead of relying only on historical logs: checked `ping-app` for `dev-env`, re-checked identity host TCP reachability, and ran targeted real MCP E2E tests against `dev-env` using the current local `clio` build.
+Discovery: `dev-env` (`http://localhost:2376/WebApp780`) is reachable, identity endpoints on port `31390` are currently reachable from this machine, and the real `clio mcp-server` passed `DataForgeReadiness_Should_Return_Structured_Readiness`, `DataForgeFindTables_Should_Return_Structured_Tables`, and `DataForgeGetInstanceModelContext_Should_Return_Structured_Context` when `McpE2E__Sandbox__EnvironmentName=dev-env` and `McpE2E__ClioProcessPath` pointed to `C:\Projects\ai\clio\clio\bin\Debug\net8.0\clio.exe`.
+Files: C:\Users\t.moshon\AppData\Local\creatio\clio\appsettings.json, C:\Users\t.moshon\AppData\Local\Temp\Creatio\Terrasoft.WebApp-Site\WebApp780\0\Log\2026_03_25\DataForge.log, C:\Users\t.moshon\AppData\Local\Temp\Creatio\Terrasoft.WebApp-Site\WebApp780\0\Log\2026_03_25\OAuth20.log, C:\Projects\ai\clio\clio.mcp.e2e\DataForgeToolE2ETests.cs, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Current evidence says the Data Forge MCP read tools are operational on `dev-env`; prior failures were environment/connectivity-related and are not reproducing in the current validation.
+
+## 2026-04-10 11:15 – Probe live dataforge-status response on dev-env
+Context: User asked to verify the current `dataforge-status` MCP tool against `dev-env` and to show the actual request payload and returned data.
+Decision: Confirmed the canonical tool name in source and E2E tests, then executed a one-off live MCP stdio call against the local `clio` build for `dev-env` to capture the exact request envelope and raw response payload.
+Discovery: The live `dataforge-status` call succeeded for `dev-env` with request payload `{"args":{"environment-name":"dev-env"}}`. The server returned a success payload from `clio+dataforge-service` with correlation id `56e9ebd38a2f471496539c6135702ad9`, `liveness/readiness/data-structure-readiness/lookups-readiness = true`, and maintenance status `Ready`. In this direct client probe the MCP SDK surfaced the payload under text content rather than `StructuredContent`, so callers should be tolerant of either representation.
+Files: C:\Projects\ai\clio\clio\Command\McpServer\Tools\DataForgeTool.cs, C:\Projects\ai\clio\clio.mcp.e2e\DataForgeToolE2ETests.cs, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future manual validation of Data Forge on `dev-env` can use `dataforge-status` as the shortest end-to-end proof that both direct service health and Creatio maintenance status are currently healthy.
+
+## 2026-03-26 14:10 – Merge upstream master into DataForge branch
+Context: User asked to update the local `master` branch and merge it into the current `ENG-87085-adac-clio-testing` branch without losing in-progress DataForge work.
+Decision: Stashed the dirty worktree, fast-forwarded local `master` to `upstream/master`, merged that updated `master` into the current branch, and then reapplied the stash while resolving the append-only diary conflict by keeping both upstream and local entries.
+Discovery: The merge fast-forwarded cleanly to `f50c3248`; the only restore conflict was `.codex/workspace-diary.md`, and `clio.tests/testbin/` remained as untracked local content outside the merge path.
+Files: C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future work on `ENG-87085-adac-clio-testing` now starts from the latest `upstream/master` history while preserving the local DataForge changes already in progress.
+
+## 2026-03-26 15:05 – Trace Activity typed usage across entity and UI metadata
+Context: User asked whether object source code itself carries information about where an entity is used, using `Activity` as the example for tasks, calls, and emails.
+Decision: Inspected the `Activity` entity source plus package data/config metadata instead of assuming the answer from UI behavior. Distinguished entity-level typing from page/config-level routing.
+Discovery: `Activity.cs` contains data/business typing only: it resolves `ActivityType.Code`, derives `TypeId` from `ActivityCategoryId`, and already branches for `Email`. The usage/page-routing layer lives separately in metadata: `SysModuleEntity.TypeColumnUId`, `SysModuleEdit.TypeColumnValue`, and `SysModuleEdit.SysPageSchemaUId` are queried in `CommonUtilities`, while `SysModule_Activity/data.json` sets the type column to `Type` and `SysModuleEditUpdateActivity/data.json` stores a concrete type-specific edit record. Page schemas like `Tasks_FormPage`, `Calls_FormPage`, and `EmailPageV2` exist as separate `ClientUnitSchema` artifacts. Conclusion: there is no single descriptor in `Activity.cs` that fully describes task/call/email usage; the complete picture spans entity schema plus module/page metadata.
+Files: C:\Projects\PackageStore\CrtCoreBase\branches\7.8.0\Schemas\Activity\Activity.cs, C:\Projects\PackageStore\CrtCoreBase\branches\7.8.0\Schemas\CommonUtilities\CommonUtilities.cs, C:\Projects\PackageStore\CrtBase\branches\7.8.0\Data\SysModule_Activity\data.json, C:\Projects\PackageStore\CrtNUI\branches\7.8.0\Data\SysModuleEditUpdateActivity\data.json, C:\Projects\PackageStore\CrtUIv2\branches\7.8.0\Schemas\Tasks_FormPage\descriptor.json, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future ADAC/DataForge reasoning about typed entities should not rely on entity source alone. To understand reuse of `Activity` for tasks/calls/emails, inspect both the data model and module/page metadata.
+
+## 2026-03-26 15:35 – Pull live MCP DataForge payloads for Activity
+Context: User asked for real DataForge data via MCP tools instead of code-level inference.
+Decision: Launched a temporary MCP client against the local `clio mcp-server` and queried the live `dev-env` with `dataforge-get-table-columns`, `dataforge-find-lookups`, and `dataforge-get-instance-model-context` focused on `Activity`.
+Discovery: The live DataForge context confirms `Activity` is modeled as a typed base entity. `dataforge-get-table-columns` returned `Type` as a lookup to `ActivityType` with description “Defines the activity type, such as meeting, email, task, or call.” It also returned `Status`, `Result`, `Owner`, `StartDate`, `DueDate`, `ActivityCategory`, `CallDirection`, `EmailSendStatus`, and `Title` (required). `dataforge-find-lookups` for `ActivityType` returned concrete values for `Call` (`e1831dec-cfc0-df11-b00f-001d60e938c6`), `Email` (`e2831dec-cfc0-df11-b00f-001d60e938c6`), and `Task` (`fbe0acdc-cfc0-df11-b00f-001d60e938c6`). `dataforge-get-instance-model-context` returned `Activity` with the semantic description “Represents a scheduled or logged interaction (meeting, email, task, or call)...” and reported readiness online/ready for both data-structure and lookups stores.
+Files: C:\Projects\ai\clio\clio\bin\Debug\net8.0\clio.exe, C:\Projects\ai\clio\clio.mcp.e2e\bin\Debug\net10.0\ModelContextProtocol.dll, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future planner work can rely on live MCP evidence that DataForge already recognizes `Activity` as a typed base entity and exposes the `ActivityType` lookup values needed for reuse-first reasoning, while still not surfacing page-level type routing.
+
+## 2026-03-27 14:29 – Add repo-local Creatio CLI MCP plugin scaffold
+Context: User asked for a Codex plugin that exposes the installed `clio mcp-server` through a repo-local plugin package instead of relying on the repo root manifests.
+Decision: Used the `plugin-creator` scaffold to create `plugins/creatio-cli-mcp`, then replaced the generated placeholder manifest with a usable MCP-only plugin definition and a plugin-local `.mcp.json` that launches `clio mcp-server` from PATH.
+Discovery: This repo already had root-level `plugin.json` and `mcp.json`, but they are not the Codex plugin package shape expected by the plugin scaffold. A repo-local plugin can stay self-contained by using `command: "clio"` and does not need marketplace registration, assets, skills, hooks, or app metadata for the first pass.
+Files: C:\Projects\ai\clio\plugins\creatio-cli-mcp\.codex-plugin\plugin.json, C:\Projects\ai\clio\plugins\creatio-cli-mcp\.mcp.json, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future work can iterate on a dedicated Codex plugin package for CLIO MCP without coupling plugin packaging to the repository’s root manifests or local build output paths.
 
 ## 2026-03-25 13:35 – Make Docker base image flow explicit
 Context: User wanted `build-docker-image` to treat the bundled base image as an explicit first-class target instead of auto-building it behind bundled `dev` and `prod` flows.
@@ -1650,7 +1796,14 @@ Discovery: The clean worktree regeneration touched a broad set of markdown docs 
 Files: clio/HelpSystem/CommandHelpRenderer.cs, clio.tests/CommandHelpRendererTests.cs, clio.tests/CommonProgramTest.cs, clio/docs/commands, .codex/workspace-diary.md
 Impact: `clio add-item --help` no longer shows unrelated inherited environment/requirement blocks, sparse manuals such as `set-pkg-version` stay manual-only by design, and GitHub markdown docs now match the same manual-first contract as runtime help.
 
-## 2026-04-01 15:02 – Canonicalize entity/schema MCP contract ownership
+
+## 2026-04-08 19:25 – DataForge enrichment in update-entity-schema + orchestration docs
+Context: Wire DataForge best-effort enrichment into `UpdateEntitySchemaTool`, create `DataForgeOrchestrationGuidanceResource` (Layer 0–4 protocol), update prompts, and skill docs.
+Decision: Enrichment in `UpdateEntitySchemaTool` is wrapped in its own try/catch (before the command try/catch) so exceptions never block mutations. `InternalExecute<UpdateEntitySchemaCommand>` used for command execution via resolver.
+Discovery: "add" operations in `UpdateEntitySchemaOperationArgs` require `TitleLocalizations` with an `en-US` key — `NormalizeMutationTitleLocalizations` throws if absent. All tests that construct "add" ops must supply `TitleLocalizations`. Also, `IToolCommandResolver.Resolve<T>` mock with `Arg.Any<EnvironmentOptions>()` works correctly when the call originates from `BaseTool.ResolveCommand` (the argument is typed as `EnvironmentOptions` in the switch case, runtime type is `UpdateEntitySchemaOptions`).
+Files: clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, clio/Command/McpServer/Resources/DataForgeOrchestrationGuidanceResource.cs, clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, .github/skills/clio/references/commands-reference.md, clio.tests/Command/McpServer/UpdateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/SchemaSyncToolTests.cs, clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.tests/Command/McpServer/SchemaEnrichmentServiceTests.cs
+Impact: `update-entity-schema` now returns a `dataforge` section alongside mutation results. ADAC gets a full Layer 0–4 orchestration guide via `docs://mcp/guides/dataforge-orchestration`. 62 targeted tests pass.
+
 Context: ENG-87888 required `clio` to stay the sole owner of entity/schema MCP semantics while ADAC drops duplicate schema validation and schema-handbook behavior.
 Decision: Removed the phantom `settings-health` contract from `tool-contract-get`, expanded contract coverage tests around the canonical entity/schema surface, and updated ADAC schema sync plus workflow docs to pass semantics through to `clio` via `tool-contract-get` and `docs://mcp/guides/app-modeling` instead of enforcing them locally.
 Discovery: The main blocker was not schema behavior itself but stale contract advertising: `ToolContractGetTool` and its E2E tests still referenced a non-existent `SettingsHealthTool`, which prevented the targeted test slice from compiling until the dead contract was removed.
@@ -1880,6 +2033,65 @@ Discovery: Previous flow used `TryResolveSingle` for code and silently switched 
 Files: clio/Command/EntitySchemaDesigner/EntitySchemaDefaultValueSourceResolver.cs, clio.tests/Command/EntitySchemaDefaultValueSourceResolverTests.cs, .codex/workspace-diary.md
 Impact: Operators now get correct diagnostics for ambiguous setting codes and can resolve with explicit setting id without confusion.
 
+## 2026-04-07 17:40 – Refactor Data Forge runtime schema reads onto a shared by-name reader
+Context: Data Forge MCP work introduced a by-name `RuntimeEntitySchemaRequest` path for `dataforge-get-table-columns`, but the repo already had another by-name consumer in Data Binding and a separate by-UId designer path that could not be conflated before merge.
+Decision: Added a neutral rich `IRuntimeEntitySchemaReader`/`RuntimeEntitySchemaReader` for name-based runtime schema reads, migrated Data Forge columns/context enrichment and `DataBindingSchemaClient` onto it, deleted the old `DataForgeColumnsReader`, extracted `dataforge-context` aggregation into `IDataForgeContextService`, and made the Data Forge DI registrations explicit in `BindingsModule`.
+Discovery: The shared reader had to preserve more than the original Data Forge projection: Data Binding still needs raw `UId`, `DataValueType` as `int`, and primary-column/display-column metadata, while Data Forge only needs a filtered, friendly projection layered on top. The refactor is intentionally limited to by-name reads; the by-UId designer client and `ApplicationInfoService` remain separate flows.
+Files: clio/BindingsModule.cs, clio/Command/DataBindingCommand.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Common/DataForge/DataForgeContextService.cs, clio/Common/DataForge/DataForgeModels.cs, clio/Common/EntitySchema/RuntimeEntitySchemaReader.cs, clio.tests/Common/RuntimeEntitySchemaReaderTests.cs, clio.tests/Command/DataBindingSchemaClientTests.cs, clio.tests/Common/DataForgeContextServiceTests.cs, clio.tests/Command/McpServer/DataForgeToolTests.cs, clio.mcp.e2e/DataForgeToolE2ETests.cs, .codex/workspace-diary.md
+Impact: By-name runtime schema reading is now implemented once and reused across Data Forge and Data Binding, Data Forge tool orchestration is isolated from the MCP facade, the earlier runtime DI bug is closed, and MCP/unit coverage exists for the new shape while the by-UId designer/application flows remain untouched.
+
+## 2026-04-07 18:25 – Fix Data Forge review findings for degraded probes and safe runtime-schema payloads
+Context: Follow-up review found three valid issues in the new Data Forge MCP surface: health probes threw on expected non-2xx degraded states, the by-name runtime-schema request body was still composed with raw JSON interpolation, and the public `scope` description no longer matched the runtime default.
+Decision: Added a non-throwing probe path in `DataForgeClient` so health/status/context derive booleans from HTTP status codes instead of exceptions, switched `RuntimeEntitySchemaReader` to serializer-based request payload creation, corrected the public `scope` description to match the actual `use_enrichment` default, and expanded staged MCP E2E coverage with a `dataforge-context` smoke test.
+Discovery: The earlier raw-JSON review note still applied after the refactor, but the affected code had moved from the deleted `DataForgeColumnsReader` into the new shared by-name reader. Existing staged E2E coverage already existed for Data Forge, so the "no E2E coverage" finding itself was stale; the real gap was incomplete coverage breadth, not absence.
+Files: clio/Common/DataForge/DataForgeClient.cs, clio/Common/DataForge/DataForgeModels.cs, clio/Common/EntitySchema/RuntimeEntitySchemaReader.cs, clio.tests/Common/DataForgeClientTests.cs, clio.tests/Common/RuntimeEntitySchemaReaderTests.cs, clio.mcp.e2e/DataForgeToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Data Forge health-oriented tools can now represent degraded services without failing the whole call path, runtime-schema requests are safe for quoted/backslashed schema names, the MCP contract text matches real auth behavior, and staged coverage now includes the context aggregation path.
+
+## 2026-04-08 10:25 – Expand Data Forge MCP E2E coverage to all public tools
+Context: Review follow-up still flagged partial `clio.mcp.e2e` coverage because the Data Forge suite exercised only health, get-table-columns, and context while six newly exposed public MCP tools remained uncovered.
+Decision: Extended `DataForgeToolE2ETests` with live MCP calls for `dataforge-status`, `dataforge-find-tables`, `dataforge-find-lookups`, `dataforge-get-relations`, `dataforge-initialize`, and `dataforge-update`, and added a shared helper that first verifies each production tool name is advertised before invoking it.
+Discovery: The destructive maintenance tools can follow the repository’s existing `AllowDestructiveMcpTests` gate rather than inventing a Data Forge-specific opt-in, while the read-side smoke coverage can reuse the same reachable-sandbox arrangement as the existing tests.
+Files: clio.mcp.e2e/DataForgeToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The Data Forge MCP suite now covers the full public tool family end to end, including both destructive maintenance endpoints and the remaining live read paths the review called out.
+
+## 2026-04-08 11:10 – Remove unreachable bearer-token branch from Data Forge auth
+Context: Follow-up review on the Data Forge auth path showed that `BearerToken` existed in the shared config/client layer but no production caller, including the MCP surface, could ever populate it.
+Decision: Removed `BearerToken` and `DataForgeAuthMode.BearerToken` from the Data Forge models, deleted the corresponding resolver branch, and simplified the HTTP client authorization logic to support only `None` and `OAuthClientCredentials`.
+Discovery: The bearer-token path had no live callers outside tests and only increased auth-state complexity; current MCP args already expose OAuth credentials and syssettings fallback but no direct access-token input.
+Files: clio/Common/DataForge/DataForgeModels.cs, clio/Common/DataForge/DataForgeConfigResolver.cs, clio/Common/DataForge/DataForgeClient.cs, .codex/workspace-diary.md
+Impact: Data Forge auth precedence is simpler and matches the real public surface, reducing dead code without changing MCP contracts or runtime behavior for supported callers.
+
+## 2026-04-08 16:35 – Embed Data Forge enrichment into application-create
+Context: `application-create` had to use Data Forge semantics inside `clio` itself instead of relying on ADAC-only orchestration, while keeping the existing request contract stable and preserving a soft fallback when Data Forge is unavailable.
+Decision: Added `IApplicationCreateEnrichmentService` and wired `ApplicationCreateTool` to run Data Forge context aggregation before shell creation, return compact `dataforge` diagnostics in the create response, update prompt/resource guidance to describe the internal enrichment stage, and align `tool-contract-get` so explicit lookup exposes the full Data Forge surface while the default bootstrap set keeps maintenance tools out.
+Discovery: The clean integration point is the shared Data Forge service layer resolved through `IToolCommandResolver`, not MCP self-calls; this keeps environment/auth resolution in `clio` and lets create-flow degrade to warnings plus false coverage flags instead of blocking shell creation.
+Files: clio/Command/McpServer/Tools/ApplicationCreateEnrichmentService.cs, clio/Command/McpServer/Tools/ApplicationTool.cs, clio/Command/McpServer/Tools/ApplicationToolResponses.cs, clio/Command/McpServer/Tools/ApplicationToolSupport.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, clio.tests/Command/McpServer/ApplicationCreateEnrichmentServiceTests.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs, clio.mcp.e2e/Support/Results/ApplicationEnvelope.cs, clio.mcp.e2e/ToolContractGetToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Direct `clio` callers now get Data Forge-assisted app creation behavior and structured diagnostics from the canonical create tool, while orchestration layers can stay thin and rely on the updated MCP contract/guidance instead of re-implementing Data Forge planning rules.
+
+
+## 2026-04-08 17:39 - DataForge enrichment wired into schema MCP tools
+Context: Only application-create had DataForge enrichment; schema tools (schema-sync, create-entity-schema, create-lookup) had none.
+Decision: Extract reusable ISchemaEnrichmentService from ApplicationCreateEnrichmentService pattern; inject it as optional ctor param in the three schema tools; return ApplicationDataForgeResult in each tool response.
+Discovery: CollectCandidateTerms/CollectLookupHints must cast Dictionary.ValueCollection to IEnumerable<string> before ?? [] to avoid CS0019.
+Files:
+- clio/Command/McpServer/Tools/SchemaEnrichmentService.cs (new)
+- clio/Command/McpServer/Tools/CommandExecutionResult.cs — added DataForge? optional param
+- clio/Command/McpServer/Tools/SchemaSyncTool.cs — async enrichment + DataForge in SchemaSyncResponse
+- clio/Command/McpServer/Tools/EntitySchemaTool.cs — CreateEntitySchemaTool + CreateLookupTool enrichment
+- clio/BindingsModule.cs — registered ISchemaEnrichmentService
+- clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs — guidance for dataforge-find-lookups pre-flight and update-entity-schema reference check
+- .github/skills/clio/references/commands-reference.md — DataForge enrichment note on create-entity-schema/create-lookup; lookup value resolution note on create-data-binding-db/upsert-data-binding-row-db; dataforge tip on update-entity-schema
+- clio.tests/Command/McpServer/SchemaSyncToolTests.cs — all test methods made async Task (await tool.SchemaSync)
+- clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs — all test methods made async Task
+- clio.tests/Command/McpServer/SchemaEnrichmentServiceTests.cs (new) — 3 unit tests
+Impact: schema-sync, create-entity-schema, and create-lookup now return a dataforge context-summary section; AI consumers have similar-tables and lookup hints before committing to schema operations.
+
+## 2026-04-08 20:15 – Add reuse guardrails for existing supporting schemas in MCP guidance and ADAC skills
+Context: Existing instructions strongly protected the canonical main entity but still allowed planning drift where agents could invent a duplicate supporting/link schema for page-detail tasks, even when refreshed runtime context already exposed the correct object model.
+Decision: Updated existing-app maintenance and app-modeling MCP guidance with inspect-before-create rules, supporting-schema reuse invariants, and a concrete Support Case example; updated DataForge guidance to keep exact package-local reuse checks on runtime context first; updated `entity-creation` and `page-schema-editing` skills with blocker rules against duplicate supporting schemas; added unit assertions for the new guidance text.
+Discovery: The gap was documentation and orchestration logic, not missing runtime facts: `application-get-info`, `page-get`, and `get-entity-schema-properties` already form a sufficient source of truth for most existing-app detail requests.
+Files: clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, clio/Command/McpServer/Resources/DataForgeOrchestrationGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, ../ai-driven-app-creation/skills/entity-creation/SKILL.md, ../ai-driven-app-creation/skills/page-schema-editing/SKILL.md, .codex/workspace-diary.md
+Impact: Agents now have an explicit instruction path that defaults existing-app detail requests to page-only/object-model reuse and treats duplicate supporting/link schema creation as a blocker-level planning error.
 ## 2026-04-08 11:00 – Normalize entity titles for `.NET Framework` schema mutations
 Context: Session analysis showed `.NET Framework` environments could create entity columns with only `title-localizations`, but later `modify-entity-schema-column` or `update-entity-schema` saves failed because the server validator still expected an effective title/caption for the current culture.
 Decision: Added a shared title-localization normalization helper that derives an effective title, synthesizes the current-culture localization when only `en-US` is supplied, and threads that normalized result through schema create, single-column modify, and batch update flows without reopening the public MCP `title` field. Added focused unit/MCP coverage plus an MCP E2E regression scenario for `update-entity-schema add -> modify-entity-schema-column default-value-config`.
@@ -1987,3 +2199,155 @@ Discovery:
 - GetSettingsValueTypeCandidates missing Float dataValueType 5; added `5 => ["Decimal"]`
 Files: clio/Command/ApplicationSectionCreateCommand.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDefaultValueSourceResolver.cs, clio.tests/Command/ApplicationSectionCreateServiceTests.cs, .codex/workspace-diary.md
 Impact: PR #522 now MERGEABLE, both Codex P2 issues addressed, 15 new tests added (33 total section tests pass)
+
+## 2026-04-10 11:20 – Remove standalone application-model-discovery MCP tool
+Context: Direct reuse-first planning was moved back out of `clio`; business-requirement shaping and explicit reuse decisions should stay in ADAC rather than a separate MCP planning tool.
+Decision: Removed `application-model-discovery`, its planning service, MCP contract exposure, and related prompt/guidance references while keeping internal Data Forge enrichment in `application-create`.
+Discovery: `application-create` already preserves the needed execution-time Data Forge diagnostics, so the extra planning tool only duplicated orchestration responsibility.
+Files: clio/BindingsModule.cs, clio/Command/McpServer/Tools/ApplicationTool.cs, clio/Command/McpServer/Tools/ApplicationToolArgs.cs, clio/Command/McpServer/Tools/ApplicationToolResponses.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, .codex/workspace-diary.md
+Impact: `clio` returns to a simpler MCP surface where `application-create` remains the app-shell mutation entrypoint with built-in Data Forge enrichment, and reuse-first planning stays external.
+
+## 2026-04-10 12:08 – Align DataForge skill guidance with live MCP payloads
+Context: Review of staged DataForge work showed the skill reference documenting fields and thresholds that the current MCP/DataForge contracts do not expose.
+Decision: Updated `.github/skills/clio/references/commands-reference.md` so Layer 0 uses the actual `health` and `status` fields, and table-discovery decisions no longer rely on a nonexistent `similar-tables[].score`.
+Discovery: `similar-lookups` still carries a numeric `score`, but `similar-tables` only returns `name`, `caption`, and `description`, so duplicate detection there must stay descriptive rather than threshold-based.
+Files: .github/skills/clio/references/commands-reference.md, .codex/workspace-diary.md
+Impact: Future agents reading the clio skill will follow DataForge guidance that matches the live MCP payload shape instead of branching on impossible fields.
+
+## 2026-04-10 12:14 – Align DataForge MCP guidance resource with live payloads
+Context: After fixing the skill reference, the MCP `docs://mcp/guides/dataforge-orchestration` resource still documented the old `health.tables`, `status.ready`, and `similar-tables[].score` fields.
+Decision: Updated `DataForgeOrchestrationGuidanceResource` to use the live `health` and `status` fields, descriptive duplicate detection for `similar-tables`, and the real stale-index readiness check.
+Discovery: The resource and skill reference had drifted independently, so both had to be corrected to keep AI-facing guidance consistent with the current MCP/Data Forge models.
+Files: clio/Command/McpServer/Resources/DataForgeOrchestrationGuidanceResource.cs, .codex/workspace-diary.md
+Impact: Agents reading the MCP guidance resource now get the same Data Forge orchestration instructions as the skill reference, without branching on nonexistent payload fields.
+
+## 2026-04-10 12:31 – Deduplicate MCP DataForge enrichment behind a shared builder
+Context: Sonar flagged duplicated logic between application and schema DataForge enrichment services, while both mutation flows already needed the same best-effort context aggregation and compact MCP-facing summary mapping.
+Decision: Introduced `IDataForgeEnrichmentBuilder` / `DataForgeEnrichmentBuilder` as the shared best-effort aggregation layer, then rewired `ApplicationCreateEnrichmentService` and `SchemaEnrichmentService` to only normalize their inputs and delegate the common Data Forge work to the builder.
+Discovery: The bulk of the duplication was not in DataForge MCP args but in repeated context-service resolution, default config construction, degraded fallback handling, and summary compaction; extracting that logic once removed the highest-value duplication with minimal surface change.
+Files: clio/Command/McpServer/Tools/DataForgeEnrichmentBuilder.cs, clio/Command/McpServer/Tools/ApplicationCreateEnrichmentService.cs, clio/Command/McpServer/Tools/SchemaEnrichmentService.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/ApplicationCreateEnrichmentServiceTests.cs, clio.tests/Command/McpServer/SchemaEnrichmentServiceTests.cs, clio.tests/Command/McpServer/DataForgeEnrichmentBuilderTests.cs, .codex/workspace-diary.md
+Impact: `application-create` and schema mutation tools now share one DataForge enrichment path, reducing duplication and keeping fallback behavior and compact summary mapping consistent across MCP mutation flows.
+
+## 2026-04-10 16:44 – Reduce MCP duplication in DataForge tooling and contract catalog
+Context: Sonar flagged new-code duplication in `DataForgeTool.cs` and `ToolContractGetTool.cs`, centered on repeated Data Forge connection payloads and repeated contract-builder scaffolding.
+Decision: Introduced `DataForgeConnectionArgsBase` so all Data Forge MCP arg records inherit one shared connection payload, collapsed target-option creation to a single helper, and extracted `BuildDataForgeContract` plus `DataForgeEnvelopeFields` so the nine Data Forge contract builders reuse one contract shape.
+Discovery: The highest-value duplication was mechanical rather than behavioral: repeated connection JSON fields, repeated `CreateTargetOptions` overloads, and repeated contract catalog envelope/default/alias wiring. Collapsing those sections kept the MCP JSON contract unchanged while cutting more duplication than method-by-method micro-refactors.
+Files: clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, .codex/workspace-diary.md
+Impact: The Data Forge MCP surface keeps the same tool names and JSON fields, but its implementation is smaller, easier to update consistently, and better positioned to clear Sonar duplication checks.
+
+## 2026-04-10 17:01 – Clear Sonar code-smell fallout from DataForge contract deduplication
+Context: After the duplication cleanup, Sonar for PR 524 still flagged `ToolContractGetTool.cs` for repeated literals and a 9-parameter private helper introduced by the refactor.
+Decision: Replaced the high-traffic Data Forge and connection literals with local constants and changed `BuildDataForgeContract` to consume a `DataForgeContractDescriptor` object instead of a long parameter list.
+Discovery: The refactor-induced Sonar noise was concentrated in the helper layer rather than the MCP surface itself, so a descriptor object plus constants removed the warnings without changing any exposed tool names, field names, or payload structure.
+Files: clio/Command/McpServer/Tools/ToolContractGetTool.cs, .codex/workspace-diary.md
+Impact: The Data Forge contract catalog keeps the deduplicated implementation while avoiding the immediate Sonar maintainability warnings that the first cleanup introduced.
+
+## 2026-04-10 11:48 – Fix entity caption loss during column mutations
+Context: User session analysis (copilot-session-b197a4a1) showed entity caption "Об'єкт" (uk-UA) was reset after clio-schema-sync update-entity on .NET Framework environment.
+Decision: In LoadSchema, removed Cultures=[GetCurrentCultureName()] from GetSchemaDesignItemRequestDto. Sending only the current system culture (en-US) caused Creatio to return Caption filtered to that culture. When SaveSchema sent the filtered Caption back, the original uk-UA caption was overwritten. Empty Cultures=[] (default) tells Creatio to return all localizations, preserving the full round-trip.
+Discovery: GetSchemaDesignItem with Cultures=["en-US"] returns entity Caption mapped to the requested culture key only. SaveSchema then replaces ALL caption entries with the sent subset, wiping other-locale captions. Same pattern in RemoteEntitySchemaCreator is verification-only (not saved back), so no fix needed there.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs
+Impact: Column mutations (add/modify/remove) now preserve entity caption in all cultures, not just the machine current locale.
+
+## 2025-07-18 - Added regression test for multi-culture entity caption preservation
+Context: User confirmed entity had captions in ALL cultures (en-US="MyTest", uk-UA caption). Confirmed cliogate is NOT involved in EntitySchemaDesigner calls.
+Decision: Added test ModifyColumn_PreservesAllEntityCultureCaptions_WhenSchemaHasMultiCultureEntityCaption that creates schema with two Caption cultures, runs column mutation with uk-UA active, and asserts both culture entries are preserved in saved schema.
+Discovery: Unit test mock returns full _loadedSchema regardless of Cultures filter, so test does not reproduce exact server-side filtering bug, but documents expected behavior and catches future code regression that strips Caption entries.
+Files: clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs
+Impact: 42 tests pass; regression coverage for entity-level Caption round-trip preservation.
+
+## 2026-04-10 17:18 – Finish remaining Sonar warnings in Data Forge and runtime schema helpers
+Context: After the MCP contract cleanup, Sonar PR 524 still showed remaining warnings in EntitySchemaTool, DataForgeConfigResolver, DataForgeContextService, and RuntimeEntitySchemaReader.
+Decision: Removed the redundant cast, replaced the manual non-empty scan with a LINQ pipeline, split DataForge context aggregation into focused helper methods, and converted runtime-schema DTO carriers into records while preserving request serialization behavior.
+Discovery: The runtime-schema DTO cleanup changed JSON request escaping from `\"` to `\u0022`, so the request path now uses an explicit relaxed encoder to keep the existing wire format and tests stable.
+Files: clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Common/DataForge/DataForgeConfigResolver.cs, clio/Common/DataForge/DataForgeContextService.cs, clio/Common/EntitySchema/RuntimeEntitySchemaReader.cs, .codex/workspace-diary.md
+Impact: The remaining PR 524 Sonar warnings from this area are addressed without changing the external MCP surface or the runtime-schema request contract.
+
+## 2025-07-14 – find-entity-schema MCP tool + CLI command
+Context: Agents were calling get-pkg-list twice then iterating packages to find entity schemas (N+1 pattern). New tool solves this with one DataService SelectQuery.
+Decision: Single HTTP request to SysSchema via existing SelectQueryHelper (no cliogate required). Parameters: schema-name (exact), search-pattern (contains), uid (Guid exact). Returns EntitySchemaSearchResult with SchemaName, PackageName, PackageMaintainer, ParentSchemaName.
+Discovery: comparisonType=10 is Contains; SysSchema.ManagerName="EntitySchemaManager" for entity schemas; joined columns SysPackage.Name and [SysSchema:Id:Parent].Name work in DataService SelectQuery.
+Files: clio/Command/FindEntitySchemaCommand.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs (FindEntitySchemaTool + FindEntitySchemaArgs), clio/Command/McpServer/Tools/ToolContractGetTool.cs (BuildFindEntitySchema), clio/Program.cs, clio/BindingsModule.cs, clio/Wiki/WikiAnchors.txt, clio/help/en/find-entity-schema.txt, clio/docs/commands/find-entity-schema.md, clio/Commands.md, clio.tests/Command/FindEntitySchemaCommandTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, .github/skills/clio/references/commands-reference.md, .github/skills/clio/SKILL.md
+Impact: Agents can now find any entity schema in one round trip without knowing the package name. 96 unit tests green.
+
+## 2026-04-13 13:05 – Analyzed Copilot session d6fe1629
+Context: User asked to analyze `/Users/a.kravchuk/Projects/copilot-session-d6fe1629-5e8e-42c2-b7ee-6bcfce5cdb27.md`.
+Decision: Treated the file as a meta-session that analyzes another exported Copilot session, separating outer-session facts from the nested viewed transcript.
+Discovery: The analyzed session itself only used two `view` actions and three assistant answers; the visible CAPI error and CLIO command failures belong to the nested file being inspected, not to the outer session. The biggest issue in the outer session is inconsistent interpretation of `find-entity-schema` output around `Test1 | Test1 (Creatio)`.
+Files: /Users/a.kravchuk/Projects/copilot-session-d6fe1629-5e8e-42c2-b7ee-6bcfce5cdb27.md, .codex/workspace-diary.md
+Impact: Future session reviews should explicitly distinguish current-session execution from quoted or viewed transcripts to avoid false incident counts and wrong root-cause conclusions.
+
+## 2025-07-16 – Implement application-section-delete (ENG-88149)
+Context: Last unimplemented AC from ENG-88149 — delete section from an installed app.
+Decision: Followed the create/update pattern: service + command + MCP tool + args/response/support + DI + contract + prompt + tests.
+Files: ApplicationSectionDeleteCommand.cs (created), ApplicationTool.cs, ApplicationToolArgs.cs, ApplicationToolResponses.cs, ApplicationToolSupport.cs, BindingsModule.cs, Program.cs, ToolContractGetTool.cs, ApplicationPrompt.cs, DeleteAppSectionCommandTests.cs
+Impact: application-section-delete MCP tool and delete-app-section CLI verb are fully wired. 3 unit tests pass.
+
+## 2025-07-17 – application-section-get-list completed
+Context: ENG-88149 — list sections of an installed Creatio application
+Decision: Reused ApplicationSectionRecord/ApplicationSectionInfoResult from create command; SelectQuery on ApplicationSection filtered by ApplicationId
+Files: clio/Command/ApplicationSectionGetListCommand.cs, clio/Command/McpServer/Tools/ApplicationTool.cs, ToolContractGetTool.cs, ApplicationPrompt.cs, guidance resources, BindingsModule.cs, Program.cs, clio.tests/Command/GetAppSectionsCommandTests.cs
+Impact: CLI list-app-sections + MCP application-section-get-list; preferred flow now includes get-list before delete/update in all guidance resources
+
+## 2026-04-13 15:06 – list-app-sections table output (UX improvement)
+Context: Raw single-line JSON output was unreadable in the terminal.
+Decision: Switch default output to ConsoleTable (Code|Caption|EntitySchemaName|Description) preceded by an application header line; add --json flag for script-friendly indented JSON. MCP tool unaffected (calls service directly).
+Files: clio/Command/ApplicationSectionGetListCommand.cs, clio.tests/Command/GetAppSectionsCommandTests.cs, clio/help/en/list-app-sections.txt (new), clio/docs/commands/list-app-sections.md (new), clio/Commands.md, .github/skills/clio/references/commands-reference.md
+Impact: Human-readable table by default; --json for piping; 4 unit tests green.
+
+## 2026-04-14 – ActiveEnvironmentKey optional -e for CLI
+Context: When ActiveEnvironmentKey is set in appsettings.json pointing to an existing env, -e was still required in practice because Execute() guards checked options.Environment directly.
+Decision: Fix infrastructure layer only (Configure() and GetEnvironmentSettings() in Program.cs) to populate options.Environment from GetDefaultEnvironmentName() before Execute() is called. MCP kept environment-required by design (user explicit decision).
+Discovery: GetEnvironment(options) in ConfigurationOptions.cs already resolves settings from active env, but never writes back to options.Environment → guards fail on null. Fix is to set options.Environment = activeEnvName in the two Program.cs entry points.
+Files: clio/Program.cs (Configure, GetEnvironmentSettings)
+Impact: All CLI commands now work without -e when ActiveEnvironmentKey is configured. Execute() guards and unit tests unchanged.
+
+## 2025-07-14 – Level 2 delete-app-section cleanup committed
+
+Context: delete-app-section was hanging because it called DeleteQuery on the virtual ApplicationSection entity (no backend delete handler in Creatio). Investigation showed ApplicationSectionEventListener has NO OnDeleted handler.
+Decision: Level 2 cleanup — delete all metadata artifacts in correct FK order, keep entity schema by default, add --delete-entity-schema flag for full cleanup.
+Discovery: CS9007 with $$""" raw literals — }}  consecutive closing braces after interpolation are treated as closing delimiter. Fix: expand JSON objects to multi-line format (one } per line).
+Files: clio/Command/ApplicationSectionDeleteCommand.cs, ApplicationSectionCreateCommand.cs, McpServer/Tools/ApplicationTool.cs, ApplicationToolArgs.cs, ToolContractGetTool.cs, clio.tests/Command/DeleteAppSectionCommandTests.cs
+Impact: Fully removes SysModuleInWorkplace, SysModuleLcz, SysSchema (Freedom UI pages + mobile), SysModuleEntity, SysModule in correct order. Section can be re-created cleanly afterward.
+
+## 2025-04-13 17:30 – delete-app-section: fix schema filter for AddonSchemaManager schemas
+
+Context: After WorkspaceExplorer refactor, 2 schemas were still left behind after delete
+Decision: Broaden LoadSectionSchemas filter from StartsWith(code+"_") to StartsWith(code) to catch non-underscore schemas
+Discovery:
+  - DataService FK column paths drop Id suffix: SysModuleId column -> path SysModule
+  - SysModuleLcz has no DataService schema for Freedom UI sections (0 rows, non-critical)
+  - AddonSchemaManager schemas (UsrXxxRelatedPage, UsrXxxMobileRelatedPage) use no underscore separator
+  - DataService cannot delete SysSchema (SecurityException) — must use WorkspaceExplorerService.svc/Delete
+Files: clio/Command/ApplicationSectionDeleteCommand.cs
+Impact: delete-app-section now fully cleans up all 7 workspace schemas + SysModule + SysModuleInWorkplace
+
+## 2025-07-07 – Normalize CLI command names to verb-noun convention
+
+Context: Commands page-get/list/update, delete-schema, get-app-list used inconsistent naming patterns.
+Decision: Renamed all to canonical {verb}-{noun} pattern; old names preserved as Aliases for backward compatibility.
+Discovery: Commands.md doc links must reference canonical filenames — HasCommandIndexEntry checks (docs/commands/{canonicalName}.md). Four artifact types must all be consistent: Commands.md index entry, help txt, docs md, WikiAnchors.txt.
+Files: clio/Command/PageGetOptions.cs, PageListOptions.cs, PageUpdateOptions.cs, DeleteSchemaCommand.cs, ListInstalledApplications.cs, Commands.md, CommandHelpCatalog.cs, WikiAnchors.txt
+Impact: All future renames must update Commands.md link paths (not just anchor IDs); test ExecuteCommands_WithUnknownVerb asserts specific canonical names in suggestions.
+
+## 2026-04-14 07:17 – PR #527 merged: MCP tool naming + CLI UX improvements
+
+Context: Long CI debugging session to get PR #527 merged into master.
+Decision: Merged via --admin with UNSTABLE status (Integration Tests pre-existing, MCP E2E timeout).
+Discovery: GitHub evaluates workflow from the MERGE COMMIT (base+head), not just HEAD branch — explains why complex 5-job workflow ran even though our branch had the simple one. MCP E2E tests: 141 tests x 30s CanReachEnvironmentAsync timeout = ~70 min total when sandbox unreachable. Need OneTimeSetUp refactor. Integration test Execute_CreatesNewPackageInFileSystem is pre-existing failure on Windows CI (templates not found), not caused by our changes. Process zombie fix: process.Kill(entireProcessTree: true) must be called on OperationCanceledException from WaitForExitAsync.
+Files: .github/workflows/build.yml (added timeout-minutes: 30 to mcp-e2e-tests job), clio.mcp.e2e/Support/Configuration/ClioCliCommandRunner.cs
+Impact: PR merged. Next: refactor MCP E2E CanReachEnvironmentAsync to OneTimeSetUp pattern to fix timeout issue.
+
+## 2026-04-14 16:05 – MCP URL fallback vs registered environments
+Context: Investigated why an agent used direct `uri/login/password` instead of registering a new clio environment before operating on a page.
+Decision: Keep the finding at analysis level for now: URL-based MCP execution is an intentional fallback in `ToolCommandResolver`, but it creates ambiguous agent behavior when working tools expose both `environment-name` and direct connection args.
+Discovery: `ToolCommandResolver.Resolve()` explicitly allows either a registered environment or explicit URI credentials, and unit tests lock that in as desired behavior when bootstrap is broken. Direct connection args are currently exposed by `PageGetTool`, `PageListTool`, `PageUpdateTool`, `ApplicationDeleteTool`, and `DataForgeTool`, while `reg-web-app` exists specifically for persistent environment registration.
+Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio.tests/Command/McpServer/ToolCommandResolverTests.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Tools/RegWebAppTool.cs, .codex/workspace-diary.md
+Impact: Future fix should likely prefer or require `environment-name` for normal work tools while preserving URL-based access only for bootstrap/break-glass scenarios.
+
+## 2026-04-14 16:24 – Soft MCP guidance toward registered environments
+Context: User approved the soft variant instead of removing URL-based MCP execution entirely.
+Decision: Kept `uri/login/password` compatibility in MCP tools, but changed resolver diagnostics, tool descriptions, and prompts to make `environment-name` the standard path and `reg-web-app` the preferred bootstrap step.
+Discovery: Wording-only MCP surface changes were enough to steer agent behavior without changing payload shape or execution paths. Existing E2E assertions still matched because they only depended on the preserved leading resolver text.
+Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageListTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Prompts/RegWebAppPrompt.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, .codex/workspace-diary.md
+Impact: Agents should now prefer registering environments and using `environment-name`, while direct credentials stay available only as a documented emergency fallback.

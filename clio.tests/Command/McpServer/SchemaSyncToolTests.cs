@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer.Tools;
@@ -13,26 +14,27 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises a stable MCP tool name for schema-sync")]
-	public void SchemaSyncTool_Should_Advertise_Stable_Tool_Name() {
+	[Description("Advertises a stable MCP tool name for sync-schemas")]
+	public async Task SchemaSyncTool_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 
 		// Act
 		string toolName = SchemaSyncTool.ToolName;
 
 		// Assert
-		toolName.Should().Be("schema-sync",
-			because: "the schema-sync MCP tool identifier must remain stable for callers");
+		toolName.Should().Be("sync-schemas",
+			because: "the sync-schemas MCP tool identifier must remain stable for callers");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Marks schema-sync as destructive and not read-only")]
-	public void SchemaSyncTool_Should_Advertise_Safety_Metadata() {
+	[Description("Marks sync-schemas as destructive and not read-only")]
+	public async Task SchemaSyncTool_Should_Advertise_Safety_Metadata() {
 		// Arrange
 		var method = typeof(SchemaSyncTool).GetMethod(nameof(SchemaSyncTool.SchemaSync))!;
 		var attribute = method
@@ -46,15 +48,15 @@ public sealed class SchemaSyncToolTests {
 
 		// Assert
 		readOnly.Should().BeFalse(
-			because: "schema-sync mutates remote schemas and should not be marked read-only");
+			because: "sync-schemas mutates remote schemas and should not be marked read-only");
 		destructive.Should().BeTrue(
-			because: "schema-sync creates and modifies remote schemas and should warn clients");
+			because: "sync-schemas creates and modifies remote schemas and should warn clients");
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Routes create-lookup operation through CreateEntitySchemaCommand with BaseLookup parent")]
-	public void SchemaSync_CreateLookup_Should_Route_Through_CreateEntitySchemaCommand() {
+	public async Task SchemaSync_CreateLookup_Should_Route_Through_CreateEntitySchemaCommand() {
 		// Arrange
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -69,7 +71,7 @@ public sealed class SchemaSyncToolTests {
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -77,7 +79,7 @@ public sealed class SchemaSyncToolTests {
 		response.Results.Should().HaveCount(1,
 			because: "one create-lookup operation was requested");
 		response.Results[0].Type.Should().Be("create-lookup",
-			because: "schema-sync results should expose the canonical type field");
+			because: "sync-schemas results should expose the canonical type field");
 		fakeCreateCommand.CapturedOptions.Should().NotBeNull(
 			because: "the tool should forward the operation to CreateEntitySchemaCommand");
 		fakeCreateCommand.CapturedOptions!.Package.Should().Be("UsrPkg",
@@ -93,8 +95,8 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects inherited BaseLookup columns inside schema-sync create-lookup operations before any command executes.")]
-	public void SchemaSync_CreateLookup_Should_Reject_Inherited_BaseLookup_Columns() {
+	[Description("Rejects inherited BaseLookup columns inside sync-schemas create-lookup operations before any command executes.")]
+	public async Task SchemaSync_CreateLookup_Should_Reject_Inherited_BaseLookup_Columns() {
 		// Arrange
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -114,11 +116,11 @@ public sealed class SchemaSyncToolTests {
 			]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
 		response.Success.Should().BeFalse(
-			because: "schema-sync should fail fast when a create-lookup operation tries to redefine inherited BaseLookup columns");
+			because: "sync-schemas should fail fast when a create-lookup operation tries to redefine inherited BaseLookup columns");
 		response.Results.Should().HaveCount(1,
 			because: "validation should stop the batch on the rejected create-lookup operation");
 		response.Results[0].Type.Should().Be("create-lookup",
@@ -128,13 +130,13 @@ public sealed class SchemaSyncToolTests {
 		response.Results[0].Error.Should().Contain("Name",
 			because: "the failure should identify the rejected inherited column");
 		fakeCreateCommand.CapturedOptions.Should().BeNull(
-			because: "schema-sync should not execute the create command after validation fails");
+			because: "sync-schemas should not execute the create command after validation fails");
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Routes create-entity operation with custom parent schema")]
-	public void SchemaSync_CreateEntity_Should_Use_Custom_Parent_Schema() {
+	public async Task SchemaSync_CreateEntity_Should_Use_Custom_Parent_Schema() {
 		// Arrange
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -147,7 +149,7 @@ public sealed class SchemaSyncToolTests {
 				TitleLocalizations: Localizations("Todo List"), ParentSchemaName: "BaseEntity")]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -159,7 +161,7 @@ public sealed class SchemaSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Routes update-entity operation through UpdateEntitySchemaCommand")]
-	public void SchemaSync_UpdateEntity_Should_Route_Through_UpdateEntitySchemaCommand() {
+	public async Task SchemaSync_UpdateEntity_Should_Route_Through_UpdateEntitySchemaCommand() {
 		// Arrange
 		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -177,7 +179,7 @@ public sealed class SchemaSyncToolTests {
 				])]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -197,7 +199,7 @@ public sealed class SchemaSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Executes seed-data after a successful create-lookup with seed-rows")]
-	public void SchemaSync_SeedRows_Should_Execute_After_Create() {
+	public async Task SchemaSync_SeedRows_Should_Execute_After_Create() {
 		// Arrange
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
 		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
@@ -224,7 +226,7 @@ public sealed class SchemaSyncToolTests {
 				])]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -247,7 +249,7 @@ public sealed class SchemaSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Stops processing on first operation failure")]
-	public void SchemaSync_Should_Stop_On_First_Failure() {
+	public async Task SchemaSync_Should_Stop_On_First_Failure() {
 		// Arrange
 		var failingCommand = new FakeCreateEntitySchemaCommand(exitCode: 1);
 		var secondCommand = new FakeCreateEntitySchemaCommand();
@@ -264,7 +266,7 @@ public sealed class SchemaSyncToolTests {
 			]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -281,8 +283,8 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Surfaces command error details in schema-sync operation error when available")]
-	public void SchemaSync_Should_Include_Detailed_Command_Error_When_Present() {
+	[Description("Surfaces command error details in sync-schemas operation error when available")]
+	public async Task SchemaSync_Should_Include_Detailed_Command_Error_When_Present() {
 		// Arrange
 		TestLogger logger = new();
 		var failingCommand = new FakeCreateEntitySchemaCommand(
@@ -298,7 +300,7 @@ public sealed class SchemaSyncToolTests {
 			[new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First"))]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -306,13 +308,13 @@ public sealed class SchemaSyncToolTests {
 		response.Results.Should().HaveCount(1,
 			because: "processing should stop after the first failed operation");
 		response.Results[0].Error.Should().Contain("Schema 'UsrFirst' already exists.",
-			because: "the schema-sync error should include the command-level error details");
+			because: "the sync-schemas error should include the command-level error details");
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Returns error for unknown operation type without stopping")]
-	public void SchemaSync_Unknown_OperationType_Should_Return_Error() {
+	public async Task SchemaSync_Unknown_OperationType_Should_Return_Error() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
@@ -321,7 +323,7 @@ public sealed class SchemaSyncToolTests {
 			[new SchemaSyncOperation("delete-schema", "UsrOops")]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -333,13 +335,13 @@ public sealed class SchemaSyncToolTests {
 		response.Results[0].Error.Should().Contain("delete-schema",
 			because: "the error should describe the unsupported type value");
 		response.Results[0].Error.Should().Contain("Supported values",
-			because: "the error should list the accepted schema-sync operation types");
+			because: "the error should list the accepted sync-schemas operation types");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects the legacy operation field name with a targeted schema-sync validation message.")]
-	public void SchemaSync_Should_Reject_Legacy_Operation_Field_Name() {
+	[Description("Rejects the legacy operation field name with a targeted sync-schemas validation message.")]
+	public async Task SchemaSync_Should_Reject_Legacy_Operation_Field_Name() {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
 		SchemaSyncArgs args = new(
@@ -356,7 +358,7 @@ public sealed class SchemaSyncToolTests {
 				}
 			]);
 
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		response.Success.Should().BeFalse(
 			because: "legacy request field names should fail before any schema command executes");
@@ -373,7 +375,7 @@ public sealed class SchemaSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns error when update-entity has no update-operations")]
-	public void SchemaSync_UpdateEntity_Without_Operations_Should_Fail() {
+	public async Task SchemaSync_UpdateEntity_Without_Operations_Should_Fail() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
@@ -382,7 +384,7 @@ public sealed class SchemaSyncToolTests {
 			[new SchemaSyncOperation("update-entity", "UsrTodoList")]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -393,8 +395,8 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects legacy scalar title fields in schema-sync create operations even when title-localizations are also provided.")]
-	public void SchemaSync_CreateLookup_Should_Reject_Legacy_Title_Field() {
+	[Description("Rejects legacy scalar title fields in sync-schemas create operations even when title-localizations are also provided.")]
+	public async Task SchemaSync_CreateLookup_Should_Reject_Legacy_Title_Field() {
 		// Arrange
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -414,20 +416,20 @@ public sealed class SchemaSyncToolTests {
 			]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
 		response.Success.Should().BeFalse();
 		response.Results.Should().ContainSingle();
 		response.Results[0].Error.Should().Contain("legacy 'title'",
-			because: "schema-sync should reject the old scalar field instead of silently accepting it");
+			because: "sync-schemas should reject the old scalar field instead of silently accepting it");
 		fakeCreateCommand.CapturedOptions.Should().BeNull();
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Stops seed-data when create-lookup fails and does not seed")]
-	public void SchemaSync_SeedRows_Should_Not_Execute_When_Create_Fails() {
+	public async Task SchemaSync_SeedRows_Should_Not_Execute_When_Create_Fails() {
 		// Arrange
 		var failingCreateCommand = new FakeCreateEntitySchemaCommand(exitCode: 1);
 		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
@@ -446,7 +448,7 @@ public sealed class SchemaSyncToolTests {
 				})])]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -460,7 +462,7 @@ public sealed class SchemaSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects malformed seed-rows before executing the schema operation command")]
-	public void SchemaSync_SeedRows_Should_Fail_Before_Command_Resolution_When_Values_Are_Missing() {
+	public async Task SchemaSync_SeedRows_Should_Fail_Before_Command_Resolution_When_Values_Are_Missing() {
 		// Arrange
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -476,11 +478,11 @@ public sealed class SchemaSyncToolTests {
 			]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
 		response.Success.Should().BeFalse(
-			because: "malformed seed-rows must fail schema-sync before any remote command is executed");
+			because: "malformed seed-rows must fail sync-schemas before any remote command is executed");
 		response.Results.Should().ContainSingle(
 			because: "the batch should stop immediately on the malformed seed-data payload");
 		response.Results[0].Type.Should().Be("seed-data",
@@ -488,13 +490,13 @@ public sealed class SchemaSyncToolTests {
 		response.Results[0].Error.Should().Contain("values",
 			because: "the caller must be told that each seed row requires a values wrapper");
 		fakeCreateCommand.CapturedOptions.Should().BeNull(
-			because: "schema-sync should not attempt create-lookup after local seed-row validation fails");
+			because: "sync-schemas should not attempt create-lookup after local seed-row validation fails");
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects malformed seed-rows when the batch contains a null seed row entry")]
-	public void SchemaSync_SeedRows_Should_Fail_Before_Command_Resolution_When_Row_Is_Null() {
+	public async Task SchemaSync_SeedRows_Should_Fail_Before_Command_Resolution_When_Row_Is_Null() {
 		// Arrange
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -512,7 +514,7 @@ public sealed class SchemaSyncToolTests {
 			]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -524,13 +526,13 @@ public sealed class SchemaSyncToolTests {
 		response.Results[0].Error.Should().Contain("values",
 			because: "the caller must be told that each seed row requires a non-null values wrapper");
 		fakeCreateCommand.CapturedOptions.Should().BeNull(
-			because: "schema-sync should not attempt create-lookup after local seed-row validation fails");
+			because: "sync-schemas should not attempt create-lookup after local seed-row validation fails");
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Executes multiple operations in order when all succeed")]
-	public void SchemaSync_Should_Execute_Multiple_Operations_In_Order() {
+	public async Task SchemaSync_Should_Execute_Multiple_Operations_In_Order() {
 		// Arrange
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
 		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
@@ -555,7 +557,7 @@ public sealed class SchemaSyncToolTests {
 			]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -571,8 +573,8 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Captures each schema-sync message under the matching operation result without leaking into adjacent results")]
-	public void SchemaSync_Should_Assign_Messages_To_The_Correct_Operation() {
+	[Description("Captures each sync-schemas message under the matching operation result without leaking into adjacent results")]
+	public async Task SchemaSync_Should_Assign_Messages_To_The_Correct_Operation() {
 		// Arrange
 		TestLogger logger = new();
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand(logger, messages: [
@@ -616,7 +618,7 @@ public sealed class SchemaSyncToolTests {
 			]);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(args);
+		SchemaSyncResponse response = await tool.SchemaSync(args);
 		string[] createMessages = GetMessageValues(response.Results[0]);
 		string[] seedMessages = GetMessageValues(response.Results[1]);
 		string[] updateMessages = GetMessageValues(response.Results[2]);
@@ -649,8 +651,8 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Fails create-lookup when Lookups registration throws so schema-sync does not report partial success")]
-	public void SchemaSync_CreateLookup_Should_Fail_When_Lookup_Registration_Fails() {
+	[Description("Fails create-lookup when Lookups registration throws so sync-schemas does not report partial success")]
+	public async Task SchemaSync_CreateLookup_Should_Fail_When_Lookup_Registration_Fails() {
 		// Arrange
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -665,7 +667,7 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		SchemaSyncResponse response = tool.SchemaSync(new SchemaSyncArgs(
+		SchemaSyncResponse response = await tool.SchemaSync(new SchemaSyncArgs(
 			"dev",
 			"UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]));
@@ -674,7 +676,7 @@ public sealed class SchemaSyncToolTests {
 		response.Success.Should().BeFalse(
 			because: "lookup registration is part of successful create-lookup execution");
 		response.Results.Should().HaveCount(1,
-			because: "schema-sync should stop after the create-lookup registration failure");
+			because: "sync-schemas should stop after the create-lookup registration failure");
 		response.Results[0].Success.Should().BeFalse(
 			because: "the create-lookup result should surface the registration failure");
 		response.Results[0].Error.Should().Contain("Lookup registration failed",

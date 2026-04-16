@@ -10,6 +10,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class InstalledApplicationQueryServiceTests {
 	private sealed record ApplicationRow(Guid Id, string Name, string Code, string Version, string Description);
 

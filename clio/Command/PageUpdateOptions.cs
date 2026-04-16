@@ -8,9 +8,9 @@ namespace Clio.Command {
 	using Newtonsoft.Json.Linq;
 
 	/// <summary>
-	/// Options for the <c>page-update</c> command.
+	/// Options for the <c>update-page</c> command.
 	/// </summary>
-	[Verb("page-update", HelpText = "Update Freedom UI page schema body")]
+	[Verb("update-page", Aliases = ["page-update"], HelpText = "Update Freedom UI page schema body")]
 	public class PageUpdateOptions : EnvironmentOptions {
 		/// <summary>
 		/// Gets or sets the page schema name to update.
@@ -211,7 +211,7 @@ namespace Clio.Command {
 			if (string.IsNullOrWhiteSpace(options.Body)) {
 				return new PageUpdateResponse {
 					Success = false,
-					Error = "body is required and must not be empty. Reuse page-get raw.body instead of bundle or viewConfig fragments."
+					Error = "body is required and must not be empty. Reuse get-page raw.body instead of bundle or viewConfig fragments."
 				};
 			}
 			var integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);

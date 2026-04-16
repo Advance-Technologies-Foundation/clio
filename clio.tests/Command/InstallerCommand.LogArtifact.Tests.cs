@@ -14,6 +14,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class InstallerCommandLogArtifactTests {
 	[Test]
 	[Description("deploy-creatio always creates a temp database-operation log artifact and reports its path through normal CLI logger output.")]

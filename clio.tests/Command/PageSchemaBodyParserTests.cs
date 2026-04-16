@@ -6,6 +6,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class PageSchemaBodyParserTests {
 
 	[Test]

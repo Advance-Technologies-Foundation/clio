@@ -13,6 +13,8 @@ using ILogger = Clio.Common.ILogger;
 namespace Clio.Tests.Common;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Common")]
 internal class ConsoleLoggerTests
 {
 

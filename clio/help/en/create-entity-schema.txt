@@ -99,4 +99,4 @@ REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
 
 SEE ALSO
-    install-gate, get-pkg-list, add-schema
+    install-gate, list-packages, add-schema

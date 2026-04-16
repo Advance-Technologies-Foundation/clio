@@ -17,7 +17,7 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class PageSyncTool(
 	IToolCommandResolver commandResolver) {
 
-	internal const string ToolName = "page-sync";
+	internal const string ToolName = "sync-pages";
 
 	/// <summary>
 	/// Updates multiple Freedom UI pages in a single MCP call.
@@ -187,7 +187,7 @@ public sealed class PageSyncTool(
 }
 
 /// <summary>
-/// Top-level arguments for the <c>page-sync</c> MCP tool.
+/// Top-level arguments for the <c>sync-pages</c> MCP tool.
 /// </summary>
 public sealed record PageSyncArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -210,7 +210,7 @@ public sealed record PageSyncArgs(
 );
 
 /// <summary>
-/// A single page input for the <c>page-sync</c> tool.
+/// A single page input for the <c>sync-pages</c> tool.
 /// </summary>
 public sealed record PageSyncPageInput(
 	[property: JsonPropertyName("schema-name")]
@@ -219,7 +219,7 @@ public sealed record PageSyncPageInput(
 	string SchemaName,
 
 	[property: JsonPropertyName("body")]
-	[property: Description("Full JavaScript page body copied from page-get raw.body")]
+	[property: Description("Full JavaScript page body copied from get-page raw.body")]
 	[property: Required]
 	string Body,
 
@@ -229,7 +229,7 @@ public sealed record PageSyncPageInput(
 );
 
 /// <summary>
-/// Response from the <c>page-sync</c> MCP tool.
+/// Response from the <c>sync-pages</c> MCP tool.
 /// </summary>
 public sealed class PageSyncResponse {
 
@@ -241,7 +241,7 @@ public sealed class PageSyncResponse {
 }
 
 /// <summary>
-/// Result for a single page in a <c>page-sync</c> response.
+/// Result for a single page in a <c>sync-pages</c> response.
 /// </summary>
 public sealed class PageSyncPageResult {
 

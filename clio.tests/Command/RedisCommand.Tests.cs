@@ -6,6 +6,7 @@ using NSubstitute;
 using NUnit.Framework;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class RedisCommandTestCase : BaseCommandTests<ClearRedisOptions>{
 	
 	private readonly IApplicationClient _applicationClient = Substitute.For<IApplicationClient>();

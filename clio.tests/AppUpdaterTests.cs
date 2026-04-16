@@ -6,6 +6,8 @@ using NUnit.Framework;
 namespace Clio.Tests;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Core")]
 public class AppUpdaterTests {
 
 	[Test]
@@ -86,5 +88,37 @@ public class AppUpdaterTests {
 
 		// Assert
 		result.Should().NotBeNullOrWhiteSpace("because the updater needs a concrete installed version for comparisons");
+	}
+
+	[TestCase("8.0.1.80", "9.0.0.0", "MAJOR")]
+	[TestCase("8.0.1.80", "8.1.0.0", "minor")]
+	[TestCase("8.0.1.80", "8.0.2.0", "patch")]
+	[TestCase("8.0.1.80", "8.0.1.85", "build")]
+	[Description("GetUpdateType should correctly classify version change type")]
+	public void GetUpdateType_WhenVersionsCompared_ReturnsCorrectType(
+		string current, string latest, string expectedType) {
+		// Arrange
+		var logger = Substitute.For<ILogger>();
+		var updater = new AppUpdater(logger);
+
+		// Act
+		string result = updater.GetUpdateType(current, latest);
+
+		// Assert
+		result.Should().Be(expectedType);
+	}
+
+	[Test]
+	[Description("GetUpdateType should handle invalid version strings gracefully")]
+	public void GetUpdateType_WhenInvalidVersions_ReturnsUpdate() {
+		// Arrange
+		var logger = Substitute.For<ILogger>();
+		var updater = new AppUpdater(logger);
+
+		// Act
+		string result = updater.GetUpdateType("invalid", "also-invalid");
+
+		// Assert
+		result.Should().Be("update");
 	}
 }

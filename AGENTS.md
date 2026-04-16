@@ -138,6 +138,61 @@ When testing command classes:
 - Resolve command system-under-test instances from the DI container in setup (`Container.GetRequiredService<TCommand>()`) instead of constructing with `new`.
 - Clear substitute received calls in teardown (`ClearReceivedCalls`) to avoid cross-test interference.
 
+# Smart regression testing policy
+
+Before committing any change, run only the tests for affected modules — do not run the full suite unless core infrastructure changed. This keeps feedback time under 10 seconds for typical single-module changes instead of 60+ seconds for the full unit suite.
+
+## Module-to-source mapping
+
+| Module trait | Source paths |
+|---|---|
+| `Command` | `clio/Command/` (root-level command files) |
+| `McpServer` | `clio/Command/McpServer/` |
+| `ApplicationCommand` | `clio/Command/ApplicationCommand/` |
+| `CreatioInstallCommand` | `clio/Command/CreatioInstallCommand/` |
+| `ProcessModel` | `clio/Command/ProcessModel/` |
+| `ModelBuilder` | `clio/ModelBuilder/` |
+| `Common` | `clio/Common/` |
+| `Package` | `clio/Package/` |
+| `Workspace` | `clio/Workspace/`, `clio/Workspaces/` |
+| `Core` | `clio/Core/` |
+| `Query` | `clio/Query/` |
+| `Requests` | `clio/Requests/` |
+| `Validators` | `clio/Validators/` |
+
+## Selection rules
+
+1. **Identify changed source paths** using `git diff --name-only HEAD` (or staged files).
+2. **Map each changed path to its module trait** using the table above.
+3. **Run targeted tests** before committing:
+
+```shell
+# Single module
+dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=Command" --no-build
+
+# Multiple modules (pipe-separated)
+dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&(Module=Command|Module=Common)" --no-build
+```
+
+4. **Full-suite triggers** — run `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit"` when any of the following changed:
+   - `clio/BindingsModule.cs` or `clio/Program.cs` — DI composition root, affects all modules
+   - `clio/Common/` — shared dependency used by every module
+   - Changes span more than 3 distinct modules
+   - Test infrastructure files: `clio.tests/TestAssemblySetup.cs`, `BaseClioModuleTests.cs`, `BaseCommandTests.cs`
+
+5. **Analyzer-only changes** — `Clio.Analyzers/**` changed: run only the analyzer test project:
+
+```shell
+dotnet test Clio.Analyzers.Tests/Clio.Analyzers.Tests.csproj --no-build
+```
+
+## Mandatory agent behavior
+
+- **Before every commit**: run the targeted test filter for each changed module and confirm all pass.
+- **Do not commit if targeted tests fail.**
+- When targeted tests pass but the change touches shared infrastructure (rule 4), additionally run the full unit suite.
+- Include the filter command used in the commit message or PR description so reviewers know what was validated locally (e.g., `Validated: dotnet test --filter "Category=Unit&Module=Command"`).
+
 # Instance creation and DI policy
 
 Prefer resolving instances from the DI container and avoid manual construction via `new` for behavior-bearing classes.

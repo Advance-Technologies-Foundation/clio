@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP arguments for the <c>application-get-list</c> tool.
+/// MCP arguments for the <c>list-apps</c> tool.
 /// </summary>
 public sealed record ApplicationGetListArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -16,7 +16,7 @@ public sealed record ApplicationGetListArgs(
 );
 
 /// <summary>
-/// MCP arguments for the <c>application-get-info</c> tool.
+/// MCP arguments for the <c>get-app-info</c> tool.
 /// </summary>
 public sealed record ApplicationGetInfoArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -34,7 +34,7 @@ public sealed record ApplicationGetInfoArgs(
 );
 
 /// <summary>
-/// MCP arguments for the <c>application-create</c> tool.
+/// MCP arguments for the <c>create-app</c> tool.
 /// </summary>
 public sealed record ApplicationCreateArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -80,7 +80,7 @@ public sealed record ApplicationCreateArgs(
 );
 
 /// <summary>
-/// Optional CreateApp template data for the <c>application-create</c> tool.
+/// Optional CreateApp template data for the <c>create-app</c> tool.
 /// </summary>
 public sealed record ApplicationOptionalTemplateDataJsonArgs(
 	string? EntitySchemaName = null,
@@ -89,7 +89,7 @@ public sealed record ApplicationOptionalTemplateDataJsonArgs(
 	string? AppSectionDescription = null);
 
 /// <summary>
-/// MCP arguments for the <c>application-section-create</c> tool.
+/// MCP arguments for the <c>create-app-section</c> tool.
 /// </summary>
 public sealed record ApplicationSectionCreateArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -120,24 +120,63 @@ public sealed record ApplicationSectionCreateArgs(
 	bool WithMobilePages = true,
 
 	[property: JsonPropertyName("title-localizations")]
-	[property: Description("Rejected. application-section-create is scalar-only and does not accept localization maps.")]
+	[property: Description("Rejected. create-app-section is scalar-only and does not accept localization maps.")]
 	IReadOnlyDictionary<string, string>? TitleLocalizations = null,
 
 	[property: JsonPropertyName("description-localizations")]
-	[property: Description("Rejected. application-section-create is scalar-only and does not accept localization maps.")]
+	[property: Description("Rejected. create-app-section is scalar-only and does not accept localization maps.")]
 	IReadOnlyDictionary<string, string>? DescriptionLocalizations = null,
 
 	[property: JsonPropertyName("caption-localizations")]
-	[property: Description("Rejected. application-section-create is scalar-only and does not accept localization maps.")]
+	[property: Description("Rejected. create-app-section is scalar-only and does not accept localization maps.")]
 	IReadOnlyDictionary<string, string>? CaptionLocalizations = null,
 
 	[property: JsonPropertyName("name-localizations")]
-	[property: Description("Rejected. application-section-create is scalar-only and does not accept localization maps.")]
+	[property: Description("Rejected. create-app-section is scalar-only and does not accept localization maps.")]
 	IReadOnlyDictionary<string, string>? NameLocalizations = null
 );
 
 /// <summary>
-/// MCP arguments for the <c>application-section-update</c> tool.
+/// MCP arguments for the <c>delete-app-section</c> tool.
+/// </summary>
+public sealed record ApplicationSectionDeleteArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("application-code")]
+	[property: Description("Installed application code.")]
+	[property: Required]
+	string ApplicationCode,
+
+	[property: JsonPropertyName("section-code")]
+	[property: Description("Existing section code inside the installed application.")]
+	[property: Required]
+	string SectionCode,
+
+	[property: JsonPropertyName("delete-entity-schema")]
+	[property: Description("When true, also deletes the entity schema record. Requires explicit opt-in. WARNING: destructive and irreversible.")]
+	bool? DeleteEntitySchema
+);
+
+/// <summary>
+/// MCP arguments for the <c>application-section-get-list</c> tool.
+/// </summary>
+public sealed record ApplicationSectionGetListArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("application-code")]
+	[property: Description("Installed application code.")]
+	[property: Required]
+	string ApplicationCode
+);
+
+/// <summary>
+/// MCP arguments for the <c>update-app-section</c> tool.
 /// </summary>
 public sealed record ApplicationSectionUpdateArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -172,18 +211,18 @@ public sealed record ApplicationSectionUpdateArgs(
 	string? IconBackground = null,
 
 	[property: JsonPropertyName("title-localizations")]
-	[property: Description("Rejected. application-section-update is scalar-only and does not accept localization maps.")]
+	[property: Description("Rejected. update-app-section is scalar-only and does not accept localization maps.")]
 	IReadOnlyDictionary<string, string>? TitleLocalizations = null,
 
 	[property: JsonPropertyName("description-localizations")]
-	[property: Description("Rejected. application-section-update is scalar-only and does not accept localization maps.")]
+	[property: Description("Rejected. update-app-section is scalar-only and does not accept localization maps.")]
 	IReadOnlyDictionary<string, string>? DescriptionLocalizations = null,
 
 	[property: JsonPropertyName("caption-localizations")]
-	[property: Description("Rejected. application-section-update is scalar-only and does not accept localization maps.")]
+	[property: Description("Rejected. update-app-section is scalar-only and does not accept localization maps.")]
 	IReadOnlyDictionary<string, string>? CaptionLocalizations = null,
 
 	[property: JsonPropertyName("name-localizations")]
-	[property: Description("Rejected. application-section-update is scalar-only and does not accept localization maps.")]
+	[property: Description("Rejected. update-app-section is scalar-only and does not accept localization maps.")]
 	IReadOnlyDictionary<string, string>? NameLocalizations = null
 );

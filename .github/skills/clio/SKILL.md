@@ -1,6 +1,6 @@
 ---
 name: clio
-description: 'CLI tool for Creatio platform integration with development and CI/CD workflows. Use when asked to manage Creatio environments, install or push packages, create workspaces, compile configuration, deploy applications, run SQL scripts, manage system settings, restart Creatio, work with NuGet packages, apply GitOps manifests, or perform any Creatio development task. Triggers on mentions of clio, Creatio, Terrasoft, creatio packages, creatio environment, creatio workspace, or bpm online.'
+description: 'CLI tool for Creatio platform integration with development and CI/CD workflows. Use when asked to manage Creatio environments, install or push packages, create workspaces, compile configuration, deploy applications, run SQL scripts, manage system settings, restart Creatio, work with NuGet packages, apply GitOps manifests, or perform any Creatio development task. Triggers on mentions of clio, Creatio, Terrasoft, creatio packages, creatio environment, creatio workspace, or bpm online. Also triggers when a browser page or HTTP response contains Creatio platform fingerprints such as Terrasoft AMD loader, Bpmonline fonts, or creatio.com CSP domains.'
 ---
 
 # Clio — Creatio CLI Tool
@@ -35,8 +35,56 @@ clio ver
 - User wants to execute **SQL scripts** or **service calls** against Creatio
 - User needs to set up **infrastructure** (Kubernetes, Docker) for Creatio
 - User wants to **create or modify entity schemas** (columns, types, lookups) in Creatio
-- User wants to **read or update Freedom UI pages** (page-get, page-update, page-list)
+- User wants to **find or discover entity schemas** by name, pattern, or UId in Creatio
+- User wants to **read or update Freedom UI pages** (get-page, update-page, list-pages)
 - User wants to **manage package data bindings** (seed data for SysSettings, SysModule, custom entities)
+- **A browser page or HTTP response matches the Creatio fingerprint** (see below)
+
+## Creatio Platform Detection (Fingerprinting)
+
+When you open a web page via browser automation (Chrome DevTools, Playwright, etc.) or inspect HTTP responses and encounter **any** of the markers below, the target site is a **Creatio** instance. Stop browser-based exploration and switch to **clio MCP tools** immediately — they are faster, more reliable, and purpose-built for Creatio.
+
+### HTML markers (visible in page source or browser snapshot)
+
+| Marker | Where to look |
+|--------|---------------|
+| `<title>Creatio</title>` | `<head>` of login page |
+| `Terrasoft/amd/bootstrap-loader.js` | `<script>` tag `src` attribute |
+| `data-loadbootstrap="bootstrap.login"` | `<script>` tag attribute |
+| `Bpmonline Open Sans` font family | `<style>` block or CSS |
+| `window.baseViewModulePath = 'Nui/ViewModule.aspx'` | Inline `<script>` |
+| `/Login/Login.html` in URL | Browser address bar after redirect |
+| `/Shell/` or `/0/Shell/` in URL | Main application shell URL pattern |
+
+### HTTP header markers
+
+| Marker | Where to look |
+|--------|---------------|
+| `*.creatio.com` or `*.bpmonline.com` in CSP domains | `Content-Security-Policy` header |
+| `creatio.ai` in `frame-ancestors` | `Content-Security-Policy` header |
+| `studio.creatio.com` in `frame-ancestors` | `Content-Security-Policy` header |
+| `/ServiceModel/` in CSP `report-uri` | `Content-Security-Policy` header |
+
+### Runtime markers (visible in browser DevTools or snapshots)
+
+| Marker | Where to look |
+|--------|---------------|
+| `Terrasoft.` namespace in JS | Console, network responses, page scripts |
+| `#CardModuleV2/` or `#Card/` in URL hash | Browser address bar on record pages |
+| `crt.` component types in DOM/config | Freedom UI page source (e.g. `crt.Button`, `crt.Input`) |
+| `ViewModule.aspx` in URL path | Main application frame |
+
+### What to do when Creatio is detected
+
+1. **Do NOT continue with browser automation** for page editing, schema changes, or app configuration
+2. Run `clio list-environments` (or MCP tool `list-environments`) to find which registered clio environment matches the detected site URL
+3. If no environment matches, register it: `clio reg-web-app <name> -u <URL> -l <login> -p <password>`
+4. Use clio MCP tools for the task:
+   - **Page editing**: `list-pages` → `get-page` → `sync-pages`
+   - **Schema changes**: `find-entity-schema` → `create-entity-schema` / `update-entity-schema`
+   - **App management**: `list-apps` → `get-app-info` → `create-app-section`
+   - **Data seeding**: `create-data-binding-db` / `upsert-data-binding-row-db`
+5. Use browser only for **final visual verification** after clio MCP changes are applied
 
 ## General Syntax
 
@@ -64,7 +112,7 @@ clio reg-web-app myenv -u https://mysite.creatio.com -l administrator -p passwor
 clio reg-web-app -a myenv
 
 # List all environments
-clio show-web-app-list --short
+clio list-environments --short
 
 # Ping to verify
 clio ping myenv
@@ -116,8 +164,8 @@ clio compile-package MyPackage -e myenv
 clio delete-pkg-remote MyPackage -e myenv
 
 # List installed packages
-clio get-pkg-list -e myenv
-clio get-pkg-list -e myenv -f CustomPrefix -j
+clio list-packages -e myenv
+clio list-packages -e myenv -f CustomPrefix -j
 
 # Compress/extract
 clio generate-pkg-zip MyPackage
@@ -406,6 +454,11 @@ clio clone-env --source Dev --target QA
 Create and evolve entity schemas directly on a remote Creatio instance. Requires cliogate.
 
 ```bash
+# Discover which package owns a schema (no package name needed)
+clio find-entity-schema -e myenv --search-pattern Vehicle
+clio find-entity-schema -e myenv --schema-name UsrVehicle
+clio find-entity-schema -e myenv --uid 117d32f9-aab9-4e3a-b13e-cfce62e15e4b
+
 # Create entity schema with columns
 clio create-entity-schema --package MyPackage --name UsrVehicle --title "Vehicle" \
   --column "Make:ShortText:Manufacturer" \
@@ -439,6 +492,8 @@ clio get-entity-schema-column-properties -e myenv --package MyPackage \
   --schema-name UsrVehicle --column-name Make
 ```
 
+`find-entity-schema` CLI output is labeled as `Schema: ... | Package: ... | Maintainer: ...` so transcript parsing stays unambiguous. When the same lookup is done through MCP, read the returned `package-name` field directly for follow-up tool calls instead of parsing CLI-style text or falling back to `list-packages`.
+
 Default resolution behavior for entity schema defaults:
 - `SystemValue` accepts Guid, alias, or caption and persists canonical Guid.
 - `Settings` accepts code, name, or id and persists canonical setting code.
@@ -451,24 +506,24 @@ Read and update Freedom UI page schemas.
 
 ```bash
 # Discover pages
-clio page-list -e myenv
-clio page-list --search-pattern FormPage --limit 20 -e myenv
+clio list-pages -e myenv
+clio list-pages --search-pattern FormPage --limit 20 -e myenv
 
 # Read page (get raw.body for editing)
-clio page-get --schema-name UsrTodo_FormPage -e myenv
+clio get-page --schema-name UsrTodo_FormPage -e myenv
 
 # Validate without saving
-clio page-update --schema-name UsrTodo_FormPage --body "<raw body>" --dry-run true -e myenv
+clio update-page --schema-name UsrTodo_FormPage --body "<raw body>" --dry-run true -e myenv
 
 # Save updated page
-clio page-update --schema-name UsrTodo_FormPage --body "<edited body>" -e myenv
+clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" -e myenv
 
 # Save with resource string registration
-clio page-update --schema-name UsrTodo_FormPage --body "<edited body>" \
+clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
   --resources '{"UsrDetailsTab_caption":"Details"}' -e myenv
 ```
 
-For updating multiple pages in one call, use the `page-sync` MCP tool.
+For updating multiple pages in one call, use the `sync-pages` MCP tool.
 
 ### 10. Data Bindings
 
@@ -536,7 +591,7 @@ clio update-cli
 | Permission denied | Ensure administrator-level Creatio credentials |
 | Package locked | Unlock with `clio unlock-package <PKG> -e <ENV>` |
 | Entity schema command fails | Ensure cliogate is installed: `clio install-gate -e <ENV>` |
-| page-update validation error | Use `--dry-run true` first; check Freedom UI schema markers |
+| update-page validation error | Use `--dry-run true` first; check Freedom UI schema markers |
 
 ## Important Notes
 
@@ -548,5 +603,5 @@ clio update-cli
 - Use `clio help` for full command list, `clio <CMD> --help` for command details
 - Manifest YAML files support GitOps: apps, syssettings, features, webservices
 - Entity schema commands (`create-entity-schema`, `modify-entity-schema-column`, etc.) require cliogate ≥ 2.0
-- Freedom UI page commands (`page-get`, `page-update`, `page-list`) work without cliogate
+- Freedom UI page commands (`get-page`, `update-page`, `list-pages`) work without cliogate
 - Data binding commands that work offline (no environment): `create-data-binding` with SysSettings/SysModule templates, `add-data-binding-row`, `remove-data-binding-row`
