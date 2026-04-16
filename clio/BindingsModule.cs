@@ -115,12 +115,13 @@ public class BindingsModule {
 					activeSettings.IsNetCore)
 				: new RemoteDataProvider(activeSettings.Uri, activeSettings.AuthAppUri, activeSettings.ClientId,
 					activeSettings.ClientSecret, activeSettings.IsNetCore));
-			services.AddSingleton<CreatioClient>(_ => string.IsNullOrEmpty(activeSettings.ClientId)
+			Lazy<CreatioClient> lazyCreatioClient = new(() => string.IsNullOrEmpty(activeSettings.ClientId)
 				? new CreatioClient(activeSettings.Uri ?? "http://localhost", activeSettings.Login ?? "Supervisor",
 					activeSettings.Password ?? "Supervisor", true, activeSettings.IsNetCore)
 				: CreatioClient.CreateOAuth20Client(activeSettings.Uri, activeSettings.AuthAppUri,
 					activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore));
-			services.AddSingleton<IApplicationClient>(sp => new CreatioClientAdapter(sp.GetRequiredService<CreatioClient>()));
+			services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
+			services.AddSingleton<IApplicationClient>(_ => new CreatioClientAdapter(lazyCreatioClient));
 			services.AddTransient<SysSettingsManager>();
 		}
 
