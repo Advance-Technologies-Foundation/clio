@@ -167,6 +167,9 @@ public sealed class ApplicationSectionDeleteService(
 			ExecuteDeleteQuery(client, deleteUrl, BuildSysModuleEntityDeleteQuery(section.SysModuleEntityId));
 		}
 
+		logger.WriteInfo("Deleting ApplicationSection record...");
+		TryExecuteDeleteQuery(client, deleteUrl, BuildApplicationSectionDeleteQuery(section.Id));
+
 		logger.WriteInfo("Deleting SysModule record...");
 		ExecuteDeleteQuery(client, deleteUrl, BuildDeleteQueryBody(section.Id));
 	}
@@ -304,6 +307,39 @@ public sealed class ApplicationSectionDeleteService(
 		          "parameter":{
 		            "dataValueType":0,
 		            "value":"{{sysModuleEntityId}}"
+		          }
+		        }
+		      }
+		    }
+		  }
+		}
+		""";
+
+	private static string BuildApplicationSectionDeleteQuery(string sectionId) =>
+		$$"""
+		{
+		  "__type":"Terrasoft.Nui.ServiceModel.DataContract.DeleteQuery",
+		  "rootSchemaName":"{{ApplicationSectionSchemaName}}",
+		  "filters":{
+		    "isEnabled":true,
+		    "filterType":6,
+		    "logicalOperation":0,
+		    "trimDateTimeParameterToDate":false,
+		    "items":{
+		      "primaryFilter":{
+		        "filterType":1,
+		        "comparisonType":3,
+		        "isEnabled":true,
+		        "trimDateTimeParameterToDate":false,
+		        "leftExpression":{
+		          "expressionType":0,
+		          "columnPath":"Id"
+		        },
+		        "rightExpression":{
+		          "expressionType":2,
+		          "parameter":{
+		            "dataValueType":0,
+		            "value":"{{sectionId}}"
 		          }
 		        }
 		      }
