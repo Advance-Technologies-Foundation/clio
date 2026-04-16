@@ -471,7 +471,7 @@ public class BindingsModule {
 		if (profile == BindingsModuleRegistrationProfile.EnvironmentScoped) {
 			return bootstrapResult.ResolvedEnvironment ?? CreateBootstrapPlaceholderEnvironment();
 		}
-		return bootstrapResult.ResolvedEnvironment ?? CreateBootstrapPlaceholderEnvironment();
+		return CreateBootstrapPlaceholderEnvironment();
 	}
 
 	private static EnvironmentSettings CreateBootstrapPlaceholderEnvironment() {
