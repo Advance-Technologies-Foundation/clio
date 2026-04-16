@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
-using System.Threading;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Clio.Command;
@@ -176,6 +175,17 @@ public class ProgramTestCase : BaseClioModuleTests
 		Action act = () => Program.Resolve<CreateWorkspaceCommand>(new CreateWorkspaceCommandOptions(), false);
 		act.Should().NotThrow(
 			because: "createw creates a local workspace and must not attempt OAuth authentication at startup");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ap (add-package) must not connect to env when run locally without an explicit env.")]
+	public void Resolve_Should_Not_Throw_For_AddPackageCommand_When_Default_Env_Has_OAuth() {
+		Program.Container = null;
+		AddOAuthDefaultEnvironmentFixture();
+		Action act = () => Program.Resolve<AddPackageCommand>(new AddPackageOptions(), false);
+		act.Should().NotThrow(
+			because: "ap creates a local package and must not attempt OAuth authentication at startup");
 	}
 
 	private void AddWrongActiveEnvironmentFixture() {
