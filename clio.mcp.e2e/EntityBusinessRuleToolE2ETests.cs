@@ -195,55 +195,6 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			cancellationToken);
 	}
 
-	private static async Task<CallToolResult> sessionCallWithLookupOperandAsync(
-		McpServerSession session,
-		string environmentName,
-		string packageName,
-		CancellationToken cancellationToken) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the create-entity-business-rule MCP tool must be advertised before the end-to-end call can be executed");
-
-		return await session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["package-name"] = packageName,
-					["entity-schema-name"] = TargetEntitySchemaName,
-					["rule"] = new Dictionary<string, object?> {
-						["caption"] = "Lookup rule",
-						["condition"] = new Dictionary<string, object?> {
-							["logicalOperation"] = "AND",
-							["conditions"] = new[] {
-								new Dictionary<string, object?> {
-									["leftExpression"] = new Dictionary<string, object?> {
-										["type"] = "AttributeValue",
-										["path"] = "Owner"
-									},
-									["comparisonType"] = "equal",
-									["rightExpression"] = new Dictionary<string, object?> {
-										["type"] = "Const",
-										["value"] = new Dictionary<string, object?> {
-											["value"] = "11111111-1111-1111-1111-111111111111",
-											["displayValue"] = "John Best"
-										}
-									}
-								}
-							}
-						},
-						["actions"] = new[] {
-							new Dictionary<string, object?> {
-								["type"] = "make-required",
-								["items"] = new[] { "JobTitle" }
-							}
-						}
-					}
-				}
-			},
-			cancellationToken);
-	}
-
 	private static AddonBusinessRuleSnapshot FetchAddonSnapshot(
 		string environmentName,
 		string packageName,
