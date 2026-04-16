@@ -205,6 +205,7 @@ public sealed class ApplicationSectionCreateService(
 					environmentSettings,
 					request.ApplicationId,
 					request.SectionCode);
+				SetIconBackground(client, environmentSettings, createdSection.Id, request.IconBackground);
 				string? entitySchemaName = string.IsNullOrWhiteSpace(createdSection.EntitySchemaName)
 					? request.EntitySchemaName
 					: createdSection.EntitySchemaName;
@@ -226,7 +227,7 @@ public sealed class ApplicationSectionCreateService(
 						createdSection.PackageId,
 						createdSection.SectionSchemaUId,
 						createdSection.LogoId,
-						createdSection.IconBackground,
+						request.IconBackground,
 						createdSection.ClientTypeId),
 					entity,
 					createdPages);
@@ -242,6 +243,57 @@ public sealed class ApplicationSectionCreateService(
 			$"Section '{request.SectionCode}' was created but its metadata could not be loaded after {PollAttempts} attempts. Last error: {lastError!.Message}",
 			lastError);
 	}
+
+	private void SetIconBackground(
+		IApplicationClient client,
+		EnvironmentSettings environmentSettings,
+		string sectionId,
+		string iconBackground) {
+		string body = JsonSerializer.Serialize(BuildIconBackgroundUpdateBody(sectionId, iconBackground), JsonOptions);
+		string responseBody = client.ExecutePostRequest(
+			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Update, environmentSettings),
+			body);
+		UpdateQueryResponseDto response = JsonSerializer.Deserialize<UpdateQueryResponseDto>(responseBody, JsonOptions)
+			?? throw new InvalidOperationException("Icon background UpdateQuery returned an empty response.");
+		if (!response.Success) {
+			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "Icon background UpdateQuery failed.");
+		}
+	}
+
+	private static object BuildIconBackgroundUpdateBody(string sectionId, string iconBackground) =>
+		new {
+			rootSchemaName = ApplicationSectionSchemaName,
+			columnValues = new {
+				items = new Dictionary<string, object> {
+					["IconBackground"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, iconBackground)
+				}
+			},
+			filters = new {
+				filterType = 6,
+				isEnabled = true,
+				trimDateTimeParameterToDate = false,
+				logicalOperation = 0,
+				items = new {
+					primaryFilter = new {
+						filterType = 1,
+						comparisonType = 3,
+						isEnabled = true,
+						trimDateTimeParameterToDate = false,
+						leftExpression = new {
+							expressionType = 0,
+							columnPath = "Id"
+						},
+						rightExpression = new {
+							expressionType = 2,
+							parameter = new {
+								dataValueType = SelectQueryHelper.GuidDataValueType,
+								value = sectionId
+							}
+						}
+					}
+				}
+			}
+		};
 
 	private static ApplicationSectionRecord GetSectionRecord(
 		IApplicationClient client,
@@ -507,6 +559,14 @@ public sealed class ApplicationSectionCreateService(
 	}
 
 	private sealed class InsertQueryResponseDto {
+		[JsonPropertyName("success")]
+		public bool Success { get; set; }
+
+		[JsonPropertyName("errorInfo")]
+		public ErrorInfoDto? ErrorInfo { get; set; }
+	}
+
+	private sealed class UpdateQueryResponseDto {
 		[JsonPropertyName("success")]
 		public bool Success { get; set; }
 
