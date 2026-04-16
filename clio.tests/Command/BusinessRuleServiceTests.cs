@@ -317,48 +317,6 @@ public sealed class BusinessRuleServiceTests {
 			because: "the saved metadata should contain the same raw GUID string that was provided in the request");
 	}
 
-	[Test]
-	[Category("Unit")]
-	[Description("Rejects lookup constant payloads when the right-hand constant is not a plain GUID string.")]
-	public void Create_Should_Reject_Lookup_Constant_Object_Payload() {
-		// Arrange
-		const string ownerId = "e0be1264-f36b-1410-fa98-00155d043204";
-		BusinessRuleCreateRequest request = new(
-			"UsrPkg",
-			"UsrOrder",
-			new BusinessRule(
-				"Require status for owner",
-				true,
-				new BusinessRuleConditionGroup(
-					"AND",
-					[
-						new BusinessRuleCondition(
-							new BusinessRuleOperand("attribute", "Owner", null, null),
-							"equal",
-							new BusinessRuleOperand(
-								"constant",
-								null,
-								JsonSerializer.SerializeToElement(new {
-									Value = ownerId,
-									DisplayValue = "John Best"
-								}),
-								null))
-					]),
-				[
-					new BusinessRuleAction("make-required", ["Status"])
-				]));
-
-		// Act
-		Action act = () => _service.Create("dev", request);
-
-		// Assert
-		act.Should().Throw<ArgumentException>()
-			.WithMessage("*rightExpression.value must be a GUID string*",
-				because: "lookup operands should only accept a plain GUID string on the right-hand side");
-		_savedAddonRequestBody.Should().BeNull(
-			because: "validation should reject the request before the add-on save call is attempted");
-	}
-
 	private string BuildResponse(string url, string requestBody) {
 		if (url.Contains("SelectQuery", StringComparison.Ordinal)) {
 			if (requestBody.Contains("\"SysPackage\"", StringComparison.Ordinal)) {

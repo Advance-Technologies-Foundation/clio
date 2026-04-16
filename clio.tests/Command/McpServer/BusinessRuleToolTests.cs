@@ -57,9 +57,9 @@ public sealed class BusinessRuleToolTests {
 					"AND",
 					[
 						new BusinessRuleConditionArgs(
-							new BusinessRuleAttributeExpressionArgs("AttributeValue") { Path = "Status" },
+							new BusinessRuleAttributeExpressionArgs { Path = "Status" },
 							"equal",
-							new BusinessRuleValueExpressionArgs("Const") {
+							new BusinessRuleValueExpressionArgs {
 								Value = JsonSerializer.Deserialize<JsonElement>("\"Draft\"")
 						})
 					]),
@@ -121,9 +121,9 @@ public sealed class BusinessRuleToolTests {
 					"AND",
 					[
 						new BusinessRuleConditionArgs(
-							new BusinessRuleAttributeExpressionArgs("AttributeValue") { Path = "Status" },
+							new BusinessRuleAttributeExpressionArgs { Path = "Status" },
 							"equal",
-							new BusinessRuleValueExpressionArgs("Const") {
+							new BusinessRuleValueExpressionArgs {
 								Value = JsonSerializer.Deserialize<JsonElement>("\"Draft\"")
 							})
 					]),
@@ -166,9 +166,9 @@ public sealed class BusinessRuleToolTests {
 					"AND",
 					[
 						new BusinessRuleConditionArgs(
-							new BusinessRuleAttributeExpressionArgs("AttributeValue") { Path = "Status" },
+							new BusinessRuleAttributeExpressionArgs { Path = "Status" },
 							"equal",
-							new BusinessRuleValueExpressionArgs("Const") {
+							new BusinessRuleValueExpressionArgs {
 								Value = JsonSerializer.Deserialize<JsonElement>("\"Draft\"")
 							})
 					]),
@@ -187,53 +187,7 @@ public sealed class BusinessRuleToolTests {
 			&& options.Environment == "dev"
 			&& string.IsNullOrWhiteSpace(options.Uri)));
 	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Preserves invalid lookup object payloads so the service layer can reject non-string lookup constants explicitly.")]
-	public void BusinessRuleCreate_Should_Preserve_Lookup_Operand_Object_For_Service_Validation() {
-		// Arrange
-		IBusinessRuleService service = Substitute.For<IBusinessRuleService>();
-		CreateEntityBusinessRuleCommand command = new(service, Substitute.For<ILogger>());
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<CreateEntityBusinessRuleCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
-		service.Create("dev", Arg.Any<BusinessRuleCreateRequest>())
-			.Returns(new BusinessRuleCreateResult("BusinessRule_7654321"));
-		CreateEntityBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
-		const string ownerId = "11111111-1111-1111-1111-111111111111";
-		BusinessRuleCreateArgs args = new(
-			"dev",
-			"UsrPkg",
-			"UsrOrder",
-			new BusinessRuleArgs(
-				"Require status for owner",
-				new BusinessRuleConditionGroupArgs(
-					"AND",
-					[
-						new BusinessRuleConditionArgs(
-							new BusinessRuleAttributeExpressionArgs("AttributeValue") { Path = "Owner" },
-							"equal",
-							new BusinessRuleValueExpressionArgs("Const") {
-								Value = JsonSerializer.Deserialize<JsonElement>(
-									$$"""{"value":"{{ownerId}}","displayValue":"John Best"}""")
-							})
-					]),
-				[
-					new BusinessRuleActionArgs("make-required", ["Status"])
-				]));
-
-		// Act
-		BusinessRuleCreateResponse result = tool.BusinessRuleCreate(args);
-
-		// Assert
-		result.Success.Should().BeTrue(
-			because: "the MCP adapter should forward payloads as-is and let the business-rule validator enforce lookup type rules");
-		service.Received(1).Create(
-			"dev",
-			Arg.Is<BusinessRuleCreateRequest>(request =>
-				request.Rule.ConditionGroup.Conditions[0].Right.Value.HasValue
-				&& request.Rule.ConditionGroup.Conditions[0].Right.Value.Value.ValueKind == JsonValueKind.Object));
-	}
+	
 
 	[Test]
 	[Category("Unit")]

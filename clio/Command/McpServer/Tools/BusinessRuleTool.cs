@@ -208,9 +208,7 @@ public abstract record BusinessRuleExpressionArgs(
 /// <summary>
 /// Structured attribute expression accepted by the MCP tool.
 /// </summary>
-public sealed record BusinessRuleAttributeExpressionArgs(
-	string Type
-) : BusinessRuleExpressionArgs(Type) {
+public sealed record BusinessRuleAttributeExpressionArgs() : BusinessRuleExpressionArgs("AttributeValue") {
 	[JsonPropertyName("path")]
 	[Description("Attribute path when type is AttributeValue.")]
 	public string? Path { get; init; }
@@ -219,9 +217,7 @@ public sealed record BusinessRuleAttributeExpressionArgs(
 /// <summary>
 /// Structured constant expression accepted by the MCP tool.
 /// </summary>
-public sealed record BusinessRuleValueExpressionArgs(
-	string Type
-) : BusinessRuleExpressionArgs(Type) {
+public sealed record BusinessRuleValueExpressionArgs() : BusinessRuleExpressionArgs("Const") {
 	[JsonPropertyName("value")]
 	[Description("Constant value when type is Const. For lookup constants pass a GUID string.")]
 	public System.Text.Json.JsonElement? Value { get; init; }
