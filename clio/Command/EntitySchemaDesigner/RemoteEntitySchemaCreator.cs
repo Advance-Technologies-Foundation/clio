@@ -22,10 +22,12 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	#region Fields: Private
 
 	private const string TitleLocalizationsArgumentName = "title-localizations";
+	private const string SchemaNamePrefixSettingCode = "SchemaNamePrefix";
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
 	private readonly ILogger _logger;
+	private readonly ISysSettingsManager _sysSettingsManager;
 
 	#endregion
 
@@ -82,11 +84,13 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		IApplicationPackageListProvider applicationPackageListProvider,
 		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
-		ILogger logger) {
+		ILogger logger,
+		ISysSettingsManager sysSettingsManager) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_logger = logger;
+		_sysSettingsManager = sysSettingsManager;
 	}
 
 	#endregion
@@ -123,7 +127,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 		if (!schema.ParentSchema.HasValue() && columns.All(column => !column.IsGuidType())) {
 			columns.Insert(0, CreateColumn(
-				new ParsedColumn("Id", "guid", "Id", null, null, null, null, null, null, null),
+				new ParsedColumn(ResolvePrimaryColumnName(), "guid", "Id", null, null, null, null, null, null, null),
 				referenceSchemas,
 				cultureName,
 				options));
@@ -268,6 +272,23 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 		EntitySchemaDesignerSupport.ValidateDefaultValueConfig(defaultValueConfig, dataValueType,
 			$"Column '{parsedColumn.Name}'");
+	}
+
+	private string ResolvePrimaryColumnName() {
+		try {
+			string schemaNamePrefix = NormalizeTextSysSettingValue(
+				_sysSettingsManager.GetSysSettingValueByCode(SchemaNamePrefixSettingCode));
+			return string.IsNullOrWhiteSpace(schemaNamePrefix)
+				? "Id"
+				: $"{schemaNamePrefix}Id";
+		}
+		catch {
+			return "Id";
+		}
+	}
+
+	private static string NormalizeTextSysSettingValue(string? value) {
+		return value?.Trim().Trim('"') ?? string.Empty;
 	}
 
 	private static bool UsesUnsupportedLegacyBinaryDefaultValue(ParsedColumn parsedColumn, int dataValueType) {

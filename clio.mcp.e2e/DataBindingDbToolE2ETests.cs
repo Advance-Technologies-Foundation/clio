@@ -66,9 +66,9 @@ public sealed class DataBindingDbToolE2ETests {
 			new Dictionary<string, object?> {
 				["environment-name"] = arrangeContext.EnvironmentName,
 				["package-name"] = arrangeContext.PackageName,
-				["schema-name"] = "SysSettings",
+				["schema-name"] = "Lookup",
 				["binding-name"] = $"UsrDbE2E{arrangeContext.PackageName}",
-				["rows"] = """[{"values":{"Name":"E2E DB binding row","Code":"UsrE2EDbRow"}}]"""
+				["rows"] = """[{"values":{"Name":"E2E DB binding row"}}]"""
 			});
 
 		// Assert
@@ -228,11 +228,11 @@ public sealed class DataBindingDbToolE2ETests {
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
 		const string rowName = "E2E Dedup Row";
-		const string rowsJson = """[{"values":{"Name":"E2E Dedup Row","Code":"UsrDedupRow"}}]""";
+		const string rowsJson = """[{"values":{"Name":"E2E Dedup Row"}}]""";
 		var firstCallArgs = new Dictionary<string, object?> {
 			["environment-name"] = arrangeContext.EnvironmentName,
 			["package-name"] = arrangeContext.PackageName,
-			["schema-name"] = "SysSettings",
+			["schema-name"] = "Lookup",
 			["binding-name"] = $"UsrDedupE2E{arrangeContext.PackageName}",
 			["rows"] = rowsJson
 		};
@@ -282,6 +282,13 @@ public sealed class DataBindingDbToolE2ETests {
 			["add-package", packageName],
 			workingDirectory: workspacePath,
 			cancellationToken: cancellationTokenSource.Token);
+		if (requireEnvironment && !string.IsNullOrWhiteSpace(environmentName)) {
+			await ClioCliCommandRunner.RunAndAssertSuccessAsync(
+				settings,
+				["push-workspace", "-e", environmentName],
+				workingDirectory: workspacePath,
+				cancellationToken: cancellationTokenSource.Token);
+		}
 
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new DataBindingDbArrangeContext(
