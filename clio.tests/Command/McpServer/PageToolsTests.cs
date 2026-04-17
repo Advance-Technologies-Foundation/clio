@@ -153,10 +153,10 @@ public class PageToolsTests {
 			because: "page guidance should describe the canonical maintenance sequence for page edits");
 		prompt.Should().Contain("single-page dry-run or legacy save workflows",
 			because: "page guidance should keep update-page in a fallback-only role");
-		prompt.Should().Contain("raw.body",
-			because: "page guidance should explicitly call out raw.body as the editable JavaScript source");
-		prompt.Should().Contain("Do not send `bundle` or `bundle.viewConfig`",
-			because: "page guidance should explicitly reject the payload shape that caused the analyzed session failure");
+		prompt.Should().Contain("body.js",
+			because: "page guidance should explicitly call out body.js as the editable JavaScript source");
+		prompt.Should().Contain("Do not send bundle data back to page tools",
+			because: "page guidance should explicitly reject submitting bundle content to write tools");
 		prompt.Should().Contain("do not send a nested object payload",
 			because: "page guidance should explicitly reject non-string resources payloads");
 		prompt.Should().NotContain("Use `sync-pages` only when you need to save multiple pages in one workflow.",
