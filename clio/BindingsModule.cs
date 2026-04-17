@@ -454,6 +454,7 @@ public class BindingsModule {
 		services.AddMcpServer(options => {
 					options.Capabilities ??= new();
 					options.Capabilities.Logging = new();
+					options.ServerInstructions = McpServerInstructions.Text;
 				})
 				.WithStdioServerTransport()
 				.WithResourcesFromAssembly(Assembly.GetExecutingAssembly())
