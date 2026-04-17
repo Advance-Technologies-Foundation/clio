@@ -18,7 +18,11 @@ internal static class PageBodyEditor {
 	};
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
-	private static readonly JsonSerializerOptions IndentedOptions = new() { WriteIndented = true };
+	private static readonly JsonSerializerOptions IndentedOptions = new() {
+		WriteIndented = true,
+		IndentCharacter = '\t',
+		IndentSize = 1
+	};
 
 	public static string AddFormFields(string body, IReadOnlyList<FormFieldSpec> fields) {
 		foreach (FormFieldSpec field in fields) {
