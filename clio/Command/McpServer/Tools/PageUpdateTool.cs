@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Common;
+using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -19,10 +22,19 @@ public sealed class PageUpdateTool(
 	internal const string ToolName = "update-page";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+<<<<<<< HEAD
 	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
 		"Section authoring rules for the body payload: " +
 		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first.")]
 	public PageUpdateResponse UpdatePage([Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageUpdateArgs args) {
+=======
+	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	public async Task<PageUpdateResponse> UpdatePage(
+		[Description("Parameters: schema-name, body (required); resources, dry-run, skip-sampling (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Required] PageUpdateArgs args,
+		McpServerLib.McpServer server,
+		CancellationToken cancellationToken = default) {
+>>>>>>> 794b3777 (feat(mcp): add AI sampling review, add-form-fields and add-list-columns tools)
 		PageUpdateOptions options = new() {
 			SchemaName = args.SchemaName,
 			Body = args.Body,
@@ -33,29 +45,18 @@ public sealed class PageUpdateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		var validationErrors = new List<string>();
-		SchemaValidationResult validatorParamResult = SchemaValidationService.ValidateValidatorParamResourceBindings(args.Body);
-		if (!validatorParamResult.IsValid) {
-			validationErrors.AddRange(validatorParamResult.Errors);
+		PageSamplingReview samplingReview = null;
+		if (!options.DryRun && args.SkipSampling != true) {
+			samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(server, args.SchemaName, args.Body, cancellationToken);
+			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues),
+					SamplingReview = samplingReview
+				};
+			}
 		}
-		SchemaValidationResult validatorBindingResult = SchemaValidationService.ValidateValidatorControlBindings(args.Body);
-		if (!validatorBindingResult.IsValid) {
-			validationErrors.AddRange(validatorBindingResult.Errors);
-		}
-		SchemaValidationResult standardValidatorResult = SchemaValidationService.ValidateStandardValidatorUsage(args.Body);
-		if (!standardValidatorResult.IsValid) {
-			validationErrors.AddRange(standardValidatorResult.Errors);
-		}
-		SchemaValidationResult validatorParamCompletenessResult = SchemaValidationService.ValidateCustomValidatorParamCompleteness(args.Body);
-		if (!validatorParamCompletenessResult.IsValid) {
-			validationErrors.AddRange(validatorParamCompletenessResult.Errors);
-		}
-		if (validationErrors.Count > 0) {
-			return new PageUpdateResponse {
-				Success = false,
-				Error = "Validation failed: " + string.Join("; ", validationErrors)
-			};
-		}
+		PageUpdateResponse response;
 		lock (CommandExecutionSyncRoot) {
 			PageUpdateCommand resolvedCommand;
 			try {
@@ -63,10 +64,12 @@ public sealed class PageUpdateTool(
 			} catch (Exception ex) {
 				return new PageUpdateResponse { Success = false, Error = ex.Message };
 			}
-			resolvedCommand.TryUpdatePage(options, out PageUpdateResponse response);
-			return response;
+			resolvedCommand.TryUpdatePage(options, out response);
 		}
+		response.SamplingReview = samplingReview;
+		return response;
 	}
+
 }
 
 public sealed record PageUpdateArgs(
@@ -100,5 +103,8 @@ public sealed record PageUpdateArgs(
 	string? Login,
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password
+	string? Password,
+	[property: JsonPropertyName("skip-sampling")]
+	[property: Description("If true, skip the AI semantic review before saving. Default: false")]
+	bool? SkipSampling = null
 );
