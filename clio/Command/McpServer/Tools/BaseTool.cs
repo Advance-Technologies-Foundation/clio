@@ -30,7 +30,7 @@ public abstract class BaseTool<T>(
 		try {
 			resolvedCommand = ResolveCommand<TCommand>(options);
 		} catch (Exception e) {
-			return new CommandExecutionResult(1, [new ErrorMessage(e.Message)], null);
+			return CommandExecutionResult.FromException(e);
 		}
 		configureCommand?.Invoke(resolvedCommand);
 		return InternalExecute(resolvedCommand, options);
@@ -67,6 +67,7 @@ public abstract class BaseTool<T>(
 
 	private protected virtual CommandExecutionResult InternalExecute(Command<T> command, T options) {
 		int result = -1;
+		string correlationId = Guid.NewGuid().ToString("N")[..12];
 		lock (CommandExecutionLock) {
 			dbOperationLogContextAccessor?.ClearLastCompletedPath();
 			bool previousPreserveMessages = logger.PreserveMessages;
@@ -76,16 +77,13 @@ public abstract class BaseTool<T>(
 				CommandExecutionResult returnResult = new(
 					result,
 					[.. logger.FlushAndSnapshotMessages(clearMessages: true)],
-					dbOperationLogContextAccessor?.LastCompletedPath);
+					dbOperationLogContextAccessor?.LastCompletedPath,
+					CorrelationId: correlationId);
 				return returnResult;
 			}
 			catch (Exception e) {
-				List<LogMessage> logMessages = [.. logger.FlushAndSnapshotMessages(clearMessages: true), new ErrorMessage(e.Message)];
-				CommandExecutionResult returnResult = new(
-					result,
-					logMessages,
-					dbOperationLogContextAccessor?.LastCompletedPath);
-				return returnResult;
+				List<LogMessage> priorLogs = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
+				return CommandExecutionResult.FromException(e, priorLogs, correlationId);
 			}
 			finally {
 				logger.PreserveMessages = previousPreserveMessages;
