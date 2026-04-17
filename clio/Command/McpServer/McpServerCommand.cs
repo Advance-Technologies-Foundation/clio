@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading;
+using Clio.Command.McpServer.Tools;
 using CommandLine;
 
 namespace Clio.Command.McpServer;
@@ -12,6 +13,7 @@ public class McpServerCommandOptions : BaseCommandOptions
 
 public class McpServerCommand(ModelContextProtocol.Server.McpServer server) : Command<McpServerCommandOptions>{
 	public override int Execute(McpServerCommandOptions options) {
+		McpLogNotifier.Initialize(server);
 		using var cts = new CancellationTokenSource();
 		Console.CancelKeyPress += (_, e) => {
 			e.Cancel = true;

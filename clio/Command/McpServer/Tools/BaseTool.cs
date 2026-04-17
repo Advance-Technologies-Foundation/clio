@@ -68,21 +68,25 @@ public abstract class BaseTool<T>(
 	private protected virtual CommandExecutionResult InternalExecute(Command<T> command, T options) {
 		int result = -1;
 		string correlationId = Guid.NewGuid().ToString("N")[..12];
+		IReadOnlyList<LogMessage> flushedMessages;
 		lock (CommandExecutionLock) {
 			dbOperationLogContextAccessor?.ClearLastCompletedPath();
 			bool previousPreserveMessages = logger.PreserveMessages;
 			logger.PreserveMessages = true;
 			try {
 				result = command.Execute(options);
+				flushedMessages = logger.FlushAndSnapshotMessages(clearMessages: true);
+				McpLogNotifier.ForwardMessages(flushedMessages, correlationId);
 				CommandExecutionResult returnResult = new(
 					result,
-					[.. logger.FlushAndSnapshotMessages(clearMessages: true)],
+					[.. flushedMessages],
 					dbOperationLogContextAccessor?.LastCompletedPath,
 					CorrelationId: correlationId);
 				return returnResult;
 			}
 			catch (Exception e) {
 				List<LogMessage> priorLogs = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
+				McpLogNotifier.ForwardMessages(priorLogs, correlationId);
 				return CommandExecutionResult.FromException(e, priorLogs, correlationId);
 			}
 			finally {
