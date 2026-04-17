@@ -98,16 +98,21 @@ internal static class DataBindingToolPathValidator {
 		}
 
 		if (!Path.IsPathRooted(workspacePath)) {
-			throw new InvalidOperationException($"Workspace path must be absolute: {workspacePath}");
+			throw new InvalidOperationException(
+				$"Workspace path must be absolute: {workspacePath}. " +
+				"Provide a full path such as C:\\Projects\\MyWorkspace.");
 		}
 
 		if (workspacePath.StartsWith(@"\\", StringComparison.Ordinal)) {
-			throw new InvalidOperationException($"Workspace path must be a local absolute path: {workspacePath}");
+			throw new InvalidOperationException(
+				$"Workspace path must be a local absolute path, not a network share: {workspacePath}");
 		}
 
 		string fullPath = Path.GetFullPath(workspacePath);
 		if (!Directory.Exists(fullPath)) {
-			throw new InvalidOperationException($"Workspace path not found: {fullPath}");
+			throw new InvalidOperationException(
+				$"Workspace path not found: {fullPath}. " +
+				"Verify the directory exists and the path is correct.");
 		}
 
 		return fullPath;
