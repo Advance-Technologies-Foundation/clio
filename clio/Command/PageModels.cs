@@ -480,6 +480,10 @@ public sealed class PageAddFieldsResponse {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
 	public int FieldsAdded { get; init; }
 
+	[JsonPropertyName("resources-registered")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int ResourcesRegistered { get; init; }
+
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
@@ -504,6 +508,10 @@ public sealed class PageAddColumnsResponse {
 	[JsonPropertyName("columns-added")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
 	public int ColumnsAdded { get; init; }
+
+	[JsonPropertyName("resources-registered")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int ResourcesRegistered { get; init; }
 
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

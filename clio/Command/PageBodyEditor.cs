@@ -81,6 +81,7 @@ internal static class PageBodyEditor {
 			}
 			body = ReplaceMarkerContent(body, vmMarker, SerializeJson(vmArray));
 		}
+		ThrowIfMarkerIntegrityFailed(body);
 		return body;
 	}
 
@@ -145,7 +146,15 @@ internal static class PageBodyEditor {
 			}
 			body = ReplaceMarkerContent(body, vmMarker, SerializeJson(vmArray));
 		}
+		ThrowIfMarkerIntegrityFailed(body);
 		return body;
+	}
+
+	private static void ThrowIfMarkerIntegrityFailed(string body) {
+		SchemaValidationResult result = SchemaValidationService.ValidateMarkerIntegrity(body);
+		if (!result.IsValid)
+			throw new InvalidOperationException(
+				"Post-edit marker integrity check failed: " + string.Join("; ", result.Errors));
 	}
 
 	private static bool TryFindMarkerSpan(string body, string marker, out int contentStart, out int contentEnd) {
