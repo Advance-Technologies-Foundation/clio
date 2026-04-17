@@ -20,4 +20,10 @@ public record CommandExecutionResult(
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("Optional Data Forge enrichment diagnostics returned when DataForge was queried during the operation.")]
 	ApplicationDataForgeResult DataForge = null
-);
+) {
+	/// <summary>
+	/// Creates a failed <see cref="CommandExecutionResult"/> with a single error message.
+	/// </summary>
+	public static CommandExecutionResult FromError(string message) =>
+		new(-1, [new ErrorMessage(message)]);
+}
