@@ -500,18 +500,29 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			throw new InvalidOperationException(
 				$"Schema '{options.SchemaName}' was saved but is not available in runtime.");
 		}
-		EntityDesignSchemaDto reloadedSchema = _entitySchemaDesignerClient.GetSchemaDesignItem(
+		DesignerResponse<EntityDesignSchemaDto>? designItemResponse = _entitySchemaDesignerClient.TryGetSchemaDesignItem(
 			new GetSchemaDesignItemRequestDto {
 				Name = options.SchemaName,
 				PackageUId = package.Descriptor.UId,
 				UseFullHierarchy = false,
 				Cultures = [EntitySchemaDesignerSupport.GetCurrentCultureName()]
-			},
-			options).Schema ?? throw new InvalidOperationException(
-			$"Schema '{options.SchemaName}' could not be reloaded after save.");
-		if (!string.Equals(reloadedSchema.Name, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
-			throw new InvalidOperationException(
-				$"Schema '{options.SchemaName}' was reloaded with unexpected name '{reloadedSchema.Name}'.");
+			}, options);
+		if (designItemResponse != null) {
+			EntityDesignSchemaDto reloadedSchema = designItemResponse.Schema
+				?? throw new InvalidOperationException(
+					$"Schema '{options.SchemaName}' could not be reloaded after save.");
+			if (!string.Equals(reloadedSchema.Name, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
+				throw new InvalidOperationException(
+					$"Schema '{options.SchemaName}' was reloaded with unexpected name '{reloadedSchema.Name}'.");
+			}
+		} else {
+			string runtimeName = runtimeResponse.Schema.Name;
+			if (!string.Equals(runtimeName, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
+				throw new InvalidOperationException(
+					$"Schema '{options.SchemaName}' was created but runtime schema name '{runtimeName}' does not match.");
+			}
+			_logger.WriteInfo(
+				$"Schema '{options.SchemaName}': designer service returned an HTML response during verification; confirmed accessible at runtime.");
 		}
 		_logger.WriteInfo($"Entity schema '{options.SchemaName}' created in package '{options.Package}'.");
 	}

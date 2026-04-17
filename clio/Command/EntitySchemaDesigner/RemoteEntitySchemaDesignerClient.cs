@@ -16,6 +16,7 @@ internal interface IRemoteEntitySchemaDesignerClient
 		RemoteCommandOptions options);
 	BoolResponse CheckUniqueSchemaName(string managerName, string schemaName, Guid excludeUId, RemoteCommandOptions options);
 	DesignerResponse<EntityDesignSchemaDto> GetSchemaDesignItem(GetSchemaDesignItemRequestDto request, RemoteCommandOptions options);
+	DesignerResponse<EntityDesignSchemaDto>? TryGetSchemaDesignItem(GetSchemaDesignItemRequestDto request, RemoteCommandOptions options);
 	SaveDesignItemDesignerResponse SaveSchema(EntityDesignSchemaDto schema, RemoteCommandOptions options);
 	BaseResponse SaveSchemaDbStructure(Guid schemaUId, RemoteCommandOptions options);
 	RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options);
@@ -77,6 +78,13 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		RemoteCommandOptions options) {
 		return Post<GetSchemaDesignItemRequestDto, DesignerResponse<EntityDesignSchemaDto>>("GetSchemaDesignItem",
 			request, options);
+	}
+
+	public DesignerResponse<EntityDesignSchemaDto>? TryGetSchemaDesignItem(GetSchemaDesignItemRequestDto request,
+		RemoteCommandOptions options) {
+		string url = BuildDesignerMethodUrl("GetSchemaDesignItem");
+		return TryPostToUrl<GetSchemaDesignItemRequestDto, DesignerResponse<EntityDesignSchemaDto>>(url, request,
+			options, "GetSchemaDesignItem");
 	}
 
 	public SaveDesignItemDesignerResponse SaveSchema(EntityDesignSchemaDto schema, RemoteCommandOptions options) {
@@ -153,7 +161,20 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut, options.RetryCount,
 			options.RetryDelay);
 		TResponse response = DeserializeResponse<TResponse>(methodName, rawResponse);
+		return EnsureSuccess(response, methodName);
+	}
 
+	private TResponse? TryPostToUrl<TRequest, TResponse>(string url, TRequest request, RemoteCommandOptions options,
+		string methodName)
+		where TRequest : class
+		where TResponse : BaseResponse {
+		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
+		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut, options.RetryCount,
+			options.RetryDelay);
+		if (IsHtmlResponse(rawResponse)) {
+			return null;
+		}
+		TResponse response = DeserializeResponse<TResponse>(methodName, rawResponse);
 		return EnsureSuccess(response, methodName);
 	}
 
