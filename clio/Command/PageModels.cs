@@ -103,16 +103,26 @@ public sealed class PageGetResponse {
 	/// <summary>
 	/// Gets or sets the merged bundle.
 	/// </summary>
-	[JsonProperty("bundle")]
+	[JsonProperty("bundle", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("bundle")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public PageBundleInfo Bundle { get; init; }
 
 	/// <summary>
 	/// Gets or sets the raw editable payload.
 	/// </summary>
-	[JsonProperty("raw")]
+	[JsonProperty("raw", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("raw")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public PageRawInfo Raw { get; init; }
+
+	/// <summary>
+	/// Gets or sets the file paths written when the tool saves output to disk.
+	/// </summary>
+	[JsonProperty("files", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("files")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public PageGetFilesInfo Files { get; init; }
 
 	/// <summary>
 	/// Gets or sets the error message for failed requests.
@@ -273,6 +283,23 @@ public sealed class PageRawInfo {
 	[JsonProperty("body")]
 	[JsonPropertyName("body")]
 	public string Body { get; init; }
+}
+
+/// <summary>
+/// Represents file paths written by <c>get-page</c> when saving output to disk.
+/// </summary>
+public sealed class PageGetFilesInfo {
+	[JsonProperty("bodyFile")]
+	[JsonPropertyName("bodyFile")]
+	public string BodyFile { get; init; }
+
+	[JsonProperty("bundleFile")]
+	[JsonPropertyName("bundleFile")]
+	public string BundleFile { get; init; }
+
+	[JsonProperty("metaFile")]
+	[JsonPropertyName("metaFile")]
+	public string MetaFile { get; init; }
 }
 
 /// <summary>

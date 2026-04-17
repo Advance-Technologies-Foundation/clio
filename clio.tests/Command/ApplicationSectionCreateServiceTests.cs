@@ -119,7 +119,14 @@ public sealed class ApplicationSectionCreateServiceTests {
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
 				body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)))
-			.Returns("""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"{\"en-US\":\"Orders\"}","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":"#123456","ClientTypeId":"195785B4-F55A-4E72-ACE3-6480B54C8FA5"}]}""");
+			.Returns("""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"{\"en-US\":\"Orders\"}","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":"195785B4-F55A-4E72-ACE3-6480B54C8FA5"}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+				!body.Contains("\"LogoId\"", StringComparison.Ordinal) &&
+				!body.Contains("\"operationType\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
 
 		// Act
 		ApplicationSectionCreateResult result = _sut.CreateSection(
@@ -152,6 +159,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 			because: "the section caption should be inserted as plain text so the UI header is rendered correctly");
 		insertBody.Should().NotContain("{\\u0022en-US\\u0022:\\u0022Orders\\u0022",
 			because: "the section caption must not be serialized as a JSON string literal");
+		result.Section.IconBackground.Should().MatchRegex("^#[0-9A-Fa-f]{6}$",
+			because: "the create flow should set a valid hex color on the section via explicit UpdateQuery");
 	}
 
 	[Test]
@@ -206,7 +215,14 @@ public sealed class ApplicationSectionCreateServiceTests {
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
 				body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)))
-			.Returns("""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"{\"en-US\":\"Task statuses\"}","Code":"UsrTaskStatuses","Description":null,"EntitySchemaName":"UsrTaskStatus","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":"#654321","ClientTypeId":null}]}""");
+			.Returns("""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"{\"en-US\":\"Task statuses\"}","Code":"UsrTaskStatuses","Description":null,"EntitySchemaName":"UsrTaskStatus","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+				!body.Contains("\"LogoId\"", StringComparison.Ordinal) &&
+				!body.Contains("\"operationType\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
 
 		// Act
 		ApplicationSectionCreateResult result = _sut.CreateSection(
@@ -227,6 +243,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 			because: "existing-entity section creation should resolve the targeted entity from refreshed app metadata");
 		result.Pages.Should().ContainSingle(
 			because: "the refreshed readback should still report pages created by the section flow");
+		result.Section.IconBackground.Should().MatchRegex("^#[0-9A-Fa-f]{6}$",
+			because: "the create flow should set a valid hex color on the section via explicit UpdateQuery");
 	}
 
 	[Test]

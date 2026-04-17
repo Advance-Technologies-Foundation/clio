@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
 using ModelContextProtocol.Server;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -15,7 +16,8 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 [McpServerToolType]
 public sealed class PageSyncTool(
-	IToolCommandResolver commandResolver) {
+	IToolCommandResolver commandResolver,
+	IFileSystem fileSystem) {
 
 	internal const string ToolName = "sync-pages";
 
@@ -65,7 +67,7 @@ public sealed class PageSyncTool(
 		};
 	}
 
-	private static PageSyncPageResult SyncSinglePage(
+	private PageSyncPageResult SyncSinglePage(
 		PageSyncPageInput page,
 		PageUpdateCommand updateCommand,
 		PageGetCommand getCommand,
@@ -112,6 +114,15 @@ public sealed class PageSyncTool(
 						Error = $"Page saved but verification failed: {getResponse.Error}"
 					};
 				}
+				string? verifiedBodyFile = null;
+				if (getResponse.Raw?.Body is not null) {
+					string schemaDir = fileSystem.Path.Combine(
+						fileSystem.Directory.GetCurrentDirectory(), ".clio-pages", page.SchemaName);
+					fileSystem.Directory.CreateDirectory(schemaDir);
+					string bodyFile = fileSystem.Path.Combine(schemaDir, "body.js");
+					fileSystem.File.WriteAllText(bodyFile, getResponse.Raw.Body);
+					verifiedBodyFile = bodyFile;
+				}
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
 					Success = true,
@@ -119,7 +130,7 @@ public sealed class PageSyncTool(
 					Validation = validationResult,
 					ResourcesRegistered = updateResponse.ResourcesRegistered,
 					Page = getResponse.Page,
-					VerifiedBody = getResponse.Raw?.Body
+					VerifiedBodyFile = verifiedBodyFile
 				};
 			}
 			return new PageSyncPageResult {
@@ -219,7 +230,7 @@ public sealed record PageSyncPageInput(
 	string SchemaName,
 
 	[property: JsonPropertyName("body")]
-	[property: Description("Full JavaScript page body copied from get-page raw.body")]
+	[property: Description("Full JavaScript page body — read from body.js returned by get-page")]
 	[property: Required]
 	string Body,
 
@@ -271,9 +282,9 @@ public sealed class PageSyncPageResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public PageMetadataInfo Page { get; init; }
 
-	[JsonPropertyName("verified-body")]
+	[JsonPropertyName("verified-body-file")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string VerifiedBody { get; init; }
+	public string VerifiedBodyFile { get; init; }
 }
 
 /// <summary>

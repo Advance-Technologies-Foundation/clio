@@ -14,9 +14,9 @@ This distinction matters most when the response is large.
 
 ---
 
-## Why `get-page` Is A Problem For MCP
+## How `get-page` Handles Large Responses
 
-`get-page` returns two distinct payloads in one response:
+`get-page` produces two distinct payloads:
 
 ```
 PageGetResponse
@@ -31,13 +31,33 @@ PageGetResponse
     └── body  ← the only field the agent actually edits
 ```
 
-The `bundle` section is read-only. It represents the merged result of parent schemas and cannot be submitted to `update-page`. The agent edits only `raw.body`.
+The `bundle` section is read-only. The agent edits only `raw.body`.
 
-There is no `fields` or `include-bundle` parameter. The response is always the full payload.
+### File-based output (MCP)
 
-### Via MCP
+The MCP `get-page` tool always writes all payloads to disk and returns only file paths:
 
-The entire response — bundle included — lands in the tool result and consumes context window space. For a complex page with a deep inheritance chain, this is routinely 100–200 KB of JSON that the agent cannot edit and may never need to read.
+```json
+{
+  "success": true,
+  "page": { "schemaName": "...", "packageName": "..." },
+  "files": {
+    "bodyFile":   ".clio-pages/MyPage/body.js",
+    "bundleFile": ".clio-pages/MyPage/bundle.json",
+    "metaFile":   ".clio-pages/MyPage/meta.json"
+  }
+}
+```
+
+Files are written to `.clio-pages/{schema-name}/` relative to the directory where clio MCP was started.
+The agent reads them selectively with the `Read` tool using `offset`/`limit`:
+
+```python
+Read(".clio-pages/MyPage/body.js")                       # editable body, typically 5–30 KB
+Read(".clio-pages/MyPage/bundle.json", offset=0, limit=50)  # inspect viewConfig structure only
+```
+
+Context consumption: the compact JSON summary plus only the lines actually read. Not 200 KB.
 
 ### Via CLI with file redirect
 
@@ -45,15 +65,8 @@ The entire response — bundle included — lands in the tool result and consume
 clio get-page --schema-name MyPage --environment local > /tmp/my-page.json
 ```
 
-The Bash tool result contains only the shell command line. The 200 KB goes to disk.
-The agent then reads selectively:
-
-```python
-Read("/tmp/my-page.json", offset=240, limit=50)   # only raw.body
-Grep('"body"', "/tmp/my-page.json")               # locate the section first
-```
-
-Context consumption: the command line plus the few lines actually read. Not 200 KB.
+The CLI output goes to disk via shell redirect. The agent reads selectively from that file.
+The CLI command itself is unchanged — file-based output is an MCP-only behavior.
 
 ---
 
@@ -61,39 +74,22 @@ Context consumption: the command line plus the few lines actually read. Not 200 
 
 | Operation | Preferred interface | Reason |
 |-----------|--------------------|-|
-| `get-page` on a complex page | CLI + file | Bundle is large, agent only needs `raw.body` |
-| `get-page` on a simple page | Either | Bundle may be small enough |
-| `update-page` | MCP | Response is compact: `success`, `bodyLength`, a few fields |
-| `sync-pages` with `verify: true` | MCP | Batch save + read-back in one call, no extra round trip |
+| `get-page` | MCP | Always file-based; no context pollution |
+| `sync-pages` | MCP | Batch save + optional read-back in one call |
+| `update-page` | MCP (fallback) | Single-page dry-run or legacy save only |
 | `list-pages` | Either | Response is small regardless |
-
-A rough signal: if the response contains a `bundle` or nested JSON that you will not submit back, prefer CLI and redirect to a file.
-
----
-
-## Can MCP Save to a File Instead?
-
-Not by protocol. MCP tools return results to the calling client. There is no side-channel that bypasses context injection.
-
-A clio MCP tool could theoretically accept an `output-file` argument, write the full payload to disk, and return only a small summary such as:
-
-```json
-{ "success": true, "saved-to": "/tmp/my-page.json", "body-length": 15420 }
-```
-
-This would give MCP the same context efficiency as CLI redirect. As of writing, `get-page` does not support this parameter. If large-page editing is a consistent bottleneck for your agent, this would be a worthwhile feature request.
 
 ---
 
 ## When MCP Is Clearly Better
 
-MCP wins on operations where the response is compact and the primary value is write semantics or batch execution.
+MCP wins on operations where the primary value is write semantics or batch execution.
 
 **`update-page`**: the agent constructs the body locally, sends it, receives a small confirmation.
-No large read involved.
 
 **`sync-pages` with `verify: true`**: saves multiple pages and reads each one back in a single MCP call.
-Without batch support, the equivalent CLI flow requires N `update-page` calls followed by N `get-page` calls.
+The `verified-body-file` path in the response points to the written `body.js` — the agent reads it
+with `Read` rather than receiving the body inline.
 
 **Thread safety**: `BaseTool` serializes execution through `CommandExecutionSyncRoot`.
 Concurrent agent calls are safe without external coordination.
@@ -105,8 +101,8 @@ CLI requires parsing stdout and checking exit codes.
 
 ## Summary
 
-CLI and MCP share the same implementation. Choose based on response size and what you do with the result.
+CLI and MCP share the same implementation. For page work, MCP is the primary interface:
 
-- Large read responses: CLI + file redirect keeps context clean.
-- Write operations and batch workflows: MCP is more efficient and purpose-built for agents.
-- Both: if you need selective reading from a large response, the file-based approach wins regardless of where the data originates.
+- `get-page` writes three files to `.clio-pages/{schema-name}/` and returns paths — no inline bundle.
+- `sync-pages` with `verify: true` writes `body.js` after save and returns `verified-body-file` path.
+- The agent reads files selectively with `Read`. Context stays clean regardless of page size.
