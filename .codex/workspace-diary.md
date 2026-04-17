@@ -2330,6 +2330,12 @@ Discovery: Commands.md doc links must reference canonical filenames — HasComma
 Files: clio/Command/PageGetOptions.cs, PageListOptions.cs, PageUpdateOptions.cs, DeleteSchemaCommand.cs, ListInstalledApplications.cs, Commands.md, CommandHelpCatalog.cs, WikiAnchors.txt
 Impact: All future renames must update Commands.md link paths (not just anchor IDs); test ExecuteCommands_WithUnknownVerb asserts specific canonical names in suggestions.
 
+## 2026-04-16 19:08 – Harden Data Forge config resolution against stale cliogate and poisoned proxy env
+Context: `dataforge-*` MCP/CLI calls could misread `DataForgeServiceUrl` when cliogate was missing, stale, or returned non-setting payloads, while hostile `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` values masked the real cause by forcing traffic to `127.0.0.1:9`.
+Decision: Keep the fix scoped to Data Forge only by adding a Data Forge-specific direct SysSettings reader fallback, strict `DataForgeServiceUrl` validation, and a proxy-safe execution wrapper around `dataforge-*` tool calls; leave general syssetting command behavior unchanged.
+Discovery: The highest-value reuse was already present as local helper files for direct SysSettings reads and proxy-scoped execution, so the remaining work was wiring them into DI, resolver/tool flow, and regression coverage instead of rebuilding them from scratch.
+Files: clio/Common/DataForge/DataForgeConfigResolver.cs, clio/Common/DataForge/DataForgeSysSettingDirectReader.cs, clio/Common/DataForge/DataForgeProxySafeExecutor.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/BindingsModule.cs, clio.tests/Common/DataForgeConfigResolverTests.cs, clio.tests/Common/DataForgeProxySafeExecutorTests.cs, clio.tests/Command/McpServer/DataForgeToolTests.cs, clio.mcp.e2e/DataForgeToolE2ETests.cs, .codex/workspace-diary.md
+Impact: `dataforge-*` calls can now fall back to direct site reads when the gateway path is broken, reject bogus HTML/non-URL values instead of treating them as config, and surface the real downstream TLS/auth/Data Forge failure even when proxy env vars are poisoned.
 ## 2026-04-14 07:17 – PR #527 merged: MCP tool naming + CLI UX improvements
 
 Context: Long CI debugging session to get PR #527 merged into master.

@@ -17,7 +17,8 @@ public sealed class DataForgeTool(
 	IDataForgeMaintenanceClient maintenanceClient,
 	IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
 	IDataForgeContextService contextService,
-	IToolCommandResolver commandResolver) {
+	IToolCommandResolver commandResolver,
+	IDataForgeProxySafeExecutor proxySafeExecutor) {
 	internal const string DataForgeHealthToolName = "dataforge-health";
 	internal const string DataForgeStatusToolName = "dataforge-status";
 	internal const string DataForgeFindTablesToolName = "dataforge-find-tables";
@@ -39,9 +40,10 @@ public sealed class DataForgeTool(
 		[Required]
 		DataForgeHealthArgs args) {
 		try {
-			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IDataForgeClient client = ResolveService(options, dataForgeClient);
-			DataForgeHealthResult health = await client.CheckHealthAsync(BuildConfigRequest(options));
+			DataForgeHealthResult health = await ExecuteAsync(args, async options => {
+				IDataForgeClient client = ResolveService(options, dataForgeClient);
+				return await client.CheckHealthAsync(BuildConfigRequest(options));
+			});
 			return new DataForgeHealthResponse(true, SourceName, health.CorrelationId, [], null, health);
 		} catch (Exception ex) {
 			return new DataForgeHealthResponse(
@@ -62,11 +64,13 @@ public sealed class DataForgeTool(
 		[Required]
 		DataForgeStatusArgs args) {
 		try {
-			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IDataForgeClient client = ResolveService(options, dataForgeClient);
-			IDataForgeMaintenanceClient maintenance = ResolveService(options, maintenanceClient);
-			DataForgeHealthResult health = await client.CheckHealthAsync(BuildConfigRequest(options));
-			DataForgeMaintenanceStatusResult status = maintenance.GetStatus();
+			(DataForgeHealthResult health, DataForgeMaintenanceStatusResult status) = await ExecuteAsync(args, async options => {
+				IDataForgeClient client = ResolveService(options, dataForgeClient);
+				IDataForgeMaintenanceClient maintenance = ResolveService(options, maintenanceClient);
+				DataForgeHealthResult resolvedHealth = await client.CheckHealthAsync(BuildConfigRequest(options));
+				DataForgeMaintenanceStatusResult resolvedStatus = maintenance.GetStatus();
+				return (resolvedHealth, resolvedStatus);
+			});
 			return new DataForgeStatusResponse(true, SourceName, health.CorrelationId, [], null, health, status);
 		} catch (Exception ex) {
 			return new DataForgeStatusResponse(
@@ -89,12 +93,13 @@ public sealed class DataForgeTool(
 		DataForgeFindTablesArgs args) {
 		try {
 			EnsureRequired(args.Query, "query");
-			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IDataForgeClient client = ResolveService(options, dataForgeClient);
-			IReadOnlyList<SimilarTableResult> results = await client.FindSimilarTablesAsync(
-				args.Query!,
-				args.Limit,
-				BuildConfigRequest(options));
+			IReadOnlyList<SimilarTableResult> results = await ExecuteAsync(args, async options => {
+				IDataForgeClient client = ResolveService(options, dataForgeClient);
+				return await client.FindSimilarTablesAsync(
+					args.Query!,
+					args.Limit,
+					BuildConfigRequest(options));
+			});
 			return new DataForgeFindTablesResponse(true, SourceName, string.Empty, [], null, results);
 		} catch (Exception ex) {
 			return new DataForgeFindTablesResponse(
@@ -116,13 +121,14 @@ public sealed class DataForgeTool(
 		DataForgeFindLookupsArgs args) {
 		try {
 			EnsureRequired(args.Query, "query");
-			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IDataForgeClient client = ResolveService(options, dataForgeClient);
-			IReadOnlyList<SimilarLookupResult> results = await client.FindSimilarLookupsAsync(
-				args.Query!,
-				args.SchemaName,
-				args.Limit,
-				BuildConfigRequest(options));
+			IReadOnlyList<SimilarLookupResult> results = await ExecuteAsync(args, async options => {
+				IDataForgeClient client = ResolveService(options, dataForgeClient);
+				return await client.FindSimilarLookupsAsync(
+					args.Query!,
+					args.SchemaName,
+					args.Limit,
+					BuildConfigRequest(options));
+			});
 			return new DataForgeFindLookupsResponse(true, SourceName, string.Empty, [], null, results);
 		} catch (Exception ex) {
 			return new DataForgeFindLookupsResponse(
@@ -145,13 +151,14 @@ public sealed class DataForgeTool(
 		try {
 			EnsureRequired(args.SourceTable, "source-table");
 			EnsureRequired(args.TargetTable, "target-table");
-			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IDataForgeClient client = ResolveService(options, dataForgeClient);
-			IReadOnlyList<string> results = await client.GetTableRelationshipsAsync(
-				args.SourceTable!,
-				args.TargetTable!,
-				args.Limit,
-				BuildConfigRequest(options));
+			IReadOnlyList<string> results = await ExecuteAsync(args, async options => {
+				IDataForgeClient client = ResolveService(options, dataForgeClient);
+				return await client.GetTableRelationshipsAsync(
+					args.SourceTable!,
+					args.TargetTable!,
+					args.Limit,
+					BuildConfigRequest(options));
+			});
 			return new DataForgeRelationsResponse(true, SourceName, string.Empty, [], null, results);
 		} catch (Exception ex) {
 			return new DataForgeRelationsResponse(
@@ -173,9 +180,10 @@ public sealed class DataForgeTool(
 		DataForgeGetTableColumnsArgs args) {
 		try {
 			EnsureRequired(args.TableName, "table-name");
-			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IRuntimeEntitySchemaReader reader = ResolveService(options, runtimeEntitySchemaReader);
-			RuntimeEntitySchemaResult runtimeSchema = reader.GetByName(args.TableName!);
+			RuntimeEntitySchemaResult runtimeSchema = Execute(args, options => {
+				IRuntimeEntitySchemaReader reader = ResolveService(options, runtimeEntitySchemaReader);
+				return reader.GetByName(args.TableName!);
+			});
 			IReadOnlyList<DataForgeColumnResult> results = DataForgeRuntimeSchemaMapper.MapColumns(runtimeSchema);
 			return new DataForgeColumnsResponse(true, SourceName, string.Empty, [], null, results);
 		} catch (Exception ex) {
@@ -197,15 +205,16 @@ public sealed class DataForgeTool(
 		[Required]
 		DataForgeContextArgs args) {
 		try {
-			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IDataForgeContextService resolvedContextService = ResolveService(options, contextService);
-			DataForgeContextAggregationResult contextResult = await resolvedContextService.GetContextAsync(
-				new DataForgeContextRequest(
-					args.RequirementSummary,
-					args.CandidateTerms,
-					args.LookupHints,
-					args.RelationPairs?.Select(pair => new DataForgeRelationPair(pair.SourceTable, pair.TargetTable)).ToList()),
-				BuildConfigRequest(options));
+			DataForgeContextAggregationResult contextResult = await ExecuteAsync(args, async options => {
+				IDataForgeContextService resolvedContextService = ResolveService(options, contextService);
+				return await resolvedContextService.GetContextAsync(
+					new DataForgeContextRequest(
+						args.RequirementSummary,
+						args.CandidateTerms,
+						args.LookupHints,
+						args.RelationPairs?.Select(pair => new DataForgeRelationPair(pair.SourceTable, pair.TargetTable)).ToList()),
+					BuildConfigRequest(options));
+			});
 			return new DataForgeContextResponse(
 				true,
 				SourceName,
@@ -244,9 +253,10 @@ public sealed class DataForgeTool(
 		[Required]
 		DataForgeMaintenanceArgs args) {
 		try {
-			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IDataForgeMaintenanceClient maintenance = ResolveService(options, maintenanceClient);
-			DataForgeMaintenanceStatusResult result = maintenance.Initialize();
+			DataForgeMaintenanceStatusResult result = Execute(args, options => {
+				IDataForgeMaintenanceClient maintenance = ResolveService(options, maintenanceClient);
+				return maintenance.Initialize();
+			});
 			return new DataForgeMaintenanceResponse(true, SourceName, string.Empty, [], null, result);
 		} catch (Exception ex) {
 			return new DataForgeMaintenanceResponse(
@@ -267,9 +277,10 @@ public sealed class DataForgeTool(
 		[Required]
 		DataForgeMaintenanceArgs args) {
 		try {
-			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IDataForgeMaintenanceClient maintenance = ResolveService(options, maintenanceClient);
-			DataForgeMaintenanceStatusResult result = maintenance.Update();
+			DataForgeMaintenanceStatusResult result = Execute(args, options => {
+				IDataForgeMaintenanceClient maintenance = ResolveService(options, maintenanceClient);
+				return maintenance.Update();
+			});
 			return new DataForgeMaintenanceResponse(true, SourceName, string.Empty, [], null, result);
 		} catch (Exception ex) {
 			return new DataForgeMaintenanceResponse(
@@ -280,6 +291,18 @@ public sealed class DataForgeTool(
 				new DataForgeErrorResult("update_error", ex.Message),
 				new DataForgeMaintenanceStatusResult(false, "Failed", ex.Message));
 		}
+	}
+
+	private T Execute<T>(DataForgeConnectionArgsBase args, Func<DataForgeTargetOptions, T> action) {
+		DataForgeTargetOptions options = CreateTargetOptions(args);
+		string? targetHost = GetTargetHost(options);
+		return proxySafeExecutor.Execute(() => action(options), targetHost);
+	}
+
+	private Task<T> ExecuteAsync<T>(DataForgeConnectionArgsBase args, Func<DataForgeTargetOptions, Task<T>> action) {
+		DataForgeTargetOptions options = CreateTargetOptions(args);
+		string? targetHost = GetTargetHost(options);
+		return proxySafeExecutor.ExecuteAsync(() => action(options), targetHost);
 	}
 
 	private static void EnsureRequired(string? value, string parameterName) {
@@ -308,6 +331,7 @@ public sealed class DataForgeTool(
 
 	private static DataForgeConfigRequest BuildConfigRequest(DataForgeTargetOptions options) {
 		return new DataForgeConfigRequest {
+			ServiceUrl = null,
 			AuthAppUri = options.AuthAppUri,
 			ClientId = options.ClientId,
 			ClientSecret = options.ClientSecret,
@@ -328,6 +352,14 @@ public sealed class DataForgeTool(
 			AllowSysSettingsAuthFallback = args.AllowSysSettingsAuthFallback,
 			Scope = string.IsNullOrWhiteSpace(args.Scope) ? DefaultDataForgeScope : args.Scope.Trim()
 		};
+	}
+
+	private static string? GetTargetHost(DataForgeTargetOptions options) {
+		if (string.IsNullOrWhiteSpace(options.Uri)) {
+			return null;
+		}
+
+		return Uri.TryCreate(options.Uri, UriKind.Absolute, out Uri? uri) ? uri.Host : null;
 	}
 }
 
