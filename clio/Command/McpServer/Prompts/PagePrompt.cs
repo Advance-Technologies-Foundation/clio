@@ -23,14 +23,13 @@ public static class PagePrompt {
 		 Use `list-pages` first when you need to discover candidate page schemas by `package-name`, `code`, or `search-pattern`. Skip `list-pages` entirely when the exact schema name is already known — call `get-page` directly with that schema name.
 		 Prefer a registered clio environment for page work. If the target site is not registered yet, call `reg-web-app` first and then continue with `environment-name`.
 		 Use direct connection args only when local bootstrap is broken or you are in an emergency recovery flow.
-		 Prefer a registered clio environment for page work. If the target site is not registered yet, call `reg-web-app` first and then continue with `environment-name`.
-		 Use direct connection args only when local bootstrap is broken or you are in an emergency recovery flow.
 		 Use `{PageGetTool.ToolName}` with `schema-name` `{schemaName}` and `environment-name` `{environmentName ?? "<registered environment name>"}` to inspect the effective merged page structure.
-		 Read layout and container hierarchy from `bundle.viewConfig`.
-		 When `bundle.viewConfig` contains unfamiliar `crt.*` types, call `{ComponentInfoTool.ToolName}` with `component-type` set to that type before editing nested config or children.
-		 Read page metadata from `page`, and treat `raw.body` as the editable JavaScript source of truth.
-		 Do not send `bundle` or `bundle.viewConfig` back to page tools; only `raw.body` is the writable payload.
-		 When you need to edit the page, take the JavaScript payload from `raw.body`, modify that raw body, and send it through `{PageSyncTool.ToolName}` as the canonical page write path.
+		 `{PageGetTool.ToolName}` writes three files to `.clio-pages/<schema-name>/`: `body.js` (editable body), `bundle.json` (merged hierarchy), `meta.json` (page metadata). Read them via `files.bodyFile`, `files.bundleFile`, `files.metaFile` in the response.
+		 Read layout and container hierarchy from `bundle.json` at `files.bundleFile`.
+		 When `bundle.json` contains unfamiliar `crt.*` types, call `{ComponentInfoTool.ToolName}` with `component-type` set to that type before editing nested config or children.
+		 Read page metadata from `files.metaFile`, and treat `files.bodyFile` as the editable JavaScript source of truth.
+		 Do not send bundle data back to page tools; only the content of `body.js` is the writable payload.
+		 When you need to edit the page, read `files.bodyFile`, modify it, and send the updated body through `{PageSyncTool.ToolName}` as the canonical page write path.
 		 Keep `{PageSyncTool.ToolName}` `validate` at its default `true`, and enable `verify` only when the workflow needs explicit server read-back inside the same tool call.
 		 Pass `resources` as a valid JSON object string when the edited body contains `#ResourceString(key)#` macros that need child-schema localizable strings; do not send a nested object payload there.
 		 Use `{PageUpdateTool.ToolName}` only as a fallback for single-page dry-run or legacy save workflows.

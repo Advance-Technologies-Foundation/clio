@@ -347,6 +347,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="list-pages"></a>
 <a id="page-list"></a>
 - [`list-pages`](docs/commands/list-pages.md) - List Freedom UI pages, `page-list`
+<a id="update-client-unit-schema"></a>
+<a id="client-unit-schema-update"></a>
+- [`update-client-unit-schema`](docs/commands/update-client-unit-schema.md) - Update the raw body of a client unit schema, `client-unit-schema-update`
 <a id="update-page"></a>
 <a id="page-update"></a>
 - [`update-page`](docs/commands/update-page.md) - Update Freedom UI page schema body, `page-update`

@@ -352,7 +352,12 @@ public sealed class SchemaSyncToolE2ETests {
 			entitySchemaName = $"Usr{Guid.NewGuid():N}".Substring(0, 22);
 			lookupSchemaName = $"Usr{Guid.NewGuid():N}".Substring(0, 22);
 			await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
-			await PushWorkspaceAsync(settings, workspacePath, environmentName!, cancellationTokenSource.Token);
+			await PushWorkspaceAsync(
+				settings,
+				workspacePath,
+				environmentName!,
+				packageName,
+				cancellationTokenSource.Token);
 		}
 
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
@@ -420,10 +425,16 @@ public sealed class SchemaSyncToolE2ETests {
 		McpE2ESettings settings,
 		string workspacePath,
 		string environmentName,
+		string packageName,
 		CancellationToken cancellationToken) {
 		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
 			settings,
 			["push-workspace", "-e", environmentName],
+			workingDirectory: workspacePath,
+			cancellationToken: cancellationToken);
+		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
+			settings,
+			["pkg-hotfix", packageName, "true", "-e", environmentName],
 			workingDirectory: workspacePath,
 			cancellationToken: cancellationToken);
 	}

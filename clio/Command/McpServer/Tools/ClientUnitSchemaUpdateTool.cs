@@ -25,14 +25,16 @@ public sealed class ClientUnitSchemaUpdateTool(
 	[Description(
 		"Update the raw body of any client unit schema (classic 7x JS mixins/modules/utilities or Freedom UI) " +
 		"without Freedom UI bundle/marker validation. Use when the target is not a Freedom UI page schema, e.g. 'NetworkUtilities'. " +
+		"Provide the body inline via `body` or, for large bodies, as an absolute file path via `body-file`. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public ClientUnitSchemaUpdateResponse UpdateSchema(
-		[Description("Parameters: schema-name, body (required); dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Description("Parameters: schema-name (required); one of body or body-file (required); dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]
 		ClientUnitSchemaUpdateArgs args) {
 		ClientUnitSchemaUpdateOptions options = new() {
 			SchemaName = args.SchemaName,
 			Body = args.Body,
+			BodyFile = args.BodyFile,
 			DryRun = args.DryRun ?? false,
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
@@ -61,9 +63,12 @@ public sealed record ClientUnitSchemaUpdateArgs(
 	string SchemaName,
 
 	[property: JsonPropertyName("body")]
-	[property: Description("Full raw JavaScript body to save as the schema body.")]
-	[property: Required]
-	string Body,
+	[property: Description("Full raw JavaScript body to save as the schema body. Optional when body-file is provided.")]
+	string? Body,
+
+	[property: JsonPropertyName("body-file")]
+	[property: Description("Absolute path to a file whose contents are used as the new schema body. Recommended for large bodies (over a few KB). Takes precedence over body when both are provided.")]
+	string? BodyFile,
 
 	[property: JsonPropertyName("dry-run")]
 	[property: Description("If true, validate and resolve the schema without saving. Default: false")]

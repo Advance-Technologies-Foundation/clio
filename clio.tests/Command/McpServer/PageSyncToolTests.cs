@@ -1,4 +1,5 @@
 using System;
+using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
@@ -59,7 +60,7 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
@@ -88,7 +89,7 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem());
 		PageSyncArgs args = new(
 			"dev",
 			[
@@ -120,7 +121,7 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem());
 		PageSyncArgs args = new(
 			"dev",
 			[
@@ -149,7 +150,7 @@ public sealed class PageSyncToolTests {
 	public void SyncPages_Should_Reject_Invalid_Page_Body_When_Validation_Enabled() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageSyncTool tool = new(commandResolver);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}")],
@@ -180,7 +181,7 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrPage", ValidPageBody)],
@@ -204,7 +205,7 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem());
 		string bodyWithHandler = ValidPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
@@ -230,7 +231,7 @@ public sealed class PageSyncToolTests {
 	[Description("Client-side validation rejects proxy standard field bindings before save")]
 	public void SyncPages_Should_Reject_Proxy_Field_Bindings_When_Validation_Is_Enabled() {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageSyncTool tool = new(commandResolver);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem());
 		string bodyWithProxyBinding = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -267,7 +268,7 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem());
 		string bodyWithExplicitFieldCaption = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_caption)#\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -325,7 +326,7 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem());
 		string bodyWithResource = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{ values: { caption: \"#ResourceString(UsrTitle)#\" } }]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -373,7 +374,7 @@ public sealed class PageSyncToolTests {
 						PackageUId = "test-package-uid",
 						ParentSchemaName = "BaseModulePage"
 					},
-					VerifiedBody = "define('VerifiedPage', function() { return {}; });"
+					VerifiedBodyFile = "/workspace/.clio-pages/UsrTodo_FormPage/body.js"
 				}
 			]
 		};
@@ -389,8 +390,8 @@ public sealed class PageSyncToolTests {
 			because: "sync-pages should serialize the registered-resource count using the documented MCP field name");
 		serializedResponse.Should().Contain("\"page\":{",
 			because: "sync-pages should serialize read-back page metadata when it is present");
-		serializedResponse.Should().Contain("\"verified-body\":\"define(\\u0027VerifiedPage\\u0027, function() { return {}; });\"",
-			because: "sync-pages should serialize the verified raw body using the documented MCP field name");
+		serializedResponse.Should().Contain("\"verified-body-file\":",
+			because: "sync-pages should serialize the verified body file path using the documented MCP field name");
 	}
 
 	[Test]
@@ -405,7 +406,8 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>())
 			.Returns(getCommand);
-		PageSyncTool tool = new(commandResolver);
+		MockFileSystem mockFs = new();
+		PageSyncTool tool = new(commandResolver, mockFs);
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
@@ -430,8 +432,12 @@ public sealed class PageSyncToolTests {
 			because: "the read-back page metadata should preserve package ownership");
 		response.Pages[0].Page.ParentSchemaName.Should().Be("BaseModulePage",
 			because: "the read-back page metadata should preserve the parent schema");
-		response.Pages[0].VerifiedBody.Should().Be(ValidPageBody,
-			because: "verify=true should surface the raw body returned by the read-back get-page");
+		response.Pages[0].VerifiedBodyFile.Should().NotBeNullOrWhiteSpace(
+			because: "verify=true should write verified body to disk and return the file path");
+		response.Pages[0].VerifiedBodyFile.Should().EndWith("body.js",
+			because: "the verified body file must be named body.js");
+		mockFs.File.ReadAllText(response.Pages[0].VerifiedBodyFile).Should().Be(ValidPageBody,
+			because: "the file written to disk must contain the verified body from the read-back get-page");
 	}
 
 	[Test]
@@ -446,7 +452,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>())
 			.Returns(getCommand);
-		PageSyncTool tool = new(commandResolver);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
