@@ -174,21 +174,48 @@ public sealed class SchemaSyncTool(
 					EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context));
 			}
 			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
+			SchemaSyncCollisionInfo? collisionInfo = exitCode != 0
+				? TryGetCollisionInfo(op.SchemaName, args)
+				: null;
 			return new SchemaSyncOperationResult {
 				Type = operationName,
 				SchemaName = op.SchemaName,
 				Success = exitCode == 0,
 				Messages = messages,
-				Error = BuildOperationError(operationName, exitCode, messages)
+				Error = BuildOperationError(operationName, exitCode, messages),
+				CollisionInfo = collisionInfo
 			};
 		} catch (Exception ex) {
+			SchemaSyncCollisionInfo? collisionInfo = TryGetCollisionInfo(op.SchemaName, args);
 			return new SchemaSyncOperationResult {
 				Type = operationName,
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = ex.Message,
-				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
+				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)],
+				CollisionInfo = collisionInfo
 			};
+		}
+	}
+
+	private SchemaSyncCollisionInfo? TryGetCollisionInfo(string schemaName, SchemaSyncArgs args) {
+		try {
+			FindEntitySchemaOptions findOptions = new() {
+				Environment = args.EnvironmentName,
+				SchemaName = schemaName
+			};
+			FindEntitySchemaCommand findCommand = commandResolver.Resolve<FindEntitySchemaCommand>(findOptions);
+			IReadOnlyList<EntitySchemaSearchResult> results = findCommand.FindSchemas(findOptions);
+			EntitySchemaSearchResult? existing = results.FirstOrDefault();
+			if (existing is null) {
+				return null;
+			}
+			string hint = string.Equals(existing.PackageName, args.PackageName, StringComparison.OrdinalIgnoreCase)
+				? "Schema already exists in the target package. Use update-entity to add columns or proceed to seed-data without recreating."
+				: $"Schema already exists in package '{existing.PackageName}'. Reuse it by referencing it without creation, or call delete-schema first to remove the stale version before recreating.";
+			return new SchemaSyncCollisionInfo(existing.PackageName, hint);
+		} catch {
+			return null;
 		}
 	}
 
@@ -416,4 +443,16 @@ public sealed class SchemaSyncOperationResult {
 	[JsonPropertyName("messages")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<LogMessage>? Messages { get; init; }
+
+	[JsonPropertyName("collision-info")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public SchemaSyncCollisionInfo? CollisionInfo { get; init; }
 }
+
+/// <summary>
+/// Schema collision details included in a failed create operation when the schema already exists on the server.
+/// </summary>
+public sealed record SchemaSyncCollisionInfo(
+	[property: JsonPropertyName("existing-package-name")] string ExistingPackageName,
+	[property: JsonPropertyName("hint")] string Hint
+);

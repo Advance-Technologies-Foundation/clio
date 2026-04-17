@@ -464,6 +464,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 	public void Create(CreateEntitySchemaOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
+		if (!CheckUniqueSchemaName(options.SchemaName, Guid.Empty, options)) {
+			throw new InvalidOperationException($"Schema '{options.SchemaName}' already exists.");
+		}
 		PackageInfo package = ResolvePackage(options.Package);
 		List<ParsedColumn> parsedColumns = ParseColumns(options.Columns).ToList();
 		DesignerResponse<EntityDesignSchemaDto> createResponse = _entitySchemaDesignerClient.CreateNewSchema(

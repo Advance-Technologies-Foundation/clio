@@ -162,6 +162,13 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		try {
 			return _jsonConverter.DeserializeObject<TResponse>(rawResponse);
 		} catch (Exception rawException) {
+			if (IsHtmlResponse(rawResponse)) {
+				throw new InvalidOperationException(
+					$"{methodName} returned an HTML error page instead of JSON. " +
+					$"The Creatio server encountered an unhandled error, possibly due to a stale database table from a previously deleted package. " +
+					$"Use find-entity-schema to check whether the schema was partially created before retrying.",
+					rawException);
+			}
 			string correctedJson = _jsonConverter.CorrectJson(rawResponse);
 			try {
 				return _jsonConverter.DeserializeObject<TResponse>(correctedJson);
@@ -172,6 +179,16 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 					correctedException);
 			}
 		}
+	}
+
+	private static bool IsHtmlResponse(string rawResponse) {
+		if (string.IsNullOrEmpty(rawResponse)) {
+			return false;
+		}
+		string trimmed = rawResponse.TrimStart();
+		return trimmed.StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase)
+			|| trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase)
+			|| trimmed.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase);
 	}
 
 	private string BuildDesignerMethodUrl(string methodName) {
