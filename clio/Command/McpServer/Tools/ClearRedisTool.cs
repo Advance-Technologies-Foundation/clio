@@ -36,14 +36,9 @@ public class ClearRedisTool(
 		[Description("Creatio instance Password")] [Required] string password,
 		[DefaultValue(false)][Description("Specifies if creatio runtime is a NET8 or NET472, default: false")] bool isNetCore = false
 	) {
-		if (string.IsNullOrWhiteSpace(url)) {
-			return CommandExecutionResult.FromError("url is required and cannot be empty.");
-		}
-		if (string.IsNullOrWhiteSpace(userName)) {
-			return CommandExecutionResult.FromError("userName is required and cannot be empty.");
-		}
-		if (string.IsNullOrWhiteSpace(password)) {
-			return CommandExecutionResult.FromError("password is required and cannot be empty.");
+		CommandExecutionResult validationError = CommandExecutionResult.ValidateCredentials(url, userName, password);
+		if (validationError != null) {
+			return validationError;
 		}
 		ClearRedisOptions options = new() {
 			Login = userName,

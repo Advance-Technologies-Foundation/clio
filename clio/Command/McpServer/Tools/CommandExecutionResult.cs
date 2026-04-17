@@ -33,6 +33,23 @@ public record CommandExecutionResult(
 		new(-1, [new ErrorMessage(message)]);
 
 	/// <summary>
+	/// Validates that url, userName and password are non-empty.
+	/// Returns a failed result on the first missing value, or <c>null</c> when all values are valid.
+	/// </summary>
+	public static CommandExecutionResult ValidateCredentials(string url, string userName, string password) {
+		if (string.IsNullOrWhiteSpace(url)) {
+			return FromError("url is required and cannot be empty.");
+		}
+		if (string.IsNullOrWhiteSpace(userName)) {
+			return FromError("userName is required and cannot be empty.");
+		}
+		if (string.IsNullOrWhiteSpace(password)) {
+			return FromError("password is required and cannot be empty.");
+		}
+		return null;
+	}
+
+	/// <summary>
 	/// Creates a failed <see cref="CommandExecutionResult"/> with full exception details
 	/// including inner exception chain, preserving diagnostic information for debugging.
 	/// </summary>
