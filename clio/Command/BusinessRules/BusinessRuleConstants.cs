@@ -23,6 +23,7 @@ internal static class BusinessRuleConstants {
 	internal const string BusinessRuleRequiredElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionRequiredElement";
 	internal const string BusinessRuleOptionalElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionOptionalElement";
 	internal const int ChangeAttributeValueTriggerType = 0;
+	internal const int DataLoadedTriggerType = 2;
 	internal const int LogicalAnd = 1;
 	internal const int LogicalOr = 2;
 	internal const int ComparisonEqual = 2;

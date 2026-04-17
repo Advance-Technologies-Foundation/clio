@@ -103,10 +103,19 @@ public sealed class BusinessRuleServiceTests {
 		rules[1].GetProperty("cases")[0].GetProperty("actions")[0].GetRawText().Should().Contain("Owner")
 			.And.Contain("Amount",
 				because: "one action should be able to persist multiple target attributes without splitting into separate actions");
-		rules[1].GetProperty("triggers")[0].GetProperty("name").GetString().Should().Be("Status",
+		JsonElement[] triggers = rules[1].GetProperty("triggers").EnumerateArray().ToArray();
+		triggers.Should().HaveCount(2,
+			because: "there should be a ChangeAttributeValue trigger for Status and a global DataLoaded trigger");
+		triggers[0].GetProperty("name").GetString().Should().Be("Status",
 			because: "the saved rule should include the derived trigger name");
-		rules[1].GetProperty("triggers")[0].TryGetProperty("scopeId", out _).Should().BeFalse(
+		triggers[0].GetProperty("type").GetInt32().Should().Be(0,
+			because: "the condition-derived trigger should be ChangeAttributeValue (type 0)");
+		triggers[0].TryGetProperty("scopeId", out _).Should().BeFalse(
 			because: "scopeId should be omitted when not provided so SaveSchema does not parse an empty GUID");
+		triggers[1].GetProperty("name").GetString().Should().BeEmpty(
+			because: "the DataLoaded trigger should have an empty name for global scope");
+		triggers[1].GetProperty("type").GetInt32().Should().Be(2,
+			because: "the DataLoaded trigger type should be 2");
 
 		JsonElement[] resources = schema.GetProperty("resources").EnumerateArray().ToArray();
 		resources.Should().NotContain(resource =>

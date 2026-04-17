@@ -132,7 +132,7 @@ internal static class BusinessRuleToDtoConverter {
 
 	private static List<BusinessRuleTriggerMetadataDto> BuildTriggers(
 		IReadOnlyList<BusinessRuleCondition> conditions) {
-		return conditions
+		List<BusinessRuleTriggerMetadataDto> triggers = conditions
 			.SelectMany(EnumerateTriggerNames)
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.Select(triggerName => new BusinessRuleTriggerMetadataDto {
@@ -142,6 +142,13 @@ internal static class BusinessRuleToDtoConverter {
 				Type = ChangeAttributeValueTriggerType,
 			})
 			.ToList();
+		triggers.Add(new BusinessRuleTriggerMetadataDto {
+			TypeName = BusinessRuleTriggerTypeName,
+			UId = Guid.NewGuid().ToString(),
+			Name = string.Empty,
+			Type = DataLoadedTriggerType,
+		});
+		return triggers;
 	}
 
 	private static IEnumerable<string> EnumerateTriggerNames(BusinessRuleCondition condition) {
