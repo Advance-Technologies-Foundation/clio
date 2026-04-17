@@ -66,9 +66,9 @@ public sealed class DataBindingDbToolE2ETests {
 			new Dictionary<string, object?> {
 				["environment-name"] = arrangeContext.EnvironmentName,
 				["package-name"] = arrangeContext.PackageName,
-				["schema-name"] = "SysSettings",
+				["schema-name"] = "Lookup",
 				["binding-name"] = $"UsrDbE2E{arrangeContext.PackageName}",
-				["rows"] = """[{"values":{"Name":"E2E DB binding row","Code":"UsrE2EDbRow"}}]"""
+				["rows"] = """[{"values":{"Name":"E2E DB binding row"}}]"""
 			});
 
 		// Assert
@@ -102,6 +102,121 @@ public sealed class DataBindingDbToolE2ETests {
 		AssertToolCallSucceeded(result);
 		AssertCommandExitCode(result, 1,
 			"create-data-binding-db must reject empty environment-name with exit code 1");
+		AssertIncludesErrorMessage(result,
+			"create-data-binding-db should emit a human-readable validation error when environment-name is empty");
+	}
+
+	[Test]
+	[Description("Fails upsert-data-binding-row-db through MCP with exit code 1 when environment-name is empty, matching the command-layer validation guard.")]
+	[AllureTag(UpsertRowDbToolName)]
+	[AllureName("Upsert DB-first row without environment fails with exit code 1")]
+	[AllureDescription("Uses the real clio MCP server to invoke upsert-data-binding-row-db without an environment-name and verifies that the tool returns exit code 1 with an error message.")]
+	public async Task UpsertDataBindingRowDb_Should_Fail_Without_Environment() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
+
+		// Act
+		CommandExecutionActResult result = await ActCommandAsync(
+			arrangeContext,
+			UpsertRowDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = string.Empty,
+				["package-name"] = arrangeContext.PackageName,
+				["binding-name"] = "UsrMissingBinding",
+				["values"] = """{"Name":"Updated row"}"""
+			});
+
+		// Assert
+		AssertToolCallSucceeded(result);
+		AssertCommandExitCode(result, 1,
+			"upsert-data-binding-row-db must reject empty environment-name with exit code 1");
+		AssertIncludesErrorMessage(result,
+			"upsert-data-binding-row-db should emit a human-readable validation error when environment-name is empty");
+	}
+
+	[Test]
+	[Description("Fails remove-data-binding-row-db through MCP with exit code 1 when environment-name is empty, matching the command-layer validation guard.")]
+	[AllureTag(RemoveRowDbToolName)]
+	[AllureName("Remove DB-first row without environment fails with exit code 1")]
+	[AllureDescription("Uses the real clio MCP server to invoke remove-data-binding-row-db without an environment-name and verifies that the tool returns exit code 1 with an error message.")]
+	public async Task RemoveDataBindingRowDb_Should_Fail_Without_Environment() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
+
+		// Act
+		CommandExecutionActResult result = await ActCommandAsync(
+			arrangeContext,
+			RemoveRowDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = string.Empty,
+				["package-name"] = arrangeContext.PackageName,
+				["binding-name"] = "UsrMissingBinding",
+				["key-value"] = "4f41bcc2-7ed0-45e8-a1fd-474918966d15"
+			});
+
+		// Assert
+		AssertToolCallSucceeded(result);
+		AssertCommandExitCode(result, 1,
+			"remove-data-binding-row-db must reject empty environment-name with exit code 1");
+		AssertIncludesErrorMessage(result,
+			"remove-data-binding-row-db should emit a human-readable validation error when environment-name is empty");
+	}
+
+	[Test]
+	[Description("Returns a top-level invocation error when create-data-binding-db is called without the MCP args wrapper.")]
+	[AllureTag(CreateDbToolName)]
+	[AllureName("Create DB-first binding rejects malformed MCP envelope")]
+	[AllureDescription("Uses the real clio MCP server to invoke create-data-binding-db without the args wrapper and verifies the MCP server rejects the malformed transport envelope before tool execution starts.")]
+	public async Task CreateDataBindingDb_Should_Return_Invocation_Error_When_Args_Wrapper_Is_Missing() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
+
+		// Act
+		ModelContextProtocol.Protocol.CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			CreateDbToolName,
+			new Dictionary<string, object?>(),
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		AssertInvocationFailure(callResult, CreateDbToolName);
+	}
+
+	[Test]
+	[Description("Returns a top-level invocation error when upsert-data-binding-row-db receives a non-object args payload.")]
+	[AllureTag(UpsertRowDbToolName)]
+	[AllureName("Upsert DB-first row rejects malformed MCP envelope")]
+	[AllureDescription("Uses the real clio MCP server to invoke upsert-data-binding-row-db with args set to a string and verifies the MCP server rejects the malformed transport envelope before tool execution starts.")]
+	public async Task UpsertDataBindingRowDb_Should_Return_Invocation_Error_When_Args_Have_Invalid_Type() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
+
+		// Act
+		ModelContextProtocol.Protocol.CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			UpsertRowDbToolName,
+			new Dictionary<string, object?> { ["args"] = "invalid" },
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		AssertInvocationFailure(callResult, UpsertRowDbToolName);
+	}
+
+	[Test]
+	[Description("Returns a top-level invocation error when remove-data-binding-row-db is called without the MCP args wrapper.")]
+	[AllureTag(RemoveRowDbToolName)]
+	[AllureName("Remove DB-first row rejects malformed MCP envelope")]
+	[AllureDescription("Uses the real clio MCP server to invoke remove-data-binding-row-db without the args wrapper and verifies the MCP server rejects the malformed transport envelope before tool execution starts.")]
+	public async Task RemoveDataBindingRowDb_Should_Return_Invocation_Error_When_Args_Wrapper_Is_Missing() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
+
+		// Act
+		ModelContextProtocol.Protocol.CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			RemoveRowDbToolName,
+			new Dictionary<string, object?>(),
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		AssertInvocationFailure(callResult, RemoveRowDbToolName);
 	}
 
 	[Test]
@@ -113,11 +228,11 @@ public sealed class DataBindingDbToolE2ETests {
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
 		const string rowName = "E2E Dedup Row";
-		const string rowsJson = """[{"values":{"Name":"E2E Dedup Row","Code":"UsrDedupRow"}}]""";
+		const string rowsJson = """[{"values":{"Name":"E2E Dedup Row"}}]""";
 		var firstCallArgs = new Dictionary<string, object?> {
 			["environment-name"] = arrangeContext.EnvironmentName,
 			["package-name"] = arrangeContext.PackageName,
-			["schema-name"] = "SysSettings",
+			["schema-name"] = "Lookup",
 			["binding-name"] = $"UsrDedupE2E{arrangeContext.PackageName}",
 			["rows"] = rowsJson
 		};
@@ -167,6 +282,13 @@ public sealed class DataBindingDbToolE2ETests {
 			["add-package", packageName],
 			workingDirectory: workspacePath,
 			cancellationToken: cancellationTokenSource.Token);
+		if (requireEnvironment && !string.IsNullOrWhiteSpace(environmentName)) {
+			await ClioCliCommandRunner.RunAndAssertSuccessAsync(
+				settings,
+				["push-workspace", "-e", environmentName],
+				workingDirectory: workspacePath,
+				cancellationToken: cancellationTokenSource.Token);
+		}
 
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new DataBindingDbArrangeContext(
@@ -234,6 +356,22 @@ public sealed class DataBindingDbToolE2ETests {
 			because: "command execution should emit human-readable diagnostics");
 		actResult.Execution.Output!.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
 			because: because);
+	}
+
+	private static void AssertIncludesErrorMessage(CommandExecutionActResult actResult, string because) {
+		actResult.Execution.Output.Should().NotBeNullOrEmpty(
+			because: "command execution should emit human-readable diagnostics");
+		actResult.Execution.Output!.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
+			because: because);
+	}
+
+	private static void AssertInvocationFailure(ModelContextProtocol.Protocol.CallToolResult callResult, string toolName) {
+		callResult.IsError.Should().BeTrue(
+			because: $"malformed MCP envelopes for {toolName} should be rejected before tool execution starts");
+		callResult.StructuredContent.Should().BeNull(
+			because: "invocation-level MCP failures should not return structured command output");
+		DescribeCallResult(callResult).Should().Contain(toolName,
+			because: "the invocation failure should identify the affected MCP tool");
 	}
 
 	private static string DescribeCallResult(ModelContextProtocol.Protocol.CallToolResult callResult) {

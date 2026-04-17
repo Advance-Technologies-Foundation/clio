@@ -38,6 +38,8 @@ public class AddPackageOptions : EnvironmentOptions{
 	/// Explicit workspace root path supplied by MCP callers.
 	/// </summary>
 	internal string WorkspacePath { get; set; }
+
+	internal override bool RequiredEnvironment => false;
 }
 
 #endregion

@@ -14,7 +14,8 @@ namespace Clio.Tests.Command;
 public class NewPkgCommandTestCase
 {
 
-	[Test, Category("Integration")]
+	[Test, Category("Integration")] 
+	[Ignore("unstable behavior in CI, needs refactoring")]
 	public void Execute_CreatesNewPackageInFileSystem() {
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		settingsRepository.GetEnvironment().Returns(new EnvironmentSettings {

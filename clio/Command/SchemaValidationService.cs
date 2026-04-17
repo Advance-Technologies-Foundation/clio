@@ -30,6 +30,7 @@ public static class SchemaValidationService
 		@"^#ResourceString\(([^)]+)\)#$",
 		RegexOptions.Compiled,
 		RegexTimeout);
+	private const string DatasourceCaptionPrefix = "$Resources.Strings.";
 	private static readonly Regex CustomFieldResourcePattern = new(
 		@"^Usr[A-Za-z0-9_]*_(label|caption)$",
 		RegexOptions.Compiled | RegexOptions.IgnoreCase,
@@ -428,6 +429,13 @@ public static class SchemaValidationService
 			result.Errors.Add(
 				$"Standard field '{fieldDisplayName}' uses proxy binding '{bindingExpression}' via '{bindingProperty}' for datasource path '{modelPath}'. Use '{BuildExpectedBinding(modelPath)}' instead.");
 		}
+		if (TryGetStringProperty(componentValues, "label", out string labelExpression) &&
+		    TryGetDatasourceCaptionKey(labelExpression, out string datasourceKey) &&
+		    explicitResources != null &&
+		    !explicitResources.ContainsKey(datasourceKey)) {
+			result.Warnings.Add(
+				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{datasourceKey}' is not in the provided resources — the label will render blank in the designer.");
+		}
 		if (!TryGetCaptionExpression(componentValues, out string captionExpression) ||
 		    !TryGetResourceStringKey(captionExpression, out string resourceKey) ||
 		    !CustomFieldResourcePattern.IsMatch(resourceKey)) {
@@ -512,6 +520,16 @@ public static class SchemaValidationService
 		}
 		resourceKey = match.Groups[1].Value;
 		return true;
+	}
+
+	private static bool TryGetDatasourceCaptionKey(string expression, out string resourceKey) {
+		resourceKey = string.Empty;
+		if (!expression.StartsWith(DatasourceCaptionPrefix, StringComparison.Ordinal) ||
+		    expression.Length <= DatasourceCaptionPrefix.Length) {
+			return false;
+		}
+		resourceKey = expression[DatasourceCaptionPrefix.Length..];
+		return !string.IsNullOrWhiteSpace(resourceKey);
 	}
 
 	private static bool IsAllowedDirectFieldBinding(string bindingAttribute) {
