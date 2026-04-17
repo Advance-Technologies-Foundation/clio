@@ -5,6 +5,7 @@ using System.Runtime.Serialization;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Newtonsoft.Json;
+using JsonIgnoreAttribute = System.Text.Json.Serialization.JsonIgnoreAttribute;
 
 /// <summary>
 /// Represents a page item returned by <c>list-pages</c>.
@@ -364,6 +365,27 @@ public sealed class PageParameterInfo {
 }
 
 /// <summary>
+/// Represents the result of an AI semantic review performed before saving a page body.
+/// </summary>
+public sealed class PageSamplingReview {
+
+	[JsonPropertyName("ok")]
+	public bool Ok { get; init; }
+
+	[JsonPropertyName("issues")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Issues { get; init; }
+
+	[JsonPropertyName("warnings")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Warnings { get; init; }
+
+	[JsonPropertyName("skipped")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public bool Skipped { get; init; }
+}
+
+/// <summary>
 /// Represents the <c>update-page</c> response envelope.
 /// </summary>
 [DataContract]
@@ -415,4 +437,79 @@ public sealed class PageUpdateResponse {
 	[JsonPropertyName("registeredResourceKeys")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public List<string> RegisteredResourceKeys { get; set; }
+
+	[JsonProperty("samplingReview", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("samplingReview")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public PageSamplingReview SamplingReview { get; set; }
+}
+
+public sealed record FormFieldSpec(
+	[property: JsonPropertyName("path")] string Path,
+	[property: JsonPropertyName("type")] string Type,
+	[property: JsonPropertyName("name")] string? Name = null,
+	[property: JsonPropertyName("attr-key")] string? AttrKey = null,
+	[property: JsonPropertyName("label")] string? Label = null,
+	[property: JsonPropertyName("parent-name")] string? ParentName = null,
+	[property: JsonPropertyName("picker-type")] string? PickerType = null,
+	[property: JsonPropertyName("multiline")] bool? Multiline = null,
+	[property: JsonPropertyName("decimal-precision")] int? DecimalPrecision = null
+);
+
+public sealed record ListColumnSpec(
+	[property: JsonPropertyName("code")] string Code,
+	[property: JsonPropertyName("data-value-type")] int DataValueType,
+	[property: JsonPropertyName("caption")] string? Caption = null,
+	[property: JsonPropertyName("width")] int? Width = null,
+	[property: JsonPropertyName("id")] string? Id = null
+);
+
+public sealed class PageAddFieldsResponse {
+	[JsonPropertyName("success")]
+	public bool Success { get; init; }
+
+	[JsonPropertyName("schema-name")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string SchemaName { get; init; }
+
+	[JsonPropertyName("body-length")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int BodyLength { get; init; }
+
+	[JsonPropertyName("fields-added")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int FieldsAdded { get; init; }
+
+	[JsonPropertyName("error")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Error { get; init; }
+
+	[JsonPropertyName("sampling-review")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public PageSamplingReview SamplingReview { get; init; }
+}
+
+public sealed class PageAddColumnsResponse {
+	[JsonPropertyName("success")]
+	public bool Success { get; init; }
+
+	[JsonPropertyName("schema-name")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string SchemaName { get; init; }
+
+	[JsonPropertyName("body-length")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int BodyLength { get; init; }
+
+	[JsonPropertyName("columns-added")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int ColumnsAdded { get; init; }
+
+	[JsonPropertyName("error")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Error { get; init; }
+
+	[JsonPropertyName("sampling-review")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public PageSamplingReview SamplingReview { get; init; }
 }

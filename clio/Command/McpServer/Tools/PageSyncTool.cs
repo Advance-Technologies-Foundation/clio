@@ -5,6 +5,9 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
+using System.Threading.Tasks;
+using Clio.Command;
+using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -21,17 +24,23 @@ public sealed class PageSyncTool(
 
 	internal const string ToolName = "sync-pages";
 
-	/// <summary>
-	/// Updates multiple Freedom UI pages in a single MCP call.
-	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
-		"For each page: validates body client-side (optional), saves to Creatio, " +
+		"For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
 		"and verifies the update (optional). Continues processing remaining pages on failure.")]
-	public PageSyncResponse SyncPages(
-		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional)")]
-		[Required] PageSyncArgs args) {
+	public async Task<PageSyncResponse> SyncPages(
+		[Description("Parameters: environment-name (required); pages array (required); validate, verify, skip-sampling (optional)")]
+		[Required] PageSyncArgs args,
+		McpServerLib.McpServer server,
+		CancellationToken cancellationToken = default) {
+		var samplingResults = new Dictionary<string, PageSamplingReview>(StringComparer.Ordinal);
+		if (args.SkipSampling != true) {
+			foreach (PageSyncPageInput page in args.Pages) {
+				samplingResults[page.SchemaName] = await PageBodySamplingService.TrySamplingReviewAsync(
+					server, page.SchemaName, page.Body, cancellationToken);
+			}
+		}
 		var results = new List<PageSyncPageResult>();
 		bool validate = args.Validate ?? true;
 		bool verify = args.Verify ?? false;
@@ -44,8 +53,9 @@ public sealed class PageSyncTool(
 						new PageGetOptions { Environment = args.EnvironmentName })
 					: null;
 				foreach (PageSyncPageInput page in args.Pages) {
+					samplingResults.TryGetValue(page.SchemaName, out PageSamplingReview samplingReview);
 					PageSyncPageResult pageResult = SyncSinglePage(
-						page, updateCommand, getCommand, validate, verify);
+						page, updateCommand, getCommand, validate, verify, samplingReview);
 					results.Add(pageResult);
 				}
 				Thread.Sleep(500);
@@ -72,7 +82,8 @@ public sealed class PageSyncTool(
 		PageUpdateCommand updateCommand,
 		PageGetCommand getCommand,
 		bool validate,
-		bool verify) {
+		bool verify,
+		PageSamplingReview samplingReview) {
 		try {
 			PageSyncValidationResult validationResult = null;
 			if (validate) {
@@ -82,10 +93,20 @@ public sealed class PageSyncTool(
 						SchemaName = page.SchemaName,
 						Success = false,
 						Validation = validationResult,
+						SamplingReview = samplingReview,
 						Error = "Client-side validation failed: " +
 							string.Join("; ", validationResult.Errors ?? Array.Empty<string>())
 					};
 				}
+			}
+			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
+				return new PageSyncPageResult {
+					SchemaName = page.SchemaName,
+					Success = false,
+					Validation = validationResult,
+					SamplingReview = samplingReview,
+					Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues)
+				};
 			}
 			PageUpdateOptions updateOptions = new() {
 				SchemaName = page.SchemaName,
@@ -128,6 +149,7 @@ public sealed class PageSyncTool(
 					Success = true,
 					BodyLength = updateResponse.BodyLength,
 					Validation = validationResult,
+					SamplingReview = samplingReview,
 					ResourcesRegistered = updateResponse.ResourcesRegistered,
 					Page = getResponse.Page,
 					VerifiedBodyFile = verifiedBodyFile
@@ -138,6 +160,7 @@ public sealed class PageSyncTool(
 				Success = true,
 				BodyLength = updateResponse.BodyLength,
 				Validation = validationResult,
+				SamplingReview = samplingReview,
 				ResourcesRegistered = updateResponse.ResourcesRegistered
 			};
 		} catch (Exception ex) {
@@ -217,7 +240,11 @@ public sealed record PageSyncArgs(
 
 	[property: JsonPropertyName("verify")]
 	[property: Description("Read back each page after saving to confirm the update. Default: false")]
-	bool? Verify = null
+	bool? Verify = null,
+
+	[property: JsonPropertyName("skip-sampling")]
+	[property: Description("If true, skip AI semantic review before saving. Default: false")]
+	bool? SkipSampling = null
 );
 
 /// <summary>
@@ -281,6 +308,10 @@ public sealed class PageSyncPageResult {
 	[JsonPropertyName("page")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public PageMetadataInfo Page { get; init; }
+
+	[JsonPropertyName("sampling-review")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public PageSamplingReview SamplingReview { get; init; }
 
 	[JsonPropertyName("verified-body-file")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
