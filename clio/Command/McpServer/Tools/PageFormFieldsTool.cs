@@ -67,7 +67,8 @@ public sealed class PageFormFieldsTool(IToolCommandResolver commandResolver) {
 				Environment = args.EnvironmentName,
 				Uri = args.Uri,
 				Login = args.Login,
-				Password = args.Password
+				Password = args.Password,
+				Resources = args.Resources
 			};
 			PageUpdateCommand updateCommand;
 			try {
@@ -82,6 +83,7 @@ public sealed class PageFormFieldsTool(IToolCommandResolver commandResolver) {
 			SchemaName = args.SchemaName,
 			BodyLength = saveResponse.BodyLength,
 			FieldsAdded = saveResponse.Success ? args.Fields.Count : 0,
+			ResourcesRegistered = saveResponse.Success ? saveResponse.ResourcesRegistered : 0,
 			Error = saveResponse.Error,
 			SamplingReview = samplingReview
 		};
@@ -114,6 +116,10 @@ public sealed record PageFormFieldsArgs(
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with uri. Emergency fallback only.")]
 	string? Password = null,
+
+	[property: JsonPropertyName("resources")]
+	[property: Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros in the field labels")]
+	string? Resources = null,
 
 	[property: JsonPropertyName("skip-sampling")]
 	[property: Description("If true, skip AI semantic review before saving. Default: false")]

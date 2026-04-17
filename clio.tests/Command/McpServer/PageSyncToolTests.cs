@@ -1,6 +1,7 @@
 using System;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -54,7 +55,7 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Successfully updates a single page when Creatio responds with success")]
-	public void SyncPages_Should_Succeed_For_Valid_Page() {
+	public async Task SyncPages_Should_Succeed_For_Valid_Page() {
 		// Arrange
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -64,10 +65,11 @@ public sealed class PageSyncToolTests {
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -83,7 +85,7 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Updates multiple pages in a single call")]
-	public void SyncPages_Should_Process_Multiple_Pages() {
+	public async Task SyncPages_Should_Process_Multiple_Pages() {
 		// Arrange
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -96,10 +98,11 @@ public sealed class PageSyncToolTests {
 				new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody),
 				new PageSyncPageInput("UsrTodo_ListPage", ValidPageBody)
 			],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -115,7 +118,7 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Continues processing remaining pages when one page fails")]
-	public void SyncPages_Should_Continue_On_Failure() {
+	public async Task SyncPages_Should_Continue_On_Failure() {
 		// Arrange
 		PageUpdateCommand updateCommand = CreatePageUpdateCommandWithFailureForSchema("UsrBroken_FormPage");
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -128,10 +131,11 @@ public sealed class PageSyncToolTests {
 				new PageSyncPageInput("UsrBroken_FormPage", ValidPageBody),
 				new PageSyncPageInput("UsrWorking_ListPage", ValidPageBody)
 			],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -147,17 +151,18 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Client-side validation rejects page body with missing markers")]
-	public void SyncPages_Should_Reject_Invalid_Page_Body_When_Validation_Enabled() {
+	public async Task SyncPages_Should_Reject_Invalid_Page_Body_When_Validation_Enabled() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}")],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -175,7 +180,7 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Skips client-side validation when validate is false")]
-	public void SyncPages_Should_Skip_Validation_When_Disabled() {
+	public async Task SyncPages_Should_Skip_Validation_When_Disabled() {
 		// Arrange
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -185,10 +190,11 @@ public sealed class PageSyncToolTests {
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrPage", ValidPageBody)],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -200,7 +206,7 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Allows JavaScript handlers when validation is enabled")]
-	public void SyncPages_Should_Accept_JavaScript_Handler_Content_When_Validation_Is_Enabled() {
+	public async Task SyncPages_Should_Accept_JavaScript_Handler_Content_When_Validation_Is_Enabled() {
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
@@ -212,9 +218,10 @@ public sealed class PageSyncToolTests {
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithHandler)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		response.Success.Should().BeTrue(
 			because: "handler markers may contain JavaScript and should not fail content validation");
@@ -229,7 +236,7 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Client-side validation rejects proxy standard field bindings before save")]
-	public void SyncPages_Should_Reject_Proxy_Field_Bindings_When_Validation_Is_Enabled() {
+	public async Task SyncPages_Should_Reject_Proxy_Field_Bindings_When_Validation_Is_Enabled() {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem());
 		string bodyWithProxyBinding = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
@@ -243,9 +250,10 @@ public sealed class PageSyncToolTests {
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithProxyBinding)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		response.Success.Should().BeFalse(
 			because: "sync-pages should block the known broken proxy field pattern before save");
@@ -263,7 +271,7 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Client-side validation surfaces warnings for explicit custom field caption resources")]
-	public void SyncPages_Should_Surface_FieldCaptionWarnings_When_ExplicitResources_Are_Provided() {
+	public async Task SyncPages_Should_Surface_FieldCaptionWarnings_When_ExplicitResources_Are_Provided() {
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
@@ -280,9 +288,10 @@ public sealed class PageSyncToolTests {
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithExplicitFieldCaption, "{\"UsrStatus_caption\":\"Status\"}")],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		response.Success.Should().BeTrue(
 			because: "explicit resources keep the custom field caption pattern non-blocking");
@@ -295,7 +304,7 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Passes page resources through sync-pages and returns the registered resource count from update-page.")]
-	public void SyncPages_Should_Surface_Registered_Resources() {
+	public async Task SyncPages_Should_Surface_Registered_Resources() {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
@@ -338,10 +347,11 @@ public sealed class PageSyncToolTests {
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithResource, "{\"UsrTitle\":\"Title\"}")],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -397,7 +407,7 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Verifies page content after save when verify is true")]
-	public void SyncPages_Should_Verify_After_Save_When_Enabled() {
+	public async Task SyncPages_Should_Verify_After_Save_When_Enabled() {
 		// Arrange
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		PageGetCommand getCommand = CreateSuccessfulPageGetCommand();
@@ -412,10 +422,11 @@ public sealed class PageSyncToolTests {
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
 			Validate: false,
-			Verify: true);
+			Verify: true,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -443,7 +454,7 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Reports error when verification fails after successful save")]
-	public void SyncPages_Should_Report_Error_When_Verification_Fails() {
+	public async Task SyncPages_Should_Report_Error_When_Verification_Fails() {
 		// Arrange
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		PageGetCommand getCommand = CreateFailingPageGetCommand();
@@ -457,10 +468,11 @@ public sealed class PageSyncToolTests {
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
 			Validate: false,
-			Verify: true);
+			Verify: true,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeFalse(
