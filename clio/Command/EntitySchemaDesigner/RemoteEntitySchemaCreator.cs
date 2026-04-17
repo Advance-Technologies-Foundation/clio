@@ -23,6 +23,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 	private const string TitleLocalizationsArgumentName = "title-localizations";
 	private const string SchemaNamePrefixSettingCode = "SchemaNamePrefix";
+	private const string DefaultMaskingPattern = ".*";
+	private const string DefaultMaskingReplacement = "********";
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
@@ -116,6 +118,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		schema.Columns ??= [];
 		schema.Indexes ??= [];
 		schema.InheritedColumns ??= [];
+		NormalizeAdministrationMetadata(schema);
 
 		Dictionary<string, ManagerItemDto> referenceSchemas = parsedColumns.Any(c => c.IsLookup)
 			? GetReferenceSchemas(package.Descriptor.UId, options)
@@ -136,6 +139,18 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		schema.Columns = columns;
 		schema.PrimaryColumn = columns.FirstOrDefault(column => column.IsGuidType()) ?? schema.PrimaryColumn;
 		schema.PrimaryDisplayColumn ??= columns.FirstOrDefault(column => column.IsTextType());
+	}
+
+	private static void NormalizeAdministrationMetadata(EntityDesignSchemaDto schema) {
+		if (schema.ParentSchema.HasValue()) {
+			return;
+		}
+
+		schema.AdministratedByOperations = false;
+		schema.AdministratedByColumns = false;
+		schema.AdministratedByRecords = false;
+		schema.UseDenyRecordRights = false;
+		schema.RightSchemaName = string.Empty;
 	}
 
 	private EntityDesignSchemaDto AssignParentSchema(
@@ -231,6 +246,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			Masked = parsedColumn.Masked ?? false,
 			ValueMasked = parsedColumn.Masked ?? false
 		};
+		if (column.ValueMasked) {
+			column.ValueMaskingSettings = CreateValueMaskingSettings(options.SchemaName, parsedColumn.Name);
+		}
 		ApplyDefaultValue(column, parsedColumn, options);
 		if (parsedColumn.IsLookup) {
 			if (!referenceSchemas.TryGetValue(parsedColumn.ReferenceSchemaName!, out ManagerItemDto referenceSchema)) {
@@ -251,6 +269,16 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 
 		return column;
+	}
+
+	private static EntitySchemaColumnValueMaskingSettingsDto CreateValueMaskingSettings(
+		string schemaName,
+		string columnName) {
+		return new EntitySchemaColumnValueMaskingSettingsDto {
+			Pattern = DefaultMaskingPattern,
+			Replacement = DefaultMaskingReplacement,
+			AdminOperationCode = $"{schemaName}_{columnName}_UnmaskedValue"
+		};
 	}
 
 	private void ValidateDefaultValue(ParsedColumn parsedColumn, int dataValueType, CreateEntitySchemaOptions options) {

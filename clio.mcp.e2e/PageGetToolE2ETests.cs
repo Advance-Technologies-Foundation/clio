@@ -90,12 +90,26 @@ public sealed class PageGetToolE2ETests {
 			because: "get-page metadata should identify the same page selected through list-pages");
 		response.Page.PackageName.Should().Be(candidate.Page.PackageName,
 			because: "get-page metadata should preserve the owning package from list-pages");
-		response.Bundle.Should().NotBeNull(
-			because: "successful get-page calls should expose the merged page bundle");
-		response.Raw.Should().NotBeNull(
-			because: "successful get-page calls should expose the raw editable payload");
-		response.Raw.Body.Should().NotBeNullOrWhiteSpace(
-			because: "the discovered page should expose a non-empty raw body for MCP clients");
+		response.Bundle.Should().BeNull(
+			because: "the MCP wrapper compacts successful get-page responses to file paths instead of returning inline bundle data");
+		response.Raw.Should().BeNull(
+			because: "the MCP wrapper compacts successful get-page responses to file paths instead of returning inline raw body data");
+		response.Files.Should().NotBeNull(
+			because: "successful get-page calls should return the written file paths for MCP clients");
+		response.Files.BodyFile.Should().EndWith("body.js",
+			because: "get-page should write the editable page body to body.js");
+		response.Files.BundleFile.Should().EndWith("bundle.json",
+			because: "get-page should write the merged bundle to bundle.json");
+		response.Files.MetaFile.Should().EndWith("meta.json",
+			because: "get-page should write the page metadata to meta.json");
+		File.Exists(response.Files.BodyFile).Should().BeTrue(
+			because: "get-page should materialize the editable page body on disk for update-page reuse");
+		File.Exists(response.Files.BundleFile).Should().BeTrue(
+			because: "get-page should materialize the merged bundle on disk for inspection");
+		File.Exists(response.Files.MetaFile).Should().BeTrue(
+			because: "get-page should materialize the metadata payload on disk for inspection");
+		(await File.ReadAllTextAsync(response.Files.BodyFile)).Should().NotBeNullOrWhiteSpace(
+			because: "body.js should contain the raw editable page body");
 		response.Error.Should().BeNullOrWhiteSpace(
 			because: "successful get-page calls should not include an error payload");
 	}
