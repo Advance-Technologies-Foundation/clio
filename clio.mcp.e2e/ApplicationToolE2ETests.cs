@@ -135,11 +135,16 @@ public sealed class ApplicationToolE2ETests {
 			because: "list-apps should succeed whether the target environment currently has zero installed apps or many");
 		listResult.Result.Applications.Should().NotBeNull(
 			because: "list-apps should always include the applications collection so MCP clients can handle empty and populated environments uniformly");
-		listResult.Result.Applications.Should().OnlyContain(application =>
-				!string.IsNullOrWhiteSpace(application.Id)
-				&& !string.IsNullOrWhiteSpace(application.Name)
-				&& !string.IsNullOrWhiteSpace(application.Code),
-			because: "every returned application item should expose the selectors that MCP clients need for follow-up targeting");
+		if (listResult.Result.Applications.Count == 0) {
+			listResult.Result.Applications.Should().BeEmpty(
+				because: "empty environments should still return an empty applications collection instead of null");
+		} else {
+			listResult.Result.Applications.Should().OnlyContain(application =>
+					!string.IsNullOrWhiteSpace(application.Id)
+					&& !string.IsNullOrWhiteSpace(application.Name)
+					&& !string.IsNullOrWhiteSpace(application.Code),
+				because: "every returned application item should expose the selectors that MCP clients need for follow-up targeting");
+		}
 		listResult.Result.Error.Should().BeNullOrWhiteSpace(
 			because: "successful list-apps calls should not include an error payload");
 	}

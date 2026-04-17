@@ -62,7 +62,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		bool runtimeVerifyCalled = false;
 		SetupApplicationClient((url, body) => {
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
-				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[],\"administratedByOperations\":true,\"administratedByColumns\":true,\"administratedByRecords\":true,\"useDenyRecordRights\":true,\"rightSchemaName\":\"UsrBrokenRights\"}}";
 			}
 			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"value\":true}";
@@ -122,6 +122,16 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			because: "the saved schema should include the generated prefixed primary column and the requested text column");
 		json["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrId")["type"]!.Value<int>().Should().Be(0,
 			because: "the generated prefixed primary column should remain a guid column");
+		json["administratedByOperations"]!.Value<bool>().Should().BeFalse(
+			because: "new root entity schemas should not inherit an invalid operation-rights state from CreateNewSchema");
+		json["administratedByColumns"]!.Value<bool>().Should().BeFalse(
+			because: "new root entity schemas should start with column administration disabled unless explicitly configured");
+		json["administratedByRecords"]!.Value<bool>().Should().BeFalse(
+			because: "new root entity schemas should start with record administration disabled unless explicitly configured");
+		json["useDenyRecordRights"]!.Value<bool>().Should().BeFalse(
+			because: "new root entity schemas should not carry deny-record-rights metadata from the initial designer draft");
+		json["rightSchemaName"]!.Value<string>().Should().BeEmpty(
+			because: "new root entity schemas should clear stale right schema names before save");
 	}
 
 	[Test]
@@ -391,6 +401,12 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			because: "structured create-column specs should preserve the optional masked flag");
 		(savedColumn["isValueMasked"] ?? savedColumn["valueMasked"])!.Value<bool>().Should().BeTrue(
 			because: "structured create-column specs should preserve schema-level value masking");
+		savedColumn["valueMaskingSettings"]!["pattern"]!.Value<string>().Should().Be(".*",
+			because: "masked create-column specs should synthesize a default masking regex accepted by core validation");
+		savedColumn["valueMaskingSettings"]!["replacement"]!.Value<string>().Should().Be("********",
+			because: "masked create-column specs should synthesize a default masked replacement accepted by core validation");
+		savedColumn["valueMaskingSettings"]!["adminOperationCode"]!.Value<string>().Should().Be("UsrVehicle_Status_UnmaskedValue",
+			because: "masked create-column specs should synthesize the conventional unmask admin operation code");
 		saveDbStructureCalled.Should().BeTrue();
 		runtimeVerifyCalled.Should().BeTrue();
 	}
@@ -608,6 +624,12 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			because: "strict schema-level masking requires masked=true for password columns");
 		(savedColumn["isValueMasked"] ?? savedColumn["valueMasked"])!.Value<bool>().Should().BeTrue(
 			because: "strict schema-level masking requires isValueMasked=true for password columns");
+		savedColumn["valueMaskingSettings"]!["pattern"]!.Value<string>().Should().Be(".*",
+			because: "masked secure text columns should synthesize a default masking regex accepted by core validation");
+		savedColumn["valueMaskingSettings"]!["replacement"]!.Value<string>().Should().Be("********",
+			because: "masked secure text columns should synthesize a default replacement accepted by core validation");
+		savedColumn["valueMaskingSettings"]!["adminOperationCode"]!.Value<string>().Should().Be("UsrVehicle_UsrPassword_UnmaskedValue",
+			because: "masked secure text columns should synthesize the conventional unmask admin operation code");
 	}
 
 	[Test]
