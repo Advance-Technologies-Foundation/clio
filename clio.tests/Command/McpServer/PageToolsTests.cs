@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
@@ -236,7 +237,8 @@ public class PageToolsTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>())
 			.Returns(command);
-		PageGetTool tool = new(command, logger, commandResolver);
+		MockFileSystem mockFs = new();
+		PageGetTool tool = new(command, logger, commandResolver, mockFs);
 
 		// Act
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
@@ -246,18 +248,22 @@ public class PageToolsTests {
 			because: "the MCP tool should surface the successful get-page command result");
 		response.Page.PackageUId.Should().Be("tool-package-uid",
 			because: "the nested page metadata should include packageUId for MCP callers");
-		response.Bundle.Should().NotBeNull(
-			because: "the MCP tool should return the merged bundle block");
-		response.Raw.Body.Should().NotBeNullOrWhiteSpace(
-			because: "the MCP tool should keep raw.body for update-page round-trips");
+		response.Bundle.Should().BeNull(
+			because: "bundle should be omitted from the response when files are written to disk");
+		response.Raw.Should().BeNull(
+			because: "raw should be omitted from the response when files are written to disk");
+		response.Files.Should().NotBeNull(
+			because: "the MCP tool should return file paths when output is written to disk");
 		string serializedResponse = System.Text.Json.JsonSerializer.Serialize(response);
 		JObject serializedObject = JObject.Parse(serializedResponse);
 		serializedResponse.Should().Contain("\"page\"",
 			because: "the serialized MCP response should include the page block");
-		serializedResponse.Should().Contain("\"bundle\"",
-			because: "the serialized MCP response should include the bundle block");
-		serializedResponse.Should().Contain("\"raw\"",
-			because: "the serialized MCP response should include the raw block");
+		serializedResponse.Should().NotContain("\"bundle\"",
+			because: "the serialized MCP response should omit bundle when files are written");
+		serializedResponse.Should().NotContain("\"raw\"",
+			because: "the serialized MCP response should omit raw when files are written");
+		serializedResponse.Should().Contain("\"files\"",
+			because: "the serialized MCP response should include file paths");
 		serializedObject["schemaName"].Should().BeNull(
 			because: "the old flat response contract should no longer emit schemaName at the root");
 	}
@@ -1261,5 +1267,150 @@ public class PageToolsTests {
 				};
 			});
 			""";
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-page writes body.js, bundle.json, meta.json and returns file paths instead of inline data")]
+	public void PageGetTool_WhenCalled_WritesThreeFilesAndReturnsPaths() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
+			.Returns([new PageDesignerHierarchySchema {
+				UId = "uid-1", Name = "UsrMcp_FormPage",
+				PackageUId = "pkg-1", PackageName = "UsrMcp",
+				SchemaVersion = 1, Body = CreatePageBody()
+			}]);
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
+		MockFileSystem mockFs = new();
+		PageGetTool tool = new(command, logger, commandResolver, mockFs);
+
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+
+		response.Success.Should().BeTrue(because: "page read and file write should both succeed");
+		response.Bundle.Should().BeNull(because: "bundle must be omitted from MCP response when written to disk");
+		response.Raw.Should().BeNull(because: "raw must be omitted from MCP response when written to disk");
+		response.Files.Should().NotBeNull(because: "response should include file paths");
+		response.Files.BodyFile.Should().EndWith("body.js", because: "body file must have .js extension");
+		response.Files.BundleFile.Should().EndWith("bundle.json", because: "bundle file must have .json extension");
+		response.Files.MetaFile.Should().EndWith("meta.json", because: "meta file must have .json extension");
+		mockFs.AllFiles.Should().Contain(response.Files.BodyFile, because: "body.js must be written to disk");
+		mockFs.AllFiles.Should().Contain(response.Files.BundleFile, because: "bundle.json must be written to disk");
+		mockFs.AllFiles.Should().Contain(response.Files.MetaFile, because: "meta.json must be written to disk");
+		mockFs.File.ReadAllText(response.Files.BodyFile).Should().NotBeNullOrWhiteSpace(
+			because: "body.js must contain the raw JS body for update-page round-trips");
+		string json = System.Text.Json.JsonSerializer.Serialize(response);
+		json.Should().NotContain("\"bundle\":", because: "bundle must be absent from serialized MCP response");
+		json.Should().NotContain("\"raw\":", because: "raw must be absent from serialized MCP response");
+		json.Should().Contain("\"files\"", because: "file paths block must appear in serialized response");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-page places files under .clio-pages/{schema-name}/ subdirectory")]
+	public void PageGetTool_WhenCalled_FilesAreUnderDotClioPagesSubdirectory() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
+			.Returns([new PageDesignerHierarchySchema {
+				UId = "uid-1", Name = "UsrMcp_FormPage",
+				PackageUId = "pkg-1", PackageName = "UsrMcp",
+				SchemaVersion = 1, Body = CreatePageBody()
+			}]);
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
+		MockFileSystem mockFs = new();
+		PageGetTool tool = new(command, logger, commandResolver, mockFs);
+
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+
+		response.Files.BodyFile.Should().Contain(".clio-pages",
+			because: "files must be written under .clio-pages directory");
+		response.Files.BodyFile.Should().Contain("UsrMcp_FormPage",
+			because: "files must be grouped under the schema name subdirectory");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-page returns error response when directory creation fails")]
+	public void PageGetTool_WhenDirectoryCreationFails_ReturnsError() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
+			.Returns([new PageDesignerHierarchySchema {
+				UId = "uid-1", Name = "UsrMcp_FormPage",
+				PackageUId = "pkg-1", PackageName = "UsrMcp",
+				SchemaVersion = 1, Body = CreatePageBody()
+			}]);
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
+		System.IO.Abstractions.IFileSystem failingFs = Substitute.For<System.IO.Abstractions.IFileSystem>();
+		failingFs.Path.Combine(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(ci => System.IO.Path.Combine(ci.ArgAt<string>(0), ci.ArgAt<string>(1)));
+		failingFs.Path.Combine(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+			.Returns(ci => System.IO.Path.Combine(ci.ArgAt<string>(0), ci.ArgAt<string>(1), ci.ArgAt<string>(2)));
+		failingFs.Directory.GetCurrentDirectory().Returns("/workspace");
+		failingFs.Directory.When(d => d.CreateDirectory(Arg.Any<string>()))
+			.Do(_ => throw new System.UnauthorizedAccessException("Access denied"));
+		PageGetTool tool = new(command, logger, commandResolver, failingFs);
+
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+
+		response.Success.Should().BeFalse(because: "directory creation failure should produce a failed response");
+		response.Error.Should().Contain("Failed to create output directory",
+			because: "the error must explain what failed");
+		response.Files.Should().BeNull(because: "no files block should be returned on failure");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("PageGetResponse with Files set serializes without bundle and raw fields")]
+	public void PageGetResponse_WithFiles_SerializesOmittingBundleAndRaw() {
+		PageGetResponse response = new() {
+			Success = true,
+			Page = new PageMetadataInfo {
+				SchemaName = "UsrFoo", SchemaUId = "uid-1",
+				PackageName = "UsrFoo", PackageUId = "pkg-1", ParentSchemaName = "BasePage"
+			},
+			Files = new PageGetFilesInfo {
+				BodyFile = "/out/UsrFoo/body.js",
+				BundleFile = "/out/UsrFoo/bundle.json",
+				MetaFile = "/out/UsrFoo/meta.json"
+			}
+		};
+
+		string json = System.Text.Json.JsonSerializer.Serialize(response);
+
+		json.Should().NotContain("\"bundle\"", because: "bundle must be absent when null with WhenWritingNull");
+		json.Should().NotContain("\"raw\"", because: "raw must be absent when null with WhenWritingNull");
+		json.Should().Contain("\"files\"", because: "files block must appear in the serialized response");
+		json.Should().Contain("\"bodyFile\":\"/out/UsrFoo/body.js\"", because: "body file path must be serialized");
+		json.Should().Contain("\"bundleFile\":\"/out/UsrFoo/bundle.json\"", because: "bundle file path must be serialized");
+		json.Should().Contain("\"metaFile\":\"/out/UsrFoo/meta.json\"", because: "meta file path must be serialized");
 	}
 }
