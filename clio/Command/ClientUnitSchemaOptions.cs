@@ -18,8 +18,11 @@ public class ClientUnitSchemaUpdateOptions : EnvironmentOptions {
 	[Option("schema-name", Required = true, HelpText = "Client unit schema name")]
 	public string SchemaName { get; set; }
 
-	[Option("body", Required = true, HelpText = "New raw JavaScript body to save as the schema body")]
+	[Option("body", Required = false, HelpText = "New raw JavaScript body to save. Use body-file for large bodies.")]
 	public string Body { get; set; }
+
+	[Option("body-file", Required = false, HelpText = "Absolute path to a file whose contents are used as the new schema body. Takes precedence over --body when both are provided.")]
+	public string BodyFile { get; set; }
 
 	[Option("dry-run", Required = false, HelpText = "Validate and resolve the schema without saving")]
 	public bool DryRun { get; set; }
@@ -56,10 +59,20 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 				};
 				return false;
 			}
+			if (!string.IsNullOrWhiteSpace(options.BodyFile)) {
+				if (!System.IO.File.Exists(options.BodyFile)) {
+					response = new ClientUnitSchemaUpdateResponse {
+						Success = false,
+						Error = $"body-file not found: '{options.BodyFile}'"
+					};
+					return false;
+				}
+				options.Body = System.IO.File.ReadAllText(options.BodyFile);
+			}
 			if (string.IsNullOrWhiteSpace(options.Body)) {
 				response = new ClientUnitSchemaUpdateResponse {
 					Success = false,
-					Error = "body is required and must not be empty"
+					Error = "body (or body-file) is required and must not be empty"
 				};
 				return false;
 			}
