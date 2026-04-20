@@ -61,7 +61,7 @@ public class SysSettingsManagerTests
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
 		dataProvider.GetSysSettingValue<string>(sysSettingCode).Returns(value);
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		bool actual = sut.GetSysSettingValueByCode<bool>(sysSettingCode);
 
@@ -85,7 +85,7 @@ public class SysSettingsManagerTests
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
 		dataProvider.GetSysSettingValue<string>(sysSettingCode).Returns(stringDateTimeValue);
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		DateTime actual = sut.GetSysSettingValueByCode<DateTime>(sysSettingCode);
 
@@ -103,7 +103,7 @@ public class SysSettingsManagerTests
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
 		dataProvider.GetSysSettingValue<string>(sysSettingCode).Returns(value);
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		Guid actual = sut.GetSysSettingValueByCode<Guid>(sysSettingCode);
 
@@ -129,7 +129,7 @@ public class SysSettingsManagerTests
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
 		dataProvider.GetSysSettingValue<string>(sysSettingCode).Returns(sysSettingValue.ToString(CultureInfo.InvariantCulture));
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		decimal actual = sut.GetSysSettingValueByCode<decimal>(sysSettingCode);
 		actual.Should().BeOfType(typeof(decimal));
@@ -153,7 +153,7 @@ public class SysSettingsManagerTests
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
 		dataProvider.GetSysSettingValue<string>(sysSettingCode).Returns(value);
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		int actual = sut.GetSysSettingValueByCode<int>(sysSettingCode);
 		actual.Should().BeOfType(typeof(int));
@@ -171,7 +171,7 @@ public class SysSettingsManagerTests
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
 		dataProvider.GetSysSettingValue<string>(sysSettingCode).Returns(value);
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		Action act = () => sut.GetSysSettingValueByCode<int>(sysSettingCode);
 		act.Should()
@@ -191,7 +191,7 @@ public class SysSettingsManagerTests
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
 		dataProvider.GetSysSettingValue<string>(sysSettingCode).Returns(sysSettingValue);
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		string actual = sut.GetSysSettingValueByCode(sysSettingCode);
 
@@ -217,7 +217,7 @@ public class SysSettingsManagerTests
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/DataService/json/SyncReply/InsertSysSettingRequest",
@@ -258,7 +258,7 @@ public class SysSettingsManagerTests
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/DataService/json/SyncReply/InsertSysSettingRequest",
@@ -305,7 +305,7 @@ public class SysSettingsManagerTests
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
 		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider,
-			workingDirectoriesProvider, filesystem, logger);
+			workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/DataService/json/SyncReply/PostSysSettingsValues",
@@ -344,7 +344,7 @@ public class SysSettingsManagerTests
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
 		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider,
-			workingDirectoriesProvider, filesystem, logger);
+			workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/DataService/json/SyncReply/PostSysSettingsValues",
