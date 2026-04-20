@@ -738,8 +738,8 @@ public class SchemaValidationServiceTests {
 	}
 
 	[Test]
-	[Description("Obvious custom max-length validators are rejected when crt.MaxLength should be used instead.")]
-	public void ValidateStandardValidatorUsage_CustomMaxLengthValidator_ReturnsInvalid() {
+	[Description("Custom validators with any logic are allowed — guidance steers AI toward standard validators; runtime validation does not second-guess custom implementations.")]
+	public void ValidateStandardValidatorUsage_CustomMaxLengthStyleValidator_ReturnsValid() {
 		// Arrange
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
 		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"usr.NameMaxLength\",\"params\":{\"message\":\"#ResourceString(UsrNameMaxLength_Message)#\"}}}}}}";
@@ -751,12 +751,10 @@ public class SchemaValidationServiceTests {
 		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
 
 		// Assert
-		result.IsValid.Should().BeFalse(
-			because: "a custom validator that only enforces maximum string length should use the built-in crt.MaxLength validator");
-		result.Errors.Should().ContainSingle(error =>
-				error.Contains("usr.NameMaxLength") &&
-				error.Contains("crt.MaxLength"),
-			because: "the validation error should identify both the custom validator and the built-in replacement");
+		result.IsValid.Should().BeTrue(
+			because: "runtime validation no longer second-guesses whether a custom validator duplicates a built-in; guidance steers the AI at authoring time");
+		result.Errors.Should().BeEmpty(
+			because: "custom validators with .length checks are valid — only structural schema errors are rejected at runtime");
 	}
 
 	[Test]
@@ -918,6 +916,69 @@ public class SchemaValidationServiceTests {
 				error.Contains("max") &&
 				error.Contains("maxLength"),
 			because: "the validation error should still enforce the canonical built-in maxLength param name");
+	}
+
+	[Test]
+	[Description("Validator with unquoted params key (valid JS) must be parsed correctly — no false 'missing message' error.")]
+	public void ValidateCustomValidatorParamCompleteness_UnquotedParamsKey_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"Upper\":{\"type\":\"usr.UpperCaseValidator\",\"params\":{\"message\":\"#ResourceString(UsrMsg)#\"}}}}}}";
+		// SCHEMA_VALIDATORS uses unquoted JS property: params: [{ "name": "message" }]
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.UpperCaseValidator\":{validator:function(config){return function(control){return null;};},params:[{\"name\":\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "unquoted JS property names in SCHEMA_VALIDATORS are valid and must be recognised by the parser");
+		result.Errors.Should().BeEmpty(
+			because: "the params array declares 'message' — no structural error should be reported");
+	}
+
+	[Test]
+	[Description("Validator with both unquoted params key and unquoted name key (pure JS style) must be parsed correctly.")]
+	public void ValidateCustomValidatorParamCompleteness_FullyUnquotedParamEntry_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"Upper\":{\"type\":\"usr.UpperCaseValidator\",\"params\":{\"message\":\"#ResourceString(UsrMsg)#\"}}}}}}";
+		// SCHEMA_VALIDATORS uses fully unquoted JS properties: params: [{ name: "message" }]
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.UpperCaseValidator\":{validator:function(config){return function(control){return null;};},params:[{name:\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "fully unquoted JS-style param entries are valid JavaScript and must not trigger a false-positive missing-param error");
+		result.Errors.Should().BeEmpty(
+			because: "params declares 'message' via unquoted name key — the parser must recognise both quoted and unquoted forms");
+	}
+
+	[Test]
+	[Description("Validator with unquoted params key that truly has no message param is still rejected.")]
+	public void ValidateCustomValidatorParamCompleteness_UnquotedParamsKeyMissingMessage_ReturnsInvalid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"Upper\":{\"type\":\"usr.UpperCaseValidator\",\"params\":{\"message\":\"#ResourceString(UsrMsg)#\"}}}}}}";
+		// params array exists but has no message param
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.UpperCaseValidator\":{validator:function(config){return function(control){return null;};},params:[{name:\"settingCode\"}],async:false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a validator without 'message' in params must still be rejected regardless of whether param keys are quoted or unquoted");
+		result.Errors.Should().ContainSingle(error => error.Contains("usr.UpperCaseValidator") && error.Contains("message"),
+			because: "the missing message param error should identify the validator type");
 	}
 
 	[Test]

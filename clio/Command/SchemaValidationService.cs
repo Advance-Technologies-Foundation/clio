@@ -44,9 +44,7 @@ public static class SchemaValidationService
 		@"^Usr[A-Za-z0-9_]*_(label|caption)$",
 		RegexOptions.Compiled | RegexOptions.IgnoreCase,
 		RegexTimeout);
-	private static readonly string[] MaxLengthTypeMarkers = ["MaxLength"];
-	private static readonly string[] MinLengthTypeMarkers = ["MinLength"];
-	private static readonly HashSet<string> StandardFieldComponentTypes = new(StringComparer.OrdinalIgnoreCase) {
+	private static readonly HashSet<string> StandardFieldComponentTypes= new(StringComparer.OrdinalIgnoreCase) {
 		"crt.Input",
 		"crt.NumberInput",
 		"crt.Checkbox",
@@ -612,9 +610,8 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
-	/// Validates that obvious custom validator implementations are not used when a standard built-in
-	/// validator already matches the rule. This targets high-confidence cases only, such as custom
-	/// string-length validators that duplicate <c>crt.MaxLength</c> or <c>crt.MinLength</c>.
+	/// Validates that standard built-in validator bindings (<c>crt.MaxLength</c>, <c>crt.MinLength</c>, etc.)
+	/// use the correct parameter names and that custom validator bindings do not reference undeclared parameters.
 	/// </summary>
 	public static SchemaValidationResult ValidateStandardValidatorUsage(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
@@ -624,28 +621,6 @@ public static class SchemaValidationService
 		IReadOnlyDictionary<string, HashSet<string>> validatorContracts = BuildValidatorParameterContracts(jsBody);
 		ValidateValidatorBindingContractsInMarker(jsBody, SchemaViewModelConfig, false, validatorContracts, result);
 		ValidateValidatorBindingContractsInMarker(jsBody, SchemaViewModelConfigDiff, true, validatorContracts, result);
-		if (!PageSchemaSectionReader.TryRead(jsBody, out string validatorsContent, SchemaValidatorsMarker)) {
-			if (result.Errors.Count > 0) {
-				result.IsValid = false;
-			}
-			return result;
-		}
-		var customValidatorTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		CollectValidatorTypesFromMarker(jsBody, SchemaViewModelConfig, false, customValidatorTypes);
-		CollectValidatorTypesFromMarker(jsBody, SchemaViewModelConfigDiff, true, customValidatorTypes);
-		foreach (string customValidatorType in customValidatorTypes) {
-			if (!customValidatorType.StartsWith("usr.", StringComparison.OrdinalIgnoreCase)) {
-				continue;
-			}
-			string equivalentBuiltIn = TryGetEquivalentBuiltInValidator(customValidatorType, validatorsContent);
-			if (string.IsNullOrEmpty(equivalentBuiltIn)) {
-				continue;
-			}
-			result.Errors.Add(
-				$"Custom validator '{customValidatorType}' duplicates built-in validator '{equivalentBuiltIn}'. " +
-				$"Use '{equivalentBuiltIn}' in the attribute validators binding instead of defining '{customValidatorType}' in SCHEMA_VALIDATORS. " +
-				"Read docs://mcp/guides/page-schema-validators before authoring validator changes.");
-		}
 		if (result.Errors.Count > 0) {
 			result.IsValid = false;
 		}
@@ -993,44 +968,6 @@ public static class SchemaValidationService
 			.ToList();
 	}
 
-	private static void CollectValidatorTypesFromMarker(
-		string jsBody,
-		string markerName,
-		bool isArray,
-		HashSet<string> validatorTypes) {
-		ForEachMarkerAttributesContainer(jsBody, markerName, isArray, attributes => ExtractValidatorTypes(attributes, validatorTypes));
-	}
-
-	private static void ExtractValidatorTypes(JsonElement attributesObject, HashSet<string> validatorTypes) {
-		foreach (string validatorType in EnumerateAttributesWithValidatorObjects(attributesObject)
-			         .SelectMany(EnumerateValidatorObjects)
-			         .Select(GetValidatorTypeOrEmpty)
-			         .Where(type => !string.IsNullOrWhiteSpace(type))) {
-			validatorTypes.Add(validatorType);
-		}
-	}
-
-	private static string GetValidatorTypeOrEmpty(JsonProperty validator) =>
-		TryGetValidatorType(validator, out string validatorType)
-			? validatorType
-			: string.Empty;
-
-	private static string TryGetEquivalentBuiltInValidator(string customValidatorType, string validatorsContent) {
-		string validatorBody = ExtractValidatorBody(validatorsContent, customValidatorType);
-		if (string.IsNullOrEmpty(validatorBody)) {
-			return string.Empty;
-		}
-		if (ContainsAny(customValidatorType, MaxLengthTypeMarkers) &&
-			validatorBody.Contains(".length", StringComparison.Ordinal)) {
-			return "crt.MaxLength";
-		}
-		if (ContainsAny(customValidatorType, MinLengthTypeMarkers) &&
-			validatorBody.Contains(".length", StringComparison.Ordinal)) {
-			return "crt.MinLength";
-		}
-		return string.Empty;
-	}
-
 	/// <summary>
 	/// Extracts the full body of a named validator entry from the SCHEMA_VALIDATORS section
 	/// using brace-depth tracking so that long validators are never truncated.
@@ -1129,10 +1066,6 @@ public static class SchemaValidationService
 		return index + 1;
 	}
 
-	private static bool ContainsAny(string source, IEnumerable<string> values) {
-		return values.Any(value => source.Contains(value, StringComparison.OrdinalIgnoreCase));
-	}
-
 	private static IEnumerable<(string ValidatorType, HashSet<string> ParamNames)> ExtractCustomValidatorContracts(
 		string validatorsContent) {
 		const string validatorPattern = "\"(?<type>usr\\.[^\"]+)\"\\s*:\\s*\\{";
@@ -1154,7 +1087,7 @@ public static class SchemaValidationService
 	private static HashSet<string> ExtractDeclaredParamNames(string snippet) {
 		Match paramsMatch = Regex.Match(
 			snippet,
-			"\"params\"\\s*:\\s*\\[(?<params>.*?)\\]",
+			"(?:\"params\"|params)\\s*:\\s*\\[(?<params>.*?)\\]",
 			RegexOptions.Singleline,
 			RegexTimeout);
 		if (!paramsMatch.Success) {
@@ -1163,7 +1096,7 @@ public static class SchemaValidationService
 
 		return Regex.Matches(
 				paramsMatch.Groups["params"].Value,
-				"\"name\"\\s*:\\s*\"(?<name>[^\"]+)\"",
+				"(?:\"name\"|name)\\s*:\\s*\"(?<name>[^\"]+)\"",
 				RegexOptions.Singleline,
 				RegexTimeout)
 			.Select(match => match.Groups["name"].Value)
