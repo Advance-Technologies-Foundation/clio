@@ -5,6 +5,7 @@ using Clio.Command;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
+using Clio.Requests;
 using Clio.UserEnvironment;
 using FluentValidation;
 using FluentAssertions;
@@ -369,7 +370,8 @@ public sealed class FsmModeToolTests
 					Substitute.For<IValidator<SetFsmConfigOptions>>(),
 					Substitute.For<ISettingsRepository>(),
 					new Clio.Common.FileSystem(new System.IO.Abstractions.FileSystem()),
-					Substitute.For<ILogger>()),
+					Substitute.For<ILogger>(),
+					Substitute.For<IIISScanner>()),
 				new LoadPackagesToFileSystemCommand(
 					Substitute.For<Clio.Package.IFileDesignModePackages>(),
 					Substitute.For<ILogger>()),

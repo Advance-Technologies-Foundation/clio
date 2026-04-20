@@ -34,7 +34,8 @@ public class TurnFsmCommandLoginRetryTests {
 			validator,
 			settingsRepository,
 			new Clio.Common.FileSystem(new System.IO.Abstractions.FileSystem()),
-			logger);
+			logger,
+			Substitute.For<Clio.Requests.IIISScanner>());
 		setFsmConfigCommand.Execute(Arg.Any<SetFsmConfigOptions>()).Returns(0);
 
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();

@@ -92,6 +92,7 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
+	private readonly IIISScanner _iisScanner;
 
 	#endregion
 
@@ -104,12 +105,14 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 	/// <param name="settingsRepository">Environment settings repository.</param>
 	/// <param name="fileSystem">Filesystem abstraction used to resolve and update config files.</param>
 	/// <param name="logger">Logger used for command output.</param>
+	/// <param name="iisScanner">IIS scanner for discovering Creatio sites.</param>
 	public SetFsmConfigCommand(IValidator<SetFsmConfigOptions> validator, ISettingsRepository settingsRepository,
-		IFileSystem fileSystem, ILogger logger) {
+		IFileSystem fileSystem, ILogger logger, IIISScanner iisScanner) {
 		_validator = validator;
 		_settingsRepository = settingsRepository;
 		_fileSystem = fileSystem;
 		_logger = logger;
+		_iisScanner = iisScanner;
 	}
 
 	#endregion
@@ -179,8 +182,8 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 			throw new Exception($"Could not find path to environment: '{envName}'");
 		}
 
-		IEnumerable<IISScannerHandler.UnregisteredSite> sites = IISScannerHandler.FindAllCreatioSites();
-		foreach (IISScannerHandler.UnregisteredSite site in sites) {
+		IEnumerable<UnregisteredSite> sites = _iisScanner.FindAllCreatioSites();
+		foreach (UnregisteredSite site in sites) {
 			foreach (Uri unregisteredSiteUri in site.Uris) {
 				if (unregisteredSiteUri.ToString() == new Uri(env.Uri).ToString()) {
 					return site.siteBinding.path;
