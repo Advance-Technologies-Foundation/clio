@@ -18,11 +18,8 @@ public sealed class PageGetTool(
 
 	internal const string ToolName = "get-page";
 
-	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description(
-		"Get a Freedom UI page. Writes body.js / bundle.json / meta.json to .clio-pages/{schema-name}/ in the working directory and returns file paths. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
-		"Before editing the returned raw.body: " +
-		"if the task targets SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first.")]
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[Description("Get a Freedom UI page. Writes body.js / bundle.json / meta.json to .clio-pages/{schema-name}/ in the working directory and returns file paths. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public PageGetResponse GetPage(
 		[Description("Parameters: schema-name (required); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageGetArgs args) {

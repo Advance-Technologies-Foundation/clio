@@ -21,9 +21,12 @@ public static class LoadPackagesPrompt {
 		[Description("Target environment name")]
 		string environmentName) =>
 		$"""
-		 Use clio mcp server `pkg-to-file-system` tool to load packages from the database
-		 into the file system for Creatio environment `{environmentName}`.
-		 This operation requires the target environment to have file design mode enabled.
+		 Export package source code from the Creatio database to the file system for
+		 environment `{environmentName}` using the `pkg-to-file-system` tool.
+		 This is typically the first step when starting local development — it downloads
+		 package schemas and resources so they can be edited in an IDE.
+		 **Prerequisite:** The environment must have file-system development (FSD) mode enabled.
+		 After editing files locally, use `pkg-to-db` to push changes back.
 		 """;
 
 	/// <summary>
@@ -37,8 +40,11 @@ public static class LoadPackagesPrompt {
 		[Description("Target environment name")]
 		string environmentName) =>
 		$"""
-		 Use clio mcp server `pkg-to-db` tool to load packages from the file system
-		 into the database for Creatio environment `{environmentName}`.
-		 This operation requires the target environment to have file design mode enabled.
+		 Import package source code from the file system back into the Creatio database
+		 for environment `{environmentName}` using the `pkg-to-db` tool.
+		 Use this after editing package files locally to apply changes to the running
+		 Creatio instance. Consider compiling configuration and restarting the
+		 environment afterward to ensure changes take full effect.
+		 **Prerequisite:** The environment must have file-system development (FSD) mode enabled.
 		 """;
 }
