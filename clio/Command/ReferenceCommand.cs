@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
+using Clio.Common;
 using Clio.Project;
 using CommandLine;
 
@@ -26,9 +27,11 @@ namespace Clio.Command
 	public class ReferenceCommand : Command<ReferenceOptions>
 	{
 		private readonly ICreatioPkgProjectCreator _projectCreator;
+		private readonly ILogger _logger;
 
-		public ReferenceCommand(ICreatioPkgProjectCreator projectCreator) {
+		public ReferenceCommand(ICreatioPkgProjectCreator projectCreator, ILogger logger) {
 			_projectCreator = projectCreator;
+			_logger = logger;
 		}
 
 		private static string CurrentProj =>
@@ -64,10 +67,10 @@ namespace Clio.Command
 						throw new NotSupportedException($"You use not supported option type {options.ReferenceType}");
 				}
 				project.SaveChanges();
-				Console.WriteLine("Done");
+				_logger.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}

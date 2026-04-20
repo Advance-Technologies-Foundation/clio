@@ -229,7 +229,7 @@ internal class Program {
 					UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 					RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
 					AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
-					UnregAppOptions opts => CreateCommand<UnregAppCommand>(new SettingsRepository()).Execute(opts),
+					UnregAppOptions opts => CreateCommand<UnregAppCommand>(new SettingsRepository(), ConsoleLogger.Instance).Execute(opts),
 					GeneratePkgZipOptions opts => Resolve<CompressPackageCommand>().Execute(opts),
 					PushPkgOptions opts => Resolve<PushPackageCommand>(opts).Execute(opts),
 					InstallApplicationOptions opts => Resolve<InstallApplicationCommand>(opts).Execute(opts),
