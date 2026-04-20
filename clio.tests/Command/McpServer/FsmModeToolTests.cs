@@ -88,7 +88,7 @@ public sealed class FsmModeToolTests
 			  "staticFileContent": null
 			}
 			""");
-		FsmModeStatusService service = new(settingsRepository, applicationClientFactory);
+		FsmModeStatusService service = new(settingsRepository, applicationClientFactory, new ServiceUrlBuilderFactory());
 
 		// Act
 		_ = service.GetStatus("sandbox");
@@ -351,7 +351,7 @@ public sealed class FsmModeToolTests
 		applicationClientFactory.CreateEnvironmentClient(Arg.Any<EnvironmentSettings>()).Returns(applicationClient);
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(responsePayload);
 
-		IFsmModeStatusService fsmModeStatusService = new FsmModeStatusService(settingsRepository, applicationClientFactory);
+		IFsmModeStatusService fsmModeStatusService = new FsmModeStatusService(settingsRepository, applicationClientFactory, new ServiceUrlBuilderFactory());
 		return new FsmModeTool(
 			new FakeTurnFsmCommand(),
 			ConsoleLogger.Instance,
