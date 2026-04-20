@@ -14,7 +14,6 @@ namespace Clio.Tests.Command;
 internal class UnlockPackageCommandTests : BaseCommandTests<UnlockPackageOptions>{
 	#region Fields: Private
 
-	private readonly IClioGateway _clioGateway = Substitute.For<IClioGateway>();
 	private readonly ILogger _logger = Substitute.For<ILogger>();
 	private readonly IPackageLockManager _packageLockManager = Substitute.For<IPackageLockManager>();
 	private readonly ISysSettingsManager _sysSettingsManager = Substitute.For<ISysSettingsManager>();
@@ -25,11 +24,10 @@ internal class UnlockPackageCommandTests : BaseCommandTests<UnlockPackageOptions
 
 	[Test]
 	public void Execute_ReturnsError_WhenMaintainerIsMissing_ForUnlockAll() {
-		UnlockPackageCommand sut = new(_packageLockManager, _clioGateway, _sysSettingsManager, _logger);
+		UnlockPackageCommand sut = new(_packageLockManager, _sysSettingsManager, _logger);
 		UnlockPackageOptions options = new() {
 			Environment = "dev"
 		};
-		_clioGateway.IsCompatibleWith(Arg.Any<string>()).Returns(true);
 
 		int actual = sut.Execute(options);
 
@@ -41,12 +39,11 @@ internal class UnlockPackageCommandTests : BaseCommandTests<UnlockPackageOptions
 
 	[Test]
 	public void Execute_ReturnsError_WhenSchemaNamePrefixUpdateFails_ForUnlockAll() {
-		UnlockPackageCommand sut = new(_packageLockManager, _clioGateway, _sysSettingsManager, _logger);
+		UnlockPackageCommand sut = new(_packageLockManager, _sysSettingsManager, _logger);
 		UnlockPackageOptions options = new() {
 			Environment = "dev_env_n8",
 			Maintainer = "Creatio"
 		};
-		_clioGateway.IsCompatibleWith(Arg.Any<string>()).Returns(true);
 		_sysSettingsManager.UpdateSysSetting("Maintainer", Arg.Any<object>(), Arg.Any<string>()).Returns(true);
 		_sysSettingsManager.UpdateSysSetting("SchemaNamePrefix", Arg.Any<object>(), Arg.Any<string>()).Returns(false);
 
@@ -59,12 +56,11 @@ internal class UnlockPackageCommandTests : BaseCommandTests<UnlockPackageOptions
 
 	[Test]
 	public void Execute_SetsMaintainerAndUnlocksAllPackages_WhenMaintainerProvided() {
-		UnlockPackageCommand sut = new(_packageLockManager, _clioGateway, _sysSettingsManager, _logger);
+		UnlockPackageCommand sut = new(_packageLockManager, _sysSettingsManager, _logger);
 		UnlockPackageOptions options = new() {
 			Environment = "dev_env_n8",
 			Maintainer = "Creatio"
 		};
-		_clioGateway.IsCompatibleWith(Arg.Any<string>()).Returns(true);
 		_sysSettingsManager.UpdateSysSetting("Maintainer", Arg.Any<object>(), Arg.Any<string>()).Returns(true);
 		_sysSettingsManager.UpdateSysSetting("SchemaNamePrefix", Arg.Any<object>(), Arg.Any<string>()).Returns(true);
 
@@ -82,12 +78,11 @@ internal class UnlockPackageCommandTests : BaseCommandTests<UnlockPackageOptions
 
 	[Test]
 	public void Execute_UnlocksNamedPackages_WithoutMaintainerUpdate() {
-		UnlockPackageCommand sut = new(_packageLockManager, _clioGateway, _sysSettingsManager, _logger);
+		UnlockPackageCommand sut = new(_packageLockManager, _sysSettingsManager, _logger);
 		UnlockPackageOptions options = new() {
 			Environment = "dev",
 			Name = "Pkg1,Pkg2"
 		};
-		_clioGateway.IsCompatibleWith(Arg.Any<string>()).Returns(true);
 
 		int actual = sut.Execute(options);
 
@@ -98,7 +93,6 @@ internal class UnlockPackageCommandTests : BaseCommandTests<UnlockPackageOptions
 
 	[SetUp]
 	public void SetUp() {
-		_clioGateway.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		_packageLockManager.ClearReceivedCalls();
 		_sysSettingsManager.ClearReceivedCalls();

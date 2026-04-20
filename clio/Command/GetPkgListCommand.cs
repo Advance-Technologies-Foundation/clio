@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Common;
@@ -34,7 +34,6 @@ namespace Clio.Command
 
 	public class GetPkgListCommand : Command<PkgListOptions>
 	{
-		private const string MinClioGateVersion = "2.0.0.0";
 
 		#region Fields: Private
 
@@ -42,16 +41,15 @@ namespace Clio.Command
 		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 		private readonly IJsonResponseFormater _jsonResponseFormater;
 		private readonly ILogger _logger;
-		private readonly IClioGateway _clioGateway;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public GetPkgListCommand(EnvironmentSettings environmentSettings, 
+		public GetPkgListCommand(EnvironmentSettings environmentSettings,
 				IApplicationPackageListProvider applicationPackageListProvider,
 				IJsonResponseFormater jsonResponseFormater,
-				ILogger logger, IClioGateway clioGateway) {
+				ILogger logger) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
 			jsonResponseFormater.CheckArgumentNull(nameof(jsonResponseFormater));
@@ -59,7 +57,6 @@ namespace Clio.Command
 			_applicationPackageListProvider = applicationPackageListProvider;
 			_jsonResponseFormater= jsonResponseFormater;
 			_logger = logger;
-			_clioGateway = clioGateway;
 		}
 
 		#endregion
@@ -86,7 +83,7 @@ namespace Clio.Command
 			_logger.WriteLine();
 		}
 
-		private static IEnumerable<PackageInfo> FilterPackages(IEnumerable<PackageInfo> packages, 
+		private static IEnumerable<PackageInfo> FilterPackages(IEnumerable<PackageInfo> packages,
 				string searchPattern) {
 			return packages
 				.Where(p => p.Descriptor.Name.Contains(searchPattern, StringComparison.OrdinalIgnoreCase))
@@ -115,16 +112,6 @@ namespace Clio.Command
 
 		internal bool TryGetFilteredPackages(PkgListOptions options, out IReadOnlyList<PackageInfo> packages,
 			out string errorMessage, out string remediationMessage) {
-			if (!_clioGateway.IsCompatibleWith(MinClioGateVersion)) {
-				packages = Array.Empty<PackageInfo>();
-				errorMessage =
-					$"To view packages feature requires cliogate package version {MinClioGateVersion} or higher installed in Creatio.";
-				remediationMessage = string.IsNullOrWhiteSpace(options.Environment)
-					? "To install cliogate use the following command: clio install-gate"
-					: $"To install cliogate use the following command: clio install-gate -e {options.Environment}";
-				return false;
-			}
-
 			packages = FilterPackages(_applicationPackageListProvider.GetPackages(), options.SearchPattern).ToList();
 			errorMessage = string.Empty;
 			remediationMessage = string.Empty;
