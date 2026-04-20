@@ -166,8 +166,10 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the validator guide should state the intended responsibility of validators");
 		article.Text.Should().Contain("@CrtValidator",
 			because: "the validator guide should mention the public frontend-source registration pattern");
-		article.Text.Should().Contain("implement-the-field-value-validation",
-			because: "the validator guide should link to the Academy field-value validation example");
+		article.Text.Should().Contain("crt.MaxLength",
+			because: "the validator guide should publish the built-in max-length validator in the standard decision table");
+		article.Text.Should().Contain("Do NOT create a custom validator when a standard validator is sufficient",
+			because: "the validator guide should explicitly prevent unnecessary custom validators for standard cases");
 		article.Text.Should().Contain("docs://mcp/guides/page-schema-handlers",
 			because: "the validator guide should redirect dynamic UI-state logic to the handler guide");
 	}

@@ -2,8 +2,10 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using McpServer.Resources;
 
 public static class SchemaValidationService
 {
@@ -35,6 +37,8 @@ public static class SchemaValidationService
 		@"^Usr[A-Za-z0-9_]*_(label|caption)$",
 		RegexOptions.Compiled | RegexOptions.IgnoreCase,
 		RegexTimeout);
+	private static readonly string[] MaxLengthTypeMarkers = ["MaxLength"];
+	private static readonly string[] MinLengthTypeMarkers = ["MinLength"];
 	private static readonly HashSet<string> StandardFieldComponentTypes = new(StringComparer.OrdinalIgnoreCase) {
 		"crt.Input",
 		"crt.NumberInput",
@@ -257,8 +261,11 @@ public static class SchemaValidationService
 			return result;
 		}
 		Dictionary<string, string> modelPaths = CollectViewModelPaths(jsBody);
+		var attributesWithValidators = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		CollectAttributesWithValidatorsFromMarker(jsBody, SchemaViewModelConfig, false, attributesWithValidators);
+		CollectAttributesWithValidatorsFromMarker(jsBody, SchemaViewModelConfigDiff, true, attributesWithValidators);
 		using (viewConfigDocument) {
-			ValidateFieldComponents(viewConfigDocument.RootElement, modelPaths, explicitResources, result);
+			ValidateFieldComponents(viewConfigDocument.RootElement, modelPaths, explicitResources, attributesWithValidators, result);
 		}
 		if (result.Errors.Count > 0) {
 			result.IsValid = false;
@@ -340,20 +347,21 @@ public static class SchemaValidationService
 		JsonElement element,
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
+		IReadOnlySet<string> attributesWithValidators,
 		SchemaValidationResult result,
 		bool checkSelf = true) {
 		if (element.ValueKind == JsonValueKind.Object) {
 			bool wrappedValues = false;
 			if (checkSelf && TryResolveFieldComponent(element, out JsonElement componentValues, out string fieldName, out string componentType, out wrappedValues)) {
-				ValidateFieldComponent(componentValues, fieldName, componentType, modelPaths, explicitResources, result);
+				ValidateFieldComponent(componentValues, fieldName, componentType, modelPaths, explicitResources, attributesWithValidators, result);
 			}
 			foreach (JsonProperty property in element.EnumerateObject()) {
 				bool childCheckSelf = !(wrappedValues && property.NameEquals("values"));
-				ValidateFieldComponents(property.Value, modelPaths, explicitResources, result, childCheckSelf);
+				ValidateFieldComponents(property.Value, modelPaths, explicitResources, attributesWithValidators, result, childCheckSelf);
 			}
 		} else if (element.ValueKind == JsonValueKind.Array) {
 			foreach (JsonElement item in element.EnumerateArray()) {
-				ValidateFieldComponents(item, modelPaths, explicitResources, result);
+				ValidateFieldComponents(item, modelPaths, explicitResources, attributesWithValidators, result);
 			}
 		}
 	}
@@ -420,10 +428,12 @@ public static class SchemaValidationService
 		string componentType,
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
+		IReadOnlySet<string> attributesWithValidators,
 		SchemaValidationResult result) {
 		string fieldDisplayName = !string.IsNullOrWhiteSpace(fieldName) ? fieldName : componentType;
 		if (TryGetBindingAttribute(componentValues, out string bindingProperty, out string bindingExpression, out string bindingAttribute) &&
 		    !IsAllowedDirectFieldBinding(bindingAttribute) &&
+		    !attributesWithValidators.Contains(bindingAttribute) &&
 		    modelPaths.TryGetValue(bindingAttribute, out string modelPath) &&
 		    modelPath.StartsWith("PDS.", StringComparison.OrdinalIgnoreCase)) {
 			result.Errors.Add(
@@ -542,6 +552,613 @@ public static class SchemaValidationService
 			return "$Name";
 		}
 		return "$" + modelPath.Replace(".", "_", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Validates that UI controls bound to <c>$PDS_AttrName</c> do not belong to view-model
+	/// attributes that carry <c>validators</c>. Validators only fire on view-model attribute
+	/// bindings (<c>$AttrName</c>), never on raw PDS data-source bindings (<c>$PDS_AttrName</c>).
+	/// </summary>
+	public static SchemaValidationResult ValidateValidatorControlBindings(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		var attributesWithValidators = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		CollectAttributesWithValidatorsFromMarker(jsBody, SchemaViewModelConfig, false, attributesWithValidators);
+		CollectAttributesWithValidatorsFromMarker(jsBody, SchemaViewModelConfigDiff, true, attributesWithValidators);
+		if (attributesWithValidators.Count == 0) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, "SCHEMA_DIFF")) {
+			return result;
+		}
+		if (!TryParseJsonDocument(vcdContent, out JsonDocument viewConfigDocument, out _)) {
+			return result;
+		}
+		using (viewConfigDocument) {
+			CheckValidatorControlBindings(viewConfigDocument.RootElement, attributesWithValidators, result);
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Validates that validator <c>params</c> values do not use the reactive binding syntax
+	/// <c>$Resources.Strings.KeyName</c>. Validator params are evaluated as plain JavaScript values
+	/// and are not processed by the reactive binding engine — the correct format is
+	/// <c>#ResourceString(KeyName)#</c> which is substituted server-side when the schema is compiled.
+	/// </summary>
+	public static SchemaValidationResult ValidateValidatorParamResourceBindings(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		CheckValidatorParamResourceBindingsInMarker(jsBody, SchemaViewModelConfig, false, result);
+		CheckValidatorParamResourceBindingsInMarker(jsBody, SchemaViewModelConfigDiff, true, result);
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Validates that obvious custom validator implementations are not used when a standard built-in
+	/// validator already matches the rule. This targets high-confidence cases only, such as custom
+	/// string-length validators that duplicate <c>crt.MaxLength</c> or <c>crt.MinLength</c>.
+	/// </summary>
+	public static SchemaValidationResult ValidateStandardValidatorUsage(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		IReadOnlyDictionary<string, HashSet<string>> validatorContracts = BuildValidatorParameterContracts(jsBody);
+		ValidateValidatorBindingContractsInMarker(jsBody, SchemaViewModelConfig, false, validatorContracts, result);
+		ValidateValidatorBindingContractsInMarker(jsBody, SchemaViewModelConfigDiff, true, validatorContracts, result);
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string validatorsContent, "SCHEMA_VALIDATORS")) {
+			if (result.Errors.Count > 0) {
+				result.IsValid = false;
+			}
+			return result;
+		}
+		var customValidatorTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		CollectValidatorTypesFromMarker(jsBody, SchemaViewModelConfig, false, customValidatorTypes);
+		CollectValidatorTypesFromMarker(jsBody, SchemaViewModelConfigDiff, true, customValidatorTypes);
+		foreach (string customValidatorType in customValidatorTypes) {
+			if (!customValidatorType.StartsWith("usr.", StringComparison.OrdinalIgnoreCase)) {
+				continue;
+			}
+			string equivalentBuiltIn = TryGetEquivalentBuiltInValidator(customValidatorType, validatorsContent);
+			if (string.IsNullOrEmpty(equivalentBuiltIn)) {
+				continue;
+			}
+			result.Errors.Add(
+				$"Custom validator '{customValidatorType}' duplicates built-in validator '{equivalentBuiltIn}'. " +
+				$"Use '{equivalentBuiltIn}' in the attribute validators binding instead of defining '{customValidatorType}' in SCHEMA_VALIDATORS. " +
+				"Read docs://mcp/guides/page-schema-validators before authoring validator changes.");
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Validates that each custom validator in <c>SCHEMA_VALIDATORS</c> declares all properties
+	/// that appear in its returned error object as named entries in its <c>params</c> array.
+	/// Catches the common mistake of returning <c>{message: "..."}</c> while leaving
+	/// <c>params: []</c>, which causes a Creatio runtime error.
+	/// </summary>
+	public static SchemaValidationResult ValidateCustomValidatorParamCompleteness(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string validatorsContent, "SCHEMA_VALIDATORS")) {
+			return result;
+		}
+		foreach ((string validatorType, HashSet<string> declaredParams) in ExtractCustomValidatorContracts(validatorsContent)) {
+			string snippet = ExtractValidatorBody(validatorsContent, validatorType);
+			if (string.IsNullOrEmpty(snippet)) {
+				continue;
+			}
+			if (HasPrimitiveErrorReturn(snippet, validatorType)) {
+				result.Errors.Add(
+					$"Validator '{validatorType}' returns a primitive error value instead of an error object. " +
+					$"Replace with {{ \"{validatorType}\": {{ message: config.message }} }}, " +
+					"add {\"name\": \"message\"} to params, and use \"#ResourceString(KeyName)#\" for the message binding in viewModelConfig. " +
+					"Read docs://mcp/guides/page-schema-validators for the canonical validator shape.");
+				continue;
+			}
+			if (!declaredParams.Contains("message")) {
+				result.Errors.Add(
+					$"Validator '{validatorType}' does not declare a 'message' param. " +
+					"Every custom validator must include {{\"name\": \"message\"}} in its params array so the error message is visible to the user. " +
+					"Pass the value via config.message and use \"#ResourceString(KeyName)#\" for the message binding in viewModelConfig. " +
+					"Read docs://mcp/guides/page-schema-validators for the canonical validator shape.");
+				continue;
+			}
+			HashSet<string> returnedProps = ExtractReturnErrorProperties(snippet, validatorType);
+			var undeclared = returnedProps
+				.Where(p => !declaredParams.Contains(p))
+				.OrderBy(p => p)
+				.ToList();
+			if (undeclared.Count > 0) {
+				result.Errors.Add(
+					$"Validator '{validatorType}' returns error properties [{string.Join(", ", undeclared)}] " +
+					$"that are not declared in its params array. " +
+					$"Add {{name: \"{undeclared[0]}\"}} (and any others) to params and pass the value via config.{undeclared[0]}. " +
+					"Read docs://mcp/guides/page-schema-validators for the canonical validator shape.");
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Returns <see langword="true"/> when the validator body contains a primitive return value
+	/// for the error object, e.g. <c>return { "usr.Type": true }</c>.
+	/// The runtime requires an object, not a boolean/number/string.
+	/// </summary>
+	private static bool HasPrimitiveErrorReturn(string snippet, string validatorType) {
+		string typeEscaped = Regex.Escape(validatorType);
+		return Regex.IsMatch(
+			snippet,
+			"\\{\\s*\"" + typeEscaped + "\"\\s*:\\s*(?:true|false|\\d[\\d.]*|\"[^\"]*\")\\s*\\}",
+			RegexOptions.Singleline,
+			RegexTimeout);
+	}
+
+	/// <summary>
+	/// Extracts property names from the error object returned inside a custom validator body.
+	/// Matches patterns like <c>return { "usr.Type": { propA: ..., propB: ... } }</c>.
+	/// </summary>
+	private static HashSet<string> ExtractReturnErrorProperties(string snippet, string validatorType) {
+		var props = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		// Match the inner error object: { "usr.Type": { prop: value, ... } }
+		string typeEscaped = Regex.Escape(validatorType);
+		Match inner = Regex.Match(
+			snippet,
+			"\"" + typeEscaped + "\"\\s*:\\s*\\{(?<inner>[^{}]+)\\}",
+			RegexOptions.Singleline,
+			RegexTimeout);
+		if (!inner.Success) {
+			return props;
+		}
+		MatchCollection propMatches = Regex.Matches(
+			inner.Groups["inner"].Value,
+			"(?<name>[a-zA-Z_$][a-zA-Z0-9_$]*)\\s*:",
+			RegexOptions.Singleline,
+			RegexTimeout);
+		foreach (Match m in propMatches) {
+			props.Add(m.Groups["name"].Value);
+		}
+		return props;
+	}
+
+	private static IReadOnlyDictionary<string, HashSet<string>> BuildValidatorParameterContracts(string jsBody) {
+		var contracts = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+		foreach ((string validatorType, string[] paramNames) in StandardValidatorContractParser.GetContracts()) {
+			contracts[validatorType] = new HashSet<string>(paramNames, StringComparer.OrdinalIgnoreCase);
+		}
+		if (PageSchemaSectionReader.TryRead(jsBody, out string validatorsContent, "SCHEMA_VALIDATORS")) {
+			foreach ((string validatorType, HashSet<string> paramNames) in ExtractCustomValidatorContracts(validatorsContent)) {
+				contracts[validatorType] = paramNames;
+			}
+		}
+		return contracts;
+	}
+
+	private static void ValidateValidatorBindingContractsInMarker(
+		string jsBody,
+		string markerName,
+		bool isArray,
+		IReadOnlyDictionary<string, HashSet<string>> validatorContracts,
+		SchemaValidationResult result) {
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string content, markerName)) {
+			return;
+		}
+		if (!TryParseJsonDocument(content, out JsonDocument document, out _)) {
+			return;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (isArray) {
+				if (root.ValueKind != JsonValueKind.Array) {
+					return;
+				}
+				foreach (JsonElement op in root.EnumerateArray()) {
+					if (op.TryGetProperty("values", out JsonElement values)) {
+						ScanAttributesForValidatorBindingContractViolations(values, validatorContracts, result);
+					}
+				}
+			} else {
+				if (!root.TryGetProperty("attributes", out JsonElement attributes)) {
+					return;
+				}
+				ScanAttributesForValidatorBindingContractViolations(attributes, validatorContracts, result);
+			}
+		}
+	}
+
+	private static void CheckValidatorParamResourceBindingsInMarker(
+		string jsBody, string markerName, bool isArray, SchemaValidationResult result) {
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string content, markerName)) {
+			return;
+		}
+		if (!TryParseJsonDocument(content, out JsonDocument document, out _)) {
+			return;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (isArray) {
+				if (root.ValueKind != JsonValueKind.Array) {
+					return;
+				}
+				foreach (JsonElement op in root.EnumerateArray()) {
+					if (op.TryGetProperty("values", out JsonElement values)) {
+						ScanAttributesForInvalidParamBindings(values, result);
+					}
+				}
+			} else {
+				if (!root.TryGetProperty("attributes", out JsonElement attributes)) {
+					return;
+				}
+				ScanAttributesForInvalidParamBindings(attributes, result);
+			}
+		}
+	}
+
+	private static void ScanAttributesForInvalidParamBindings(
+		JsonElement attributesElement, SchemaValidationResult result) {
+		if (attributesElement.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		foreach (JsonProperty attr in attributesElement.EnumerateObject()) {
+			if (!attr.Value.TryGetProperty("validators", out JsonElement validators) ||
+			    validators.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			foreach (JsonProperty validator in validators.EnumerateObject()) {
+				if (!validator.Value.TryGetProperty("params", out JsonElement paramsEl) ||
+				    paramsEl.ValueKind != JsonValueKind.Object) {
+					continue;
+				}
+				foreach (JsonProperty param in paramsEl.EnumerateObject()) {
+					if (param.Value.ValueKind != JsonValueKind.String) {
+						continue;
+					}
+					string? val = param.Value.GetString();
+					if (val != null && val.StartsWith("$Resources.Strings.", StringComparison.OrdinalIgnoreCase)) {
+						string key = val["$Resources.Strings.".Length..];
+						result.Errors.Add(
+							$"Validator '{validator.Name}' param '{param.Name}' on attribute '{attr.Name}' " +
+							$"uses reactive binding '{val}'. Validator params are not processed by the reactive engine — " +
+							$"use '#ResourceString({key})#' instead.");
+					}
+				}
+			}
+		}
+	}
+
+	// "message" is universally optional on all crt.* validators via ValidatorParametersValues.message — never treat it as unknown for standard validators.
+	private static readonly HashSet<string> StandardValidatorUniversalParams =
+		new(StringComparer.OrdinalIgnoreCase) { "message" };
+
+	private static void ScanAttributesForValidatorBindingContractViolations(
+		JsonElement attributesElement,
+		IReadOnlyDictionary<string, HashSet<string>> validatorContracts,
+		SchemaValidationResult result) {
+		if (attributesElement.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		foreach (JsonProperty attr in attributesElement.EnumerateObject()) {
+			if (!attr.Value.TryGetProperty("validators", out JsonElement validators) ||
+			    validators.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			foreach (JsonProperty validator in validators.EnumerateObject()) {
+				if (validator.Value.ValueKind != JsonValueKind.Object ||
+				    !validator.Value.TryGetProperty("type", out JsonElement typeElement) ||
+				    typeElement.ValueKind != JsonValueKind.String) {
+					continue;
+				}
+				string validatorType = typeElement.GetString() ?? string.Empty;
+				if (!validatorContracts.TryGetValue(validatorType, out HashSet<string>? allowedParams)) {
+					continue;
+				}
+				bool isStandardValidator = validatorType.StartsWith("crt.", StringComparison.OrdinalIgnoreCase);
+				bool hasParamsObject = validator.Value.TryGetProperty("params", out JsonElement paramsElement) &&
+				                    paramsElement.ValueKind == JsonValueKind.Object;
+				if (!hasParamsObject) {
+					if (allowedParams.Count == 0) {
+						continue;
+					}
+					result.Errors.Add(
+						$"Validator '{validatorType}' on attribute '{attr.Name}' must declare params object " +
+						$"with [{string.Join(", ", allowedParams)}].");
+					continue;
+				}
+				var unknownParams = new List<string>();
+				foreach (JsonProperty param in paramsElement.EnumerateObject()) {
+					if (!allowedParams.Contains(param.Name) &&
+					    !(isStandardValidator && StandardValidatorUniversalParams.Contains(param.Name))) {
+						unknownParams.Add(param.Name);
+					}
+				}
+				if (unknownParams.Count > 0) {
+					result.Errors.Add(
+						$"Validator '{validatorType}' on attribute '{attr.Name}' uses unsupported params [{string.Join(", ", unknownParams)}]. " +
+						$"Allowed params: [{string.Join(", ", allowedParams)}].");
+					continue;
+				}
+				if (allowedParams.Count > 0 && paramsElement.EnumerateObject().MoveNext() == false) {
+					result.Errors.Add(
+						$"Validator '{validatorType}' on attribute '{attr.Name}' must use params [{string.Join(", ", allowedParams)}].");
+				}
+			}
+		}
+	}
+
+	private static void CollectValidatorTypesFromMarker(
+		string jsBody,
+		string markerName,
+		bool isArray,
+		HashSet<string> validatorTypes) {
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string content, markerName)) {
+			return;
+		}
+		if (!TryParseJsonDocument(content, out JsonDocument document, out _)) {
+			return;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (isArray) {
+				if (root.ValueKind != JsonValueKind.Array) {
+					return;
+				}
+				foreach (JsonElement op in root.EnumerateArray()) {
+					if (op.TryGetProperty("values", out JsonElement values)) {
+						ExtractValidatorTypes(values, validatorTypes);
+					}
+				}
+			} else {
+				if (!root.TryGetProperty("attributes", out JsonElement attributes)) {
+					return;
+				}
+				ExtractValidatorTypes(attributes, validatorTypes);
+			}
+		}
+	}
+
+	private static void ExtractValidatorTypes(JsonElement attributesObject, HashSet<string> validatorTypes) {
+		if (attributesObject.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		foreach (JsonProperty attr in attributesObject.EnumerateObject()) {
+			if (attr.Value.ValueKind != JsonValueKind.Object ||
+			    !attr.Value.TryGetProperty("validators", out JsonElement validators) ||
+			    validators.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			foreach (JsonProperty validator in validators.EnumerateObject()) {
+				if (validator.Value.ValueKind == JsonValueKind.Object &&
+				    validator.Value.TryGetProperty("type", out JsonElement typeElement) &&
+				    typeElement.ValueKind == JsonValueKind.String &&
+				    !string.IsNullOrWhiteSpace(typeElement.GetString())) {
+					validatorTypes.Add(typeElement.GetString()!);
+				}
+			}
+		}
+	}
+
+	private static string TryGetEquivalentBuiltInValidator(string customValidatorType, string validatorsContent) {
+		string validatorBody = ExtractValidatorBody(validatorsContent, customValidatorType);
+		if (string.IsNullOrEmpty(validatorBody)) {
+			return string.Empty;
+		}
+		if (ContainsAny(customValidatorType, MaxLengthTypeMarkers) &&
+		    validatorBody.Contains(".length", StringComparison.Ordinal)) {
+			return "crt.MaxLength";
+		}
+		if (ContainsAny(customValidatorType, MinLengthTypeMarkers) &&
+		    validatorBody.Contains(".length", StringComparison.Ordinal)) {
+			return "crt.MinLength";
+		}
+		return string.Empty;
+	}
+
+	/// <summary>
+	/// Extracts the full body of a named validator entry from the SCHEMA_VALIDATORS section
+	/// using brace-depth tracking so that long validators are never truncated.
+	/// Returns the substring from the opening quote of <paramref name="customValidatorType"/>
+	/// through the closing <c>}</c> of its top-level object, or an empty string when not found.
+	/// </summary>
+	private static string ExtractValidatorBody(string validatorsContent, string customValidatorType) {
+		string marker = "\"" + customValidatorType + "\"";
+		int markerIndex = validatorsContent.IndexOf(marker, StringComparison.Ordinal);
+		if (markerIndex < 0) {
+			return string.Empty;
+		}
+		int braceStart = -1;
+		for (int i = markerIndex + marker.Length; i < validatorsContent.Length; i++) {
+			if (validatorsContent[i] == '{') {
+				braceStart = i;
+				break;
+			}
+		}
+		if (braceStart < 0) {
+			return string.Empty;
+		}
+		int depth = 0;
+		bool inString = false;
+		char stringChar = '"';
+		for (int i = braceStart; i < validatorsContent.Length; i++) {
+			char c = validatorsContent[i];
+			if (inString) {
+				if (c == '\\') {
+					i++; // skip escaped character
+					continue;
+				}
+				if (c == stringChar) {
+					inString = false;
+				}
+				continue;
+			}
+			switch (c) {
+				case '"':
+				case '\'':
+				case '`':
+					inString = true;
+					stringChar = c;
+					break;
+				case '{':
+					depth++;
+					break;
+				case '}':
+					depth--;
+					if (depth == 0) {
+						return validatorsContent.Substring(markerIndex, i - markerIndex + 1);
+					}
+					break;
+			}
+		}
+		return string.Empty;
+	}
+
+	private static bool ContainsAny(string source, IEnumerable<string> values) {
+		foreach (string value in values) {
+			if (source.Contains(value, StringComparison.OrdinalIgnoreCase)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static IEnumerable<(string ValidatorType, HashSet<string> ParamNames)> ExtractCustomValidatorContracts(
+		string validatorsContent) {
+		const string validatorPattern = "\"(?<type>usr\\.[^\"]+)\"\\s*:\\s*\\{";
+		MatchCollection matches = Regex.Matches(validatorsContent, validatorPattern, RegexOptions.Singleline, RegexTimeout);
+		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (Match match in matches) {
+			string validatorType = match.Groups["type"].Value;
+			if (!seen.Add(validatorType)) {
+				continue;
+			}
+			string snippet = ExtractValidatorBody(validatorsContent, validatorType);
+			if (string.IsNullOrEmpty(snippet)) {
+				continue;
+			}
+			var paramNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			Match paramsMatch = Regex.Match(
+				snippet,
+				"\"params\"\\s*:\\s*\\[(?<params>.*?)\\]",
+				RegexOptions.Singleline,
+				RegexTimeout);
+			if (paramsMatch.Success) {
+				MatchCollection nameMatches = Regex.Matches(
+					paramsMatch.Groups["params"].Value,
+					"\"name\"\\s*:\\s*\"(?<name>[^\"]+)\"",
+					RegexOptions.Singleline,
+					RegexTimeout);
+				foreach (Match nameMatch in nameMatches) {
+					string paramName = nameMatch.Groups["name"].Value;
+					if (!string.IsNullOrWhiteSpace(paramName)) {
+						paramNames.Add(paramName);
+					}
+				}
+			}
+			yield return (validatorType, paramNames);
+		}
+	}
+
+
+	private static void CollectAttributesWithValidatorsFromMarker(
+		string jsBody,
+		string markerName,
+		bool isArray,
+		HashSet<string> attributeNames) {
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string content, markerName)) {
+			return;
+		}
+		if (!TryParseJsonDocument(content, out JsonDocument document, out _)) {
+			return;
+		}
+		using (document) {
+			if (isArray) {
+				if (document.RootElement.ValueKind != JsonValueKind.Array) {
+					return;
+				}
+				foreach (JsonElement op in document.RootElement.EnumerateArray()) {
+					if (!op.TryGetProperty("values", out JsonElement values)) {
+						continue;
+					}
+					ExtractAttributesWithValidators(values, attributeNames);
+				}
+			} else {
+				if (!document.RootElement.TryGetProperty("attributes", out JsonElement attributes)) {
+					return;
+				}
+				ExtractAttributesWithValidators(attributes, attributeNames);
+			}
+		}
+	}
+
+	private static void ExtractAttributesWithValidators(JsonElement attributesObject, HashSet<string> names) {
+		if (attributesObject.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		foreach (JsonProperty attr in attributesObject.EnumerateObject()) {
+			if (attr.Value.ValueKind == JsonValueKind.Object &&
+			    attr.Value.TryGetProperty("validators", out JsonElement validators) &&
+			    validators.ValueKind == JsonValueKind.Object &&
+			    validators.EnumerateObject().GetEnumerator().MoveNext()) {
+				names.Add(attr.Name);
+			}
+		}
+	}
+
+	private static void CheckValidatorControlBindings(
+		JsonElement element,
+		HashSet<string> attributesWithValidators,
+		SchemaValidationResult result) {
+		if (element.ValueKind == JsonValueKind.Array) {
+			foreach (JsonElement item in element.EnumerateArray()) {
+				CheckValidatorControlBindings(item, attributesWithValidators, result);
+			}
+			return;
+		}
+		if (element.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		JsonElement target = element.TryGetProperty("values", out JsonElement valuesElement) &&
+		                     valuesElement.ValueKind == JsonValueKind.Object
+			? valuesElement
+			: element;
+		if (TryGetStringProperty(target, "control", out string controlBinding) &&
+		    controlBinding.StartsWith("$PDS_", StringComparison.OrdinalIgnoreCase)) {
+			string attributeName = controlBinding["$PDS_".Length..];
+			if (attributesWithValidators.Contains(attributeName)) {
+				string fieldName = element.TryGetProperty("name", out JsonElement nameEl) &&
+				                   nameEl.ValueKind == JsonValueKind.String
+					? nameEl.GetString() ?? attributeName
+					: attributeName;
+				result.Errors.Add(
+					$"Control '{fieldName}' binds to '$PDS_{attributeName}' but attribute " +
+					$"'{attributeName}' has validators. Validators only fire on view-model attribute " +
+					"bindings \u2014 use '$" + attributeName +
+					"' instead of '$PDS_" + attributeName + "'.");
+			}
+		}
+		foreach (JsonProperty property in element.EnumerateObject()) {
+			if (!property.NameEquals("values")) {
+				CheckValidatorControlBindings(property.Value, attributesWithValidators, result);
+			}
+		}
 	}
 
 	private static bool TryGetDataTableColumns(JsonElement item, out JsonElement columns) {

@@ -20,7 +20,12 @@ public sealed class PageGetTool(
 	/// Reads a Freedom UI page as a merged bundle plus raw editable body.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Get a Freedom UI page bundle plus raw schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	[Description(
+		"Get a Freedom UI page bundle plus raw schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
+		"Before editing the returned raw.body: " +
+		"if the task targets SCHEMA_VALIDATORS read docs://mcp/guides/page-schema-validators first; " +
+		"if the task targets SCHEMA_CONVERTERS read docs://mcp/guides/page-schema-converters; " +
+		"if the task targets SCHEMA_HANDLERS read docs://mcp/guides/page-schema-handlers.")]
 	public PageGetResponse GetPage([Description("Parameters: schema-name (required); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageGetArgs args) {
 		PageGetOptions options = new() {
 			SchemaName = args.SchemaName,

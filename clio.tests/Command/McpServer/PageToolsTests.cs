@@ -136,6 +136,12 @@ public class PageToolsTests {
 			because: "get-page prompt guidance should point converter edits to the dedicated clio-owned converter guide");
 		prompt.Should().Contain("docs://mcp/guides/page-schema-validators",
 			because: "get-page prompt guidance should point validator edits to the dedicated clio-owned validator guide");
+		prompt.Should().Contain("you must read `docs://mcp/guides/page-schema-validators` before proposing or applying changes",
+			because: "validator guidance should be mandatory before authorship so callers do not drift into handler syntax");
+		prompt.Should().Contain("must not author validator changes until that guidance has been read",
+			because: "validator guidance should be framed as a hard workflow prerequisite rather than an optional recommendation");
+		prompt.Should().Contain("never use handler signatures like `handler(request, next)`",
+			because: "validator guidance should explicitly block handler contract leakage into SCHEMA_VALIDATORS");
 		prompt.Should().Contain($"`{ToolContractGetTool.ToolName}`",
 			because: "get-page prompt guidance should bootstrap page workflows from the authoritative MCP contract before the first page tool call");
 		prompt.Should().Contain($"`{PageSyncTool.ToolName}`",
@@ -174,6 +180,110 @@ public class PageToolsTests {
 			because: "get-page prompt guidance should no longer advertise removed camelCase request fields");
 		prompt.Should().NotContain("`environmentName`",
 			because: "get-page prompt guidance should no longer advertise removed camelCase request fields");
+	}
+
+	[Test]
+	[Description("get-page tool description routes callers to the canonical validator guide so they read it before authoring validators.")]
+	public void PageGetTool_Description_Should_Contain_Validator_Binding_Location_Guidance() {
+		// Arrange
+		var method = typeof(PageGetTool).GetMethod(nameof(PageGetTool.GetPage))!;
+		var descAttr = method.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single();
+
+		// Act
+		string description = descAttr.Description;
+
+		// Assert
+		description.Should().Contain("SCHEMA_VALIDATORS",
+			because: "get-page description should surface the section name so callers know which guide to read before editing");
+		description.Should().Contain("docs://mcp/guides/page-schema-validators",
+			because: "get-page description should link to the dedicated validator guide so callers read it before authoring");
+	}
+
+	[Test]
+	[Description("sync-pages tool description routes callers to the canonical validator guide so they read it before authoring validators.")]
+	public void PageSyncTool_Description_Should_Contain_Validator_Section_Authoring_Rules() {
+		// Arrange
+		var method = typeof(PageSyncTool).GetMethod(nameof(PageSyncTool.SyncPages))!;
+		var descAttr = method.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single();
+
+		// Act
+		string description = descAttr.Description;
+
+		// Assert
+		description.Should().Contain("SCHEMA_VALIDATORS",
+			because: "sync-pages description should surface the validator section name as part of body authoring rules");
+		description.Should().Contain("docs://mcp/guides/page-schema-validators",
+			because: "sync-pages description should link to the dedicated validator guide so callers read it before authoring");
+	}
+
+	[Test]
+	[Description("update-page tool description routes validator authoring to the dedicated guidance resource instead of duplicating validator rules inline.")]
+	public void PageUpdateTool_Description_Should_Contain_Validator_Section_Authoring_Rules() {
+		// Arrange
+		var method = typeof(PageUpdateTool).GetMethod(nameof(PageUpdateTool.UpdatePage))!;
+		var descAttr = method.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single();
+
+		// Act
+		string description = descAttr.Description;
+
+		// Assert
+		description.Should().Contain("SCHEMA_VALIDATORS",
+			because: "update-page description should surface the validator section name as part of body authoring rules");
+		description.Should().Contain("read docs://mcp/guides/page-schema-validators first",
+			because: "update-page description should make validator guidance a mandatory precondition before validator authoring");
+	}
+
+	[Test]
+	[Description("get-page, sync-pages, and update-page tool descriptions all link to the validator guide so validator-specific rules live in one canonical location.")]
+	public void PageTools_Descriptions_Should_Forbid_PDS_Control_Binding_For_Validators() {
+		// Arrange
+		var getDesc = typeof(PageGetTool).GetMethod(nameof(PageGetTool.GetPage))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+		var syncDesc = typeof(PageSyncTool).GetMethod(nameof(PageSyncTool.SyncPages))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+		var updateDesc = typeof(PageUpdateTool).GetMethod(nameof(PageUpdateTool.UpdatePage))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+
+		// Act & Assert
+		getDesc.Should().Contain("docs://mcp/guides/page-schema-validators",
+			because: "get-page description must route callers to the validator guide which forbids $PDS_ bindings");
+		syncDesc.Should().Contain("docs://mcp/guides/page-schema-validators",
+			because: "sync-pages description must route callers to the validator guide which forbids $PDS_ bindings");
+		updateDesc.Should().Contain("docs://mcp/guides/page-schema-validators",
+			because: "update-page description must route callers to the validator guide instead of duplicating PDS binding rules inline");
+	}
+
+	[Test]
+	[Description("get-page, sync-pages, and update-page tool descriptions enforce #ResourceString(KeyName)# for validator message params and forbid $Resources.Strings.KeyName.")]
+	public void PageTools_Descriptions_Should_Enforce_ResourceString_Format_For_Validator_Messages() {
+		// Arrange
+		var getDesc = typeof(PageGetTool).GetMethod(nameof(PageGetTool.GetPage))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+		var syncDesc = typeof(PageSyncTool).GetMethod(nameof(PageSyncTool.SyncPages))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+		var updateDesc = typeof(PageUpdateTool).GetMethod(nameof(PageUpdateTool.UpdatePage))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+
+		// Act & Assert
+		// all tools route callers to the guide which contains the ResourceString rules
+		getDesc.Should().Contain("docs://mcp/guides/page-schema-validators",
+			because: "get-page description must route callers to the validator guide which documents the #ResourceString(KeyName)# requirement");
+		syncDesc.Should().Contain("docs://mcp/guides/page-schema-validators",
+			because: "sync-pages description must route callers to the validator guide which documents the #ResourceString(KeyName)# requirement");
+		updateDesc.Should().Contain("docs://mcp/guides/page-schema-validators",
+			because: "update-page description must route callers to the validator guide which documents the #ResourceString(KeyName)# requirement");
 	}
 
 	[Test]
@@ -1204,6 +1314,160 @@ public class PageToolsTests {
 		applicationClient.ReceivedCalls().Should().BeEmpty(
 			because: "validation should fail before the command sends any remote requests");
 	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage rejects schemas where validator params use $Resources.Strings.X binding syntax before saving to Creatio.")]
+	public void PageUpdateTool_UpdatePage_Rejects_Schema_With_Resources_Strings_In_Validator_Params() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		PageUpdateTool tool = new(command, logger, commandResolver);
+		string body = CreatePageBody(
+			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"$Resources.Strings.UsrUpperCaseValidator_Message"}}}}}}""",
+			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
+		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "update-page must reject schemas where validator params use $Resources.Strings.X — this syntax is not evaluated in validator params");
+		response.Error.Should().Contain("Validation failed",
+			because: "the error message must clearly communicate that client-side validation blocked the save");
+		response.Error.Should().Contain("#ResourceString(",
+			because: "the error message must suggest the correct #ResourceString(KeyName)# format");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "validation must fail before any remote call is made to Creatio");
+	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage accepts a schema that correctly uses #ResourceString(KeyName)# in validator params.")]
+	public void PageUpdateTool_UpdatePage_Accepts_Schema_With_Correct_ResourceString_In_Validator_Params() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(System.Text.Json.JsonSerializer.Serialize(new { success = true }));
+		PageUpdateTool tool = new(command, logger, commandResolver);
+		string body = CreatePageBody(
+			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"#ResourceString(UsrUpperCaseValidator_Message)#"}}}}}}""",
+			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
+		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args);
+
+		// Assert
+		response.Error.Should().NotContain("Validation failed",
+			because: "#ResourceString(KeyName)# is the correct format and must not be rejected by the validator param check");
+	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage rejects obvious custom max-length validators when crt.MaxLength should be used.")]
+	public void PageUpdateTool_UpdatePage_Rejects_Obvious_Custom_MaxLength_Validator() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		PageUpdateTool tool = new(command, logger, commandResolver);
+		string body = CreatePageBody(
+			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","control":"$UsrName"}}]""",
+			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"NameMaxLength":{"type":"usr.NameMaxLength","params":{"message":"#ResourceString(UsrNameMaxLength_Message)#"}}}}}}""",
+			validators: """{"usr.NameMaxLength":{"validator":function(config){return function(control){if (control.value && control.value.length >= 5) { return {"usr.NameMaxLength": { message: config.message }}; } return null;};},"params":[{"name":"message"}],"async":false}}""");
+		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "obvious custom max-length validators should be rejected in favor of crt.MaxLength");
+		response.Error.Should().Contain("crt.MaxLength")
+			.And.Contain("usr.NameMaxLength",
+				because: "the validation error should identify both the built-in replacement and the rejected custom validator");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "the validation failure must happen before any remote save call is made");
+	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage rejects crt.MaxLength bindings that use max instead of maxLength in params.")]
+	public void PageUpdateTool_UpdatePage_Rejects_BuiltIn_MaxLength_With_Wrong_Param_Name() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		PageUpdateTool tool = new(command, logger, commandResolver);
+		string body = CreatePageBody(
+			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","control":"$UsrName"}}]""",
+			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"NameMaxLength":{"type":"crt.MaxLength","params":{"max":4}}}}}}""");
+		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "crt.MaxLength expects maxLength in params, so max must be rejected before save");
+		response.Error.Should().Contain("crt.MaxLength")
+			.And.Contain("max")
+			.And.Contain("maxLength",
+				because: "the validation error should identify the wrong param and the required one");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "the validation failure must happen before any remote save call is made");
+	}
+
+	[Test]
+	[Description("PageUpdateTool description routes callers to the validator guide which covers both viewModelConfig and viewModelConfigDiff for validator bindings.")]
+	public void PageUpdateTool_Description_Supports_Static_And_Diff_ViewModel_Config() {
+		// Arrange
+		System.ComponentModel.DescriptionAttribute? attribute = typeof(PageUpdateTool)
+			.GetMethod(nameof(PageUpdateTool.UpdatePage))?
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.SingleOrDefault();
+
+		// Act
+		string? description = attribute?.Description;
+
+		// Assert
+		description.Should().Contain("docs://mcp/guides/page-schema-validators",
+			because: "the tool contract should delegate static-vs-diff binding details to the canonical validator guidance");
+	}
+
+	[Test]
+	[Description("PageSyncTool description routes callers to the validator guide which covers both viewModelConfig and viewModelConfigDiff binding variants.")]
+	public void PageSyncTool_Description_Supports_Static_And_Diff_ViewModel_Config() {
+		// Arrange
+		System.ComponentModel.DescriptionAttribute? attribute = typeof(PageSyncTool)
+			.GetMethod(nameof(PageSyncTool.SyncPages))?
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.SingleOrDefault();
+
+		// Act
+		string? description = attribute?.Description;
+
+		// Assert
+		description.Should().Contain("docs://mcp/guides/page-schema-validators",
+			because: "sync-pages description must route callers to the validator guide which covers both static and diff-based viewModelConfig binding");
+	}
+
 
 	private static PageGetCommand CreatePageGetCommand(
 		IApplicationClient applicationClient,

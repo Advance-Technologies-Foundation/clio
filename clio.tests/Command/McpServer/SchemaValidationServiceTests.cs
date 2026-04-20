@@ -180,7 +180,7 @@ public class SchemaValidationServiceTests {
 	public void ValidateMarkerContent_ValidListPageBody_ReturnsValid() {
 		var result = SchemaValidationService.ValidateMarkerContent(ValidListPageBody);
 		result.IsValid.Should().BeTrue("because all marker sections contain valid structured content");
-		result.Errors.Should().BeEmpty();
+		result.Errors.Should().BeEmpty("because no marker section contains structural or syntax errors");
 	}
 
 	[Test]
@@ -188,7 +188,7 @@ public class SchemaValidationServiceTests {
 	public void ValidateMarkerContent_ValidFormPageBody_ReturnsValid() {
 		var result = SchemaValidationService.ValidateMarkerContent(ValidFormPageBody);
 		result.IsValid.Should().BeTrue("because all marker sections contain valid structured content");
-		result.Errors.Should().BeEmpty();
+		result.Errors.Should().BeEmpty("because no marker section contains structural or syntax errors");
 	}
 
 	[Test]
@@ -211,7 +211,7 @@ public class SchemaValidationServiceTests {
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"a\":1},{\"b\":2},]/**SCHEMA_VIEW_CONFIG_DIFF*/");
 		var result = SchemaValidationService.ValidateMarkerContent(body);
 		result.IsValid.Should().BeTrue("because Hjson tolerates trailing commas");
-		result.Errors.Should().BeEmpty();
+		result.Errors.Should().BeEmpty("because Hjson parser does not treat trailing commas as errors");
 	}
 
 	[Test]
@@ -259,6 +259,42 @@ public class SchemaValidationServiceTests {
 		result.IsValid.Should().BeFalse("because converters must remain an object-literal section");
 		result.Errors.Should().ContainMatch("*SCHEMA_CONVERTERS*",
 			because: "the error should identify the broken converter marker section");
+	}
+
+	[Test]
+	[Description("Body with non-object validators section fails content validation")]
+	public void ValidateMarkerContent_NonObjectValidators_ReturnsInvalid() {
+		string body = ValidFormPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/[\"usr.SomeValidator\"]/**SCHEMA_VALIDATORS*/");
+		var result = SchemaValidationService.ValidateMarkerContent(body);
+		result.IsValid.Should().BeFalse("because validators must remain an object-literal section");
+		result.Errors.Should().ContainMatch("*SCHEMA_VALIDATORS*",
+			because: "the error should identify the broken validator marker section");
+	}
+
+	[Test]
+	[Description("Converter section with invalid JavaScript syntax fails content validation")]
+	public void ValidateMarkerContent_InvalidJsSyntaxInConverters_ReturnsInvalid() {
+		string body = ValidFormPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.Bad\": function(value { return value; } }/**SCHEMA_CONVERTERS*/");
+		var result = SchemaValidationService.ValidateMarkerContent(body);
+		result.IsValid.Should().BeFalse("because a syntax error inside a JavaScript object section must be caught");
+		result.Errors.Should().ContainMatch("*SCHEMA_CONVERTERS*",
+			because: "the error should identify which marker section contains the syntax problem");
+	}
+
+	[Test]
+	[Description("Validator section with invalid JavaScript syntax fails content validation")]
+	public void ValidateMarkerContent_InvalidJsSyntaxInValidators_ReturnsInvalid() {
+		string body = ValidFormPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"usr.Bad\": function(config { return null; } }/**SCHEMA_VALIDATORS*/");
+		var result = SchemaValidationService.ValidateMarkerContent(body);
+		result.IsValid.Should().BeFalse("because a syntax error inside a JavaScript object section must be caught");
+		result.Errors.Should().ContainMatch("*SCHEMA_VALIDATORS*",
+			because: "the error should identify which marker section contains the syntax problem");
 	}
 
 	[Test]
@@ -441,6 +477,40 @@ public class SchemaValidationServiceTests {
 		result.Warnings.Should().BeEmpty();
 	}
 
+	[Test]
+	[Description("Standard field with validators uses view-model attribute binding $AttrName — must NOT be flagged as proxy-binding error")]
+	public void ValidateStandardFieldBindings_AttributeWithValidators_ViewModelBindingIsAllowed() {
+		// Arrange — UsrName has a validator in viewModelConfig; control binds to $UsrName (view-model attribute)
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCase\",\"params\":{\"message\":\"$Resources.Strings.UsrUpperCaseValidator_Message\"}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		// Act
+		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because when an attribute carries validators the correct control binding is $AttrName, not $PDS_AttrName");
+		result.Errors.Should().NotContain(error => error.Contains("$UsrName"),
+			"because the view-model attribute binding is required for validators to fire and must not be rejected as a proxy error");
+	}
+
+	[Test]
+	[Description("Standard field without validators still requires $PDS_AttrName proxy binding to the datasource")]
+	public void ValidateStandardFieldBindings_AttributeWithoutValidators_ViewModelBindingIsRejected() {
+		// Arrange — UsrStatus has no validators; control binds to $UsrStatus (should use $PDS_UsrStatus)
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		// Act
+		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because attributes without validators must bind to the datasource proxy $PDS_UsrStatus");
+		result.Errors.Should().ContainSingle(error => error.Contains("$PDS_UsrStatus"),
+			"because the validation should reject the view-model binding and suggest the correct PDS proxy binding");
+	}
+
 	private static string BuildDiffBackedPageBody(string viewConfigDiff, string viewModelConfigDiff) {
 		return
 			"define(\"TestPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
@@ -452,4 +522,557 @@ public class SchemaValidationServiceTests {
 			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 	}
+
+	private static string BuildStaticViewModelConfigPageBody(string viewConfigDiff, string viewModelConfig) {
+		return
+			"define(\"TestPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
+			$"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/{viewConfigDiff}/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			$"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{viewModelConfig}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
+			"modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+	}
+
+	[Test]
+	[Description("Static viewModelConfig with $PDS_AttrName control where attribute has validators is rejected")]
+	public void ValidateValidatorControlBindings_StaticViewModelConfig_PdsBinding_WithValidators_ReturnsInvalid() {
+		// Arrange — exact shape of the bug: validator on 'UsrName' but control = "$PDS_UsrName"
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
+		                        "\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\"," +
+		                        "\"control\":\"$PDS_UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{" +
+		                         "\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
+		                         "\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCaseValidator\"," +
+		                         "\"params\":{\"message\":\"Must be uppercase\"}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorControlBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a control bound to '$PDS_UsrName' will never trigger the validator registered on attribute 'UsrName'");
+		result.Errors.Should().ContainSingle(
+			error => error.Contains("UsrName") && error.Contains("$PDS_UsrName") && error.Contains("$UsrName"),
+			because: "the error should identify the control, the wrong binding, and the correct alternative");
+	}
+
+	[Test]
+	[Description("Static viewModelConfig with $AttrName control where attribute has validators passes validation")]
+	public void ValidateValidatorControlBindings_StaticViewModelConfig_AttrBinding_WithValidators_ReturnsValid() {
+		// Arrange — correct shape: validator on 'UsrName' and control = "$UsrName"
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
+		                        "\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\"," +
+		                        "\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{" +
+		                         "\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
+		                         "\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCaseValidator\"," +
+		                         "\"params\":{\"message\":\"Must be uppercase\"}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorControlBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "control '$UsrName' correctly binds to the view-model attribute that carries the validators");
+		result.Errors.Should().BeEmpty(
+			because: "no validator binding violations are present");
+	}
+
+	[Test]
+	[Description("viewModelConfigDiff with $PDS_AttrName control where attribute has validators is rejected")]
+	public void ValidateValidatorControlBindings_DiffViewModelConfig_PdsBinding_WithValidators_ReturnsInvalid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrEmail\",\"values\":{" +
+		                        "\"type\":\"crt.EmailInput\",\"control\":\"$PDS_UsrEmail\"}}]";
+		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"attributes\"]," +
+		                             "\"values\":{\"UsrEmail\":{\"modelConfig\":{\"path\":\"PDS.UsrEmail\"}," +
+		                             "\"validators\":{\"EmailValidator\":{\"type\":\"usr.EmailValidator\"}}}}}]";
+		string body = BuildDiffBackedPageBody(viewConfigDiff, viewModelConfigDiff);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorControlBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a control bound to '$PDS_UsrEmail' will never trigger the validator on attribute 'UsrEmail' in viewModelConfigDiff");
+		result.Errors.Should().ContainSingle(
+			error => error.Contains("UsrEmail") && error.Contains("$PDS_UsrEmail"),
+			because: "the error should identify the control with the wrong PDS binding");
+	}
+
+	[Test]
+	[Description("viewModelConfigDiff with $AttrName control where attribute has validators passes validation")]
+	public void ValidateValidatorControlBindings_DiffViewModelConfig_AttrBinding_WithValidators_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrEmail\",\"values\":{" +
+		                        "\"type\":\"crt.EmailInput\",\"control\":\"$UsrEmail\"}}]";
+		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"attributes\"]," +
+		                             "\"values\":{\"UsrEmail\":{\"modelConfig\":{\"path\":\"PDS.UsrEmail\"}," +
+		                             "\"validators\":{\"EmailValidator\":{\"type\":\"usr.EmailValidator\"}}}}}]";
+		string body = BuildDiffBackedPageBody(viewConfigDiff, viewModelConfigDiff);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorControlBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "control '$UsrEmail' correctly binds to the view-model attribute carrying validators");
+		result.Errors.Should().BeEmpty(
+			because: "no validator binding violations are present");
+	}
+
+	[Test]
+	[Description("$PDS_AttrName binding on attribute without validators is allowed")]
+	public void ValidateValidatorControlBindings_PdsBinding_AttributeHasNoValidators_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
+		                        "\"type\":\"crt.Input\",\"control\":\"$PDS_UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorControlBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "'$PDS_UsrName' is acceptable when the attribute has no validators registered");
+		result.Errors.Should().BeEmpty(
+			because: "no validator binding constraints apply to attributes without validators");
+	}
+
+	[Test]
+	[Description("Attribute with empty validators object is not treated as having validators")]
+	public void ValidateValidatorControlBindings_PdsBinding_AttributeHasEmptyValidators_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
+		                        "\"type\":\"crt.Input\",\"control\":\"$PDS_UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
+		                         "\"validators\":{}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorControlBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "an empty validators object means no validators are registered, so the PDS binding is acceptable");
+		result.Errors.Should().BeEmpty(
+			because: "empty validators do not impose control binding constraints");
+	}
+
+	[Test]
+	[Description("Empty body returns valid result without errors")]
+	public void ValidateValidatorControlBindings_EmptyBody_ReturnsValid() {
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorControlBindings("");
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "an empty body has nothing to validate and should not throw");
+		result.Errors.Should().BeEmpty(
+			because: "empty input produces no errors");
+	}
+
+	[Test]
+	[Description("$Resources.Strings. binding in validator params is rejected — use #ResourceString()# instead")]
+	public void ValidateValidatorParamResourceBindings_ReactiveBinding_InValidatorParam_ReturnsInvalid() {
+		// Arrange
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
+		                         "\"validators\":{\"AllUpperCase\":{\"type\":\"usr.AllUpperCase\"," +
+		                         "\"params\":{\"message\":\"$Resources.Strings.UsrUpperCaseValidator_Message\"}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody("[]", viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorParamResourceBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "$Resources.Strings. is a reactive binding syntax not evaluated in validator params");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("$Resources.Strings.UsrUpperCaseValidator_Message") &&
+				error.Contains("#ResourceString(UsrUpperCaseValidator_Message)#"),
+			because: "the error should identify the wrong value and suggest the correct #ResourceString()# macro");
+	}
+
+	[Test]
+	[Description("#ResourceString()# binding in validator params is accepted")]
+	public void ValidateValidatorParamResourceBindings_ResourceStringMacro_InValidatorParam_ReturnsValid() {
+		// Arrange
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
+		                         "\"validators\":{\"AllUpperCase\":{\"type\":\"usr.AllUpperCase\"," +
+		                         "\"params\":{\"message\":\"#ResourceString(UsrUpperCaseValidator_Message)#\"}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody("[]", viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorParamResourceBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "#ResourceString()# is the correct server-side substitution format for validator params");
+		result.Errors.Should().BeEmpty(
+			because: "the correct macro format produces no errors");
+	}
+
+	[Test]
+	[Description("$Resources.Strings. in viewModelConfigDiff validator params is also rejected")]
+	public void ValidateValidatorParamResourceBindings_ReactiveBinding_InDiffFormat_ReturnsInvalid() {
+		// Arrange — diff-backed format (viewModelConfigDiff)
+		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"attributes\"],\"values\":{" +
+		                             "\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
+		                             "\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
+		                             "\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
+		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorParamResourceBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the reactive binding restriction applies in both viewModelConfig and viewModelConfigDiff formats");
+		result.Errors.Should().ContainSingle(error => error.Contains("$Resources.Strings.UsrMsg"),
+			because: "the error should identify the reactive binding in the diff-format validator params");
+	}
+
+	[Test]
+	[Description("Obvious custom max-length validators are rejected when crt.MaxLength should be used instead.")]
+	public void ValidateStandardValidatorUsage_CustomMaxLengthValidator_ReturnsInvalid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"usr.NameMaxLength\",\"params\":{\"message\":\"#ResourceString(UsrNameMaxLength_Message)#\"}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.NameMaxLength\":{\"validator\":function(config){return function(control){if (control.value && control.value.length >= 5) { return {\"usr.NameMaxLength\": { message: config.message }}; } return null;};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a custom validator that only enforces maximum string length should use the built-in crt.MaxLength validator");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("usr.NameMaxLength") &&
+				error.Contains("crt.MaxLength"),
+			because: "the validation error should identify both the custom validator and the built-in replacement");
+	}
+
+	[Test]
+	[Description("Non-standard custom validators remain allowed when no built-in validator obviously matches the rule.")]
+	public void ValidateStandardValidatorUsage_CustomDomainValidator_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCaseValidator\",\"params\":{\"message\":\"#ResourceString(UsrUpperCaseValidator_Message)#\"}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.UpperCaseValidator\":{\"validator\":function(config){return function(control){const value = control.value; if (!value || value === value.toUpperCase()) { return null; } return {\"usr.UpperCaseValidator\": { message: config.message }};};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "domain-specific custom validators such as uppercase checks do not have an obvious built-in replacement");
+		result.Errors.Should().BeEmpty(
+			because: "no built-in validator misuse should be reported for non-standard validation logic");
+	}
+
+	[Test]
+	[Description("Built-in crt.MaxLength validator must use maxLength instead of max in params.")]
+	public void ValidateStandardValidatorUsage_BuiltInMaxLengthWithWrongParamName_ReturnsInvalid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"crt.MaxLength\",\"params\":{\"max\":4}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "crt.MaxLength expects the maxLength param name, not max");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("crt.MaxLength") &&
+				error.Contains("max") &&
+				error.Contains("maxLength"),
+			because: "the validation error should identify both the wrong param and the required one");
+	}
+
+	[Test]
+	[Description("Built-in crt.MaxLength validator with maxLength param passes validation.")]
+	public void ValidateStandardValidatorUsage_BuiltInMaxLengthWithCorrectParamName_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"crt.MaxLength\",\"params\":{\"maxLength\":4}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "crt.MaxLength with the canonical maxLength param should not be rejected");
+		result.Errors.Should().BeEmpty(
+			because: "the standard validator binding is structurally correct");
+	}
+
+	[Test]
+	[Description("Built-in crt.MaxLength with an optional message param passes validation because message is universally allowed via ValidatorParametersValues.")]
+	public void ValidateStandardValidatorUsage_BuiltInMaxLengthWithMessageParam_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"crt.MaxLength\",\"params\":{\"maxLength\":4,\"message\":\"#ResourceString(UsrNameTooLong)#\"}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "message is universally optional on all validators via ValidatorParametersValues and must not be rejected");
+		result.Errors.Should().BeEmpty(
+			because: "crt.MaxLength with maxLength and message params is structurally valid");
+	}
+
+	[Test]
+	[Description("Built-in crt.Required with only a message param passes validation because message is universally allowed.")]
+	public void ValidateStandardValidatorUsage_BuiltInRequiredWithOnlyMessageParam_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"Required\":{\"type\":\"crt.Required\",\"params\":{\"message\":\"#ResourceString(UsrRequired)#\"}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "message is universally optional — crt.Required with a message override must pass");
+		result.Errors.Should().BeEmpty(
+			because: "message is the only universally-optional param and must never be reported as unsupported");
+	}
+
+
+	public void ValidateStandardValidatorUsage_CustomValidatorWithEmptyParamsBindingParams_ReturnsInvalid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NoParams\":{\"type\":\"usr.NoParamsValidator\",\"params\":{\"message\":\"#ResourceString(UsrMsg)#\"}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.NoParamsValidator\":{\"validator\":function(){return function(){return null;};},\"params\":[],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a custom validator that declares no params must not accept bound params on the attribute");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("usr.NoParamsValidator") &&
+				error.Contains("message"),
+			because: "the validation error should identify the custom validator and the unsupported bound param");
+	}
+
+	[Test]
+	[Description("Custom validators without a params array still reject bound params instead of overriding built-in contracts.")]
+	public void ValidateStandardValidatorUsage_CustomValidatorWithoutParamsDeclarationBindingParams_ReturnsInvalid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NoParams\":{\"type\":\"usr.NoParamsValidator\",\"params\":{\"message\":\"#ResourceString(UsrMsg)#\"}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.NoParamsValidator\":{\"validator\":function(){return function(){return null;};},\"async\":false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a custom validator without a declared params array must still reject bound params");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("usr.NoParamsValidator") &&
+				error.Contains("message"),
+			because: "the validation error should identify the unsupported param bound to a zero-param custom validator");
+	}
+
+	[Test]
+	[Description("SCHEMA_VALIDATORS cannot override built-in crt.MaxLength param contracts.")]
+	public void ValidateStandardValidatorUsage_BuiltInContractCannotBeOverriddenFromSchemaValidators_ReturnsInvalid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"crt.MaxLength\",\"params\":{\"max\":4}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"crt.MaxLength\":{\"validator\":function(){return function(){return null;};},\"params\":[{\"name\":\"max\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "built-in validator contracts must stay canonical even if SCHEMA_VALIDATORS tries to redefine crt.MaxLength");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("crt.MaxLength") &&
+				error.Contains("max") &&
+				error.Contains("maxLength"),
+			because: "the validation error should still enforce the canonical built-in maxLength param name");
+	}
+
+	[Test]
+	[Description("Attribute without validators passes param resource binding check without errors")]
+	public void ValidateValidatorParamResourceBindings_NoValidators_ReturnsValid() {
+		// Arrange
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}";
+		string body = BuildStaticViewModelConfigPageBody("[]", viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorParamResourceBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "attributes without validators have no params to validate");
+		result.Errors.Should().BeEmpty(
+			because: "no validator params are present");
+	}
+
+	[Test]
+	[Description("Custom validator that returns a proper error object with declared params passes completeness check")]
+	public void ValidateCustomValidatorParamCompleteness_ValidatorWithDeclaredMessageParam_ReturnsValid() {
+		// Arrange
+		string body = BuildStaticViewModelConfigPageBody("[]", "{}").Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.OnlyDigits\":{\"validator\":function(config){return function(control){" +
+			"var v=control.value;if(v&&!/^\\d+$/.test(v)){return{\"usr.OnlyDigits\":{message:config.message}};}" +
+			"return null;};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the validator declares 'message' in params and the error object only uses 'message'");
+		result.Errors.Should().BeEmpty(
+			because: "all returned error properties are declared in params");
+	}
+
+	[Test]
+	[Description("Custom validator that returns boolean true instead of error object fails completeness check")]
+	public void ValidateCustomValidatorParamCompleteness_ValidatorReturnsPrimitiveTrue_ReturnsInvalid() {
+		// Arrange
+		string body = BuildStaticViewModelConfigPageBody("[]", "{}").Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.OnlyDigits\":{\"validator\":function(config){return function(control){" +
+			"var v=control.value;if(v&&!/^\\d+$/.test(v)){return{\"usr.OnlyDigits\":true};}" +
+			"return null;};},\"params\":[],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "returning a boolean true instead of an error object causes a Creatio runtime error");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("usr.OnlyDigits") &&
+				error.Contains("primitive"),
+			because: "the error message should identify the validator and explain the primitive return issue");
+	}
+
+	[Test]
+	[Description("Custom validator with empty params that returns undeclared message property fails completeness check")]
+	public void ValidateCustomValidatorParamCompleteness_ValidatorReturnsUndeclaredMessageProperty_ReturnsInvalid() {
+		// Arrange
+		string body = BuildStaticViewModelConfigPageBody("[]", "{}").Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.OnlyDigits\":{\"validator\":function(config){return function(control){" +
+			"var v=control.value;if(v&&!/^\\d+$/.test(v)){return{\"usr.OnlyDigits\":{message:\"Only digits allowed\"}};}" +
+			"return null;};},\"params\":[],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a validator without a declared 'message' param cannot show a user-visible error message");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("usr.OnlyDigits") &&
+				error.Contains("message"),
+			because: "the error should identify the validator and explain the missing 'message' param");
+	}
+
+	[Test]
+	[Description("Custom validator that returns an empty error object fails completeness check because message param is missing")]
+	public void ValidateCustomValidatorParamCompleteness_ValidatorReturnsEmptyErrorObject_ReturnsInvalid() {
+		// Arrange
+		string body = BuildStaticViewModelConfigPageBody("[]", "{}").Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.OnlyDigits\":{\"validator\":function(config){return function(control){" +
+			"var v=control.value;if(v&&!/^\\d+$/.test(v)){return{\"usr.OnlyDigits\":{}};}" +
+			"return null;};},\"params\":[],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "an empty error object with no message param means the user never sees an error message");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("usr.OnlyDigits") &&
+				error.Contains("message"),
+			because: "the error should identify that 'message' param is missing from the validator declaration");
+	}
+
+	[Test]
+	[Description("Custom validator with params array beyond the old 1200-character cutoff is parsed correctly and passes completeness check")]
+	public void ValidateCustomValidatorParamCompleteness_LongValidatorBodyWithParamsBeyond1200Chars_ReturnsValid() {
+		// Arrange — pad the validator function body so that "params" appears well past character 1200
+		string padding = new string(' ', 1300); // blank space inside the function comment
+		string validatorsBlock =
+			"{\"usr.LongValidator\":{\"validator\":function(config){" +
+			$"/* {padding} */" +
+			"return function(control){var v=control.value;" +
+			"if(!v||v.length>0){return{\"usr.LongValidator\":{message:config.message}};}" +
+			"return null;};}" +
+			",\"params\":[{\"name\":\"message\"}],\"async\":false}}";
+		string body = BuildStaticViewModelConfigPageBody("[]", "{}").Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			$"/**SCHEMA_VALIDATORS*/{validatorsBlock}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "brace-balanced extraction must find params even when they appear past the old 1200-char cutoff");
+		result.Errors.Should().BeEmpty(
+			because: "the validator declares 'message' and returns it correctly — it is structurally valid");
+	}
+
+	[Test]
+	[Description("Custom validator whose SCHEMA_VALIDATORS block contains balanced braces inside regex character class literals is extracted correctly")]
+	public void ValidateCustomValidatorParamCompleteness_ValidatorWithBracesInStrings_ReturnsValid() {
+		// Arrange — the validator body contains a regex literal /^[{a-z}]+$/ with balanced braces.
+		// These braces are balanced so brace-depth tracking works correctly.
+		// NOTE: regex literals with unbalanced braces (e.g. /{[a-z]+/) are a known ExtractValidatorBody limitation.
+		string validatorsBlock =
+			"{\"usr.PatternValidator\":{\"validator\":function(config){" +
+			"return function(control){var v=control.value;" +
+			"if(v&&!/^[{a-z}]+$/.test(v)){return{\"usr.PatternValidator\":{message:config.message}};}" +
+			"return null;};}" +
+			",\"params\":[{\"name\":\"message\"}],\"async\":false}}";
+		string body = BuildStaticViewModelConfigPageBody("[]", "{}").Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			$"/**SCHEMA_VALIDATORS*/{validatorsBlock}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "brace-balanced extraction handles balanced braces inside regex character class literals without misreading depth");
+		result.Errors.Should().BeEmpty(
+			because: "the validator is structurally valid with a declared message param");
+	}
 }
+

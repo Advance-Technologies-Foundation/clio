@@ -26,7 +26,11 @@ public sealed class PageSyncTool(
 		Idempotent = false, OpenWorld = false)]
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
 		"For each page: validates body client-side (optional), saves to Creatio, " +
-		"and verifies the update (optional). Continues processing remaining pages on failure.")]
+		"and verifies the update (optional). Continues processing remaining pages on failure. " +
+		"Section authoring rules for the body payload: " +
+		"if the body changes SCHEMA_VALIDATORS read docs://mcp/guides/page-schema-validators first; " +
+		"if the body changes SCHEMA_HANDLERS read docs://mcp/guides/page-schema-handlers first; " +
+		"if the body changes SCHEMA_CONVERTERS read docs://mcp/guides/page-schema-converters first. ")]
 	public PageSyncResponse SyncPages(
 		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional)")]
 		[Required] PageSyncArgs args) {
@@ -153,6 +157,18 @@ public sealed class PageSyncTool(
 		SchemaValidationResult fieldResult = contentResult.IsValid
 			? SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources)
 			: new SchemaValidationResult { IsValid = true };
+		SchemaValidationResult validatorBindingResult = contentResult.IsValid
+			? SchemaValidationService.ValidateValidatorControlBindings(body)
+			: new SchemaValidationResult { IsValid = true };
+		SchemaValidationResult validatorParamResult = contentResult.IsValid
+			? SchemaValidationService.ValidateValidatorParamResourceBindings(body)
+			: new SchemaValidationResult { IsValid = true };
+		SchemaValidationResult standardValidatorResult = contentResult.IsValid
+			? SchemaValidationService.ValidateStandardValidatorUsage(body)
+			: new SchemaValidationResult { IsValid = true };
+		SchemaValidationResult validatorParamCompletenessResult = contentResult.IsValid
+			? SchemaValidationService.ValidateCustomValidatorParamCompleteness(body)
+			: new SchemaValidationResult { IsValid = true };
 		SchemaValidationResult bindingResult = contentResult.IsValid
 			? SchemaValidationService.ValidateColumnBindings(body)
 			: new SchemaValidationResult { IsValid = true };
@@ -173,13 +189,30 @@ public sealed class PageSyncTool(
 		if (fieldResult.Warnings.Count > 0) {
 			warnings.AddRange(fieldResult.Warnings);
 		}
+		if (!validatorBindingResult.IsValid) {
+			errors.AddRange(validatorBindingResult.Errors);
+		}
+		if (!validatorParamResult.IsValid) {
+			errors.AddRange(validatorParamResult.Errors);
+		}
+		if (!standardValidatorResult.IsValid) {
+			errors.AddRange(standardValidatorResult.Errors);
+		}
+		if (!validatorParamCompletenessResult.IsValid) {
+			errors.AddRange(validatorParamCompletenessResult.Errors);
+		}
 		if (!bindingResult.IsValid) {
 			warnings.AddRange(bindingResult.Errors);
 		}
 		return new PageSyncValidationResult {
 			MarkersOk = markerResult.IsValid,
 			JsSyntaxOk = syntaxResult.IsValid,
-			ContentOk = contentResult.IsValid && fieldResult.IsValid,
+			ContentOk = contentResult.IsValid &&
+				fieldResult.IsValid &&
+				validatorBindingResult.IsValid &&
+				validatorParamResult.IsValid &&
+				standardValidatorResult.IsValid &&
+				validatorParamCompletenessResult.IsValid,
 			Errors = errors.Count > 0 ? errors : null,
 			Warnings = warnings.Count > 0 ? warnings : null
 		};

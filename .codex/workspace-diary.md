@@ -2352,6 +2352,67 @@ Discovery: Wording-only MCP surface changes were enough to steer agent behavior 
 Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageListTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Prompts/RegWebAppPrompt.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, .codex/workspace-diary.md
 Impact: Agents should now prefer registering environments and using `environment-name`, while direct credentials stay available only as a documented emergency fallback.
 
+## 2026-04-17 15:20 – AI-structure review of page-schema validators guidance
+Context: User asked to assess PageSchemaValidatorsGuidanceResource.cs specifically as an AI-facing template.
+Decision: Treated the task as prompt-structure analysis rather than API/content validation only; compared the validators guide with neighboring handlers/converters guides and prompt/tool consumers.
+Discovery: Main issues are structural for LLM use: no compact execution checklist, no decision tree, repeated full examples increase token cost, and one safe-edit rule conflicts with required binding fixes. Also found surrounding MCP surface inconsistency: get-page description still says validator params should use $Resources.Strings, while the resource, update-page, sync-pages, and tests enforce #ResourceString(... )#.
+Files: clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, .codex/workspace-diary.md
+Impact: Future MCP guidance refinement should front-load non-negotiable validator rules, separate core rules from appendices/examples, and align PageGetTool wording with the canonical validator param format before expecting consistent agent behavior.
+
+## 2026-04-17 16:05 – Restructured validator guidance for AI consumption
+Context: User approved rewriting PageSchemaValidatorsGuidanceResource to make it work better as an AI-facing MCP resource.
+Decision: Reorganized the guide around decision tree, non-negotiables, name mapping, before-save checklist, compact canonical template, and deltas/variants instead of one long monolithic narrative.
+Discovery: `dotnet test` against the default Debug output stayed blocked by a running `clio` process locking `bin\Debug\net8.0\clio.exe` and `clio.dll`; using `--artifacts-path` provided an isolated build/test path and validated the new code successfully.
+Files: clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, .codex/workspace-diary.md
+Impact: Future work on AI-facing MCP guidance can validate prompt-structure changes without stopping the local clio process by using isolated artifacts output, and the validator guide now front-loads the rules models most often miss.
+
+## 2026-04-17 16:35 – AI-first standard validator decision table
+Context: User asked to optimize validator guidance strictly for AI consumption and questioned whether a plain list of built-in validators is enough.
+Decision: Keep the validator guidance in decision-table form instead of a flat list so the model can map requirement patterns to built-in validators before considering a custom `usr.*Validator`.
+Discovery: For MCP guidance, a compact first-match table is a stronger control surface than prose because it reduces ambiguity, discourages unnecessary custom validators, and makes the fallback boundary explicit. Source list came from the Creatio Academy validators reference.
+Files: clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, .codex/workspace-diary.md
+Impact: Future AI callers should select `crt.Required`, `crt.EmptyOrWhiteSpace`, `crt.MinLength`, `crt.MaxLength`, `crt.Min`, and `crt.Max` more reliably instead of inventing custom validators for standard cases.
+
+## 2026-04-17 16:48 – Validator guidance deduplication for AI readers
+Context: User reviewed the AI-facing validator guide and flagged concrete prompt-quality issues: duplicated sentences, overlapping non-negotiables vs critical sections, ambiguous section names, and an unsafe minimal template that always failed validation when copied literally.
+Decision: Kept the AI-first structure but removed literal duplication, folded the SDK-alias note into Safe editing rules, dropped the one-item Decision guardrails section, renamed the regex example section, and changed the minimal template to use `const isValid = <isValidCondition>;`.
+Discovery: The best balance for LLM guidance here is layered structure without verbatim repetition: a compact NON-NEGOTIABLES index plus detailed CRITICAL sections. Tests should assert the compact-pointer contract instead of exact duplicated phrases.
+Files: clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, .codex/workspace-diary.md
+Impact: Future edits should preserve the AI-first structure while avoiding redundant reinforcement that increases token cost and copy-paste failure modes.
+
+## 2026-04-17 17:02 – Reordered validator guidance for AI reading flow
+Context: User identified that the validator guide still had an AI-hostile section order: checklist before rules, critical explanations after the template, and a minimal template that omitted the required `viewConfigDiff` control binding.
+Decision: Reordered the guide to front-load rules and rationale before examples, renamed the async section to `Async validator template`, moved the checklist near the end, and updated the minimal template to include `viewConfigDiff` with `"control": "$<AttrName>"`.
+Discovery: For LLM-facing guidance, section order is not cosmetic. Putting CRITICAL rules before templates materially reduces incomplete copy-paste outputs, especially for validator bindings that require coordinated `viewConfigDiff` and `viewModelConfig*` edits.
+Files: clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, .codex/workspace-diary.md
+Impact: Future AI callers should learn the validator contract in the right order: choose, constrain, understand, then apply the template and variants, with the checklist only after the rules are known.
+
+## 2026-04-17 17:14 – Validator guidance wording made more operational for AI
+Context: User flagged remaining prompt-quality issues in the validator guide: ambiguous verbs (`preserve`, `re-parse`), a lowercase typo, duplicated frontend-source intent, and variants that did not explicitly point back to the canonical template.
+Decision: Replaced vague wording with operational instructions, removed the duplicate frontend-source sentence, capitalized the static variant rule, and made both regex and async variants explicitly reuse the `Minimal canonical template` for binding structure.
+Discovery: For AI-facing guidance, wording precision matters as much as structure. Imperative statements like `must contain an object section` and `verify the edited body is syntactically valid JavaScript before calling sync-pages` produce clearer execution than softer editorial verbs.
+Files: clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, .codex/workspace-diary.md
+Impact: Future resource reviews should keep optimizing for operational clarity and explicit section linkage rather than human-readable but under-specified prose.
+## 2026-04-17 18:25 – Enforced validator guidance and standard-validator misuse checks
+Context: User asked to make validator guidance mandatory for MCP page edits and prevent obvious custom validators when a built-in validator already fits.
+Decision: Strengthened Page MCP prompt/tool contracts to require reading docs://mcp/guides/page-schema-validators before authoring validator changes, and added SchemaValidationService checks for obvious custom MinLength/MaxLength validators that should use crt.MinLength/crt.MaxLength.
+Discovery: Prompt-only guidance is insufficient because external agents can skip the resource read; the practical enforcement point is sync/update validation. Sandbox-dependent MCP E2E validator-save tests skip cleanly when no sandbox environment is configured.
+Files: C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageGetTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.mcp.e2e\PageSyncToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs
+Impact: Future page-validator tasks now get an earlier contract hint and a hard save-time rejection for the highest-confidence custom length-validator misuse.
+## 2026-04-17 19:05 – Universal validator-parameter contract checks
+Context: User pointed out that hardcoded C# checks for individual standard validator param names do not scale and asked for a universal parameter-name validation approach.
+Decision: Reworked validator-param enforcement to validate binding `params` against validator contracts instead of per-validator `if` statements. Built-in validator contracts are derived from the canonical decision table in `PageSchemaValidatorsGuidanceResource`; custom validator contracts are derived from each validator's declared `params` array in `SCHEMA_VALIDATORS`.
+Discovery: This catches wrong param names such as `crt.MaxLength` with `max` instead of `maxLength` while keeping the source of truth centralized in the guidance contract. Lazy initialization was required because the resource text must exist before parsing the decision table into machine-readable contracts.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaValidatorsGuidanceResource.cs, C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.mcp.e2e\PageSyncToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future validator additions only require updating the canonical contract source, and save-time validation now rejects unsupported binding param names for both built-in and custom validators.
+
+## 2026-04-17 20:05 – Closed validator contract review gaps
+Context: Review of the validator guidance and save-time validation work identified three remaining gaps: zero-param custom validators bypassed universal param checks, built-in contracts could be shadowed from SCHEMA_VALIDATORS, and update/sync tool descriptions still described only viewModelConfigDiff.
+Decision: Restricted runtime-extracted validator contracts to usr.* entries, emitted empty contracts for zero-param custom validators, and aligned update-page/sync-pages descriptions with the static-or-diff guidance already used by get-page and the validator resource.
+Discovery: Universal validator-param validation only works when zero-param validators are represented explicitly as empty contracts; otherwise arbitrary binding params slip through. The MCP surface also needs to stay textually consistent across tools or the model follows the narrower contract.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future validator save-time checks now cover zero-param custom validators and preserve canonical built-in contracts while the MCP tool surface stays aligned with the guidance resource.
+
 ## 2026-04-14 16:40 – Local clio version fallback investigation
 Context: User asked why local clio builds now show version `0.0.0.0`.
 Decision: Confirmed the recent versioning change and verified current local build behavior before concluding.
@@ -2380,3 +2441,10 @@ Decision: Kept `uri/login/password` compatibility in MCP tools, but changed reso
 Discovery: Wording-only MCP surface changes were enough to steer agent behavior without changing payload shape or execution paths. Existing E2E assertions still matched because they only depended on the preserved leading resolver text.
 Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageListTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Prompts/RegWebAppPrompt.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, .codex/workspace-diary.md
 Impact: Agents should now prefer registering environments and using `environment-name`, while direct credentials stay available only as a documented emergency fallback.
+
+## 2026-04-20 13:10 – Simplified update-page validator contract
+Context: Follow-up review on the validator-guidance branch flagged PageUpdateTool as a second source of truth because its description duplicated detailed SCHEMA_VALIDATORS rules already maintained in the validator guidance resource.
+Decision: Reduced update-page validator guidance to the same lean pattern used by sync-pages: require reading docs://mcp/guides/page-schema-validators first, and keep detailed binding/control/resource-string rules only in the canonical resource.
+Discovery: PageToolsTests had accumulated assertions against the old inline validator wording, so the contract tests needed to switch from checking duplicated details to checking guide delegation.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Validator authoring rules now have one canonical maintenance point, reducing MCP contract drift when guidance changes again.
