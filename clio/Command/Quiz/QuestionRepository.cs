@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.Quiz;
 
@@ -14,14 +15,14 @@ internal sealed class QuestionRepository
 		_questionsByRole = questionsByRole;
 	}
 
-	public static QuestionRepository Load(string filePath)
+	public static QuestionRepository Load(string filePath, IAbstractionsFileSystem fileSystem)
 	{
-		if (!File.Exists(filePath))
+		if (!fileSystem.File.Exists(filePath))
 		{
 			throw new FileNotFoundException($"Question file not found: {filePath}");
 		}
 
-		var text = File.ReadAllText(filePath);
+		var text = fileSystem.File.ReadAllText(filePath);
 		var entries = text.Split(
 			[Environment.NewLine + Environment.NewLine, "\n\n", "\r\n\r\n"],
 			StringSplitOptions.RemoveEmptyEntries);
