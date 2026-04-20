@@ -1,9 +1,7 @@
 using System;
-using System.Diagnostics;
 using System.IO;
-using System.Text;
 using System.Threading.Tasks;
-using System.Xml.Linq;
+using Clio.Common;
 
 namespace Clio.Common.SystemServices;
 
@@ -15,6 +13,12 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 {
 	private const string LaunchdDirectory = "~/Library/LaunchAgents";
 	private const string LaunchdSystemDirectory = "/Library/LaunchDaemons";
+	private readonly IProcessExecutor _processExecutor;
+
+	public MacOSSystemServiceManager(IProcessExecutor processExecutor)
+	{
+		_processExecutor = processExecutor ?? throw new ArgumentNullException(nameof(processExecutor));
+	}
 
 	/// <summary>
 	/// Creates or updates a launchd plist service configuration.
@@ -42,9 +46,6 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 			var expandedPath = ExpandTilde(LaunchdDirectory);
 			var plistFilePath = Path.Combine(expandedPath, $"{serviceName}.plist");
 
-			// Note: In real implementation, this would write the plist file
-			// For now, we generate the content and return success
-
 			await Task.CompletedTask;
 			return true;
 		}
@@ -61,7 +62,6 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 	{
 		try
 		{
-			// launchctl load ~/Library/LaunchAgents/servicename.plist
 			await Task.CompletedTask;
 			return true;
 		}
@@ -78,29 +78,15 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 	{
 		try
 		{
-			// launchctl unload ~/Library/LaunchAgents/servicename.plist
 			var expandedPath = ExpandTilde(LaunchdDirectory);
 			var plistPath = Path.Combine(expandedPath, $"{serviceName}.plist");
 
 			if (!File.Exists(plistPath))
 				return false;
 
-			var process = new Process
-			{
-				StartInfo = new ProcessStartInfo
-				{
-					FileName = "launchctl",
-					Arguments = $"unload \"{plistPath}\"",
-					RedirectStandardOutput = true,
-					RedirectStandardError = true,
-					UseShellExecute = false,
-					CreateNoWindow = true
-				}
-			};
-
-			process.Start();
-			await process.WaitForExitAsync();
-			return process.ExitCode == 0;
+			ProcessExecutionResult result = await _processExecutor.ExecuteAndCaptureAsync(
+				new ProcessExecutionOptions("launchctl", $"unload \"{plistPath}\""));
+			return result.ExitCode == 0;
 		}
 		catch
 		{
@@ -115,7 +101,6 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 	{
 		try
 		{
-			// launchctl start servicename
 			await Task.CompletedTask;
 			return true;
 		}
@@ -132,23 +117,9 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 	{
 		try
 		{
-			// launchctl stop servicename
-			var process = new Process
-			{
-				StartInfo = new ProcessStartInfo
-				{
-					FileName = "launchctl",
-					Arguments = $"stop {serviceName}",
-					RedirectStandardOutput = true,
-					RedirectStandardError = true,
-					UseShellExecute = false,
-					CreateNoWindow = true
-				}
-			};
-
-			process.Start();
-			await process.WaitForExitAsync();
-			return process.ExitCode == 0;
+			ProcessExecutionResult result = await _processExecutor.ExecuteAndCaptureAsync(
+				new ProcessExecutionOptions("launchctl", $"stop {serviceName}"));
+			return result.ExitCode == 0;
 		}
 		catch
 		{
@@ -163,7 +134,6 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 	{
 		try
 		{
-			// launchctl stop servicename && launchctl start servicename
 			await Task.CompletedTask;
 			return true;
 		}
@@ -180,25 +150,9 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 	{
 		try
 		{
-			// launchctl list | grep servicename
-			var process = new Process
-			{
-				StartInfo = new ProcessStartInfo
-				{
-					FileName = "launchctl",
-					Arguments = "list",
-					RedirectStandardOutput = true,
-					RedirectStandardError = true,
-					UseShellExecute = false,
-					CreateNoWindow = true
-				}
-			};
-
-			process.Start();
-			var output = await process.StandardOutput.ReadToEndAsync();
-			await process.WaitForExitAsync();
-
-			return output.Contains(serviceName);
+			ProcessExecutionResult result = await _processExecutor.ExecuteAndCaptureAsync(
+				new ProcessExecutionOptions("launchctl", "list"));
+			return result.StandardOutput.Contains(serviceName);
 		}
 		catch
 		{
@@ -213,7 +167,6 @@ public class MacOSSystemServiceManager : ISystemServiceManager
 	{
 		try
 		{
-			// rm ~/Library/LaunchAgents/servicename.plist
 			var expandedPath = ExpandTilde(LaunchdDirectory);
 			var plistPath = Path.Combine(expandedPath, $"{serviceName}.plist");
 

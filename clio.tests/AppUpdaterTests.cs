@@ -81,7 +81,8 @@ public class AppUpdaterTests {
 	public void GetCurrentVersion_WhenCalled_ReturnsAssemblyFileVersion() {
 		// Arrange
 		var logger = Substitute.For<ILogger>();
-		var updater = new AppUpdater(logger);
+		var processExecutor = Substitute.For<IProcessExecutor>();
+		var updater = new AppUpdater(logger, processExecutor);
 
 		// Act
 		string result = updater.GetCurrentVersion();
@@ -99,7 +100,8 @@ public class AppUpdaterTests {
 		string current, string latest, string expectedType) {
 		// Arrange
 		var logger = Substitute.For<ILogger>();
-		var updater = new AppUpdater(logger);
+		var processExecutor = Substitute.For<IProcessExecutor>();
+		var updater = new AppUpdater(logger, processExecutor);
 
 		// Act
 		string result = updater.GetUpdateType(current, latest);
@@ -113,7 +115,8 @@ public class AppUpdaterTests {
 	public void GetUpdateType_WhenInvalidVersions_ReturnsUpdate() {
 		// Arrange
 		var logger = Substitute.For<ILogger>();
-		var updater = new AppUpdater(logger);
+		var processExecutor = Substitute.For<IProcessExecutor>();
+		var updater = new AppUpdater(logger, processExecutor);
 
 		// Act
 		string result = updater.GetUpdateType("invalid", "also-invalid");

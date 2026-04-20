@@ -1,5 +1,4 @@
-﻿using System;
-using System.Diagnostics;
+using System;
 using System.Runtime.InteropServices;
 using Clio.Common;
 using CommandLine;
@@ -14,14 +13,17 @@ public class OpenInfrastructureCommand : Command<OpenInfrastructureOptions>{
 
 	private readonly IInfrastructurePathProvider _infrastructurePathProvider;
 	private readonly ILogger _logger;
+	private readonly IProcessExecutor _processExecutor;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public OpenInfrastructureCommand(IInfrastructurePathProvider infrastructurePathProvider, ILogger logger) {
+	public OpenInfrastructureCommand(IInfrastructurePathProvider infrastructurePathProvider, ILogger logger,
+		IProcessExecutor processExecutor) {
 		_infrastructurePathProvider = infrastructurePathProvider;
 		_logger = logger;
+		_processExecutor = processExecutor;
 	}
 
 	#endregion
@@ -32,13 +34,13 @@ public class OpenInfrastructureCommand : Command<OpenInfrastructureOptions>{
 		string infrsatructureCfgFilesFolder = _infrastructurePathProvider.GetInfrastructurePath();
 		try {
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
-				Process.Start("explorer.exe", infrsatructureCfgFilesFolder);
+				_processExecutor.Execute("explorer.exe", infrsatructureCfgFilesFolder, waitForExit: false);
 			}
 			else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) {
-				Process.Start("open", infrsatructureCfgFilesFolder);
+				_processExecutor.Execute("open", infrsatructureCfgFilesFolder, waitForExit: false);
 			}
 			else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
-				Process.Start("xdg-open", infrsatructureCfgFilesFolder);
+				_processExecutor.Execute("xdg-open", infrsatructureCfgFilesFolder, waitForExit: false);
 			}
 			else {
 				_logger.WriteError($"Unsupported platform: {RuntimeInformation.OSDescription}");
