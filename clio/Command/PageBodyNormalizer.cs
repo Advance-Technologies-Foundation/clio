@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using JsonhCs;
 
 namespace Clio.Command;
 
@@ -27,17 +28,18 @@ internal static class PageBodyNormalizer {
 			if (modelPaths.Count == 0) {
 				return body;
 			}
-			if (!PageSchemaSectionReader.TryRead(body, out string content, "SCHEMA_VIEW_CONFIG_DIFF")) {
+			string marker = ResolveViewConfigMarker(body, out string content);
+			if (marker is null) {
 				return body;
 			}
-			if (JsonNode.Parse(SchemaValidationService.NormalizeJson(content)) is not JsonArray viewConfigDiff) {
+			if (JsonNode.Parse(JsonhReader.ParseElement(content).Value.GetRawText()) is not JsonArray viewConfigDiff) {
 				return body;
 			}
 			if (!NormalizeElements(viewConfigDiff, modelPaths)) {
 				return body;
 			}
 			string serialized = PageBodyEditor.SerializeJson(viewConfigDiff);
-			return PageBodyEditor.ReplaceMarkerContent(body, "SCHEMA_VIEW_CONFIG_DIFF", serialized);
+			return PageBodyEditor.ReplaceMarkerContent(body, marker, serialized);
 		} catch (JsonException) {
 			return body;
 		} catch (InvalidOperationException) {
@@ -45,6 +47,16 @@ internal static class PageBodyNormalizer {
 		} catch (RegexMatchTimeoutException) {
 			return body;
 		}
+	}
+
+	private static string ResolveViewConfigMarker(string body, out string content) {
+		foreach (string candidate in new[] { "SCHEMA_VIEW_CONFIG_DIFF", "SCHEMA_DIFF" }) {
+			if (PageSchemaSectionReader.TryRead(body, out content, candidate)) {
+				return candidate;
+			}
+		}
+		content = null;
+		return null;
 	}
 
 	private static bool NormalizeElements(JsonArray viewConfigDiff, IReadOnlyDictionary<string, string> modelPaths) {

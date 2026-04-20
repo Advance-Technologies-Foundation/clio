@@ -29,6 +29,19 @@ public class PageBodyNormalizerTests {
 			""";
 	}
 
+	private static string CreatePageBodyWithSchemaDiffMarker(
+		string viewConfigDiff = "[]",
+		string viewModelConfigDiff = "[]") {
+		return $$"""
+			define("TestPage", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+				return {
+					viewConfigDiff: /**SCHEMA_DIFF*/{{viewConfigDiff}}/**SCHEMA_DIFF*/,
+					viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{{viewModelConfigDiff}}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/
+				};
+			});
+			""";
+	}
+
 	[Test]
 	[Description("Proxy binding on a standard field is rewritten to $PDS_* form.")]
 	public void NormalizeProxyBindings_ProxyField_RewritesToPdsBinding() {
@@ -206,5 +219,23 @@ public class PageBodyNormalizerTests {
 		// Assert
 		result.Should().Contain("$PDS_UsrStatus",
 			because: "flat-shape components without a 'values' wrapper must also be normalized");
+	}
+
+	[Test]
+	[Description("A body that uses the SCHEMA_DIFF alias instead of SCHEMA_VIEW_CONFIG_DIFF is also normalized.")]
+	public void NormalizeProxyBindings_SchemaDiffAlias_RewritesProxyBinding() {
+		// Arrange
+		string body = CreatePageBodyWithSchemaDiffMarker(
+			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","control":"$UsrStatus"}}]""",
+			viewModelConfigDiff: """[{"operation":"merge","values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}}]""");
+
+		// Act
+		string result = PageBodyNormalizer.NormalizeProxyBindings(body);
+
+		// Assert
+		result.Should().Contain("$PDS_UsrStatus",
+			because: "SCHEMA_DIFF is a supported alias for SCHEMA_VIEW_CONFIG_DIFF and must trigger proxy binding rewrite");
+		result.Should().NotContain("\"$UsrStatus\"",
+			because: "the proxy binding must be replaced even when the body uses the SCHEMA_DIFF marker");
 	}
 }
