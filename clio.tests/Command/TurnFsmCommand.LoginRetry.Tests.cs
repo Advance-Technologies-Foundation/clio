@@ -58,7 +58,7 @@ public class TurnFsmCommandLoginRetryTests {
 		RestartCommand restartCommand = Substitute.ForPartsOf<RestartCommand>(applicationClient, envSettings);
 		restartCommand.Execute(Arg.Any<RestartOptions>()).Returns(0);
 
-		TurnFsmCommand command = new(setFsmConfigCommand, loadToFs, loadToDb, applicationClient, envSettings, restartCommand);
+		TurnFsmCommand command = new(setFsmConfigCommand, loadToFs, loadToDb, applicationClient, envSettings, restartCommand, Substitute.For<Clio.Common.ILogger>());
 		TurnFsmCommandOptions options = new() {
 			IsFsm = "on",
 			Uri = envSettings.Uri,

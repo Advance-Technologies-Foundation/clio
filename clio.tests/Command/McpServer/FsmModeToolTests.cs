@@ -378,7 +378,8 @@ public sealed class FsmModeToolTests
 					Substitute.For<ILogger>()),
 				Substitute.For<IApplicationClient>(),
 				new EnvironmentSettings(),
-				new RestartCommand(Substitute.For<IApplicationClient>(), new EnvironmentSettings()))
+				new RestartCommand(Substitute.For<IApplicationClient>(), new EnvironmentSettings()),
+				Substitute.For<ILogger>())
 		{
 		}
 

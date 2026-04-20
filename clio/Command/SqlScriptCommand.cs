@@ -37,12 +37,14 @@ namespace Clio.Command.SqlScriptCommand
 	public class SqlScriptCommand : RemoteCommand<ExecuteSqlScriptOptions>
 	{
 		private readonly ISqlScriptExecutor _sqlScriptExecutor;
+		private readonly ILogger _logger;
 
 		public SqlScriptCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-				ISqlScriptExecutor sqlScriptExecutor,IClioGateway clioGateway)
+				ISqlScriptExecutor sqlScriptExecutor, IClioGateway clioGateway, ILogger logger)
 			: base(applicationClient, settings) {
 			_sqlScriptExecutor = sqlScriptExecutor;
 			ClioGateWay = clioGateway;
+			_logger = logger;
 		}
 
 		protected override string ClioGateMinVersion { get; } = "2.0.0.41";
@@ -168,22 +170,24 @@ namespace Clio.Command.SqlScriptCommand
 					result = _sqlScriptExecutor.Execute(opts.Script, ApplicationClient, EnvironmentSettings);
 				} else if (!string.IsNullOrEmpty(opts.File)) {
 					var script = File.ReadAllText(opts.File);
-					Console.WriteLine(script);
+					_logger.WriteLine(script);
 					script = script.Replace(Environment.NewLine, "|nl|");
 					result = _sqlScriptExecutor.Execute(script, ApplicationClient, EnvironmentSettings);
 				} else {
-					Console.WriteLine("Enter sql (Ctrl+C for exit): ");
+					_logger.WriteLine("Enter sql (Ctrl+C for exit): ");
 					var sc = Console.ReadLine();
 					result = _sqlScriptExecutor.Execute(sc, ApplicationClient, EnvironmentSettings);
 				}
 				result = GetSqlScriptResult(result, opts.ViewType, opts.DestPath);
+#pragma warning disable CLIO002
 				Console.OutputEncoding = System.Text.Encoding.UTF8;
+#pragma warning restore CLIO002
 				if (!opts.IsSilent) {
-					Console.WriteLine(result);
+					_logger.WriteLine(result);
 				}
-				Console.WriteLine("Done");
+				_logger.WriteLine("Done");
 			} catch (Exception e) {
-				Console.WriteLine(e);
+				_logger.WriteError(e.Message);
 			}
 			return 0;
 		}

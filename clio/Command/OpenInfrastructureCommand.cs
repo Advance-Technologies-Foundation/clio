@@ -13,13 +13,15 @@ public class OpenInfrastructureCommand : Command<OpenInfrastructureOptions>{
 	#region Fields: Private
 
 	private readonly IInfrastructurePathProvider _infrastructurePathProvider;
+	private readonly ILogger _logger;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public OpenInfrastructureCommand(IInfrastructurePathProvider infrastructurePathProvider) {
+	public OpenInfrastructureCommand(IInfrastructurePathProvider infrastructurePathProvider, ILogger logger) {
 		_infrastructurePathProvider = infrastructurePathProvider;
+		_logger = logger;
 	}
 
 	#endregion
@@ -39,15 +41,15 @@ public class OpenInfrastructureCommand : Command<OpenInfrastructureOptions>{
 				Process.Start("xdg-open", infrsatructureCfgFilesFolder);
 			}
 			else {
-				Console.WriteLine($"Unsupported platform: {RuntimeInformation.OSDescription}");
+				_logger.WriteError($"Unsupported platform: {RuntimeInformation.OSDescription}");
 				return 1;
 			}
 
 			return 0;
 		}
 		catch (Exception e) {
-			Console.WriteLine($"Failed to open folder: {e.Message}");
-			Console.WriteLine($"Folder path: {infrsatructureCfgFilesFolder}");
+			_logger.WriteError($"Failed to open folder: {e.Message}");
+			_logger.WriteError($"Folder path: {infrsatructureCfgFilesFolder}");
 			return 1;
 		}
 	}
