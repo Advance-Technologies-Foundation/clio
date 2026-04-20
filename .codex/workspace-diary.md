@@ -2413,6 +2413,13 @@ Discovery: PageToolsTests had accumulated assertions against the old inline vali
 Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Validator authoring rules now have one canonical maintenance point, reducing MCP contract drift when guidance changes again.
 
+## 2026-04-20 15:40 – Stop MCP E2E from running in GitHub Actions
+Context: MCP end-to-end coverage is being moved off GitHub Actions so the repo should stop scheduling that suite there for now.
+Decision: Remove the dedicated `mcp-e2e-tests` workflow job and the now-unused `mcp` change-detection output/filter from `.github/workflows/build.yml`; keep the `clio.mcp.e2e` project in the repo for future TeamCity ownership.
+Discovery: GitHub Actions invoked MCP E2E only from the dedicated workflow job, so no project or test code changes were required for the stopgap.
+Files: .github/workflows/build.yml, .codex/workspace-diary.md
+Impact: PRs and branch builds on GitHub no longer queue MCP E2E, reducing CI time while preserving the suite for a later TeamCity migration.
+
 ## 2026-04-20 19:20 – Add explicit get-guidance MCP tool
 Context: Replaced prompt and tool guidance references from raw `docs://mcp/guides/...` URIs with an explicit MCP tool because external clients routed the custom URI scheme inconsistently through web fetch or help resolvers.
 Decision: Added a `get-guidance` MCP tool backed by a shared guidance catalog, rewired MCP prompts/tool descriptions/resources to instruct agents to call `get-guidance`, and covered the contract with unit plus E2E tests.
