@@ -23,9 +23,9 @@ public sealed class PageGetTool(
 	[Description(
 		"Get a Freedom UI page bundle plus raw schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
 		"Before editing the returned raw.body: " +
-		"if the task targets SCHEMA_VALIDATORS read docs://mcp/guides/page-schema-validators first; " +
-		"if the task targets SCHEMA_CONVERTERS read docs://mcp/guides/page-schema-converters; " +
-		"if the task targets SCHEMA_HANDLERS read docs://mcp/guides/page-schema-handlers.")]
+		"if the task targets SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
+		"if the task targets SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters`; " +
+		"if the task targets SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers`.")]
 	public PageGetResponse GetPage([Description("Parameters: schema-name (required); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageGetArgs args) {
 		PageGetOptions options = new() {
 			SchemaName = args.SchemaName,

@@ -46,8 +46,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should document the soft-fallback semantics when Data Forge is degraded or unavailable");
 		article.Text.Should().Contain("Canonical page flow after planning a page change",
 			because: "the guide should publish the preferred page inspection and write sequence as MCP-owned guidance");
-		article.Text.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "the creation-oriented guide should point callers to the dedicated existing-app maintenance guide for minimal edits");
+		article.Text.Should().Contain("get-guidance",
+			because: "the creation-oriented guide should point callers to the dedicated existing-app maintenance guide through the guidance tool");
 		article.Text.Should().Contain("scalar-only for app shell fields",
 			because: "the guide should state that create-app keeps shell fields as plain strings");
 		article.Text.Should().Contain("Do not send localization-map fields",
@@ -204,10 +204,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should explicitly reject using handlers for uppercase display-label scenarios");
 		article.Text.Should().Contain("https://academy.creatio.com/docs/8.x/dev/development-on-creatio-platform/front-end-development/freedom-ui/client-schema-freedomui/overview",
 			because: "handler guidance should link to the relevant Academy overview for deeper reference");
-		article.Text.Should().Contain("docs://mcp/guides/page-schema-converters",
-			because: "handler guidance should redirect value-transformation work to the converter guide");
-		article.Text.Should().Contain("docs://mcp/guides/page-schema-validators",
-			because: "handler guidance should redirect field-validation work to the validator guide");
+		article.Text.Should().Contain("page-schema-converters",
+			because: "handler guidance should redirect value-transformation work to the converter guide name");
+		article.Text.Should().Contain("page-schema-validators",
+			because: "handler guidance should redirect field-validation work to the validator guide name");
 	}
 
 	[Test]
@@ -250,10 +250,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "converter guidance should explicitly reject side-effect responsibilities");
 		article.Text.Should().Contain("Do not introduce a handler that writes a second attribute only to display an uppercase",
 			because: "converter guidance should explicitly reject handler-based shadow-attribute solutions for pure display conversion");
-		article.Text.Should().Contain("docs://mcp/guides/page-schema-handlers",
-			because: "converter guidance should redirect lifecycle and request-chain logic to handlers");
-		article.Text.Should().Contain("docs://mcp/guides/page-schema-validators",
-			because: "converter guidance should redirect validation work to validators");
+		article.Text.Should().Contain("page-schema-handlers",
+			because: "converter guidance should redirect lifecycle and request-chain logic to the handler guide name");
+		article.Text.Should().Contain("page-schema-validators",
+			because: "converter guidance should redirect validation work to the validator guide name");
 	}
 
 	[Test]
@@ -338,10 +338,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "validator guidance should point to the main public validator base type in the devkit API");
 		article.Text.Should().Contain("setAttributePropertyValue(...)",
 			because: "validator guidance should redirect dynamic UI state rules to the supported handler-side API");
-		article.Text.Should().Contain("docs://mcp/guides/page-schema-handlers",
-			because: "validator guidance should redirect request-chain and dynamic UI state logic to handlers");
-		article.Text.Should().Contain("docs://mcp/guides/page-schema-converters",
-			because: "validator guidance should redirect value transformation work to converters");
+		article.Text.Should().Contain("page-schema-handlers",
+			because: "validator guidance should redirect request-chain and dynamic UI state logic to the handler guide name");
+		article.Text.Should().Contain("page-schema-converters",
+			because: "validator guidance should redirect value transformation work to the converter guide name");
 		article.Text.Should().Contain("Static `viewModelConfig` variant",
 			because: "the guide should include a dedicated static viewModelConfig branch so AI callers detect format before editing");
 		article.Text.Should().Contain("Treat the binding-location, control-binding, resource-string, in-place-fix, and async CRITICAL sections below as hard requirements.",

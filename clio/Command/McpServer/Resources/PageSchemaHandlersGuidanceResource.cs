@@ -18,8 +18,9 @@ public sealed class PageSchemaHandlersGuidanceResource {
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "page-schema-handlers-guidance")]
 	[Description("Returns canonical MCP guidance for creating and editing Freedom UI page handlers inside raw page schema bodies.")]
-	public ResourceContents GetGuide() =>
-		new TextResourceContents {
+	public ResourceContents GetGuide() => Guide;
+
+	internal static readonly TextResourceContents Guide = new() {
 			Uri = ResourceUri,
 			MimeType = "text/plain",
 			Text = """
@@ -88,9 +89,10 @@ public sealed class PageSchemaHandlersGuidanceResource {
 			       - Re-parse the edited handler section before save.
 			       - Keep handler logic focused on lifecycle, request-chain, navigation, or controlled runtime state changes.
 			       - Do not use a handler for pure display transformation tasks such as "add a label that shows Name in uppercase"; use a converter and UI binding instead.
-			       - If the task is really value transformation, use `docs://mcp/guides/page-schema-converters`.
-			       - If the task is really field-value validation, use `docs://mcp/guides/page-schema-validators`.
+			       - If the task is really value transformation, call `get-guidance` with `name` set to `page-schema-converters`.
+			       - If the task is really field-value validation, call `get-guidance` with `name` set to `page-schema-validators`.
 			       - Do not use an external repository as the source of truth for handler authoring when clio MCP is available.
 			       """
 		};
 }
+

@@ -34,6 +34,13 @@ Available MCP guidance resources:
 - docs://mcp/guides/page-schema-converters
 - docs://mcp/guides/page-schema-validators
 
+Preferred guidance access:
+- get-guidance {"name":"app-modeling"}
+- get-guidance {"name":"existing-app-maintenance"}
+- get-guidance {"name":"page-schema-handlers"}
+- get-guidance {"name":"page-schema-converters"}
+- get-guidance {"name":"page-schema-validators"}
+
 ## Synopsis
 
 ```bash
@@ -55,6 +62,9 @@ Bootstrap an existing-app or page workflow from the authoritative contract befor
 
 Use your MCP client to call get-tool-contract {"tool-names":["get-page","get-component-info","sync-pages"]}.
 Bootstrap page inspection/editing and discover whether get-component-info is needed before mutating raw.body.
+
+Use your MCP client to call get-guidance {"name":"page-schema-validators"}.
+Read the canonical validator authoring guide through a tool call instead of relying on docs:// URI routing in the client.
 ```
 
 ## Prerequisites
@@ -70,7 +80,7 @@ Bootstrap page inspection/editing and discover whether get-component-info is nee
 - "get-component-info" is local and read-only, so it does not require environment or connection args
 - Start each MCP workflow with "get-tool-contract" so the client reads the authoritative clio MCP contract before the first discovery, inspection, or mutation call
 - Preferred existing-app flow starts with get-tool-contract, then list-apps -> get-app-info, then page or schema inspection, then sync-pages / modify-entity-schema-column / sync-schemas as needed
-- For Freedom UI page-body work, read the dedicated clio MCP guidance resources for handlers, converters, and validators instead of relying on external repository notes
+- For Freedom UI page-body work, prefer get-guidance for handlers, converters, and validators instead of relying on client-specific docs:// resource routing
 - This repository documents the MCP server surface; it does not ship a generic stdio helper client
 - If you use an external MCP client wrapper, follow that wrapper's own parsing and transport guarantees
 - Boolean parameters must be JSON booleans (true/false), not strings

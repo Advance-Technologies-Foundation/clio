@@ -206,6 +206,7 @@ internal static class ToolContractCatalog {
 	private static readonly IReadOnlyDictionary<string, ToolContractDefinition> Contracts =
 		new Dictionary<string, ToolContractDefinition>(StringComparer.OrdinalIgnoreCase) {
 			[ToolContractGetTool.ToolName] = BuildToolContractGet(),
+			[GuidanceGetTool.ToolName] = BuildGuidanceGet(),
 			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
@@ -243,6 +244,7 @@ internal static class ToolContractCatalog {
 		};
 
 	private static readonly string[] CanonicalToolNames = [
+		GuidanceGetTool.ToolName,
 		SettingsHealthTool.ToolName,
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
@@ -421,6 +423,44 @@ internal static class ToolContractCatalog {
 					],
 					"Follow with get-tool-contract when the caller must choose a bootstrap-safe recovery or inspection tool.")
 			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildGuidanceGet() {
+		return new ToolContractDefinition(
+			GuidanceGetTool.ToolName,
+			"Returns canonical clio MCP guidance text by stable guide name so clients can consume workflows and page-authoring rules without fetching docs:// resources directly.",
+			new ToolInputSchemaContract(
+				["name"],
+				[
+					Field("name", StringType, "Stable guidance name. Known values include app-modeling, existing-app-maintenance, dataforge-orchestration, page-schema-handlers, page-schema-converters, and page-schema-validators.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("guidance", ObjectType, "Resolved guidance article with name, uri, mime-type, description, and text."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("available-guides", ArrayType, "Known guidance names returned on lookup failure.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read validator authoring guidance", new Dictionary<string, object?> {
+					["name"] = "page-schema-validators"
+				}),
+				Example("Read canonical existing-app maintenance guidance", new Dictionary<string, object?> {
+					["name"] = "existing-app-maintenance"
+				})
+			],
+			new ToolFlowHint(
+				[
+					GuidanceGetTool.ToolName
+				],
+				"Call this tool before workflows that require canonical clio MCP guidance text, especially when page prompts or app prompts reference a named guide."),
+			[],
 			[]);
 	}
 

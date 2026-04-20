@@ -139,8 +139,8 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the converter guide should include the cookbook label insertion example for uppercase display scenarios");
 		article.Text.Should().Contain("implement-the-field-value-conversion",
 			because: "the converter guide should link to the Academy field-value conversion example");
-		article.Text.Should().Contain("docs://mcp/guides/page-schema-handlers",
-			because: "the converter guide should redirect request-chain logic to the handler guide");
+		article.Text.Should().Contain("get-guidance",
+			because: "the converter guide should redirect request-chain logic through the guidance tool");
 	}
 
 	[Test]
@@ -170,8 +170,8 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the validator guide should publish the built-in max-length validator in the standard decision table");
 		article.Text.Should().Contain("Do NOT create a custom validator when a standard validator is sufficient",
 			because: "the validator guide should explicitly prevent unnecessary custom validators for standard cases");
-		article.Text.Should().Contain("docs://mcp/guides/page-schema-handlers",
-			because: "the validator guide should redirect dynamic UI-state logic to the handler guide");
+		article.Text.Should().Contain("get-guidance",
+			because: "the validator guide should redirect dynamic UI-state logic through the guidance tool");
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {

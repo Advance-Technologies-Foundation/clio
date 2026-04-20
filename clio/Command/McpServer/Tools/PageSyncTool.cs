@@ -28,9 +28,9 @@ public sealed class PageSyncTool(
 		"For each page: validates body client-side (optional), saves to Creatio, " +
 		"and verifies the update (optional). Continues processing remaining pages on failure. " +
 		"Section authoring rules for the body payload: " +
-		"if the body changes SCHEMA_VALIDATORS read docs://mcp/guides/page-schema-validators first; " +
-		"if the body changes SCHEMA_HANDLERS read docs://mcp/guides/page-schema-handlers first; " +
-		"if the body changes SCHEMA_CONVERTERS read docs://mcp/guides/page-schema-converters first. ")]
+		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
+		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
+		"if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first. ")]
 	public PageSyncResponse SyncPages(
 		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional)")]
 		[Required] PageSyncArgs args) {

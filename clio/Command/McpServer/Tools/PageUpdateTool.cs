@@ -21,7 +21,7 @@ public sealed class PageUpdateTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
 		"Section authoring rules for the body payload: " +
-		"if the body changes SCHEMA_VALIDATORS read docs://mcp/guides/page-schema-validators first; " +
+		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
 		"SCHEMA_HANDLERS — use array entries `{request:\"crt.Type\",handler:async(request,next)=>{return next?.handle(request);}}`. " +
 		"SCHEMA_CONVERTERS — use `\"usr.Name\":function(value){return transformed;}` entries.")]
 	public PageUpdateResponse UpdatePage([Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageUpdateArgs args) {

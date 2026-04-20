@@ -17,8 +17,7 @@ internal static class StandardValidatorContractParser {
 	/// The result is cached after the first parse because the guide text is constant.
 	/// </summary>
 	internal static IReadOnlyDictionary<string, string[]> GetContracts() =>
-		_cachedContracts ??= BuildContracts(
-			((TextResourceContents)new PageSchemaValidatorsGuidanceResource().GetGuide()).Text);
+		_cachedContracts ??= BuildContracts(PageSchemaValidatorsGuidanceResource.Guide.Text);
 
 	private static IReadOnlyDictionary<string, string[]> BuildContracts(string guideText) {
 		var contracts = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);

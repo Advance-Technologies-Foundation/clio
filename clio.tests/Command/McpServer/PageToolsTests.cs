@@ -128,15 +128,17 @@ public class PageToolsTests {
 			because: "page guidance should keep direct connection args in a fallback-only role");
 		prompt.Should().Contain($"`{ComponentInfoTool.ToolName}`",
 			because: "get-page prompt guidance should direct callers to get-component-info for unfamiliar Freedom UI types");
-		prompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "get-page prompt guidance should point callers to the MCP-owned existing-app maintenance guide");
-		prompt.Should().Contain("docs://mcp/guides/page-schema-handlers",
-			because: "get-page prompt guidance should point handler edits to the dedicated clio-owned handler guide");
-		prompt.Should().Contain("docs://mcp/guides/page-schema-converters",
-			because: "get-page prompt guidance should point converter edits to the dedicated clio-owned converter guide");
-		prompt.Should().Contain("docs://mcp/guides/page-schema-validators",
-			because: "get-page prompt guidance should point validator edits to the dedicated clio-owned validator guide");
-		prompt.Should().Contain("you must read `docs://mcp/guides/page-schema-validators` before proposing or applying changes",
+		prompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "get-page prompt guidance should route guide lookups through the dedicated guidance tool");
+		prompt.Should().Contain("`existing-app-maintenance`",
+			because: "get-page prompt guidance should point callers to the MCP-owned existing-app maintenance guide name");
+		prompt.Should().Contain("`page-schema-handlers`",
+			because: "get-page prompt guidance should point handler edits to the dedicated clio-owned handler guide name");
+		prompt.Should().Contain("`page-schema-converters`",
+			because: "get-page prompt guidance should point converter edits to the dedicated clio-owned converter guide name");
+		prompt.Should().Contain("`page-schema-validators`",
+			because: "get-page prompt guidance should point validator edits to the dedicated clio-owned validator guide name");
+		prompt.Should().Contain($"you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-validators` before proposing or applying changes",
 			because: "validator guidance should be mandatory before authorship so callers do not drift into handler syntax");
 		prompt.Should().Contain("must not author validator changes until that guidance has been read",
 			because: "validator guidance should be framed as a hard workflow prerequisite rather than an optional recommendation");
@@ -197,8 +199,8 @@ public class PageToolsTests {
 		// Assert
 		description.Should().Contain("SCHEMA_VALIDATORS",
 			because: "get-page description should surface the section name so callers know which guide to read before editing");
-		description.Should().Contain("docs://mcp/guides/page-schema-validators",
-			because: "get-page description should link to the dedicated validator guide so callers read it before authoring");
+		description.Should().Contain("call get-guidance with name `page-schema-validators`",
+			because: "get-page description should route callers to the dedicated validator guide through get-guidance");
 	}
 
 	[Test]
@@ -216,8 +218,8 @@ public class PageToolsTests {
 		// Assert
 		description.Should().Contain("SCHEMA_VALIDATORS",
 			because: "sync-pages description should surface the validator section name as part of body authoring rules");
-		description.Should().Contain("docs://mcp/guides/page-schema-validators",
-			because: "sync-pages description should link to the dedicated validator guide so callers read it before authoring");
+		description.Should().Contain("call get-guidance with name `page-schema-validators`",
+			because: "sync-pages description should route callers to the dedicated validator guide through get-guidance");
 	}
 
 	[Test]
@@ -235,7 +237,7 @@ public class PageToolsTests {
 		// Assert
 		description.Should().Contain("SCHEMA_VALIDATORS",
 			because: "update-page description should surface the validator section name as part of body authoring rules");
-		description.Should().Contain("read docs://mcp/guides/page-schema-validators first",
+		description.Should().Contain("call get-guidance with name `page-schema-validators` first",
 			because: "update-page description should make validator guidance a mandatory precondition before validator authoring");
 	}
 
@@ -254,11 +256,11 @@ public class PageToolsTests {
 			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
 
 		// Act & Assert
-		getDesc.Should().Contain("docs://mcp/guides/page-schema-validators",
-			because: "get-page description must route callers to the validator guide which forbids $PDS_ bindings");
-		syncDesc.Should().Contain("docs://mcp/guides/page-schema-validators",
-			because: "sync-pages description must route callers to the validator guide which forbids $PDS_ bindings");
-		updateDesc.Should().Contain("docs://mcp/guides/page-schema-validators",
+		getDesc.Should().Contain("get-guidance",
+			because: "get-page description must route callers to the validator guide through get-guidance");
+		syncDesc.Should().Contain("get-guidance",
+			because: "sync-pages description must route callers to the validator guide through get-guidance");
+		updateDesc.Should().Contain("get-guidance",
 			because: "update-page description must route callers to the validator guide instead of duplicating PDS binding rules inline");
 	}
 
@@ -278,11 +280,11 @@ public class PageToolsTests {
 
 		// Act & Assert
 		// all tools route callers to the guide which contains the ResourceString rules
-		getDesc.Should().Contain("docs://mcp/guides/page-schema-validators",
+		getDesc.Should().Contain("get-guidance",
 			because: "get-page description must route callers to the validator guide which documents the #ResourceString(KeyName)# requirement");
-		syncDesc.Should().Contain("docs://mcp/guides/page-schema-validators",
+		syncDesc.Should().Contain("get-guidance",
 			because: "sync-pages description must route callers to the validator guide which documents the #ResourceString(KeyName)# requirement");
-		updateDesc.Should().Contain("docs://mcp/guides/page-schema-validators",
+		updateDesc.Should().Contain("get-guidance",
 			because: "update-page description must route callers to the validator guide which documents the #ResourceString(KeyName)# requirement");
 	}
 
@@ -1446,7 +1448,7 @@ public class PageToolsTests {
 		string? description = attribute?.Description;
 
 		// Assert
-		description.Should().Contain("docs://mcp/guides/page-schema-validators",
+		description.Should().Contain("get-guidance",
 			because: "the tool contract should delegate static-vs-diff binding details to the canonical validator guidance");
 	}
 
@@ -1464,7 +1466,7 @@ public class PageToolsTests {
 		string? description = attribute?.Description;
 
 		// Assert
-		description.Should().Contain("docs://mcp/guides/page-schema-validators",
+		description.Should().Contain("get-guidance",
 			because: "sync-pages description must route callers to the validator guide which covers both static and diff-based viewModelConfig binding");
 	}
 

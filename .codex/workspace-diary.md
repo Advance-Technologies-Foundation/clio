@@ -2448,3 +2448,17 @@ Decision: Reduced update-page validator guidance to the same lean pattern used b
 Discovery: PageToolsTests had accumulated assertions against the old inline validator wording, so the contract tests needed to switch from checking duplicated details to checking guide delegation.
 Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Validator authoring rules now have one canonical maintenance point, reducing MCP contract drift when guidance changes again.
+
+## 2026-04-20 19:20 – Add explicit get-guidance MCP tool
+Context: Replaced prompt and tool guidance references from raw `docs://mcp/guides/...` URIs with an explicit MCP tool because external clients routed the custom URI scheme inconsistently through web fetch or help resolvers.
+Decision: Added a `get-guidance` MCP tool backed by a shared guidance catalog, rewired MCP prompts/tool descriptions/resources to instruct agents to call `get-guidance`, and covered the contract with unit plus E2E tests.
+Discovery: `McpGuidanceResourceE2ETests` start a fresh `clio` process from `clio\\bin\\Debug\\net8.0`; running unit tests with `--artifacts-path` alone leaves those E2E checks on stale binaries until the main `clio` and `clio.mcp.e2e` outputs are rebuilt.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\GuidanceGetTool.cs, C:\Projects\clio\clio\Command\McpServer\Resources\GuidanceCatalog.cs, C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\clio.mcp.e2e\GuidanceGetToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP guidance changes can stay in one canonical resource while clients use a machine-actionable tool call instead of relying on custom URI handling.
+
+## 2026-04-20 19:48 – Tighten guidance catalog initialization
+Context: Follow-up review on the new `get-guidance` flow flagged eager resource construction, an unsafe `TextResourceContents` cast, and thin lookup coverage in unit tests.
+Decision: Switched MCP guidance resources to expose `internal static` guide payloads for catalog reuse, updated `GuidanceCatalog` to consume those cached payloads with an explicit type check, and added case-insensitive lookup coverage plus fixture-level unit categorization for `GuidanceGetToolTests`.
+Discovery: The resource attributes can stay on `GetGuide()` while the shared cached article is exposed separately as an internal static field; `GuidanceCatalog` can then remain free of resource instantiation without changing the external MCP contract.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\GuidanceCatalog.cs, C:\Projects\clio\clio\Command\McpServer\Resources\AppModelingGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future guidance resources can be added to the catalog without startup-time object construction, and the `get-guidance` tests now lock in the case-insensitive behavior actually used by the catalog.

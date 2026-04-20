@@ -18,8 +18,9 @@ public sealed class PageSchemaConvertersGuidanceResource {
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "page-schema-converters-guidance")]
 	[Description("Returns canonical MCP guidance for creating and editing Freedom UI page converters inside raw page schema bodies.")]
-	public ResourceContents GetGuide() =>
-		new TextResourceContents {
+	public ResourceContents GetGuide() => Guide;
+
+	internal static readonly TextResourceContents Guide = new() {
 			Uri = ResourceUri,
 			MimeType = "text/plain",
 			Text = """
@@ -40,7 +41,7 @@ public sealed class PageSchemaConvertersGuidanceResource {
 			       - Keep converters focused on value transformation between page data and UI presentation.
 			       - Use converters only when the requirement explicitly calls for conversion logic or when the live page already contains converter infrastructure that must be extended.
 			       - If the user asks to add a label, caption, or display-only field that shows an existing value in uppercase, lowercase, formatted text, or other derived presentation, implement a converter plus binding instead of a handler.
-			       - When behavior is really page lifecycle, request-chain, navigation, save interception, HTTP access, or runtime state changes, use `docs://mcp/guides/page-schema-handlers` instead.
+			       - When behavior is really page lifecycle, request-chain, navigation, save interception, HTTP access, or runtime state changes, call `get-guidance` with `name` set to `page-schema-handlers` instead.
 
 			       Minimal page-body example
 			       - Academy-style uppercase converter in a deployed page body:
@@ -99,10 +100,11 @@ public sealed class PageSchemaConvertersGuidanceResource {
 			       - Use the public `@creatio-devkit/common` surface for `CrtConverter`, `ConverterConfig`, and `Converter<V, R>`.
 
 			       Decision guardrails
-			       - If the task validates a field value, use `docs://mcp/guides/page-schema-validators` instead of a converter.
+			       - If the task validates a field value, call `get-guidance` with `name` set to `page-schema-validators` instead of using a converter.
 			       - If the task toggles visibility, required state, readonly state, navigation, save flow, or data loading, use handlers or business rules instead of a converter.
 			       - Do not introduce a handler that writes a second attribute only to display an uppercase or otherwise transformed copy of an existing field when converter binding can express the requirement directly.
 			       - Do not use an external repository as the source of truth for converter authoring when clio MCP is available.
 			       """
 		};
 }
+
