@@ -174,7 +174,7 @@ internal static class PageBodyEditor {
 		return true;
 	}
 
-	private static string ReplaceMarkerContent(string body, string marker, string newContent) {
+	internal static string ReplaceMarkerContent(string body, string marker, string newContent) {
 		if (!TryFindMarkerSpan(body, marker, out int start, out int end))
 			throw new InvalidOperationException($"Marker {marker} not found in body");
 		return body[..start] + newContent + body[end..];
@@ -197,7 +197,7 @@ internal static class PageBodyEditor {
 			?? throw new InvalidOperationException($"Marker {marker} content parsed as null");
 	}
 
-	private static string SerializeJson(JsonNode node) {
+	internal static string SerializeJson(JsonNode node) {
 		string raw = node.ToJsonString(IndentedOptions);
 		const string prefix = "\t\t";
 		string[] lines = raw.Split('\n');
