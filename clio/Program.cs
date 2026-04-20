@@ -999,8 +999,7 @@ internal class Program {
 		SysSettingsCommand sysSettingsCommand = Resolve<SysSettingsCommand>(opts);
 		sysSettingsCommand.TryUpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
 		UnlockMaintainerPackageInternal(opts);
-		new RestartCommand(new CreatioClientAdapter(_creatioClientInstance), CreatioEnvironment.Settings).Execute(
-			new RestartOptions());
+		Resolve<RestartCommand>(opts).Execute(new RestartOptions());
 		Console.WriteLine("Done");
 		return 0;
 	}
