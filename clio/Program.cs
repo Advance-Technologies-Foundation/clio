@@ -636,7 +636,7 @@ internal class Program {
 	/// <param name="options">Environment options containing the environment name</param>
 	/// <returns>Environment settings if found, null otherwise</returns>
 	private static EnvironmentSettings FindEnvironmentSettings(EnvironmentOptions options){
-	ISettingsRepository settingsRepository = Resolve<ISettingsRepository>();
+	SettingsRepository settingsRepository = new();
 	return settingsRepository.FindEnvironment(options.Environment);
 }
 
@@ -660,7 +660,7 @@ internal class Program {
 	/// <param name="options">Environment options</param>
 	/// <returns>Environment settings</returns>
 	private static EnvironmentSettings GetEnvironmentSettings(EnvironmentOptions options){
-	ISettingsRepository settingsRepository = Resolve<ISettingsRepository>();
+	SettingsRepository settingsRepository = new();
 	if (string.IsNullOrWhiteSpace(options.Environment) && string.IsNullOrEmpty(options.Uri)) {
 		string activeEnvName = settingsRepository.GetDefaultEnvironmentName();
 		if (!string.IsNullOrWhiteSpace(activeEnvName) && settingsRepository.IsEnvironmentExists(activeEnvName)) {
