@@ -431,9 +431,9 @@ public class BindingsModule {
 		services.AddTransient<DotNetDeploymentStrategy>();
 		services.AddTransient<DeploymentStrategyFactory>();
 		services.AddTransient<OpenAppCommand>();
-		services.AddSingleton<ISystemServiceManager>(_ =>
+		services.AddSingleton<ISystemServiceManager>(sp =>
 			RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? new LinuxSystemServiceManager() :
-			RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? new MacOSSystemServiceManager() :
+			RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? new MacOSSystemServiceManager(sp.GetRequiredService<IProcessExecutor>()) :
 			new WindowsSystemServiceManager());
 		services.AddSingleton<Common.IIS.IIISSiteDetector>(_ =>
 			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
@@ -442,9 +442,9 @@ public class BindingsModule {
 		services.AddSingleton<Common.IIS.IPlatformDetector, Common.IIS.PlatformDetector>();
 		services.AddSingleton<Common.IIS.ITcpPortReservationReader, Common.IIS.TcpPortReservationReader>();
 		services.AddTransient<Common.IIS.IAvailableIisPortService, Common.IIS.AvailableIisPortService>();
-		services.AddSingleton<Common.IIS.IIISAppPoolManager>(_ =>
+		services.AddSingleton<Common.IIS.IIISAppPoolManager>(sp =>
 			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-				? new Common.IIS.WindowsIISAppPoolManager()
+				? new Common.IIS.WindowsIISAppPoolManager(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISAppPoolManager());
 		services.AddTransient<ClioGateway>();
 		services.AddTransient<CompileConfigurationCommand>();

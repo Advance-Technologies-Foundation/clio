@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
@@ -14,7 +14,7 @@ using Newtonsoft.Json.Linq;
 
 namespace Clio;
 
-public class AppUpdater(ILogger logger) : IAppUpdater {
+public class AppUpdater(ILogger logger, IProcessExecutor processExecutor) : IAppUpdater {
 
 
 	#region Properties: Private
@@ -44,7 +44,6 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 			string responseBody = await response.Content.ReadAsStringAsync();
 			JObject data = JObject.Parse(responseBody);
 
-			// Extracting the latest version from the response
 			string latestVersion = data["versions"].Last.ToString();
 
 			return latestVersion;
@@ -126,34 +125,21 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 				arguments += " -g";
 			}
 
-			ProcessStartInfo psi = new ProcessStartInfo {
-				FileName = "dotnet",
-				Arguments = arguments,
-				UseShellExecute = false,
-				RedirectStandardOutput = true,
-				RedirectStandardError = true,
-				CreateNoWindow = true
-			};
+			ProcessExecutionOptions options = new("dotnet", arguments);
+			ProcessExecutionResult result = await processExecutor.ExecuteAndCaptureAsync(options);
 
-			using (Process process = Process.Start(psi)) {
-				if (process == null) {
-					logger.WriteError("Failed to start dotnet tool update process");
-					return 1;
-				}
-
-				string output = await process.StandardOutput.ReadToEndAsync();
-				string error = await process.StandardError.ReadToEndAsync();
-
-				process.WaitForExit();
-
-				if (process.ExitCode != 0) {
-					logger.WriteError($"Update failed: {error}");
-					return 1;
-				}
-
-				logger.WriteDebug(output.Trim());
-				return 0;
+			if (!result.Started) {
+				logger.WriteError($"Failed to start dotnet tool update process: {result.StandardError}");
+				return 1;
 			}
+
+			if (result.ExitCode != 0) {
+				logger.WriteError($"Update failed: {result.StandardError}");
+				return 1;
+			}
+
+			logger.WriteDebug(result.StandardOutput.Trim());
+			return 0;
 		} catch (Exception e) {
 			logger.WriteError($"Error executing update: {e.Message}");
 			return 1;
@@ -163,39 +149,27 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 	/// <inheritdoc/>
 	public async Task<bool> VerifyInstallationAsync(string expectedVersion){
 		try {
-			ProcessStartInfo psi = new ProcessStartInfo {
-				FileName = "clio",
-				Arguments = "info --clio",
-				UseShellExecute = false,
-				RedirectStandardOutput = true,
-				RedirectStandardError = true,
-				CreateNoWindow = true
-			};
+			ProcessExecutionOptions options = new("clio", "info --clio");
+			ProcessExecutionResult result = await processExecutor.ExecuteAndCaptureAsync(options);
 
-			using (Process process = Process.Start(psi)) {
-				if (process == null) {
-					logger.WriteError("Failed to verify clio installation");
-					return false;
-				}
-
-				string output = await process.StandardOutput.ReadToEndAsync();
-				string error = await process.StandardError.ReadToEndAsync();
-				process.WaitForExit();
-
-				if (process.ExitCode != 0) {
-					logger.WriteError($"Verification command failed: {error.Trim()}");
-					return false;
-				}
-
-				string installedVersion = NormalizeInstalledVersion(output, error);
-				bool isVerified = installedVersion.Equals(expectedVersion, StringComparison.OrdinalIgnoreCase);
-
-				if (!isVerified) {
-					logger.WriteWarning($"Version mismatch: expected {expectedVersion}, got {installedVersion}");
-				}
-
-				return isVerified;
+			if (!result.Started) {
+				logger.WriteError("Failed to verify clio installation");
+				return false;
 			}
+
+			if (result.ExitCode != 0) {
+				logger.WriteError($"Verification command failed: {result.StandardError.Trim()}");
+				return false;
+			}
+
+			string installedVersion = NormalizeInstalledVersion(result.StandardOutput, result.StandardError);
+			bool isVerified = installedVersion.Equals(expectedVersion, StringComparison.OrdinalIgnoreCase);
+
+			if (!isVerified) {
+				logger.WriteWarning($"Version mismatch: expected {expectedVersion}, got {installedVersion}");
+			}
+
+			return isVerified;
 		} catch (Exception e) {
 			logger.WriteError($"Error verifying installation: {e.Message}");
 			return false;
@@ -251,7 +225,6 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 			var v2 = new Version(version2);
 			return v1.CompareTo(v2);
 		} catch {
-			// Fallback to string comparison if version parsing fails
 			return string.Compare(version1, version2, StringComparison.OrdinalIgnoreCase);
 		}
 	}
