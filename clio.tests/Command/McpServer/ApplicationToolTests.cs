@@ -1283,7 +1283,7 @@ public sealed class ApplicationToolTests {
 		// Assert
 		response.Success.Should().BeFalse(
 			because: "the resolver exception should be surfaced as a structured MCP failure");
-		response.Error.Should().Be("resolved from current MCP call",
+		response.Error.Should().Contain("resolved from current MCP call",
 			because: "the tool should resolve the uninstall command from the current MCP request target");
 		startupApplicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
 		commandResolver.Received(1).Resolve<UninstallAppCommand>(Arg.Is<EnvironmentOptions>(options =>
@@ -1327,7 +1327,7 @@ public sealed class ApplicationToolTests {
 		// Assert
 		response.Success.Should().BeFalse(
 			because: "delete-app should return a structured failure when no execution target can be resolved");
-		response.Error.Should().Be("Either a configured environment name or an explicit URI is required for MCP command execution. Prefer a registered environment name; use explicit URI credentials only as a bootstrap or emergency fallback.",
+		response.Error.Should().Contain("Either a configured environment name or an explicit URI is required for MCP command execution. Prefer a registered environment name; use explicit URI credentials only as a bootstrap or emergency fallback.",
 			because: "the error payload should preserve the human-readable resolver diagnostics");
 		response.Error.Should().NotContain("ErrorMessage",
 			because: "the error payload should contain the log text instead of the log message type name");

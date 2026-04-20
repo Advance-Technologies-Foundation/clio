@@ -49,6 +49,7 @@ using Creatio.Client;
 using FluentValidation;
 using k8s;
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -450,7 +451,11 @@ public class BindingsModule {
 		services.AddTransient<WikiHelpViewer>();
 		
 		services.AddTransient<McpServerCommand>();
-		services.AddMcpServer()
+		services.AddMcpServer(options => {
+					options.Capabilities ??= new();
+					options.Capabilities.Logging = new();
+					options.ServerInstructions = McpServerInstructions.Text;
+				})
 				.WithStdioServerTransport()
 				.WithResourcesFromAssembly(Assembly.GetExecutingAssembly())
 				.WithToolsFromAssembly(Assembly.GetExecutingAssembly())
