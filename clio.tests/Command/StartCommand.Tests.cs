@@ -49,7 +49,7 @@ public class StartCommandTestCase : BaseCommandTests<StartOptions>
 			_iisAppPoolManager,
 			_iisSiteDetector,
 			_applicationClient,
-			Substitute.For<IAbstractionsFileSystem>());
+			new System.IO.Abstractions.FileSystem());
 	}
 
 	[Test]
