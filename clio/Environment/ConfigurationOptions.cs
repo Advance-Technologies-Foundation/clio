@@ -375,15 +375,18 @@ namespace Clio
 		internal static string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
 
 		public SettingsRepository(IFileSystem fileSystem = null, ISettingsBootstrapService settingsBootstrapService = null) {
-			if (fileSystem != null) {
-				FileSystem = fileSystem;
-			}
-			ISettingsBootstrapService bootstrapService = settingsBootstrapService ?? new SettingsBootstrapService(FileSystem);
-			SettingsBootstrapResult bootstrapResult = bootstrapService.GetResult();
-			_settings = bootstrapResult.Settings ?? new Settings();
-			EnsureSettingsCollections();
-			AttachDbServers(_settings);
-		}
+	if (fileSystem != null) {
+		FileSystem = fileSystem;
+	}
+	ISettingsBootstrapService bootstrapService = settingsBootstrapService;
+	if (bootstrapService == null) {
+		bootstrapService = new SettingsBootstrapService(FileSystem);
+	}
+	SettingsBootstrapResult bootstrapResult = bootstrapService.GetResult();
+	_settings = bootstrapResult.Settings ?? new Settings();
+	EnsureSettingsCollections();
+	AttachDbServers(_settings);
+}
 
 		internal static Settings CreateDefaultSettings(Settings settings = null) {
 			Settings result = settings ?? new Settings();
@@ -577,7 +580,7 @@ namespace Clio
 			return _settings.Environments.FirstOrDefault(pair => pair.Value.Uri == safeUri).Key;
 		}
 
-		internal bool GetAutoupdate() {
+		public bool GetAutoupdate() {
 			return _settings.Autoupdate;
 		}
 
