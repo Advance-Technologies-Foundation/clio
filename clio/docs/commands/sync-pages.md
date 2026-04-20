@@ -71,7 +71,7 @@ Each entry in the `pages` array must have:
         "packageUId": "22222222-2222-2222-2222-222222222222",
         "parentSchemaName": "PageWithTabsFreedomTemplate"
       },
-      "verified-body": "define(\"UsrTodoList_FormPage\", ...full page body...)"
+      "verified-body-file": ".clio-pages/UsrTodoList_FormPage/body.js"
     },
     {
       "schema-name": "UsrTodoList_ListPage",
@@ -85,7 +85,7 @@ Each entry in the `pages` array must have:
         "packageUId": "22222222-2222-2222-2222-222222222222",
         "parentSchemaName": "BaseSectionTemplate"
       },
-      "verified-body": "define(\"UsrTodoList_ListPage\", ...full page body...)"
+      "verified-body-file": ".clio-pages/UsrTodoList_ListPage/body.js"
     }
   ]
 }
@@ -115,7 +115,7 @@ were added during save.
 When `verify` is `true`, each successful page result also returns:
 
 - `page` — the same metadata shape as `get-page.page`
-- `verified-body` — the raw body read back from Creatio after save
+- `verified-body-file` — path to the local `body.js` file written from the raw body read back from Creatio after save
 
 ## Error Handling
 

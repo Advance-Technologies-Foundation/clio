@@ -134,6 +134,7 @@ unlock-package:unlock-package,up
 unreg-web-app:unreg-web-app,unreg
 unregister:unregister
 update-app-section:update-app-section
+update-client-unit-schema:update-client-unit-schema,client-unit-schema-update
 update-cli:update-cli,update
 update-entity-schema:update-entity-schema
 update-skill:update-skill

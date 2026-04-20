@@ -236,6 +236,8 @@ public class BindingsModule {
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
 		services.AddHttpClient<IDataForgeClient, DataForgeClient>();
+		services.AddTransient<IDataForgeSysSettingDirectReader, DataForgeSysSettingDirectReader>();
+		services.AddSingleton<IDataForgeProxySafeExecutor, DataForgeProxySafeExecutor>();
 		services.AddTransient<IDataForgeConfigResolver, DataForgeConfigResolver>();
 		services.AddTransient<IDataForgeMaintenanceClient, DataForgeMaintenanceClient>();
 		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();

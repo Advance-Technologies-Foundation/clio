@@ -127,7 +127,7 @@ public sealed class ToolContractGetToolE2ETests {
 		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
 			.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "pages" &&
-				field.Description.Contains("verified-body", StringComparison.Ordinal) &&
+				field.Description.Contains("verified-body-file", StringComparison.Ordinal) &&
 				field.Description.Contains("page", StringComparison.Ordinal),
 				because: "sync-pages should advertise the richer per-page verify response through get-tool-contract");
 		response.Tools.Single(tool => tool.Name == PageUpdateTool.ToolName)

@@ -39,7 +39,7 @@ public sealed record EntitySchemaSearchResult(
 /// Finds entity schemas in a Creatio environment using a single DataService query on SysSchema.
 /// Accepts exact name, case-insensitive substring pattern, or UId as search criteria.
 /// </summary>
-public sealed class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
+public class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 {
 	private const string EntitySchemaManagerName = "EntitySchemaManager";
 	private const int ContainsComparisonType = 10;
@@ -93,7 +93,7 @@ public sealed class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 	/// </summary>
 	/// <param name="options">Search criteria and environment settings.</param>
 	/// <returns>Read-only list of matching entity schema search results.</returns>
-	public IReadOnlyList<EntitySchemaSearchResult> FindSchemas(FindEntitySchemaOptions options) {
+	public virtual IReadOnlyList<EntitySchemaSearchResult> FindSchemas(FindEntitySchemaOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		Validate(options);
 		object query = BuildFindSchemasQuery(options);

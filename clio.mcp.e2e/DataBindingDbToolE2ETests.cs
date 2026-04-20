@@ -288,6 +288,11 @@ public sealed class DataBindingDbToolE2ETests {
 				["push-workspace", "-e", environmentName],
 				workingDirectory: workspacePath,
 				cancellationToken: cancellationTokenSource.Token);
+			await ClioCliCommandRunner.RunAndAssertSuccessAsync(
+				settings,
+				["pkg-hotfix", packageName, "true", "-e", environmentName],
+				workingDirectory: workspacePath,
+				cancellationToken: cancellationTokenSource.Token);
 		}
 
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);

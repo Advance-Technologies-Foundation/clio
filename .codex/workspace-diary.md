@@ -2330,6 +2330,12 @@ Discovery: Commands.md doc links must reference canonical filenames — HasComma
 Files: clio/Command/PageGetOptions.cs, PageListOptions.cs, PageUpdateOptions.cs, DeleteSchemaCommand.cs, ListInstalledApplications.cs, Commands.md, CommandHelpCatalog.cs, WikiAnchors.txt
 Impact: All future renames must update Commands.md link paths (not just anchor IDs); test ExecuteCommands_WithUnknownVerb asserts specific canonical names in suggestions.
 
+## 2026-04-16 19:08 – Harden Data Forge config resolution against stale cliogate and poisoned proxy env
+Context: `dataforge-*` MCP/CLI calls could misread `DataForgeServiceUrl` when cliogate was missing, stale, or returned non-setting payloads, while hostile `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` values masked the real cause by forcing traffic to `127.0.0.1:9`.
+Decision: Keep the fix scoped to Data Forge only by adding a Data Forge-specific direct SysSettings reader fallback, strict `DataForgeServiceUrl` validation, and a proxy-safe execution wrapper around `dataforge-*` tool calls; leave general syssetting command behavior unchanged.
+Discovery: The highest-value reuse was already present as local helper files for direct SysSettings reads and proxy-scoped execution, so the remaining work was wiring them into DI, resolver/tool flow, and regression coverage instead of rebuilding them from scratch.
+Files: clio/Common/DataForge/DataForgeConfigResolver.cs, clio/Common/DataForge/DataForgeSysSettingDirectReader.cs, clio/Common/DataForge/DataForgeProxySafeExecutor.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/BindingsModule.cs, clio.tests/Common/DataForgeConfigResolverTests.cs, clio.tests/Common/DataForgeProxySafeExecutorTests.cs, clio.tests/Command/McpServer/DataForgeToolTests.cs, clio.mcp.e2e/DataForgeToolE2ETests.cs, .codex/workspace-diary.md
+Impact: `dataforge-*` calls can now fall back to direct site reads when the gateway path is broken, reject bogus HTML/non-URL values instead of treating them as config, and surface the real downstream TLS/auth/Data Forge failure even when proxy env vars are poisoned.
 ## 2026-04-14 07:17 – PR #527 merged: MCP tool naming + CLI UX improvements
 
 Context: Long CI debugging session to get PR #527 merged into master.
@@ -2351,96 +2357,54 @@ Decision: Kept `uri/login/password` compatibility in MCP tools, but changed reso
 Discovery: Wording-only MCP surface changes were enough to steer agent behavior without changing payload shape or execution paths. Existing E2E assertions still matched because they only depended on the preserved leading resolver text.
 Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageListTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Prompts/RegWebAppPrompt.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, .codex/workspace-diary.md
 Impact: Agents should now prefer registering environments and using `environment-name`, while direct credentials stay available only as a documented emergency fallback.
+## 2026-04-17 11:55 – E2E pushed packages need hotfix to become editable
+Context: Debugged MCP E2E failures where tests created a temp workspace/package, used push-workspace to install it on remote stands, then immediately tried package mutations such as create-lookup, create-data-binding-db, and sync-schemas update flows.
+Decision: Keep push-workspace for package deployment but enable `pkg-hotfix <package> true` immediately after push inside mutation-oriented E2E arrange flows so the remote package becomes editable before designer/schema-data writes.
+Discovery: Core computes package read-only state from `InstallType`, not `InstallBehavior`. `push-workspace` installs `CreatioPackages.zip` through archive/package-installer flow, which leaves packages as `InstallType=Repository` and therefore `IsReadOnly=true`. `PackageService.StartPackageHotfix` flips package editability by setting maintainer/install-type to editable state. Verified that EntitySchema, DataBindingDb, and SchemaSync mutation E2Es pass after hotfixing.
+Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio.mcp.e2e/DataBindingDbToolE2ETests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs
+Impact: Future destructive E2E tests that push a workspace and then mutate remote package contents should hotfix the package after push unless a true SourceControl-mode push flow is introduced.
 
-## 2026-04-17 15:20 – AI-structure review of page-schema validators guidance
-Context: User asked to assess PageSchemaValidatorsGuidanceResource.cs specifically as an AI-facing template.
-Decision: Treated the task as prompt-structure analysis rather than API/content validation only; compared the validators guide with neighboring handlers/converters guides and prompt/tool consumers.
-Discovery: Main issues are structural for LLM use: no compact execution checklist, no decision tree, repeated full examples increase token cost, and one safe-edit rule conflicts with required binding fixes. Also found surrounding MCP surface inconsistency: get-page description still says validator params should use $Resources.Strings, while the resource, update-page, sync-pages, and tests enforce #ResourceString(... )#.
-Files: clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, .codex/workspace-diary.md
-Impact: Future MCP guidance refinement should front-load non-negotiable validator rules, separate core rules from appendices/examples, and align PageGetTool wording with the canonical validator param format before expecting consistent agent behavior.
+## 2026-04-17 12:32 – sync-pages contract drifted from verified-body-file wire field
+Context: Investigated the failing `ToolContractGet_Should_Return_Maintenance_Oriented_Canonical_Contracts` E2E after the broader MCP tool run.
+Decision: Keep the existing `PageSyncTool` wire shape and update `ToolContractGetTool.BuildPageSync()` so the advertised `sync-pages` output contract says `verified-body-file`.
+Discovery: `PageSyncTool` serializes `[JsonPropertyName("verified-body-file")]` and unit tests already assert that wire name, but `get-tool-contract` had drifted to `verified-body`, causing only the contract inspection test to fail.
+Files: clio/Command/McpServer/Tools/ToolContractGetTool.cs
+Impact: MCP contract inspection for `sync-pages` now matches the real response payload, avoiding false contract failures when clients rely on `get-tool-contract` for page verify output fields.
 
-## 2026-04-17 16:05 – Restructured validator guidance for AI consumption
-Context: User approved rewriting PageSchemaValidatorsGuidanceResource to make it work better as an AI-facing MCP resource.
-Decision: Reorganized the guide around decision tree, non-negotiables, name mapping, before-save checklist, compact canonical template, and deltas/variants instead of one long monolithic narrative.
-Discovery: `dotnet test` against the default Debug output stayed blocked by a running `clio` process locking `bin\Debug\net8.0\clio.exe` and `clio.dll`; using `--artifacts-path` provided an isolated build/test path and validated the new code successfully.
-Files: clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, .codex/workspace-diary.md
-Impact: Future work on AI-facing MCP guidance can validate prompt-structure changes without stopping the local clio process by using isolated artifacts output, and the validator guide now front-loads the rules models most often miss.
+## 2026-04-17 12:58 – get-page E2E expected pre-compaction payload
+Context: Investigated the failing `PageGetTool_Should_Return_Stable_Metadata_Contract_For_Real_Page` E2E after restoring an installed application so the test would run instead of skipping.
+Decision: Keep `PageGetTool` behavior unchanged and update the E2E to validate the compact MCP response (`page` + `files`) plus written `body.js`/`bundle.json`/`meta.json` paths on disk.
+Discovery: `PageGetCommand` still builds inline `bundle` and `raw`, but `PageGetTool.WriteFilesAndCompact()` intentionally strips those fields from successful MCP responses after writing them to `.clio-pages/<schema-name>/`. Unit tests in `PageToolsTests` already locked in that contract.
+Files: clio.mcp.e2e/PageGetToolE2ETests.cs
+Impact: The live-environment `get-page` E2E now tracks the real MCP wire contract and verifies the file-based artifacts that update flows actually consume.
 
-## 2026-04-17 16:35 – AI-first standard validator decision table
-Context: User asked to optimize validator guidance strictly for AI consumption and questioned whether a plain list of built-in validators is enough.
-Decision: Keep the validator guidance in decision-table form instead of a flat list so the model can map requirement patterns to built-in validators before considering a custom `usr.*Validator`.
-Discovery: For MCP guidance, a compact first-match table is a stronger control surface than prose because it reduces ambiguity, discourages unnecessary custom validators, and makes the fallback boundary explicit. Source list came from the Creatio Academy validators reference.
-Files: clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, .codex/workspace-diary.md
-Impact: Future AI callers should select `crt.Required`, `crt.EmptyOrWhiteSpace`, `crt.MinLength`, `crt.MaxLength`, `crt.Min`, and `crt.Max` more reliably instead of inventing custom validators for standard cases.
+## 2026-04-17 13:18 – masked entity-schema creation needs synthetic value-masking settings
+Context: Investigated why `CreateEntitySchema_Should_Apply_Masked_For_Text_Column_Through_Mcp` still failed after normalizing root-schema administration flags.
+Decision: Keep the administration-flag normalization for fresh root schemas, and additionally synthesize `valueMaskingSettings` whenever `masked=true` is requested during create-entity-schema. Use the conventional unmask operation code `<SchemaName>_<ColumnName>_UnmaskedValue` with default masking pattern `.*` and replacement `********`.
+Discovery: Core validator `EntitySchemaValidator.ValidateValueMaskingSettings` rejects any column with `isValueMasked=true` unless `valueMaskingSettings.adminOperationCode`, `pattern`, and `replacement` are all non-empty. The previous clio payload only set `isMasked`/`isValueMasked`, which triggered the server-side error `Operation permission is not selected.`.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDesignerDtos.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs
+Impact: create-entity-schema now produces core-valid masked Text/SecureText payloads, and the live masked-column E2E passes again.
 
-## 2026-04-17 16:48 – Validator guidance deduplication for AI readers
-Context: User reviewed the AI-facing validator guide and flagged concrete prompt-quality issues: duplicated sentences, overlapping non-negotiables vs critical sections, ambiguous section names, and an unsafe minimal template that always failed validation when copied literally.
-Decision: Kept the AI-first structure but removed literal duplication, folded the SDK-alias note into Safe editing rules, dropped the one-item Decision guardrails section, renamed the regex example section, and changed the minimal template to use `const isValid = <isValidCondition>;`.
-Discovery: The best balance for LLM guidance here is layered structure without verbatim repetition: a compact NON-NEGOTIABLES index plus detailed CRITICAL sections. Tests should assert the compact-pointer contract instead of exact duplicated phrases.
-Files: clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, .codex/workspace-diary.md
-Impact: Future edits should preserve the AI-first structure while avoiding redundant reinforcement that increases token cost and copy-paste failure modes.
+## 2026-04-17 14:05 – entity-schema positive E2Es need Usr-prefixed custom column codes
+Context: Investigated why `UpdateEntitySchema_Should_Add_BinaryLike_Columns_And_Read_Back_Friendly_Types` failed even after the package-editability and masked-column fixes.
+Decision: Update the positive entity-schema E2E fixture to use `Usr...` codes for every custom column created through `create-entity-schema` and `update-entity-schema`, including the shared arrange defaults and the binary-like test-specific columns.
+Discovery: The failure was not in binary/image/file column handling. The initial create step still seeded a custom column named `Name`, which core rejects because custom entity-schema column codes must start with `Usr`. The binary-like test also used unprefixed custom add names (`Payload`, `Preview`, `Document`), so fixing the shared setup and per-test constants together avoids the next validation failure.
+Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs
+Impact: The targeted binary-like entity-schema E2E now passes, and other positive entity-schema flows that reuse the shared arrange helper are less likely to fail on the same prefix validation.
 
-## 2026-04-17 17:02 – Reordered validator guidance for AI reading flow
-Context: User identified that the validator guide still had an AI-hostile section order: checklist before rules, critical explanations after the template, and a minimal template that omitted the required `viewConfigDiff` control binding.
-Decision: Reordered the guide to front-load rules and rationale before examples, renamed the async section to `Async validator template`, moved the checklist near the end, and updated the minimal template to include `viewConfigDiff` with `"control": "$<AttrName>"`.
-Discovery: For LLM-facing guidance, section order is not cosmetic. Putting CRITICAL rules before templates materially reduces incomplete copy-paste outputs, especially for validator bindings that require coordinated `viewConfigDiff` and `viewModelConfig*` edits.
-Files: clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, .codex/workspace-diary.md
-Impact: Future AI callers should learn the validator contract in the right order: choose, constrain, understand, then apply the template and variants, with the checklist only after the rules are known.
+## 2026-04-17 14:52 – Allure async step attributes can deadlock NUnit tests
+Context: Investigated MCP E2E hangs where async helper methods were annotated with `[AllureStep]`.
+Decision: Remove `[AllureStep]` from private static async Task helpers and wrap their bodies with `await AllureApi.Step(...)` instead.
+Discovery: `[AllureStep]` blocks the NUnit test thread while async continuations still need `NUnitSynchronizationContext` to resume on that same thread, which causes a deadlock. Non-async step methods are unaffected.
+Files: clio.mcp.e2e/*.cs
+Impact: Async E2E helper steps can report to Allure without blocking test execution on NUnit.
 
-## 2026-04-17 17:14 – Validator guidance wording made more operational for AI
-Context: User flagged remaining prompt-quality issues in the validator guide: ambiguous verbs (`preserve`, `re-parse`), a lowercase typo, duplicated frontend-source intent, and variants that did not explicitly point back to the canonical template.
-Decision: Replaced vague wording with operational instructions, removed the duplicate frontend-source sentence, capitalized the static variant rule, and made both regex and async variants explicitly reuse the `Minimal canonical template` for binding structure.
-Discovery: For AI-facing guidance, wording precision matters as much as structure. Imperative statements like `must contain an object section` and `verify the edited body is syntactically valid JavaScript before calling sync-pages` produce clearer execution than softer editorial verbs.
-Files: clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, .codex/workspace-diary.md
-Impact: Future resource reviews should keep optimizing for operational clarity and explicit section linkage rather than human-readable but under-specified prose.
-## 2026-04-17 18:25 – Enforced validator guidance and standard-validator misuse checks
-Context: User asked to make validator guidance mandatory for MCP page edits and prevent obvious custom validators when a built-in validator already fits.
-Decision: Strengthened Page MCP prompt/tool contracts to require reading docs://mcp/guides/page-schema-validators before authoring validator changes, and added SchemaValidationService checks for obvious custom MinLength/MaxLength validators that should use crt.MinLength/crt.MaxLength.
-Discovery: Prompt-only guidance is insufficient because external agents can skip the resource read; the practical enforcement point is sync/update validation. Sandbox-dependent MCP E2E validator-save tests skip cleanly when no sandbox environment is configured.
-Files: C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageGetTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.mcp.e2e\PageSyncToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs
-Impact: Future page-validator tasks now get an earlier contract hint and a hard save-time rejection for the highest-confidence custom length-validator misuse.
-## 2026-04-17 19:05 – Universal validator-parameter contract checks
-Context: User pointed out that hardcoded C# checks for individual standard validator param names do not scale and asked for a universal parameter-name validation approach.
-Decision: Reworked validator-param enforcement to validate binding `params` against validator contracts instead of per-validator `if` statements. Built-in validator contracts are derived from the canonical decision table in `PageSchemaValidatorsGuidanceResource`; custom validator contracts are derived from each validator's declared `params` array in `SCHEMA_VALIDATORS`.
-Discovery: This catches wrong param names such as `crt.MaxLength` with `max` instead of `maxLength` while keeping the source of truth centralized in the guidance contract. Lazy initialization was required because the resource text must exist before parsing the decision table into machine-readable contracts.
-Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaValidatorsGuidanceResource.cs, C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.mcp.e2e\PageSyncToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
-Impact: Future validator additions only require updating the canonical contract source, and save-time validation now rejects unsupported binding param names for both built-in and custom validators.
-
-## 2026-04-17 20:05 – Closed validator contract review gaps
-Context: Review of the validator guidance and save-time validation work identified three remaining gaps: zero-param custom validators bypassed universal param checks, built-in contracts could be shadowed from SCHEMA_VALIDATORS, and update/sync tool descriptions still described only viewModelConfigDiff.
-Decision: Restricted runtime-extracted validator contracts to usr.* entries, emitted empty contracts for zero-param custom validators, and aligned update-page/sync-pages descriptions with the static-or-diff guidance already used by get-page and the validator resource.
-Discovery: Universal validator-param validation only works when zero-param validators are represented explicitly as empty contracts; otherwise arbitrary binding params slip through. The MCP surface also needs to stay textually consistent across tools or the model follows the narrower contract.
-Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\.codex\workspace-diary.md
-Impact: Future validator save-time checks now cover zero-param custom validators and preserve canonical built-in contracts while the MCP tool surface stays aligned with the guidance resource.
-
-## 2026-04-14 16:40 – Local clio version fallback investigation
-Context: User asked why local clio builds now show version `0.0.0.0`.
-Decision: Confirmed the recent versioning change and verified current local build behavior before concluding.
-Discovery: Commit `7d5a2985` on 2026-04-13 replaced the hardcoded `AssemblyVersion` in `clio/clio.csproj` with a git-tag-based target. `0.0.0.0` is now only the fallback when `git describe --tags --abbrev=0 --match "[0-9]*.[0-9]*.[0-9]*.[0-9]*"` cannot resolve a tag. In this checkout, `dotnet build clio/clio.csproj -c Debug` resolves `8.0.2.66`, so the fallback is environment-specific rather than a repo-wide regression.
-Files: clio/clio.csproj, .codex/workspace-diary.md
-Impact: Future investigations of unexpected local version `0.0.0.0` should first verify tag availability and `git` visibility in the actual build environment.
-
-## 2026-04-14 07:17 – PR #527 merged: MCP tool naming + CLI UX improvements
-
-Context: Long CI debugging session to get PR #527 merged into master.
-Decision: Merged via --admin with UNSTABLE status (Integration Tests pre-existing, MCP E2E timeout).
-Discovery: GitHub evaluates workflow from the MERGE COMMIT (base+head), not just HEAD branch — explains why complex 5-job workflow ran even though our branch had the simple one. MCP E2E tests: 141 tests x 30s CanReachEnvironmentAsync timeout = ~70 min total when sandbox unreachable. Need OneTimeSetUp refactor. Integration test Execute_CreatesNewPackageInFileSystem is pre-existing failure on Windows CI (templates not found), not caused by our changes. Process zombie fix: process.Kill(entireProcessTree: true) must be called on OperationCanceledException from WaitForExitAsync.
-Files: .github/workflows/build.yml (added timeout-minutes: 30 to mcp-e2e-tests job), clio.mcp.e2e/Support/Configuration/ClioCliCommandRunner.cs
-Impact: PR merged. Next: refactor MCP E2E CanReachEnvironmentAsync to OneTimeSetUp pattern to fix timeout issue.
-
-## 2026-04-14 16:05 – MCP URL fallback vs registered environments
-Context: Investigated why an agent used direct `uri/login/password` instead of registering a new clio environment before operating on a page.
-Decision: Keep the finding at analysis level for now: URL-based MCP execution is an intentional fallback in `ToolCommandResolver`, but it creates ambiguous agent behavior when working tools expose both `environment-name` and direct connection args.
-Discovery: `ToolCommandResolver.Resolve()` explicitly allows either a registered environment or explicit URI credentials, and unit tests lock that in as desired behavior when bootstrap is broken. Direct connection args are currently exposed by `PageGetTool`, `PageListTool`, `PageUpdateTool`, `ApplicationDeleteTool`, and `DataForgeTool`, while `reg-web-app` exists specifically for persistent environment registration.
-Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio.tests/Command/McpServer/ToolCommandResolverTests.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Tools/RegWebAppTool.cs, .codex/workspace-diary.md
-Impact: Future fix should likely prefer or require `environment-name` for normal work tools while preserving URL-based access only for bootstrap/break-glass scenarios.
-
-## 2026-04-14 16:24 – Soft MCP guidance toward registered environments
-Context: User approved the soft variant instead of removing URL-based MCP execution entirely.
-Decision: Kept `uri/login/password` compatibility in MCP tools, but changed resolver diagnostics, tool descriptions, and prompts to make `environment-name` the standard path and `reg-web-app` the preferred bootstrap step.
-Discovery: Wording-only MCP surface changes were enough to steer agent behavior without changing payload shape or execution paths. Existing E2E assertions still matched because they only depended on the preserved leading resolver text.
-Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageListTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Prompts/RegWebAppPrompt.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, .codex/workspace-diary.md
-Impact: Agents should now prefer registering environments and using `environment-name`, while direct credentials stay available only as a documented emergency fallback.
+## 2026-04-17 15:12 – Reuse one deterministic sys setting in entity-schema E2Es
+Context: Review of the settings-default entity-schema E2Es found that creating a unique sys setting per run polluted the shared sandbox.
+Decision: Replace per-run generated setting codes with one deterministic reusable code, `UsrEntitySchemaE2EDefaultText`, and keep updating that setting idempotently during arrange.
+Discovery: The tests only need any resolvable `Text` sys setting; they do not depend on special semantics of the original `Maintainer` value or on unique setting names per run.
+Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs
+Impact: The settings-default E2Es remain self-sufficient without leaking unbounded sys settings into shared environments.
 
 ## 2026-04-20 13:10 – Simplified update-page validator contract
 Context: Follow-up review on the validator-guidance branch flagged PageUpdateTool as a second source of truth because its description duplicated detailed SCHEMA_VALIDATORS rules already maintained in the validator guidance resource.

@@ -95,6 +95,54 @@ public sealed class DataForgeToolE2ETests {
 	}
 
 	[Test]
+	[Description("Starts the real clio MCP server with poisoned proxy env vars, invokes dataforge-status against the configured sandbox environment, and verifies the Data Forge call still reaches the real service instead of failing with a masked syssetting error.")]
+	[AllureTag(StatusToolName)]
+	[AllureName("DataForge status ignores poisoned proxy env vars")]
+	[AllureDescription("Uses the real clio MCP server to call dataforge-status while HTTP_PROXY, HTTPS_PROXY, and ALL_PROXY point to 127.0.0.1:9, verifying that the Data Forge-specific proxy-safe wrapper still returns the real structured response for a reachable environment.")]
+	public async Task DataForgeStatus_Should_Ignore_Poisoned_Proxy_Environment_Variables() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? originalHttpProxy = Environment.GetEnvironmentVariable("HTTP_PROXY");
+		string? originalHttpsProxy = Environment.GetEnvironmentVariable("HTTPS_PROXY");
+		string? originalAllProxy = Environment.GetEnvironmentVariable("ALL_PROXY");
+		string? originalNoProxy = Environment.GetEnvironmentVariable("NO_PROXY");
+
+		Environment.SetEnvironmentVariable("HTTP_PROXY", "http://127.0.0.1:9");
+		Environment.SetEnvironmentVariable("HTTPS_PROXY", "http://127.0.0.1:9");
+		Environment.SetEnvironmentVariable("ALL_PROXY", "http://127.0.0.1:9");
+		Environment.SetEnvironmentVariable("NO_PROXY", null);
+
+		try {
+			await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+
+			// Act
+			CallToolResult callResult = await CallToolAsync(
+				arrangeContext,
+				StatusToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = arrangeContext.EnvironmentName
+				});
+			DataForgeStatusResponse response = DeserializeStructuredContent<DataForgeStatusResponse>(callResult);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "the Data Forge proxy-safe wrapper should bypass poisoned process proxy variables for the real service call");
+			response.Success.Should().BeTrue(
+				because: "the real Data Forge status call should still succeed when proxy env vars are temporarily neutralized");
+			response.Health.Should().NotBeNull(
+				because: "the status tool should still return the health payload under poisoned proxy conditions");
+			response.Status.Should().NotBeNull(
+				because: "the status tool should still return the maintenance payload under poisoned proxy conditions");
+		} finally {
+			Environment.SetEnvironmentVariable("HTTP_PROXY", originalHttpProxy);
+			Environment.SetEnvironmentVariable("HTTPS_PROXY", originalHttpsProxy);
+			Environment.SetEnvironmentVariable("ALL_PROXY", originalAllProxy);
+			Environment.SetEnvironmentVariable("NO_PROXY", originalNoProxy);
+		}
+	}
+
+	[Test]
 	[Description("Starts the real clio MCP server, invokes dataforge-find-tables with a Contact-style query against the configured sandbox environment, and verifies the structured table search response succeeds.")]
 	[AllureTag(FindTablesToolName)]
 	[AllureName("DataForge find-tables returns table matches for Contact-style terms")]

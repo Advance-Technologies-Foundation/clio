@@ -313,6 +313,69 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Includes collision-info when schema already exists in a different package")]
+	public async Task SchemaSync_CreateLookup_Should_Include_CollisionInfo_When_Schema_Exists_In_Different_Package() {
+		// Arrange
+		TestLogger logger = new();
+		var failingCommand = new FakeCreateEntitySchemaCommand(
+			logger,
+			exitCode: 1,
+			messages: ["Schema 'UsrFirst' already exists."]);
+		var fakeFindCommand = new FakeFindEntitySchemaCommand(
+			[new EntitySchemaSearchResult("UsrFirst", "OtherPackage", "Customer", "BaseLookup")]);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(failingCommand);
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(fakeFindCommand);
+		SchemaSyncTool tool = new(commandResolver, logger);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].CollisionInfo.Should().NotBeNull(
+			because: "find-entity-schema found the schema in a different package");
+		response.Results[0].CollisionInfo!.ExistingPackageName.Should().Be("OtherPackage",
+			because: "the collision info should name the package that owns the stale schema");
+		response.Results[0].CollisionInfo.Hint.Should().Contain("OtherPackage",
+			because: "the hint should reference the owning package to guide the agent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Omits collision-info when schema is not found after a failed create operation")]
+	public async Task SchemaSync_CreateLookup_Should_Not_Include_CollisionInfo_When_Schema_Not_Found() {
+		// Arrange
+		TestLogger logger = new();
+		var failingCommand = new FakeCreateEntitySchemaCommand(
+			logger,
+			exitCode: 1,
+			messages: ["create-lookup failed with exit code 1: network timeout"]);
+		var fakeFindCommand = new FakeFindEntitySchemaCommand([]);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(failingCommand);
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(fakeFindCommand);
+		SchemaSyncTool tool = new(commandResolver, logger);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].CollisionInfo.Should().BeNull(
+			because: "no existing schema was found, so there is no collision to report");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns error for unknown operation type without stopping")]
 	public async Task SchemaSync_Unknown_OperationType_Should_Return_Error() {
 		// Arrange
@@ -743,6 +806,15 @@ public sealed class SchemaSyncToolTests {
 			}
 			return 0;
 		}
+	}
+
+	private sealed class FakeFindEntitySchemaCommand : FindEntitySchemaCommand {
+		private readonly IReadOnlyList<EntitySchemaSearchResult> _results;
+		public FakeFindEntitySchemaCommand(IReadOnlyList<EntitySchemaSearchResult> results)
+			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>()) {
+			_results = results;
+		}
+		public override IReadOnlyList<EntitySchemaSearchResult> FindSchemas(FindEntitySchemaOptions options) => _results;
 	}
 
 	private sealed class FakeCreateDataBindingDbCommand : CreateDataBindingDbCommand {
