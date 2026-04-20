@@ -52,9 +52,56 @@ namespace Clio.Command {
 
 		public override int Execute(PageTemplatesListOptions options) {
 			bool success = TryListTemplates(options, out PageTemplateListResponse response);
-			_logger.WriteInfo(JsonConvert.SerializeObject(response));
+			if (success && response.Items != null && response.Items.Count > 0) {
+				_logger.WriteInfo(FormatTable(response));
+				return 0;
+			}
+			_logger.WriteInfo(JsonConvert.SerializeObject(response, Formatting.Indented));
 			return success ? 0 : 1;
 		}
+
+		private static string FormatTable(PageTemplateListResponse response) {
+			const string nameHeader = "Name";
+			const string titleHeader = "Title";
+			const string groupHeader = "Group";
+			const string typeHeader = "Type";
+			const string uidHeader = "UId";
+			int nameWidth = Math.Max(nameHeader.Length, response.Items.Max(t => t.Name?.Length ?? 0));
+			int titleWidth = Math.Max(titleHeader.Length, response.Items.Max(t => t.Title?.Length ?? 0));
+			int groupWidth = Math.Max(groupHeader.Length, response.Items.Max(t => t.GroupName?.Length ?? 0));
+			int typeWidth = Math.Max(typeHeader.Length, 6);
+			int uidWidth = Math.Max(uidHeader.Length, response.Items.Max(t => t.UId?.Length ?? 0));
+			System.Text.StringBuilder sb = new();
+			sb.AppendLine();
+			sb.Append(' ').Append(Pad(nameHeader, nameWidth)).Append("  ")
+				.Append(Pad(titleHeader, titleWidth)).Append("  ")
+				.Append(Pad(groupHeader, groupWidth)).Append("  ")
+				.Append(Pad(typeHeader, typeWidth)).Append("  ")
+				.Append(Pad(uidHeader, uidWidth)).AppendLine();
+			sb.Append(' ').Append(new string('-', nameWidth)).Append("  ")
+				.Append(new string('-', titleWidth)).Append("  ")
+				.Append(new string('-', groupWidth)).Append("  ")
+				.Append(new string('-', typeWidth)).Append("  ")
+				.Append(new string('-', uidWidth)).AppendLine();
+			foreach (PageTemplateInfo item in response.Items) {
+				sb.Append(' ').Append(Pad(item.Name, nameWidth)).Append("  ")
+					.Append(Pad(item.Title, titleWidth)).Append("  ")
+					.Append(Pad(item.GroupName, groupWidth)).Append("  ")
+					.Append(Pad(DescribeSchemaType(item.SchemaType), typeWidth)).Append("  ")
+					.Append(Pad(item.UId, uidWidth)).AppendLine();
+			}
+			sb.AppendLine();
+			sb.Append($"Total: {response.Count}");
+			return sb.ToString();
+		}
+
+		private static string Pad(string value, int width) => (value ?? string.Empty).PadRight(width);
+
+		private static string DescribeSchemaType(int schemaType) => schemaType switch {
+			9 => "web",
+			10 => "mobile",
+			_ => schemaType.ToString()
+		};
 
 		private static bool TryParseSchemaType(string value, out PageSchemaType schemaType, out string error) {
 			schemaType = default;

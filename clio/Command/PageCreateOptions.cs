@@ -60,16 +60,23 @@ namespace Clio.Command {
 
 		public bool TryCreatePage(PageCreateOptions options, out PageCreateResponse response) {
 			try {
+				bool hasEntity = options is not null && !string.IsNullOrWhiteSpace(options.EntitySchemaName);
+				int totalSteps = 5 + (hasEntity ? 1 : 0);
+				int stepNumber = 0;
+				LogStep(ref stepNumber, totalSteps, "Validating inputs");
 				PageCreateResponse validationError = ValidateInput(options);
 				if (validationError != null) {
 					response = validationError;
+					LogFailure(response.Error);
 					return false;
 				}
+				LogStep(ref stepNumber, totalSteps, $"Resolving template '{options.Template}'");
 				PageTemplateInfo template;
 				try {
 					template = _templateCatalog.FindTemplate(options.Template);
 				} catch (Exception ex) {
 					response = new PageCreateResponse { Success = false, Error = $"Failed to resolve template catalog: {ex.Message}" };
+					LogFailure(response.Error);
 					return false;
 				}
 				if (template is null) {
@@ -77,28 +84,39 @@ namespace Clio.Command {
 						Success = false,
 						Error = $"Template '{options.Template}' is not supported. Use list-page-templates to discover valid values."
 					};
+					LogFailure(response.Error);
 					return false;
 				}
+				_logger.WriteInfo($"         template: {template.Name} (uId={template.UId}, group={template.GroupName}, type={DescribeSchemaType(template.SchemaType)})");
+				LogStep(ref stepNumber, totalSteps, $"Resolving package '{options.PackageName}'");
 				if (!TryResolvePackageUId(options.PackageName, out string packageUId, out string packageError)) {
 					response = new PageCreateResponse { Success = false, Error = packageError };
+					LogFailure(response.Error);
 					return false;
 				}
+				_logger.WriteInfo($"         package : {options.PackageName} (uId={packageUId})");
+				LogStep(ref stepNumber, totalSteps, $"Checking schema-name uniqueness for '{options.SchemaName}'");
 				if (SchemaNameExists(options.SchemaName)) {
 					response = new PageCreateResponse {
 						Success = false,
 						Error = $"Page schema '{options.SchemaName}' already exists in this environment."
 					};
+					LogFailure(response.Error);
 					return false;
 				}
 				string caption = string.IsNullOrWhiteSpace(options.Caption) ? options.SchemaName : options.Caption.Trim();
 				string entitySchemaUId = null;
-				if (!string.IsNullOrWhiteSpace(options.EntitySchemaName)) {
+				if (hasEntity) {
+					LogStep(ref stepNumber, totalSteps, $"Resolving entity schema '{options.EntitySchemaName}'");
 					if (!TryResolveEntitySchemaUId(options.EntitySchemaName, out entitySchemaUId, out string entityError)) {
 						response = new PageCreateResponse { Success = false, Error = entityError };
+						LogFailure(response.Error);
 						return false;
 					}
+					_logger.WriteInfo($"         entity  : {options.EntitySchemaName} (uId={entitySchemaUId})");
 				}
 				if (options.DryRun) {
+					LogStep(ref stepNumber, totalSteps, "Dry-run: skipping SaveSchema (no changes persisted)");
 					response = new PageCreateResponse {
 						Success = true,
 						SchemaName = options.SchemaName,
@@ -114,13 +132,16 @@ namespace Clio.Command {
 					return true;
 				}
 				string newSchemaUId = Guid.NewGuid().ToString("D");
+				LogStep(ref stepNumber, totalSteps, $"Saving schema via ClientUnitSchemaDesignerService (uId={newSchemaUId})");
 				JObject payload = BuildSaveSchemaPayload(
 					newSchemaUId, options.SchemaName, caption, options.Description,
 					template, packageUId, options.PackageName, entitySchemaUId);
 				if (!TrySaveSchema(payload, out string saveError)) {
 					response = new PageCreateResponse { Success = false, Error = saveError };
+					LogFailure(response.Error);
 					return false;
 				}
+				_logger.WriteInfo($"Page '{options.SchemaName}' created successfully (schemaUId={newSchemaUId}).");
 				response = new PageCreateResponse {
 					Success = true,
 					SchemaName = options.SchemaName,
@@ -137,9 +158,25 @@ namespace Clio.Command {
 				return true;
 			} catch (Exception ex) {
 				response = new PageCreateResponse { Success = false, Error = ex.Message };
+				LogFailure(response.Error);
 				return false;
 			}
 		}
+
+		private void LogStep(ref int stepNumber, int totalSteps, string message) {
+			stepNumber++;
+			_logger.WriteInfo($"[{stepNumber}/{totalSteps}] {message}...");
+		}
+
+		private void LogFailure(string error) {
+			_logger.WriteInfo($"  failed: {error}");
+		}
+
+		private static string DescribeSchemaType(int schemaType) => schemaType switch {
+			9 => "web",
+			10 => "mobile",
+			_ => schemaType.ToString()
+		};
 
 		public override int Execute(PageCreateOptions options) {
 			bool success = TryCreatePage(options, out PageCreateResponse response);
