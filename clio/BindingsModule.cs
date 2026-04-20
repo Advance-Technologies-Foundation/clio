@@ -183,6 +183,7 @@ public class BindingsModule {
 		services.AddSingleton(serializer);
 
 		services.AddTransient<IProcessExecutor, ProcessExecutor>();
+		services.AddTransient<IDotnetExecutor, DotnetExecutor>();
 		services.AddTransient<IPackageUtilities, PackageUtilities>();
 		services.AddKeyedTransient<IFollowupUpChainItem, DconfChainItem>(nameof(DconfChainItem));
 		services.AddTransient<IFollowUpChain, FollowUpChain>();
@@ -447,6 +448,7 @@ public class BindingsModule {
 				: new Common.IIS.StubIISAppPoolManager());
 		services.AddTransient<ClioGateway>();
 		services.AddTransient<CompileConfigurationCommand>();
+		services.AddTransient<CompileWorkspaceCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();

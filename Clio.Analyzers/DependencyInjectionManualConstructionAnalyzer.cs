@@ -59,6 +59,15 @@ private static void AnalyzeObjectCreation(
 			return;
 		}
 
+		INamedTypeSymbol? containingType = context.ContainingSymbol?.ContainingType;
+		if (namedType is not null && SymbolEqualityComparer.Default.Equals(namedType.OriginalDefinition, containingType?.OriginalDefinition)) {
+			return;
+		}
+
+		if (IsInsideFactoryClass(context)) {
+			return;
+		}
+
 		string typeName = namedType?.Name ?? GetTypeNameFromCreationSyntax(context.Node);
 		string displayName = namedType?.ToDisplayString() ?? typeName;
 
@@ -87,6 +96,20 @@ private static void AnalyzeObjectCreation(
 
 		Diagnostic diagnostic = Diagnostic.Create(Rule, context.Node.GetLocation(), displayName);
 		context.ReportDiagnostic(diagnostic);
+	}
+
+	private static bool IsInsideFactoryClass(SyntaxNodeAnalysisContext context) {
+		INamedTypeSymbol? containingClass = context.ContainingSymbol?.ContainingType;
+		if (containingClass is null) {
+			return false;
+		}
+
+		if (containingClass.Name.EndsWith("Factory", StringComparison.Ordinal)) {
+			return true;
+		}
+
+		return containingClass.AllInterfaces.Any(i =>
+			i.Name.EndsWith("Factory", StringComparison.Ordinal));
 	}
 
 	private static bool IsLikelyDiServiceType(INamedTypeSymbol typeSymbol) {
@@ -140,6 +163,11 @@ private static void AnalyzeObjectCreation(
 					}
 
 					if (namedType.IsAbstract) {
+						continue;
+					}
+
+					if (namedType.ContainingNamespace.ToDisplayString()
+							.StartsWith("System", StringComparison.Ordinal)) {
 						continue;
 					}
 
