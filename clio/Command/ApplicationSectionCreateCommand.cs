@@ -66,6 +66,7 @@ public sealed class ApplicationSectionCreateService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
+	IServiceUrlBuilderFactory serviceUrlBuilderFactory,
 	IApplicationInfoService applicationInfoService)
 	: IApplicationSectionCreateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
@@ -162,7 +163,7 @@ public sealed class ApplicationSectionCreateService(
 			request.WithMobilePages ? null : WebClientTypeId);
 	}
 
-	private static void CheckEntitySchemaDoesNotExist(
+	private void CheckEntitySchemaDoesNotExist(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		string schemaName,
@@ -170,7 +171,7 @@ public sealed class ApplicationSectionCreateService(
 		try {
 			SysSchemaExistsResponseDto response = SelectQueryHelper.ExecuteSelectQuery<SysSchemaExistsResponseDto>(
 				client,
-				new ServiceUrlBuilder(environmentSettings),
+				serviceUrlBuilderFactory.Create(environmentSettings),
 				SelectQueryHelper.BuildSelectQuery(
 					"SysSchema",
 					[new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name")],
@@ -295,14 +296,14 @@ public sealed class ApplicationSectionCreateService(
 			}
 		};
 
-	private static ApplicationSectionRecord GetSectionRecord(
+	private ApplicationSectionRecord GetSectionRecord(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		string applicationId,
 		string sectionCode) {
 		ApplicationSectionSelectQueryResponseDto response = SelectQueryHelper.ExecuteSelectQuery<ApplicationSectionSelectQueryResponseDto>(
 			client,
-			new ServiceUrlBuilder(environmentSettings),
+			serviceUrlBuilderFactory.Create(environmentSettings),
 			SelectQueryHelper.BuildSelectQuery(
 				ApplicationSectionSchemaName,
 				[

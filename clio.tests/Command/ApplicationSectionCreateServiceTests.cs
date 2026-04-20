@@ -39,10 +39,13 @@ public sealed class ApplicationSectionCreateServiceTests {
 		_applicationClientFactory.CreateEnvironmentClient(_environmentSettings).Returns(_applicationClient);
 		_serviceUrlBuilder.Build(Arg.Any<string>(), Arg.Any<EnvironmentSettings>())
 			.Returns(callInfo => $"https://example.invalid/{callInfo.ArgAt<string>(0)}");
+		IServiceUrlBuilderFactory serviceUrlBuilderFactory = Substitute.For<IServiceUrlBuilderFactory>();
+		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
 		_sut = new ApplicationSectionCreateService(
 			_settingsRepository,
 			_applicationClientFactory,
 			_serviceUrlBuilder,
+			serviceUrlBuilderFactory,
 			_applicationInfoService);
 	}
 
