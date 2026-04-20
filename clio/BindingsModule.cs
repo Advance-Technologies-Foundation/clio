@@ -94,6 +94,7 @@ public class BindingsModule {
 		RegisterAssemblyInterfaceTypes(services);
 		services.AddSingleton<IWorkspacePathBuilder, WorkspacePathBuilder>();
 		services.AddTransient<IVsProjectFactory, VsProjectFactory>();
+		services.AddTransient<ICreatioPkgProjectCreator, CreatioPkgProjectCreator>();
 		services.AddSingleton<ILogger>(ConsoleLogger.Instance);
 		services.AddSingleton<IDbOperationLogContextAccessor, DbOperationLogContextAccessor>();
 		services.AddSingleton<IDbOperationLogSessionFactory, DbOperationLogSessionFactory>();

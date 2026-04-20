@@ -2412,3 +2412,15 @@ Decision: Remove the dedicated `mcp-e2e-tests` workflow job and the now-unused `
 Discovery: GitHub Actions invoked MCP E2E only from the dedicated workflow job, so no project or test code changes were required for the stopgap.
 Files: .github/workflows/build.yml, .codex/workspace-diary.md
 Impact: PRs and branch builds on GitHub no longer queue MCP E2E, reducing CI time while preserving the suite for a later TeamCity migration.
+
+## 2025-07-10 – Wave 3: Eliminate CLIO004 warnings via IProcessExecutor
+
+Context: Refactoring roadmap Wave 3 — remove all `System.Diagnostics.Process` direct usage
+Decision: Extract nested types from IISScannerHandler, introduce IIISScanner interface, inject IProcessExecutor
+Discovery:
+- IISScannerHandler constructor requires 5 deps: ISettingsRepository, RegAppCommand, PowerShellFactory, ILogger, IProcessExecutor — tests must pass all args for compilation
+- SetFsmConfigCommand gained IIISScanner as 5th ctor param — 4 test files needed updating (SetFsmConfigCommand.Tests.cs, FsmModeToolTests.cs, TurnFsmCommand.LoginRetry.Tests.cs, IISScannerHandler.Tests.cs)
+- StopCommand IIS tests fail on macOS due to RuntimeInformation.IsOSPlatform(Windows) guard — pre-existing issue, not Wave 3 regression
+- 13 pre-existing failures remain (DeleteSection 3, DeletePackageCommand 3, InstallTideCommand 3, StopCommand 3, NewPkgCommand 1)
+Files: clio/Requests/IISScannerRequest.cs, clio/BindingsModule.cs, clio/Command/SetFsmConfigCommand.cs, clio/Command/TurnFarmModeCommand.cs, clio.tests/ (8 files)
+Impact: Build clean, 0 CLIO004 warnings, Wave 3 complete. Branch Alfa-04-20 pushed.
