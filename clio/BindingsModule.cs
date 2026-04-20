@@ -435,7 +435,7 @@ public class BindingsModule {
 		services.AddTransient<DeploymentStrategyFactory>();
 		services.AddTransient<OpenAppCommand>();
 		services.AddSingleton<ISystemServiceManager>(sp =>
-			RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? new LinuxSystemServiceManager() :
+			RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? new LinuxSystemServiceManager(sp.GetRequiredService<System.IO.Abstractions.IFileSystem>()) :
 			RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? new MacOSSystemServiceManager(sp.GetRequiredService<IProcessExecutor>()) :
 			new WindowsSystemServiceManager());
 		services.AddSingleton<Common.IIS.IIISSiteDetector>(sp =>
