@@ -7,6 +7,7 @@ using Clio.Common;
 using Clio.UserEnvironment;
 using Clio.Utilities;
 using CommandLine;
+using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console;
 
 namespace Clio.Command;
@@ -45,6 +46,7 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 {
 	#region Fields: Private
 
+	private readonly IServiceProvider _serviceProvider;
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly ILogger _logger;
 	private readonly IEnvManageUiService _service;
@@ -61,6 +63,7 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 	#region Constructors: Public
 
 	public EnvManageUiCommand(
+		IServiceProvider serviceProvider,
 		ISettingsRepository settingsRepository,
 		ILogger logger,
 		IEnvManageUiService service,
@@ -70,6 +73,7 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 		IProcessExecutor processExecutor, IServiceUrlBuilder serviceUrlBuilder, 
 		IDataProvider dataProvider)
 	{
+		_serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_service = service ?? throw new ArgumentNullException(nameof(service));
@@ -994,7 +998,7 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 
 	private int ExecuteOpenSettings()
 	{
-		var command = new OpenCfgCommand(_logger);
+		var command = ActivatorUtilities.CreateInstance<OpenCfgCommand>(_serviceProvider);
 		return command.Execute(new OpenCfgOptions());
 	}
 
@@ -1022,40 +1026,40 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 	private int ExecuteRestart(string envName, EnvironmentSettings environmentSettings)
 	{
 		var settings = CloneEnvironmentSettings(environmentSettings);
-		var command = new RestartCommand(_applicationClientFactory.CreateClient(settings), settings);
+		var command = ActivatorUtilities.CreateInstance<RestartCommand>(_serviceProvider,
+			_applicationClientFactory.CreateClient(settings), settings);
 		return command.Execute(new RestartOptions { Environment = envName });
 	}
 
 	private int ExecuteClearRedis(string envName, EnvironmentSettings environmentSettings)
 	{
 		var settings = CloneEnvironmentSettings(environmentSettings);
-		var command = new RedisCommand(_applicationClientFactory.CreateClient(settings), settings, _serviceUrlBuilder);
+		var command = ActivatorUtilities.CreateInstance<RedisCommand>(_serviceProvider,
+			_applicationClientFactory.CreateClient(settings), settings);
 		return command.Execute(new ClearRedisOptions { Environment = envName });
 	}
 
 	private int ExecuteOpen(string envName, EnvironmentSettings environmentSettings)
 	{
 		var settings = CloneEnvironmentSettings(environmentSettings);
-		var command = new OpenAppCommand(
-			_applicationClientFactory.CreateClient(settings),
-			settings,
-			_webBrowser,
-			_processExecutor,
-			_settingsRepository);
+		var command = ActivatorUtilities.CreateInstance<OpenAppCommand>(_serviceProvider,
+			_applicationClientFactory.CreateClient(settings), settings);
 		return command.Execute(new OpenAppOptions { Environment = envName });
 	}
 
 	private int ExecutePing(string envName, EnvironmentSettings environmentSettings)
 	{
 		var settings = CloneEnvironmentSettings(environmentSettings);
-		var command = new PingAppCommand(_applicationClientFactory.CreateClient(settings), settings);
+		var command = ActivatorUtilities.CreateInstance<PingAppCommand>(_serviceProvider,
+			_applicationClientFactory.CreateClient(settings), settings);
 		return command.Execute(new PingAppOptions { Environment = envName });
 	}
 
 	private int ExecuteHealthcheck(string envName, EnvironmentSettings environmentSettings)
 	{
 		var settings = CloneEnvironmentSettings(environmentSettings, forceNetCore: true);
-		var command = new HealthCheckCommand(_applicationClientFactory.CreateClient(settings), settings);
+		var command = ActivatorUtilities.CreateInstance<HealthCheckCommand>(_serviceProvider,
+			_applicationClientFactory.CreateClient(settings), settings);
 		return command.Execute(new HealthCheckOptions {
 			Environment = envName,
 			WebApp = "true",
@@ -1066,18 +1070,17 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 	private int ExecuteGetInfo(string envName, EnvironmentSettings environmentSettings)
 	{
 		var settings = CloneEnvironmentSettings(environmentSettings);
-		var command = new GetCreatioInfoCommand(_applicationClientFactory.CreateClient(settings), settings, _clioGateway);
+		var command = ActivatorUtilities.CreateInstance<GetCreatioInfoCommand>(_serviceProvider,
+			_applicationClientFactory.CreateClient(settings), settings);
 		return command.Execute(new GetCreatioInfoCommandOptions { Environment = envName });
 	}
 
 	private int ExecuteCompileConfiguration(string envName, EnvironmentSettings environmentSettings)
 	{
 		var settings = CloneEnvironmentSettings(environmentSettings);
-		var serviceUrlBuilder = new ServiceUrlBuilder(settings);
-		var command = new CompileConfigurationCommand(
-			_applicationClientFactory.CreateClient(settings),
-			settings,
-			serviceUrlBuilder, _dataProvider, _logger);
+		var serviceUrlBuilder = ActivatorUtilities.CreateInstance<ServiceUrlBuilder>(_serviceProvider, settings);
+		var command = ActivatorUtilities.CreateInstance<CompileConfigurationCommand>(_serviceProvider,
+			_applicationClientFactory.CreateClient(settings), settings, serviceUrlBuilder);
 		return command.Execute(new CompileConfigurationOptions { Environment = envName });
 	}
 
