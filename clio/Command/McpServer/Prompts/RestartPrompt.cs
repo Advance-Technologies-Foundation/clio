@@ -40,4 +40,26 @@ public static class RestartPrompt {
 		 is not registered in clio. Prefer `restart-by-environment-name` when possible.
 		 The application will be temporarily unavailable during restart (usually 10–30 seconds).
 		 """;
+
+	/// <summary>
+	/// Deprecated PascalCase alias of <see cref="PromptByEnvironmentName"/>.
+	/// </summary>
+	[McpServerPrompt(Name = "RestartByEnvironmentName"),
+	 Description("[Deprecated: use restart-by-environment-name] Prompt to restart Creatio by environment name")]
+	public static string PromptByEnvironmentNameLegacy(
+		[Required]
+		[Description("The name of the environment to restart")]
+		string environmentName) => PromptByEnvironmentName(environmentName);
+
+	/// <summary>
+	/// Deprecated PascalCase alias of <see cref="PromptByCredentials"/>.
+	/// </summary>
+	[McpServerPrompt(Name = "RestartByCredentials"),
+	 Description("[Deprecated: use restart-by-credentials] Prompt to restart Creatio by explicit credentials")]
+	public static string PromptByCredentialsLegacy(
+		[Description("Creatio instance url")] [Required] string url,
+		[Description("Creatio user name")] [Required] string userName,
+		[Description("Creatio user password")] [Required] string password,
+		[Description("Whether the target environment runs on .NET Core")] [Required] bool isNetCore) =>
+		PromptByCredentials(url, userName, password, isNetCore);
 }

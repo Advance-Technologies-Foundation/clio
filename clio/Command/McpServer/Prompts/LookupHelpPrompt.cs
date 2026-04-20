@@ -25,4 +25,15 @@ public static class LookupHelpPrompt {
 		 and CLI command names are accepted — aliases are resolved automatically.
 		 """;
 
+	/// <summary>
+	/// Deprecated alias of <see cref="LookupCommand"/> preserved for clients configured
+	/// against the original prompt name (which contained a space).
+	/// </summary>
+	[McpServerPrompt(Name = "Lookup up help"),
+	 Description("[Deprecated: use lookup-help] Prompt to open a command help resource")]
+	public static string LookupCommandLegacy(
+		[Required]
+		[Description("Command name to lookup, by name or alias")]
+		string commandName) => LookupCommand(commandName);
+
 }

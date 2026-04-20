@@ -24,6 +24,8 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server) : Co
 			server.RunAsync(cts.Token).GetAwaiter().GetResult();
 		} catch (OperationCanceledException) {
 			// Graceful shutdown — expected when CancellationToken is triggered.
+		} finally {
+			McpLogNotifier.Reset();
 		}
 		return 0;
 	}

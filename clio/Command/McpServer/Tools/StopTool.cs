@@ -44,6 +44,17 @@ public class StopTool(
 		return InternalExecute(options);
 	}
 
+	/// <summary>
+	/// Deprecated PascalCase alias preserved for backwards compatibility with clients
+	/// that were configured against the original tool name. New clients should use
+	/// <c>stop-all-creatio</c>.
+	/// </summary>
+	[McpServerTool(Name = "StopAllCreatio", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
+	 Description("[Deprecated: use stop-all-creatio] Stops all Creatio instances")]
+	public CommandExecutionResult StopAllCreatioLegacy(
+		RequestContext<CallToolRequestParams> requestContext
+	) => StopAllCreatio(requestContext);
+
 	private void OnStatusChanged(object sender, ProgressNotificationValue args) {
 		ProgressToken? progressToken = _requestContext.Params?.ProgressToken;
 		if(progressToken is null) {

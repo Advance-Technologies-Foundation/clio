@@ -37,8 +37,8 @@ public sealed class ShowWebAppListToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns structured show-web-app settings without masking sensitive values for the MCP response.")]
-	public void ShowWebAppList_Should_Return_Unmasked_Structured_Settings()
+	[Description("Returns structured show-web-app settings with sensitive values masked by default for the MCP response.")]
+	public void ShowWebAppList_Should_Return_Masked_Structured_Settings()
 	{
 		// Arrange
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
@@ -69,13 +69,13 @@ public sealed class ShowWebAppListToolTests
 		ShowWebAppSettingsResult environment = result.Single();
 		environment.Name.Should().Be("sandbox",
 			because: "the MCP tool should preserve the registered environment name");
-		environment.Password.Should().Be("super-secret",
-			because: "the MCP tool must not mask environment passwords");
-		environment.ClientSecret.Should().Be("oauth-secret",
-			because: "the MCP tool must not mask OAuth client secrets");
+		environment.Password.Should().Be("****",
+			because: "the MCP tool must mask environment passwords by default to avoid leaking secrets to AI agents");
+		environment.ClientSecret.Should().Be("****",
+			because: "the MCP tool must mask OAuth client secrets by default to avoid leaking secrets to AI agents");
 		environment.DbServer.Should().NotBeNull(
 			because: "the structured response should preserve nested database server configuration when it exists");
-		environment.DbServer!.Password.Should().Be("db-password",
-			because: "the MCP tool must not mask nested database server passwords");
+		environment.DbServer!.Password.Should().Be("****",
+			because: "the MCP tool must mask nested database server passwords by default");
 	}
 }

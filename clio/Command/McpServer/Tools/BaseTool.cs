@@ -66,32 +66,35 @@ public abstract class BaseTool<T>(
 
 
 	private protected virtual CommandExecutionResult InternalExecute(Command<T> command, T options) {
-		int result = -1;
 		string correlationId = Guid.NewGuid().ToString("N")[..12];
-		IReadOnlyList<LogMessage> flushedMessages;
+		CommandExecutionResult executionResult;
+		IReadOnlyList<LogMessage> messagesToForward;
 		lock (CommandExecutionLock) {
 			dbOperationLogContextAccessor?.ClearLastCompletedPath();
 			bool previousPreserveMessages = logger.PreserveMessages;
 			logger.PreserveMessages = true;
 			try {
-				result = command.Execute(options);
-				flushedMessages = logger.FlushAndSnapshotMessages(clearMessages: true);
-				McpLogNotifier.ForwardMessages(flushedMessages, correlationId);
-				CommandExecutionResult returnResult = new(
-					result,
+				int exitCode = command.Execute(options);
+				IReadOnlyList<LogMessage> flushedMessages = logger.FlushAndSnapshotMessages(clearMessages: true);
+				messagesToForward = flushedMessages;
+				executionResult = new CommandExecutionResult(
+					exitCode,
 					[.. flushedMessages],
 					dbOperationLogContextAccessor?.LastCompletedPath,
 					CorrelationId: correlationId);
-				return returnResult;
 			}
 			catch (Exception e) {
 				List<LogMessage> priorLogs = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
-				McpLogNotifier.ForwardMessages(priorLogs, correlationId);
-				return CommandExecutionResult.FromException(e, priorLogs, correlationId);
+				messagesToForward = priorLogs;
+				executionResult = CommandExecutionResult.FromException(e, priorLogs, correlationId);
 			}
 			finally {
 				logger.PreserveMessages = previousPreserveMessages;
 			}
 		}
+		// Forward log notifications OUTSIDE the execution lock to avoid blocking other
+		// tool invocations on stdio I/O performed by SendNotificationAsync.
+		McpLogNotifier.ForwardMessages(messagesToForward, correlationId);
+		return executionResult;
 	}
 }

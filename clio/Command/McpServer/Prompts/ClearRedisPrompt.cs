@@ -47,4 +47,28 @@ public static class ClearRedisPrompt {
 		 when the environment is registered.
 		 Credentials: user `{userName}`, password {(string.IsNullOrWhiteSpace(password) ? "not provided" : "provided")}, isNetCore={isNetCore}.
 		 """;
+
+	/// <summary>
+	/// Deprecated PascalCase alias of <see cref="PromptByEnvironmentName"/>.
+	/// </summary>
+	[McpServerPrompt(Name = "ClearRedisByEnvironmentName"),
+	 Description("[Deprecated: use clear-redis-by-environment-name] Prompt to clear Redis by environment name")]
+	public static string PromptByEnvironmentNameLegacy(
+		[Required] [Description("The name of the environment to clear Redis for")]
+		string environmentName) => PromptByEnvironmentName(environmentName);
+
+	/// <summary>
+	/// Deprecated PascalCase alias of <see cref="PromptByCredentials"/>.
+	/// </summary>
+	[McpServerPrompt(Name = "ClearRedisByCredentials"),
+	 Description("[Deprecated: use clear-redis-by-credentials] Prompt to clear Redis by explicit credentials")]
+	public static string PromptByCredentialsLegacy(
+		[Description("Creatio instance url")] [Required]
+		string url,
+		[Description("Creatio user name")] [Required]
+		string userName,
+		[Description("Creatio user password")] [Required]
+		string password,
+		[Description("Whether the target environment runs on .NET Core. Optional, defaults to false.")]
+		bool isNetCore = false) => PromptByCredentials(url, userName, password, isNetCore);
 }
