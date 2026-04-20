@@ -333,9 +333,9 @@ public static class SchemaValidationService
 		if (element.ValueKind == JsonValueKind.Object) {
 			foreach (JsonProperty property in element.EnumerateObject()) {
 				if (property.Value.ValueKind == JsonValueKind.Object &&
-				    property.Value.TryGetProperty("modelConfig", out JsonElement modelConfig) &&
-				    modelConfig.TryGetProperty("path", out JsonElement pathElement) &&
-				    pathElement.ValueKind == JsonValueKind.String) {
+					property.Value.TryGetProperty("modelConfig", out JsonElement modelConfig) &&
+					modelConfig.TryGetProperty("path", out JsonElement pathElement) &&
+					pathElement.ValueKind == JsonValueKind.String) {
 					string? path = pathElement.GetString();
 					if (!string.IsNullOrWhiteSpace(path)) {
 						modelPaths[property.Name] = path;
@@ -1219,10 +1219,9 @@ public static class SchemaValidationService
 					"' instead of '$PDS_" + attributeName + "'.");
 			}
 		}
-		foreach (JsonProperty property in element.EnumerateObject()) {
-			if (!property.NameEquals(ValuesPropertyName)) {
-				CheckValidatorControlBindings(property.Value, attributesWithValidators, result);
-			}
+		foreach (JsonProperty property in element.EnumerateObject()
+		             .Where(property => !property.NameEquals(ValuesPropertyName))) {
+			CheckValidatorControlBindings(property.Value, attributesWithValidators, result);
 		}
 	}
 

@@ -2461,3 +2461,10 @@ Decision: Removed `bindingResult` from `CollectErrors(...)` while keeping it in 
 Discovery: The prior hotfix that reintroduced `bindingResult` into the validation payload over-corrected by treating binding diagnostics as hard errors; the intended behavior is to surface them only as warnings while other validator-related failures remain blocking.
 Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: `sync-pages` now returns binding diagnostics once, in the correct severity bucket, avoiding duplicate handling in MCP clients.
+
+## 2026-04-20 21:36 – Reduce validator control-binding scan complexity
+Context: Sonar flagged `SchemaValidationService.CheckValidatorControlBindings(...)` for cognitive complexity above the project threshold.
+Decision: Extracted the control-target lookup, invalid `$PDS_` binding detection, field-name resolution, and child-element enumeration into small helpers while preserving the existing recursion and error text.
+Discovery: The method's complexity came mostly from stacking array/object guards, values-target selection, control-binding parsing, and recursive child traversal in one block. Splitting those concerns leaves the same traversal semantics with lower local branching.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Further validator control-binding rules can be added through dedicated helpers without pushing the main recursive walker back over the Sonar threshold.
