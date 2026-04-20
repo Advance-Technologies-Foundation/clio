@@ -229,7 +229,7 @@ internal class Program {
 					UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 					RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
 					AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
-					UnregAppOptions opts => CreateCommand<UnregAppCommand>(new SettingsRepository(), ConsoleLogger.Instance).Execute(opts),
+					UnregAppOptions opts => CreateCommand<UnregAppCommand>(Resolve<ISettingsRepository>(), ConsoleLogger.Instance).Execute(opts),
 					GeneratePkgZipOptions opts => Resolve<CompressPackageCommand>().Execute(opts),
 					PushPkgOptions opts => Resolve<PushPackageCommand>(opts).Execute(opts),
 					InstallApplicationOptions opts => Resolve<InstallApplicationCommand>(opts).Execute(opts),
@@ -457,9 +457,9 @@ internal class Program {
 	}
 
 	public static bool AutoUpdate {
-		get { return autoUpdate.HasValue ? autoUpdate.Value : new SettingsRepository().GetAutoupdate(); }
-		set { autoUpdate = value; }
-	}
+	get { return autoUpdate.HasValue ? autoUpdate.Value : Resolve<ISettingsRepository>().GetAutoupdate(); }
+	set { autoUpdate = value; }
+}
 
 	public static bool IsDebugMode { get; set; }
 
@@ -478,7 +478,7 @@ internal class Program {
 	/// <param name="checkEnvExist">If true, verifies that the environment exists before proceeding</param>
 	/// <exception cref="ArgumentException">Thrown when the environment doesn't exist and checkEnvExist is true</exception>
 	private static void Configure(EnvironmentOptions options, bool checkEnvExist = false){
-		SettingsRepository settingsRepository = new();
+		ISettingsRepository settingsRepository = Resolve<ISettingsRepository>();
 		if (string.IsNullOrWhiteSpace(options.Environment) && string.IsNullOrEmpty(options.Uri)) {
 			string activeEnvName = settingsRepository.GetDefaultEnvironmentName();
 			if (!string.IsNullOrWhiteSpace(activeEnvName) && settingsRepository.IsEnvironmentExists(activeEnvName)) {
@@ -534,25 +534,25 @@ internal class Program {
 	/// <param name="options">Gate installation options</param>
 	/// <returns>Configured package options</returns>
 	private static PushPkgOptions CreatePushPkgOptions(InstallGateOptions options){
-		SettingsRepository settingsRepository = new();
-		EnvironmentSettings settings = settingsRepository.GetEnvironment(options);
-		IWorkingDirectoriesProvider workingDirectoriesProvider = Resolve<IWorkingDirectoriesProvider>(options);
-		string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";
-		string packagePath = Path.Combine(workingDirectoriesProvider.ExecutingDirectory, "cliogate",
-			$"{packageName}.gz");
-		return new PushPkgOptions {
-			Environment = options.Environment,
-			Name = packagePath,
-			Login = options.Login,
-			Uri = options.Uri,
-			Password = options.Password,
-			Maintainer = options.Maintainer,
-			IsNetCore = options.IsNetCore,
-			AuthAppUri = options.AuthAppUri,
-			ClientSecret = options.ClientSecret,
-			ClientId = options.ClientId
-		};
-	}
+	ISettingsRepository settingsRepository = Resolve<ISettingsRepository>();
+	EnvironmentSettings settings = settingsRepository.GetEnvironment(options);
+	IWorkingDirectoriesProvider workingDirectoriesProvider = Resolve<IWorkingDirectoriesProvider>(options);
+	string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";
+	string packagePath = Path.Combine(workingDirectoriesProvider.ExecutingDirectory, "cliogate",
+		$"{packageName}.gz");
+	return new PushPkgOptions {
+		Environment = options.Environment,
+		Name = packagePath,
+		Login = options.Login,
+		Uri = options.Uri,
+		Password = options.Password,
+		Maintainer = options.Maintainer,
+		IsNetCore = options.IsNetCore,
+		AuthAppUri = options.AuthAppUri,
+		ClientSecret = options.ClientSecret,
+		ClientId = options.ClientId
+	};
+}
 
 	/// <summary>
 	/// Creates a remote command with a client connection to the Creatio environment.
@@ -636,9 +636,9 @@ internal class Program {
 	/// <param name="options">Environment options containing the environment name</param>
 	/// <returns>Environment settings if found, null otherwise</returns>
 	private static EnvironmentSettings FindEnvironmentSettings(EnvironmentOptions options){
-		SettingsRepository settingsRepository = new();
-		return settingsRepository.FindEnvironment(options.Environment);
-	}
+	ISettingsRepository settingsRepository = Resolve<ISettingsRepository>();
+	return settingsRepository.FindEnvironment(options.Environment);
+}
 
 	/// <summary>
 	/// Gets the API version from the configured Creatio environment.
@@ -660,15 +660,15 @@ internal class Program {
 	/// <param name="options">Environment options</param>
 	/// <returns>Environment settings</returns>
 	private static EnvironmentSettings GetEnvironmentSettings(EnvironmentOptions options){
-		SettingsRepository settingsRepository = new();
-		if (string.IsNullOrWhiteSpace(options.Environment) && string.IsNullOrEmpty(options.Uri)) {
-			string activeEnvName = settingsRepository.GetDefaultEnvironmentName();
-			if (!string.IsNullOrWhiteSpace(activeEnvName) && settingsRepository.IsEnvironmentExists(activeEnvName)) {
-				options.Environment = activeEnvName;
-			}
+	ISettingsRepository settingsRepository = Resolve<ISettingsRepository>();
+	if (string.IsNullOrWhiteSpace(options.Environment) && string.IsNullOrEmpty(options.Uri)) {
+		string activeEnvName = settingsRepository.GetDefaultEnvironmentName();
+		if (!string.IsNullOrWhiteSpace(activeEnvName) && settingsRepository.IsEnvironmentExists(activeEnvName)) {
+			options.Environment = activeEnvName;
 		}
-		return settingsRepository.GetEnvironment(options);
 	}
+	return settingsRepository.GetEnvironment(options);
+}
 
 	/// <summary>
 	/// Handles errors that occur during command-line parsing.
@@ -987,28 +987,28 @@ internal class Program {
 	/// <param name="opts">Developer mode options</param>
 	/// <returns>0 if the operation succeeds, 1 otherwise</returns>
 	private static int SetDeveloperMode(DeveloperModeOptions opts){
-		try {
-			SetupAppConnection(opts, true);
-			SettingsRepository repository = new();
-			CreatioEnvironment.Settings.DeveloperModeEnabled = true;
-			repository.ConfigureEnvironment(CreatioEnvironment.EnvironmentName, CreatioEnvironment.Settings);
-			SysSettingsOptions sysSettingOptions = new() {
-				Code = "Maintainer",
-				Value = CreatioEnvironment.Settings.Maintainer
-			};
-			SysSettingsCommand sysSettingsCommand = Resolve<SysSettingsCommand>(opts);
-			sysSettingsCommand.TryUpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
-			UnlockMaintainerPackageInternal(opts);
-			new RestartCommand(new CreatioClientAdapter(_creatioClientInstance), CreatioEnvironment.Settings).Execute(
-				new RestartOptions());
-			Console.WriteLine("Done");
-			return 0;
-		}
-		catch (Exception e) {
-			Console.WriteLine(e);
-			return 1;
-		}
+	try {
+		SetupAppConnection(opts, true);
+		ISettingsRepository repository = Resolve<ISettingsRepository>();
+		CreatioEnvironment.Settings.DeveloperModeEnabled = true;
+		repository.ConfigureEnvironment(CreatioEnvironment.EnvironmentName, CreatioEnvironment.Settings);
+		SysSettingsOptions sysSettingOptions = new() {
+			Code = "Maintainer",
+			Value = CreatioEnvironment.Settings.Maintainer
+		};
+		SysSettingsCommand sysSettingsCommand = Resolve<SysSettingsCommand>(opts);
+		sysSettingsCommand.TryUpdateSysSetting(sysSettingOptions, CreatioEnvironment.Settings);
+		UnlockMaintainerPackageInternal(opts);
+		new RestartCommand(new CreatioClientAdapter(_creatioClientInstance), CreatioEnvironment.Settings).Execute(
+			new RestartOptions());
+		Console.WriteLine("Done");
+		return 0;
 	}
+	catch (Exception e) {
+		Console.WriteLine(e);
+		return 1;
+	}
+}
 
 	/// <summary>
 	/// Unlocks the maintainer package in the specified environment.
