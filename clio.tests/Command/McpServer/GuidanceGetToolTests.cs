@@ -85,8 +85,6 @@ public sealed class GuidanceGetToolTests {
 		result.AvailableGuides.Should().Contain([
 				"app-modeling",
 				"existing-app-maintenance",
-				"page-schema-handlers",
-				"page-schema-converters",
 				"page-schema-validators"
 			],
 			because: "the failure response should help the caller recover with one of the registered guidance names");

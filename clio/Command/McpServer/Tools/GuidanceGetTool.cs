@@ -19,7 +19,7 @@ public sealed class GuidanceGetTool {
 	/// Resolves one named guidance article and returns its plain-text content.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Returns canonical clio MCP guidance text by stable guide name so clients do not need to fetch docs:// resources directly. Known names: app-modeling, existing-app-maintenance, dataforge-orchestration, page-schema-handlers, page-schema-converters, page-schema-validators.")]
+	[Description("Returns canonical clio MCP guidance text by stable guide name so clients do not need to fetch docs:// resources directly. Known names: app-modeling, existing-app-maintenance, dataforge-orchestration, page-schema-validators.")]
 	public GuidanceGetResponse GetGuidance(
 		[Description("Parameters: name (required). Use one of the known guidance names such as page-schema-validators or existing-app-maintenance.")]
 		[Required]

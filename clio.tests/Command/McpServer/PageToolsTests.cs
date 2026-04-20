@@ -133,10 +133,6 @@ public class PageToolsTests {
 			because: "get-page prompt guidance should route guide lookups through the dedicated guidance tool");
 		prompt.Should().Contain("`existing-app-maintenance`",
 			because: "get-page prompt guidance should point callers to the MCP-owned existing-app maintenance guide name");
-		prompt.Should().Contain("`page-schema-handlers`",
-			because: "get-page prompt guidance should point handler edits to the dedicated clio-owned handler guide name");
-		prompt.Should().Contain("`page-schema-converters`",
-			because: "get-page prompt guidance should point converter edits to the dedicated clio-owned converter guide name");
 		prompt.Should().Contain("`page-schema-validators`",
 			because: "get-page prompt guidance should point validator edits to the dedicated clio-owned validator guide name");
 		prompt.Should().Contain($"you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-validators` before proposing or applying changes",
@@ -173,10 +169,6 @@ public class PageToolsTests {
 			because: "page guidance should explicitly reject submitting bundle content to write tools");
 		prompt.Should().Contain("do not send a nested object payload",
 			because: "page guidance should explicitly reject non-string resources payloads");
-		prompt.Should().Contain("Keep `handlers` for request-chain and lifecycle logic, `converters` for value transformation, and `validators` for field-value validation",
-			because: "page guidance should explicitly separate handler converter and validator responsibilities");
-		prompt.Should().Contain("$UsrName | usr.ToUpperCase",
-			because: "page guidance should steer uppercase display-label scenarios to converter bindings instead of handlers");
 		prompt.Should().NotContain("Use `sync-pages` only when you need to save multiple pages in one workflow.",
 			because: "sync-pages should no longer be presented as a multi-page-only path");
 		prompt.Should().NotContain("`schemaName`",

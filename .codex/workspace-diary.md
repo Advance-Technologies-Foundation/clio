@@ -2468,3 +2468,17 @@ Decision: Extracted the control-target lookup, invalid `$PDS_` binding detection
 Discovery: The method's complexity came mostly from stacking array/object guards, values-target selection, control-binding parsing, and recursive child traversal in one block. Splitting those concerns leaves the same traversal semantics with lower local branching.
 Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Further validator control-binding rules can be added through dedicated helpers without pushing the main recursive walker back over the Sonar threshold.
+
+## 2026-04-20 16:30 – Remove handler and converter MCP guidance from validator branch
+Context: Branch feature/validator needed to keep only validator-related MCP guidance and remove handler/converter guidance that had been added earlier.
+Decision: Deleted handler/converter guidance resources and removed all prompt, tool, catalog, help/doc, unit-test, and E2E references while preserving validator guidance and the get-guidance tool flow.
+Discovery: Remaining SCHEMA_CONVERTERS references under MCP tests are fixture payloads for parser/validation behavior, not published guidance surface; guidance E2E also needed one assertion updated from old get-guidance redirect wording to the new validator-only business-rules wording.
+Files: clio/Command/McpServer/Resources/PageSchemaHandlersGuidanceResource.cs, clio/Command/McpServer/Resources/PageSchemaConvertersGuidanceResource.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio/help/en/mcp-server.txt, clio/docs/commands/mcp-server.md, clio.tests/Command/McpServer/GuidanceGetToolTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs
+Impact: Branch MCP surface is now validator-only for page-schema guidance, which reduces drift from unrelated handler/converter maintenance in this branch.
+
+## 2026-04-20 22:20 – Trim validator control-binding complexity by one branch
+Context: Sonar still reported `CheckValidatorControlBindings(...)` at cognitive complexity 16 after the earlier helper extraction.
+Decision: Moved the `$PDS_` control-binding violation detection and error creation into `AddValidatorControlBindingErrorIfNeeded(...)`, leaving the recursive walker responsible only for array/object traversal and child recursion.
+Discovery: The remaining complexity came from a single nested `control`/`$PDS_`/`attributesWithValidators` branch inside the traversal method; extracting that branch was enough to drop the method below the threshold without touching validation semantics or tests.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future control-binding rule tweaks can stay isolated in the helper while the recursive method remains under the Sonar limit.

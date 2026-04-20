@@ -1204,25 +1204,37 @@ public static class SchemaValidationService
 		                     valuesElement.ValueKind == JsonValueKind.Object
 			? valuesElement
 			: element;
-		if (TryGetStringProperty(target, "control", out string controlBinding) &&
-		    controlBinding.StartsWith("$PDS_", StringComparison.OrdinalIgnoreCase)) {
-			string attributeName = controlBinding["$PDS_".Length..];
-			if (attributesWithValidators.Contains(attributeName)) {
-				string fieldName = element.TryGetProperty("name", out JsonElement nameEl) &&
-				                   nameEl.ValueKind == JsonValueKind.String
-					? nameEl.GetString() ?? attributeName
-					: attributeName;
-				result.Errors.Add(
-					$"Control '{fieldName}' binds to '$PDS_{attributeName}' but attribute " +
-					$"'{attributeName}' has validators. Validators only fire on view-model attribute " +
-					"bindings \u2014 use '$" + attributeName +
-					"' instead of '$PDS_" + attributeName + "'.");
-			}
-		}
+		AddValidatorControlBindingErrorIfNeeded(element, target, attributesWithValidators, result);
 		foreach (JsonProperty property in element.EnumerateObject()
 		             .Where(property => !property.NameEquals(ValuesPropertyName))) {
 			CheckValidatorControlBindings(property.Value, attributesWithValidators, result);
 		}
+	}
+
+	private static void AddValidatorControlBindingErrorIfNeeded(
+		JsonElement element,
+		JsonElement target,
+		HashSet<string> attributesWithValidators,
+		SchemaValidationResult result) {
+		if (!TryGetStringProperty(target, "control", out string controlBinding) ||
+		    !controlBinding.StartsWith("$PDS_", StringComparison.OrdinalIgnoreCase)) {
+			return;
+		}
+
+		string attributeName = controlBinding["$PDS_".Length..];
+		if (!attributesWithValidators.Contains(attributeName)) {
+			return;
+		}
+
+		string fieldName = element.TryGetProperty("name", out JsonElement nameEl) &&
+		                   nameEl.ValueKind == JsonValueKind.String
+			? nameEl.GetString() ?? attributeName
+			: attributeName;
+		result.Errors.Add(
+			$"Control '{fieldName}' binds to '$PDS_{attributeName}' but attribute " +
+			$"'{attributeName}' has validators. Validators only fire on view-model attribute " +
+			"bindings \u2014 use '$" + attributeName +
+			"' instead of '$PDS_" + attributeName + "'.");
 	}
 
 	private static bool TryGetDataTableColumns(JsonElement item, out JsonElement columns) {

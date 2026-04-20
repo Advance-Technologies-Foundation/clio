@@ -433,7 +433,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				["name"],
 				[
-					Field("name", StringType, "Stable guidance name. Known values include app-modeling, existing-app-maintenance, dataforge-orchestration, page-schema-handlers, page-schema-converters, and page-schema-validators.")
+					Field("name", StringType, "Stable guidance name. Known values include app-modeling, existing-app-maintenance, dataforge-orchestration, and page-schema-validators.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
