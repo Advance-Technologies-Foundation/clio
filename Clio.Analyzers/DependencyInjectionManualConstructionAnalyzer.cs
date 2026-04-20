@@ -33,6 +33,10 @@ public sealed class DependencyInjectionManualConstructionAnalyzer : DiagnosticAn
 		"TryAddTransient",
 		"Replace");
 
+	private static readonly ImmutableHashSet<string> ExemptTypeFullNames = ImmutableHashSet.Create(
+		StringComparer.Ordinal,
+		"Clio.EnvironmentSettings");
+
 	#region Properties: Public
 
 	/// <inheritdoc />
@@ -65,6 +69,11 @@ private static void AnalyzeObjectCreation(
 		}
 
 		if (IsInsideFactoryClass(context)) {
+			return;
+		}
+
+		if (namedType is not null
+			&& ExemptTypeFullNames.Contains(namedType.ToDisplayString())) {
 			return;
 		}
 
