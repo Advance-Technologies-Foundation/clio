@@ -4,6 +4,7 @@ using System.Linq;
 using Clio.Common;
 using Clio.Project;
 using CommandLine;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command
 {
@@ -28,14 +29,20 @@ namespace Clio.Command
 	{
 		private readonly ICreatioPkgProjectCreator _projectCreator;
 		private readonly ILogger _logger;
+		private readonly IAbstractionsFileSystem _fileSystem;
 
-		public ReferenceCommand(ICreatioPkgProjectCreator projectCreator, ILogger logger) {
-			_projectCreator = projectCreator;
-			_logger = logger;
+		public ReferenceCommand(ICreatioPkgProjectCreator projectCreator, ILogger logger)
+			: this(projectCreator, logger, new System.IO.Abstractions.FileSystem()) {
 		}
 
-		private static string CurrentProj =>
-			new DirectoryInfo(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
+		public ReferenceCommand(ICreatioPkgProjectCreator projectCreator, ILogger logger, IAbstractionsFileSystem fileSystem) {
+			_projectCreator = projectCreator;
+			_logger = logger;
+			_fileSystem = fileSystem;
+		}
+
+		private string CurrentProj =>
+			_fileSystem.DirectoryInfo.New(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
 
 		public override int Execute(ReferenceOptions options) {
 			options.Path = options.Path ?? CurrentProj;
