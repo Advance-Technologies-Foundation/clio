@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ATF.Repository;
+using ATF.Repository.Providers;
 using Clio.Common;
+using CreatioModel;
 
 namespace Clio.Package
 {
@@ -15,24 +18,21 @@ namespace Clio.Package
 
 		#region Fields: Private
 
-		private readonly IServiceUrlBuilder _serviceUrlBuilder;
-		private readonly IApplicationClient _applicationClient;
+		private readonly IDataProvider _dataProvider;
+
+		private static readonly JsonSerializerOptions JsonOptions = new()
+		{
+			PropertyNameCaseInsensitive = true,
+			NumberHandling = JsonNumberHandling.AllowReadingFromString
+		};
 
 		#endregion
 
 		#region Constructors: Public
 
-		public ApplicationPackageListProvider(IApplicationClient applicationClient,
-				IServiceUrlBuilder serviceUrlBuilder) {
-			applicationClient.CheckArgumentNull(nameof(applicationClient));
-			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
-			_applicationClient = applicationClient;
-			_serviceUrlBuilder = serviceUrlBuilder;
-		}
-
-		public ApplicationPackageListProvider(IApplicationClient applicationClient, IJsonConverter jsonConverter,
-				IServiceUrlBuilder serviceUrlBuilder)
-			: this(applicationClient, serviceUrlBuilder) {
+		public ApplicationPackageListProvider(IDataProvider dataProvider) {
+			dataProvider.CheckArgumentNull(nameof(dataProvider));
+			_dataProvider = dataProvider;
 		}
 
 		public ApplicationPackageListProvider() {
@@ -45,52 +45,28 @@ namespace Clio.Package
 
 		#region Methods: Private
 
-		private static readonly IReadOnlyList<SelectQueryHelper.SelectQueryColumnDefinition> PackageColumns =
-		[
-			new("Name", "Name"),
-			new("UId", "UId"),
-			new("Maintainer", "Maintainer"),
-			new("Version", "Version")
-		];
-
-		private static readonly JsonSerializerOptions JsonOptions = new()
-		{
-			PropertyNameCaseInsensitive = true,
-			NumberHandling = JsonNumberHandling.AllowReadingFromString
-		};
-
-		private static object BuildSysPackageQuery(IReadOnlyList<SelectQueryHelper.SelectQueryFilterDefinition> filters) =>
-			SelectQueryHelper.BuildSelectQuery("SysPackage", PackageColumns, filters);
-
-		private static IReadOnlyList<SelectQueryHelper.SelectQueryFilterDefinition> ParseFilters(string scriptData) {
+		private static bool ParseIsCustomer(string scriptData) {
 			if (string.IsNullOrWhiteSpace(scriptData) || scriptData.Trim() == "{}")
 			{
-				return [];
+				return false;
 			}
 			try
 			{
 				var options = JsonSerializer.Deserialize<FilterOptions>(scriptData, JsonOptions);
-				if (options is { IsCustomer: true })
-				{
-					return
-					[
-						new SelectQueryHelper.SelectQueryFilterDefinition(
-							"InstallType", 0, SelectQueryHelper.IntDataValueType)
-					];
-				}
+				return options is { IsCustomer: true };
 			}
 			catch (JsonException)
 			{
+				return false;
 			}
-			return [];
 		}
 
-		private static PackageInfo CreatePackageInfo(SysPackageRowDto row) {
+		private static PackageInfo CreatePackageInfo(SysPackage p) {
 			PackageDescriptor descriptor = new() {
-				Name = row.Name ?? string.Empty,
-				UId = Guid.TryParse(row.UId, out Guid uid) ? uid : Guid.Empty,
-				Maintainer = row.Maintainer ?? string.Empty,
-				PackageVersion = row.Version ?? string.Empty
+				Name = p.Name ?? string.Empty,
+				UId = p.UId,
+				Maintainer = p.Maintainer ?? string.Empty,
+				PackageVersion = p.Version ?? string.Empty
 			};
 			return new PackageInfo(descriptor, string.Empty, []);
 		}
@@ -102,12 +78,14 @@ namespace Clio.Package
 		public IEnumerable<PackageInfo> GetPackages() => GetPackages("{}");
 
 		public IEnumerable<PackageInfo> GetPackages(string scriptData) {
-			IReadOnlyList<SelectQueryHelper.SelectQueryFilterDefinition> filters = ParseFilters(scriptData);
-			object query = BuildSysPackageQuery(filters);
-			SysPackageSelectQueryResponseDto response =
-				SelectQueryHelper.ExecuteSelectQuery<SysPackageSelectQueryResponseDto>(
-					_applicationClient, _serviceUrlBuilder, query);
-			return (response.Rows ?? []).Select(CreatePackageInfo);
+			bool customerOnly = ParseIsCustomer(scriptData);
+			IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
+			IQueryable<SysPackage> query = ctx.Models<SysPackage>();
+			if (customerOnly)
+			{
+				query = query.Where(p => p.InstallType == 0);
+			}
+			return query.ToList().Select(CreatePackageInfo);
 		}
 
 		#endregion
@@ -134,27 +112,6 @@ namespace Clio.Package
 
 			public override void Write(Utf8JsonWriter writer, bool value, JsonSerializerOptions options) =>
 				writer.WriteBooleanValue(value);
-		}
-
-		private sealed class SysPackageSelectQueryResponseDto : SelectQueryHelper.SelectQueryResponseBaseDto
-		{
-			[JsonPropertyName("rows")]
-			public List<SysPackageRowDto> Rows { get; set; } = [];
-		}
-
-		private sealed class SysPackageRowDto
-		{
-			[JsonPropertyName("Name")]
-			public string? Name { get; set; }
-
-			[JsonPropertyName("UId")]
-			public string? UId { get; set; }
-
-			[JsonPropertyName("Maintainer")]
-			public string? Maintainer { get; set; }
-
-			[JsonPropertyName("Version")]
-			public string? Version { get; set; }
 		}
 
 		#endregion

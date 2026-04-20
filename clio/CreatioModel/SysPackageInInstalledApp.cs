@@ -17,14 +17,23 @@ namespace CreatioModel
 		[SchemaProperty("Name")]
 		public string Name { get; set; }
 
+		[SchemaProperty("UId")]
+		public Guid UId { get; set; }
+
+		[SchemaProperty("Version")]
+		public string Version { get; set; }
+
+		[SchemaProperty("Maintainer")]
+		public string Maintainer { get; set; }
+
+		[SchemaProperty("InstallType")]
+		public int InstallType { get; set; }
+
 		[SchemaProperty("ModifiedOn")]
 		public DateTime ModifiedOn { get; set; }
 
 		[DetailProperty("SysPackageId")]
 		public virtual List<SysSchema> SysSchemas { get; set; }
-
-		[SchemaProperty("Maintainer")]
-		public string Maintainer { get; set; }
 	}
 }
 
