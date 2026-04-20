@@ -536,10 +536,14 @@ namespace Clio
 
 		public EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
 			var settingsRepository = new SettingsRepository();
-			var _settings = settingsRepository.FindEnvironment(options.Environment);
+			bool hasExplicitEnvironment = !string.IsNullOrWhiteSpace(options.Environment);
+			bool hasDirectUri = !string.IsNullOrEmpty(options.Uri);
+			var _settings = hasExplicitEnvironment
+				? settingsRepository.FindEnvironment(options.Environment)
+				: hasDirectUri ? null : settingsRepository.FindEnvironment(null);
 			if (_settings == null) {
 				var envName = options.Environment ?? settingsRepository.GetDefaultEnvironmentName();
-				if (!settingsRepository.IsEnvironmentExists(envName) && string.IsNullOrEmpty(options.Uri)) {
+				if (!settingsRepository.IsEnvironmentExists(envName) && !hasDirectUri) {
 					throw new Exception($"Environment with key '{envName}' not found. Check youre config file or command arguments.");
 				} else {
 					_settings = new EnvironmentSettings();

@@ -661,7 +661,7 @@ internal class Program {
 	/// <returns>Environment settings</returns>
 	private static EnvironmentSettings GetEnvironmentSettings(EnvironmentOptions options){
 		SettingsRepository settingsRepository = new();
-		if (string.IsNullOrWhiteSpace(options.Environment)) {
+		if (string.IsNullOrWhiteSpace(options.Environment) && string.IsNullOrEmpty(options.Uri)) {
 			string activeEnvName = settingsRepository.GetDefaultEnvironmentName();
 			if (!string.IsNullOrWhiteSpace(activeEnvName) && settingsRepository.IsEnvironmentExists(activeEnvName)) {
 				options.Environment = activeEnvName;
