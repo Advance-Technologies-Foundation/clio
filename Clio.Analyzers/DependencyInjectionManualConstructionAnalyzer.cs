@@ -157,7 +157,9 @@ private static void AnalyzeObjectCreation(
 			if (cancellationToken.IsCancellationRequested) {
 				break;
 			}
+#pragma warning disable RS1030
 			SemanticModel semanticModel = compilation.GetSemanticModel(syntaxTree);
+#pragma warning restore RS1030
 			SyntaxNode root = syntaxTree.GetRoot(cancellationToken);
 			IEnumerable<InvocationExpressionSyntax> invocations
 				= root.DescendantNodes().OfType<InvocationExpressionSyntax>();
