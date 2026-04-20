@@ -36,7 +36,7 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 
 	private static void DebugLog(string message) {
 		if (_debugMode) {
-			Console.WriteLine($"[DEBUG IIS] {message}");
+			ConsoleLogger.Instance.WriteDebug($"[DEBUG IIS] {message}");
 		}
 
 		Debug.WriteLine(message);

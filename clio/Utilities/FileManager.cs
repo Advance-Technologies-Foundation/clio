@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using Clio.Common;
 
 namespace Clio.Utilities
 {
@@ -7,7 +8,7 @@ namespace Clio.Utilities
     {
 		public static void OpenFile(string filePath)
 		{
-			Console.WriteLine($"Open {filePath}...");
+			ConsoleLogger.Instance.WriteLine($"Open {filePath}...");
 			if (OSPlatformChecker.GetIsWindowsEnvironment()) {
 				Process.Start(new ProcessStartInfo("cmd", $"/c start {filePath}") { CreateNoWindow = true });
 			}

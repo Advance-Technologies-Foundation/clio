@@ -29,8 +29,10 @@ internal class LocalHelpViewer(CommandHelpRenderer commandHelpRenderer, WikiHelp
 			wikiHelpViewer.ViewHelp(commandName);
 			return;
 		}
+#pragma warning disable CLIO002
 		Console.OutputEncoding = Encoding.UTF8;
 		Console.Out.Write(_helpText);
+#pragma warning restore CLIO002
 	}
 }
 
