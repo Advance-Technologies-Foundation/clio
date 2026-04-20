@@ -44,7 +44,7 @@ public static class SchemaValidationService
 		@"^Usr[A-Za-z0-9_]*_(label|caption)$",
 		RegexOptions.Compiled | RegexOptions.IgnoreCase,
 		RegexTimeout);
-	private static readonly HashSet<string> StandardFieldComponentTypes= new(StringComparer.OrdinalIgnoreCase) {
+	internal static readonly HashSet<string> StandardFieldComponentTypes = new(StringComparer.OrdinalIgnoreCase) {
 		"crt.Input",
 		"crt.NumberInput",
 		"crt.Checkbox",
@@ -302,7 +302,7 @@ public static class SchemaValidationService
 		}
 	}
 
-	private static Dictionary<string, string> CollectViewModelPaths(string jsBody) {
+	internal static Dictionary<string, string> CollectViewModelPaths(string jsBody) {
 		var modelPaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		CollectViewModelPathsFromMarker(jsBody, modelPaths, "SCHEMA_VIEW_MODEL_CONFIG_DIFF");
 		CollectViewModelPathsFromMarker(jsBody, modelPaths, "SCHEMA_VIEW_MODEL_CONFIG");
@@ -544,12 +544,12 @@ public static class SchemaValidationService
 		return !string.IsNullOrWhiteSpace(resourceKey);
 	}
 
-	private static bool IsAllowedDirectFieldBinding(string bindingAttribute) {
+	internal static bool IsAllowedDirectFieldBinding(string bindingAttribute) {
 		return string.Equals(bindingAttribute, "Name", StringComparison.OrdinalIgnoreCase)
 			|| bindingAttribute.StartsWith("PDS_", StringComparison.OrdinalIgnoreCase);
 	}
 
-	private static string BuildExpectedBinding(string modelPath) {
+	internal static string BuildExpectedBinding(string modelPath) {
 		if (string.Equals(modelPath, "PDS.Name", StringComparison.OrdinalIgnoreCase)) {
 			return "$Name";
 		}
@@ -1430,7 +1430,7 @@ public static class SchemaValidationService
 		}
 	}
 
-	private static string NormalizeJson(string content) {
+	internal static string NormalizeJson(string content) {
 		return Regex.Replace(content, @",(\s*[\]\}])", "$1", RegexOptions.None, RegexTimeout);
 	}
 
