@@ -39,17 +39,17 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		}
 	}
 
-	private List<IISScannerHandler.RegisteredSite> MockRegisteredSites(Dictionary<string, string> envs, bool mockDir){
-		List<IISScannerHandler.RegisteredSite> sites = [];
+	private List<RegisteredSite> MockRegisteredSites(Dictionary<string, string> envs, bool mockDir){
+		List<RegisteredSite> sites = [];
 		foreach (KeyValuePair<string, string> keyValuePair in envs) {
 			string sitePath = GetPlatformPath("T", keyValuePair.Key);
 
 			if (mockDir) {
 				FileSystem.Directory.CreateDirectory(sitePath);
 			}
-			IISScannerHandler.SiteBinding binding = new(keyValuePair.Key, "", "", sitePath);
+			SiteBinding binding = new(keyValuePair.Key, "", "", sitePath);
 			List<Uri> uris = [new(keyValuePair.Value)];
-			IISScannerHandler.RegisteredSite site = new(binding, uris, IISScannerHandler.SiteType.Core);
+			RegisteredSite site = new(binding, uris, SiteType.Core);
 			sites.Add(site);
 		}
 		return sites;
@@ -167,7 +167,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 			{envName, envUri}
 		};
 
-		List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, false);
+		List<RegisteredSite> sites = MockRegisteredSites(envs, false);
 		_mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
 				.Returns(Task.CompletedTask)
 				.AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
@@ -203,7 +203,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 
 		Dictionary<string, string> envs = new();
 
-		List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, true);
+		List<RegisteredSite> sites = MockRegisteredSites(envs, true);
 		_mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
 				.Returns(Task.CompletedTask)
 				.AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
@@ -241,7 +241,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 			{envName, envUri}
 		};
 
-		List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, true);
+		List<RegisteredSite> sites = MockRegisteredSites(envs, true);
 		_mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
 				.Returns(Task.CompletedTask)
 				.AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
@@ -279,7 +279,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 			{envName, envUri}
 		};
 
-		List<IISScannerHandler.RegisteredSite> sites = MockRegisteredSites(envs, true);
+		List<RegisteredSite> sites = MockRegisteredSites(envs, true);
 		_mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
 				.Returns(Task.CompletedTask)
 				.AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });

@@ -23,6 +23,7 @@ namespace Clio.Tests.Command
         private IValidator<TurnFarmModeOptions> _validator;
         private ISettingsRepository _settingsRepository;
         private ILogger _logger;
+        private IIISScanner _iisScanner;
         private TurnFarmModeCommand _command;
         private string _testSitePath;
         private string _testWebConfigPath;
@@ -34,7 +35,8 @@ namespace Clio.Tests.Command
             _validator = Substitute.For<IValidator<TurnFarmModeOptions>>();
             _settingsRepository = Substitute.For<ISettingsRepository>();
             _logger = Substitute.For<ILogger>();
-            _command = new TurnFarmModeCommand(_validator, _settingsRepository, _logger);
+            _iisScanner = Substitute.For<IIISScanner>();
+            _command = new TurnFarmModeCommand(_validator, _settingsRepository, _logger, _iisScanner);
 
             // Set up test paths
             _testSitePath = Path.Combine(Path.GetTempPath(), "TestSite");
@@ -136,10 +138,10 @@ namespace Clio.Tests.Command
             };
             _settingsRepository.GetEnvironment("TestEnv").Returns(environmentSettings);
 
-            var testSite = new IISScannerHandler.UnregisteredSite(
-                new IISScannerHandler.SiteBinding("TestSite", "Started", "http/*:8080:localhost", _testSitePath),
+            var testSite = new UnregisteredSite(
+                new SiteBinding("TestSite", "Started", "http/*:8080:localhost", _testSitePath),
                 new List<Uri> { new Uri("http://localhost:8080") },
-                IISScannerHandler.SiteType.NetFramework
+                SiteType.NetFramework
             );
 
             // Mock the static method call (in real scenario, this would require more setup)

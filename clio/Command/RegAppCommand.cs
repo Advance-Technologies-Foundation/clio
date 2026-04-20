@@ -152,7 +152,7 @@ public class RegAppCommand : Command<RegAppOptions> {
 				site.Key,
 				site.Value.PhysicalPath,
 				site.Value.Url.ToString().TrimEnd('/'),
-				site.Value.SiteType == IISScannerHandler.SiteType.Core));
+				site.Value.SiteType == SiteType.Core));
 	}
 
 	private bool ResolveIsNetCore(RegAppOptions options, EnvironmentSettings? existingEnvironment) {
