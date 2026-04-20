@@ -53,7 +53,7 @@ internal class SetApplicationVersionCommandTest: BaseCommandTests<SetApplication
 		_fileSystem = CreateFs(descriptorPath, mockWorkspaceAppPackageFolderPath);
 		string expectedVersion = "8.1.1";
 		var composableApplicationManager = new ComposableApplicationManager(_fileSystem, null, null, null);
-		var command = new SetApplicationVersionCommand(composableApplicationManager);
+		var command = new SetApplicationVersionCommand(composableApplicationManager, _fileSystem);
 		string worspaceFolderPath = mockWorspacePath;
 		command.Execute(new SetApplicationVersionOption() {
 			Version = expectedVersion, WorspaceFolderPath = worspaceFolderPath
@@ -72,7 +72,7 @@ internal class SetApplicationVersionCommandTest: BaseCommandTests<SetApplication
 		appDescriptions.Add("Package2", "app2-app-descriptor.json");
 		_fileSystem = CreateFs(appDescriptions);
 		var composableApplicationManager = new ComposableApplicationManager(_fileSystem, null, null, null);
-		var command = new SetApplicationVersionCommand(composableApplicationManager);
+		var command = new SetApplicationVersionCommand(composableApplicationManager, _fileSystem);
 		string expectedVersion = "8.1.1";
 		string worspaceFolderPath = mockWorspacePath;
 		var exception = Assert.Throws<Exception>( () => command.Execute(new SetApplicationVersionOption() { 
@@ -89,7 +89,7 @@ internal class SetApplicationVersionCommandTest: BaseCommandTests<SetApplication
 		_fileSystem = CreateFs(appDescriptions);
 		string expectedVersion = "8.1.1";
 		var composableApplicationManager = new ComposableApplicationManager(_fileSystem, null, null, null);
-		var command = new SetApplicationVersionCommand(composableApplicationManager);
+		var command = new SetApplicationVersionCommand(composableApplicationManager, _fileSystem);
 		string worspaceFolderPath = mockWorspacePath;
 		var exception = Assert.Throws<Exception>(() => command.Execute(new SetApplicationVersionOption() { 
 			Version = expectedVersion, WorspaceFolderPath = worspaceFolderPath }));
@@ -106,7 +106,7 @@ internal class SetApplicationVersionCommandTest: BaseCommandTests<SetApplication
 		_fileSystem = CreateFs(appDescriptions);
 		string expectedVersion = "8.1.1"; 
 		var composableApplicationManager = new ComposableApplicationManager(_fileSystem, null, null, null);
-		var command = new SetApplicationVersionCommand(composableApplicationManager); 
+		var command = new SetApplicationVersionCommand(composableApplicationManager, _fileSystem); 
 		string worspaceFolderPath = mockWorspacePath;
 		command.Execute(new SetApplicationVersionOption() {
 			Version = expectedVersion,
@@ -122,7 +122,7 @@ internal class SetApplicationVersionCommandTest: BaseCommandTests<SetApplication
 		_fileSystem = CreateFs(descriptorPath, mockPackageFolderPath);
 		string expectedVersion = "8.1.1";
 		var composableApplicationManager = new ComposableApplicationManager(_fileSystem, null, null, null);
-		var command = new SetApplicationVersionCommand(composableApplicationManager);
+		var command = new SetApplicationVersionCommand(composableApplicationManager, _fileSystem);
 		command.Execute(new SetApplicationVersionOption() {
 			Version = expectedVersion,
 			PackageFolderPath = mockPackageFolderPath

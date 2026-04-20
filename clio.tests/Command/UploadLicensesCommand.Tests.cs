@@ -72,7 +72,7 @@ public class UploadLicensesCommandTestCase
 public class UploadLicensesCommandTestable : UploadLicensesCommand
 {
 	public UploadLicensesCommandTestable(IApplicationClient applicationClient, EnvironmentSettings settings)
-		: base(applicationClient, settings) {
+		: base(applicationClient, settings, Substitute.For<System.IO.Abstractions.IFileSystem>()) {
 	}
 
 	public void TestProceedResponse(string response, UploadLicensesOptions options) {
