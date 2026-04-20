@@ -35,12 +35,6 @@ namespace Clio.Package
 			_dataProvider = dataProvider;
 		}
 
-		public ApplicationPackageListProvider() {
-		}
-
-		public ApplicationPackageListProvider(IJsonConverter jsonConverter) {
-		}
-
 		#endregion
 
 		#region Methods: Private
@@ -85,7 +79,8 @@ namespace Clio.Package
 			{
 				query = query.Where(p => p.InstallType == 0);
 			}
-			return query.ToList().Select(CreatePackageInfo);
+			List<SysPackage> packages = query.ToList();
+			return packages.Select(CreatePackageInfo);
 		}
 
 		#endregion
