@@ -408,7 +408,7 @@ public sealed class SkillManagementServiceTests {
 			.Returns(new GitCommandResult(true, string.Empty, string.Empty));
 		gitCommandRunner.GetHeadCommitHash(cachedRepositoryPath)
 			.Returns(new GitCommandResult(true, "abc123", string.Empty));
-		SkillRepositoryResolver resolver = new(fileSystem, workingDirectoriesProvider, gitCommandRunner);
+		SkillRepositoryResolver resolver = new(fileSystem, workingDirectoriesProvider, gitCommandRunner, mockFileSystem);
 
 		// Act
 		using ResolvedSkillRepository repository = resolver.Resolve(null);
@@ -438,7 +438,7 @@ public sealed class SkillManagementServiceTests {
 			.Returns(new GitCommandResult(true, string.Empty, string.Empty));
 		gitCommandRunner.GetHeadCommitHash(cachedRepositoryPath)
 			.Returns(new GitCommandResult(true, "abc123", string.Empty));
-		SkillRepositoryResolver resolver = new(fileSystem, workingDirectoriesProvider, gitCommandRunner);
+		SkillRepositoryResolver resolver = new(fileSystem, workingDirectoriesProvider, gitCommandRunner, mockFileSystem);
 
 		// Act
 		using ResolvedSkillRepository repository = resolver.Resolve(WorkspaceSkillDefaults.DefaultRepository);
