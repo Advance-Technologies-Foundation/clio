@@ -50,7 +50,7 @@ public static class InstallerHelper
 		}
 		catch (Exception)
 		{
-			Console.WriteLine("Defaulting to localhost");
+			ConsoleLogger.Instance.WriteWarning("Defaulting to localhost");
 			return FQDN;
 		}
 	}

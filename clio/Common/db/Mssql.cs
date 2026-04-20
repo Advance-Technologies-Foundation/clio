@@ -62,11 +62,14 @@ public interface IMssql {
 /// </summary>
 public class Mssql : IMssql {
 	private SqlConnectionStringBuilder _builder;
+	private readonly ILogger _logger;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="Mssql"/> class.
 	/// </summary>
-	public Mssql() { }
+	public Mssql(ILogger logger = null) {
+		_logger = logger ?? NullLogger.Instance;
+	}
 
 	/// <inheritdoc />
 	public void Init(string host, int port, string username, string password, bool isWindowsAuth = false) {
@@ -85,7 +88,7 @@ public class Mssql : IMssql {
 	/// <summary>
 	/// Initializes a new instance of the <see cref="Mssql"/> class with explicit connection settings.
 	/// </summary>
-	public Mssql(string host, int port, string username, string password, bool isWindowsAuth = false) {
+	public Mssql(string host, int port, string username, string password, bool isWindowsAuth = false) : this((ILogger)null) {
 		_builder = new SqlConnectionStringBuilder {
 			DataSource = host.Contains("\\") || port == 0 ? host : $"{host},{port}",
 			InitialCatalog = "master",
@@ -101,7 +104,7 @@ public class Mssql : IMssql {
 	/// <summary>
 	/// Initializes a new instance of the <see cref="Mssql"/> class for the Kubernetes SQL Server endpoint.
 	/// </summary>
-	public Mssql(int port, string username, string password) {
+	public Mssql(int port, string username, string password) : this((ILogger)null) {
 		_builder = new SqlConnectionStringBuilder {
 			DataSource = $"{BindingsModule.k8sDns},{port}",
 			UserID = username,
@@ -165,7 +168,7 @@ public class Mssql : IMssql {
 		}
 		catch (SqlException e) {
 			Emit(e.Message);
-			Console.WriteLine(e.Message);
+			_logger.WriteError(e.Message);
 			return new DatabaseRestoreResult(false, messages);
 		}
 	}
@@ -189,7 +192,7 @@ public class Mssql : IMssql {
 			return int.Parse(result.ToString()) == 1;
 		}
 		catch (SqlException e) {
-			Console.WriteLine(e.ToString());
+			_logger.WriteError(e.ToString());
 			return false;
 		}
 	}

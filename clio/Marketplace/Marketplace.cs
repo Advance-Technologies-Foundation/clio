@@ -18,15 +18,17 @@
 		const string _baseUri = "https://marketplace.creatio.com";
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly HttpClient _httpClient;
+		private readonly ILogger _logger;
 		private MarketplaceApplicationModel _model;
 
-		public Marketplace(IWorkingDirectoriesProvider workingDirectoriesProvider)
+		public Marketplace(IWorkingDirectoriesProvider workingDirectoriesProvider, ILogger logger)
 		{
 			_httpClient = new HttpClient
 			{
 				BaseAddress = new Uri(_baseUri)
 			};
 			_workingDirectoriesProvider = workingDirectoriesProvider;
+			_logger = logger;
 		}
 
 		private async Task GetMrkModelById(int id)
@@ -43,7 +45,7 @@
 
 			var filename = _model.FileLink.Segments[^1];
 			var fullpath = Path.Combine(dir, filename);
-			Console.WriteLine(fullpath);
+			_logger.WriteLine(fullpath);
 			var bites = await _httpClient.GetByteArrayAsync(_model.FileLink.PathAndQuery);
 
 			using var fs = new FileStream(fullpath, FileMode.Create, FileAccess.Write, FileShare.None);
