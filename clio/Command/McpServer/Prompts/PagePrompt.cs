@@ -55,8 +55,8 @@ public static class PagePrompt {
 		 Always call `{PageTemplatesListTool.ToolName}` first to discover the live template catalog. Pick the `name` (or `uId`) of the desired template for the `template` argument of `{PageCreateTool.ToolName}`.
 		 Prefer a registered clio environment for page work. If the target site is not registered yet, call `reg-web-app` first and then continue with `environment-name`.
 		 Use `{PageCreateTool.ToolName}` with `schema-name` `{schemaName}`, `template` `{template ?? "<template-name>"}`, `package-name` `{packageName}`, and `environment-name` `{environmentName ?? "<registered environment name>"}` to create the page.
-		 `{PageCreateTool.ToolName}` required fields: `schema-name`, `template`, `package-name`. Optional: `caption` (defaults to schema-name), `description`, `entity-schema-name`, `dry-run`.
-		 Use `dry-run` to validate inputs (schema-name format, template existence, package existence, schema-name uniqueness, entity-schema existence) without writing to the environment.
+		 `{PageCreateTool.ToolName}` required fields: `schema-name`, `template`, `package-name`. Optional: `caption` (defaults to schema-name), `description`, `entity-schema-name`.
+		 `{PageCreateTool.ToolName}` validates inputs (schema-name format, template existence, package existence, schema-name uniqueness, entity-schema existence) before calling the designer service; invalid inputs fail fast with a readable error.
 		 After a successful `{PageCreateTool.ToolName}`, read the page back with `{PageGetTool.ToolName}` with the same `schema-name` to confirm the created page loads and has the expected parent template.
 		 Known failure modes: duplicate schema-name, unknown template (call `{PageTemplatesListTool.ToolName}`), missing package. Each returns a readable `error` in the tool response.
 		 Keep created page bodies inherited from the template; add fields or columns with `add-form-fields` / `add-list-columns` or edit the body via `{PageSyncTool.ToolName}` only as a follow-up step.

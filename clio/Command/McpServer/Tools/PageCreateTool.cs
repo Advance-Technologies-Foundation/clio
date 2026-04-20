@@ -19,7 +19,7 @@ public sealed class PageCreateTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Create a new Freedom UI page schema from a supported template. Use `list-page-templates` first to discover valid template values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public PageCreateResponse CreatePage(
-		[Description("Parameters: schema-name, template, package-name (required); caption, description, entity-schema-name, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Description("Parameters: schema-name, template, package-name (required); caption, description, entity-schema-name (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageCreateArgs args) {
 		PageCreateOptions options = new() {
 			SchemaName = args.SchemaName,
@@ -28,7 +28,6 @@ public sealed class PageCreateTool(
 			Caption = args.Caption,
 			Description = args.Description,
 			EntitySchemaName = args.EntitySchemaName,
-			DryRun = args.DryRun ?? false,
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
@@ -75,10 +74,6 @@ public sealed record PageCreateArgs(
 	[property: JsonPropertyName("entity-schema-name")]
 	[property: Description("Optional entity schema name to record in the new page dependencies.")]
 	string? EntitySchemaName,
-
-	[property: JsonPropertyName("dry-run")]
-	[property: Description("If true, validate inputs and resolve references without creating the page. Default: false.")]
-	bool? DryRun,
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]

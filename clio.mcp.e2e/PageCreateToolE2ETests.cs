@@ -60,7 +60,6 @@ public sealed class PageCreateToolE2ETests {
 					["schema-name"] = "UsrMissing_BlankPage",
 					["template"] = "BlankPageTemplate",
 					["package-name"] = "Custom",
-					["dry-run"] = true,
 					["environment-name"] = invalidEnvironmentName
 				}
 			},
@@ -91,7 +90,6 @@ public sealed class PageCreateToolE2ETests {
 					["schema-name"] = "1BadName",
 					["template"] = "BlankPageTemplate",
 					["package-name"] = "Custom",
-					["dry-run"] = true,
 					["environment-name"] = $"noop-{Guid.NewGuid():N}"
 				}
 			},
@@ -170,7 +168,6 @@ public sealed class PageCreateToolE2ETests {
 		createResponse.SchemaUId.Should().NotBeNullOrWhiteSpace();
 		createResponse.TemplateName.Should().Be("BlankPageTemplate");
 		createResponse.PackageName.Should().Be(packageName);
-		createResponse.DryRun.Should().BeFalse();
 
 		// Act read-back
 		CallToolResult getResult = await arrangeContext.Session.CallToolAsync(

@@ -29,9 +29,6 @@ namespace Clio.Command {
 
 		[Option("entity-schema-name", Required = false, HelpText = "Optional entity schema name to record in the new page dependencies")]
 		public string EntitySchemaName { get; set; }
-
-		[Option("dry-run", Required = false, HelpText = "Validate inputs and resolution without creating the page")]
-		public bool DryRun { get; set; }
 	}
 
 	/// <summary>
@@ -115,22 +112,6 @@ namespace Clio.Command {
 					}
 					_logger.WriteInfo($"         entity  : {options.EntitySchemaName} (uId={entitySchemaUId})");
 				}
-				if (options.DryRun) {
-					LogStep(ref stepNumber, totalSteps, "Dry-run: skipping SaveSchema (no changes persisted)");
-					response = new PageCreateResponse {
-						Success = true,
-						SchemaName = options.SchemaName,
-						PackageName = options.PackageName,
-						PackageUId = packageUId,
-						TemplateName = template.Name,
-						TemplateUId = template.UId,
-						Caption = caption,
-						EntitySchemaName = options.EntitySchemaName,
-						EntitySchemaUId = entitySchemaUId,
-						DryRun = true
-					};
-					return true;
-				}
 				string newSchemaUId = Guid.NewGuid().ToString("D");
 				LogStep(ref stepNumber, totalSteps, $"Saving schema via ClientUnitSchemaDesignerService (uId={newSchemaUId})");
 				JObject payload = BuildSaveSchemaPayload(
@@ -152,8 +133,7 @@ namespace Clio.Command {
 					TemplateUId = template.UId,
 					Caption = caption,
 					EntitySchemaName = options.EntitySchemaName,
-					EntitySchemaUId = entitySchemaUId,
-					DryRun = false
+					EntitySchemaUId = entitySchemaUId
 				};
 				return true;
 			} catch (Exception ex) {

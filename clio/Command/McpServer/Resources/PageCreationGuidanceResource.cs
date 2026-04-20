@@ -58,7 +58,6 @@ public sealed class PageCreationGuidanceResource {
 			       - `caption`: human-readable caption. Defaults to `schema-name` when omitted.
 			       - `description`: free-form description.
 			       - `entity-schema-name`: existing entity schema. When set, the new page records the entity in its dependencies; leave blank for template-pure pages (dashboards, blank pages, custom pages).
-			       - `dry-run`: validate inputs and resolve references without creating the page. Use for plan previews or when integrating in automation.
 
 			       Validation and failure modes
 			       - Unknown template: `create-page` rejects the call with a readable error; always call `list-page-templates` first when unsure.

@@ -608,11 +608,6 @@ public sealed class PageCreateResponse {
 	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string EntitySchemaUId { get; set; }
 
-	[DataMember(Name = "dryRun")]
-	[JsonProperty("dryRun")]
-	[JsonPropertyName("dryRun")]
-	public bool DryRun { get; set; }
-
 	[DataMember(Name = "error")]
 	[JsonProperty("error")]
 	[JsonPropertyName("error")]
