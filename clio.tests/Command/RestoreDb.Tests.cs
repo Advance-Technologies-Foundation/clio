@@ -59,6 +59,7 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
 		RestoreDbCommand sut = new(
 			logger,
 			fileSystem,
+			new System.IO.Abstractions.FileSystem(),
 			dbClientFactory,
 			settingsRepository,
 			Substitute.For<ICreatioInstallerService>(),
@@ -106,6 +107,7 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
 		RestoreDbCommand sut = new(
 			logger,
 			fileSystem,
+			new System.IO.Abstractions.FileSystem(),
 			dbClientFactory,
 			settingsRepository,
 			creatioInstallerService,
@@ -165,6 +167,7 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
 		RestoreDbCommand sut = new(
 			logger,
 			fileSystem,
+			new System.IO.Abstractions.FileSystem(),
 			dbClientFactory,
 			settingsRepository,
 			creatioInstallerService,

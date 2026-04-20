@@ -47,6 +47,7 @@ public sealed class RestoreDbLogArtifactTests {
 		RestoreDbCommand sut = new(
 			logger,
 			fileSystem,
+			new System.IO.Abstractions.FileSystem(),
 			dbClientFactory,
 			settingsRepository,
 			Substitute.For<ICreatioInstallerService>(),
@@ -122,6 +123,7 @@ public sealed class RestoreDbLogArtifactTests {
 			RestoreDbCommand sut = new(
 				logger,
 				fileSystem,
+				new System.IO.Abstractions.FileSystem(),
 				dbClientFactory,
 				settingsRepository,
 				Substitute.For<ICreatioInstallerService>(),
@@ -193,6 +195,7 @@ public sealed class RestoreDbLogArtifactTests {
 		RestoreDbCommand sut = new(
 			logger,
 			fileSystem,
+			new System.IO.Abstractions.FileSystem(),
 			dbClientFactory,
 			settingsRepository,
 			Substitute.For<ICreatioInstallerService>(),
