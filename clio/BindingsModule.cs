@@ -435,9 +435,9 @@ public class BindingsModule {
 			RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? new LinuxSystemServiceManager() :
 			RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? new MacOSSystemServiceManager(sp.GetRequiredService<IProcessExecutor>()) :
 			new WindowsSystemServiceManager());
-		services.AddSingleton<Common.IIS.IIISSiteDetector>(_ =>
+		services.AddSingleton<Common.IIS.IIISSiteDetector>(sp =>
 			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-				? new Common.IIS.WindowsIISSiteDetector()
+				? new Common.IIS.WindowsIISSiteDetector(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISSiteDetector());
 		services.AddSingleton<Common.IIS.IPlatformDetector, Common.IIS.PlatformDetector>();
 		services.AddSingleton<Common.IIS.ITcpPortReservationReader, Common.IIS.TcpPortReservationReader>();
