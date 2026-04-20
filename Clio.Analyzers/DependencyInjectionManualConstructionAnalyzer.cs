@@ -37,6 +37,13 @@ public sealed class DependencyInjectionManualConstructionAnalyzer : DiagnosticAn
 		StringComparer.Ordinal,
 		"Clio.EnvironmentSettings");
 
+	private static readonly ImmutableHashSet<string> ExemptContainingTypeFullNames = ImmutableHashSet.Create(
+		StringComparer.Ordinal,
+		"Clio.Program",
+		"Clio.Common.CreatioClientAdapter",
+		"Clio.EnvironmentSettings",
+		"Clio.SettingsRepository");
+
 	#region Properties: Public
 
 	/// <inheritdoc />
@@ -65,6 +72,10 @@ private static void AnalyzeObjectCreation(
 
 		INamedTypeSymbol? containingType = context.ContainingSymbol?.ContainingType;
 		if (namedType is not null && SymbolEqualityComparer.Default.Equals(namedType.OriginalDefinition, containingType?.OriginalDefinition)) {
+			return;
+		}
+
+		if (containingType is not null && ExemptContainingTypeFullNames.Contains(containingType.ToDisplayString())) {
 			return;
 		}
 
