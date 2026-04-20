@@ -1,126 +1,166 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using ATF.Repository.Mock;
+using System.Text.Json;
+using Clio.Common;
 using Clio.Package;
-using CreatioModel;
+using Clio.Tests.Command;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests;
 
-[TestFixture(Category = "Unit")]
-[Property("Module", "Core")]
+[TestFixture(Category = "UnitTests")]
 internal class ApplicationPackageListProviderTest
 {
-	private MemoryDataProviderMock _dataProvider;
+	private IApplicationClient _applicationClient;
+	private IServiceUrlBuilder _serviceUrlBuilder;
 	private ApplicationPackageListProvider _sut;
 
 	[SetUp]
 	public void Setup() {
-		_dataProvider = new MemoryDataProviderMock();
-		_dataProvider.DataStore.RegisterModelSchema<SysPackage>();
-		_sut = new ApplicationPackageListProvider(_dataProvider);
+		_applicationClient = Substitute.For<IApplicationClient>();
+		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		_serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns("http://localhost/0/DataService/json/SyncReply/SelectQuery");
+		_sut = new ApplicationPackageListProvider(_applicationClient, _serviceUrlBuilder);
+	}
+
+	private static string BuildSelectQueryResponse(params (string name, string uid, string? maintainer, string? version)[] packages) {
+		var rows = packages.Select(p => new Dictionary<string, object?>
+		{
+			["Name"] = p.name,
+			["UId"] = p.uid,
+			["Maintainer"] = p.maintainer ?? string.Empty,
+			["Version"] = p.version ?? string.Empty
+		}).ToList();
+		return JsonSerializer.Serialize(new { success = true, rows });
 	}
 
 	[Test]
-	[Description("GetPackages returns empty list when no packages in data store")]
-	public void GetPackages_ReturnsEmpty_WhenNoData() {
+	[Description("GetPackages returns empty list when SelectQuery returns no rows")]
+	public void GetPackages_ReturnsEmpty_WhenNoRows() {
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":true,\"rows\":[]}");
+
 		IEnumerable<PackageInfo> result = _sut.GetPackages();
 
-		result.Should().BeEmpty("because no packages were seeded");
+		result.Should().BeEmpty("because the SelectQuery returned no rows");
 	}
 
 	[Test]
 	[Description("GetPackages returns single package with correct name and UId")]
-	public void GetPackages_ReturnsSinglePackage_WhenOneRecord() {
-		Guid uid = Guid.Parse("00000000-0000-0000-0000-000000000001");
-		_dataProvider.DataStore.AddModel<SysPackage>(p => {
-			p.Name = "TestPackage";
-			p.UId = uid;
-		});
+	public void GetPackages_ReturnsSinglePackage_WhenOneRow() {
+		string response = BuildSelectQueryResponse(
+			("TestPackage", "00000000-0000-0000-0000-000000000001", null, null));
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(response);
 
 		List<PackageInfo> result = _sut.GetPackages().ToList();
 
-		result.Should().HaveCount(1, "because one package was seeded");
-		result[0].Descriptor.Name.Should().Be("TestPackage");
-		result[0].Descriptor.UId.Should().Be(uid);
+		result.Should().HaveCount(1, "because SelectQuery returned one row");
+		result[0].Descriptor.Name.Should().Be("TestPackage", "because that is the package name in the response");
+		result[0].Descriptor.UId.Should().Be(Guid.Parse("00000000-0000-0000-0000-000000000001"),
+			"because that is the UId in the response");
 	}
 
 	[Test]
 	[Description("GetPackages correctly maps Maintainer and Version fields")]
-	public void GetPackages_MapsAllFields_WhenFullRecord() {
-		Guid uid = Guid.Parse("a0120c05-78fd-41e4-baf5-112ab9006c3e");
-		_dataProvider.DataStore.AddModel<SysPackage>(p => {
-			p.Name = "MyPkg";
-			p.UId = uid;
-			p.Maintainer = "Creatio";
-			p.Version = "1.2.3";
-		});
+	public void GetPackages_MapsAllFields_WhenFullRow() {
+		string response = BuildSelectQueryResponse(
+			("MyPkg", "a0120c05-78fd-41e4-baf5-112ab9006c3e", "Creatio", "1.2.3"));
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(response);
 
 		List<PackageInfo> result = _sut.GetPackages().ToList();
 
-		result.Should().HaveCount(1);
-		result[0].Descriptor.Maintainer.Should().Be("Creatio");
-		result[0].Descriptor.PackageVersion.Should().Be("1.2.3");
+		result.Should().HaveCount(1, "because one package was returned");
+		result[0].Descriptor.Maintainer.Should().Be("Creatio", "because Maintainer field was set");
+		result[0].Descriptor.PackageVersion.Should().Be("1.2.3", "because Version field was set");
 	}
 
 	[Test]
-	[Description("GetPackages returns multiple packages when multiple records exist")]
-	public void GetPackages_ReturnsMultiple_WhenMultipleRecords() {
-		_dataProvider.DataStore.AddModel<SysPackage>(p => p.Name = "Pkg1");
-		_dataProvider.DataStore.AddModel<SysPackage>(p => p.Name = "Pkg2");
-		_dataProvider.DataStore.AddModel<SysPackage>(p => p.Name = "Pkg3");
+	[Description("GetPackages returns multiple packages when SelectQuery returns multiple rows")]
+	public void GetPackages_ReturnsMultiple_WhenMultipleRows() {
+		string response = BuildSelectQueryResponse(
+			("Pkg1", "00000000-0000-0000-0000-000000000001", null, null),
+			("Pkg2", "00000000-0000-0000-0000-000000000002", "M", "2.0"),
+			("Pkg3", "00000000-0000-0000-0000-000000000003", null, "3.0"));
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(response);
 
 		List<PackageInfo> result = _sut.GetPackages().ToList();
 
-		result.Should().HaveCount(3, "because three packages were seeded");
+		result.Should().HaveCount(3, "because SelectQuery returned three rows");
 	}
 
 	[Test]
-	[Description("GetPackages with isCustomer filter returns only InstallType=0 packages")]
-	public void GetPackages_WithCustomerFilter_ReturnsOnlyCustomerPackages() {
-		_dataProvider.DataStore.AddModel<SysPackage>(p => {
-			p.Name = "CustomerPkg";
-			p.InstallType = 0;
-		});
-		_dataProvider.DataStore.AddModel<SysPackage>(p => {
-			p.Name = "SystemPkg";
-			p.InstallType = 1;
-		});
+	[Description("GetPackages throws when SelectQuery response indicates failure")]
+	public void GetPackages_Throws_WhenResponseIndicatesFailure() {
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"Access denied\"}}");
 
-		List<PackageInfo> result = _sut.GetPackages("{\"isCustomer\": true}").ToList();
+		Action act = () => _sut.GetPackages();
 
-		result.Should().HaveCount(1, "because only one package has InstallType=0");
-		result[0].Descriptor.Name.Should().Be("CustomerPkg");
+		act.Should().Throw<InvalidOperationException>("because the SelectQuery returned success=false")
+			.WithMessage("*Access denied*");
 	}
 
 	[Test]
-	[Description("GetPackages with isCustomer as string 'true' also filters correctly")]
-	public void GetPackages_WithCustomerFilterAsString_FiltersCorrectly() {
-		_dataProvider.DataStore.AddModel<SysPackage>(p => {
-			p.Name = "CustomerPkg";
-			p.InstallType = 0;
-		});
-		_dataProvider.DataStore.AddModel<SysPackage>(p => {
-			p.Name = "SystemPkg";
-			p.InstallType = 1;
-		});
+	[Description("GetPackages throws when SelectQuery returns empty response")]
+	public void GetPackages_Throws_WhenResponseIsEmpty() {
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(string.Empty);
 
-		List<PackageInfo> result = _sut.GetPackages("{\"isCustomer\": \"true\"}").ToList();
+		Action act = () => _sut.GetPackages();
 
-		result.Should().HaveCount(1, "because string 'true' is treated as boolean true");
-		result[0].Descriptor.Name.Should().Be("CustomerPkg");
+		act.Should().Throw<InvalidOperationException>("because an empty response is invalid");
 	}
 
 	[Test]
-	[Description("GetPackages with empty scriptData returns all packages")]
-	public void GetPackages_WithEmptyScriptData_ReturnsAll() {
-		_dataProvider.DataStore.AddModel<SysPackage>(p => p.InstallType = 0);
-		_dataProvider.DataStore.AddModel<SysPackage>(p => p.InstallType = 1);
+	[Description("GetPackages uses SelectQuery endpoint, not cliogate")]
+	public void GetPackages_UsesSelectQueryEndpoint() {
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":true,\"rows\":[]}");
 
-		List<PackageInfo> result = _sut.GetPackages("{}").ToList();
+		_sut.GetPackages();
 
-		result.Should().HaveCount(2, "because no filter is applied for empty script data");
+		_serviceUrlBuilder.Received(1).Build(ServiceUrlBuilder.KnownRoute.Select);
+	}
+
+	[Test]
+	[Description("GetPackages with isCustomer filter includes InstallType filter in request body")]
+	public void GetPackages_WithCustomerFilter_IncludesInstallTypeFilter() {
+		string capturedBody = string.Empty;
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(body => capturedBody = body))
+			.Returns("{\"success\":true,\"rows\":[]}");
+
+		_sut.GetPackages("{\"isCustomer\": true}");
+
+		capturedBody.Should().Contain("InstallType", "because isCustomer filter should add InstallType condition");
+	}
+
+	[Test]
+	[Description("GetPackages with isCustomer as string true includes InstallType filter (WorkspaceCreator compat)")]
+	public void GetPackages_WithCustomerFilterAsString_IncludesInstallTypeFilter() {
+		string capturedBody = string.Empty;
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(body => capturedBody = body))
+			.Returns("{\"success\":true,\"rows\":[]}");
+
+		_sut.GetPackages("{\"isCustomer\": \"true\"}");
+
+		capturedBody.Should().Contain("InstallType", "because string 'true' should be treated as boolean true for backward compatibility");
+	}
+
+	[Test]
+	[Description("GetPackages handles null rows in response without throwing")]
+	public void GetPackages_NullRowsInResponse_ReturnsEmpty() {
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":true}");
+
+		IEnumerable<PackageInfo> result = _sut.GetPackages();
+
+		result.Should().BeEmpty("because null rows should be treated as empty collection");
 	}
 }
