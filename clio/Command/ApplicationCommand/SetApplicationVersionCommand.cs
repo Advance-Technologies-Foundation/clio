@@ -1,7 +1,7 @@
-﻿using System.IO;
-using Clio.ComposableApplication;
+﻿using Clio.ComposableApplication;
 using CommandLine;
 using Terrasoft.Common;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.ApplicationCommand;
 
@@ -28,13 +28,16 @@ internal class SetApplicationVersionCommand : Command<SetApplicationVersionOptio
 	#region Fields: Private
 
 	private readonly IComposableApplicationManager _composableApplicationManager;
+	private readonly IFileSystem _fileSystem;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public SetApplicationVersionCommand(IComposableApplicationManager composableApplicationManager) {
+	public SetApplicationVersionCommand(IComposableApplicationManager composableApplicationManager,
+		IFileSystem fileSystem) {
 		_composableApplicationManager = composableApplicationManager;
+		_fileSystem = fileSystem;
 	}
 
 	#endregion
@@ -44,7 +47,7 @@ internal class SetApplicationVersionCommand : Command<SetApplicationVersionOptio
 	public override int Execute(SetApplicationVersionOption options) {
 		string packagesFolderPath = options.PackageFolderPath.IsNotNullOrEmpty()
 			? options.PackageFolderPath
-			: Path.Combine(options.WorspaceFolderPath, "packages");
+			: _fileSystem.Path.Combine(options.WorspaceFolderPath, "packages");
 		_composableApplicationManager.SetVersion(packagesFolderPath, options.Version, options.PackageName);
 		return 0;
 	}
