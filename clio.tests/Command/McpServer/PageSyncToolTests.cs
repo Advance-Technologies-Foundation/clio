@@ -234,7 +234,7 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem());
 		string bodyWithConverterAndValidator = ValidPageBody
 			.Replace(
 				"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
