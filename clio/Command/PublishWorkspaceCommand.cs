@@ -5,6 +5,7 @@ using System.IO;
 using Clio.Common;
 using Clio.Workspaces;
 using CommandLine;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 #endregion
 
@@ -67,14 +68,21 @@ public class PublishWorkspaceCommand : Command<PublishWorkspaceCommandOptions>{
 
 	private readonly IWorkspace _workspace;
 
+	private readonly IAbstractionsFileSystem _fileSystem;
+
 	#endregion
 
 	#region Constructors: Public
 
-	public PublishWorkspaceCommand(IWorkspace workspace, ILogger logger) {
+	public PublishWorkspaceCommand(IWorkspace workspace, ILogger logger)
+		: this(workspace, logger, new System.IO.Abstractions.FileSystem()) {
+	}
+
+	public PublishWorkspaceCommand(IWorkspace workspace, ILogger logger, IAbstractionsFileSystem fileSystem) {
 		workspace.CheckArgumentNull(nameof(workspace));
 		_workspace = workspace;
 		_logger = logger;
+		_fileSystem = fileSystem;
 	}
 
 	#endregion
@@ -89,11 +97,11 @@ public class PublishWorkspaceCommand : Command<PublishWorkspaceCommandOptions>{
 					"Workspace path is required. Specify it as the first argument or via --repo-path.");
 			}
 
-			workspacePath = Path.GetFullPath(workspacePath);
+			workspacePath = _fileSystem.Path.GetFullPath(workspacePath);
 			bool useFileMode = !string.IsNullOrWhiteSpace(options.FilePath);
 			if (useFileMode) {
 				string version = options.AppVersion;
-				string targetPath = Path.GetFullPath(options.FilePath);
+				string targetPath = _fileSystem.Path.GetFullPath(options.FilePath);
 				_workspace.PublishToFile(workspacePath, targetPath, version);
 			}
 			else {
