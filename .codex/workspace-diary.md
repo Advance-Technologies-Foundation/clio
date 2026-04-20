@@ -2587,3 +2587,15 @@ Decision: Treat pathless diff operations as root-level merges and therefore elig
 Discovery: The stricter irst segment == attributes guard fixed nested false positives, but it also created a silent skip for existing pathless merge shapes until an explicit regression test covered them.
 Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Validator resource and contract validation now covers both supported diff shapes: root merges without path and explicit top-level ttributes merges, while still excluding unrelated nested paths.
+
+## 2025-07-10 – Wave 3: Eliminate CLIO004 warnings via IProcessExecutor
+
+Context: Refactoring roadmap Wave 3 — remove all `System.Diagnostics.Process` direct usage
+Decision: Extract nested types from IISScannerHandler, introduce IIISScanner interface, inject IProcessExecutor
+Discovery:
+- IISScannerHandler constructor requires 5 deps: ISettingsRepository, RegAppCommand, PowerShellFactory, ILogger, IProcessExecutor — tests must pass all args for compilation
+- SetFsmConfigCommand gained IIISScanner as 5th ctor param — 4 test files needed updating (SetFsmConfigCommand.Tests.cs, FsmModeToolTests.cs, TurnFsmCommand.LoginRetry.Tests.cs, IISScannerHandler.Tests.cs)
+- StopCommand IIS tests fail on macOS due to RuntimeInformation.IsOSPlatform(Windows) guard — pre-existing issue, not Wave 3 regression
+- 13 pre-existing failures remain (DeleteSection 3, DeletePackageCommand 3, InstallTideCommand 3, StopCommand 3, NewPkgCommand 1)
+Files: clio/Requests/IISScannerRequest.cs, clio/BindingsModule.cs, clio/Command/SetFsmConfigCommand.cs, clio/Command/TurnFarmModeCommand.cs, clio.tests/ (8 files)
+Impact: Build clean, 0 CLIO004 warnings, Wave 3 complete. Branch Alfa-04-20 pushed.

@@ -241,10 +241,10 @@ internal class Program {
 					GetAppInfoOptions opts => Resolve<GetAppInfoCommand>(opts).Execute(opts),
 					CreateLookupOptions opts => Resolve<CreateLookupCommand>(opts).Execute(opts),
 					DeletePkgOptions opts => Resolve<DeletePackageCommand>(opts).Execute(opts),
-					ReferenceOptions opts => CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator())
+					ReferenceOptions opts => CreateCommand<ReferenceCommand>(Resolve<ICreatioPkgProjectCreator>())
 						.Execute(opts),
-					NewPkgOptions opts => CreateCommand<NewPkgCommand>(new SettingsRepository(),
-							CreateCommand<ReferenceCommand>(new CreatioPkgProjectCreator()), ConsoleLogger.Instance)
+					NewPkgOptions opts => CreateCommand<NewPkgCommand>(Resolve<ISettingsRepository>(),
+							CreateCommand<ReferenceCommand>(Resolve<ICreatioPkgProjectCreator>()), ConsoleLogger.Instance)
 						.Execute(opts),
 					ConvertOptions opts => ConvertPackage(opts),
 					RegisterOptions opts => Resolve<RegisterCommand>().Execute(opts),
