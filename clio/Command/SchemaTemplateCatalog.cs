@@ -63,7 +63,12 @@ public sealed class SchemaTemplateCatalog : ISchemaTemplateCatalog {
 			}
 			string url = _serviceUrlBuilder.Build($"/rest/schema.template.api/templates?schemaType={schemaType}");
 			string responseJson = _applicationClient.ExecuteGetRequest(url);
-			var response = JObject.Parse(responseJson);
+			JObject response;
+			try {
+				response = JObject.Parse(responseJson);
+			} catch (Newtonsoft.Json.JsonReaderException ex) {
+				throw new InvalidOperationException(BuildNonJsonErrorMessage(url, responseJson, ex));
+			}
 			if (!(response["success"]?.Value<bool>() ?? false)) {
 				string detail = response["errorInfo"]?["message"]?.ToString()
 					?? response["errorInfo"]?.ToString()
@@ -87,5 +92,23 @@ public sealed class SchemaTemplateCatalog : ISchemaTemplateCatalog {
 			_cache[schemaType] = result;
 			return result;
 		}
+	}
+
+	private static string BuildNonJsonErrorMessage(string url, string responseBody, Exception parseException) {
+		string trimmed = (responseBody ?? string.Empty).TrimStart();
+		bool looksLikeHtml = trimmed.StartsWith("<", StringComparison.Ordinal);
+		if (looksLikeHtml) {
+			return $"Page template catalog endpoint did not return JSON (URL: {url}). "
+				+ "The server returned an HTML response — likely because the request was redirected to a login page "
+				+ "or the endpoint is missing on this Creatio version. "
+				+ "Verify that: 1) the environment is registered with correct credentials (reg-web-app); "
+				+ "2) `IsNetCore` flag matches the target instance (omit for .NET Framework, add --IsNetCore for .NET Core); "
+				+ "3) the target Creatio version exposes `/rest/schema.template.api/templates` (Creatio 7.18+).";
+		}
+		string snippet = string.IsNullOrWhiteSpace(responseBody)
+			? "<empty body>"
+			: responseBody.Length > 200 ? responseBody[..200] + "…" : responseBody;
+		return $"Page template catalog endpoint returned an unparseable response (URL: {url}). "
+			+ $"Parser error: {parseException.Message}. Response preview: {snippet}";
 	}
 }
