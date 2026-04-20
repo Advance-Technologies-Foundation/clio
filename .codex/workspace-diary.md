@@ -2426,3 +2426,38 @@ Decision: Switched MCP guidance resources to expose `internal static` guide payl
 Discovery: The resource attributes can stay on `GetGuide()` while the shared cached article is exposed separately as an internal static field; `GuidanceCatalog` can then remain free of resource instantiation without changing the external MCP contract.
 Files: C:\Projects\clio\clio\Command\McpServer\Resources\GuidanceCatalog.cs, C:\Projects\clio\clio\Command\McpServer\Resources\AppModelingGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Future guidance resources can be added to the catalog without startup-time object construction, and the `get-guidance` tests now lock in the case-insensitive behavior actually used by the catalog.
+
+## 2026-04-20 20:14 – Split PageSyncTool body validation helpers
+Context: A follow-up refactoring request targeted `PageSyncTool.ValidateBody(...)` because Sonar flagged cognitive complexity above the project threshold.
+Decision: Kept the validation sequence and output contract unchanged, but extracted resource parsing, gated content validation, error aggregation, warning aggregation, and response assembly into small private helpers.
+Discovery: Most of the complexity came from repeated `contentResult.IsValid ? ... : new SchemaValidationResult { IsValid = true }` guards plus result-list aggregation; those compress cleanly into `RunContentValidation(...)`, `CollectErrors(...)`, and `CollectWarnings(...)` without changing behavior.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future validation-rule additions in `sync-pages` can be slotted into the helper pattern with less risk of breaching the complexity threshold again.
+
+## 2026-04-20 20:23 – Simplified validator param binding scan
+Context: Sonar flagged `SchemaValidationService.ScanAttributesForInvalidParamBindings(...)` for excessive cognitive complexity while checking validator param bindings for invalid `$Resources.Strings.*` usage.
+Decision: Preserved the exact diagnostics but split the method into narrow helpers for extracting validator bindings, extracting validator params, and detecting reactive resource bindings.
+Discovery: The complexity was driven by nested guard clauses over `validators`, `params`, and string checks; moving those conditions into `TryGetValidatorBindings(...)`, `TryGetValidatorParams(...)`, and `TryGetReactiveResourceBinding(...)` reduced branching without changing the scan order.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future validator-binding checks in `SchemaValidationService` can reuse the same helper pattern and stay under the Sonar complexity threshold.
+
+## 2026-04-20 20:39 – Consolidated schema-validator scan helpers
+Context: A broader Sonar cleanup request covered repeated marker/property literals and several high-complexity validator scan methods in `SchemaValidationService`, plus lingering complexity in `PageSyncTool.ValidateBody(...)`.
+Decision: Introduced shared constants for schema markers/property names, added a reusable `ForEachMarkerAttributesContainer(...)` traversal helper, flattened validator-binding scans into enumerable/helper-based pipelines, and split `ExtractValidatorBody(...)` into smaller brace/string parsing helpers. `PageSyncTool.ValidateBody(...)` now delegates content-result and final success calculation to helpers.
+Discovery: Most of the remaining complexity came from repeating the same “read marker -> parse JSON -> branch on array vs attributes object” pattern in four different methods. Centralizing that traversal removed multiple Sonar issues at once without changing validation messages or semantics.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future validator-related validation rules can plug into one shared traversal path, making Sonar cleanups and maintenance cheaper across both command and MCP validation flows.
+
+## 2026-04-20 21:19 – Restore PageSync binding errors and harden string-literal scan
+Context: Follow-up review identified that `sync-pages` stopped surfacing column-binding validation errors after the body-validation refactor, and that the validator body scanner could step past the end of a malformed escaped string literal.
+Decision: Added `bindingResult` back into `PageSyncTool.ValidateBody(...)` error aggregation and guarded the escape branch in `SchemaValidationService.ConsumeStringLiteralCharacter(...)` so a trailing backslash advances safely.
+Discovery: `ValidateColumnBindings(...)` is intentionally split between hard errors and warnings in `PageSyncTool`; after the refactor, `bindingResult` still fed warnings but no longer contributed to `Errors`, which hid real validation failures from tool users.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `sync-pages` once again reports binding validation failures in its primary error payload, and malformed trailing escapes in validator bodies no longer risk index overflow during custom-validator parsing.
+
+## 2026-04-20 21:28 – Restore warning-only binding diagnostics in sync-pages
+Context: Review of the recent `PageSyncTool.ValidateBody(...)` refactor found that `ValidateColumnBindings(...)` diagnostics were being returned in both `Errors` and `Warnings`, duplicating the same message for MCP callers.
+Decision: Removed `bindingResult` from `CollectErrors(...)` while keeping it in `CollectWarnings(...)`, restoring the original warning-only contract for column-binding diagnostics.
+Discovery: The prior hotfix that reintroduced `bindingResult` into the validation payload over-corrected by treating binding diagnostics as hard errors; the intended behavior is to surface them only as warnings while other validator-related failures remain blocking.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `sync-pages` now returns binding diagnostics once, in the correct severity bucket, avoiding duplicate handling in MCP clients.
