@@ -493,6 +493,132 @@ public sealed class PageAddFieldsResponse {
 	public PageSamplingReview SamplingReview { get; init; }
 }
 
+/// <summary>
+/// Represents a single Freedom UI template entry from <c>list-page-templates</c> / <c>create-page</c>.
+/// </summary>
+[DataContract]
+public sealed class PageTemplateInfo {
+	[DataMember(Name = "uId")]
+	[JsonProperty("uId")]
+	[JsonPropertyName("uId")]
+	public string UId { get; set; }
+
+	[DataMember(Name = "name")]
+	[JsonProperty("name")]
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+
+	[DataMember(Name = "title")]
+	[JsonProperty("title")]
+	[JsonPropertyName("title")]
+	public string Title { get; set; }
+
+	[DataMember(Name = "groupName")]
+	[JsonProperty("groupName")]
+	[JsonPropertyName("groupName")]
+	public string GroupName { get; set; }
+
+	[DataMember(Name = "schemaType")]
+	[JsonProperty("schemaType")]
+	[JsonPropertyName("schemaType")]
+	public int SchemaType { get; set; }
+}
+
+/// <summary>
+/// Represents the <c>list-page-templates</c> response envelope.
+/// </summary>
+[DataContract]
+public sealed class PageTemplateListResponse {
+	[DataMember(Name = "success")]
+	[JsonProperty("success")]
+	[JsonPropertyName("success")]
+	public bool Success { get; set; }
+
+	[DataMember(Name = "count")]
+	[JsonProperty("count")]
+	[JsonPropertyName("count")]
+	public int Count { get; set; }
+
+	[DataMember(Name = "items")]
+	[JsonProperty("items")]
+	[JsonPropertyName("items")]
+	public List<PageTemplateInfo> Items { get; set; }
+
+	[DataMember(Name = "error")]
+	[JsonProperty("error")]
+	[JsonPropertyName("error")]
+	public string Error { get; set; }
+}
+
+/// <summary>
+/// Represents the <c>create-page</c> response envelope.
+/// </summary>
+[DataContract]
+public sealed class PageCreateResponse {
+	[DataMember(Name = "success")]
+	[JsonProperty("success")]
+	[JsonPropertyName("success")]
+	public bool Success { get; set; }
+
+	[DataMember(Name = "schemaName")]
+	[JsonProperty("schemaName")]
+	[JsonPropertyName("schemaName")]
+	public string SchemaName { get; set; }
+
+	[DataMember(Name = "schemaUId")]
+	[JsonProperty("schemaUId")]
+	[JsonPropertyName("schemaUId")]
+	public string SchemaUId { get; set; }
+
+	[DataMember(Name = "packageName")]
+	[JsonProperty("packageName")]
+	[JsonPropertyName("packageName")]
+	public string PackageName { get; set; }
+
+	[DataMember(Name = "packageUId")]
+	[JsonProperty("packageUId")]
+	[JsonPropertyName("packageUId")]
+	public string PackageUId { get; set; }
+
+	[DataMember(Name = "templateName")]
+	[JsonProperty("templateName")]
+	[JsonPropertyName("templateName")]
+	public string TemplateName { get; set; }
+
+	[DataMember(Name = "templateUId")]
+	[JsonProperty("templateUId")]
+	[JsonPropertyName("templateUId")]
+	public string TemplateUId { get; set; }
+
+	[DataMember(Name = "caption")]
+	[JsonProperty("caption", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("caption")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Caption { get; set; }
+
+	[DataMember(Name = "entitySchemaName")]
+	[JsonProperty("entitySchemaName", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("entitySchemaName")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string EntitySchemaName { get; set; }
+
+	[DataMember(Name = "entitySchemaUId")]
+	[JsonProperty("entitySchemaUId", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("entitySchemaUId")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string EntitySchemaUId { get; set; }
+
+	[DataMember(Name = "dryRun")]
+	[JsonProperty("dryRun")]
+	[JsonPropertyName("dryRun")]
+	public bool DryRun { get; set; }
+
+	[DataMember(Name = "error")]
+	[JsonProperty("error")]
+	[JsonPropertyName("error")]
+	public string Error { get; set; }
+}
+
 public sealed class PageAddColumnsResponse {
 	[JsonPropertyName("success")]
 	public bool Success { get; init; }

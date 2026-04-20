@@ -118,6 +118,8 @@ internal class Program {
 		typeof(PageListOptions),
 		typeof(PageGetOptions),
 		typeof(PageUpdateOptions),
+		typeof(PageCreateOptions),
+		typeof(PageTemplatesListOptions),
 		typeof(ClientUnitSchemaUpdateOptions),
 		typeof(ConfigureWorkspaceOptions),
 		typeof(GitSyncOptions),
@@ -378,6 +380,8 @@ internal class Program {
 					AssertOptions opts => Resolve<AssertCommand>(opts).Execute(opts),
 					LinkPackageStoreOptions opts => Resolve<LinkPackageStoreCommand>(opts).Execute(opts),
 					McpServerCommandOptions opts => Resolve<McpServerCommand>(opts).Execute(opts),
+					PageCreateOptions opts => Resolve<PageCreateCommand>(opts).Execute(opts),
+					PageTemplatesListOptions opts => Resolve<PageTemplatesListCommand>(opts).Execute(opts),
 					QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
 					var _ => 1
 				};
