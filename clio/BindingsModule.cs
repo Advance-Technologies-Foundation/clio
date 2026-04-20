@@ -209,6 +209,9 @@ public class BindingsModule {
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
 		services.AddTransient<PageUpdateCommand>();
+		services.AddTransient<PageCreateCommand>();
+		services.AddTransient<PageTemplatesListCommand>();
+		services.AddTransient<ISchemaTemplateCatalog, SchemaTemplateCatalog>();
 		services.AddTransient<IPageDesignerHierarchyClient, PageDesignerHierarchyClient>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
@@ -229,6 +232,8 @@ public class BindingsModule {
 		services.AddTransient<ToolContractGetTool>();
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
+		services.AddTransient<PageCreateTool>();
+		services.AddTransient<PageTemplatesListTool>();
 		services.AddTransient<PageSyncTool>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<DataForgeTool>();

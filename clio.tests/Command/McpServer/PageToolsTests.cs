@@ -37,6 +37,51 @@ public class PageToolsTests {
 	}
 
 	[Test]
+	[Description("Verifies that PageCreateTool has the correct MCP tool name")]
+	public void PageCreateTool_HasCorrectName() {
+		PageCreateTool.ToolName.Should().Be("create-page", "because the MCP tool name must match the protocol contract");
+	}
+
+	[Test]
+	[Description("Verifies that PageTemplatesListTool has the correct MCP tool name")]
+	public void PageTemplatesListTool_HasCorrectName() {
+		PageTemplatesListTool.ToolName.Should().Be("list-page-templates", "because the MCP tool name must match the protocol contract");
+	}
+
+	[Test]
+	[Description("Serializes create-page MCP request arguments using kebab-case field names")]
+	public void PageCreateToolArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
+		PageCreateArgs args = new(
+			"UsrDemo_BlankPage", "BlankPageTemplate", "Custom",
+			"Demo page", "Demo description", "UsrDemoEntity",
+			true, "sandbox", null, null, null);
+
+		string json = System.Text.Json.JsonSerializer.Serialize(args);
+
+		json.Should().Contain("\"schema-name\":\"UsrDemo_BlankPage\"");
+		json.Should().Contain("\"template\":\"BlankPageTemplate\"");
+		json.Should().Contain("\"package-name\":\"Custom\"");
+		json.Should().Contain("\"entity-schema-name\":\"UsrDemoEntity\"");
+		json.Should().Contain("\"dry-run\":true");
+		json.Should().Contain("\"environment-name\":\"sandbox\"");
+		json.Should().NotContain("\"schemaName\"");
+		json.Should().NotContain("\"packageName\"");
+		json.Should().NotContain("\"dryRun\"");
+	}
+
+	[Test]
+	[Description("Serializes list-page-templates MCP request arguments using kebab-case field names")]
+	public void PageTemplatesListArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
+		PageTemplatesListArgs args = new("web", "sandbox", null, null, null);
+
+		string json = System.Text.Json.JsonSerializer.Serialize(args);
+
+		json.Should().Contain("\"schema-type\":\"web\"");
+		json.Should().Contain("\"environment-name\":\"sandbox\"");
+		json.Should().NotContain("\"schemaType\"");
+	}
+
+	[Test]
 	[Description("Serializes page MCP request arguments using kebab-case field names")]
 	public void PageToolArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
 		// Arrange
