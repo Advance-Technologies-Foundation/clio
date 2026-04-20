@@ -20,8 +20,10 @@ discover valid template values (web and mobile).
 
 create-page validates the input before calling the designer service:
 schema-name format, template existence, package existence, schema-name
-uniqueness, and optional entity schema resolution. On success it returns
-the assigned SchemaUId and the resolved package / template metadata.
+uniqueness, and optional entity schema resolution. The command emits
+step-by-step progress for every validation and remote call, and on
+success returns the assigned SchemaUId and the resolved package /
+template metadata.
 
 create-page does not run AI sampling on the new page; it relies on the
 platform template body. After a successful call, use `get-page` to read
@@ -54,9 +56,6 @@ clio create-page [options]
 --entity-schema-name               Optional entity schema to record in the
                                    new page dependencies
 
---dry-run                          Validate inputs and resolve references
-                                   without creating the page
-
 --uri                    -u       Application uri
 
 --Password               -p       User password
@@ -73,9 +72,6 @@ clio create-page [options]
 ```bash
 clio list-page-templates -e dev
 discover valid templates in the target environment
-
-clio create-page --schema-name UsrDemo_BlankPage --template BlankPageTemplate --package-name Custom --dry-run -e dev
-validate inputs and resolve template and package without creating the page
 
 clio create-page --schema-name UsrDemo_BlankPage --template BlankPageTemplate --package-name Custom --caption "Demo blank page" -e dev
 create the Freedom UI page from the BlankPageTemplate parent

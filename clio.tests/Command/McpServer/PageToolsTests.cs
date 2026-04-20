@@ -54,7 +54,7 @@ public class PageToolsTests {
 		PageCreateArgs args = new(
 			"UsrDemo_BlankPage", "BlankPageTemplate", "Custom",
 			"Demo page", "Demo description", "UsrDemoEntity",
-			true, "sandbox", null, null, null);
+			"sandbox", null, null, null);
 
 		string json = System.Text.Json.JsonSerializer.Serialize(args);
 
@@ -62,10 +62,10 @@ public class PageToolsTests {
 		json.Should().Contain("\"template\":\"BlankPageTemplate\"");
 		json.Should().Contain("\"package-name\":\"Custom\"");
 		json.Should().Contain("\"entity-schema-name\":\"UsrDemoEntity\"");
-		json.Should().Contain("\"dry-run\":true");
 		json.Should().Contain("\"environment-name\":\"sandbox\"");
 		json.Should().NotContain("\"schemaName\"");
 		json.Should().NotContain("\"packageName\"");
+		json.Should().NotContain("\"dry-run\"");
 		json.Should().NotContain("\"dryRun\"");
 	}
 

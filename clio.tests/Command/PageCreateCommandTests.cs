@@ -134,33 +134,6 @@ public sealed class PageCreateCommandTests {
 	}
 
 	[Test]
-	public void TryCreatePage_DryRun_Returns_Success_Without_Saving() {
-		Queue<string> responses = new([
-			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
-			"""{"success": true, "rows": []}"""
-		]);
-		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
-			.Returns(_ => responses.Dequeue());
-		PageCreateOptions options = new() {
-			SchemaName = "UsrDemo_BlankPage",
-			Template = TemplateName,
-			PackageName = "Custom",
-			DryRun = true
-		};
-
-		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
-
-		result.Should().BeTrue();
-		response.Success.Should().BeTrue();
-		response.DryRun.Should().BeTrue();
-		response.TemplateName.Should().Be(TemplateName);
-		response.TemplateUId.Should().Be(TemplateUId);
-		response.PackageUId.Should().Be(PackageUId);
-		response.SchemaUId.Should().BeNull();
-		_applicationClient.DidNotReceive().ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>());
-	}
-
-	[Test]
 	public void TryCreatePage_Happy_Path_Posts_SaveSchema_And_Returns_SchemaUId() {
 		Queue<string> selectResponses = new([
 			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
@@ -186,7 +159,6 @@ public sealed class PageCreateCommandTests {
 		response.TemplateName.Should().Be(TemplateName);
 		response.PackageUId.Should().Be(PackageUId);
 		response.Caption.Should().Be("Demo page");
-		response.DryRun.Should().BeFalse();
 		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl, Arg.Is<string>(s => s.Contains(TemplateUId)));
 	}
 
