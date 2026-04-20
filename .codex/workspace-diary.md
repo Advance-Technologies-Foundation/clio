@@ -2405,3 +2405,10 @@ Decision: Replace per-run generated setting codes with one deterministic reusabl
 Discovery: The tests only need any resolvable `Text` sys setting; they do not depend on special semantics of the original `Maintainer` value or on unique setting names per run.
 Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs
 Impact: The settings-default E2Es remain self-sufficient without leaking unbounded sys settings into shared environments.
+
+## 2026-04-20 15:40 – Stop MCP E2E from running in GitHub Actions
+Context: MCP end-to-end coverage is being moved off GitHub Actions so the repo should stop scheduling that suite there for now.
+Decision: Remove the dedicated `mcp-e2e-tests` workflow job and the now-unused `mcp` change-detection output/filter from `.github/workflows/build.yml`; keep the `clio.mcp.e2e` project in the repo for future TeamCity ownership.
+Discovery: GitHub Actions invoked MCP E2E only from the dedicated workflow job, so no project or test code changes were required for the stopgap.
+Files: .github/workflows/build.yml, .codex/workspace-diary.md
+Impact: PRs and branch builds on GitHub no longer queue MCP E2E, reducing CI time while preserving the suite for a later TeamCity migration.
