@@ -2482,3 +2482,31 @@ Decision: Moved the `$PDS_` control-binding violation detection and error creati
 Discovery: The remaining complexity came from a single nested `control`/`$PDS_`/`attributesWithValidators` branch inside the traversal method; extracting that branch was enough to drop the method below the threshold without touching validation semantics or tests.
 Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Future control-binding rule tweaks can stay isolated in the helper while the recursive method remains under the Sonar limit.
+
+## 2026-04-21 11:55 – Remove speculative PageUpdate max-length validator test
+Context: A recently added `PageUpdateTool` test asserted that custom max-length-style validators must stay accepted because runtime validation no longer tries to infer `crt.MaxLength` equivalence. The branch goal is to keep tests tied to current behavior contracts, not to guard against hypothetical future heuristic reintroduction.
+Decision: Deleted the `PageUpdateTool_UpdatePage_Allows_Custom_MaxLength_Style_Validator` test from `PageToolsTests` and kept the remaining validator-related tests that still validate active contracts: `#ResourceString(...)` enforcement, canonical built-in param names, zero-param custom validator rejection, and validator guidance routing through `get-guidance`.
+Discovery: The removed test was the only remaining test in the branch that encoded a negative assertion about a future reintroduction of broad built-in-equivalence heuristics; the rest of the added validator tests remain grounded in current runtime validation behavior.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The MCP validator test suite now checks only present-day contracts and error semantics, which keeps future validation changes free to evolve without carrying a speculative regression test.
+
+## 2026-04-21 12:05 – Remove handler/converter guide references from clio skill docs
+Context: After cleaning the validator branch MCP surface, the clio GitHub skill artifacts still referenced `page-schema-handlers` and `page-schema-converters`, which kept outdated guidance names visible to agents reading repository-local skill docs.
+Decision: Replaced the `commands-reference.md` get-page note with a validator-only `get-guidance` instruction and rewrote the corresponding `SKILL.md` page-body guidance block to mention only validator authoring.
+Discovery: The remaining handler/converter references were confined to `.github/skills/clio/references/commands-reference.md` and `.github/skills/clio/SKILL.md`; repository-wide search confirmed no other `page-schema-handlers` or `page-schema-converters` strings remain after the update.
+Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Agents that rely on the repository-local clio skill now see the same validator-only guidance surface as the branch MCP runtime and tests.
+
+## 2026-04-21 12:12 – Restore validator guidance URI as secondary identifier in skill docs
+Context: After removing handler/converter guide references from repository-local clio skill docs, the validator guide URI also disappeared from human-facing guidance, which made the canonical resource address less visible even though `get-guidance` remains the supported access path.
+Decision: Added `docs://mcp/guides/page-schema-validators` back to `.github/skills/clio/references/commands-reference.md` and `.github/skills/clio/SKILL.md` as a secondary identifier while keeping `get-guidance name=page-schema-validators` as the primary instruction.
+Discovery: Keeping the URI as metadata preserves discoverability for inspectors and humans without reintroducing the unreliable client behavior caused by telling agents to read `docs://...` directly.
+Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Repository-local skill docs now expose both the stable guidance tool flow and the canonical validator guide URI without re-opening the broken direct-URI access pattern.
+
+## 2026-04-21 12:16 – Keep skill docs get-guidance-only for validator authoring
+Context: A brief follow-up added the validator guide URI back into the repository-local clio skill docs as metadata, but that made the docs noisier without improving the supported access flow.
+Decision: Removed the secondary `docs://mcp/guides/page-schema-validators` mention again and kept `get-guidance name=page-schema-validators` as the sole instruction in `.github/skills/clio/references/commands-reference.md` and `.github/skills/clio/SKILL.md`.
+Discovery: For these repository-local skill docs, the extra URI adds no operational value because agents should already use `get-guidance`; keeping only the actionable instruction is clearer and avoids reintroducing ambiguous guidance text.
+Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The local clio skill now stays aligned with the single supported validator-guidance access path and avoids redundant URI noise.

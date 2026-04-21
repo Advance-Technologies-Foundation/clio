@@ -1115,10 +1115,7 @@ clio get-page --schema-name UsrTodo_FormPage -e <ENV>
 ```
 Returns a JSON envelope with page metadata, bundle data, and `raw.body`. Use `raw.body` as the editable payload for `update-page`.
 
-For MCP-guided page-body authoring, read the clio runtime guides instead of relying on repository-local notes from another workspace:
-- `docs://mcp/guides/page-schema-handlers`
-- `docs://mcp/guides/page-schema-converters`
-- `docs://mcp/guides/page-schema-validators`
+For MCP-guided page-body authoring, call `get-guidance` with `name` set to `page-schema-validators` instead of relying on repository-local notes from another workspace.
 
 ### update-page
 Update the raw schema body of a Freedom UI page. **Alias:** `page-update`

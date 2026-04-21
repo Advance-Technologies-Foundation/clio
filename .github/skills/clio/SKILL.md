@@ -525,12 +525,9 @@ clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
 
 For updating multiple pages in one call, use the `sync-pages` MCP tool.
 
-For raw Freedom UI page-body edits through MCP, keep the logic inside clio-owned runtime guidance:
-- handler authoring: `docs://mcp/guides/page-schema-handlers`
-- converter authoring: `docs://mcp/guides/page-schema-converters`
-- validator authoring: `docs://mcp/guides/page-schema-validators`
+For raw Freedom UI page-body edits through MCP, keep validator logic inside clio-owned runtime guidance by calling `get-guidance` with `name` set to `page-schema-validators`.
 
-Use `handlers` for request-chain and lifecycle logic, `converters` for value transformation, and `validators` for field-value validation. For deployed schema editing, read the live page with `get-page`, edit `raw.body`, and save through `sync-pages`.
+Use validators for field-value validation. For deployed schema editing, read the live page with `get-page`, edit `raw.body`, and save through `sync-pages`.
 
 ### 10. Data Bindings
 
