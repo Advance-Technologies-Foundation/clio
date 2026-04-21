@@ -234,12 +234,15 @@ public sealed class ApplicationSectionUpdateService(
 			items["Description"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, request.Description);
 		}
 
-		return new {
-			rootSchemaName = ApplicationSectionSchemaName,
-			columnValues = new {
+		return new Dictionary<string, object> {
+			["__type"] = "Terrasoft.Nui.ServiceModel.DataContract.UpdateQuery",
+			["operationType"] = 2,
+			["rootSchemaName"] = ApplicationSectionSchemaName,
+			["isForceUpdate"] = false,
+			["columnValues"] = new {
 				items
 			},
-			filters = BuildPrimaryKeyFilter(previousSection.Id)
+			["filters"] = BuildPrimaryKeyFilter(previousSection.Id)
 		};
 	}
 

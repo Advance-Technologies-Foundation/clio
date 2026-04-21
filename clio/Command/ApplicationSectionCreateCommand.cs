@@ -279,19 +279,23 @@ public sealed class ApplicationSectionCreateService(
 		}
 	}
 
-	private static object BuildIconBackgroundUpdateBody(ApplicationSectionRecord section, string iconBackground) =>
-		new {
-			rootSchemaName = ApplicationSectionSchemaName,
-			columnValues = new {
-				items = new Dictionary<string, object> {
-					["Id"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.Id),
-					["ApplicationId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.ApplicationId),
-					["LogoId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.LogoId ?? string.Empty),
-					["PackageId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.PackageId ?? string.Empty),
-					["IconBackground"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, iconBackground)
-				}
+	private static object BuildIconBackgroundUpdateBody(ApplicationSectionRecord section, string iconBackground) {
+		Dictionary<string, object> columnItems = new(StringComparer.Ordinal) {
+			["Id"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.Id),
+			["ApplicationId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.ApplicationId),
+			["LogoId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.LogoId ?? string.Empty),
+			["PackageId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.PackageId ?? string.Empty),
+			["IconBackground"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, iconBackground)
+		};
+		return new Dictionary<string, object> {
+			["__type"] = "Terrasoft.Nui.ServiceModel.DataContract.UpdateQuery",
+			["operationType"] = 2,
+			["rootSchemaName"] = ApplicationSectionSchemaName,
+			["isForceUpdate"] = false,
+			["columnValues"] = new {
+				items = columnItems
 			},
-			filters = new {
+			["filters"] = new {
 				filterType = 6,
 				isEnabled = true,
 				trimDateTimeParameterToDate = false,
@@ -317,6 +321,7 @@ public sealed class ApplicationSectionCreateService(
 				}
 			}
 		};
+	}
 
 	private ApplicationSectionRecord GetSectionRecord(
 		IApplicationClient client,
@@ -569,17 +574,34 @@ public sealed class ApplicationSectionCreateService(
 			: char.ToUpperInvariant(sanitizedValue[0]) + sanitizedValue[1..];
 	}
 
-	private static string GenerateRandomHexColor() {
-		int red = Random.Shared.Next(50, 200);
-		int green = Random.Shared.Next(50, 200);
-		int blue = Random.Shared.Next(50, 200);
-		return string.Create(7, (red, green, blue), static (span, value) => {
-			span[0] = '#';
-			value.red.TryFormat(span.Slice(1, 2), out _, "X2");
-			value.green.TryFormat(span.Slice(3, 2), out _, "X2");
-			value.blue.TryFormat(span.Slice(5, 2), out _, "X2");
-		});
-	}
+	private static readonly string[] FreedomUIColorPalette = [
+		"#A6DE00",
+		"#20A959",
+		"#22AC14",
+		"#FFAC07",
+		"#FF8800",
+		"#F9307F",
+		"#FF602E",
+		"#FF4013",
+		"#B87CCF",
+		"#7848EE",
+		"#247EE5",
+		"#0058EF",
+		"#009DE3",
+		"#4F43C2",
+		"#08857E",
+		"#00BFA5",
+		"#BE1B5A",
+		"#E00022",
+		"#0B6A32",
+		"#1566B9",
+		"#9641A9",
+		"#F86700",
+		"#0D2E4E"
+	];
+
+	private static string GenerateRandomHexColor() =>
+		FreedomUIColorPalette[Random.Shared.Next(FreedomUIColorPalette.Length)];
 
 	private sealed class InsertQueryResponseDto {
 		[JsonPropertyName("success")]
