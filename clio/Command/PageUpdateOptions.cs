@@ -1,6 +1,7 @@
 namespace Clio.Command {
 	using System;
 	using System.Collections.Generic;
+	using System.IO;
 	using System.Linq;
 	using Clio.Common;
 	using CommandLine;
@@ -21,8 +22,14 @@ namespace Clio.Command {
 		/// <summary>
 		/// Gets or sets the full raw JavaScript body to save.
 		/// </summary>
-		[Option("body", Required = true, HelpText = "New JSON body content")]
+		[Option("body", Required = false, HelpText = "New JSON body content (inline)")]
 		public string Body { get; set; }
+
+		/// <summary>
+		/// Gets or sets path to a file containing the new body. Alternative to --body.
+		/// </summary>
+		[Option("body-file", Required = false, HelpText = "Path to a file containing the new body. Alternative to --body.")]
+		public string? BodyFile { get; set; }
 
 		/// <summary>
 		/// Gets or sets a value indicating whether the command should validate without saving.
@@ -68,6 +75,13 @@ namespace Clio.Command {
 		/// <returns><c>true</c> when the page was updated successfully; otherwise <c>false</c>.</returns>
 		public bool TryUpdatePage(PageUpdateOptions options, out PageUpdateResponse response) {
 			try {
+				if (string.IsNullOrWhiteSpace(options.Body) && !string.IsNullOrWhiteSpace(options.BodyFile)) {
+					if (!File.Exists(options.BodyFile)) {
+						response = new PageUpdateResponse { Success = false, Error = $"File not found: {options.BodyFile}" };
+						return false;
+					}
+					options.Body = File.ReadAllText(options.BodyFile);
+				}
 				PageUpdateResponse validationError = ValidateInput(options, out Dictionary<string, string> explicitResources);
 				if (validationError != null) {
 					response = validationError;
