@@ -27,10 +27,9 @@ to set a specific icon background color from the Freedom UI palette, or omit
 it to pick a random palette color. Values outside the palette are rejected
 because the app manager UI only renders palette colors as tile gradients.
 
-Valid palette colors: #A6DE00, #20A959, #22AC14, #FFAC07, #FF8800, #F9307F,
-#FF602E, #FF4013, #B87CCF, #7848EE, #247EE5, #0058EF, #009DE3, #4F43C2,
-#08857E, #00BFA5, #BE1B5A, #E00022, #0B6A32, #1566B9, #9641A9, #F86700,
-#0D2E4E.
+Valid palette colors (16 gradients rendered by the app manager UI):
+#A6DE00, #20A959, #22AC14, #FFAC07, #FF8800, #F9307F, #FF602E, #FF4013,
+#B87CCF, #7848EE, #247EE5, #0058EF, #009DE3, #4F43C2, #08857E, #00BFA5.
 
 ## Synopsis
 
