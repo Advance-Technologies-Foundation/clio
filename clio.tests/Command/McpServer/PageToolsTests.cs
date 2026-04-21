@@ -2133,6 +2133,55 @@ public class PageToolsTests {
 	}
 
 	[Test]
+	[Description("update-page append mode permits bodies that omit sections — missing markers are not treated as validation failures because the current schema body supplies those sections")]
+	public void TryUpdatePage_AppendMode_Should_Allow_Body_With_Missing_Markers() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
+		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
+		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "Opportunities_ListPage", PackageUId = designPkg, PackageName = "CrtWaterfallPipelineInLeadOppMgmt" }
+		});
+		string currentBody = "define(\"Opportunities_ListPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"Existing\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = originalUId, ["name"] = "Opportunities_ListPage", ["body"] = currentBody, ["package"] = new JObject { ["uId"] = designPkg } }
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				return callIndex switch {
+					1 => metadataResponse.ToString(),
+					2 => getSchemaResponse.ToString(),
+					_ => saveResponse.ToString()
+				};
+			});
+		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\",\"caption\":\"Test\"},\"parentName\":\"ActionButtonsContainer\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/ /**SCHEMA_HANDLERS*/[{request:\"usr.TestRequest\",handler:()=>alert(\"Test\")}]/**SCHEMA_HANDLERS*/";
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+
+		bool ok = command.TryUpdatePage(new PageUpdateOptions {
+			SchemaName = "Opportunities_ListPage",
+			Body = incomingFragment,
+			Mode = "append",
+			DryRun = false
+		}, out PageUpdateResponse response);
+
+		ok.Should().BeTrue(because: "append mode should accept bodies with only the sections that change");
+		response.Error.Should().BeNull();
+		response.Success.Should().BeTrue();
+	}
+
+	[Test]
 	[Description("PageBodyMerger handlers dedupe: when incoming declares the same request as current, incoming wins")]
 	public void PageBodyMerger_Should_Dedupe_Handlers_By_Request() {
 		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
