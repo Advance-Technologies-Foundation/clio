@@ -20,14 +20,7 @@ internal static class ApplicationSectionColorPalette {
 		"#009DE3",
 		"#4F43C2",
 		"#08857E",
-		"#00BFA5",
-		"#BE1B5A",
-		"#E00022",
-		"#0B6A32",
-		"#1566B9",
-		"#9641A9",
-		"#F86700",
-		"#0D2E4E"
+		"#00BFA5"
 	];
 
 	internal static readonly string JoinedColors = string.Join(", ", Colors);
