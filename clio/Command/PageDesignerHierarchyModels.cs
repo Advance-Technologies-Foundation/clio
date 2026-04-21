@@ -16,9 +16,7 @@ public interface IPageDesignerHierarchyClient {
 	IReadOnlyList<PageDesignerHierarchySchema> GetParentSchemas(string schemaUId, string packageUId);
 
 	/// <summary>
-	/// Gets the design package identifier for the specified schema. Matches the Freedom UI designer flow:
-	/// determines the package where a new replacing schema would be created (may be a virtual package
-	/// that is materialized on first save).
+	/// Gets the design package identifier for the specified schema.
 	/// </summary>
 	/// <param name="schemaUId">Schema identifier.</param>
 	/// <returns>Design package identifier.</returns>

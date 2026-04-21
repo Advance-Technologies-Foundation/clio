@@ -5,6 +5,9 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
+using System.Threading.Tasks;
+using Clio.Command;
+using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -21,19 +24,23 @@ public sealed class PageSyncTool(
 
 	internal const string ToolName = "sync-pages";
 
-	/// <summary>
-	/// Updates multiple Freedom UI pages in a single MCP call.
-	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
-		"For each page: validates body client-side (optional), saves to Creatio, " +
-		"and verifies the update (optional). Continues processing remaining pages on failure. " +
-		"Section authoring rules for the body payload: " +
-		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first. ")]
-	public PageSyncResponse SyncPages(
-		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional)")]
-		[Required] PageSyncArgs args) {
+		"For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
+		"and verifies the update (optional). Continues processing remaining pages on failure.")]
+	public async Task<PageSyncResponse> SyncPages(
+		[Description("Parameters: environment-name (required); pages array (required); validate, verify, skip-sampling (optional)")]
+		[Required] PageSyncArgs args,
+		McpServerLib.McpServer server,
+		CancellationToken cancellationToken = default) {
+		var samplingResults = new Dictionary<string, PageSamplingReview>(StringComparer.Ordinal);
+		if (args.SkipSampling != true) {
+			foreach (PageSyncPageInput page in args.Pages) {
+				samplingResults[page.SchemaName] = await PageBodySamplingService.TrySamplingReviewAsync(
+					server, page.SchemaName, page.Body, cancellationToken);
+			}
+		}
 		var results = new List<PageSyncPageResult>();
 		bool validate = args.Validate ?? true;
 		bool verify = args.Verify ?? false;
@@ -46,8 +53,9 @@ public sealed class PageSyncTool(
 						new PageGetOptions { Environment = args.EnvironmentName })
 					: null;
 				foreach (PageSyncPageInput page in args.Pages) {
+					samplingResults.TryGetValue(page.SchemaName, out PageSamplingReview samplingReview);
 					PageSyncPageResult pageResult = SyncSinglePage(
-						page, updateCommand, getCommand, validate, verify);
+						page, updateCommand, getCommand, validate, verify, samplingReview);
 					results.Add(pageResult);
 				}
 				Thread.Sleep(500);
@@ -74,7 +82,8 @@ public sealed class PageSyncTool(
 		PageUpdateCommand updateCommand,
 		PageGetCommand getCommand,
 		bool validate,
-		bool verify) {
+		bool verify,
+		PageSamplingReview samplingReview) {
 		try {
 			PageSyncValidationResult validationResult = null;
 			if (validate) {
@@ -84,16 +93,27 @@ public sealed class PageSyncTool(
 						SchemaName = page.SchemaName,
 						Success = false,
 						Validation = validationResult,
+						SamplingReview = samplingReview,
 						Error = "Client-side validation failed: " +
 							string.Join("; ", validationResult.Errors ?? Array.Empty<string>())
 					};
 				}
 			}
+			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
+				return new PageSyncPageResult {
+					SchemaName = page.SchemaName,
+					Success = false,
+					Validation = validationResult,
+					SamplingReview = samplingReview,
+					Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues)
+				};
+			}
 			PageUpdateOptions updateOptions = new() {
 				SchemaName = page.SchemaName,
 				Body = page.Body,
 				DryRun = false,
-				Resources = page.Resources
+				Resources = page.Resources,
+				OptionalProperties = page.OptionalProperties
 			};
 			updateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
 			if (!updateResponse.Success) {
@@ -130,6 +150,7 @@ public sealed class PageSyncTool(
 					Success = true,
 					BodyLength = updateResponse.BodyLength,
 					Validation = validationResult,
+					SamplingReview = samplingReview,
 					ResourcesRegistered = updateResponse.ResourcesRegistered,
 					Page = getResponse.Page,
 					VerifiedBodyFile = verifiedBodyFile
@@ -140,6 +161,7 @@ public sealed class PageSyncTool(
 				Success = true,
 				BodyLength = updateResponse.BodyLength,
 				Validation = validationResult,
+				SamplingReview = samplingReview,
 				ResourcesRegistered = updateResponse.ResourcesRegistered
 			};
 		} catch (Exception ex) {
@@ -154,112 +176,49 @@ public sealed class PageSyncTool(
 	private static PageSyncValidationResult ValidateBody(string body, string? resources) {
 		SchemaValidationResult markerResult = SchemaValidationService.ValidateMarkerIntegrity(body);
 		SchemaValidationResult syntaxResult = SchemaValidationService.ValidateJsSyntax(body);
-		SchemaValidationResult contentResult = GetContentValidationResult(body, markerResult);
-		Dictionary<string, string>? explicitResources = TryParseExplicitResources(resources, contentResult);
-		SchemaValidationResult fieldResult = RunContentValidation(
-			contentResult, () => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources));
-		SchemaValidationResult validatorBindingResult = RunContentValidation(
-			contentResult, () => SchemaValidationService.ValidateValidatorControlBindings(body));
-		SchemaValidationResult validatorParamResult = RunContentValidation(
-			contentResult, () => SchemaValidationService.ValidateValidatorParamResourceBindings(body));
-		SchemaValidationResult standardValidatorResult = RunContentValidation(
-			contentResult, () => SchemaValidationService.ValidateStandardValidatorUsage(body));
-		SchemaValidationResult validatorParamCompletenessResult = RunContentValidation(
-			contentResult, () => SchemaValidationService.ValidateCustomValidatorParamCompleteness(body));
-		SchemaValidationResult bindingResult = RunContentValidation(
-			contentResult, () => SchemaValidationService.ValidateColumnBindings(body));
-		List<string> errors = CollectErrors(
-			markerResult,
-			syntaxResult,
-			contentResult,
-			fieldResult,
-			validatorBindingResult,
-			validatorParamResult,
-			standardValidatorResult,
-			validatorParamCompletenessResult);
-		List<string> warnings = CollectWarnings(fieldResult, bindingResult);
-		bool contentOk = IsContentValidationSuccessful(
-			contentResult,
-			fieldResult,
-			validatorBindingResult,
-			validatorParamResult,
-			standardValidatorResult,
-			validatorParamCompletenessResult);
-		return BuildValidationResult(markerResult, syntaxResult, contentOk, errors, warnings);
-	}
-
-	private static SchemaValidationResult GetContentValidationResult(
-		string body,
-		SchemaValidationResult markerResult) =>
-		markerResult.IsValid
+		SchemaValidationResult contentResult = markerResult.IsValid
 			? SchemaValidationService.ValidateMarkerContent(body)
 			: new SchemaValidationResult { IsValid = true };
-
-	private static Dictionary<string, string>? TryParseExplicitResources(
-		string? resources,
-		SchemaValidationResult contentResult) {
-		if (!contentResult.IsValid) {
-			return null;
+		Dictionary<string, string>? explicitResources = null;
+		if (contentResult.IsValid &&
+		    !SchemaValidationService.TryParseResources(resources, out explicitResources, out _)) {
+			contentResult.IsValid = false;
+			contentResult.Errors.Add("resources must be a valid JSON object string");
 		}
-
-		if (SchemaValidationService.TryParseResources(resources, out Dictionary<string, string>? explicitResources, out _)) {
-			return explicitResources;
-		}
-
-		contentResult.IsValid = false;
-		contentResult.Errors.Add("resources must be a valid JSON object string");
-		return null;
-	}
-
-	private static SchemaValidationResult RunContentValidation(
-		SchemaValidationResult contentResult,
-		Func<SchemaValidationResult> validation) =>
-		contentResult.IsValid
-			? validation()
+		SchemaValidationResult fieldResult = contentResult.IsValid
+			? SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources)
 			: new SchemaValidationResult { IsValid = true };
-
-	private static bool IsContentValidationSuccessful(params SchemaValidationResult[] results) =>
-		results.All(result => result.IsValid);
-
-	private static List<string> CollectErrors(params SchemaValidationResult[] results) {
+		SchemaValidationResult bindingResult = contentResult.IsValid
+			? SchemaValidationService.ValidateColumnBindings(body)
+			: new SchemaValidationResult { IsValid = true };
 		var errors = new List<string>();
-		foreach (SchemaValidationResult result in results) {
-			if (!result.IsValid) {
-				errors.AddRange(result.Errors);
-			}
-		}
-
-		return errors;
-	}
-
-	private static List<string> CollectWarnings(
-		SchemaValidationResult fieldResult,
-		SchemaValidationResult bindingResult) {
 		var warnings = new List<string>();
+		if (!markerResult.IsValid) {
+			errors.AddRange(markerResult.Errors);
+		}
+		if (!syntaxResult.IsValid) {
+			errors.AddRange(syntaxResult.Errors);
+		}
+		if (!contentResult.IsValid) {
+			errors.AddRange(contentResult.Errors);
+		}
+		if (!fieldResult.IsValid) {
+			errors.AddRange(fieldResult.Errors);
+		}
 		if (fieldResult.Warnings.Count > 0) {
 			warnings.AddRange(fieldResult.Warnings);
 		}
-
 		if (!bindingResult.IsValid) {
 			warnings.AddRange(bindingResult.Errors);
 		}
-
-		return warnings;
-	}
-
-	private static PageSyncValidationResult BuildValidationResult(
-		SchemaValidationResult markerResult,
-		SchemaValidationResult syntaxResult,
-		bool contentOk,
-		List<string> errors,
-		List<string> warnings) =>
-		new() {
+		return new PageSyncValidationResult {
 			MarkersOk = markerResult.IsValid,
 			JsSyntaxOk = syntaxResult.IsValid,
-			ContentOk = contentOk,
+			ContentOk = contentResult.IsValid && fieldResult.IsValid,
 			Errors = errors.Count > 0 ? errors : null,
 			Warnings = warnings.Count > 0 ? warnings : null
 		};
+	}
 }
 
 /// <summary>
@@ -282,7 +241,11 @@ public sealed record PageSyncArgs(
 
 	[property: JsonPropertyName("verify")]
 	[property: Description("Read back each page after saving to confirm the update. Default: false")]
-	bool? Verify = null
+	bool? Verify = null,
+
+	[property: JsonPropertyName("skip-sampling")]
+	[property: Description("If true, skip AI semantic review before saving. Default: false")]
+	bool? SkipSampling = null
 );
 
 /// <summary>
@@ -301,7 +264,10 @@ public sealed record PageSyncPageInput(
 
 	[property: JsonPropertyName("resources")]
 	[property: Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros")]
-	string? Resources = null
+	string? Resources = null,
+	[property: JsonPropertyName("optional-properties")]
+	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties")]
+	string? OptionalProperties = null
 );
 
 /// <summary>
@@ -346,6 +312,10 @@ public sealed class PageSyncPageResult {
 	[JsonPropertyName("page")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public PageMetadataInfo Page { get; init; }
+
+	[JsonPropertyName("sampling-review")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public PageSamplingReview SamplingReview { get; init; }
 
 	[JsonPropertyName("verified-body-file")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

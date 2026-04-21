@@ -16,15 +16,16 @@ public sealed class ApplicationInfoServiceTests {
 	private ISettingsRepository _settingsRepository = null!;
 	private IApplicationClientFactory _applicationClientFactory = null!;
 	private IApplicationClient _applicationClient = null!;
+	private IServiceUrlBuilderFactory _serviceUrlBuilderFactory = null!;
 	private ApplicationInfoService _sut = null!;
 	private EnvironmentSettings _environment = null!;
 
 	[SetUp]
 	public void SetUp() {
-		// Arrange
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		_applicationClient = Substitute.For<IApplicationClient>();
+		_serviceUrlBuilderFactory = new ServiceUrlBuilderFactory();
 		_environment = new EnvironmentSettings {
 			Uri = "https://example.invalid",
 			Login = "Supervisor",
@@ -33,7 +34,7 @@ public sealed class ApplicationInfoServiceTests {
 		};
 		_settingsRepository.FindEnvironment("sandbox").Returns(_environment);
 		_applicationClientFactory.CreateEnvironmentClient(_environment).Returns(_applicationClient);
-		_sut = new ApplicationInfoService(_settingsRepository, _applicationClientFactory);
+		_sut = new ApplicationInfoService(_settingsRepository, _applicationClientFactory, _serviceUrlBuilderFactory);
 	}
 
 	[Test]

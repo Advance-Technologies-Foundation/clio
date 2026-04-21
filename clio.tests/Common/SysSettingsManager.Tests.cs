@@ -53,37 +53,16 @@ public class SysSettingsManagerTests
 	[TestCase("false")]
 	[TestCase("False")]
 	public void GetSysSettingValueByCode_Returns_CorrectBooleanValue(string value){
-		//Arrange
 		const string sysSettingCode = "nonExistingCode";
-		string sysSettingValue = value;
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		dataProvider.GetSysSettingValue<string>(sysSettingCode).Returns(value);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
-		string segment = EnvironmentSettings.IsNetCore switch {
-			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
-			false => "/0/rest/CreatioApiGateway/GetSysSettingValueByCode"
-		};
-
-		string expectedUrl = EnvironmentSettings.Uri + segment;
-		string expectedRequestData = JsonSerializer
-			.Serialize(new SysSettingsManager.GetSettingRequestData(sysSettingCode),
-				new JsonSerializerOptions {
-					WriteIndented = false,
-					AllowTrailingCommas = false,
-					PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-				});
-
-		applicationClient.ExecutePostRequest(
-				Arg.Is(expectedUrl),
-				Arg.Is(expectedRequestData))
-			.Returns(sysSettingValue);
-
-		//Act
 		bool actual = sut.GetSysSettingValueByCode<bool>(sysSettingCode);
 
 		if (value.ToLower() == "true") {
@@ -96,78 +75,38 @@ public class SysSettingsManagerTests
 	[TestCase("10/29/2013 4:42:51 PM", "MM/dd/yyyy h:mm:ss tt")]
 	[TestCase("10/29/2013 4:42:51 AM", "MM/dd/yyyy h:mm:ss tt")]
 	public void GetSysSettingValueByCode_Returns_CorrectDateTimeValue(string dateValue, string format){
-		//Arrange
 		DateTime.TryParseExact(dateValue, format, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime dtValue);
 		string stringDateTimeValue = dtValue.ToString(CultureInfo.InvariantCulture);
 		const string sysSettingCode = "nonExistingCode";
-		string sysSettingValue = stringDateTimeValue;
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-        ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
-		string segment = EnvironmentSettings.IsNetCore switch {
-			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
-			false => "/0/rest/CreatioApiGateway/GetSysSettingValueByCode"
-		};
-		string expectedUrl = EnvironmentSettings.Uri + segment;
-		string expectedRequestData = JsonSerializer
-			.Serialize(new SysSettingsManager.GetSettingRequestData(sysSettingCode),
-				new JsonSerializerOptions {
-					WriteIndented = false,
-					AllowTrailingCommas = false,
-					PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-				});
+		dataProvider.GetSysSettingValue<string>(sysSettingCode).Returns(stringDateTimeValue);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
-		applicationClient.ExecutePostRequest(
-				Arg.Is(expectedUrl),
-				Arg.Is(expectedRequestData))
-			.Returns(sysSettingValue);
-
-		//Act
 		DateTime actual = sut.GetSysSettingValueByCode<DateTime>(sysSettingCode);
 
-		//Assert
 		actual.Should().Be(dtValue);
 	}
 
 	[TestCase("0C5715C6-D067-45F5-ABC6-B2BDAE909393")]
 	[TestCase("00000000-0000-0000-0000-000000000000")]
 	public void GetSysSettingValueByCode_Returns_CorrectGuidValue(string value){
-		//Arrange
 		const string sysSettingCode = "nonExistingCode";
-		string sysSettingValue = value;
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
-		string segment = EnvironmentSettings.IsNetCore switch {
-			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
-			false => "/0/rest/CreatioApiGateway/GetSysSettingValueByCode"
-		};
-		string expectedUrl = EnvironmentSettings.Uri + segment;
-		string expectedRequestData = JsonSerializer
-			.Serialize(new SysSettingsManager.GetSettingRequestData(sysSettingCode),
-				new JsonSerializerOptions {
-					WriteIndented = false,
-					AllowTrailingCommas = false,
-					PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-				});
+		dataProvider.GetSysSettingValue<string>(sysSettingCode).Returns(value);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
-		applicationClient.ExecutePostRequest(
-				Arg.Is(expectedUrl),
-				Arg.Is(expectedRequestData))
-			.Returns(sysSettingValue);
-
-		//Act
 		Guid actual = sut.GetSysSettingValueByCode<Guid>(sysSettingCode);
 
-		//Assert
 		Guid.TryParse(value, out Guid guidValue);
 		actual.Should().Be(guidValue);
 	}
@@ -181,37 +120,17 @@ public class SysSettingsManagerTests
 	[TestCase("0")]
 	[TestCase("1,1234.00")]
 	public void GetSysSettingValueByCode_Returns_CorrectDecimalValue(string value){
-		//Arrange
 		const string sysSettingCode = "nonExistingCode";
 		decimal sysSettingValue = decimal.Parse(value, CultureInfo.InvariantCulture);
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		dataProvider.GetSysSettingValue<string>(sysSettingCode).Returns(sysSettingValue.ToString(CultureInfo.InvariantCulture));
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
-		string segment = EnvironmentSettings.IsNetCore switch {
-			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
-			false => "/0/rest/CreatioApiGateway/GetSysSettingValueByCode"
-		};
-
-		string expectedUrl = EnvironmentSettings.Uri + segment;
-		string expectedRequestData = JsonSerializer
-			.Serialize(new SysSettingsManager.GetSettingRequestData(sysSettingCode),
-				new JsonSerializerOptions {
-					WriteIndented = false,
-					AllowTrailingCommas = false,
-					PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-				});
-
-		applicationClient.ExecutePostRequest(
-				Arg.Is(expectedUrl),
-				Arg.Is(expectedRequestData))
-			.Returns(sysSettingValue.ToString(CultureInfo.InvariantCulture));
-
-		//Act
 		decimal actual = sut.GetSysSettingValueByCode<decimal>(sysSettingCode);
 		actual.Should().BeOfType(typeof(decimal));
 		actual.Should().Be(sysSettingValue);
@@ -223,39 +142,19 @@ public class SysSettingsManagerTests
 	[TestCase("1,230")]
 	[TestCase("-1,230")]
 	public void GetSysSettingValueByCode_Returns_CorrectIntValue(string value){
-		//Arrange
 		const string sysSettingCode = "nonExistingCode";
 		CultureInfo provider = new("en-US");
 		int sysSettingValue = (int)decimal.Parse(value, provider);
 
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		dataProvider.GetSysSettingValue<string>(sysSettingCode).Returns(value);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
-		string segment = EnvironmentSettings.IsNetCore switch {
-			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
-			false => "/0/rest/CreatioApiGateway/GetSysSettingValueByCode"
-		};
-
-		string expectedUrl = EnvironmentSettings.Uri + segment;
-		string expectedRequestData = JsonSerializer
-			.Serialize(new SysSettingsManager.GetSettingRequestData(sysSettingCode),
-				new JsonSerializerOptions {
-					WriteIndented = false,
-					AllowTrailingCommas = false,
-					PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-				});
-
-		applicationClient.ExecutePostRequest(
-				Arg.Is(expectedUrl),
-				Arg.Is(expectedRequestData))
-			.Returns(value);
-
-		//Act
 		int actual = sut.GetSysSettingValueByCode<int>(sysSettingCode);
 		actual.Should().BeOfType(typeof(int));
 		actual.Should().Be(sysSettingValue);
@@ -264,36 +163,16 @@ public class SysSettingsManagerTests
 	[TestCase("-1,230.5")]
 	[TestCase("1,230.5")]
 	public void GetSysSettingValueByCode_Throws(string value){
-		//Arrange
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		dataProvider.GetSysSettingValue<string>(sysSettingCode).Returns(value);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
-		string segment = EnvironmentSettings.IsNetCore switch {
-			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
-			false => "/0/rest/CreatioApiGateway/GetSysSettingValueByCode"
-		};
-
-		string expectedUrl = EnvironmentSettings.Uri + segment;
-		string expectedRequestData = JsonSerializer
-			.Serialize(new SysSettingsManager.GetSettingRequestData(sysSettingCode),
-				new JsonSerializerOptions {
-					WriteIndented = false,
-					AllowTrailingCommas = false,
-					PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-				});
-
-		applicationClient.ExecutePostRequest(
-				Arg.Is(expectedUrl),
-				Arg.Is(expectedRequestData))
-			.Returns(value);
-
-		//Act + Assert
 		Action act = () => sut.GetSysSettingValueByCode<int>(sysSettingCode);
 		act.Should()
 			.Throw<InvalidCastException>()
@@ -302,48 +181,22 @@ public class SysSettingsManagerTests
 
 	[Test]
 	public void GetSysSettingValueByCode_Returns_Value(){
-		//Arrange
 		const string sysSettingCode = "nonExistingCode";
 		const string sysSettingValue = "123";
 
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
-		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
+		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		dataProvider.GetSysSettingValue<string>(sysSettingCode).Returns(sysSettingValue);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
-
-		string segment = EnvironmentSettings.IsNetCore switch {
-			true => "/rest/CreatioApiGateway/GetSysSettingValueByCode",
-			false => "/0/rest/CreatioApiGateway/GetSysSettingValueByCode"
-		};
-
-		string expectedUrl = EnvironmentSettings.Uri + segment;
-		string expectedRequestData = JsonSerializer
-			.Serialize(new SysSettingsManager.GetSettingRequestData(sysSettingCode),
-				new JsonSerializerOptions {
-					WriteIndented = false,
-					AllowTrailingCommas = false,
-					PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-				});
-
-		applicationClient.ExecutePostRequest(
-				Arg.Is(expectedUrl),
-				Arg.Is(expectedRequestData))
-			.Returns(sysSettingValue);
-
-		//Act
 		string actual = sut.GetSysSettingValueByCode(sysSettingCode);
 
-		//Assert
 		actual.Should().Be(sysSettingValue);
-		applicationClient.Received(1)
-			.ExecutePostRequest(Arg.Is(expectedUrl), Arg.Any<string>());
-
-		applicationClient.Received(1)
-			.ExecutePostRequest(Arg.Any<string>(), Arg.Is(expectedRequestData));
+		dataProvider.Received(1).GetSysSettingValue<string>(sysSettingCode);
 	}
 
 	#endregion
@@ -357,7 +210,6 @@ public class SysSettingsManagerTests
 	[TestCase("SecureText")]
 	[TestCase("MaxSizeText")]
 	public void CreatioCanCreateSetting(string valueTypeName){
-		//Arrange
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
@@ -365,7 +217,7 @@ public class SysSettingsManagerTests
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/DataService/json/SyncReply/InsertSysSettingRequest",
@@ -386,11 +238,9 @@ public class SysSettingsManagerTests
 				"""
 			);
 
-		//Act
 		SysSettingsManager.InsertSysSettingResponse actual
 			= sut.InsertSysSetting(sysSettingCode, sysSettingCode, valueTypeName);
 
-		//Assert
 		actual.Id.Should().Be("acf40078-ba48-4285-9f3b-44ebafa28cac");
 	}
 
@@ -401,7 +251,6 @@ public class SysSettingsManagerTests
 
 	[Test]
 	public void CreatioCannotCanCreateSetting(){
-		//Arrange
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
@@ -409,7 +258,7 @@ public class SysSettingsManagerTests
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
-        		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, logger);
+		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider, workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/DataService/json/SyncReply/InsertSysSettingRequest",
@@ -433,11 +282,9 @@ public class SysSettingsManagerTests
 				"""
 			);
 
-		//Act
 		SysSettingsManager.InsertSysSettingResponse actual
 			= sut.InsertSysSetting(sysSettingCode, sysSettingCode, "Text");
 
-		//Assert
 		actual.Id.Should().Be(Guid.Empty);
 		actual.Success.Should().BeFalse();
 		actual.ResponseStatus.ErrorCode.Should().Be("DbOperationException");
@@ -451,7 +298,6 @@ public class SysSettingsManagerTests
 	[Test]
 	[Ignore("Changed update logic, deprecated test")]
 	public void UpdateSysSetting_ReturnsTrue_WhenApiResponseSuccessIsTrue(){
-		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
 		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
@@ -459,7 +305,7 @@ public class SysSettingsManagerTests
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
 		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider,
-			workingDirectoriesProvider, filesystem, logger);
+			workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/DataService/json/SyncReply/PostSysSettingsValues",
@@ -483,17 +329,14 @@ public class SysSettingsManagerTests
 				"""
 			);
 
-		// Act
 		bool actual = sut.UpdateSysSetting("Maintainer", "Creatio");
 
-		// Assert
 		actual.Should().BeTrue();
 	}
 
 	[Test]
 	[Ignore("Changed update logic, deprecated test")]
 	public void UpdateSysSetting_ReturnsFalse_WhenApiResponseSuccessIsFalse(){
-		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
 		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
@@ -501,7 +344,7 @@ public class SysSettingsManagerTests
 		IFileSystem filesystem = _container.GetRequiredService<IFileSystem>();
 		ILogger logger = Substitute.For<ILogger>();
 		ISysSettingsManager sut = new SysSettingsManager(applicationClient, urlBuilder, dataProvider,
-			workingDirectoriesProvider, filesystem, logger);
+			workingDirectoriesProvider, filesystem, _fileSystem, logger);
 
 		string segment = EnvironmentSettings.IsNetCore switch {
 			true => "/DataService/json/SyncReply/PostSysSettingsValues",
@@ -525,10 +368,8 @@ public class SysSettingsManagerTests
 				"""
 			);
 
-		// Act
 		bool actual = sut.UpdateSysSetting("Maintainer", "Creatio");
 
-		// Assert
 		actual.Should().BeFalse();
 	}
 

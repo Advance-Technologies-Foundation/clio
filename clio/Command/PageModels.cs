@@ -5,6 +5,7 @@ using System.Runtime.Serialization;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Newtonsoft.Json;
+using JsonIgnoreAttribute = System.Text.Json.Serialization.JsonIgnoreAttribute;
 
 /// <summary>
 /// Represents a page item returned by <c>list-pages</c>.
@@ -364,6 +365,27 @@ public sealed class PageParameterInfo {
 }
 
 /// <summary>
+/// Represents the result of an AI semantic review performed before saving a page body.
+/// </summary>
+public sealed class PageSamplingReview {
+
+	[JsonPropertyName("ok")]
+	public bool Ok { get; init; }
+
+	[JsonPropertyName("issues")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Issues { get; init; }
+
+	[JsonPropertyName("warnings")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Warnings { get; init; }
+
+	[JsonPropertyName("skipped")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public bool Skipped { get; init; }
+}
+
+/// <summary>
 /// Represents the <c>update-page</c> response envelope.
 /// </summary>
 [DataContract]
@@ -415,4 +437,213 @@ public sealed class PageUpdateResponse {
 	[JsonPropertyName("registeredResourceKeys")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public List<string> RegisteredResourceKeys { get; set; }
+
+	[JsonProperty("samplingReview", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("samplingReview")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public PageSamplingReview SamplingReview { get; set; }
+
+	[JsonProperty("page", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("page")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public PageMetadataInfo? Page { get; set; }
+}
+
+public sealed record FormFieldSpec(
+	[property: JsonPropertyName("path")] string Path,
+	[property: JsonPropertyName("type")] string Type,
+	[property: JsonPropertyName("name")] string? Name = null,
+	[property: JsonPropertyName("attr-key")] string? AttrKey = null,
+	[property: JsonPropertyName("label")] string? Label = null,
+	[property: JsonPropertyName("parent-name")] string? ParentName = null,
+	[property: JsonPropertyName("picker-type")] string? PickerType = null,
+	[property: JsonPropertyName("multiline")] bool? Multiline = null,
+	[property: JsonPropertyName("decimal-precision")] int? DecimalPrecision = null
+);
+
+public sealed record ListColumnSpec(
+	[property: JsonPropertyName("code")] string Code,
+	[property: JsonPropertyName("data-value-type")] int DataValueType,
+	[property: JsonPropertyName("caption")] string? Caption = null,
+	[property: JsonPropertyName("width")] int? Width = null,
+	[property: JsonPropertyName("id")] string? Id = null
+);
+
+public sealed class PageAddFieldsResponse {
+	[JsonPropertyName("success")]
+	public bool Success { get; init; }
+
+	[JsonPropertyName("schema-name")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string SchemaName { get; init; }
+
+	[JsonPropertyName("body-length")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int BodyLength { get; init; }
+
+	[JsonPropertyName("fields-added")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int FieldsAdded { get; init; }
+
+	[JsonPropertyName("resources-registered")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int ResourcesRegistered { get; init; }
+
+	[JsonPropertyName("error")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Error { get; init; }
+
+	[JsonPropertyName("sampling-review")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public PageSamplingReview SamplingReview { get; init; }
+}
+
+/// <summary>
+/// Represents a single Freedom UI template entry from <c>list-page-templates</c> / <c>create-page</c>.
+/// </summary>
+[DataContract]
+public sealed class PageTemplateInfo {
+	[DataMember(Name = "uId")]
+	[JsonProperty("uId")]
+	[JsonPropertyName("uId")]
+	public string UId { get; set; }
+
+	[DataMember(Name = "name")]
+	[JsonProperty("name")]
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+
+	[DataMember(Name = "title")]
+	[JsonProperty("title")]
+	[JsonPropertyName("title")]
+	public string Title { get; set; }
+
+	[DataMember(Name = "groupName")]
+	[JsonProperty("groupName")]
+	[JsonPropertyName("groupName")]
+	public string GroupName { get; set; }
+
+	[DataMember(Name = "schemaType")]
+	[JsonProperty("schemaType")]
+	[JsonPropertyName("schemaType")]
+	public int SchemaType { get; set; }
+}
+
+/// <summary>
+/// Represents the <c>list-page-templates</c> response envelope.
+/// </summary>
+[DataContract]
+public sealed class PageTemplateListResponse {
+	[DataMember(Name = "success")]
+	[JsonProperty("success")]
+	[JsonPropertyName("success")]
+	public bool Success { get; set; }
+
+	[DataMember(Name = "count")]
+	[JsonProperty("count")]
+	[JsonPropertyName("count")]
+	public int Count { get; set; }
+
+	[DataMember(Name = "items")]
+	[JsonProperty("items")]
+	[JsonPropertyName("items")]
+	public List<PageTemplateInfo> Items { get; set; }
+
+	[DataMember(Name = "error")]
+	[JsonProperty("error")]
+	[JsonPropertyName("error")]
+	public string Error { get; set; }
+}
+
+/// <summary>
+/// Represents the <c>create-page</c> response envelope.
+/// </summary>
+[DataContract]
+public sealed class PageCreateResponse {
+	[DataMember(Name = "success")]
+	[JsonProperty("success")]
+	[JsonPropertyName("success")]
+	public bool Success { get; set; }
+
+	[DataMember(Name = "schemaName")]
+	[JsonProperty("schemaName")]
+	[JsonPropertyName("schemaName")]
+	public string SchemaName { get; set; }
+
+	[DataMember(Name = "schemaUId")]
+	[JsonProperty("schemaUId")]
+	[JsonPropertyName("schemaUId")]
+	public string SchemaUId { get; set; }
+
+	[DataMember(Name = "packageName")]
+	[JsonProperty("packageName")]
+	[JsonPropertyName("packageName")]
+	public string PackageName { get; set; }
+
+	[DataMember(Name = "packageUId")]
+	[JsonProperty("packageUId")]
+	[JsonPropertyName("packageUId")]
+	public string PackageUId { get; set; }
+
+	[DataMember(Name = "templateName")]
+	[JsonProperty("templateName")]
+	[JsonPropertyName("templateName")]
+	public string TemplateName { get; set; }
+
+	[DataMember(Name = "templateUId")]
+	[JsonProperty("templateUId")]
+	[JsonPropertyName("templateUId")]
+	public string TemplateUId { get; set; }
+
+	[DataMember(Name = "caption")]
+	[JsonProperty("caption", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("caption")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Caption { get; set; }
+
+	[DataMember(Name = "entitySchemaName")]
+	[JsonProperty("entitySchemaName", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("entitySchemaName")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string EntitySchemaName { get; set; }
+
+	[DataMember(Name = "entitySchemaUId")]
+	[JsonProperty("entitySchemaUId", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("entitySchemaUId")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string EntitySchemaUId { get; set; }
+
+	[DataMember(Name = "error")]
+	[JsonProperty("error")]
+	[JsonPropertyName("error")]
+	public string Error { get; set; }
+}
+
+public sealed class PageAddColumnsResponse {
+	[JsonPropertyName("success")]
+	public bool Success { get; init; }
+
+	[JsonPropertyName("schema-name")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string SchemaName { get; init; }
+
+	[JsonPropertyName("body-length")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int BodyLength { get; init; }
+
+	[JsonPropertyName("columns-added")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int ColumnsAdded { get; init; }
+
+	[JsonPropertyName("resources-registered")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int ResourcesRegistered { get; init; }
+
+	[JsonPropertyName("error")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Error { get; init; }
+
+	[JsonPropertyName("sampling-review")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public PageSamplingReview SamplingReview { get; init; }
 }

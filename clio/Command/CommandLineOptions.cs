@@ -10,11 +10,29 @@ namespace Clio
 			[Option('u', "uri", Required = false, HelpText = "Application uri")]
 			public string Uri { get; set; }
 
+			[Option("url", Required = false, Hidden = true, HelpText = "Alias for --uri")]
+			public string UrlAlias {
+				get => Uri;
+				set { if (!string.IsNullOrEmpty(value)) Uri = value; }
+			}
+
 			[Option('p', "Password", Required = false, HelpText = "User password")]
 			public string Password { get; set; }
 
+			[Option("password", Required = false, Hidden = true, HelpText = "Alias for --Password")]
+			public string PasswordAlias {
+				get => Password;
+				set { if (!string.IsNullOrEmpty(value)) Password = value; }
+			}
+
 			[Option('l', "Login", Required = false, HelpText = "User login (administrator permission required)")]
 			public string Login { get; set; }
+
+			[Option("login", Required = false, Hidden = true, HelpText = "Alias for --Login")]
+			public string LoginAlias {
+				get => Login;
+				set { if (!string.IsNullOrEmpty(value)) Login = value; }
+			}
 
 			[Option('i', "IsNetCore", Required = false, HelpText = "Use .NET Core application", Hidden = true)]
 		public bool? IsNetCore { get; set; }

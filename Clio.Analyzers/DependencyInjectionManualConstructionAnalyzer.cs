@@ -33,6 +33,17 @@ public sealed class DependencyInjectionManualConstructionAnalyzer : DiagnosticAn
 		"TryAddTransient",
 		"Replace");
 
+	private static readonly ImmutableHashSet<string> ExemptTypeFullNames = ImmutableHashSet.Create(
+		StringComparer.Ordinal,
+		"Clio.EnvironmentSettings");
+
+	private static readonly ImmutableHashSet<string> ExemptContainingTypeFullNames = ImmutableHashSet.Create(
+		StringComparer.Ordinal,
+		"Clio.Program",
+		"Clio.Common.CreatioClientAdapter",
+		"Clio.EnvironmentSettings",
+		"Clio.SettingsRepository");
+
 	#region Properties: Public
 
 	/// <inheritdoc />
@@ -56,6 +67,24 @@ private static void AnalyzeObjectCreation(
 		INamedTypeSymbol? namedType = creationType as INamedTypeSymbol;
 
 		if (namedType?.IsRecord == true) {
+			return;
+		}
+
+		INamedTypeSymbol? containingType = context.ContainingSymbol?.ContainingType;
+		if (namedType is not null && SymbolEqualityComparer.Default.Equals(namedType.OriginalDefinition, containingType?.OriginalDefinition)) {
+			return;
+		}
+
+		if (containingType is not null && ExemptContainingTypeFullNames.Contains(containingType.ToDisplayString())) {
+			return;
+		}
+
+		if (IsInsideFactoryClass(context)) {
+			return;
+		}
+
+		if (namedType is not null
+			&& ExemptTypeFullNames.Contains(namedType.ToDisplayString())) {
 			return;
 		}
 
@@ -89,6 +118,20 @@ private static void AnalyzeObjectCreation(
 		context.ReportDiagnostic(diagnostic);
 	}
 
+	private static bool IsInsideFactoryClass(SyntaxNodeAnalysisContext context) {
+		INamedTypeSymbol? containingClass = context.ContainingSymbol?.ContainingType;
+		if (containingClass is null) {
+			return false;
+		}
+
+		if (containingClass.Name.EndsWith("Factory", StringComparison.Ordinal)) {
+			return true;
+		}
+
+		return containingClass.AllInterfaces.Any(i =>
+			i.Name.EndsWith("Factory", StringComparison.Ordinal));
+	}
+
 	private static bool IsLikelyDiServiceType(INamedTypeSymbol typeSymbol) {
 		string ns = typeSymbol.ContainingNamespace.ToDisplayString();
 		if (!ns.StartsWith("Clio", StringComparison.Ordinal)) {
@@ -114,7 +157,9 @@ private static void AnalyzeObjectCreation(
 			if (cancellationToken.IsCancellationRequested) {
 				break;
 			}
+#pragma warning disable RS1030
 			SemanticModel semanticModel = compilation.GetSemanticModel(syntaxTree);
+#pragma warning restore RS1030
 			SyntaxNode root = syntaxTree.GetRoot(cancellationToken);
 			IEnumerable<InvocationExpressionSyntax> invocations
 				= root.DescendantNodes().OfType<InvocationExpressionSyntax>();
@@ -140,6 +185,11 @@ private static void AnalyzeObjectCreation(
 					}
 
 					if (namedType.IsAbstract) {
+						continue;
+					}
+
+					if (namedType.ContainingNamespace.ToDisplayString()
+							.StartsWith("System", StringComparison.Ordinal)) {
 						continue;
 					}
 

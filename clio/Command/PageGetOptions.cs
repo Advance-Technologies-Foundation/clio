@@ -95,13 +95,10 @@ public class PageGetCommand : Command<PageGetOptions> {
 				return false;
 			}
 
-			string designPackageUId = null;
+			string designPackageUId;
 			try {
 				designPackageUId = _hierarchyClient.GetDesignPackageUId(schemaUId);
 			} catch {
-				designPackageUId = null;
-			}
-			if (string.IsNullOrWhiteSpace(designPackageUId)) {
 				designPackageUId = packageUId;
 			}
 			var hierarchy = _hierarchyClient.GetParentSchemas(schemaUId, designPackageUId);

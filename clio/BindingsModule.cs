@@ -49,6 +49,7 @@ using Creatio.Client;
 using FluentValidation;
 using k8s;
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -93,6 +94,7 @@ public class BindingsModule {
 		RegisterAssemblyInterfaceTypes(services);
 		services.AddSingleton<IWorkspacePathBuilder, WorkspacePathBuilder>();
 		services.AddTransient<IVsProjectFactory, VsProjectFactory>();
+		services.AddTransient<ICreatioPkgProjectCreator, CreatioPkgProjectCreator>();
 		services.AddSingleton<ILogger>(ConsoleLogger.Instance);
 		services.AddSingleton<IDbOperationLogContextAccessor, DbOperationLogContextAccessor>();
 		services.AddSingleton<IDbOperationLogSessionFactory, DbOperationLogSessionFactory>();
@@ -182,6 +184,7 @@ public class BindingsModule {
 		services.AddSingleton(serializer);
 
 		services.AddTransient<IProcessExecutor, ProcessExecutor>();
+		services.AddTransient<IDotnetExecutor, DotnetExecutor>();
 		services.AddTransient<IPackageUtilities, PackageUtilities>();
 		services.AddKeyedTransient<IFollowupUpChainItem, DconfChainItem>(nameof(DconfChainItem));
 		services.AddTransient<IFollowUpChain, FollowUpChain>();
@@ -208,6 +211,9 @@ public class BindingsModule {
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
 		services.AddTransient<PageUpdateCommand>();
+		services.AddTransient<PageCreateCommand>();
+		services.AddTransient<PageTemplatesListCommand>();
+		services.AddTransient<ISchemaTemplateCatalog, SchemaTemplateCatalog>();
 		services.AddTransient<IPageDesignerHierarchyClient, PageDesignerHierarchyClient>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
@@ -228,7 +234,10 @@ public class BindingsModule {
 		services.AddTransient<ToolContractGetTool>();
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
+		services.AddTransient<PageCreateTool>();
+		services.AddTransient<PageTemplatesListTool>();
 		services.AddTransient<PageSyncTool>();
+		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
@@ -376,6 +385,8 @@ public class BindingsModule {
 			cfg.RegisterServicesFromAssembly(typeof(BindingsModule).Assembly);
 			cfg.AddOpenBehavior(typeof(ValidationBehaviour<,>));
 		});
+		services.AddTransient<IISScannerHandler>();
+		services.AddTransient<IIISScanner, IISScannerHandler>();
 
 		services.AddTransient<ExternalLinkOptionsValidator>();
 		services.AddTransient<SetFsmConfigOptionsValidator>();
@@ -424,23 +435,24 @@ public class BindingsModule {
 		services.AddTransient<DotNetDeploymentStrategy>();
 		services.AddTransient<DeploymentStrategyFactory>();
 		services.AddTransient<OpenAppCommand>();
-		services.AddSingleton<ISystemServiceManager>(_ =>
-			RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? new LinuxSystemServiceManager() :
-			RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? new MacOSSystemServiceManager() :
+		services.AddSingleton<ISystemServiceManager>(sp =>
+			RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? new LinuxSystemServiceManager(sp.GetRequiredService<System.IO.Abstractions.IFileSystem>()) :
+			RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? new MacOSSystemServiceManager(sp.GetRequiredService<IProcessExecutor>()) :
 			new WindowsSystemServiceManager());
-		services.AddSingleton<Common.IIS.IIISSiteDetector>(_ =>
+		services.AddSingleton<Common.IIS.IIISSiteDetector>(sp =>
 			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-				? new Common.IIS.WindowsIISSiteDetector()
+				? new Common.IIS.WindowsIISSiteDetector(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISSiteDetector());
 		services.AddSingleton<Common.IIS.IPlatformDetector, Common.IIS.PlatformDetector>();
 		services.AddSingleton<Common.IIS.ITcpPortReservationReader, Common.IIS.TcpPortReservationReader>();
 		services.AddTransient<Common.IIS.IAvailableIisPortService, Common.IIS.AvailableIisPortService>();
-		services.AddSingleton<Common.IIS.IIISAppPoolManager>(_ =>
+		services.AddSingleton<Common.IIS.IIISAppPoolManager>(sp =>
 			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-				? new Common.IIS.WindowsIISAppPoolManager()
+				? new Common.IIS.WindowsIISAppPoolManager(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISAppPoolManager());
 		services.AddTransient<ClioGateway>();
 		services.AddTransient<CompileConfigurationCommand>();
+		services.AddTransient<CompileWorkspaceCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();
@@ -450,7 +462,11 @@ public class BindingsModule {
 		services.AddTransient<WikiHelpViewer>();
 		
 		services.AddTransient<McpServerCommand>();
-		services.AddMcpServer()
+		services.AddMcpServer(options => {
+					options.Capabilities ??= new();
+					options.Capabilities.Logging = new();
+					options.ServerInstructions = McpServerInstructions.Text;
+				})
 				.WithStdioServerTransport()
 				.WithResourcesFromAssembly(Assembly.GetExecutingAssembly())
 				.WithToolsFromAssembly(Assembly.GetExecutingAssembly())

@@ -29,6 +29,9 @@ public sealed class CreateAppSectionOptions : EnvironmentOptions {
 	[Option("entity-schema-name", Required = false, HelpText = "Existing entity schema name")]
 	public string? EntitySchemaName { get; set; }
 
+	[Option("icon-background", Required = false, HelpText = "Icon background color in #RRGGBB format, e.g. #1F5F8B. Defaults to a random color when omitted.")]
+	public string? IconBackground { get; set; }
+
 	[Option("with-mobile-pages", Required = false, Default = "true", HelpText = "Create mobile pages in addition to web pages (default: true)")]
 	public string? WithMobilePagesValue { get; set; }
 
@@ -66,7 +69,9 @@ public sealed class ApplicationSectionCreateService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
-	IApplicationInfoService applicationInfoService)
+	IServiceUrlBuilderFactory serviceUrlBuilderFactory,
+	IApplicationInfoService applicationInfoService,
+	ILogger logger)
 	: IApplicationSectionCreateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private const string ApplicationIdJsonField = "ApplicationId";
@@ -101,6 +106,7 @@ public sealed class ApplicationSectionCreateService(
 		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		logger.WriteInfo($"Loading application info for '{request.ApplicationCode}'...");
 		ApplicationInfoResult beforeInfo = applicationInfoService.GetApplicationInfo(
 			environmentName,
 			null,
@@ -114,14 +120,23 @@ public sealed class ApplicationSectionCreateService(
 		if (string.IsNullOrWhiteSpace(resolvedRequest.EntitySchemaName)) {
 			CheckEntitySchemaDoesNotExist(client, environmentSettings, resolvedRequest.SectionCode, request.Caption);
 		}
-		string responseBody = client.ExecutePostRequest(
-			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert, environmentSettings),
-			requestBody);
+		logger.BeginSpinner($"Creating section '{resolvedRequest.Caption}' ({resolvedRequest.SectionCode})...");
+		string responseBody;
+		try {
+			responseBody = client.ExecutePostRequest(
+				serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert, environmentSettings),
+				requestBody);
+		} catch {
+			logger.EndSpinner(false);
+			throw;
+		}
 		InsertQueryResponseDto response = JsonSerializer.Deserialize<InsertQueryResponseDto>(responseBody, JsonOptions)
 			?? throw new InvalidOperationException("InsertQuery returned an empty response.");
 		if (!response.Success) {
+			logger.EndSpinner(false);
 			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "InsertQuery failed.");
 		}
+		logger.EndSpinner(true);
 
 		return LoadCreatedSection(environmentName, beforeInfo, resolvedRequest, client, environmentSettings);
 	}
@@ -134,6 +149,10 @@ public sealed class ApplicationSectionCreateService(
 		if (string.IsNullOrWhiteSpace(request.Caption)) {
 			throw new ArgumentException("caption is required.");
 		}
+
+		if (request.IconBackground is not null) {
+			ApplicationSectionColorPalette.ValidateOrThrow(request.IconBackground);
+		}
 	}
 
 	private ResolvedApplicationSectionCreateRequest ResolveRequest(
@@ -142,7 +161,10 @@ public sealed class ApplicationSectionCreateService(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings) {
 		string sectionCode = GenerateCodeFromCaption(request.Caption);
-		string iconBackground = GenerateRandomHexColor();
+		string iconBackground = string.IsNullOrWhiteSpace(request.IconBackground)
+		? GenerateRandomHexColor()
+		: request.IconBackground.Trim();
+		logger.WriteInfo("Resolving section icon...");
 		string iconId = ResolveRandomIconId(client, environmentSettings);
 		return new ResolvedApplicationSectionCreateRequest(
 			Guid.NewGuid().ToString(),
@@ -162,7 +184,7 @@ public sealed class ApplicationSectionCreateService(
 			request.WithMobilePages ? null : WebClientTypeId);
 	}
 
-	private static void CheckEntitySchemaDoesNotExist(
+	private void CheckEntitySchemaDoesNotExist(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		string schemaName,
@@ -170,7 +192,7 @@ public sealed class ApplicationSectionCreateService(
 		try {
 			SysSchemaExistsResponseDto response = SelectQueryHelper.ExecuteSelectQuery<SysSchemaExistsResponseDto>(
 				client,
-				new ServiceUrlBuilder(environmentSettings),
+				serviceUrlBuilderFactory.Create(environmentSettings),
 				SelectQueryHelper.BuildSelectQuery(
 					"SysSchema",
 					[new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name")],
@@ -196,6 +218,7 @@ public sealed class ApplicationSectionCreateService(
 		Exception? lastError = null;
 		for (int attempt = 1; attempt <= PollAttempts; attempt++) {
 			try {
+				logger.WriteInfo($"Waiting for section '{request.SectionCode}' to be ready... (attempt {attempt}/{PollAttempts})");
 				ApplicationInfoResult afterInfo = applicationInfoService.GetApplicationInfo(
 					environmentName,
 					null,
@@ -205,7 +228,7 @@ public sealed class ApplicationSectionCreateService(
 					environmentSettings,
 					request.ApplicationId,
 					request.SectionCode);
-				SetIconBackground(client, environmentSettings, createdSection.Id, request.IconBackground);
+				SetIconBackground(client, environmentSettings, createdSection, request.IconBackground);
 				string? entitySchemaName = string.IsNullOrWhiteSpace(createdSection.EntitySchemaName)
 					? request.EntitySchemaName
 					: createdSection.EntitySchemaName;
@@ -247,9 +270,9 @@ public sealed class ApplicationSectionCreateService(
 	private void SetIconBackground(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
-		string sectionId,
+		ApplicationSectionRecord section,
 		string iconBackground) {
-		string body = JsonSerializer.Serialize(BuildIconBackgroundUpdateBody(sectionId, iconBackground), JsonOptions);
+		string body = JsonSerializer.Serialize(BuildIconBackgroundUpdateBody(section, iconBackground), JsonOptions);
 		string responseBody = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Update, environmentSettings),
 			body);
@@ -260,15 +283,23 @@ public sealed class ApplicationSectionCreateService(
 		}
 	}
 
-	private static object BuildIconBackgroundUpdateBody(string sectionId, string iconBackground) =>
-		new {
-			rootSchemaName = ApplicationSectionSchemaName,
-			columnValues = new {
-				items = new Dictionary<string, object> {
-					["IconBackground"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, iconBackground)
-				}
+	private static object BuildIconBackgroundUpdateBody(ApplicationSectionRecord section, string iconBackground) {
+		Dictionary<string, object> columnItems = new(StringComparer.Ordinal) {
+			["Id"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.Id),
+			["ApplicationId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.ApplicationId),
+			["LogoId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.LogoId ?? string.Empty),
+			["PackageId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.PackageId ?? string.Empty),
+			["IconBackground"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, iconBackground)
+		};
+		return new Dictionary<string, object> {
+			["__type"] = "Terrasoft.Nui.ServiceModel.DataContract.UpdateQuery",
+			["operationType"] = 2,
+			["rootSchemaName"] = ApplicationSectionSchemaName,
+			["isForceUpdate"] = false,
+			["columnValues"] = new {
+				items = columnItems
 			},
-			filters = new {
+			["filters"] = new {
 				filterType = 6,
 				isEnabled = true,
 				trimDateTimeParameterToDate = false,
@@ -286,23 +317,24 @@ public sealed class ApplicationSectionCreateService(
 						rightExpression = new {
 							expressionType = 2,
 							parameter = new {
-								dataValueType = SelectQueryHelper.GuidDataValueType,
-								value = sectionId
+								dataValueType = SelectQueryHelper.TextDataValueType,
+								value = section.Id
 							}
 						}
 					}
 				}
 			}
 		};
+	}
 
-	private static ApplicationSectionRecord GetSectionRecord(
+	private ApplicationSectionRecord GetSectionRecord(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		string applicationId,
 		string sectionCode) {
 		ApplicationSectionSelectQueryResponseDto response = SelectQueryHelper.ExecuteSelectQuery<ApplicationSectionSelectQueryResponseDto>(
 			client,
-			new ServiceUrlBuilder(environmentSettings),
+			serviceUrlBuilderFactory.Create(environmentSettings),
 			SelectQueryHelper.BuildSelectQuery(
 				ApplicationSectionSchemaName,
 				[
@@ -546,17 +578,7 @@ public sealed class ApplicationSectionCreateService(
 			: char.ToUpperInvariant(sanitizedValue[0]) + sanitizedValue[1..];
 	}
 
-	private static string GenerateRandomHexColor() {
-		int red = Random.Shared.Next(50, 200);
-		int green = Random.Shared.Next(50, 200);
-		int blue = Random.Shared.Next(50, 200);
-		return string.Create(7, (red, green, blue), static (span, value) => {
-			span[0] = '#';
-			value.red.TryFormat(span.Slice(1, 2), out _, "X2");
-			value.green.TryFormat(span.Slice(3, 2), out _, "X2");
-			value.blue.TryFormat(span.Slice(5, 2), out _, "X2");
-		});
-	}
+	private static string GenerateRandomHexColor() => ApplicationSectionColorPalette.PickRandom();
 
 	private sealed class InsertQueryResponseDto {
 		[JsonPropertyName("success")]
@@ -651,7 +673,8 @@ public sealed class CreateAppSectionCommand(
 					options.Caption,
 					options.Description,
 					options.EntitySchemaName,
-					options.WithMobilePages));
+					options.WithMobilePages,
+					options.IconBackground));
 			logger.WriteInfo(JsonSerializer.Serialize(result));
 			return 0;
 		} catch (Exception exception) {
@@ -669,12 +692,14 @@ public sealed class CreateAppSectionCommand(
 /// <param name="Description">Optional section description.</param>
 /// <param name="EntitySchemaName">Optional existing entity schema name. When provided, the section reuses that entity.</param>
 /// <param name="WithMobilePages">Whether to create mobile pages.</param>
+/// <param name="IconBackground">Optional icon background color in #RRGGBB format. Defaults to a random color when omitted.</param>
 public sealed record ApplicationSectionCreateRequest(
 	string ApplicationCode,
 	string Caption,
 	string? Description = null,
 	string? EntitySchemaName = null,
-	bool WithMobilePages = true);
+	bool WithMobilePages = true,
+	string? IconBackground = null);
 
 /// <summary>
 /// Structured result for existing-app section creation.

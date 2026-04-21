@@ -7,10 +7,11 @@ namespace Clio
 {
 	public class CreatioPackage{
 		private readonly ILogger _logger;
+		private readonly IDotnetExecutor _dotnetExecutor;
 
-
-		public CreatioPackage(ILogger logger) {
+		public CreatioPackage(ILogger logger, IDotnetExecutor dotnetExecutor) {
 			_logger = logger;
+			_dotnetExecutor = dotnetExecutor;
 		}
 		
 		public const string DescriptorName = "descriptor.json";
@@ -93,10 +94,7 @@ namespace Clio
 		}
 
 		private void ExecuteDotnetCommand(string command) {
-			ILogger logger = _logger ?? ConsoleLogger.Instance;
-			IProcessExecutor processExecutor = new ProcessExecutor(logger);
-			IDotnetExecutor dotnetExecutor = new DotnetExecutor(processExecutor);
-			dotnetExecutor.Execute(command, true, FullPath);
+			_dotnetExecutor.Execute(command, true, FullPath);
 		}
 
 		public static string GetExecutingDirectorybyAppDomain() {

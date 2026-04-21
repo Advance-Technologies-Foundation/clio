@@ -18,7 +18,7 @@ internal sealed class IisEnvironmentDiscoveryService(IPowerShellFactory powerShe
 				site.Key,
 				site.Value.PhysicalPath,
 				site.Value.Url.ToString().TrimEnd('/'),
-				site.Value.SiteType == IISScannerHandler.SiteType.Core))
+				site.Value.SiteType == SiteType.Core))
 			.ToArray();
 	}
 }

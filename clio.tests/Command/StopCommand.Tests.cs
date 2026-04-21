@@ -39,7 +39,8 @@ public class StopCommandTestCase : BaseCommandTests<StopOptions>
 			_serviceManager,
 			_logger,
 			_iisAppPoolManager,
-			_iisSiteDetector);
+			_iisSiteDetector,
+			Substitute.For<IProcessExecutor>());
 	}
 
 	[Test]

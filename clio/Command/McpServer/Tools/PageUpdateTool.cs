@@ -1,10 +1,11 @@
 using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
-using Clio.Command;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Common;
+using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -16,46 +17,40 @@ public sealed class PageUpdateTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	internal const string ToolName = "update-page";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
-		"Section authoring rules for the body payload: " +
-		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first.")]
-	public PageUpdateResponse UpdatePage([Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageUpdateArgs args) {
+	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	public async Task<PageUpdateResponse> UpdatePage(
+		[Description("Parameters: schema-name, body (required); resources, dry-run, skip-sampling (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Required] PageUpdateArgs args,
+		McpServerLib.McpServer server,
+		CancellationToken cancellationToken = default) {
 		PageUpdateOptions options = new() {
 			SchemaName = args.SchemaName,
 			Body = args.Body,
 			DryRun = args.DryRun ?? false,
 			Resources = args.Resources,
+			OptionalProperties = args.OptionalProperties,
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
 			Password = args.Password
 		};
-		var validationErrors = new List<string>();
-		SchemaValidationResult validatorParamResult = SchemaValidationService.ValidateValidatorParamResourceBindings(args.Body);
-		if (!validatorParamResult.IsValid) {
-			validationErrors.AddRange(validatorParamResult.Errors);
+		PageSamplingReview samplingReview = null;
+		if (!options.DryRun && args.SkipSampling != true) {
+			samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(server, args.SchemaName, args.Body, cancellationToken);
+			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues),
+					SamplingReview = samplingReview
+				};
+			}
 		}
-		SchemaValidationResult validatorBindingResult = SchemaValidationService.ValidateValidatorControlBindings(args.Body);
-		if (!validatorBindingResult.IsValid) {
-			validationErrors.AddRange(validatorBindingResult.Errors);
-		}
-		SchemaValidationResult standardValidatorResult = SchemaValidationService.ValidateStandardValidatorUsage(args.Body);
-		if (!standardValidatorResult.IsValid) {
-			validationErrors.AddRange(standardValidatorResult.Errors);
-		}
-		SchemaValidationResult validatorParamCompletenessResult = SchemaValidationService.ValidateCustomValidatorParamCompleteness(args.Body);
-		if (!validatorParamCompletenessResult.IsValid) {
-			validationErrors.AddRange(validatorParamCompletenessResult.Errors);
-		}
-		if (validationErrors.Count > 0) {
-			return new PageUpdateResponse {
-				Success = false,
-				Error = "Validation failed: " + string.Join("; ", validationErrors)
-			};
-		}
+		PageUpdateResponse response;
 		lock (CommandExecutionSyncRoot) {
 			PageUpdateCommand resolvedCommand;
 			try {
@@ -63,10 +58,29 @@ public sealed class PageUpdateTool(
 			} catch (Exception ex) {
 				return new PageUpdateResponse { Success = false, Error = ex.Message };
 			}
-			resolvedCommand.TryUpdatePage(options, out PageUpdateResponse response);
-			return response;
+			resolvedCommand.TryUpdatePage(options, out response);
+			if (response.Success && args.Verify == true) {
+				try {
+					PageGetOptions getOptions = new() {
+						SchemaName = args.SchemaName,
+						Environment = args.EnvironmentName,
+						Uri = args.Uri,
+						Login = args.Login,
+						Password = args.Password
+					};
+					PageGetCommand getCommand = _commandResolver.Resolve<PageGetCommand>(getOptions);
+					if (getCommand.TryGetPage(getOptions, out PageGetResponse getResponse) && getResponse.Success) {
+						response.Page = getResponse.Page;
+					}
+				} catch {
+					// verify is best-effort; failure does not fail the update
+				}
+			}
 		}
+		response.SamplingReview = samplingReview;
+		return response;
 	}
+
 }
 
 public sealed record PageUpdateArgs(
@@ -100,5 +114,14 @@ public sealed record PageUpdateArgs(
 	string? Login,
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password
+	string? Password,
+	[property: JsonPropertyName("skip-sampling")]
+	[property: Description("If true, skip the AI semantic review before saving. Default: false")]
+	bool? SkipSampling = null,
+	[property: JsonPropertyName("optional-properties")]
+	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties, e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]'")]
+	string? OptionalProperties = null,
+	[property: JsonPropertyName("verify")]
+	[property: Description("If true, read the page back after saving and return its metadata. Best-effort — verify failure does not fail the update. Default: false")]
+	bool? Verify = null
 );

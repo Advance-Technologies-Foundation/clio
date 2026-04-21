@@ -73,7 +73,8 @@ internal class AddItemCommand(
 	IVsProjectFactory vsProjectFactory,
 	ILogger logger,
 	IFileSystem fileSystem,
-	IModelBuilder modelBuilder)
+	IModelBuilder modelBuilder,
+	ICreatioEnvironment creatioEnvironment)
 	: Command<AddItemOptions>{
 
 	#region Methods: Private
@@ -92,10 +93,9 @@ internal class AddItemCommand(
 
 	private int AddItemFromTemplate(AddItemOptions options) {
 		IVsProject project = vsProjectFactory.Create(options.DestinationPath, options.Namespace);
-		CreatioEnvironment creatioEnv = new();
 		string tplPath = $"tpl{Path.DirectorySeparatorChar}{options.ItemType}-template.tpl";
 		if (!fileSystem.File.Exists(tplPath)) {
-			string envPath = creatioEnv.GetAssemblyFolderPath();
+			string envPath = creatioEnvironment.GetAssemblyFolderPath();
 			if (!string.IsNullOrEmpty(envPath)) {
 				tplPath = Path.Combine(envPath, tplPath);
 			}

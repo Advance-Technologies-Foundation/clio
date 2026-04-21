@@ -36,14 +36,16 @@ namespace Clio.Command
 		#region Fields: Private
 
 		private readonly IInstallNugetPackage _installNugetPackage;
+		private readonly ILogger _logger;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public InstallNugetPackageCommand(IInstallNugetPackage installNugetPackage) {
+		public InstallNugetPackageCommand(IInstallNugetPackage installNugetPackage, ILogger logger) {
 			installNugetPackage.CheckArgumentNull(nameof(installNugetPackage));
 			_installNugetPackage = installNugetPackage;
+			_logger = logger;
 		}
 
 		#endregion
@@ -61,10 +63,10 @@ namespace Clio.Command
 		public override int Execute(InstallNugetPkgOptions options) {
 			try {
 				_installNugetPackage.Install(ParseNugetPackageFullNames(options.Names), options.SourceUrl);
-				Console.WriteLine("Done");
+				_logger.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e.Message);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}

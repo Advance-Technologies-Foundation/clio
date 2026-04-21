@@ -282,7 +282,6 @@ public sealed class WorkspaceSyncToolTests {
 				Substitute.For<IWorkspace>(),
 				new UnlockPackageCommand(
 					Substitute.For<IPackageLockManager>(),
-					Substitute.For<IClioGateway>(),
 					Substitute.For<ISysSettingsManager>(),
 					Substitute.For<ILogger>()),
 				Substitute.For<IApplicationClientFactory>(),

@@ -1115,7 +1115,7 @@ clio get-page --schema-name UsrTodo_FormPage -e <ENV>
 ```
 Returns a JSON envelope with page metadata, bundle data, and `raw.body`. Use `raw.body` as the editable payload for `update-page`.
 
-For MCP-guided page-body authoring, call `get-guidance` with `name` set to `page-schema-validators` instead of relying on repository-local notes from another workspace.
+The command resolves the design package for the schema and uses the top of the parent-schema hierarchy to load the editable version. This ensures `raw.body` is always read from the package where the schema can be modified.
 
 ### update-page
 Update the raw schema body of a Freedom UI page. **Alias:** `page-update`
@@ -1129,15 +1129,17 @@ clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" -e <ENV>
 # Save with missing resource string registration
 clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
   --resources '{"UsrDetailsTab_caption":"Details"}' -e <ENV>
+
+# Save with optional-properties merge
+clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
+  --optional-properties '[{"key":"entitySchemaName","value":"UsrTodo"}]' -e <ENV>
 ```
-Options: `--schema-name` (required), `--body` (required), `--dry-run`, `--resources` (JSON object)
+Options: `--schema-name` (required), `--body` (required), `--dry-run`, `--resources` (JSON object), `--optional-properties` (JSON array of `{key,value}` objects)
 
 ### sync-pages
 Update multiple Freedom UI page schemas in one MCP call. **MCP-only tool** — not available as a standalone CLI command.
 
 Each page is processed independently; failures do not stop remaining pages. Supports client-side validation (`validate: true`, default) and read-back verification (`verify: false`, default).
-
-Client-side validation keeps JSON-backed markers strict, but treats `SCHEMA_VALIDATORS` as a JavaScript object section so function-based validator entries remain valid.
 
 Input:
 ```json
@@ -1145,12 +1147,63 @@ Input:
   "environment-name": "dev",
   "pages": [
     { "schema-name": "UsrTodo_FormPage", "body": "define(...)" },
-    { "schema-name": "UsrTodo_ListPage", "body": "define(...)", "resources": "{\"caption\":\"List\"}" }
+    { "schema-name": "UsrTodo_ListPage", "body": "define(...)", "resources": "{\"caption\":\"List\"}", "optional-properties": "[{\"key\":\"entitySchemaName\",\"value\":\"UsrTodo\"}]" }
   ],
   "validate": true,
   "verify": false
 }
 ```
+
+### get-guidance
+Return a named clio MCP guidance article, or list all available guide names when the requested name is unknown. **MCP-only tool** — not available as a standalone CLI command.
+
+```json
+{ "name": "freedom-ui-page-editing" }
+```
+
+When the requested name is not found, the response lists all available article names so the caller can discover valid values.
+
+### list-page-templates
+List Freedom UI page templates available for `create-page`. **Aliases:** `page-templates`, `page-templates-list`
+```bash
+clio list-page-templates -e <ENV>
+clio list-page-templates --schema-type web -e <ENV>
+clio list-page-templates --schema-type mobile -e <ENV>
+```
+Options: `--schema-type` (`web` for FreedomUIPage=9, `mobile` for MobilePage=10; default returns both).
+
+CLI output is a column table (Name / Title / Group / Type / UId). MCP response is a structured `PageTemplateListResponse { success, count, items[], error }`.
+
+The visible subset is driven by platform feature flags (`ShowSidebarTemplate`, `UseListPageV3Template`, `UseMobilePageDesigner`) and may differ per environment. Always call this before `create-page` to discover valid `--template` values.
+
+### create-page
+Create a new Freedom UI page from a supported template. **Alias:** `page-create`
+```bash
+# Minimal call: blank page in Custom package
+clio create-page --schema-name UsrTodo_BlankPage --template BlankPageTemplate \
+  --package-name Custom -e <ENV>
+
+# Record page bound to an existing entity schema
+clio create-page --schema-name UsrTodo_FormPage --template PageWithTabsFreedomTemplate \
+  --package-name Custom --entity-schema-name UsrTodo -e <ENV>
+
+# Mobile page from a mobile template
+clio create-page --schema-name UsrTodo_MobileBlank --template BlankMobilePageTemplate \
+  --package-name Custom -e <ENV>
+```
+Required: `--schema-name`, `--template`, `--package-name`.
+Optional: `--caption` (defaults to schema-name), `--description`, `--entity-schema-name`.
+
+The command emits step-by-step progress (`[N/total] ...`) for input validation, template resolution, package resolution, schema-name uniqueness, optional entity-schema resolution, and SaveSchema. It writes the new schema via `ClientUnitSchemaDesignerService.svc/SaveSchema`; the final JSON response includes `schemaUId`, `packageUId`, `templateName`, `templateUId`.
+
+Failure modes (all return exit code 1 + readable `error`):
+- Duplicate `schema-name` (schema already exists in the environment)
+- Unknown `template` (call `list-page-templates` first)
+- Missing `package-name`
+- Malformed `schema-name` (must start with a letter; letters, digits, underscores only)
+- Missing `entity-schema-name` target when the flag is provided
+
+After success, read the page back with `get-page` to verify it loads through the canonical page flow.
 
 ---
 

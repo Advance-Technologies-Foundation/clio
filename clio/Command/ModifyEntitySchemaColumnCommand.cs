@@ -12,8 +12,14 @@ namespace Clio.Command;
 [Verb("modify-entity-schema-column", HelpText = "Add, modify, or remove a column in a remote Creatio entity schema")]
 public class ModifyEntitySchemaColumnOptions : RemoteCommandOptions
 {
-	[Option("package", Required = true, HelpText = "Target package name")]
+	[Option("package", Required = false, HelpText = "Target package name")]
 	public string Package { get; set; }
+
+	[Option("package-name", Required = false, Hidden = true, HelpText = "Alias for --package")]
+	public string? PackageNameAlias {
+		get => Package;
+		set { if (!string.IsNullOrEmpty(value)) Package = value; }
+	}
 
 	[Option("schema-name", Required = true, HelpText = "Entity schema name")]
 	public string SchemaName { get; set; }

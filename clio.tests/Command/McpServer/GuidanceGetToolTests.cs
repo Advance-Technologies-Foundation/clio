@@ -35,16 +35,16 @@ public sealed class GuidanceGetToolTests {
 		GuidanceGetTool tool = new();
 
 		// Act
-		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("page-schema-validators"));
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("page-schema-validators")).Result;
 
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "page-schema-validators is a registered guidance name");
-		result.Guidance.Should().NotBeNull(
+		result.Article.Should().NotBeNull(
 			because: "successful guidance lookups should return the resolved article");
-		result.Guidance!.Uri.Should().Be("docs://mcp/guides/page-schema-validators",
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-validators",
 			because: "the guidance tool should preserve the canonical resource URI in the response");
-		result.Guidance.Text.Should().Contain("clio MCP page-schema validators guide",
+		result.Article.Text.Should().Contain("clio MCP page-schema validators guide",
 			because: "the guidance tool should return the canonical validator article text");
 	}
 
@@ -56,14 +56,14 @@ public sealed class GuidanceGetToolTests {
 		GuidanceGetTool tool = new();
 
 		// Act
-		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("PAGE-SCHEMA-VALIDATORS"));
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("PAGE-SCHEMA-VALIDATORS")).Result;
 
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "the guidance catalog stores names with an ordinal-ignore-case comparer");
-		result.Guidance.Should().NotBeNull(
+		result.Article.Should().NotBeNull(
 			because: "a case-insensitive match should still return the canonical guidance article");
-		result.Guidance!.Uri.Should().Be("docs://mcp/guides/page-schema-validators",
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-validators",
 			because: "case-insensitive lookup should still resolve to the canonical validator guide URI");
 	}
 
@@ -75,7 +75,7 @@ public sealed class GuidanceGetToolTests {
 		GuidanceGetTool tool = new();
 
 		// Act
-		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("not-a-guide"));
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("not-a-guide")).Result;
 
 		// Assert
 		result.Success.Should().BeFalse(

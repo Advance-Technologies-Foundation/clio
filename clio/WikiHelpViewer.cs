@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Text;
 using Clio.Common;
@@ -29,8 +28,10 @@ internal class LocalHelpViewer(CommandHelpRenderer commandHelpRenderer, WikiHelp
 			wikiHelpViewer.ViewHelp(commandName);
 			return;
 		}
+#pragma warning disable CLIO002
 		Console.OutputEncoding = Encoding.UTF8;
 		Console.Out.Write(_helpText);
+#pragma warning restore CLIO002
 	}
 }
 
@@ -53,7 +54,7 @@ internal class WikiHelpViewer : CustomHelpViewer{
 
 	public WikiHelpViewer(IWorkingDirectoriesProvider directoryProvider, IFileSystem fileSystem, IWebBrowser webBrowser) {
 		_webBrowser = webBrowser;
-		string anchorFilePath = Path.Combine(directoryProvider.ExecutingDirectory, "Wiki", "WikiAnchors.txt");
+		string anchorFilePath = fileSystem.Path.Combine(directoryProvider.ExecutingDirectory, "Wiki", "WikiAnchors.txt");
 		string[] fileLines = fileSystem.File.ReadAllLines(anchorFilePath);
 		foreach (string line in fileLines) {
 			string[] parts = line.Split(':');

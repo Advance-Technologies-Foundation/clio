@@ -19,45 +19,16 @@ public interface IApplicationClient{
 
 	void DownloadFile(string url, string filePath, string requestData);
 
-	/// <summary>
-	///     Executes DELETE Request with retry
-	/// </summary>
-	/// <param name="url">Request URL</param>
-	/// <param name="requestData">Request body (optional)</param>
-	/// <param name="requestTimeout">Request Timeout</param>
-	/// <param name="retryCount">retry count</param>
-	/// <param name="delaySec">delay between retries in seconds</param>
-	/// <returns>Response</returns>
-	/// <exception cref="Exception">Throws when request fails after attempts made exceed <paramref name="retryCount" /> count</exception>
 	string ExecuteDeleteRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1);
 
-	/// <summary>
-	///     Executes GET Request with retry
-	/// </summary>
-	/// <param name="url">Request URL</param>
-	/// <param name="requestTimeout">Request Timeout</param>
-	/// <param name="retryCount">retry count</param>
-	/// <param name="delaySec">delay between retries in seconds</param>
-	/// <returns>Response</returns>
-	/// <exception cref="Exception">Throws when request fails after attempts made exceed <paramref name="retryCount" /> count</exception>
 	string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int retryCount = 1, int delaySec = 1);
 
-	/// <summary>
-	///     Executes POST Request with retry
-	/// </summary>
-	/// <param name="url">Request URL</param>
-	/// <param name="requestData">Request Data</param>
-	/// <param name="requestTimeout">Request Timeout</param>
-	/// <param name="retryCount">retry count</param>
-	/// <param name="delaySec">delay between retries in seconds</param>
-	/// <returns>Response</returns>
-	/// <exception cref="Exception">Throws when request fails after attempts made exceed <paramref name="retryCount" /> count</exception>
-	string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite, int retryCount = 1,
-		int delaySec = 1);
+	string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int retryCount = 1, int delaySec = 1);
 
-
-	T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite)
+	T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int retryCount = 1, int delaySec = 1)
 		where T : BaseResponse, new();
 
 	void Listen(CancellationToken cancellationToken);
@@ -75,6 +46,7 @@ public class CreatioClientAdapter : IApplicationClient{
 
 	private readonly Lazy<CreatioClient> _lazyClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
+	private readonly JsonConverter _jsonConverter;
 
 	private CreatioClient Client => _lazyClient.Value;
 
@@ -82,9 +54,10 @@ public class CreatioClientAdapter : IApplicationClient{
 
 	#region Constructors: Private
 
-	private CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IServiceUrlBuilder serviceUrlBuilder = null) {
+	private CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IServiceUrlBuilder serviceUrlBuilder = null, JsonConverter jsonConverter = null) {
 		_lazyClient = lazyClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
+		_jsonConverter = jsonConverter ?? new JsonConverter();
 	}
 
 	#endregion
@@ -115,10 +88,6 @@ public class CreatioClientAdapter : IApplicationClient{
 	public event EventHandler<WsMessage> MessageReceived;
 
 	#region Methods: Protected
-
-	// internal T As<T>() {
-	// 	throw new NotImplementedException();
-	// }
 
 	#endregion
 
@@ -153,19 +122,11 @@ public class CreatioClientAdapter : IApplicationClient{
 		return Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
 	}
 
-	/// <summary>
-	///     Performs post request and returns deserialized response.
-	/// </summary>
-	/// <param name="url">Request url.</param>
-	/// <param name="requestData">Request data.</param>
-	/// <param name="requestTimeout">Request timeout. Default: infinity period.</param>
-	/// <typeparam name="T">Return value type.</typeparam>
-	/// <returns>Response.<see cref="T" /></returns>
-	public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite)
+	public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int retryCount = 1, int delaySec = 1)
 		where T : BaseResponse, new() {
-		JsonConverter converter = new();
-		string response = Client.ExecutePostRequest(url, requestData, requestTimeout);
-		return converter.DeserializeObject<T>(response);
+		string response = Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
+		return _jsonConverter.DeserializeObject<T>(response);
 	}
 
 	public void Listen(CancellationToken cancellationToken) {

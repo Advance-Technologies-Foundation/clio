@@ -41,7 +41,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 
 	#region Properties: Private
 
-	private Action<IEnumerable<IISScannerHandler.UnregisteredSite>> MockMediator =>
+	private Action<IEnumerable<UnregisteredSite>> MockMediator =>
 		allSitesMock => {
 			_mediatorMock.When(i =>
 					i.Send(Arg.Any<AllUnregisteredSitesRequest>()))
@@ -57,19 +57,19 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	#region Methods: Private
 
 	private void MockNoSitesFound(){
-		IEnumerable<IISScannerHandler.UnregisteredSite> allSitesMock = [];
+		IEnumerable<UnregisteredSite> allSitesMock = [];
 		MockMediator(allSitesMock);
 	}
 
 	private void MockStartedSite(string url = "", string siteName = EnvironmentName){
-		IEnumerable<IISScannerHandler.UnregisteredSite> allSitesMock = [
-			new IISScannerHandler.UnregisteredSite(
-				new IISScannerHandler.SiteBinding(siteName, "Started", "", InstalledCreatioPath),
+		IEnumerable<UnregisteredSite> allSitesMock = [
+			new UnregisteredSite(
+				new SiteBinding(siteName, "Started", "", InstalledCreatioPath),
 				[
 					string.IsNullOrWhiteSpace(url) ?
 						new Uri(EnvironmentSettings.Uri) : new Uri(url)
 				],
-				IISScannerHandler.SiteType.NetFramework)
+				SiteType.NetFramework)
 		];
 		MockMediator(allSitesMock);
 	}

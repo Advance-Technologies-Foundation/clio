@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Clio.Common;
 using CommandLine;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command;
 
@@ -35,15 +36,17 @@ internal class MockDataCommand : RemoteCommand<MockDataCommandOptions>
 	#region Fields: Private
 
 	private readonly IFileSystem _fileSystem;
+	private readonly IAbstractionsFileSystem _abstractionsFileSystem;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public MockDataCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings,
-		IFileSystem fileSystem)
+		IFileSystem fileSystem, IAbstractionsFileSystem abstractionsFileSystem)
 		: base(applicationClient, environmentSettings){
 		_fileSystem = fileSystem;
+		_abstractionsFileSystem = abstractionsFileSystem;
 		EnvironmentSettings = environmentSettings;
 	}
 
@@ -70,7 +73,7 @@ internal class MockDataCommand : RemoteCommand<MockDataCommandOptions>
 			foundModel => {
 				i++;
 				try {
-					string modelODataDataFilePath = Path.Combine(dataFolderPath, $"{foundModel}.json");
+					string modelODataDataFilePath = _abstractionsFileSystem.Path.Combine(dataFolderPath, $"{foundModel}.json");
 					string modelOdataData = GetModelDataData(foundModel);
 					_fileSystem.WriteAllTextToFile(modelODataDataFilePath, modelOdataData);
 					Logger.WriteInfo(

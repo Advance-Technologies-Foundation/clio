@@ -91,6 +91,8 @@ get-page:get-page,page-get
 list-app-sections:list-app-sections
 list-pages:list-pages,page-list
 update-page:update-page,page-update
+create-page:create-page,page-create
+list-page-templates:list-page-templates,page-templates,page-templates-list
 ping-app:ping-app,ping
 pkg-hotfix:pkg-hotfix,hf,hotfix
 pkg-to-db:pkg-to-db,2db,todb

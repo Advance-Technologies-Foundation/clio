@@ -46,14 +46,16 @@ namespace Clio.Command
 		#region Fields: Private
 
 		private readonly INuGetManager _nugetManager;
+		private readonly ILogger _logger;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public PackNuGetPackageCommand(INuGetManager nugetManager) {
+		public PackNuGetPackageCommand(INuGetManager nugetManager, ILogger logger) {
 			nugetManager.CheckArgumentNull(nameof(nugetManager));
 			_nugetManager = nugetManager;
+			_logger = logger;
 		}
 
 		#endregion
@@ -83,10 +85,10 @@ namespace Clio.Command
 					? Enumerable.Empty<PackageDependency>() 
 					: ParseDependencies(options.Dependencies);
 				_nugetManager.Pack(options.PackagePath, dependencies, options.SkipPdb, options.NupkgDirectory);
-				Console.WriteLine("Done");
+				_logger.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e.Message);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}

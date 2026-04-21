@@ -1,5 +1,5 @@
 using System;
-using System.IO;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Common.db;
 
@@ -19,9 +19,11 @@ public enum BackupFileType
 public class BackupFileDetector : IBackupFileDetector
 {
 	private readonly IFileSystem _fileSystem;
+	private readonly IAbstractionsFileSystem _abstractionsFileSystem;
 
-	public BackupFileDetector(IFileSystem fileSystem) {
+	public BackupFileDetector(IFileSystem fileSystem, IAbstractionsFileSystem abstractionsFileSystem) {
 		_fileSystem = fileSystem;
+		_abstractionsFileSystem = abstractionsFileSystem;
 	}
 
 	public BackupFileType DetectBackupType(string filePath) {
@@ -29,7 +31,7 @@ public class BackupFileDetector : IBackupFileDetector
 			return BackupFileType.Unknown;
 		}
 
-		string extension = Path.GetExtension(filePath).ToLowerInvariant();
+		string extension = _abstractionsFileSystem.Path.GetExtension(filePath).ToLowerInvariant();
 
 		return extension switch {
 			".backup" => BackupFileType.PostgresBackup,

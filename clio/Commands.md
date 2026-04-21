@@ -353,6 +353,13 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="update-page"></a>
 <a id="page-update"></a>
 - [`update-page`](docs/commands/update-page.md) - Update Freedom UI page schema body, `page-update`
+<a id="create-page"></a>
+<a id="page-create"></a>
+- [`create-page`](docs/commands/create-page.md) - Create a new Freedom UI page from a supported template, `page-create`
+<a id="list-page-templates"></a>
+<a id="page-templates"></a>
+<a id="page-templates-list"></a>
+- [`list-page-templates`](docs/commands/list-page-templates.md) - List Freedom UI page templates available for create-page, `page-templates`, `page-templates-list`
 <a id="run"></a>
 <a id="run-scenario"></a>
 <a id="scenario"></a>

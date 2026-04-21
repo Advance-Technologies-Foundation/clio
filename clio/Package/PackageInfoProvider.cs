@@ -46,7 +46,7 @@ namespace Clio
 					_jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(packageDescriptorPath);
 				IEnumerable<string> filePaths = _fileSystem.Directory
 					.EnumerateFiles(packagePath, "*.*", SearchOption.AllDirectories);
-				return new PackageInfo(packageDescriptorDto.Descriptor, packagePath, filePaths);
+				return new PackageInfo(packageDescriptorDto.Descriptor, packagePath, filePaths, packageDescriptorPath);
 			}
 			catch (Exception ex) {
 				throw new Exception($"Package descriptor is wrong: '{ex.Message}'");

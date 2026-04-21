@@ -1,13 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using Clio.Common;
 using Clio.Workspaces;
 using ErrorOr;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.ChainItems;
 
-public class DconfChainItem(DownloadConfigurationCommand dconf, IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem) : IFollowupUpChainItem{
+public class DconfChainItem(DownloadConfigurationCommand dconf, IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem, IAbstractionsFileSystem abstractionsFileSystem) : IFollowupUpChainItem{
 	public ErrorOr<int> Execute() {
 		return Error.Failure("NoContext","Cannot execute without context");
 	}
@@ -27,8 +27,8 @@ public class DconfChainItem(DownloadConfigurationCommand dconf, IWorkspacePathBu
 		}
 		
 		// Early exist when directories already exist and are not empty
-		string ncDir = Path.Combine(workspacePathBuilder.RootPath, ".application", "net-core");
-		string nfDir = Path.Combine(workspacePathBuilder.RootPath, ".application", "net-framework");
+		string ncDir = abstractionsFileSystem.Path.Combine(workspacePathBuilder.RootPath, ".application", "net-core");
+		string nfDir = abstractionsFileSystem.Path.Combine(workspacePathBuilder.RootPath, ".application", "net-framework");
 		
 		bool restoreRequired = (!fileSystem.ExistsDirectory(ncDir) || (fileSystem.ExistsDirectory(ncDir) && fileSystem.IsEmptyDirectory(ncDir)))
 							   || 

@@ -29,6 +29,16 @@ OPTIONS
 
     --entity-schema-name             Existing entity schema name
 
+    --icon-background                Icon background color in #RRGGBB format,
+                                     must be one of the Freedom UI palette
+                                     values that the app manager renders
+                                     as gradient tiles: #A6DE00, #20A959,
+                                     #22AC14, #FFAC07, #FF8800, #F9307F,
+                                     #FF602E, #FF4013, #B87CCF, #7848EE,
+                                     #247EE5, #0058EF, #009DE3, #4F43C2,
+                                     #08857E, #00BFA5. Defaults to a random
+                                     palette color when omitted.
+
     --with-mobile-pages              Create mobile pages in addition to web
                                      pages. Default: true
 

@@ -11,6 +11,7 @@ using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Tests.Command;
 
@@ -22,6 +23,7 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 {
 	private ILogger _logger;
 	private IFileSystem _fileSystem;
+	private IAbstractionsFileSystem _abstractionsFileSystem;
 	private IDbClientFactory _dbClientFactory;
 	private ISettingsRepository _settingsRepository;
 	private ICreatioInstallerService _creatioInstallerService;
@@ -35,6 +37,7 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 		base.Setup();
 		_logger = Substitute.For<ILogger>();
 		_fileSystem = Substitute.For<IFileSystem>();
+		_abstractionsFileSystem = new System.IO.Abstractions.FileSystem();
 		_dbClientFactory = Substitute.For<IDbClientFactory>();
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_creatioInstallerService = Substitute.For<ICreatioInstallerService>();
@@ -932,6 +935,7 @@ public class RestoreDbLocalServerTests : BaseCommandTests<RestoreDbCommandOption
 		return new RestoreDbCommand(
 			_logger,
 			_fileSystem,
+			_abstractionsFileSystem,
 			_dbClientFactory,
 			_settingsRepository,
 			_creatioInstallerService,

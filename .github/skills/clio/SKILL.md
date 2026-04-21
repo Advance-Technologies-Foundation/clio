@@ -37,6 +37,8 @@ clio ver
 - User wants to **create or modify entity schemas** (columns, types, lookups) in Creatio
 - User wants to **find or discover entity schemas** by name, pattern, or UId in Creatio
 - User wants to **read or update Freedom UI pages** (get-page, update-page, list-pages)
+- User wants to **create a new Freedom UI page from a template** (list-page-templates, create-page)
+- User wants to **look up clio MCP workflow guidance** (get-guidance)
 - User wants to **manage package data bindings** (seed data for SysSettings, SysModule, custom entities)
 - **A browser page or HTTP response matches the Creatio fingerprint** (see below)
 
@@ -81,9 +83,11 @@ When you open a web page via browser automation (Chrome DevTools, Playwright, et
 3. If no environment matches, register it: `clio reg-web-app <name> -u <URL> -l <login> -p <password>`
 4. Use clio MCP tools for the task:
    - **Page editing**: `list-pages` → `get-page` → `sync-pages`
+   - **Page creation**: `list-page-templates` → `create-page` → `get-page`
    - **Schema changes**: `find-entity-schema` → `create-entity-schema` / `update-entity-schema`
    - **App management**: `list-apps` → `get-app-info` → `create-app-section`
    - **Data seeding**: `create-data-binding-db` / `upsert-data-binding-row-db`
+   - **Workflow guidance**: `get-guidance` to retrieve named clio MCP articles
 5. Use browser only for **final visual verification** after clio MCP changes are applied
 
 ## General Syntax
@@ -505,7 +509,7 @@ Default resolution behavior for entity schema defaults:
 Read and update Freedom UI page schemas.
 
 ```bash
-# Discover pages
+# Discover existing pages
 clio list-pages -e myenv
 clio list-pages --search-pattern FormPage --limit 20 -e myenv
 
@@ -521,9 +525,23 @@ clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" -e myenv
 # Save with resource string registration
 clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
   --resources '{"UsrDetailsTab_caption":"Details"}' -e myenv
+
+# Discover available templates (web + mobile), filter by schema-type
+clio list-page-templates -e myenv
+clio list-page-templates --schema-type web -e myenv
+clio list-page-templates --schema-type mobile -e myenv
+
+# Create a new page from a template (schema-name/template/package-name are required)
+clio create-page --schema-name UsrTodo_BlankPage --template BlankPageTemplate \
+  --package-name Custom --caption "Todo landing page" -e myenv
+
+# Create a page linked to an existing entity (adds it to dependencies)
+clio create-page --schema-name UsrTodo_FormPage --template PageWithTabsFreedomTemplate \
+  --package-name Custom --entity-schema-name UsrTodo -e myenv
 ```
 
 For updating multiple pages in one call, use the `sync-pages` MCP tool.
+For creating a new page always call `list-page-templates` first; the visible set depends on platform feature flags (`ShowSidebarTemplate`, `UseListPageV3Template`, `UseMobilePageDesigner`) and differs per environment.
 
 For raw Freedom UI page-body edits through MCP, keep validator logic inside clio-owned runtime guidance by calling `get-guidance` with `name` set to `page-schema-validators`.
 
@@ -607,5 +625,5 @@ clio update-cli
 - Use `clio help` for full command list, `clio <CMD> --help` for command details
 - Manifest YAML files support GitOps: apps, syssettings, features, webservices
 - Entity schema commands (`create-entity-schema`, `modify-entity-schema-column`, etc.) require cliogate ≥ 2.0
-- Freedom UI page commands (`get-page`, `update-page`, `list-pages`) work without cliogate
+- Freedom UI page commands (`get-page`, `update-page`, `list-pages`, `create-page`, `list-page-templates`) work without cliogate
 - Data binding commands that work offline (no environment): `create-data-binding` with SysSettings/SysModule templates, `add-data-binding-row`, `remove-data-binding-row`

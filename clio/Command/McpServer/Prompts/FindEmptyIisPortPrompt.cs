@@ -14,13 +14,14 @@ public static class FindEmptyIisPortPrompt
 	/// Builds a prompt that directs the agent to find a safe local IIS port before deployment.
 	/// </summary>
 	[McpServerPrompt(Name = FindEmptyIisPortTool.FindEmptyIisPortToolName),
-	 Description("Prompt to discover an empty IIS port between 40000 and 42000")]
+	 Description("Prompt to discover an empty IIS port for local Creatio deployment")]
 	public static string Prompt() =>
 		$"""
-		 When preparing a local IIS deployment, first run `{AssertInfrastructureTool.AssertInfrastructureToolName}`
-		 to inspect failing areas, then run `{ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName}` to
-		 select passing database and Redis targets, and then run `{FindEmptyIisPortTool.FindEmptyIisPortToolName}`
-		 to get a safe `sitePort` between {FindEmptyIisPortTool.RangeStart} and {FindEmptyIisPortTool.RangeEnd}
-		 before calling `{InstallerCommandTool.DeployCreatioToolName}`.
+		 Before deploying Creatio locally via IIS, follow this sequence:
+		 1. Run `{AssertInfrastructureTool.AssertInfrastructureToolName}` to check infrastructure health and identify failing areas.
+		 2. Run `{ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName}` to select passing database and Redis targets.
+		 3. Run `{FindEmptyIisPortTool.FindEmptyIisPortToolName}` to find an available port in range {FindEmptyIisPortTool.RangeStart}–{FindEmptyIisPortTool.RangeEnd}.
+		 4. Pass the returned port as `sitePort` to `{InstallerCommandTool.DeployCreatioToolName}`.
+		 This workflow ensures no port conflicts and validates all prerequisites before deployment.
 		 """;
 }

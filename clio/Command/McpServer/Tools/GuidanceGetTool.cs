@@ -3,72 +3,79 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.McpServer.Resources;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
-/// <summary>
-/// Returns canonical clio MCP guidance articles by stable guide name.
-/// </summary>
 [McpServerToolType]
 public sealed class GuidanceGetTool {
+
 	internal const string ToolName = "get-guidance";
 
-	/// <summary>
-	/// Resolves one named guidance article and returns its plain-text content.
-	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Returns canonical clio MCP guidance text by stable guide name so clients do not need to fetch docs:// resources directly. Known names: app-modeling, existing-app-maintenance, dataforge-orchestration, page-schema-validators.")]
-	public GuidanceGetResponse GetGuidance(
-		[Description("Parameters: name (required). Use one of the known guidance names such as page-schema-validators or existing-app-maintenance.")]
-		[Required]
-		GuidanceGetArgs args) {
-		if (GuidanceCatalog.TryGet(args.Name, out GuidanceCatalogEntry entry)) {
-			return new GuidanceGetResponse(
-				Success: true,
-				Guidance: new GuidanceArticle(
-					Name: entry.Name,
-					Uri: entry.Article.Uri,
-					MimeType: entry.Article.MimeType,
-					Description: entry.Description,
-					Text: entry.Article.Text));
+	[Description("Returns a named clio MCP guidance article, or lists all available guide names when the requested name is unknown.")]
+	public Task<GuidanceGetResponse> GetGuidance(
+		[Description("Parameters: name (required).")]
+		[Required] GuidanceGetArgs args,
+		CancellationToken cancellationToken = default) {
+		if (GuidanceCatalog.Entries.TryGetValue(args.Name, out var article)) {
+			return Task.FromResult(new GuidanceGetResponse {
+				Success = true,
+				Article = new GuidanceArticle {
+					Name = args.Name,
+					Uri = article.Uri,
+					Text = article.Text
+				}
+			});
 		}
-
-		return new GuidanceGetResponse(
-			Success: false,
-			Error: $"Unknown guidance '{args.Name}'.",
-			AvailableGuides: GuidanceCatalog.GetNames());
+		return Task.FromResult(new GuidanceGetResponse {
+			Success = false,
+			Error = $"Unknown guidance name '{args.Name}'. Use one of the listed names.",
+			AvailableGuides = GuidanceCatalog.Entries.Keys.ToList()
+		});
 	}
 }
 
-/// <summary>
-/// Request arguments for <c>get-guidance</c>.
-/// </summary>
 public sealed record GuidanceGetArgs(
 	[property: JsonPropertyName("name")]
-	[property: Description("Stable guidance name, for example page-schema-validators or existing-app-maintenance.")]
+	[property: Description("Guidance article name. Use one of the names returned in 'availableGuides' when unknown.")]
 	[property: Required]
 	string Name
 );
 
 /// <summary>
-/// Response envelope for <c>get-guidance</c>.
+/// Response from the <c>get-guidance</c> MCP tool.
 /// </summary>
-public sealed record GuidanceGetResponse(
-	[property: JsonPropertyName("success")] bool Success,
-	[property: JsonPropertyName("guidance")] GuidanceArticle? Guidance = null,
-	[property: JsonPropertyName("error")] string? Error = null,
-	[property: JsonPropertyName("available-guides")] IReadOnlyList<string>? AvailableGuides = null
-);
+public sealed class GuidanceGetResponse {
+	[JsonPropertyName("success")]
+	public bool Success { get; init; }
+
+	[JsonPropertyName("error")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public string? Error { get; init; }
+
+	[JsonPropertyName("article")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public GuidanceArticle? Article { get; init; }
+
+	[JsonPropertyName("availableGuides")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public List<string>? AvailableGuides { get; init; }
+}
 
 /// <summary>
-/// One resolved guidance article exposed through the MCP tool surface.
+/// A single named guidance article returned by <c>get-guidance</c>.
 /// </summary>
-public sealed record GuidanceArticle(
-	[property: JsonPropertyName("name")] string Name,
-	[property: JsonPropertyName("uri")] string Uri,
-	[property: JsonPropertyName("mime-type")] string MimeType,
-	[property: JsonPropertyName("description")] string Description,
-	[property: JsonPropertyName("text")] string Text
-);
+public sealed class GuidanceArticle {
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	[JsonPropertyName("uri")]
+	public string Uri { get; init; }
+
+	[JsonPropertyName("text")]
+	public string Text { get; init; }
+}

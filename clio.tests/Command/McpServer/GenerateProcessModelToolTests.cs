@@ -140,11 +140,12 @@ public sealed class GenerateProcessModelToolTests {
 			"missing-env"));
 
 		// Assert
-		result.ExitCode.Should().Be(1,
-			because: "resolver failures should be returned as normal command execution envelopes");
+		result.ExitCode.Should().Be(-1,
+			because: "resolver failures should be returned as normal command execution envelopes with the FromException exit code");
 		result.Output.Should().ContainSingle(message =>
 			message.GetType() == typeof(ErrorMessage) &&
-			Equals(message.Value, "Environment with key 'missing-env' not found."),
+			message.Value != null &&
+			message.Value.ToString()!.Contains("Environment with key 'missing-env' not found."),
 			because: "the failure should surface the environment-resolution problem to the caller");
 	}
 

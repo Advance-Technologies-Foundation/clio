@@ -6,6 +6,7 @@ using Clio.Common;
 using OneOf;
 using OneOf.Types;
 using YamlDotNet.Serialization;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.YAML;
 
@@ -63,21 +64,21 @@ public class Scenario : IScenario, IExecutableScenario{
 				   };
 		};
 
-	private static readonly Func<string, IDeserializer, Dictionary<object, object>>
-		FileContentLoader = (fileName, deserializer) => {
-			if (!File.Exists(fileName)) {
-				return new Dictionary<object, object>();
-			}
-
-			using TextReader reader = new StreamReader(fileName);
-			try {
-				return deserializer.Deserialize<Dictionary<object, object>>(reader) ?? new Dictionary<object, object>();
-			}
-			catch (Exception ex) {
-				ConsoleLogger.Instance.WriteError("Could not deserialize file: " + fileName + ex.Message);
-				return new Dictionary<object, object>();
-			}
-		};
+	private static Dictionary<object, object> LoadFileContent(string fileName, IDeserializer deserializer,
+			IAbstractionsFileSystem fileSystem) {
+		if (!fileSystem.File.Exists(fileName)) {
+			return new Dictionary<object, object>();
+		}
+		using Stream stream = fileSystem.File.OpenRead(fileName);
+		using TextReader reader = new StreamReader(stream);
+		try {
+			return deserializer.Deserialize<Dictionary<object, object>>(reader) ?? new Dictionary<object, object>();
+		}
+		catch (Exception ex) {
+			ConsoleLogger.Instance.WriteError("Could not deserialize file: " + fileName + ex.Message);
+			return new Dictionary<object, object>();
+		}
+	}
 
 	private static readonly Func<Dictionary<object, object>, string, Func<string, Dictionary<object, object>>,
 			Dictionary<string, object>>
@@ -163,8 +164,12 @@ public class Scenario : IScenario, IExecutableScenario{
 
 	#region Constructors: Public
 
-	public Scenario(IDeserializer deserializer) {
-		_initializedFileContentLoader = filename => FileContentLoader(filename, deserializer);
+	public Scenario(IDeserializer deserializer)
+		: this(deserializer, new System.IO.Abstractions.FileSystem()) {
+	}
+
+	public Scenario(IDeserializer deserializer, IAbstractionsFileSystem fileSystem) {
+		_initializedFileContentLoader = filename => LoadFileContent(filename, deserializer, fileSystem);
 		_settingLookup = key => GetOptionByKey(key, Settings);
 		_secretsLookup = key => GetOptionByKey(key, Secrets);
 	}

@@ -38,7 +38,8 @@ public interface IApplicationInfoService
 /// </summary>
 public sealed class ApplicationInfoService(
 	ISettingsRepository settingsRepository,
-	IApplicationClientFactory applicationClientFactory)
+	IApplicationClientFactory applicationClientFactory,
+	IServiceUrlBuilderFactory serviceUrlBuilderFactory)
 	: IApplicationInfoService
 {
 	private const string BaseObjectCaption = "Base object";
@@ -128,7 +129,7 @@ public sealed class ApplicationInfoService(
 			?? throw new InvalidOperationException(
 				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
-		ServiceUrlBuilder serviceUrlBuilder = new(environmentSettings);
+		IServiceUrlBuilder serviceUrlBuilder = serviceUrlBuilderFactory.Create(environmentSettings);
 
 		InstalledApplicationDto application = ResolveApplication(client, serviceUrlBuilder, id, code);
 		ApplicationPackageDto primaryPackage = GetPrimaryPackage(client, serviceUrlBuilder, application.Id);
@@ -172,7 +173,7 @@ public sealed class ApplicationInfoService(
 			?? throw new InvalidOperationException(
 				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
-		ServiceUrlBuilder serviceUrlBuilder = new(environmentSettings);
+		IServiceUrlBuilder serviceUrlBuilder = serviceUrlBuilderFactory.Create(environmentSettings);
 		InstalledApplicationDto application = ResolveApplication(client, serviceUrlBuilder, null, code);
 		return new InstalledAppSummary(
 			application.Id,
@@ -183,7 +184,7 @@ public sealed class ApplicationInfoService(
 
 	private static InstalledApplicationDto ResolveApplication(
 		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
+		IServiceUrlBuilder serviceUrlBuilder,
 		string? id,
 		string? code)
 	{
@@ -203,7 +204,7 @@ public sealed class ApplicationInfoService(
 
 	private static ApplicationPackageDto GetPrimaryPackage(
 		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
+		IServiceUrlBuilder serviceUrlBuilder,
 		string applicationId)
 	{
 		string responseJson = client.ExecutePostRequest(
@@ -230,7 +231,7 @@ public sealed class ApplicationInfoService(
 
 	private static IReadOnlyList<ApplicationEntityRecordDto> GetApplicationEntities(
 		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
+		IServiceUrlBuilder serviceUrlBuilder,
 		string appId,
 		string packageUId)
 	{
@@ -243,7 +244,7 @@ public sealed class ApplicationInfoService(
 
 	private static IReadOnlyList<PageListItem> GetApplicationPages(
 		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
+		IServiceUrlBuilder serviceUrlBuilder,
 		string packageName)
 	{
 		ApplicationPageSelectQueryResponseDto response = ExecuteSelectQuery<ApplicationPageSelectQueryResponseDto>(
@@ -264,7 +265,7 @@ public sealed class ApplicationInfoService(
 
 	private static ApplicationEntityInfoResult LoadEntityInfo(
 		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
+		IServiceUrlBuilder serviceUrlBuilder,
 		string packageUId,
 		string canonicalMainEntityName,
 		string? canonicalMainEntityCaptionFallback,
@@ -495,7 +496,7 @@ public sealed class ApplicationInfoService(
 
 	private static DesignSchemaDto? TryLoadDesignSchema(
 		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
+		IServiceUrlBuilder serviceUrlBuilder,
 		string packageUId,
 		string entityName)
 	{
@@ -536,7 +537,7 @@ public sealed class ApplicationInfoService(
 
 	private static T ExecuteSelectQuery<T>(
 		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
+		IServiceUrlBuilder serviceUrlBuilder,
 		object query)
 		where T : SelectQueryResponseBaseDto
 	{

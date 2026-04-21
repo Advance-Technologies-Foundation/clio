@@ -8,6 +8,7 @@ using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Tests.Command
 {
@@ -20,6 +21,7 @@ namespace Clio.Tests.Command
 
         private IWorkspaceMerger _workspaceMerger;
         private ILogger _logger;
+        private IFileSystem _fileSystem;
         private MergeWorkspacesCommand _command;
         private string _testOutputPath;
         private string _testZipFileName;
@@ -33,7 +35,9 @@ namespace Clio.Tests.Command
         {
             _workspaceMerger = Substitute.For<IWorkspaceMerger>();
             _logger = Substitute.For<ILogger>();
-            _command = new MergeWorkspacesCommand(_workspaceMerger, _logger);
+            _fileSystem = Substitute.For<IFileSystem>();
+            _fileSystem.Directory.Exists(Arg.Any<string>()).Returns(true);
+            _command = new MergeWorkspacesCommand(_workspaceMerger, _logger, _fileSystem);
             _testOutputPath = Path.Combine(Path.GetTempPath(), "test-output");
             _testZipFileName = "TestMergedPackages";
             
@@ -242,6 +246,7 @@ namespace Clio.Tests.Command
                 ZipFileName = _testZipFileName,
                 Install = true
             };
+            _fileSystem.Directory.Exists("./non-existent-workspace").Returns(false);
 
             // Act
             int result = _command.Execute(options);

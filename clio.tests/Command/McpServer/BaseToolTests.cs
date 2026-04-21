@@ -55,8 +55,8 @@ public sealed class BaseToolTests {
 			because: "BaseTool keeps the default exit code when command throws before completion");
 		messageValues.Should().Contain("Before failure.",
 			because: "messages queued prior to the exception should still be returned");
-		messageValues.Should().Contain("Boom from command.",
-			because: "BaseTool appends the thrown exception message into MCP output");
+		messageValues.Should().ContainMatch("*Boom from command.*",
+			because: "BaseTool appends the formatted exception chain (e.g. '[InvalidOperationException] Boom from command.') into MCP output");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 

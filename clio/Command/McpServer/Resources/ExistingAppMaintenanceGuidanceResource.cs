@@ -16,14 +16,10 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 	/// <summary>
 	/// Returns the canonical guidance article for discovering, inspecting, and minimally mutating an existing app.
 	/// </summary>
-	[McpServerResource(UriTemplate = ResourceUri, Name = "existing-app-maintenance-guidance")]
-	[Description("Returns canonical MCP guidance for existing-app discovery, inspection, and minimal mutation workflows.")]
-	public ResourceContents GetGuide() => Guide;
-
 	internal static readonly TextResourceContents Guide = new() {
-			Uri = ResourceUri,
-			MimeType = "text/plain",
-			Text = """
+		Uri = ResourceUri,
+		MimeType = "text/plain",
+		Text = """
 			       clio MCP existing-app maintenance guide
 
 			       Canonical flow
@@ -34,7 +30,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - For deleting a section from an existing app, prefer `list-apps -> get-app-info -> list-app-sections -> delete-app-section`.
 			       - Prefer `list-pages -> get-page -> sync-pages -> get-page` as the canonical page workflow, including single-page saves when the caller wants the clio-advertised path.
 			       - Read before write, and read back after mutations when the tool or workflow allows it.
-			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
+			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), read `docs://mcp/guides/dataforge-orchestration`.
 
 			       Discover the target app
 			       - Use `list-apps` when you do not yet know the installed application code or need to confirm candidates.
@@ -89,6 +85,12 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - The refresh after schema mutations is essential: it verifies that changes were materialized, updates the canonical main-entity selector, and detects incomplete states such as `Database update required`. Treat the schema batch as successful only when refreshed metadata is available and no schema is left in an incomplete state.
 			       - Example: if `get-app-info` or refreshed schema metadata already exposes `Support Case Knowledge Link` / `UsrSupportCaseKbLink`, a request to add a Related Knowledge detail on the Support Case form is a page mutation that reuses that schema. Do not create `UsrSupportCaseKnowledgeBase`.
 			       """
-		};
-}
+	};
 
+	/// <summary>
+	/// Returns the canonical guidance article for discovering, inspecting, and minimally mutating an existing app.
+	/// </summary>
+	[McpServerResource(UriTemplate = ResourceUri, Name = "existing-app-maintenance-guidance")]
+	[Description("Returns canonical MCP guidance for existing-app discovery, inspection, and minimal mutation workflows.")]
+	public ResourceContents GetGuide() => Guide;
+}
