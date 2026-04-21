@@ -44,6 +44,7 @@ public sealed class PageUpdateTool(
 			DryRun = args.DryRun ?? false,
 			Resources = args.Resources,
 			OptionalProperties = args.OptionalProperties,
+			Mode = args.Mode,
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
@@ -135,5 +136,8 @@ public sealed record PageUpdateArgs(
 	bool? Verify = null,
 	[property: JsonPropertyName("body-file")]
 	[property: Description("Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping.")]
-	string? BodyFile = null
+	string? BodyFile = null,
+	[property: JsonPropertyName("mode")]
+	[property: Description("Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming body fragment with the schema's current body on the server — viewConfigDiff entries dedupe by `name` (incoming wins), handlers dedupe by `request`. Use 'append' when adding a component without clobbering existing customizations.")]
+	string? Mode = null
 );

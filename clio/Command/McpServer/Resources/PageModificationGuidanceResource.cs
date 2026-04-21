@@ -43,6 +43,15 @@ public sealed class PageModificationGuidanceResource {
 		       - `bundle` — read-only merged view across the full hierarchy. Do not send `bundle` or `bundle.viewConfig` as the body payload.
 		       - `bundle.containers` — flat list of usable `parentName` values.
 
+		       update-page write modes
+		       - `mode: "replace"` (default): the body you pass replaces the schema body verbatim. Use only when composing the full schema body from scratch.
+		       - `mode: "append"`: clio loads the current schema body from the server, merges your incoming body fragment with it, and saves the merged result. Use this mode when ADDING a component/handler/config to an existing customized page — it is the safe choice when `ownBodySummary.viewConfigDiffOperations > 0`.
+		       - Merge rules (append mode):
+		         * `viewConfigDiff` — concat + dedupe by `name` (incoming wins)
+		         * `handlers` — concat + dedupe by `request` string (incoming wins)
+		         * `viewModelConfigDiff` / `modelConfigDiff` — plain concat (no dedupe)
+		       - In append mode the incoming body still needs the full marker envelope (all six marker pairs present, even if some sections are empty `[]` or `{}`).
+
 		       CRITICAL — do NOT resend the full raw.body as the update-page body payload
 		       - `raw.body` contains the schema's own existing viewConfigDiff operations (existing merges/inserts). Re-sending it makes the backend re-apply those merges against the current parent hierarchy, and one of them typically fails with
 		         "The requested operation requires an element of type 'Object', but the target element has type 'Array'".

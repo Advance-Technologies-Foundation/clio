@@ -48,6 +48,13 @@ namespace Clio.Command {
 		/// </summary>
 		[Option("optional-properties", Required = false, HelpText = "JSON array of {key, value} objects to merge into schema optionalProperties")]
 		public string? OptionalProperties { get; set; }
+
+		/// <summary>
+		/// Gets or sets the write mode. <c>replace</c> (default) saves the provided body verbatim.
+		/// <c>append</c> merges the provided body fragment with the current schema body on the server.
+		/// </summary>
+		[Option("mode", Required = false, HelpText = "Write mode: 'replace' (default) or 'append' (merge with existing body)")]
+		public string? Mode { get; set; }
 	}
 
 	/// <summary>
@@ -111,7 +118,23 @@ namespace Clio.Command {
 				if (!string.IsNullOrWhiteSpace(options.OptionalProperties)) {
 					parsedOptionalProperties = JArray.Parse(options.OptionalProperties);
 				}
-				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, options.Body, explicitResources, parsedOptionalProperties);
+				string bodyToWrite = options.Body;
+				bool isAppendMode = string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase);
+				if (isAppendMode) {
+					string currentBody = schemaToSave["body"]?.ToString();
+					if (!string.IsNullOrWhiteSpace(currentBody)) {
+						try {
+							bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body);
+						} catch (Exception ex) {
+							response = new PageUpdateResponse {
+								Success = false,
+								Error = $"Append merge failed: {ex.Message} [hint: the incoming body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]"
+							};
+							return false;
+						}
+					}
+				}
+				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, explicitResources, parsedOptionalProperties);
 				if (!TrySaveSchema(schemaToSave, out response)) {
 					return false;
 				}

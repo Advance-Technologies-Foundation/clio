@@ -2105,4 +2105,50 @@ public class PageToolsTests {
 		response.Page.OwnBodySummary.HandlerEntries.Should().Be(2,
 			because: "handler entries are counted by top-level object literals in the handlers marker block");
 	}
+
+	[Test]
+	[Description("PageBodyMerger.Merge concatenates viewConfigDiff entries, dedupes by name (incoming wins), and preserves other sections")]
+	public void PageBodyMerger_Should_Merge_ViewConfigDiff_And_Handlers() {
+		string currentBody = "define(\"P\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"RefreshButton\",\"values\":{\"size\":\"large\"}},{\"operation\":\"insert\",\"name\":\"Existing\",\"values\":{\"type\":\"crt.Input\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[{request:\"crt.KeepMeRequest\",handler:()=>null}]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		string incomingBody = "define(\"P\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\",\"caption\":\"Test\"},\"parentName\":\"ActionButtonsContainer\"},{\"operation\":\"merge\",\"name\":\"RefreshButton\",\"values\":{\"size\":\"small\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[{request:\"usr.TestRequest\",handler:async(r)=>{alert(\"hi\");return r.next?.handle(r);}}]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("\"name\":\"Existing\"", because: "existing entries without collisions are preserved");
+		merged.Should().Contain("\"name\":\"TestButton\"", because: "new entries are appended");
+		merged.Should().Contain("\"size\":\"small\"", because: "incoming wins when names collide (RefreshButton gets size:small)");
+		merged.Should().NotContain("\"size\":\"large\"", because: "the colliding entry is superseded");
+		merged.Should().Contain("crt.KeepMeRequest", because: "existing handlers without request collision are preserved");
+		merged.Should().Contain("usr.TestRequest", because: "new handlers are appended");
+	}
+
+	[Test]
+	[Description("PageBodyMerger handlers dedupe: when incoming declares the same request as current, incoming wins")]
+	public void PageBodyMerger_Should_Dedupe_Handlers_By_Request() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[{request:\"usr.X\",handler:()=>{return 'old';}}]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[{request:\"usr.X\",handler:()=>{return 'new';}}]/**SCHEMA_HANDLERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("'new'", because: "incoming handler wins when request string matches");
+		merged.Should().NotContain("'old'", because: "old handler with the same request is dropped");
+	}
 }
