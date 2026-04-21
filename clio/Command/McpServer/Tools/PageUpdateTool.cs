@@ -37,6 +37,7 @@ public sealed class PageUpdateTool(
 			OptionalProperties = args.OptionalProperties,
 			Mode = args.Mode,
 			TargetPackageUId = args.TargetPackageUId,
+			TargetSchemaUId = args.TargetSchemaUId,
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
@@ -134,5 +135,8 @@ public sealed record PageUpdateArgs(
 	string? Mode = null,
 	[property: JsonPropertyName("target-package-uid")]
 	[property: Description("Explicit target package UId for the replacing schema. Overrides automatic design-package resolution. Required when multiple apps replace the same platform page and automatic resolution would land the edit in the wrong app's design package.")]
-	string? TargetPackageUId = null
+	string? TargetPackageUId = null,
+	[property: JsonPropertyName("target-schema-uid")]
+	[property: Description("Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely. Use when you already know the exact replacing schema you want to modify (obtained via list-pages filter by name) and want to skip the design-package inference.")]
+	string? TargetSchemaUId = null
 );
