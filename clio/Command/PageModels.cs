@@ -182,6 +182,35 @@ public sealed class PageMetadataInfo {
 	[JsonPropertyName("ownBodySummary")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public PageOwnBodySummary OwnBodySummary { get; init; }
+
+	/// <summary>
+	/// Gets or sets the design package identifier that subsequent <c>update-page</c> writes
+	/// will target when <c>mode</c> is not explicitly overridden. Equals the value returned by
+	/// <c>ApplicationPackagesService.svc/GetDesignPackageUId</c> for this schema.
+	/// </summary>
+	[JsonProperty("designPackageUId")]
+	[JsonPropertyName("designPackageUId")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public string DesignPackageUId { get; init; }
+
+	/// <summary>
+	/// Gets or sets the design package name for <see cref="DesignPackageUId"/>. May be empty
+	/// for virtual packages that have not yet been materialized in the database.
+	/// </summary>
+	[JsonProperty("designPackageName")]
+	[JsonPropertyName("designPackageName")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public string DesignPackageName { get; init; }
+
+	/// <summary>
+	/// When <c>true</c>, <see cref="DesignPackageUId"/> differs from <see cref="PackageUId"/>
+	/// which means a subsequent write will materialize a NEW replacing schema in the design
+	/// package. Callers should warn the user because the edit may land in a different app than
+	/// the one currently shown at runtime when multiple apps replace the same platform page.
+	/// </summary>
+	[JsonProperty("willCreateReplacingInDesignPackage")]
+	[JsonPropertyName("willCreateReplacingInDesignPackage")]
+	public bool WillCreateReplacingInDesignPackage { get; init; }
 }
 
 /// <summary>
