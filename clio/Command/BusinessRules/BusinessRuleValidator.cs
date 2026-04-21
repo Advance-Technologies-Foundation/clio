@@ -82,8 +82,15 @@ internal static class BusinessRuleValidator {
 			}
 
 			string rightPath = condition.RightExpression.Path;
-			if (!columnMap.TryGetValue(rightPath, out _)) {
+			if (!columnMap.TryGetValue(rightPath, out EntitySchemaColumnDto? rightDescriptor)) {
 				throw new ArgumentException($"Unknown attribute '{rightPath}' in rule.condition.conditions[*].rightExpression.path.");
+			}
+
+			string leftTypeName = MapDataValueTypeName(leftDescriptor.DataValueType);
+			string rightTypeName = MapDataValueTypeName(rightDescriptor.DataValueType);
+			if (!string.Equals(leftTypeName, rightTypeName, StringComparison.OrdinalIgnoreCase)) {
+				throw new ArgumentException(
+					$"rule.condition.conditions[*] compares left attribute '{leftPath}' ({leftTypeName}) to right attribute '{rightPath}' ({rightTypeName}). Both attributes must have the same data value type.");
 			}
 			return;
 		}
@@ -103,6 +110,36 @@ internal static class BusinessRuleValidator {
 				throw new ArgumentException(
 					"rule.condition.conditions[*].rightExpression.value must be a GUID string when the left attribute is a Lookup.");
 			}
+			return;
+		}
+
+		string leftDataValueTypeName = MapDataValueTypeName(leftDescriptor.DataValueType);
+		JsonElement rightValue = condition.RightExpression.Value.Value;
+		if (string.Equals(leftDataValueTypeName, "Guid", StringComparison.OrdinalIgnoreCase)) {
+			if (rightValue.ValueKind != JsonValueKind.String
+				|| !Guid.TryParse(rightValue.GetString(), out _)) {
+				throw new ArgumentException(
+					"rule.condition.conditions[*].rightExpression.value must be a GUID string when the left attribute is Guid.");
+			}
+			return;
+		}
+
+		if (string.Equals(leftDataValueTypeName, "Boolean", StringComparison.OrdinalIgnoreCase)) {
+			if (rightValue.ValueKind != JsonValueKind.True && rightValue.ValueKind != JsonValueKind.False) {
+				throw new ArgumentException(
+					"rule.condition.conditions[*].rightExpression.value must be a JSON boolean when the left attribute is Boolean.");
+			}
+			return;
+		}
+
+		if (IsTextDataValueType(leftDataValueTypeName) && rightValue.ValueKind != JsonValueKind.String) {
+			throw new ArgumentException(
+				"rule.condition.conditions[*].rightExpression.value must be a JSON string when the left attribute is a text type.");
+		}
+
+		if (IsNumericDataValueType(leftDataValueTypeName) && rightValue.ValueKind != JsonValueKind.Number) {
+			throw new ArgumentException(
+				"rule.condition.conditions[*].rightExpression.value must be a JSON number when the left attribute is a numeric type.");
 		}
 	}
 
@@ -132,4 +169,22 @@ internal static class BusinessRuleValidator {
 			}
 		}
 	}
+
+	private static bool IsTextDataValueType(string dataValueTypeName) =>
+		string.Equals(dataValueTypeName, "Text", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(dataValueTypeName, "SecureText", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(dataValueTypeName, "ShortText", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(dataValueTypeName, "MediumText", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(dataValueTypeName, "MaxSizeText", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(dataValueTypeName, "LongText", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(dataValueTypeName, "PhoneText", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(dataValueTypeName, "RichText", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(dataValueTypeName, "WebText", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(dataValueTypeName, "EmailText", StringComparison.OrdinalIgnoreCase);
+
+	private static bool IsNumericDataValueType(string dataValueTypeName) =>
+		string.Equals(dataValueTypeName, "Integer", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(dataValueTypeName, "Float", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(dataValueTypeName, "Money", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(dataValueTypeName, "Float0", StringComparison.OrdinalIgnoreCase);
 }

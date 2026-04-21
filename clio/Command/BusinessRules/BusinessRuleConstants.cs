@@ -9,7 +9,6 @@ internal static class BusinessRuleConstants {
 	internal const string BusinessRuleAddonName = "BusinessRule";
 	internal const string EntitySchemaManagerName = "EntitySchemaManager";
 	internal const string EntitySchemaDesignerBasePath = "ServiceModel/EntitySchemaDesignerService.svc";
-	internal const string AddonDesignerBasePath = "ServiceModel/AddonSchemaDesignerService.svc";
 	internal const string BusinessRulesMetadataTypeName = "Terrasoft.Core.BusinessRules.BusinessRules";
 	internal const string BusinessRuleTypeName = "Terrasoft.Core.BusinessRules.BusinessRule";
 	internal const string BusinessRuleCaseTypeName = "Terrasoft.Core.BusinessRules.Models.BusinessRuleCase";

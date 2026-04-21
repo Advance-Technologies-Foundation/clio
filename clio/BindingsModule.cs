@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Command;
+using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.ApplicationCommand;
 using Clio.Command.BusinessRules;
 using Clio.Command.ChainItems;
@@ -199,6 +200,7 @@ public class BindingsModule {
 		services.AddTransient<CreateAppSectionCommand>();
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
 		services.AddTransient<UpdateAppSectionCommand>();
+		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
 		services.AddTransient<IBusinessRuleService, BusinessRuleService>();
 		services.AddTransient<CreateEntityBusinessRuleCommand>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();

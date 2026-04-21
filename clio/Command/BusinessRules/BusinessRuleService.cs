@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.EntitySchemaDesigner;
-using Clio.Common;
 using Clio.Package;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
@@ -36,11 +36,9 @@ public sealed record BusinessRuleCreateRequest(
 public sealed record BusinessRuleCreateResult(string RuleName);
 
 internal sealed class BusinessRuleService(
-	IApplicationClient applicationClient,
-	IServiceUrlBuilder serviceUrlBuilder,
+	IAddonSchemaDesignerClient addonSchemaDesignerClient,
 	IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
-	IApplicationPackageListProvider applicationPackageListProvider,
-	IJsonConverter jsonConverter)
+	IApplicationPackageListProvider applicationPackageListProvider)
 	: IBusinessRuleService {
 	
 	public BusinessRuleCreateResult Create(BusinessRuleCreateRequest request) {
@@ -54,20 +52,19 @@ internal sealed class BusinessRuleService(
 		EntityDesignSchemaDto entitySchema = LoadEntitySchema(request.EntitySchemaName, packageUId);
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = BusinessRuleHelpers.BuildColumnMap(entitySchema);
 		BusinessRuleValidator.Validate(request.Rule, columnMap);
-		AddonSchemaResponseDto addonResponse = LoadAddonSchema(entitySchema, packageUId);
-		BusinessRulesAddonMetadata metadata = ParseMetadata(addonResponse.Schema?.MetaData);
-		List<AddonResourceDto> resources = NormalizeResourceKeys(addonResponse.Schema?.Resources?.ToList() ?? []);
+		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(BuildAddonSchemaRequest(entitySchema, packageUId));
+		BusinessRulesAddonMetadata metadata = ParseMetadata(schema.MetaData);
+		List<AddonResourceDto> resources = NormalizeResourceKeys(schema.Resources.ToList());
 
 		BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToMetadata(columnMap, request.Rule);
 		metadata.Rules.Add(createdRule);
 		UpsertCaptionResource(resources, createdRule.UId, request.Rule.Caption.Trim());
 
-		AddonSchemaDto schema = addonResponse.Schema
-			?? throw new InvalidOperationException("AddonSchemaDesignerService did not return a schema payload.");
 		schema.MetaData = JsonSerializer.Serialize(metadata, JsonOptions);
 		schema.Resources = resources;
 
-		SaveAddonSchema(schema);
+		addonSchemaDesignerClient.SaveSchema(schema);
+		addonSchemaDesignerClient.ResetClientScriptCache();
 
 		return new BusinessRuleCreateResult(createdRule.Name);
 	}
@@ -101,43 +98,17 @@ internal sealed class BusinessRuleService(
 			?? throw new InvalidOperationException($"Entity schema '{entitySchemaName}' was not returned.");
 	}
 
-	private AddonSchemaResponseDto LoadAddonSchema(
+	private static AddonGetRequestDto BuildAddonSchemaRequest(
 		EntityDesignSchemaDto entitySchema,
 		Guid packageUId) {
-		string responseBody = applicationClient.ExecutePostRequest(
-			serviceUrlBuilder.Build($"{AddonDesignerBasePath}/GetSchema"),
-			JsonSerializer.Serialize(new AddonGetRequestDto {
-				AddonName = BusinessRuleAddonName,
-				TargetSchemaUId = entitySchema.UId,
-				TargetParentSchemaUId = entitySchema.ParentSchema?.UId ?? Guid.Empty,
-				TargetPackageUId = packageUId,
-				TargetSchemaManagerName = EntitySchemaManagerName,
-				UseFullHierarchy = true
-			}, JsonOptions));
-		AddonSchemaResponseDto response = Deserialize<AddonSchemaResponseDto>(
-			responseBody,
-			"AddonSchemaDesignerService returned an empty response.");
-		if (!response.Success) {
-			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "AddonSchemaDesignerService.GetSchema failed.");
-		}
-
-		return response;
-	}
-
-	private void SaveAddonSchema(AddonSchemaDto schema) {
-		string responseBody = applicationClient.ExecutePostRequest(
-			serviceUrlBuilder.Build($"{AddonDesignerBasePath}/SaveSchema"),
-			JsonSerializer.Serialize(schema, JsonOptions));
-		AddonSaveResponseDto response = Deserialize<AddonSaveResponseDto>(
-			responseBody,
-			"AddonSchemaDesignerService.SaveSchema returned an empty response.");
-		if (!response.Success || response.Value == false) {
-			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "AddonSchemaDesignerService.SaveSchema failed.");
-		}
-
-		applicationClient.ExecutePostRequest(
-			serviceUrlBuilder.Build("/rest/WorkplaceService/ResetScriptCache"),
-			string.Empty);
+		return new AddonGetRequestDto {
+			AddonName = BusinessRuleAddonName,
+			TargetSchemaUId = entitySchema.UId,
+			TargetParentSchemaUId = entitySchema.ParentSchema?.UId ?? Guid.Empty,
+			TargetPackageUId = packageUId,
+			TargetSchemaManagerName = EntitySchemaManagerName,
+			UseFullHierarchy = true
+		};
 	}
 
 	private static BusinessRulesAddonMetadata ParseMetadata(string? metaData) {
@@ -185,18 +156,4 @@ internal sealed class BusinessRuleService(
 		existing.Value = [enUsValue];
 	}
 
-	private T Deserialize<T>(string responseBody, string emptyMessage) {
-		if (string.IsNullOrWhiteSpace(responseBody)) {
-			throw new InvalidOperationException(emptyMessage);
-		}
-
-		try {
-			return JsonSerializer.Deserialize<T>(responseBody, JsonOptions)
-				?? throw new InvalidOperationException(emptyMessage);
-		} catch (JsonException) {
-			string correctedJson = jsonConverter.CorrectJson(responseBody);
-			return JsonSerializer.Deserialize<T>(correctedJson, JsonOptions)
-				?? throw new InvalidOperationException(emptyMessage);
-		}
-	}
 }

@@ -1,13 +1,10 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text.Json;
 using Clio.Command;
+using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.BusinessRules;
 using Clio.Command.EntitySchemaDesigner;
-using Clio.Common;
 using Clio.Package;
-using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -15,28 +12,19 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public sealed class BusinessRuleServiceTests {
-	private IApplicationClient _applicationClient = null!;
+	private IAddonSchemaDesignerClient _addonSchemaDesignerClient = null!;
 	private IApplicationPackageListProvider _applicationPackageListProvider = null!;
 	private IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient = null!;
-	private IServiceUrlBuilder _serviceUrlBuilder = null!;
-	private JsonConverter _jsonConverter = null!;
 	private BusinessRuleService _service = null!;
-	private string? _savedAddonRequestBody;
+	private AddonSchemaDto? _savedAddonSchema;
 
 	[SetUp]
 	public void SetUp() {
-		_savedAddonRequestBody = null;
-		_applicationClient = Substitute.For<IApplicationClient>();
-		_jsonConverter = new JsonConverter();
-		_serviceUrlBuilder = new ServiceUrlBuilder(new EnvironmentSettings {
-			Uri = "http://localhost",
-			IsNetCore = true
-		});
-		_entitySchemaDesignerClient = new RemoteEntitySchemaDesignerClient(
-			_applicationClient,
-			_jsonConverter,
-			_serviceUrlBuilder);
+		_savedAddonSchema = null;
+		_addonSchemaDesignerClient = Substitute.For<IAddonSchemaDesignerClient>();
+		_entitySchemaDesignerClient = Substitute.For<IRemoteEntitySchemaDesignerClient>();
 		_applicationPackageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_applicationPackageListProvider.GetPackages().Returns(new[] {
 			new PackageInfo(new PackageDescriptor {
@@ -44,15 +32,20 @@ public sealed class BusinessRuleServiceTests {
 				UId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 			}, string.Empty, [])
 		});
-		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
-				Arg.Any<int>())
-			.Returns(callInfo => BuildResponse((string)callInfo[0], (string)callInfo[1]));
+		_entitySchemaDesignerClient.GetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(), Arg.Any<RemoteCommandOptions>())
+			.Returns(new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
+				Success = true,
+				Schema = BuildEntitySchema()
+			});
+		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(BuildAddonSchema());
+		_addonSchemaDesignerClient
+			.When(client => client.SaveSchema(Arg.Any<AddonSchemaDto>()))
+			.Do(callInfo => _savedAddonSchema = callInfo.Arg<AddonSchemaDto>());
 		_service = new BusinessRuleService(
-			_applicationClient,
-			_serviceUrlBuilder,
+			_addonSchemaDesignerClient,
 			_entitySchemaDesignerClient,
-			_applicationPackageListProvider,
-			_jsonConverter);
+			_applicationPackageListProvider);
 	}
 
 	[Test]
@@ -84,12 +77,7 @@ public sealed class BusinessRuleServiceTests {
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("package-name is required.",
 				because: "request-level preconditions belong to the create operation even though rule validation is handled separately");
-		_applicationClient.DidNotReceive().ExecutePostRequest(
-			Arg.Any<string>(),
-			Arg.Any<string>(),
-			Arg.Any<int>(),
-			Arg.Any<int>(),
-			Arg.Any<int>());
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
 	}
 
 	[Test]
@@ -108,7 +96,7 @@ public sealed class BusinessRuleServiceTests {
 						new BusinessRuleCondition(
 							new BusinessRuleExpression("AttributeValue", "Status", null),
 							"equal",
-								new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"Draft\"")))
+							new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"Draft\"")))
 					]),
 				[
 					new BusinessRuleAction("make-required", ["Owner", "Amount"]),
@@ -121,24 +109,19 @@ public sealed class BusinessRuleServiceTests {
 		// Assert
 		result.RuleName.Should().StartWith("BusinessRule_",
 			because: "the service should return the generated internal rule name");
-		_applicationClient.Received(1).ExecutePostRequest(
-			Arg.Is<string>(url => url.Contains("EntitySchemaDesignerService.svc/GetSchemaDesignItem", StringComparison.Ordinal)),
-			Arg.Is<string>(body =>
-				body.Contains("\"name\": \"UsrOrder\"", StringComparison.Ordinal)
-				&& body.Contains("\"packageUId\": \"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\"", StringComparison.Ordinal)
-				&& body.Contains("\"useFullHierarchy\": true", StringComparison.Ordinal)),
-			Arg.Any<int>(),
-			Arg.Any<int>(),
-			Arg.Any<int>());
+		_addonSchemaDesignerClient.Received(1).GetSchema(
+			Arg.Is<AddonGetRequestDto>(dto =>
+				dto.AddonName == "BusinessRule"
+				&& dto.TargetSchemaUId == Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+				&& dto.TargetParentSchemaUId == Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc")
+				&& dto.TargetPackageUId == Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+				&& dto.TargetSchemaManagerName == "EntitySchemaManager"
+				&& dto.UseFullHierarchy));
 
-		_savedAddonRequestBody.Should().NotBeNullOrWhiteSpace(
+		_savedAddonSchema.Should().NotBeNull(
 			because: "the service should persist the updated add-on payload");
-		using JsonDocument saveRequest = JsonDocument.Parse(_savedAddonRequestBody!);
-		JsonElement schema = saveRequest.RootElement;
-		schema.TryGetProperty("metaData", out JsonElement metaDataElement).Should().BeTrue(
-			because: "the add-on save payload should carry serialized metadata");
-		using JsonDocument metaData = JsonDocument.Parse(metaDataElement.GetString()!);
-		JsonElement[] rules = metaData.RootElement.GetProperty("rules").EnumerateArray().ToArray();
+		using JsonDocument metaData = JsonDocument.Parse(_savedAddonSchema!.MetaData);
+		JsonElement[] rules = [.. metaData.RootElement.GetProperty("rules").EnumerateArray()];
 		rules.Should().HaveCount(2,
 			because: "existing rules must be preserved while the new rule is appended");
 		rules[0].GetProperty("uId").GetString().Should().Be("existing-rule",
@@ -154,7 +137,7 @@ public sealed class BusinessRuleServiceTests {
 		rules[1].GetProperty("cases")[0].GetProperty("actions")[0].GetRawText().Should().Contain("Owner")
 			.And.Contain("Amount",
 				because: "one action should be able to persist multiple target attributes without splitting into separate actions");
-		JsonElement[] triggers = rules[1].GetProperty("triggers").EnumerateArray().ToArray();
+		JsonElement[] triggers = [.. rules[1].GetProperty("triggers").EnumerateArray()];
 		triggers.Should().HaveCount(2,
 			because: "there should be a ChangeAttributeValue trigger for Status and a global DataLoaded trigger");
 		triggers[0].GetProperty("name").GetString().Should().Be("Status",
@@ -168,18 +151,18 @@ public sealed class BusinessRuleServiceTests {
 		triggers[1].GetProperty("type").GetInt32().Should().Be(2,
 			because: "the DataLoaded trigger type should be 2");
 
-		JsonElement[] resources = schema.GetProperty("resources").EnumerateArray().ToArray();
-		resources.Should().NotContain(resource =>
-				resource.GetProperty("key").GetString()!.StartsWith("AddonConfig.Rules.", StringComparison.Ordinal),
+		_savedAddonSchema.Resources.Should().NotContain(resource =>
+				resource.Key.StartsWith("AddonConfig.Rules.", StringComparison.Ordinal),
 			because: "GetSchema returns resources with 'AddonConfig.Rules.' prefix that must be stripped before SaveSchema, " +
 				"otherwise ProcessSchemaDesignerUtilities.ApplyResources fails on Guid.Parse(path[0])");
-		resources.Should().Contain(resource =>
-				resource.GetProperty("key").GetString() == "existing-rule.Caption",
+		_savedAddonSchema.Resources.Should().Contain(resource =>
+				resource.Key == "existing-rule.Caption",
 			because: "the existing resource key should be normalized from 'AddonConfig.Rules.existing-rule.Caption' to 'existing-rule.Caption'");
-		resources.Should().Contain(resource =>
-				resource.GetProperty("key").GetString() == $"{rules[1].GetProperty("uId").GetString()}.Caption" &&
-				resource.GetProperty("value")[0].GetProperty("value").GetString() == "Require owner for drafts",
+		_savedAddonSchema.Resources.Should().Contain(resource =>
+				resource.Key == $"{rules[1].GetProperty("uId").GetString()}.Caption" &&
+				resource.Value[0].Value == "Require owner for drafts",
 			because: "the caption resource must be saved under the generated rule resource key");
+		_addonSchemaDesignerClient.Received(1).ResetClientScriptCache();
 	}
 
 	[Test]
@@ -198,7 +181,7 @@ public sealed class BusinessRuleServiceTests {
 						new BusinessRuleCondition(
 							new BusinessRuleExpression("AttributeValue", "MissingStatus", null),
 							"equal",
-								new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"Draft\"")))
+							new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"Draft\"")))
 					]),
 				[
 					new BusinessRuleAction("make-required", ["Owner"])
@@ -211,12 +194,7 @@ public sealed class BusinessRuleServiceTests {
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("*Unknown attribute 'MissingStatus'*",
 				because: "the service should validate condition and action references against the target entity schema before save");
-		_applicationClient.DidNotReceive().ExecutePostRequest(
-			Arg.Is<string>(url => url.Contains("AddonSchemaDesignerService.svc/SaveSchema", StringComparison.Ordinal)),
-			Arg.Any<string>(),
-			Arg.Any<int>(),
-			Arg.Any<int>(),
-			Arg.Any<int>());
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}
 
 	[Test]
@@ -235,7 +213,7 @@ public sealed class BusinessRuleServiceTests {
 						new BusinessRuleCondition(
 							new BusinessRuleExpression("AttributeValue", "Amount", null),
 							"equal",
-								new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("5")))
+							new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("5")))
 					]),
 				[
 					new BusinessRuleAction("make-read-only", ["Amount"])
@@ -245,10 +223,9 @@ public sealed class BusinessRuleServiceTests {
 		_service.Create(request);
 
 		// Assert
-		_savedAddonRequestBody.Should().NotBeNullOrWhiteSpace(
+		_savedAddonSchema.Should().NotBeNull(
 			because: "the updated add-on payload should be captured for save");
-		using JsonDocument saveRequest = JsonDocument.Parse(_savedAddonRequestBody!);
-		using JsonDocument metaData = JsonDocument.Parse(saveRequest.RootElement.GetProperty("metaData").GetString()!);
+		using JsonDocument metaData = JsonDocument.Parse(_savedAddonSchema!.MetaData);
 		string rightExpressionJson = metaData.RootElement
 			.GetProperty("rules")[1]
 			.GetProperty("cases")[0]
@@ -292,7 +269,7 @@ public sealed class BusinessRuleServiceTests {
 						new BusinessRuleCondition(
 							new BusinessRuleExpression("AttributeValue", "Completed", null),
 							"equal",
-								new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("true")))
+							new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("true")))
 					]),
 				[
 					new BusinessRuleAction("make-read-only", ["Amount"])
@@ -302,10 +279,9 @@ public sealed class BusinessRuleServiceTests {
 		_service.Create(request);
 
 		// Assert
-		_savedAddonRequestBody.Should().NotBeNullOrWhiteSpace(
+		_savedAddonSchema.Should().NotBeNull(
 			because: "the service should persist the updated add-on payload");
-		using JsonDocument saveRequest = JsonDocument.Parse(_savedAddonRequestBody!);
-		using JsonDocument metaData = JsonDocument.Parse(saveRequest.RootElement.GetProperty("metaData").GetString()!);
+		using JsonDocument metaData = JsonDocument.Parse(_savedAddonSchema!.MetaData);
 		JsonElement condition = metaData.RootElement
 			.GetProperty("rules")[1]
 			.GetProperty("cases")[0]
@@ -340,7 +316,7 @@ public sealed class BusinessRuleServiceTests {
 							new BusinessRuleExpression(
 								"Const",
 								null,
-									JsonSerializer.Deserialize<JsonElement>($"\"{ownerId}\"")))
+								JsonSerializer.Deserialize<JsonElement>($"\"{ownerId}\"")))
 					]),
 				[
 					new BusinessRuleAction("make-required", ["Status"])
@@ -352,10 +328,9 @@ public sealed class BusinessRuleServiceTests {
 		// Assert
 		result.RuleName.Should().StartWith("BusinessRule_",
 			because: "the service should create a rule when lookup constants are passed as plain GUID strings");
-		_savedAddonRequestBody.Should().NotBeNullOrWhiteSpace(
+		_savedAddonSchema.Should().NotBeNull(
 			because: "a valid lookup constant should be persisted into the add-on payload");
-		using JsonDocument saveRequest = JsonDocument.Parse(_savedAddonRequestBody!);
-		using JsonDocument metaData = JsonDocument.Parse(saveRequest.RootElement.GetProperty("metaData").GetString()!);
+		using JsonDocument metaData = JsonDocument.Parse(_savedAddonSchema!.MetaData);
 		JsonElement rightExpression = metaData.RootElement
 			.GetProperty("rules")[1]
 			.GetProperty("cases")[0]
@@ -371,69 +346,58 @@ public sealed class BusinessRuleServiceTests {
 			because: "the saved metadata should contain the same raw GUID string that was provided in the request");
 	}
 
-	private string BuildResponse(string url, string requestBody) {
-		if (url.Contains("ResetScriptCache", StringComparison.Ordinal)) {
-			return "{\"success\":true}";
-		}
-
-		if (url.Contains("SelectQuery", StringComparison.Ordinal)) {
-			if (requestBody.Contains("\"SysPackage\"", StringComparison.Ordinal)) {
-				return """
-				{"success":true,"rows":[{"UId":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}]}
-				""";
+	private static EntityDesignSchemaDto BuildEntitySchema() {
+		return new EntityDesignSchemaDto {
+			UId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+			Name = "UsrOrder",
+			Columns = [
+				new EntitySchemaColumnDto {
+					UId = Guid.Parse("10000000-0000-0000-0000-000000000001"),
+					Name = "Status",
+					DataValueType = 1
+				},
+				new EntitySchemaColumnDto {
+					UId = Guid.Parse("10000000-0000-0000-0000-000000000004"),
+					Name = "Completed",
+					DataValueType = 12
+				},
+				new EntitySchemaColumnDto {
+					UId = Guid.Parse("10000000-0000-0000-0000-000000000002"),
+					Name = "Owner",
+					DataValueType = 10,
+					ReferenceSchema = new EntityDesignSchemaDto {
+						Name = "Contact"
+					}
+				},
+				new EntitySchemaColumnDto {
+					UId = Guid.Parse("10000000-0000-0000-0000-000000000003"),
+					Name = "Amount",
+					DataValueType = 6
+				}
+			],
+			InheritedColumns = [],
+			Indexes = [],
+			ParentSchema = new EntityDesignSchemaDto {
+				UId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+				Name = "BaseEntity"
 			}
+		};
+	}
 
-			throw new InvalidOperationException($"Unexpected select query payload: {requestBody}");
-		}
-
-		if (url.Contains("EntitySchemaDesignerService.svc/GetSchemaDesignItem", StringComparison.Ordinal)) {
-			return """
-			{
-			  "success": true,
-			  "schema": {
-			    "uId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-			    "name": "UsrOrder",
-			    "package": { "uId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "name": "UsrPkg" },
-			    "columns": [
-			      { "uId": "10000000-0000-0000-0000-000000000001", "name": "Status", "type": 1 },
-			      { "uId": "10000000-0000-0000-0000-000000000004", "name": "Completed", "type": 12 },
-			      { "uId": "10000000-0000-0000-0000-000000000002", "name": "Owner", "type": 10, "referenceSchema": { "name": "Contact", "primaryDisplayColumn": { "name": "Name" } } },
-			      { "uId": "10000000-0000-0000-0000-000000000003", "name": "Amount", "type": 6 }
-			    ],
-			    "inheritedColumns": [],
-			    "indexes": [],
-			    "parentSchema": { "uId": "cccccccc-cccc-cccc-cccc-cccccccccccc", "name": "BaseEntity" }
-			  }
-			}
-			""";
-		}
-
-		if (url.Contains("AddonSchemaDesignerService.svc/GetSchema", StringComparison.Ordinal)) {
-			return """
-			{
-			  "success": true,
-			  "schema": {
-			    "metaData": "{\"typeName\":\"Terrasoft.Core.BusinessRules.BusinessRules\",\"rules\":[{\"typeName\":\"Terrasoft.Core.BusinessRules.BusinessRule\",\"uId\":\"existing-rule\",\"name\":\"BusinessRule_old\",\"enabled\":true,\"caption\":\"Existing rule\",\"cases\":[{\"typeName\":\"Terrasoft.Core.BusinessRules.Models.BusinessRuleCase\",\"uId\":\"existing-case\",\"actions\":[]}],\"triggers\":[]}]}",
-			    "resources": [
-			      {
-			        "key": "AddonConfig.Rules.existing-rule.Caption",
-			        "value": [
-			          { "key": "en-US", "value": "Existing rule" }
-			        ]
-			      }
-			    ]
-			  }
-			}
-			""";
-		}
-
-		if (url.Contains("AddonSchemaDesignerService.svc/SaveSchema", StringComparison.Ordinal)) {
-			_savedAddonRequestBody = requestBody;
-			return """
-			{"success":true,"value":true}
-			""";
-		}
-
-		throw new InvalidOperationException($"Unexpected request url: {url}");
+	private static AddonSchemaDto BuildAddonSchema() {
+		return new AddonSchemaDto {
+			MetaData = "{\"typeName\":\"Terrasoft.Core.BusinessRules.BusinessRules\",\"rules\":[{\"typeName\":\"Terrasoft.Core.BusinessRules.BusinessRule\",\"uId\":\"existing-rule\",\"name\":\"BusinessRule_old\",\"enabled\":true,\"caption\":\"Existing rule\",\"cases\":[{\"typeName\":\"Terrasoft.Core.BusinessRules.Models.BusinessRuleCase\",\"uId\":\"existing-case\",\"actions\":[]}],\"triggers\":[]}]}",
+			Resources = [
+				new AddonResourceDto {
+					Key = "AddonConfig.Rules.existing-rule.Caption",
+					Value = [
+						new AddonResourceValueDto {
+							Key = "en-US",
+							Value = "Existing rule"
+						}
+					]
+				}
+			]
+		};
 	}
 }
