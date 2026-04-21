@@ -132,7 +132,7 @@ public sealed record ApplicationSectionCreateArgs(
 	string? EntitySchemaName = null,
 
 	[property: JsonPropertyName("icon-background")]
-	[property: Description("Optional icon background color in #RRGGBB format, e.g. '#1F5F8B'. Defaults to a random color when omitted.")]
+	[property: Description("Optional icon background color in #RRGGBB format. Must be one of the Freedom UI palette values: #A6DE00, #20A959, #22AC14, #FFAC07, #FF8800, #F9307F, #FF602E, #FF4013, #B87CCF, #7848EE, #247EE5, #0058EF, #009DE3, #4F43C2, #08857E, #00BFA5, #BE1B5A, #E00022, #0B6A32, #1566B9, #9641A9, #F86700, #0D2E4E. Defaults to a random palette color when omitted.")]
 	string? IconBackground = null,
 
 	[property: JsonPropertyName("with-mobile-pages")]
@@ -227,7 +227,7 @@ public sealed record ApplicationSectionUpdateArgs(
 	string? IconId = null,
 
 	[property: JsonPropertyName("icon-background")]
-	[property: Description("Optional updated icon background color in #RRGGBB format.")]
+	[property: Description("Optional updated icon background color in #RRGGBB format. Must be one of the Freedom UI palette values: #A6DE00, #20A959, #22AC14, #FFAC07, #FF8800, #F9307F, #FF602E, #FF4013, #B87CCF, #7848EE, #247EE5, #0058EF, #009DE3, #4F43C2, #08857E, #00BFA5, #BE1B5A, #E00022, #0B6A32, #1566B9, #9641A9, #F86700, #0D2E4E.")]
 	string? IconBackground = null,
 
 	[property: JsonPropertyName("title-localizations")]

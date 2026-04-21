@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
@@ -62,7 +61,6 @@ public sealed class ApplicationSectionUpdateService(
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		PropertyNameCaseInsensitive = true
 	};
-	private static readonly Regex HexColorRegex = new("^#[0-9A-Fa-f]{6}$", RegexOptions.None, TimeSpan.FromSeconds(5));
 
 	/// <inheritdoc />
 	public ApplicationSectionUpdateResult UpdateSection(string environmentName, ApplicationSectionUpdateRequest request) {
@@ -149,13 +147,7 @@ public sealed class ApplicationSectionUpdateService(
 		}
 
 		if (hasIconBackground) {
-			if (string.IsNullOrWhiteSpace(request.IconBackground)) {
-				throw new ArgumentException("icon-background cannot be empty.");
-			}
-
-			if (!HexColorRegex.IsMatch(request.IconBackground.Trim())) {
-				throw new ArgumentException("icon-background must use #RRGGBB format.");
-			}
+			ApplicationSectionColorPalette.ValidateOrThrow(request.IconBackground!);
 		}
 	}
 

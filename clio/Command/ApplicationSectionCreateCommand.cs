@@ -149,6 +149,10 @@ public sealed class ApplicationSectionCreateService(
 		if (string.IsNullOrWhiteSpace(request.Caption)) {
 			throw new ArgumentException("caption is required.");
 		}
+
+		if (request.IconBackground is not null) {
+			ApplicationSectionColorPalette.ValidateOrThrow(request.IconBackground);
+		}
 	}
 
 	private ResolvedApplicationSectionCreateRequest ResolveRequest(
@@ -574,34 +578,7 @@ public sealed class ApplicationSectionCreateService(
 			: char.ToUpperInvariant(sanitizedValue[0]) + sanitizedValue[1..];
 	}
 
-	private static readonly string[] FreedomUIColorPalette = [
-		"#A6DE00",
-		"#20A959",
-		"#22AC14",
-		"#FFAC07",
-		"#FF8800",
-		"#F9307F",
-		"#FF602E",
-		"#FF4013",
-		"#B87CCF",
-		"#7848EE",
-		"#247EE5",
-		"#0058EF",
-		"#009DE3",
-		"#4F43C2",
-		"#08857E",
-		"#00BFA5",
-		"#BE1B5A",
-		"#E00022",
-		"#0B6A32",
-		"#1566B9",
-		"#9641A9",
-		"#F86700",
-		"#0D2E4E"
-	];
-
-	private static string GenerateRandomHexColor() =>
-		FreedomUIColorPalette[Random.Shared.Next(FreedomUIColorPalette.Length)];
+	private static string GenerateRandomHexColor() => ApplicationSectionColorPalette.PickRandom();
 
 	private sealed class InsertQueryResponseDto {
 		[JsonPropertyName("success")]
