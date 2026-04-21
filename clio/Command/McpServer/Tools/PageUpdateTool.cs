@@ -36,6 +36,7 @@ public sealed class PageUpdateTool(
 			Resources = args.Resources,
 			OptionalProperties = args.OptionalProperties,
 			Mode = args.Mode,
+			TargetPackageUId = args.TargetPackageUId,
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
@@ -130,5 +131,8 @@ public sealed record PageUpdateArgs(
 	string? BodyFile = null,
 	[property: JsonPropertyName("mode")]
 	[property: Description("Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming body fragment with the schema's current body on the server — viewConfigDiff entries dedupe by `name` (incoming wins), handlers dedupe by `request`. Use 'append' when adding a component without clobbering existing customizations.")]
-	string? Mode = null
+	string? Mode = null,
+	[property: JsonPropertyName("target-package-uid")]
+	[property: Description("Explicit target package UId for the replacing schema. Overrides automatic design-package resolution. Required when multiple apps replace the same platform page and automatic resolution would land the edit in the wrong app's design package.")]
+	string? TargetPackageUId = null
 );

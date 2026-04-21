@@ -118,6 +118,8 @@ public class PageGetCommand : Command<PageGetOptions> {
 				.ToList();
 			PageBundleInfo bundle = _bundleBuilder.Build(parts);
 			PageOwnBodySummary ownBodySummary = BuildOwnBodySummary(currentSchema, _bodyParser);
+			bool willCreateReplacing = !string.IsNullOrWhiteSpace(designPackageUId)
+				&& !string.Equals(designPackageUId, currentSchema.PackageUId, StringComparison.OrdinalIgnoreCase);
 			response = new PageGetResponse {
 				Success = true,
 				Page = new PageMetadataInfo {
@@ -126,7 +128,9 @@ public class PageGetCommand : Command<PageGetOptions> {
 					PackageName = currentSchema.PackageName,
 					PackageUId = currentSchema.PackageUId,
 					ParentSchemaName = metadata["ParentSchemaName"]?.ToString(),
-					OwnBodySummary = ownBodySummary
+					OwnBodySummary = ownBodySummary,
+					DesignPackageUId = designPackageUId,
+					WillCreateReplacingInDesignPackage = willCreateReplacing
 				},
 				Bundle = bundle,
 				Raw = new PageRawInfo {

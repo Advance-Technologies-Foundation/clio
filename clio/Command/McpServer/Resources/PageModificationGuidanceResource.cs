@@ -43,6 +43,13 @@ public sealed class PageModificationGuidanceResource {
 		       - `bundle` — read-only merged view across the full hierarchy. Do not send `bundle` or `bundle.viewConfig` as the body payload.
 		       - `bundle.containers` — flat list of usable `parentName` values.
 
+		       CRITICAL — multi-app replacements and target-package-uid
+		       - Many platform pages are replaced by MULTIPLE apps (for example `Opportunities_ListPage` is replaced by both `CrtLeadOppMgmt` and `CrtWaterfallPipelineInLeadOppMgmt`). Each replacement lives in a different design package.
+		       - `get-page` returns the most-derived replacement plus `page.designPackageUId` — the package where `update-page` will save by default. If `page.willCreateReplacingInDesignPackage` is `true`, a NEW replacing schema will be materialized in the design package.
+		       - The auto-picked design package comes from the user's currently active app. If the wrong app wins the resolution, the saved button never shows up in the workspace the user is actually viewing.
+		       - When in doubt, pass `target-package-uid` explicitly to `update-page`. Discover the candidate packages via `list-pages` (shows every schema named `Opportunities_ListPage` with its package) and pick the one owned by the workplace where the user expects the change.
+		       - Symptom if the wrong package is picked: `update-page` returns `success: true` but the button is absent at runtime, the designer URL hangs or loads an empty page, and Workspace Explorer shows the page in an unexpected package.
+
 		       update-page write modes
 		       - `mode: "replace"` (default): the body you pass replaces the schema body verbatim. Use only when composing the full schema body from scratch. All six marker pairs must be present.
 		       - `mode: "append"`: clio loads the current schema body from the server, merges your incoming body fragment with it, and saves the merged result. Use this mode when ADDING a component/handler/config to an existing customized page — it is the safe choice when `ownBodySummary.viewConfigDiffOperations > 0`.

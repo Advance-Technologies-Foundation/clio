@@ -55,6 +55,15 @@ namespace Clio.Command {
 		/// </summary>
 		[Option("mode", Required = false, HelpText = "Write mode: 'replace' (default) or 'append' (merge with existing body)")]
 		public string? Mode { get; set; }
+
+		/// <summary>
+		/// Optional explicit design package UId override. When set, bypasses
+		/// <c>GetDesignPackageUId</c> and saves the replacing schema into the specified package.
+		/// Use this when multiple apps replace the same platform page and the automatic resolution
+		/// picks the wrong app.
+		/// </summary>
+		[Option("target-package-uid", Required = false, HelpText = "Explicit target package UId for the replacing schema (overrides automatic design-package resolution)")]
+		public string? TargetPackageUId { get; set; }
 	}
 
 	/// <summary>
@@ -104,7 +113,7 @@ namespace Clio.Command {
 					response = validationError;
 					return false;
 				}
-				if (!TryResolveEditableSchemaContext(options.SchemaName, out EditableSchemaContext context, out response)) {
+				if (!TryResolveEditableSchemaContext(options.SchemaName, options.TargetPackageUId, out EditableSchemaContext context, out response)) {
 					return false;
 				}
 				if (options.DryRun) {
@@ -158,7 +167,10 @@ namespace Clio.Command {
 			return success ? 0 : 1;
 		}
 
-		private bool TryResolveEditableSchemaContext(string schemaName, out EditableSchemaContext context, out PageUpdateResponse response) {
+		private string TargetPackageUIdOverride { get; set; }
+
+		private bool TryResolveEditableSchemaContext(string schemaName, string targetPackageUIdOverride, out EditableSchemaContext context, out PageUpdateResponse response) {
+			TargetPackageUIdOverride = targetPackageUIdOverride;
 			context = null;
 			var (metadata, queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
 				_applicationClient,
@@ -175,15 +187,19 @@ namespace Clio.Command {
 				return false;
 			}
 			string designPackageUId;
-			try {
-				designPackageUId = _hierarchyClient.GetDesignPackageUId(rawSchemaUId);
-			} catch (Exception ex) {
-				response = new PageUpdateResponse { Success = false, Error = $"Failed to resolve design package for '{schemaName}': {ex.Message}" };
-				return false;
-			}
-			if (string.IsNullOrWhiteSpace(designPackageUId)) {
-				response = new PageUpdateResponse { Success = false, Error = $"Failed to resolve design package for '{schemaName}': no package returned" };
-				return false;
+			if (!string.IsNullOrWhiteSpace(TargetPackageUIdOverride)) {
+				designPackageUId = TargetPackageUIdOverride;
+			} else {
+				try {
+					designPackageUId = _hierarchyClient.GetDesignPackageUId(rawSchemaUId);
+				} catch (Exception ex) {
+					response = new PageUpdateResponse { Success = false, Error = $"Failed to resolve design package for '{schemaName}': {ex.Message}" };
+					return false;
+				}
+				if (string.IsNullOrWhiteSpace(designPackageUId)) {
+					response = new PageUpdateResponse { Success = false, Error = $"Failed to resolve design package for '{schemaName}': no package returned" };
+					return false;
+				}
 			}
 			IReadOnlyList<PageDesignerHierarchySchema> hierarchy;
 			try {
