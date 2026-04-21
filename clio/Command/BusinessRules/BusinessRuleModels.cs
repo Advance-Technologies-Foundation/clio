@@ -6,9 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Clio.Command.BusinessRules;
 
-/// <summary>
-/// Structured entity business-rule definition used both as MCP tool contract and internal domain model.
-/// </summary>
 public sealed record BusinessRule(
 	[property: JsonPropertyName("caption")]
 	[property: Description("Business-rule caption shown to authors.")]
@@ -26,9 +23,6 @@ public sealed record BusinessRule(
 	List<BusinessRuleAction> Actions
 );
 
-/// <summary>
-/// Structured top-level condition group.
-/// </summary>
 public sealed record BusinessRuleConditionGroup(
 	[property: JsonPropertyName("logicalOperation")]
 	[property: Description("Logical operator. Supported values: AND, OR.")]
@@ -41,9 +35,6 @@ public sealed record BusinessRuleConditionGroup(
 	List<BusinessRuleCondition> Conditions
 );
 
-/// <summary>
-/// Structured leaf condition definition.
-/// </summary>
 public sealed record BusinessRuleCondition(
 	[property: JsonPropertyName("leftExpression")]
 	[property: Description("Left expression. Must be an attribute reference with type AttributeValue.")]
@@ -61,9 +52,6 @@ public sealed record BusinessRuleCondition(
 	BusinessRuleExpression RightExpression
 );
 
-/// <summary>
-/// Structured expression definition (flat — discriminated by <see cref="Type"/>).
-/// </summary>
 public sealed record BusinessRuleExpression(
 	[property: JsonPropertyName("type")]
 	[property: Description("Expression type. Supported values: AttributeValue, Const.")]
@@ -79,9 +67,6 @@ public sealed record BusinessRuleExpression(
 	JsonElement? Value
 );
 
-/// <summary>
-/// Structured action definition.
-/// </summary>
 public sealed record BusinessRuleAction(
 	[property: JsonPropertyName("type")]
 	[property: Description("Business-rule action. Supported values: make-editable, make-read-only, make-required, make-optional.")]

@@ -6,24 +6,15 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
-/// <summary>
-/// MCP tool surface for entity-level Freedom UI business-rule creation.
-/// </summary>
 [McpServerToolType]
 public sealed class CreateEntityBusinessRuleTool(
 	CreateEntityBusinessRuleCommand command,
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 	: BaseTool<CreateEntityBusinessRuleOptions>(command, logger, commandResolver) {
-
-	/// <summary>
-	/// Stable MCP tool name for entity business-rule creation.
-	/// </summary>
+	
 	internal const string BusinessRuleCreateToolName = "create-entity-business-rule";
-
-	/// <summary>
-	/// Creates an entity-level Freedom UI business rule in the requested package and entity schema.
-	/// </summary>
+	
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Creates an entity-level Freedom UI business rule.")]

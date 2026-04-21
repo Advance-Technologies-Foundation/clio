@@ -4,35 +4,19 @@ using Clio.Common;
 
 namespace Clio.Command;
 
-/// <summary>
-/// Environment-scoped options for entity-level business-rule creation.
-/// </summary>
 public sealed class CreateEntityBusinessRuleOptions : EnvironmentNameOptions {
-	/// <summary>
-	/// Gets or sets the target package name on the Creatio environment.
-	/// </summary>
 	public string PackageName { get; set; } = string.Empty;
-
-	/// <summary>
-	/// Gets or sets the target entity schema name.
-	/// </summary>
+	
 	public string EntitySchemaName { get; set; } = string.Empty;
-
-	/// <summary>
-	/// Gets or sets the structured business-rule definition.
-	/// </summary>
+	
 	public BusinessRule Rule { get; set; } = null!;
 }
 
-/// <summary>
-/// Creates an entity-level Freedom UI business rule on the requested environment.
-/// </summary>
 public sealed class CreateEntityBusinessRuleCommand(
 	IBusinessRuleService businessRuleService,
 	ILogger logger)
 	: Command<CreateEntityBusinessRuleOptions> {
-
-	/// <inheritdoc />
+	
 	public override int Execute(CreateEntityBusinessRuleOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		try {

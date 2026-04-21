@@ -9,35 +9,18 @@ using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
 namespace Clio.Command.BusinessRules;
 
-/// <summary>
-/// Creates entity-level Freedom UI business rules through the entity add-on authoring flow.
-/// </summary>
 public interface IBusinessRuleService {
-	/// <summary>
-	/// Creates an entity business rule in the requested package.
-	/// </summary>
-	/// <param name="request">Structured entity business-rule request.</param>
-	/// <returns>Structured information about the created business rule.</returns>
 	BusinessRuleCreateResult Create(BusinessRuleCreateRequest request);
 }
 
-/// <summary>
-/// Structured request for entity business-rule creation.
-/// </summary>
 public sealed record BusinessRuleCreateRequest(
 	string PackageName,
 	string EntitySchemaName,
 	BusinessRule Rule
 );
 
-/// <summary>
-/// Structured result for entity business-rule creation.
-/// </summary>
 public sealed record BusinessRuleCreateResult(string RuleName);
 
-/// <summary>
-/// Default entity business-rule creator backed by <c>AddonSchemaDesignerService.svc</c>.
-/// </summary>
 internal sealed class BusinessRuleService(
 	IApplicationClient applicationClient,
 	IServiceUrlBuilder serviceUrlBuilder,
@@ -45,8 +28,7 @@ internal sealed class BusinessRuleService(
 	IApplicationPackageListProvider applicationPackageListProvider,
 	IJsonConverter jsonConverter)
 	: IBusinessRuleService {
-
-	/// <inheritdoc />
+	
 	public BusinessRuleCreateResult Create(BusinessRuleCreateRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		BusinessRuleValidator.ValidateRequest(request);

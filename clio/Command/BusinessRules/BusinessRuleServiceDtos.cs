@@ -5,8 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Clio.Command.BusinessRules;
 
-#region Wire DTOs
-
 internal sealed class AddonGetRequestDto {
 	[JsonPropertyName("addonName")]
 	public string AddonName { get; set; } = string.Empty;
@@ -215,5 +213,3 @@ internal sealed class BusinessRuleExpressionMetadataDto {
 	[JsonPropertyName("value")]
 	public object? Value { get; set; }
 }
-
-#endregion
