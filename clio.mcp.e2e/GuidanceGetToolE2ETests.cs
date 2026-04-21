@@ -55,11 +55,11 @@ public sealed class GuidanceGetToolE2ETests {
 		// Assert
 		response.Success.Should().BeTrue(
 			because: "page-schema-validators is a registered guidance name");
-		response.Guidance.Should().NotBeNull(
+		response.Article.Should().NotBeNull(
 			because: "successful guidance lookups should return the resolved article payload");
-		response.Guidance!.Uri.Should().Be("docs://mcp/guides/page-schema-validators",
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-validators",
 			because: "the canonical resource URI should still be visible in the tool response");
-		response.Guidance.Text.Should().Contain("clio MCP page-schema validators guide",
+		response.Article.Text.Should().Contain("clio MCP page-schema validators guide",
 			because: "the guidance tool should return the canonical validator guide text");
 	}
 
