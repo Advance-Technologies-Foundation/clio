@@ -171,6 +171,56 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns canonical guidance for object-scoped business-rule authoring, including the current subset and DataForge-assisted lookup resolution flow.")]
+	public void ObjectBusinessRulesGuidanceResource_Should_Return_Canonical_Business_Rule_Guide() {
+		// Arrange
+		ObjectBusinessRulesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = (TextResourceContents)result;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/object-business-rules",
+			because: "the resource should expose a stable MCP URI for business-rule guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the business-rule guide should be discoverable as plain text");
+		article.Text.Should().Contain("create-entity-business-rule",
+			because: "the guide should point callers to the only currently supported business-rule mutation tool");
+		article.Text.Should().Contain("get-tool-contract -> get-entity-schema-properties -> create-entity-business-rule",
+			because: "the guide should publish the canonical inspect-before-create workflow");
+		article.Text.Should().Contain("entity-level Freedom UI business rules",
+			because: "the guide should define the supported business-rule scope precisely");
+		article.Text.Should().Contain("Current clio MCP supports create-only execution",
+			because: "the guide should state the current lifecycle limitation explicitly");
+		article.Text.Should().Contain("`environmentName`, `packageName`, `entitySchemaName`, and `rule`",
+			because: "the guide should lock the current camelCase top-level request shape");
+		article.Text.Should().Contain("Do not send `rule.name`",
+			because: "the guide should reject generated-name input on the create tool");
+		article.Text.Should().Contain("`make-editable`, `make-read-only`, `make-required`, and `make-optional`",
+			because: "the guide should enumerate the supported action subset");
+		article.Text.Should().Contain("`equal` and `not-equal`",
+			because: "the guide should enumerate the supported comparison subset");
+		article.Text.Should().Contain("raw GUID string",
+			because: "the guide should teach the lookup-constant payload rule");
+		article.Text.Should().Contain("DataForge is optional assistance",
+			because: "the guide should keep schema inspection as the primary source of truth");
+		article.Text.Should().Contain("dataforge-context",
+			because: "the guide should include semantic DataForge planning reads");
+		article.Text.Should().Contain("dataforge-find-tables",
+			because: "the guide should include schema discovery assistance for business concepts");
+		article.Text.Should().Contain("dataforge-get-table-columns",
+			because: "the guide should include runtime column inspection assistance");
+		article.Text.Should().Contain("dataforge-find-lookups",
+			because: "the guide should include lookup GUID resolution assistance for lookup constants");
+		article.Text.Should().Contain("dataforge-update",
+			because: "the guide should describe the stale-index recovery action when DataForge is ready but empty");
+		article.Text.Should().Contain("Recommended authoring sequence when lookup constants are involved",
+			because: "the guide should include the concrete lookup-constant authoring sequence from the current resource text");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns DataForge orchestration guidance that keeps exact package-local reuse checks on runtime context before DataForge fallback.")]
 	public void DataForgeOrchestrationGuidanceResource_Should_Keep_Runtime_Context_As_Primary_Source_For_Existing_App_Reuse() {
 		// Arrange
