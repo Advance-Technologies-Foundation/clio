@@ -22,8 +22,8 @@ to an existing entity, provide --entity-schema-name.
 By default clio creates web and mobile pages. Set --with-mobile-pages false
 when the new section must stay web-only.
 
-Clio always selects an application icon automatically and always generates
-the icon background color automatically.
+Clio always selects an application icon automatically. Use --icon-background
+to set a specific icon background color, or omit it to generate one randomly.
 
 ## Synopsis
 
@@ -41,6 +41,10 @@ clio create-app-section [options]
 --description                    Section description
 
 --entity-schema-name             Existing entity schema name
+
+--icon-background                Icon background color in #RRGGBB format,
+                                 e.g. #1F5F8B. Defaults to a random color
+                                 when omitted.
 
 --with-mobile-pages              Create mobile pages in addition to web
                                  pages. Default: true

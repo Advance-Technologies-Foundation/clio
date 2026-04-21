@@ -191,7 +191,7 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 		OpenWorld = false)]
 	[Description("Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, and page readback data.")]
 	public ApplicationSectionContextResponse ApplicationSectionCreate(
-		[Description("Parameters: environment-name, application-code, caption (required); description, entity-schema-name, with-mobile-pages (optional)")]
+		[Description("Parameters: environment-name, application-code, caption (required); description, entity-schema-name, icon-background, with-mobile-pages (optional)")]
 		[Required]
 		ApplicationSectionCreateArgs args) {
 		try {
@@ -203,7 +203,8 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 					args.Caption,
 					args.Description,
 					args.EntitySchemaName,
-					args.WithMobilePages));
+					args.WithMobilePages,
+					args.IconBackground));
 			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateSectionContextErrorResponse(ex.Message);

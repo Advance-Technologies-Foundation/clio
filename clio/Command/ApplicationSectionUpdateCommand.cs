@@ -93,7 +93,7 @@ public sealed class ApplicationSectionUpdateService(
 			applicationId,
 			request.SectionCode);
 		ResolvedApplicationSectionUpdateRequest resolvedRequest = ResolveRequest(request);
-		string requestBody = JsonSerializer.Serialize(BuildUpdateBody(previousSection.Id, resolvedRequest), JsonOptions);
+		string requestBody = JsonSerializer.Serialize(BuildUpdateBody(previousSection, resolvedRequest), JsonOptions);
 		string responseBody = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Update, environmentSettings),
 			requestBody);
@@ -216,8 +216,16 @@ public sealed class ApplicationSectionUpdateService(
 					SelectQueryHelper.GuidDataValueType)
 			]);
 
-	private static object BuildUpdateBody(string sectionId, ResolvedApplicationSectionUpdateRequest request) {
-		Dictionary<string, object> items = new(StringComparer.Ordinal);
+	private static object BuildUpdateBody(ApplicationSectionRecord previousSection, ResolvedApplicationSectionUpdateRequest request) {
+		Dictionary<string, object> items = new(StringComparer.Ordinal) {
+			["Id"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.Id),
+			["ApplicationId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.ApplicationId),
+			["LogoId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType,
+				request.ShouldUpdateIconId && request.IconId is not null ? request.IconId : previousSection.LogoId ?? string.Empty),
+			["PackageId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.PackageId ?? string.Empty),
+			["IconBackground"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType,
+				request.ShouldUpdateIconBackground && request.IconBackground is not null ? request.IconBackground : previousSection.IconBackground ?? string.Empty)
+		};
 		if (request.ShouldUpdateCaption && request.Caption is not null) {
 			items["Caption"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, request.Caption);
 		}
@@ -226,20 +234,12 @@ public sealed class ApplicationSectionUpdateService(
 			items["Description"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, request.Description);
 		}
 
-		if (request.ShouldUpdateIconId && request.IconId is not null) {
-			items["LogoId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, request.IconId);
-		}
-
-		if (request.ShouldUpdateIconBackground && request.IconBackground is not null) {
-			items["IconBackground"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, request.IconBackground);
-		}
-
 		return new {
 			rootSchemaName = ApplicationSectionSchemaName,
 			columnValues = new {
 				items
 			},
-			filters = BuildPrimaryKeyFilter(sectionId)
+			filters = BuildPrimaryKeyFilter(previousSection.Id)
 		};
 	}
 
@@ -271,7 +271,7 @@ public sealed class ApplicationSectionUpdateService(
 					rightExpression = new {
 						expressionType = 2,
 						parameter = new {
-							dataValueType = 0,
+							dataValueType = SelectQueryHelper.TextDataValueType,
 							value = keyValue
 						}
 					}
