@@ -2517,3 +2517,10 @@ Decision: Updated the lookup prompt assertions to require `GuidanceGetTool.ToolN
 Discovery: The entity-schema prompt test had already stopped checking `docs://mcp/guides/app-modeling`; the remaining gap was an explicit assertion on the `app-modeling` guidance name itself.
 Files: C:\Projects\clio\clio.tests\Command\McpServer\EntitySchemaToolTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: The test now tracks the real MCP contract callers use and is less brittle to internal guidance URI changes.
+
+## 2026-04-21 12:33 – Remove remaining converter wording from clio command reference skill
+Context: The validator-only branch still had one leftover line in the repository-local clio command reference describing `SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` together for `sync-pages` client-side validation.
+Decision: Rewrote the note to mention only `SCHEMA_VALIDATORS` as a JavaScript object section for function-based validator entries.
+Discovery: This was the last remaining converter-specific wording in `.github/skills/clio/references/commands-reference.md`; no matching text remained in `.github/skills/clio/SKILL.md`.
+Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The repository-local clio skill reference now stays fully aligned with the validator-only focus of the branch.

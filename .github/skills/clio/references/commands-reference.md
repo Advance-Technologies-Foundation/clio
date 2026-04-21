@@ -1137,7 +1137,7 @@ Update multiple Freedom UI page schemas in one MCP call. **MCP-only tool** — n
 
 Each page is processed independently; failures do not stop remaining pages. Supports client-side validation (`validate: true`, default) and read-back verification (`verify: false`, default).
 
-Client-side validation keeps JSON-backed markers strict, but treats `SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` as JavaScript object sections so function-based entries remain valid.
+Client-side validation keeps JSON-backed markers strict, but treats `SCHEMA_VALIDATORS` as a JavaScript object section so function-based validator entries remain valid.
 
 Input:
 ```json
