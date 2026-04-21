@@ -29,6 +29,9 @@ public sealed class CreateAppSectionOptions : EnvironmentOptions {
 	[Option("entity-schema-name", Required = false, HelpText = "Existing entity schema name")]
 	public string? EntitySchemaName { get; set; }
 
+	[Option("icon-background", Required = false, HelpText = "Icon background color in #RRGGBB format, e.g. #1F5F8B. Defaults to a random color when omitted.")]
+	public string? IconBackground { get; set; }
+
 	[Option("with-mobile-pages", Required = false, Default = "true", HelpText = "Create mobile pages in addition to web pages (default: true)")]
 	public string? WithMobilePagesValue { get; set; }
 
@@ -154,7 +157,9 @@ public sealed class ApplicationSectionCreateService(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings) {
 		string sectionCode = GenerateCodeFromCaption(request.Caption);
-		string iconBackground = GenerateRandomHexColor();
+		string iconBackground = string.IsNullOrWhiteSpace(request.IconBackground)
+		? GenerateRandomHexColor()
+		: request.IconBackground.Trim();
 		logger.WriteInfo("Resolving section icon...");
 		string iconId = ResolveRandomIconId(client, environmentSettings);
 		return new ResolvedApplicationSectionCreateRequest(
@@ -219,7 +224,7 @@ public sealed class ApplicationSectionCreateService(
 					environmentSettings,
 					request.ApplicationId,
 					request.SectionCode);
-				SetIconBackground(client, environmentSettings, createdSection.Id, request.IconBackground);
+				SetIconBackground(client, environmentSettings, createdSection, request.IconBackground);
 				string? entitySchemaName = string.IsNullOrWhiteSpace(createdSection.EntitySchemaName)
 					? request.EntitySchemaName
 					: createdSection.EntitySchemaName;
@@ -261,9 +266,9 @@ public sealed class ApplicationSectionCreateService(
 	private void SetIconBackground(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
-		string sectionId,
+		ApplicationSectionRecord section,
 		string iconBackground) {
-		string body = JsonSerializer.Serialize(BuildIconBackgroundUpdateBody(sectionId, iconBackground), JsonOptions);
+		string body = JsonSerializer.Serialize(BuildIconBackgroundUpdateBody(section, iconBackground), JsonOptions);
 		string responseBody = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Update, environmentSettings),
 			body);
@@ -274,11 +279,15 @@ public sealed class ApplicationSectionCreateService(
 		}
 	}
 
-	private static object BuildIconBackgroundUpdateBody(string sectionId, string iconBackground) =>
+	private static object BuildIconBackgroundUpdateBody(ApplicationSectionRecord section, string iconBackground) =>
 		new {
 			rootSchemaName = ApplicationSectionSchemaName,
 			columnValues = new {
 				items = new Dictionary<string, object> {
+					["Id"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.Id),
+					["ApplicationId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.ApplicationId),
+					["LogoId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.LogoId ?? string.Empty),
+					["PackageId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.PackageId ?? string.Empty),
 					["IconBackground"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, iconBackground)
 				}
 			},
@@ -300,8 +309,8 @@ public sealed class ApplicationSectionCreateService(
 						rightExpression = new {
 							expressionType = 2,
 							parameter = new {
-								dataValueType = SelectQueryHelper.GuidDataValueType,
-								value = sectionId
+								dataValueType = SelectQueryHelper.TextDataValueType,
+								value = section.Id
 							}
 						}
 					}
@@ -665,7 +674,8 @@ public sealed class CreateAppSectionCommand(
 					options.Caption,
 					options.Description,
 					options.EntitySchemaName,
-					options.WithMobilePages));
+					options.WithMobilePages,
+					options.IconBackground));
 			logger.WriteInfo(JsonSerializer.Serialize(result));
 			return 0;
 		} catch (Exception exception) {
@@ -683,12 +693,14 @@ public sealed class CreateAppSectionCommand(
 /// <param name="Description">Optional section description.</param>
 /// <param name="EntitySchemaName">Optional existing entity schema name. When provided, the section reuses that entity.</param>
 /// <param name="WithMobilePages">Whether to create mobile pages.</param>
+/// <param name="IconBackground">Optional icon background color in #RRGGBB format. Defaults to a random color when omitted.</param>
 public sealed record ApplicationSectionCreateRequest(
 	string ApplicationCode,
 	string Caption,
 	string? Description = null,
 	string? EntitySchemaName = null,
-	bool WithMobilePages = true);
+	bool WithMobilePages = true,
+	string? IconBackground = null);
 
 /// <summary>
 /// Structured result for existing-app section creation.

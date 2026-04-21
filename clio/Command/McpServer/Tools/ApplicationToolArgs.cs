@@ -131,6 +131,10 @@ public sealed record ApplicationSectionCreateArgs(
 	[property: Description("Optional existing entity schema name. When provided, the section reuses that entity.")]
 	string? EntitySchemaName = null,
 
+	[property: JsonPropertyName("icon-background")]
+	[property: Description("Optional icon background color in #RRGGBB format, e.g. '#1F5F8B'. Defaults to a random color when omitted.")]
+	string? IconBackground = null,
+
 	[property: JsonPropertyName("with-mobile-pages")]
 	[property: Description("Create mobile pages in addition to web pages. Default: true.")]
 	bool WithMobilePages = true,

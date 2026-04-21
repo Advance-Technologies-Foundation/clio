@@ -29,6 +29,10 @@ OPTIONS
 
     --entity-schema-name             Existing entity schema name
 
+    --icon-background                Icon background color in #RRGGBB format,
+                                     e.g. #1F5F8B. Defaults to a random color
+                                     when omitted.
+
     --with-mobile-pages              Create mobile pages in addition to web
                                      pages. Default: true
 

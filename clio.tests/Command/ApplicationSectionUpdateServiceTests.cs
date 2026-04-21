@@ -146,10 +146,14 @@ public sealed class ApplicationSectionUpdateServiceTests {
 			because: "the payload should update the description field");
 		updateBody.Should().NotContain("\"Caption\"",
 			because: "description-only updates should leave caption untouched");
-		updateBody.Should().NotContain("\"LogoId\"",
-			because: "description-only updates should leave icon id untouched");
-		updateBody.Should().NotContain("\"IconBackground\"",
-			because: "description-only updates should leave icon background untouched");
+		updateBody.Should().Contain("\"LogoId\"",
+			because: "ApplicationSection virtual object requires LogoId in columnValues for persistence; preserved value is sent when not updating");
+		updateBody.Should().Contain("\"value\":\"icon-old\"",
+			because: "LogoId preserved value should match the previous section icon id");
+		updateBody.Should().Contain("\"IconBackground\"",
+			because: "ApplicationSection virtual object requires IconBackground in columnValues for persistence; preserved value is sent when not updating");
+		updateBody.Should().Contain("\"value\":\"#111111\"",
+			because: "IconBackground preserved value should match the previous section color");
 	}
 
 	[Test]

@@ -129,9 +129,9 @@ public sealed class ApplicationSectionCreateServiceTests {
 		_applicationClient.ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
 				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
-				!body.Contains("\"LogoId\"", StringComparison.Ordinal) &&
-				!body.Contains("\"operationType\"", StringComparison.Ordinal)))
+				body.Contains("\"filters\"", StringComparison.Ordinal)))
 			.Returns("""{"success":true}""");
 
 		// Act
@@ -225,9 +225,9 @@ public sealed class ApplicationSectionCreateServiceTests {
 		_applicationClient.ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
 				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
-				!body.Contains("\"LogoId\"", StringComparison.Ordinal) &&
-				!body.Contains("\"operationType\"", StringComparison.Ordinal)))
+				body.Contains("\"filters\"", StringComparison.Ordinal)))
 			.Returns("""{"success":true}""");
 
 		// Act
