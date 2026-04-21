@@ -10,14 +10,14 @@ namespace Clio.Command.McpServer.Resources;
 /// </summary>
 internal static class StandardValidatorContractParser {
 
-	private static IReadOnlyDictionary<string, string[]>? _cachedContracts;
+	private static readonly Lazy<IReadOnlyDictionary<string, string[]>> Contracts =
+		new(() => BuildContracts(PageSchemaValidatorsGuidanceResource.Guide.Text));
 
 	/// <summary>
 	/// Returns the standard validator parameter contracts extracted from the validators guidance resource.
 	/// The result is cached after the first parse because the guide text is constant.
 	/// </summary>
-	internal static IReadOnlyDictionary<string, string[]> GetContracts() =>
-		_cachedContracts ??= BuildContracts(PageSchemaValidatorsGuidanceResource.Guide.Text);
+	internal static IReadOnlyDictionary<string, string[]> GetContracts() => Contracts.Value;
 
 	private static IReadOnlyDictionary<string, string[]> BuildContracts(string guideText) {
 		var contracts = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);

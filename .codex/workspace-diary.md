@@ -2524,3 +2524,59 @@ Decision: Rewrote the note to mention only `SCHEMA_VALIDATORS` as a JavaScript o
 Discovery: This was the last remaining converter-specific wording in `.github/skills/clio/references/commands-reference.md`; no matching text remained in `.github/skills/clio/SKILL.md`.
 Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.codex\workspace-diary.md
 Impact: The repository-local clio skill reference now stays fully aligned with the validator-only focus of the branch.
+
+## 2026-04-21 13:05 – Document clio release flow from GitHub release to NuGet publish
+Context: Needed to answer how a new release is created for the `Advance-Technologies-Foundation/clio` repository without guessing a generic GitHub flow.
+Decision: Verified the release process from the repository-local release prompt, the release workflow, the project fallback version in `clio.csproj`, and the current latest GitHub release/tag.
+Discovery: Publishing a GitHub Release triggers `.github/workflows/reliase-to-nuget.yml` on `release.published`, the workflow accepts `v`-prefixed or plain tags but requires `X.Y.Z.W`, and the repo guidance increments the last version segment plus updates the fallback `AssemblyVersion` in `clio/clio.csproj`.
+Files: C:\Projects\clio\.github\prompts\release.prompt.md, C:\Projects\clio\.github\workflows\reliase-to-nuget.yml, C:\Projects\clio\clio\clio.csproj, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future release questions can be answered with the repository-specific procedure and current versioning expectations instead of a generic GitHub Releases walkthrough.
+
+## 2026-04-21 12:40 – Continue JavaScript marker validation after peer failures
+Context: Review found that `ValidateJavaScriptObjectMarkers(...)` stopped on the first malformed JavaScript object marker, which hid later `SCHEMA_VALIDATORS` errors when `SCHEMA_CONVERTERS` failed first.
+Decision: Changed the loop to `continue` after `TryValidateJavaScriptObjectSection(...)` failures and added a regression test that asserts malformed converter and validator sections are both reported in one validation pass.
+Discovery: The early `return` was unnecessary because JavaScript object markers are peer sections and each failure is already added to the shared `SchemaValidationResult`; continuing does not create cascaded parse errors across sections.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: AI-generated page bodies with multiple broken JavaScript object markers now return a complete validation error set in one save attempt instead of forcing iterative rediscovery.
+
+## 2026-04-21 12:48 – Filter diff traversal to attribute-targeted operations only
+Context: Review found that the shared `EnumerateAttributesContainers(...)` helper treated every `viewModelConfigDiff` operation with a `values` object as an attribute container, even when the operation targeted paths such as `handlers` rather than `attributes`.
+Decision: Added `TargetsAttributesPath(...)` and changed diff traversal to yield `values` only for operations whose `path` array contains `attributes`, then added a regression test proving that validator param validation ignores handler-targeted diff payloads even if they contain a validators-like shape.
+Discovery: The same helper feeds validator param binding scans, standard-validator contract checks, and attribute-with-validators collection, so the path filter removes a whole class of false positives across the validator validation pipeline.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `viewModelConfigDiff` validation now inspects only real attribute operations, which prevents unrelated handler/model-config diff entries from being misclassified as validator-bearing attributes.
+
+## 2026-04-21 13:00 – Parse nested custom-validator error objects from return statements only
+Context: Review found that `ExtractReturnErrorProperties(...)` used a flat regex that missed nested error objects, and the first brace-balanced rewrite accidentally matched the top-level validator definition key instead of the returned error object inside `return { ... }`.
+Decision: Anchored extraction to `return { "<validatorType>": { ... } }`, reused brace-balanced object extraction for the nested error payload, and added a regression test for a nested top-level `details` error property whose value is another object.
+Discovery: The correctness boundary here is twofold: the extractor must ignore the `SCHEMA_VALIDATORS` declaration key itself, and it must collect only top-level properties from the returned error object so nested keys like `field` are not misreported as undeclared validator params.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Completeness validation now correctly flags undeclared top-level properties in nested validator error objects without producing false negatives or misclassifying nested child keys.
+
+## 2026-04-21 13:05 – Make standard validator contract cache thread-safe
+Context: Review pointed out that `StandardValidatorContractParser` cached contracts with a static field plus `??=`, which is not a safe lazy-initialization pattern under concurrent MCP calls.
+Decision: Replaced the static nullable cache with `Lazy<IReadOnlyDictionary<string, string[]>>` and kept the external `GetContracts()` API unchanged.
+Discovery: No parser behavior or test expectations changed — existing `McpGuidanceResourceTests` already covered the contract map contents, so a dedicated concurrency test was unnecessary for this framework-provided `Lazy<T>` guarantee.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\StandardValidatorContractParser.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Startup-time guidance contract parsing now has a single-execution, memory-safe cache path under concurrent MCP requests.
+
+## 2026-04-21 14:35 – Restrict diff validator scans to top-level attributes path
+Context: Review found that the new iewModelConfigDiff guard still used Any(...) over path segments, so nested paths such as ["handlers","attributes"] could still be misclassified as attribute operations and trigger false-positive validator binding errors.
+Decision: Tightened TargetsAttributesPath(...) to require the first path segment to be ttributes and added a regression test that proves nested paths merely containing ttributes are ignored.
+Discovery: The existing handler-path regression only covered path: ["handlers"]; it did not protect against nested paths that still slipped through the broader Any(...) predicate.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Validator param scans now align with the intended top-level Freedom UI diff target and stop reading unrelated alues payloads from nested non-attribute operations.
+
+## 2026-04-21 15:05 – Split top-level error-object property scan into smaller parser helpers
+Context: Sonar still reported ExtractTopLevelObjectPropertyNames(...) above the cognitive-complexity threshold after the nested validator error-object parsing rewrite.
+Decision: Kept the brace-depth parsing algorithm intact, but extracted three focused helpers: one for consuming string-literal characters, one for reading top-level property names, and one for structural character handling.
+Discovery: The complexity came from mixing parser state transitions (inString, brace depth, quoted property detection, identifier detection) inside one loop; isolating those transitions dropped the method below the threshold without changing the parser contract or its tests.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The custom-validator error-object parser remains behaviorally identical while becoming easier to extend and less likely to trigger future Sonar regressions.
+
+## 2026-04-21 15:20 – Restore validator scans for pathless root diff merges
+Context: Review found that tightening TargetsAttributesPath(...) to top-level ttributes accidentally excluded root-level iewModelConfigDiff merge operations that omit path, which this repository still uses for diff payloads.
+Decision: Treat pathless diff operations as root-level merges and therefore eligible for validator scans, while keeping explicit-path operations restricted to those whose first segment is ttributes.
+Discovery: The stricter irst segment == attributes guard fixed nested false positives, but it also created a silent skip for existing pathless merge shapes until an explicit regression test covered them.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Validator resource and contract validation now covers both supported diff shapes: root merges without path and explicit top-level ttributes merges, while still excluding unrelated nested paths.
