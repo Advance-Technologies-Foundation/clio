@@ -40,6 +40,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <PackageVersion Include="JsonhCs" Version="7.0.0" />
     <PackageVersion Include="KubernetesClient" Version="19.0.2" />
     <PackageVersion Include="System.IO.Compression" Version="4.3.0" />
+    <PackageVersion Include="Microsoft.PowerShell.SDK" Version="7.6.0" />
   </ItemGroup>
   <ItemGroup Label="Used in tests">
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />

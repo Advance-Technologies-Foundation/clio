@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<TargetFramework>net10.0</TargetFramework>
+		<TargetFrameworks>net10.0;net8.0</TargetFrameworks>
 		<PackAsTool>true</PackAsTool>
 		<PackageId>clio</PackageId>
 		<Company>creatio</Company>
@@ -22,7 +22,7 @@
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
-		<LangVersion>latest</LangVersion>
+		<LangVersion>12</LangVersion>
 <!--		<UseAppHost>false</UseAppHost>-->
 		<NoWarn>NU5119;NU5118;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169</NoWarn>
 	</PropertyGroup>
@@ -134,16 +134,28 @@
 		</Otherwise>
 	</Choose>
 
+	<Choose>
+		<When Condition="'$(TargetFramework)' == 'net8.0'">
+			<ItemGroup>
+				<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/>
+			</ItemGroup>
+		</When>
+		<Otherwise>
+			<ItemGroup>
+				<PackageReference Include="Microsoft.PowerShell.SDK"/>
+			</ItemGroup>
+		</Otherwise>
+	</Choose>
+
 	<ItemGroup>
-		<ProjectReference Condition="'$(Configuration)|$(Platform)'!='Release|AnyCPU'" 
+		<ProjectReference Condition="'$(Configuration)|$(Platform)'!='Release|AnyCPU'"
 						  Include="..\Clio.Analyzers\Clio.Analyzers.csproj"
 		                  OutputItemType="Analyzer"
 		                  ReferenceOutputAssembly="false" />
-		
+
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" VersionOverride="2.0.0"/>
 		<PackageReference Include="MediatR" VersionOverride="[12.5.0]"/>
 		<PackageReference Include="Microsoft.Dism" VersionOverride="5.0.0" />
-		<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/>
 		<PackageReference Include="Microsoft.Web.Administration" VersionOverride="11.1.0"/>
 	</ItemGroup>
 	
