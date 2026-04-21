@@ -427,6 +427,15 @@ namespace Clio.Command {
 				return serverError + " [hint: the schema manager cache may be holding a stale phantom replacing schema " +
 					"from an earlier failed save. Restart Creatio to clear the cache, or verify the schema UId via list-pages.]";
 			}
+			if (serverError.Contains("third-party publisher", StringComparison.OrdinalIgnoreCase) ||
+				serverError.Contains("installed from the file archive", StringComparison.OrdinalIgnoreCase)) {
+				return serverError + " [hint: the schema is owned by a package whose maintainer differs from the " +
+					"current workspace maintainer, so Creatio blocks direct in-place edits. " +
+					"Fix by saving into a replacing schema in your design package: call update-page with " +
+					"mode=append (auto-detects design package and creates a replacement there) or pass " +
+					"target-package-uid explicitly to the app's design package. See " +
+					"docs://mcp/guides/page-modification section 'multi-app replacements'.]";
+			}
 			return serverError;
 		}
 
