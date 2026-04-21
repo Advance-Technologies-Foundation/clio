@@ -18,8 +18,9 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "existing-app-maintenance-guidance")]
 	[Description("Returns canonical MCP guidance for existing-app discovery, inspection, and minimal mutation workflows.")]
-	public ResourceContents GetGuide() =>
-		new TextResourceContents {
+	public ResourceContents GetGuide() => Guide;
+
+	internal static readonly TextResourceContents Guide = new() {
 			Uri = ResourceUri,
 			MimeType = "text/plain",
 			Text = """
@@ -33,7 +34,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - For deleting a section from an existing app, prefer `list-apps -> get-app-info -> list-app-sections -> delete-app-section`.
 			       - Prefer `list-pages -> get-page -> sync-pages -> get-page` as the canonical page workflow, including single-page saves when the caller wants the clio-advertised path.
 			       - Read before write, and read back after mutations when the tool or workflow allows it.
-			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), read `docs://mcp/guides/dataforge-orchestration`.
+			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
 
 			       Discover the target app
 			       - Use `list-apps` when you do not yet know the installed application code or need to confirm candidates.
@@ -90,3 +91,4 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       """
 		};
 }
+

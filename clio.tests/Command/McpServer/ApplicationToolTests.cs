@@ -1423,8 +1423,8 @@ public sealed class ApplicationToolTests {
 			because: "the list prompt should no longer advertise application filters");
 		listPrompt.Should().NotContain("`app-code`",
 			because: "the list prompt should no longer advertise application filters");
-		listPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "the list prompt should point existing-app flows to the dedicated MCP maintenance guide");
+		listPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the list prompt should point existing-app flows to the dedicated guidance tool");
 		listPrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
 			because: "the list prompt should direct callers to the canonical follow-up application inspection step");
 		infoPrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
@@ -1439,8 +1439,8 @@ public sealed class ApplicationToolTests {
 			because: "the info prompt should document the canonical installed-application id selector");
 		infoPrompt.Should().Contain("`code`",
 			because: "the info prompt should document the canonical installed-application code selector");
-		infoPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "the info prompt should point callers to the dedicated MCP maintenance guide for discover and inspect flows");
+		infoPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the info prompt should point callers to the dedicated guidance tool for discover and inspect flows");
 		createPrompt.Should().Contain(ApplicationCreateTool.ApplicationCreateToolName,
 			because: "the create prompt should reference the exact production tool name");
 		createPrompt.Should().Contain(ToolContractGetTool.ToolName,
@@ -1451,8 +1451,8 @@ public sealed class ApplicationToolTests {
 			because: "the create prompt should explicitly reject the wrapper shape that caused the analyzed session failure");
 		createPrompt.Should().Contain("`optional-template-data-json`",
 			because: "the create prompt should mention the JSON string template-data field");
-		createPrompt.Should().Contain("docs://mcp/guides/app-modeling",
-			because: "the create prompt should point callers to the MCP-owned modeling guidance instead of relying only on consumer AGENTS instructions");
+		createPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the create prompt should point callers to the MCP-owned modeling guidance through the guidance tool");
 		createPrompt.Should().Contain("internal Data Forge enrichment step",
 			because: "the create prompt should teach callers that create-app already runs the canonical Data Forge enrichment stage");
 		createPrompt.Should().Contain("Do not add a separate mandatory Data Forge preflight",
@@ -1485,8 +1485,8 @@ public sealed class ApplicationToolTests {
 			because: "the section-create prompt should explain that the entity field alone triggers entity reuse");
 		sectionCreatePrompt.Should().Contain("Do not send `title-localizations`",
 			because: "the section-create prompt should reject localization maps on the scalar section tool");
-		sectionCreatePrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "the section-create prompt should point callers to the existing-app maintenance guide");
+		sectionCreatePrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the section-create prompt should point callers to the existing-app maintenance guide through the guidance tool");
 		sectionCreatePrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
 			because: "the section-create prompt should point callers to the canonical inspect and verify step");
 		sectionUpdatePrompt.Should().Contain(ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
@@ -1503,8 +1503,8 @@ public sealed class ApplicationToolTests {
 			because: "the section-update prompt should explain how callers fix broken JSON-style headings");
 		sectionUpdatePrompt.Should().Contain("Do not send `title-localizations`",
 			because: "the section-update prompt should reject localization maps on the scalar update tool");
-		sectionUpdatePrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "the section-update prompt should point callers to the existing-app maintenance guide");
+		sectionUpdatePrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the section-update prompt should point callers to the existing-app maintenance guide through the guidance tool");
 		sectionUpdatePrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
 			because: "the section-update prompt should point callers to the canonical inspect step");
 	}

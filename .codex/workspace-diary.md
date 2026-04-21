@@ -2405,3 +2405,122 @@ Decision: Replace per-run generated setting codes with one deterministic reusabl
 Discovery: The tests only need any resolvable `Text` sys setting; they do not depend on special semantics of the original `Maintainer` value or on unique setting names per run.
 Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs
 Impact: The settings-default E2Es remain self-sufficient without leaking unbounded sys settings into shared environments.
+
+## 2026-04-20 13:10 – Simplified update-page validator contract
+Context: Follow-up review on the validator-guidance branch flagged PageUpdateTool as a second source of truth because its description duplicated detailed SCHEMA_VALIDATORS rules already maintained in the validator guidance resource.
+Decision: Reduced update-page validator guidance to the same lean pattern used by sync-pages: require reading docs://mcp/guides/page-schema-validators first, and keep detailed binding/control/resource-string rules only in the canonical resource.
+Discovery: PageToolsTests had accumulated assertions against the old inline validator wording, so the contract tests needed to switch from checking duplicated details to checking guide delegation.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Validator authoring rules now have one canonical maintenance point, reducing MCP contract drift when guidance changes again.
+
+## 2026-04-20 19:20 – Add explicit get-guidance MCP tool
+Context: Replaced prompt and tool guidance references from raw `docs://mcp/guides/...` URIs with an explicit MCP tool because external clients routed the custom URI scheme inconsistently through web fetch or help resolvers.
+Decision: Added a `get-guidance` MCP tool backed by a shared guidance catalog, rewired MCP prompts/tool descriptions/resources to instruct agents to call `get-guidance`, and covered the contract with unit plus E2E tests.
+Discovery: `McpGuidanceResourceE2ETests` start a fresh `clio` process from `clio\\bin\\Debug\\net8.0`; running unit tests with `--artifacts-path` alone leaves those E2E checks on stale binaries until the main `clio` and `clio.mcp.e2e` outputs are rebuilt.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\GuidanceGetTool.cs, C:\Projects\clio\clio\Command\McpServer\Resources\GuidanceCatalog.cs, C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\clio.mcp.e2e\GuidanceGetToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP guidance changes can stay in one canonical resource while clients use a machine-actionable tool call instead of relying on custom URI handling.
+
+## 2026-04-20 19:48 – Tighten guidance catalog initialization
+Context: Follow-up review on the new `get-guidance` flow flagged eager resource construction, an unsafe `TextResourceContents` cast, and thin lookup coverage in unit tests.
+Decision: Switched MCP guidance resources to expose `internal static` guide payloads for catalog reuse, updated `GuidanceCatalog` to consume those cached payloads with an explicit type check, and added case-insensitive lookup coverage plus fixture-level unit categorization for `GuidanceGetToolTests`.
+Discovery: The resource attributes can stay on `GetGuide()` while the shared cached article is exposed separately as an internal static field; `GuidanceCatalog` can then remain free of resource instantiation without changing the external MCP contract.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\GuidanceCatalog.cs, C:\Projects\clio\clio\Command\McpServer\Resources\AppModelingGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future guidance resources can be added to the catalog without startup-time object construction, and the `get-guidance` tests now lock in the case-insensitive behavior actually used by the catalog.
+
+## 2026-04-20 20:14 – Split PageSyncTool body validation helpers
+Context: A follow-up refactoring request targeted `PageSyncTool.ValidateBody(...)` because Sonar flagged cognitive complexity above the project threshold.
+Decision: Kept the validation sequence and output contract unchanged, but extracted resource parsing, gated content validation, error aggregation, warning aggregation, and response assembly into small private helpers.
+Discovery: Most of the complexity came from repeated `contentResult.IsValid ? ... : new SchemaValidationResult { IsValid = true }` guards plus result-list aggregation; those compress cleanly into `RunContentValidation(...)`, `CollectErrors(...)`, and `CollectWarnings(...)` without changing behavior.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future validation-rule additions in `sync-pages` can be slotted into the helper pattern with less risk of breaching the complexity threshold again.
+
+## 2026-04-20 20:23 – Simplified validator param binding scan
+Context: Sonar flagged `SchemaValidationService.ScanAttributesForInvalidParamBindings(...)` for excessive cognitive complexity while checking validator param bindings for invalid `$Resources.Strings.*` usage.
+Decision: Preserved the exact diagnostics but split the method into narrow helpers for extracting validator bindings, extracting validator params, and detecting reactive resource bindings.
+Discovery: The complexity was driven by nested guard clauses over `validators`, `params`, and string checks; moving those conditions into `TryGetValidatorBindings(...)`, `TryGetValidatorParams(...)`, and `TryGetReactiveResourceBinding(...)` reduced branching without changing the scan order.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future validator-binding checks in `SchemaValidationService` can reuse the same helper pattern and stay under the Sonar complexity threshold.
+
+## 2026-04-20 20:39 – Consolidated schema-validator scan helpers
+Context: A broader Sonar cleanup request covered repeated marker/property literals and several high-complexity validator scan methods in `SchemaValidationService`, plus lingering complexity in `PageSyncTool.ValidateBody(...)`.
+Decision: Introduced shared constants for schema markers/property names, added a reusable `ForEachMarkerAttributesContainer(...)` traversal helper, flattened validator-binding scans into enumerable/helper-based pipelines, and split `ExtractValidatorBody(...)` into smaller brace/string parsing helpers. `PageSyncTool.ValidateBody(...)` now delegates content-result and final success calculation to helpers.
+Discovery: Most of the remaining complexity came from repeating the same “read marker -> parse JSON -> branch on array vs attributes object” pattern in four different methods. Centralizing that traversal removed multiple Sonar issues at once without changing validation messages or semantics.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future validator-related validation rules can plug into one shared traversal path, making Sonar cleanups and maintenance cheaper across both command and MCP validation flows.
+
+## 2026-04-20 21:19 – Restore PageSync binding errors and harden string-literal scan
+Context: Follow-up review identified that `sync-pages` stopped surfacing column-binding validation errors after the body-validation refactor, and that the validator body scanner could step past the end of a malformed escaped string literal.
+Decision: Added `bindingResult` back into `PageSyncTool.ValidateBody(...)` error aggregation and guarded the escape branch in `SchemaValidationService.ConsumeStringLiteralCharacter(...)` so a trailing backslash advances safely.
+Discovery: `ValidateColumnBindings(...)` is intentionally split between hard errors and warnings in `PageSyncTool`; after the refactor, `bindingResult` still fed warnings but no longer contributed to `Errors`, which hid real validation failures from tool users.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `sync-pages` once again reports binding validation failures in its primary error payload, and malformed trailing escapes in validator bodies no longer risk index overflow during custom-validator parsing.
+
+## 2026-04-20 21:28 – Restore warning-only binding diagnostics in sync-pages
+Context: Review of the recent `PageSyncTool.ValidateBody(...)` refactor found that `ValidateColumnBindings(...)` diagnostics were being returned in both `Errors` and `Warnings`, duplicating the same message for MCP callers.
+Decision: Removed `bindingResult` from `CollectErrors(...)` while keeping it in `CollectWarnings(...)`, restoring the original warning-only contract for column-binding diagnostics.
+Discovery: The prior hotfix that reintroduced `bindingResult` into the validation payload over-corrected by treating binding diagnostics as hard errors; the intended behavior is to surface them only as warnings while other validator-related failures remain blocking.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `sync-pages` now returns binding diagnostics once, in the correct severity bucket, avoiding duplicate handling in MCP clients.
+
+## 2026-04-20 21:36 – Reduce validator control-binding scan complexity
+Context: Sonar flagged `SchemaValidationService.CheckValidatorControlBindings(...)` for cognitive complexity above the project threshold.
+Decision: Extracted the control-target lookup, invalid `$PDS_` binding detection, field-name resolution, and child-element enumeration into small helpers while preserving the existing recursion and error text.
+Discovery: The method's complexity came mostly from stacking array/object guards, values-target selection, control-binding parsing, and recursive child traversal in one block. Splitting those concerns leaves the same traversal semantics with lower local branching.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Further validator control-binding rules can be added through dedicated helpers without pushing the main recursive walker back over the Sonar threshold.
+
+## 2026-04-20 16:30 – Remove handler and converter MCP guidance from validator branch
+Context: Branch feature/validator needed to keep only validator-related MCP guidance and remove handler/converter guidance that had been added earlier.
+Decision: Deleted handler/converter guidance resources and removed all prompt, tool, catalog, help/doc, unit-test, and E2E references while preserving validator guidance and the get-guidance tool flow.
+Discovery: Remaining SCHEMA_CONVERTERS references under MCP tests are fixture payloads for parser/validation behavior, not published guidance surface; guidance E2E also needed one assertion updated from old get-guidance redirect wording to the new validator-only business-rules wording.
+Files: clio/Command/McpServer/Resources/PageSchemaHandlersGuidanceResource.cs, clio/Command/McpServer/Resources/PageSchemaConvertersGuidanceResource.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio/help/en/mcp-server.txt, clio/docs/commands/mcp-server.md, clio.tests/Command/McpServer/GuidanceGetToolTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs
+Impact: Branch MCP surface is now validator-only for page-schema guidance, which reduces drift from unrelated handler/converter maintenance in this branch.
+
+## 2026-04-20 22:20 – Trim validator control-binding complexity by one branch
+Context: Sonar still reported `CheckValidatorControlBindings(...)` at cognitive complexity 16 after the earlier helper extraction.
+Decision: Moved the `$PDS_` control-binding violation detection and error creation into `AddValidatorControlBindingErrorIfNeeded(...)`, leaving the recursive walker responsible only for array/object traversal and child recursion.
+Discovery: The remaining complexity came from a single nested `control`/`$PDS_`/`attributesWithValidators` branch inside the traversal method; extracting that branch was enough to drop the method below the threshold without touching validation semantics or tests.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future control-binding rule tweaks can stay isolated in the helper while the recursive method remains under the Sonar limit.
+
+## 2026-04-21 11:55 – Remove speculative PageUpdate max-length validator test
+Context: A recently added `PageUpdateTool` test asserted that custom max-length-style validators must stay accepted because runtime validation no longer tries to infer `crt.MaxLength` equivalence. The branch goal is to keep tests tied to current behavior contracts, not to guard against hypothetical future heuristic reintroduction.
+Decision: Deleted the `PageUpdateTool_UpdatePage_Allows_Custom_MaxLength_Style_Validator` test from `PageToolsTests` and kept the remaining validator-related tests that still validate active contracts: `#ResourceString(...)` enforcement, canonical built-in param names, zero-param custom validator rejection, and validator guidance routing through `get-guidance`.
+Discovery: The removed test was the only remaining test in the branch that encoded a negative assertion about a future reintroduction of broad built-in-equivalence heuristics; the rest of the added validator tests remain grounded in current runtime validation behavior.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The MCP validator test suite now checks only present-day contracts and error semantics, which keeps future validation changes free to evolve without carrying a speculative regression test.
+
+## 2026-04-21 12:05 – Remove handler/converter guide references from clio skill docs
+Context: After cleaning the validator branch MCP surface, the clio GitHub skill artifacts still referenced `page-schema-handlers` and `page-schema-converters`, which kept outdated guidance names visible to agents reading repository-local skill docs.
+Decision: Replaced the `commands-reference.md` get-page note with a validator-only `get-guidance` instruction and rewrote the corresponding `SKILL.md` page-body guidance block to mention only validator authoring.
+Discovery: The remaining handler/converter references were confined to `.github/skills/clio/references/commands-reference.md` and `.github/skills/clio/SKILL.md`; repository-wide search confirmed no other `page-schema-handlers` or `page-schema-converters` strings remain after the update.
+Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Agents that rely on the repository-local clio skill now see the same validator-only guidance surface as the branch MCP runtime and tests.
+
+## 2026-04-21 12:12 – Restore validator guidance URI as secondary identifier in skill docs
+Context: After removing handler/converter guide references from repository-local clio skill docs, the validator guide URI also disappeared from human-facing guidance, which made the canonical resource address less visible even though `get-guidance` remains the supported access path.
+Decision: Added `docs://mcp/guides/page-schema-validators` back to `.github/skills/clio/references/commands-reference.md` and `.github/skills/clio/SKILL.md` as a secondary identifier while keeping `get-guidance name=page-schema-validators` as the primary instruction.
+Discovery: Keeping the URI as metadata preserves discoverability for inspectors and humans without reintroducing the unreliable client behavior caused by telling agents to read `docs://...` directly.
+Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Repository-local skill docs now expose both the stable guidance tool flow and the canonical validator guide URI without re-opening the broken direct-URI access pattern.
+
+## 2026-04-21 12:16 – Keep skill docs get-guidance-only for validator authoring
+Context: A brief follow-up added the validator guide URI back into the repository-local clio skill docs as metadata, but that made the docs noisier without improving the supported access flow.
+Decision: Removed the secondary `docs://mcp/guides/page-schema-validators` mention again and kept `get-guidance name=page-schema-validators` as the sole instruction in `.github/skills/clio/references/commands-reference.md` and `.github/skills/clio/SKILL.md`.
+Discovery: For these repository-local skill docs, the extra URI adds no operational value because agents should already use `get-guidance`; keeping only the actionable instruction is clearer and avoids reintroducing ambiguous guidance text.
+Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The local clio skill now stays aligned with the single supported validator-guidance access path and avoids redundant URI noise.
+
+## 2026-04-21 12:24 – Align entity-schema prompt test with guidance tool contract
+Context: Review feedback on `EntitySchemaToolTests` noted that prompt assertions should validate the supported guidance access path (`get-guidance` plus guidance name) instead of coupling to a backing `docs://...` URI literal.
+Decision: Updated the lookup prompt assertions to require `GuidanceGetTool.ToolName` and the guidance name `app-modeling`, without asserting the underlying resource URI string.
+Discovery: The entity-schema prompt test had already stopped checking `docs://mcp/guides/app-modeling`; the remaining gap was an explicit assertion on the `app-modeling` guidance name itself.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\EntitySchemaToolTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The test now tracks the real MCP contract callers use and is less brittle to internal guidance URI changes.
+
+## 2026-04-21 12:33 – Remove remaining converter wording from clio command reference skill
+Context: The validator-only branch still had one leftover line in the repository-local clio command reference describing `SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` together for `sync-pages` client-side validation.
+Decision: Rewrote the note to mention only `SCHEMA_VALIDATORS` as a JavaScript object section for function-based validator entries.
+Discovery: This was the last remaining converter-specific wording in `.github/skills/clio/references/commands-reference.md`; no matching text remained in `.github/skills/clio/SKILL.md`.
+Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The repository-local clio skill reference now stays fully aligned with the validator-only focus of the branch.

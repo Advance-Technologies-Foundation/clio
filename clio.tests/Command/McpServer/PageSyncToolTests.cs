@@ -228,6 +228,39 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Allows JavaScript converters and validators when validation is enabled")]
+	public void SyncPages_Should_Accept_JavaScript_Converters_And_Validators_When_Validation_Is_Enabled() {
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem());
+		string bodyWithConverterAndValidator = ValidPageBody
+			.Replace(
+				"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+				"/**SCHEMA_CONVERTERS*/{ \"usr.ToUpperCase\": function(value) { return value?.toUpperCase() ?? \"\"; } }/**SCHEMA_CONVERTERS*/")
+			.Replace(
+				"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+				"/**SCHEMA_VALIDATORS*/{ \"usr.ValidateFieldValue\": { \"validator\": function(config) { return function(control) { return control.value !== config.invalidName ? null : { \"usr.ValidateFieldValue\": { message: config.message } }; }; }, \"params\": [{ \"name\": \"invalidName\" }, { \"name\": \"message\" }], \"async\": false } }/**SCHEMA_VALIDATORS*/");
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithConverterAndValidator)],
+			Validate: true);
+
+		PageSyncResponse response = tool.SyncPages(args);
+
+		response.Success.Should().BeTrue(
+			because: "sync-pages should not reject function-based converter and validator sections as JSON errors");
+		response.Pages[0].Success.Should().BeTrue(
+			because: "the page body remains valid when converter and validator markers contain JavaScript functions");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should still be present when validation is enabled");
+		response.Pages[0].Validation!.ContentOk.Should().BeTrue(
+			because: "content validation should treat converters and validators as JavaScript object sections");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Client-side validation rejects proxy standard field bindings before save")]
 	public void SyncPages_Should_Reject_Proxy_Field_Bindings_When_Validation_Is_Enabled() {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();

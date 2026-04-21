@@ -100,6 +100,9 @@ being sent to Creatio:
   (`SCHEMA_DEPS`, `SCHEMA_ARGS`, `SCHEMA_VIEW_CONFIG_DIFF`, `SCHEMA_HANDLERS`,
   `SCHEMA_CONVERTERS`, `SCHEMA_VALIDATORS`, and model config markers)
 - **JS syntax** — checks bracket matching and string literal balance
+- **Marker content shape** — JSON-backed markers must still parse as structured data, while
+  `SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` must remain JavaScript object sections and may
+  contain function-based entries
 
 Validation failures prevent the page from being saved and are reported in the response.
 This replaces the need for separate dry-run calls.

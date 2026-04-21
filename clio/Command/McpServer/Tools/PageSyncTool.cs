@@ -28,7 +28,9 @@ public sealed class PageSyncTool(
 		Idempotent = false, OpenWorld = false)]
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
 		"For each page: validates body client-side (optional), saves to Creatio, " +
-		"and verifies the update (optional). Continues processing remaining pages on failure.")]
+		"and verifies the update (optional). Continues processing remaining pages on failure. " +
+		"Section authoring rules for the body payload: " +
+		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first. ")]
 	public PageSyncResponse SyncPages(
 		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional)")]
 		[Required] PageSyncArgs args) {
@@ -152,49 +154,112 @@ public sealed class PageSyncTool(
 	private static PageSyncValidationResult ValidateBody(string body, string? resources) {
 		SchemaValidationResult markerResult = SchemaValidationService.ValidateMarkerIntegrity(body);
 		SchemaValidationResult syntaxResult = SchemaValidationService.ValidateJsSyntax(body);
-		SchemaValidationResult contentResult = markerResult.IsValid
+		SchemaValidationResult contentResult = GetContentValidationResult(body, markerResult);
+		Dictionary<string, string>? explicitResources = TryParseExplicitResources(resources, contentResult);
+		SchemaValidationResult fieldResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources));
+		SchemaValidationResult validatorBindingResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateValidatorControlBindings(body));
+		SchemaValidationResult validatorParamResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateValidatorParamResourceBindings(body));
+		SchemaValidationResult standardValidatorResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateStandardValidatorUsage(body));
+		SchemaValidationResult validatorParamCompletenessResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateCustomValidatorParamCompleteness(body));
+		SchemaValidationResult bindingResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateColumnBindings(body));
+		List<string> errors = CollectErrors(
+			markerResult,
+			syntaxResult,
+			contentResult,
+			fieldResult,
+			validatorBindingResult,
+			validatorParamResult,
+			standardValidatorResult,
+			validatorParamCompletenessResult);
+		List<string> warnings = CollectWarnings(fieldResult, bindingResult);
+		bool contentOk = IsContentValidationSuccessful(
+			contentResult,
+			fieldResult,
+			validatorBindingResult,
+			validatorParamResult,
+			standardValidatorResult,
+			validatorParamCompletenessResult);
+		return BuildValidationResult(markerResult, syntaxResult, contentOk, errors, warnings);
+	}
+
+	private static SchemaValidationResult GetContentValidationResult(
+		string body,
+		SchemaValidationResult markerResult) =>
+		markerResult.IsValid
 			? SchemaValidationService.ValidateMarkerContent(body)
 			: new SchemaValidationResult { IsValid = true };
-		Dictionary<string, string>? explicitResources = null;
-		if (contentResult.IsValid &&
-		    !SchemaValidationService.TryParseResources(resources, out explicitResources, out _)) {
-			contentResult.IsValid = false;
-			contentResult.Errors.Add("resources must be a valid JSON object string");
-		}
-		SchemaValidationResult fieldResult = contentResult.IsValid
-			? SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources)
-			: new SchemaValidationResult { IsValid = true };
-		SchemaValidationResult bindingResult = contentResult.IsValid
-			? SchemaValidationService.ValidateColumnBindings(body)
-			: new SchemaValidationResult { IsValid = true };
-		var errors = new List<string>();
-		var warnings = new List<string>();
-		if (!markerResult.IsValid) {
-			errors.AddRange(markerResult.Errors);
-		}
-		if (!syntaxResult.IsValid) {
-			errors.AddRange(syntaxResult.Errors);
-		}
+
+	private static Dictionary<string, string>? TryParseExplicitResources(
+		string? resources,
+		SchemaValidationResult contentResult) {
 		if (!contentResult.IsValid) {
-			errors.AddRange(contentResult.Errors);
+			return null;
 		}
-		if (!fieldResult.IsValid) {
-			errors.AddRange(fieldResult.Errors);
+
+		if (SchemaValidationService.TryParseResources(resources, out Dictionary<string, string>? explicitResources, out _)) {
+			return explicitResources;
 		}
+
+		contentResult.IsValid = false;
+		contentResult.Errors.Add("resources must be a valid JSON object string");
+		return null;
+	}
+
+	private static SchemaValidationResult RunContentValidation(
+		SchemaValidationResult contentResult,
+		Func<SchemaValidationResult> validation) =>
+		contentResult.IsValid
+			? validation()
+			: new SchemaValidationResult { IsValid = true };
+
+	private static bool IsContentValidationSuccessful(params SchemaValidationResult[] results) =>
+		results.All(result => result.IsValid);
+
+	private static List<string> CollectErrors(params SchemaValidationResult[] results) {
+		var errors = new List<string>();
+		foreach (SchemaValidationResult result in results) {
+			if (!result.IsValid) {
+				errors.AddRange(result.Errors);
+			}
+		}
+
+		return errors;
+	}
+
+	private static List<string> CollectWarnings(
+		SchemaValidationResult fieldResult,
+		SchemaValidationResult bindingResult) {
+		var warnings = new List<string>();
 		if (fieldResult.Warnings.Count > 0) {
 			warnings.AddRange(fieldResult.Warnings);
 		}
+
 		if (!bindingResult.IsValid) {
 			warnings.AddRange(bindingResult.Errors);
 		}
-		return new PageSyncValidationResult {
+
+		return warnings;
+	}
+
+	private static PageSyncValidationResult BuildValidationResult(
+		SchemaValidationResult markerResult,
+		SchemaValidationResult syntaxResult,
+		bool contentOk,
+		List<string> errors,
+		List<string> warnings) =>
+		new() {
 			MarkersOk = markerResult.IsValid,
 			JsSyntaxOk = syntaxResult.IsValid,
-			ContentOk = contentResult.IsValid && fieldResult.IsValid,
+			ContentOk = contentOk,
 			Errors = errors.Count > 0 ? errors : null,
 			Warnings = warnings.Count > 0 ? warnings : null
 		};
-	}
 }
 
 /// <summary>

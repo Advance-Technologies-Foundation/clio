@@ -45,6 +45,7 @@ public sealed class ToolContractGetToolTests {
 		result.Tools.Should().NotBeNull(
 			because: "the bootstrap response should include the canonical contract set");
 		result.Tools!.Select(contract => contract.Name).Should().Contain([
+				GuidanceGetTool.ToolName,
 				SettingsHealthTool.ToolName,
 				ApplicationGetListTool.ApplicationGetListToolName,
 				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
@@ -63,6 +64,34 @@ public sealed class ToolContractGetToolTests {
 			because: "destructive Data Forge maintenance tools should stay available only through explicit contract lookup rather than the default bootstrap set");
 		result.Tools!.Select(contract => contract.Name).Should().NotContain(ToolContractGetTool.ToolName,
 			because: "get-tool-contract should not include itself in the default returned contract set");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical get-guidance contract so callers can retrieve guidance through a tool instead of docs URI routing.")]
+	public void ToolContractGet_Should_Return_Guidance_Get_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			GuidanceGetTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-guidance is part of the executable clio MCP contract surface");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.InputSchema.Required.Should().ContainSingle(required => required == "name",
+			because: "guidance lookup should require the stable guide name");
+		contract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "name" &&
+				field.Description.Contains("page-schema-validators", StringComparison.Ordinal),
+			because: "the contract should advertise the stable guidance-name selector");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "guidance",
+			because: "successful lookups should return the resolved article payload");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "available-guides",
+			because: "failed lookups should expose recovery names");
 	}
 
 	[Test]

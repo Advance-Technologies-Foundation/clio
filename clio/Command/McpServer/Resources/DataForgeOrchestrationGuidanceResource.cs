@@ -18,8 +18,9 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "dataforge-orchestration-guidance")]
 	[Description("Returns the canonical 4-layer DataForge orchestration protocol for AI agents using clio MCP.")]
-	public ResourceContents GetGuide() =>
-		new TextResourceContents {
+	public ResourceContents GetGuide() => Guide;
+
+	internal static readonly TextResourceContents Guide = new() {
 			Uri = ResourceUri,
 			MimeType = "text/plain",
 			Text = """
@@ -84,3 +85,4 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 			       """
 		};
 }
+
