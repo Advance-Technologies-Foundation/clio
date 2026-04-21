@@ -270,6 +270,38 @@ public sealed class ApplicationSectionCreateServiceTests {
 				because: "the section-create contract now requires the installed application code");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 	}
+
+	[Test]
+	[Description("Rejects icon-background values that are not Freedom UI palette colors.")]
+	public void CreateSection_Should_Reject_Non_Palette_Icon_Background() {
+		ApplicationSectionCreateRequest request = new(
+			"UsrOrdersApp",
+			"Orders",
+			IconBackground: "#FF00FF");
+
+		Action action = () => _sut.CreateSection("sandbox", request);
+
+		action.Should().Throw<ArgumentException>()
+			.WithMessage("*Freedom UI palette*",
+				because: "non-palette hex colors render as a white tile in the app manager UI");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+	}
+
+	[Test]
+	[Description("Rejects icon-background values that are not #RRGGBB hex strings.")]
+	public void CreateSection_Should_Reject_Invalid_Format_Icon_Background() {
+		ApplicationSectionCreateRequest request = new(
+			"UsrOrdersApp",
+			"Orders",
+			IconBackground: "red");
+
+		Action action = () => _sut.CreateSection("sandbox", request);
+
+		action.Should().Throw<ArgumentException>()
+			.WithMessage("*#RRGGBB format*",
+				because: "non-hex strings are never valid palette values");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+	}
 }
 
 [TestFixture]
