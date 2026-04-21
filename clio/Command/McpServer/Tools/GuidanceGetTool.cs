@@ -33,7 +33,7 @@ public sealed class GuidanceGetTool {
 		}
 		return Task.FromResult(new GuidanceGetResponse {
 			Success = false,
-			Error = $"Unknown guidance name '{args.Name}'. Use one of the listed names.",
+			Error = $"Unknown guidance '{args.Name}'. Use one of the listed names.",
 			AvailableGuides = GuidanceCatalog.Entries.Keys.ToList()
 		});
 	}
