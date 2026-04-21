@@ -78,28 +78,39 @@ public sealed class ApplicationCreateService(
 		string requestUrl = serviceUrlBuilder.Build(CreateApplicationRoute, environmentSettings);
 		string requestBody = JsonSerializer.Serialize(CreateRequestDto.From(resolvedRequest), JsonOptions);
 
-		logger.WriteInfo($"Creating application '{resolvedRequest.Name}' ({resolvedRequest.Code})...");
+		logger.BeginSpinner($"Creating application '{resolvedRequest.Name}' ({resolvedRequest.Code})...");
+		string responseBody;
 		try
 		{
-			string responseBody = client.ExecutePostRequest(requestUrl, requestBody);
-			CreateApplicationResponseDto response = DeserializeResponse(responseBody);
-			if (!response.Success)
-			{
-				throw new InvalidOperationException(BuildFailureMessage(response));
-			}
-
-			if (!Guid.TryParse(response.Value, out _))
-			{
-				throw new InvalidOperationException("CreateApp returned an invalid application identifier.");
-			}
-
-			return LoadCreatedApplication(environmentName, resolvedRequest.Code, response.Value);
+			responseBody = client.ExecutePostRequest(requestUrl, requestBody);
 		}
 		catch (Exception exception) when (IsTimeout(exception))
 		{
+			logger.EndSpinner(false);
 			logger.WriteInfo($"Request timed out, polling for application '{resolvedRequest.Code}'...");
 			return PollApplicationInfo(environmentName, resolvedRequest.Code, exception);
 		}
+		catch
+		{
+			logger.EndSpinner(false);
+			throw;
+		}
+
+		CreateApplicationResponseDto response = DeserializeResponse(responseBody);
+		if (!response.Success)
+		{
+			logger.EndSpinner(false);
+			throw new InvalidOperationException(BuildFailureMessage(response));
+		}
+
+		if (!Guid.TryParse(response.Value, out _))
+		{
+			logger.EndSpinner(false);
+			throw new InvalidOperationException("CreateApp returned an invalid application identifier.");
+		}
+
+		logger.EndSpinner(true);
+		return LoadCreatedApplication(environmentName, resolvedRequest.Code, response.Value);
 	}
 
 	private static void ValidateRequest(ApplicationCreateRequest request)
