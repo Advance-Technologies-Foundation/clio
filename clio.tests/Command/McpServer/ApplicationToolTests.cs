@@ -359,7 +359,7 @@ public sealed class ApplicationToolTests {
 					"pkg-uid",
 					"section-schema-uid",
 					"icon-id",
-					"#123456",
+					"#A6DE00",
 					null),
 				new ApplicationEntityInfoResult(
 					"entity-uid",
@@ -383,7 +383,7 @@ public sealed class ApplicationToolTests {
 			Caption: "Orders",
 			Description: "Order workspace",
 			EntitySchemaName: "UsrOrder",
-			WithMobilePages: true));
+			WithMobilePages: true), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
 		// Assert
 		applicationSectionCreateService.Received(1).CreateSection(
@@ -418,7 +418,7 @@ public sealed class ApplicationToolTests {
 		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
 			EnvironmentName: "sandbox",
 			ApplicationCode: null!,
-			Caption: "Orders"));
+			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
 		// Assert
 		result.Success.Should().BeFalse(
@@ -443,7 +443,7 @@ public sealed class ApplicationToolTests {
 			Caption: "Orders",
 			TitleLocalizations: new Dictionary<string, string> {
 				["en-US"] = "Orders"
-			}));
+			}), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
 		// Assert
 		result.Success.Should().BeFalse(
@@ -487,7 +487,7 @@ public sealed class ApplicationToolTests {
 					"pkg-uid",
 					"section-schema-uid",
 					"11111111-1111-1111-1111-111111111111",
-					"#123456",
+					"#A6DE00",
 					null)));
 		ApplicationSectionUpdateTool tool = new(applicationSectionUpdateService);
 
@@ -499,7 +499,7 @@ public sealed class ApplicationToolTests {
 			Caption: "Orders",
 			Description: "New description",
 			IconId: "11111111-1111-1111-1111-111111111111",
-			IconBackground: "#123456"));
+			IconBackground: "#A6DE00"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
 		// Assert
 		applicationSectionUpdateService.Received(1).UpdateSection(
@@ -510,7 +510,7 @@ public sealed class ApplicationToolTests {
 				request.Caption == "Orders" &&
 				request.Description == "New description" &&
 				request.IconId == "11111111-1111-1111-1111-111111111111" &&
-				request.IconBackground == "#123456"));
+				request.IconBackground == "#A6DE00"));
 		result.Success.Should().BeTrue(
 			because: "a successful section-update call should be wrapped in a core-style success envelope");
 		result.PreviousSection.Should().NotBeNull(
@@ -536,7 +536,7 @@ public sealed class ApplicationToolTests {
 			EnvironmentName: "sandbox",
 			ApplicationCode: "UsrOrdersApp",
 			SectionCode: null!,
-			Caption: "Orders"));
+			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
 		// Assert
 		result.Success.Should().BeFalse(
@@ -558,7 +558,7 @@ public sealed class ApplicationToolTests {
 		ApplicationSectionUpdateContextResponse result = tool.ApplicationSectionUpdate(new ApplicationSectionUpdateArgs(
 			EnvironmentName: "sandbox",
 			ApplicationCode: "UsrOrdersApp",
-			SectionCode: "UsrOrders"));
+			SectionCode: "UsrOrders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
 		// Assert
 		result.Success.Should().BeFalse(
@@ -584,7 +584,7 @@ public sealed class ApplicationToolTests {
 			Caption: "Orders",
 			TitleLocalizations: new Dictionary<string, string> {
 				["en-US"] = "Orders"
-			}));
+			}), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
 		// Assert
 		result.Success.Should().BeFalse(
@@ -1068,7 +1068,7 @@ public sealed class ApplicationToolTests {
 						"pkg-uid",
 						"section-schema-uid",
 						"icon-id",
-						"#123456",
+						"#A6DE00",
 						null)
 				]));
 		ApplicationSectionGetListTool tool = new(applicationSectionGetListService);
@@ -1139,7 +1139,7 @@ public sealed class ApplicationToolTests {
 					"pkg-uid",
 					"section-schema-uid",
 					"icon-id",
-					"#123456",
+					"#A6DE00",
 					null)));
 		ApplicationSectionDeleteTool tool = new(applicationSectionDeleteService);
 
@@ -1404,7 +1404,7 @@ public sealed class ApplicationToolTests {
 			caption: "Orders",
 			description: "Order workspace",
 			iconId: "11111111-1111-1111-1111-111111111111",
-			iconBackground: "#123456");
+			iconBackground: "#A6DE00");
 
 		// Assert
 		listPrompt.Should().Contain(ApplicationGetListTool.ApplicationGetListToolName,
@@ -1571,6 +1571,43 @@ public sealed class ApplicationToolTests {
 			because: "the validation message should point callers to a valid color example");
 		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
 		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("SectionIconPalette.Colors contains exactly the 16 swatches the Creatio backend accepts for SysModule.IconBackground")]
+	public void SectionIconPalette_Should_Expose_Exactly_16_Allowed_Colors() {
+		Clio.Command.McpServer.Tools.SectionIconPalette.Colors.Should().HaveCount(16,
+			because: "Creatio renders exactly 16 swatches in the designer and the DataBinding enum has 16 values");
+		foreach (string color in Clio.Command.McpServer.Tools.SectionIconPalette.Colors) {
+			color.Should().MatchRegex(@"^#[0-9A-F]{6}$",
+				because: "every palette entry must be an uppercase #RRGGBB hex literal so value round-tripping stays stable");
+			Clio.Command.McpServer.Tools.SectionIconPalette.IsAllowed(color).Should().BeTrue(
+				because: "the palette entry itself must pass the public validator");
+			Clio.Command.McpServer.Tools.SectionIconPalette.IsAllowed(color.ToLowerInvariant()).Should().BeTrue(
+				because: "lookup must be case-insensitive so AI callers passing lowercase hex still pass");
+		}
+		Clio.Command.McpServer.Tools.SectionIconPalette.IsAllowed("#123456").Should().BeFalse(
+			because: "arbitrary colors outside the 16 swatches must be rejected to prevent backend failures");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("SectionIconPalette.ResolveAsync throws ArgumentException listing allowed colors when the client does not support elicitation and the caller passed an invalid value")]
+	public async System.Threading.Tasks.Task SectionIconPalette_Should_Throw_With_Palette_List_When_Client_Cannot_Elicit() {
+		Func<System.Threading.Tasks.Task> act = () => Clio.Command.McpServer.Tools.SectionIconPalette.ResolveAsync(
+			server: null,
+			requestedColor: "#999999",
+			sectionLabel: "Orders",
+			cancellationToken: System.Threading.CancellationToken.None);
+
+		ArgumentException thrown = (await act.Should().ThrowAsync<ArgumentException>(
+			because: "without an elicitation-capable client the tool must fail fast with a machine-readable error")).Which;
+		thrown.Message.Should().Contain("not in the allowed SysModule palette",
+			because: "the error must name the rejected value and the rule that was broken");
+		thrown.Message.Should().Contain("#A6DE00",
+			because: "the error must include the full palette so AI callers can retry with a valid color");
+		thrown.Message.Should().Contain("#00BFA5");
 	}
 
 }

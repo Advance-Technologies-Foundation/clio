@@ -190,12 +190,19 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 	[McpServerTool(Name = ApplicationSectionCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, and page readback data.")]
-	public ApplicationSectionContextResponse ApplicationSectionCreate(
+	public async Task<ApplicationSectionContextResponse> ApplicationSectionCreate(
 		[Description("Parameters: environment-name, application-code, caption (required); description, entity-schema-name, icon-background, with-mobile-pages (optional)")]
 		[Required]
-		ApplicationSectionCreateArgs args) {
+		ApplicationSectionCreateArgs args,
+		global::ModelContextProtocol.Server.McpServer server,
+		CancellationToken cancellationToken = default) {
 		try {
 			ValidateSectionCreateArgs(args);
+			string resolvedIconBackground = args.IconBackground;
+			if (!string.IsNullOrWhiteSpace(resolvedIconBackground) || server?.ClientCapabilities?.Elicitation is not null) {
+				resolvedIconBackground = await SectionIconPalette.ResolveAsync(
+					server, args.IconBackground, args.Caption, cancellationToken).ConfigureAwait(false);
+			}
 			ApplicationSectionCreateResult result = applicationSectionCreateService.CreateSection(
 				args.EnvironmentName,
 				new ApplicationSectionCreateRequest(
@@ -204,7 +211,7 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 					args.Description,
 					args.EntitySchemaName,
 					args.WithMobilePages,
-					args.IconBackground));
+					resolvedIconBackground));
 			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateSectionContextErrorResponse(ex.Message);
@@ -246,12 +253,19 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 	[McpServerTool(Name = ApplicationSectionUpdateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Updates metadata of a section inside an existing application in Creatio through backend MCP and returns structured section readback data before and after the update.")]
-	public ApplicationSectionUpdateContextResponse ApplicationSectionUpdate(
+	public async Task<ApplicationSectionUpdateContextResponse> ApplicationSectionUpdate(
 		[Description("Parameters: environment-name, application-code, section-code (required); caption, description, icon-id, icon-background (optional partial update fields)")]
 		[Required]
-		ApplicationSectionUpdateArgs args) {
+		ApplicationSectionUpdateArgs args,
+		global::ModelContextProtocol.Server.McpServer server,
+		CancellationToken cancellationToken = default) {
 		try {
 			ValidateSectionUpdateArgs(args);
+			string resolvedIconBackground = args.IconBackground;
+			if (!string.IsNullOrWhiteSpace(resolvedIconBackground)) {
+				resolvedIconBackground = await SectionIconPalette.ResolveAsync(
+					server, args.IconBackground, args.Caption ?? args.SectionCode, cancellationToken).ConfigureAwait(false);
+			}
 			ApplicationSectionUpdateResult result = applicationSectionUpdateService.UpdateSection(
 				args.EnvironmentName,
 				new ApplicationSectionUpdateRequest(
@@ -260,7 +274,7 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 					args.Caption,
 					args.Description,
 					args.IconId,
-					args.IconBackground));
+					resolvedIconBackground));
 			return ApplicationToolHelper.CreateSectionUpdateContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateSectionUpdateContextErrorResponse(ex.Message);
