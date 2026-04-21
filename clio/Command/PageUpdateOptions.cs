@@ -64,6 +64,16 @@ namespace Clio.Command {
 		/// </summary>
 		[Option("target-package-uid", Required = false, HelpText = "Explicit target package UId for the replacing schema (overrides automatic design-package resolution)")]
 		public string? TargetPackageUId { get; set; }
+
+		/// <summary>
+		/// Optional explicit schema UId to save into directly. When set, bypasses hierarchy resolution
+		/// entirely — <c>update-page</c> loads the schema by this UId, applies the body (or appends to
+		/// it when <c>mode</c> is <c>append</c>), and saves. Use this when the page name is replaced by
+		/// multiple apps and you already know the exact schema UId (for example, obtained via
+		/// <c>list-pages</c>) of the replacement you want to modify.
+		/// </summary>
+		[Option("target-schema-uid", Required = false, HelpText = "Explicit schema UId to save into (bypasses hierarchy resolution)")]
+		public string? TargetSchemaUId { get; set; }
 	}
 
 	/// <summary>
@@ -113,7 +123,16 @@ namespace Clio.Command {
 					response = validationError;
 					return false;
 				}
-				if (!TryResolveEditableSchemaContext(options.SchemaName, options.TargetPackageUId, out EditableSchemaContext context, out response)) {
+				EditableSchemaContext context;
+				if (!string.IsNullOrWhiteSpace(options.TargetSchemaUId)) {
+					context = new EditableSchemaContext {
+						SchemaName = options.SchemaName,
+						EditableSchemaUId = options.TargetSchemaUId,
+						TemplateSchemaUId = options.TargetSchemaUId,
+						IsCreateReplacing = false
+					};
+					response = null;
+				} else if (!TryResolveEditableSchemaContext(options.SchemaName, options.TargetPackageUId, out context, out response)) {
 					return false;
 				}
 				if (options.DryRun) {
@@ -224,14 +243,30 @@ namespace Clio.Command {
 			}
 			PageDesignerHierarchySchema head = hierarchy[0];
 			bool headInDesignPackage = string.Equals(head.PackageUId, designPackageUId, StringComparison.OrdinalIgnoreCase);
+			string editableUId;
+			bool isCreateReplacing;
+			if (headInDesignPackage) {
+				editableUId = head.UId;
+				isCreateReplacing = false;
+			} else {
+				string existingInPkg = PageSchemaMetadataHelper.FindExistingSchemaInPackage(
+					_applicationClient, _serviceUrlBuilder, schemaName, designPackageUId);
+				if (!string.IsNullOrWhiteSpace(existingInPkg)) {
+					editableUId = existingInPkg;
+					isCreateReplacing = false;
+				} else {
+					editableUId = Guid.NewGuid().ToString();
+					isCreateReplacing = true;
+				}
+			}
 			context = new EditableSchemaContext {
 				SchemaName = schemaName,
-				EditableSchemaUId = headInDesignPackage ? head.UId : Guid.NewGuid().ToString(),
+				EditableSchemaUId = editableUId,
 				DesignPackageUId = designPackageUId,
-				IsCreateReplacing = !headInDesignPackage,
-				ParentSchemaUId = headInDesignPackage ? null : head.UId,
+				IsCreateReplacing = isCreateReplacing,
+				ParentSchemaUId = isCreateReplacing ? head.UId : null,
 				ParentSchemaName = head.Name,
-				TemplateSchemaUId = head.UId
+				TemplateSchemaUId = isCreateReplacing ? head.UId : editableUId
 			};
 			response = null;
 			return true;
