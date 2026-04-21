@@ -761,7 +761,7 @@ public static class SchemaValidationService
 		}
 
 		foreach (JsonElement op in root.EnumerateArray()) {
-			if (!TargetsAttributesPath(op)) {
+			if (!ShouldScanAsAttributesContainer(op)) {
 				continue;
 			}
 
@@ -771,9 +771,12 @@ public static class SchemaValidationService
 		}
 	}
 
-	private static bool TargetsAttributesPath(JsonElement operation) {
-		if (!operation.TryGetProperty("path", out JsonElement pathElement) ||
-		    pathElement.ValueKind != JsonValueKind.Array) {
+	private static bool ShouldScanAsAttributesContainer(JsonElement operation) {
+		if (!operation.TryGetProperty("path", out JsonElement pathElement)) {
+			return true;
+		}
+
+		if (pathElement.ValueKind != JsonValueKind.Array) {
 			return false;
 		}
 

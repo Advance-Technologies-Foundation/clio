@@ -799,6 +799,43 @@ public class SchemaValidationServiceTests {
 	}
 
 	[Test]
+	[Description("Root-level diff merge operations without path still participate in validator param validation")]
+	public void ValidateValidatorParamResourceBindings_PathlessRootMergeWithAttributeValidators_ReturnsInvalid() {
+		// Arrange
+		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"values\":{" +
+		                             "\"UsrName\":{\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
+		                             "\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
+		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorParamResourceBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "root-level merge operations without an explicit path are still valid diff shapes and must be validated");
+		result.Errors.Should().ContainSingle(error => error.Contains("#ResourceString(UsrMsg)#"),
+			because: "validator param validation must still run for pathless root merges that bind resource strings reactively");
+	}
+
+	[Test]
+	[Description("Root-level diff merge operations without validators do not produce validator param errors")]
+	public void ValidateValidatorParamResourceBindings_PathlessRootMergeWithoutValidators_ReturnsValid() {
+		// Arrange
+		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"values\":{" +
+		                             "\"UsrPseudoHandler\":{\"request\":\"usr.DoSomething\",\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}]";
+		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorParamResourceBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "pathless root merges should not fail validator validation when their values do not define attribute validators");
+		result.Errors.Should().BeEmpty(
+			because: "non-validator payloads inside a pathless root merge must not be misread as validator bindings");
+	}
+
+	[Test]
 	[Description("Custom validators with any logic are allowed — guidance steers AI toward standard validators; runtime validation does not second-guess custom implementations.")]
 	public void ValidateStandardValidatorUsage_CustomMaxLengthStyleValidator_ReturnsValid() {
 		// Arrange

@@ -2566,3 +2566,10 @@ Decision: Kept the brace-depth parsing algorithm intact, but extracted three foc
 Discovery: The complexity came from mixing parser state transitions (inString, brace depth, quoted property detection, identifier detection) inside one loop; isolating those transitions dropped the method below the threshold without changing the parser contract or its tests.
 Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: The custom-validator error-object parser remains behaviorally identical while becoming easier to extend and less likely to trigger future Sonar regressions.
+
+## 2026-04-21 15:20 – Restore validator scans for pathless root diff merges
+Context: Review found that tightening TargetsAttributesPath(...) to top-level ttributes accidentally excluded root-level iewModelConfigDiff merge operations that omit path, which this repository still uses for diff payloads.
+Decision: Treat pathless diff operations as root-level merges and therefore eligible for validator scans, while keeping explicit-path operations restricted to those whose first segment is ttributes.
+Discovery: The stricter irst segment == attributes guard fixed nested false positives, but it also created a silent skip for existing pathless merge shapes until an explicit regression test covered them.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Validator resource and contract validation now covers both supported diff shapes: root merges without path and explicit top-level ttributes merges, while still excluding unrelated nested paths.
