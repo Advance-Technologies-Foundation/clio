@@ -192,11 +192,11 @@ public static class SchemaValidationService
 			if (!PageSchemaSectionReader.TryRead(jsBody, out string content, marker)) {
 				continue;
 			}
-			TryValidateJavaScriptObjectSection(content, marker, result);
+			ValidateJavaScriptObjectSection(content, marker, result);
 		}
 	}
 
-	private static bool TryValidateJavaScriptObjectSection(
+	private static void ValidateJavaScriptObjectSection(
 		string content,
 		string marker,
 		SchemaValidationResult result) {
@@ -206,17 +206,16 @@ public static class SchemaValidationService
 		    !trimmedContent.EndsWith("}", StringComparison.Ordinal)) {
 			result.IsValid = false;
 			result.Errors.Add($"Invalid JavaScript object section in {marker}: section must remain an object literal.");
-			return false;
+			return;
 		}
 
 		SchemaValidationResult syntaxResult = ValidateJsSyntax($"const __clioSection = {trimmedContent};");
 		if (syntaxResult.IsValid) {
-			return true;
+			return;
 		}
 
 		result.IsValid = false;
 		result.Errors.Add($"Invalid JavaScript object section in {marker}: {string.Join("; ", syntaxResult.Errors)}");
-		return false;
 	}
 
 	public static SchemaValidationResult ValidateColumnBindings(string jsBody) {
@@ -1109,42 +1108,16 @@ public static class SchemaValidationService
 		char stringChar = '"';
 		int index = 0;
 		while (index < objectContent.Length) {
+			if (TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
+				continue;
+			}
+
 			char current = objectContent[index];
-			if (inString) {
-				index = ConsumeStringLiteralCharacter(objectContent, index, ref inString, stringChar);
+			if (TryReadTopLevelPropertyName(objectContent, depth, current, ref index, props)) {
 				continue;
 			}
 
-			if (current is '"' or '\'' or '`') {
-				if (depth == 1 && TryReadQuotedPropertyName(objectContent, index, current, out string propertyName, out int nextIndex)) {
-					props.Add(propertyName);
-					index = nextIndex;
-					continue;
-				}
-
-				inString = true;
-				stringChar = current;
-				index++;
-				continue;
-			}
-
-			if (current == '{') {
-				depth++;
-				index++;
-				continue;
-			}
-
-			if (current == '}') {
-				depth--;
-				index++;
-				continue;
-			}
-
-			if (depth == 1 &&
-			    IsIdentifierStart(current) &&
-			    TryReadIdentifierPropertyName(objectContent, index, out string identifierName, out int identifierNextIndex)) {
-				props.Add(identifierName);
-				index = identifierNextIndex;
+			if (TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
 				continue;
 			}
 
@@ -1152,6 +1125,72 @@ public static class SchemaValidationService
 		}
 
 		return props;
+	}
+
+	private static bool TryConsumeStringLiteralCharacter(
+		string content,
+		ref int index,
+		ref bool inString,
+		char stringChar) {
+		if (!inString) {
+			return false;
+		}
+
+		index = ConsumeStringLiteralCharacter(content, index, ref inString, stringChar);
+		return true;
+	}
+
+	private static bool TryReadTopLevelPropertyName(
+		string content,
+		int depth,
+		char current,
+		ref int index,
+		HashSet<string> props) {
+		if (current is '"' or '\'' or '`' &&
+		    depth == 1 &&
+		    TryReadQuotedPropertyName(content, index, current, out string propertyName, out int nextIndex)) {
+			props.Add(propertyName);
+			index = nextIndex;
+			return true;
+		}
+
+		if (depth == 1 &&
+		    IsIdentifierStart(current) &&
+		    TryReadIdentifierPropertyName(content, index, out string identifierName, out int identifierNextIndex)) {
+			props.Add(identifierName);
+			index = identifierNextIndex;
+			return true;
+		}
+
+		return false;
+	}
+
+	private static bool TryHandleStructuralCharacter(
+		char current,
+		ref int index,
+		ref int depth,
+		ref bool inString,
+		ref char stringChar) {
+		if (current is '"' or '\'' or '`') {
+			inString = true;
+			stringChar = current;
+			index++;
+			return true;
+		}
+
+		if (current == '{') {
+			depth++;
+			index++;
+			return true;
+		}
+
+		if (current == '}') {
+			depth--;
+			index++;
+			return true;
+		}
+
+		return false;
 	}
 
 	private static bool TryReadQuotedPropertyName(

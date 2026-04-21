@@ -2559,3 +2559,10 @@ Decision: Tightened TargetsAttributesPath(...) to require the first path segment
 Discovery: The existing handler-path regression only covered path: ["handlers"]; it did not protect against nested paths that still slipped through the broader Any(...) predicate.
 Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Validator param scans now align with the intended top-level Freedom UI diff target and stop reading unrelated alues payloads from nested non-attribute operations.
+
+## 2026-04-21 15:05 – Split top-level error-object property scan into smaller parser helpers
+Context: Sonar still reported ExtractTopLevelObjectPropertyNames(...) above the cognitive-complexity threshold after the nested validator error-object parsing rewrite.
+Decision: Kept the brace-depth parsing algorithm intact, but extracted three focused helpers: one for consuming string-literal characters, one for reading top-level property names, and one for structural character handling.
+Discovery: The complexity came from mixing parser state transitions (inString, brace depth, quoted property detection, identifier detection) inside one loop; isolating those transitions dropped the method below the threshold without changing the parser contract or its tests.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The custom-validator error-object parser remains behaviorally identical while becoming easier to extend and less likely to trigger future Sonar regressions.
