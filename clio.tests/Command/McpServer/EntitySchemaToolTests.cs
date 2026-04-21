@@ -804,6 +804,8 @@ public sealed class EntitySchemaToolTests {
 			because: "lookup prompt guidance should explain the inherited display-field contract for BaseLookup");
 		lookupPrompt.Should().Contain(GuidanceGetTool.ToolName,
 			because: "lookup prompt guidance should point callers to the MCP-owned modeling guide through the guidance tool");
+		lookupPrompt.Should().Contain("app-modeling",
+			because: "lookup prompt guidance should identify the exact guidance name callers must pass to the guidance tool");
 		updatePrompt.Should().Contain(UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
 			because: "batch update prompt guidance should reference the exact production tool name");
 		updatePrompt.Should().Contain("title-localizations",

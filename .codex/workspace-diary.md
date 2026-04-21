@@ -2510,3 +2510,10 @@ Decision: Removed the secondary `docs://mcp/guides/page-schema-validators` menti
 Discovery: For these repository-local skill docs, the extra URI adds no operational value because agents should already use `get-guidance`; keeping only the actionable instruction is clearer and avoids reintroducing ambiguous guidance text.
 Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
 Impact: The local clio skill now stays aligned with the single supported validator-guidance access path and avoids redundant URI noise.
+
+## 2026-04-21 12:24 – Align entity-schema prompt test with guidance tool contract
+Context: Review feedback on `EntitySchemaToolTests` noted that prompt assertions should validate the supported guidance access path (`get-guidance` plus guidance name) instead of coupling to a backing `docs://...` URI literal.
+Decision: Updated the lookup prompt assertions to require `GuidanceGetTool.ToolName` and the guidance name `app-modeling`, without asserting the underlying resource URI string.
+Discovery: The entity-schema prompt test had already stopped checking `docs://mcp/guides/app-modeling`; the remaining gap was an explicit assertion on the `app-modeling` guidance name itself.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\EntitySchemaToolTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The test now tracks the real MCP contract callers use and is less brittle to internal guidance URI changes.
