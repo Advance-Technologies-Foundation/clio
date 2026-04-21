@@ -42,6 +42,12 @@ namespace Clio.Command {
 		/// </summary>
 		[Option("resources", Required = false, HelpText = "JSON object of resource key-value pairs for #ResourceString(key)# macros")]
 		public string Resources { get; set; }
+
+		/// <summary>
+		/// Gets or sets the optional properties to merge into the schema, as a JSON array of {key, value} objects.
+		/// </summary>
+		[Option("optional-properties", Required = false, HelpText = "JSON array of {key, value} objects to merge into schema optionalProperties")]
+		public string? OptionalProperties { get; set; }
 	}
 
 	/// <summary>
@@ -101,7 +107,11 @@ namespace Clio.Command {
 				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) {
 					return false;
 				}
-				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, options.Body, explicitResources);
+				JArray parsedOptionalProperties = null;
+				if (!string.IsNullOrWhiteSpace(options.OptionalProperties)) {
+					parsedOptionalProperties = JArray.Parse(options.OptionalProperties);
+				}
+				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, options.Body, explicitResources, parsedOptionalProperties);
 				if (!TrySaveSchema(schemaToSave, out response)) {
 					return false;
 				}
@@ -189,6 +199,36 @@ namespace Clio.Command {
 			};
 			response = null;
 			return true;
+		}
+
+		private static List<string> UpdateSchemaBody(JObject schemaToSave, string body, Dictionary<string, string> explicitResources, JArray optionalProperties = null) {
+			schemaToSave["body"] = body;
+			if (optionalProperties != null) {
+				MergeOptionalProperties(schemaToSave, optionalProperties);
+			}
+			var bodyKeys = ResourceStringHelper.ExtractKeys(body);
+			var existingStrings = schemaToSave["localizableStrings"] as JArray;
+			var (cleaned, registered) = ResourceStringHelper.CleanAndMerge(existingStrings, explicitResources, bodyKeys);
+			schemaToSave["localizableStrings"] = cleaned;
+			return registered.Count > 0 ? registered : null;
+		}
+
+		private static void MergeOptionalProperties(JObject schemaToSave, JArray incoming) {
+			var existing = schemaToSave["optionalProperties"] as JArray ?? new JArray();
+			var merged = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
+			foreach (JToken item in existing) {
+				string key = item["key"]?.ToString();
+				if (!string.IsNullOrWhiteSpace(key)) {
+					merged[key] = item;
+				}
+			}
+			foreach (JToken item in incoming) {
+				string key = item["key"]?.ToString();
+				if (!string.IsNullOrWhiteSpace(key)) {
+					merged[key] = item;
+				}
+			}
+			schemaToSave["optionalProperties"] = new JArray(merged.Values);
 		}
 
 		private bool TryLoadSchemaForSave(
@@ -369,6 +409,16 @@ namespace Clio.Command {
 					Success = false,
 					Error = "resources must be a valid JSON object string"
 				};
+			}
+			if (!string.IsNullOrWhiteSpace(options.OptionalProperties)) {
+				try {
+					JArray.Parse(options.OptionalProperties);
+				} catch {
+					return new PageUpdateResponse {
+						Success = false,
+						Error = "optional-properties must be a valid JSON array of {key, value} objects"
+					};
+				}
 			}
 			var semanticResult = SchemaValidationService.ValidateStandardFieldBindings(options.Body, explicitResources);
 			if (!semanticResult.IsValid) {

@@ -237,6 +237,7 @@ public class BindingsModule {
 		services.AddTransient<PageCreateTool>();
 		services.AddTransient<PageTemplatesListTool>();
 		services.AddTransient<PageSyncTool>();
+		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();

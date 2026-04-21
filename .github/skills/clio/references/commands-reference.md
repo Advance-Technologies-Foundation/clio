@@ -1129,8 +1129,12 @@ clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" -e <ENV>
 # Save with missing resource string registration
 clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
   --resources '{"UsrDetailsTab_caption":"Details"}' -e <ENV>
+
+# Save with optional-properties merge
+clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
+  --optional-properties '[{"key":"entitySchemaName","value":"UsrTodo"}]' -e <ENV>
 ```
-Options: `--schema-name` (required), `--body` (required), `--dry-run`, `--resources` (JSON object)
+Options: `--schema-name` (required), `--body` (required), `--dry-run`, `--resources` (JSON object), `--optional-properties` (JSON array of `{key,value}` objects)
 
 ### sync-pages
 Update multiple Freedom UI page schemas in one MCP call. **MCP-only tool** — not available as a standalone CLI command.
@@ -1145,12 +1149,21 @@ Input:
   "environment-name": "dev",
   "pages": [
     { "schema-name": "UsrTodo_FormPage", "body": "define(...)" },
-    { "schema-name": "UsrTodo_ListPage", "body": "define(...)", "resources": "{\"caption\":\"List\"}" }
+    { "schema-name": "UsrTodo_ListPage", "body": "define(...)", "resources": "{\"caption\":\"List\"}", "optional-properties": "[{\"key\":\"entitySchemaName\",\"value\":\"UsrTodo\"}]" }
   ],
   "validate": true,
   "verify": false
 }
 ```
+
+### get-guidance
+Return a named clio MCP guidance article, or list all available guide names when the requested name is unknown. **MCP-only tool** — not available as a standalone CLI command.
+
+```json
+{ "name": "freedom-ui-page-editing" }
+```
+
+When the requested name is not found, the response lists all available article names so the caller can discover valid values.
 
 ### list-page-templates
 List Freedom UI page templates available for `create-page`. **Aliases:** `page-templates`, `page-templates-list`

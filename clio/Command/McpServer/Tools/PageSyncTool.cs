@@ -112,7 +112,8 @@ public sealed class PageSyncTool(
 				SchemaName = page.SchemaName,
 				Body = page.Body,
 				DryRun = false,
-				Resources = page.Resources
+				Resources = page.Resources,
+				OptionalProperties = page.OptionalProperties
 			};
 			updateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
 			if (!updateResponse.Success) {
@@ -326,7 +327,10 @@ public sealed record PageSyncPageInput(
 
 	[property: JsonPropertyName("resources")]
 	[property: Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros")]
-	string? Resources = null
+	string? Resources = null,
+	[property: JsonPropertyName("optional-properties")]
+	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties")]
+	string? OptionalProperties = null
 );
 
 /// <summary>

@@ -371,6 +371,7 @@ public class PageToolsTests {
 				"UsrMcp",
 				"BasePage").ToString());
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("tool-page-uid").Returns("tool-package-uid");
 		hierarchyClient.GetParentSchemas("tool-page-uid", "tool-package-uid")
 			.Returns([
 				new PageDesignerHierarchySchema {
@@ -1022,6 +1023,7 @@ public class PageToolsTests {
 				Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("broken-page-uid").Returns("broken-package-uid");
 		hierarchyClient.GetParentSchemas("broken-page-uid", "broken-package-uid")
 			.Returns(_ => throw new System.InvalidOperationException("Failed to load page schema hierarchy"));
 		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
@@ -1061,6 +1063,7 @@ public class PageToolsTests {
 				Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("malformed-page-uid").Returns("malformed-package-uid");
 		hierarchyClient.GetParentSchemas("malformed-page-uid", "malformed-package-uid")
 			.Returns([
 				new PageDesignerHierarchySchema {
@@ -1143,7 +1146,7 @@ public class PageToolsTests {
 					}
 				}
 			}.ToString());
-		PageUpdateCommand updateCommand = new(updateApplicationClient, updateServiceUrlBuilder, updateLogger);
+		PageUpdateCommand updateCommand = new(updateApplicationClient, updateServiceUrlBuilder, updateLogger, CreateHierarchyClientFor("roundtrip-page-uid", "roundtrip-pkg-uid"));
 
 		// Act
 		bool getResult = getCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
@@ -1204,7 +1207,7 @@ public class PageToolsTests {
 				if (callIndex == 2) return getSchemaResponse.ToString();
 				return saveResponse.ToString();
 			});
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
 		var options = new PageUpdateOptions {
 			SchemaName = "Test_FormPage",
 			Body = validBody,
@@ -1236,7 +1239,7 @@ public class PageToolsTests {
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
 		string validBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
 		var options = new PageUpdateOptions {
 			SchemaName = "Test_FormPage",
 			Body = validBody,
@@ -1265,7 +1268,7 @@ public class PageToolsTests {
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
 		string validBody = "define(\"X\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
 		var options = new PageUpdateOptions {
 			SchemaName = "MissingPage",
 			Body = validBody,
@@ -1284,7 +1287,7 @@ public class PageToolsTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrEmptyBody_FormPage",
 			Body = string.Empty,
@@ -1311,7 +1314,7 @@ public class PageToolsTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrInvalidResources_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -1337,7 +1340,7 @@ public class PageToolsTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrProxyBinding_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -1508,6 +1511,7 @@ public class PageToolsTests {
 				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("pkg-1");
 		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
 			.Returns([new PageDesignerHierarchySchema {
 				UId = "uid-1", Name = "UsrMcp_FormPage",
@@ -1588,6 +1592,7 @@ public class PageToolsTests {
 				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("pkg-1");
 		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
 			.Returns([new PageDesignerHierarchySchema {
 				UId = "uid-1", Name = "UsrMcp_FormPage",
@@ -1633,6 +1638,7 @@ public class PageToolsTests {
 				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("pkg-1");
 		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
 			.Returns([new PageDesignerHierarchySchema {
 				UId = "uid-1", Name = "UsrMcp_FormPage",
@@ -1708,6 +1714,7 @@ public class PageToolsTests {
 				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("pkg-1");
 		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
 			.Returns([new PageDesignerHierarchySchema {
 				UId = "uid-1", Name = "UsrMcp_FormPage",

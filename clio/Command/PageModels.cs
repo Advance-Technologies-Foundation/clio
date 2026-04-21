@@ -442,6 +442,11 @@ public sealed class PageUpdateResponse {
 	[JsonPropertyName("samplingReview")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public PageSamplingReview SamplingReview { get; set; }
+
+	[JsonProperty("page", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("page")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public PageMetadataInfo? Page { get; set; }
 }
 
 public sealed record FormFieldSpec(

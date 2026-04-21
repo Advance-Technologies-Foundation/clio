@@ -2599,3 +2599,12 @@ Discovery:
 - 13 pre-existing failures remain (DeleteSection 3, DeletePackageCommand 3, InstallTideCommand 3, StopCommand 3, NewPkgCommand 1)
 Files: clio/Requests/IISScannerRequest.cs, clio/BindingsModule.cs, clio/Command/SetFsmConfigCommand.cs, clio/Command/TurnFarmModeCommand.cs, clio.tests/ (8 files)
 Impact: Build clean, 0 CLIO004 warnings, Wave 3 complete. Branch Alfa-04-20 pushed.
+
+## 2025-07-17 – ENG-88190 hierarchy-aware page resolution (complete)
+Context: ENG-88190 required get-page and update-page to resolve the editable schema from the design package (hierarchy[0]) rather than the schema's own package.
+Decision: Called GetDesignPackageUId before GetParentSchemas; fail-open in get-page (fallback to schemaUId) and fail-closed in update-page (error on missing UId).
+Discovery: NSubstitute returns null (not empty list) for unmocked IReadOnlyList<T>; always add null guard after GetDesignPackageUId and GetParentSchemas calls.
+Discovery: Removing PackageUId from metadata query in PageUpdateOptions fixed "missing identifiers" failures — design package UID comes only from GetDesignPackageUId.
+Discovery: --no-incremental is mandatory; stale binaries caused 2 tests to appear failing after fixes were already in source.
+Files: clio/Command/PageUpdateOptions.cs, clio/Command/PageGetOptions.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs
+Impact: 412 McpServer unit tests pass. Docs updated for update-page (--optional-properties), get-page (hierarchy note), sync-pages (optional-properties in page input), get-guidance (new MCP tool).

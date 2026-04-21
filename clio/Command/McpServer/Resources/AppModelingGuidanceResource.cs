@@ -14,7 +14,7 @@ public sealed class AppModelingGuidanceResource {
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	/// <summary>
-	/// Returns the canonical guidance article for DB-first app creation, schema modeling, and page workflows.
+	/// Canonical guidance article accessible by name through <c>get-guidance</c>.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "app-modeling-guidance")]
 	[Description("Returns canonical MCP guidance for Creatio application modeling, schema design, and page-editing workflows.")]
@@ -92,6 +92,13 @@ public sealed class AppModelingGuidanceResource {
 			       - For new apps or extended main entities, perform page edits after `sync-schemas` and `get-app-info` refresh so that page bindings reference materialized columns.
 			       - Example: if the app context already contains `Support Case Knowledge Link` / `UsrSupportCaseKbLink`, add the Related Knowledge detail by wiring the page to that existing schema. Do not create `UsrSupportCaseKnowledgeBase`.
 			       """
-		};
+	};
+
+	/// <summary>
+	/// Returns the canonical guidance article for DB-first app creation, schema modeling, and page workflows.
+	/// </summary>
+	[McpServerResource(UriTemplate = ResourceUri, Name = "app-modeling-guidance")]
+	[Description("Returns canonical MCP guidance for Creatio application modeling, schema design, and page-editing workflows.")]
+	public ResourceContents GetGuide() => Guide;
 }
 
