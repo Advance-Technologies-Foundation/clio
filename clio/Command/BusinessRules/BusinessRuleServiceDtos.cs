@@ -183,7 +183,7 @@ internal sealed class BusinessRuleTriggerMetadataDto {
 	public int Type { get; set; }
 }
 
-internal abstract class BusinessRuleExpressionMetadataDto {
+internal sealed class BusinessRuleExpressionMetadataDto {
 	// AddonSchemaDesignerService reads business-rule metadata sequentially and parses `value`
 	// according to the already-read `dataValueTypeName`. Keep base expression fields ordered
 	// ahead of derived payload fields to avoid numeric constants being treated as default Text.
@@ -206,41 +206,14 @@ internal abstract class BusinessRuleExpressionMetadataDto {
 	[JsonPropertyOrder(4)]
 	[JsonPropertyName("referenceSchemaName")]
 	public string? ReferenceSchemaName { get; set; }
-}
 
-internal sealed class BusinessRuleAttributeExpressionMetadataDto : BusinessRuleExpressionMetadataDto {
 	[JsonPropertyOrder(5)]
 	[JsonPropertyName("path")]
-	public string Path { get; set; } = string.Empty;
-}
+	public string? Path { get; set; }
 
-internal sealed class BusinessRuleValueExpressionMetadataDto : BusinessRuleExpressionMetadataDto {
 	[JsonPropertyOrder(5)]
 	[JsonPropertyName("value")]
 	public object? Value { get; set; }
-}
-
-internal sealed class BusinessRuleExpressionMetadataDtoConverter : JsonConverter<BusinessRuleExpressionMetadataDto> {
-	public override BusinessRuleExpressionMetadataDto? Read(
-		ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) {
-		using JsonDocument doc = JsonDocument.ParseValue(ref reader);
-		string rawJson = doc.RootElement.GetRawText();
-		if (doc.RootElement.TryGetProperty("typeName", out JsonElement typeNameElement)) {
-			string? typeName = typeNameElement.GetString();
-			if (string.Equals(typeName, BusinessRuleConstants.BusinessRuleAttributeExpressionTypeName, StringComparison.Ordinal)) {
-				return JsonSerializer.Deserialize<BusinessRuleAttributeExpressionMetadataDto>(rawJson, options);
-			}
-			if (string.Equals(typeName, BusinessRuleConstants.BusinessRuleValueExpressionTypeName, StringComparison.Ordinal)) {
-				return JsonSerializer.Deserialize<BusinessRuleValueExpressionMetadataDto>(rawJson, options);
-			}
-		}
-		return null;
-	}
-
-	public override void Write(
-		Utf8JsonWriter writer, BusinessRuleExpressionMetadataDto value, JsonSerializerOptions options) {
-		JsonSerializer.Serialize(writer, value, value.GetType(), options);
-	}
 }
 
 #endregion

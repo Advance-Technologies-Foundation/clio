@@ -67,13 +67,13 @@ public sealed class BusinessRuleService(
 			?.Descriptor.UId
 			?? throw new InvalidOperationException($"Package '{request.PackageName}' was not found.");
 		EntityDesignSchemaDto entitySchema = LoadEntitySchema(client, serviceUrlBuilder, request.EntitySchemaName, packageUId);
-		IReadOnlyDictionary<string, EntityColumnDescriptor> columnIndex = BusinessRuleToDtoConverter.BuildColumnIndex(entitySchema);
-		BusinessRuleValidator.ValidateRuleAgainstSchema(request.Rule, columnIndex);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = BusinessRuleToDtoConverter.BuildColumnMap(entitySchema);
+		BusinessRuleValidator.ValidateRuleAgainstSchema(request.Rule, columnMap);
 		AddonSchemaResponseDto addonResponse = LoadAddonSchema(client, serviceUrlBuilder, entitySchema, packageUId);
 		BusinessRulesAddonMetadata metadata = ParseMetadata(addonResponse.Schema?.MetaData);
 		List<AddonResourceDto> resources = NormalizeResourceKeys(addonResponse.Schema?.Resources?.ToList() ?? []);
 
-		BusinessRuleMetadataDto createdRule = BusinessRuleToDtoConverter.BuildRule(columnIndex, request.Rule);
+		BusinessRuleMetadataDto createdRule = BusinessRuleToDtoConverter.BuildRule(columnMap, request.Rule);
 		metadata.Rules.Add(createdRule);
 		UpsertCaptionResource(resources, createdRule.UId, request.Rule.Caption.Trim());
 
@@ -92,23 +92,19 @@ public sealed class BusinessRuleService(
 		ServiceUrlBuilder serviceUrlBuilder,
 		string entitySchemaName,
 		Guid packageUId) {
-		string responseBody = client.ExecutePostRequest(
-			serviceUrlBuilder.Build($"{EntitySchemaDesignerBasePath}/GetSchemaDesignItem"),
-			JsonSerializer.Serialize(new {
-				name = entitySchemaName.Trim(),
-				packageUId,
-				useFullHierarchy = true,
-				cultures = new[] { EntitySchemaDesignerSupport.DefaultCultureName }
-			}, JsonOptions));
-		DesignerResponse<EntityDesignSchemaDto> response = Deserialize<DesignerResponse<EntityDesignSchemaDto>>(
-			responseBody,
-			"EntitySchemaDesignerService returned an empty response.");
-		if (!response.Success || response.Schema is null) {
-			throw new InvalidOperationException(
-				response.ErrorInfo?.Message ?? $"Entity schema '{entitySchemaName}' was not returned.");
-		}
-
-		return response.Schema;
+		Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> response = new RemoteEntitySchemaDesignerClient(
+			client,
+			jsonConverter,
+			serviceUrlBuilder).GetSchemaDesignItem(
+			new GetSchemaDesignItemRequestDto {
+				Name = entitySchemaName.Trim(),
+				PackageUId = packageUId,
+				UseFullHierarchy = true,
+				Cultures = [EntitySchemaDesignerSupport.DefaultCultureName]
+			},
+			new RemoteCommandOptions());
+		return response.Schema
+			?? throw new InvalidOperationException($"Entity schema '{entitySchemaName}' was not returned.");
 	}
 
 	private AddonSchemaResponseDto LoadAddonSchema(
@@ -146,6 +142,10 @@ public sealed class BusinessRuleService(
 		if (!response.Success || response.Value == false) {
 			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "AddonSchemaDesignerService.SaveSchema failed.");
 		}
+
+		client.ExecutePostRequest(
+			serviceUrlBuilder.Build("/rest/WorkplaceService/ResetScriptCache"),
+			string.Empty);
 	}
 
 	private static BusinessRulesAddonMetadata ParseMetadata(string? metaData) {

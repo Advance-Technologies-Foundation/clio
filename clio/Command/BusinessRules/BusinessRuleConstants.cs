@@ -32,10 +32,7 @@ internal static class BusinessRuleConstants {
 	internal static readonly JsonSerializerOptions JsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		PropertyNameCaseInsensitive = true,
-		WriteIndented = true,
-		Converters = {
-			new BusinessRuleExpressionMetadataDtoConverter()
-		}
+		WriteIndented = true
 	};
 
 	internal static readonly IReadOnlyDictionary<int, string> DataValueTypeNames = new Dictionary<int, string> {
@@ -66,7 +63,7 @@ internal static class BusinessRuleConstants {
 	};
 
 	internal static readonly IReadOnlyDictionary<string, string> SupportedActionTypeNames =
-		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+		new Dictionary<string, string> {
 			["make-editable"] = BusinessRuleEditableElementTypeName,
 			["make-read-only"] = BusinessRuleReadonlyElementTypeName,
 			["make-required"] = BusinessRuleRequiredElementTypeName,

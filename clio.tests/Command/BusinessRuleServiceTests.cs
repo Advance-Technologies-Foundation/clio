@@ -19,7 +19,7 @@ public sealed class BusinessRuleServiceTests {
 	private IApplicationClientFactory _applicationClientFactory = null!;
 	private IApplicationClient _applicationClient = null!;
 	private IApplicationPackageListProvider _applicationPackageListProvider = null!;
-	private IJsonConverter _jsonConverter = null!;
+	private JsonConverter _jsonConverter = null!;
 	private BusinessRuleService _service = null!;
 	private string? _savedAddonRequestBody;
 
@@ -29,8 +29,7 @@ public sealed class BusinessRuleServiceTests {
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		_applicationClient = Substitute.For<IApplicationClient>();
-		_jsonConverter = Substitute.For<IJsonConverter>();
-		_jsonConverter.CorrectJson(Arg.Any<string>()).Returns(call => call.Arg<string>());
+		_jsonConverter = new JsonConverter();
 		_applicationPackageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_applicationPackageListProvider.GetPackages().Returns(new[] {
 			new PackageInfo(new PackageDescriptor {
@@ -79,6 +78,15 @@ public sealed class BusinessRuleServiceTests {
 		// Assert
 		result.RuleName.Should().StartWith("BusinessRule_",
 			because: "the service should return the generated internal rule name");
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("EntitySchemaDesignerService.svc/GetSchemaDesignItem", StringComparison.Ordinal)),
+			Arg.Is<string>(body =>
+				body.Contains("\"name\": \"UsrOrder\"", StringComparison.Ordinal)
+				&& body.Contains("\"packageUId\": \"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\"", StringComparison.Ordinal)
+				&& body.Contains("\"useFullHierarchy\": true", StringComparison.Ordinal)),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
 
 		_savedAddonRequestBody.Should().NotBeNullOrWhiteSpace(
 			because: "the service should persist the updated add-on payload");
@@ -321,6 +329,10 @@ public sealed class BusinessRuleServiceTests {
 	}
 
 	private string BuildResponse(string url, string requestBody) {
+		if (url.Contains("ResetScriptCache", StringComparison.Ordinal)) {
+			return "{\"success\":true}";
+		}
+
 		if (url.Contains("SelectQuery", StringComparison.Ordinal)) {
 			if (requestBody.Contains("\"SysPackage\"", StringComparison.Ordinal)) {
 				return """

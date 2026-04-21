@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using Clio.Common.Responses;
 using Newtonsoft.Json;
-using System.Text.Json.Serialization;
 using Terrasoft.Core.Entities;
 
 namespace Clio.Command.EntitySchemaDesigner;
@@ -288,8 +287,6 @@ internal sealed class EntityDesignSchemaDto
 
 internal sealed class EntitySchemaColumnDto
 {
-	private int? _dataValueType;
-
 	[JsonProperty("uId")]
 	public Guid UId { get; set; }
 
@@ -303,23 +300,7 @@ internal sealed class EntitySchemaColumnDto
 	public IEnumerable<LocalizableStringDto> Description { get; set; } = [];
 
 	[JsonProperty("type")]
-	[JsonPropertyName("type")]
-	public int? Type {
-		set => _dataValueType = value;
-	}
-
-	[JsonProperty("dataValueType")]
-	[JsonPropertyName("dataValueType")]
-	public int? RuntimeDataValueType {
-		set => _dataValueType = value;
-	}
-
-	[Newtonsoft.Json.JsonIgnore]
-	[System.Text.Json.Serialization.JsonIgnore]
-	public int? DataValueType {
-		get => _dataValueType;
-		set => _dataValueType = value;
-	}
+	public int? DataValueType { get; set; }
 
 	[JsonProperty("isInherited")]
 	public bool IsInherited { get; set; }

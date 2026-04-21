@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using Clio.Command.EntitySchemaDesigner;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 using static Clio.Command.BusinessRules.BusinessRuleHelpers;
 
@@ -36,7 +37,7 @@ internal static class BusinessRuleValidator {
 
 	internal static void ValidateRuleAgainstSchema(
 		BusinessRule rule,
-		IReadOnlyDictionary<string, EntityColumnDescriptor> columnIndex) {
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
 		if (string.IsNullOrWhiteSpace(rule.Condition.LogicalOperation)) {
 			throw new ArgumentException("rule.condition.logicalOperation is required.");
 		}
@@ -51,17 +52,17 @@ internal static class BusinessRuleValidator {
 		}
 
 		foreach (BusinessRuleCondition condition in rule.Condition.Conditions) {
-			ValidateCondition(condition, columnIndex);
+			ValidateCondition(condition, columnMap);
 		}
 
 		foreach (BusinessRuleAction action in rule.Actions) {
-			ValidateAction(action, columnIndex);
+			ValidateAction(action, columnMap);
 		}
 	}
 
 	private static void ValidateCondition(
 		BusinessRuleCondition condition,
-		IReadOnlyDictionary<string, EntityColumnDescriptor> columnIndex) {
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
 		if (condition.LeftExpression is null || !string.Equals(condition.LeftExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
 			throw new ArgumentException("rule.condition.conditions[*].leftExpression.type must be 'AttributeValue'.");
 		}
@@ -70,10 +71,10 @@ internal static class BusinessRuleValidator {
 			throw new ArgumentException("rule.condition.conditions[*].leftExpression.path is required.");
 		}
 
-		EntityColumnDescriptor leftDescriptor = ResolveAttributeDescriptor(
-			columnIndex,
-			condition.LeftExpression.Path,
-			"rule.condition.conditions[*].leftExpression.path");
+		string leftPath = condition.LeftExpression.Path;
+		if (!columnMap.TryGetValue(leftPath, out EntitySchemaColumnDto? leftDescriptor)) {
+			throw new ArgumentException($"Unknown attribute '{leftPath}' in rule.condition.conditions[*].leftExpression.path.");
+		}
 
 		if (!string.Equals(condition.ComparisonType, "equal", StringComparison.OrdinalIgnoreCase)
 			&& !string.Equals(condition.ComparisonType, "not-equal", StringComparison.OrdinalIgnoreCase)) {
@@ -90,10 +91,10 @@ internal static class BusinessRuleValidator {
 				throw new ArgumentException("rule.condition.conditions[*].rightExpression.path is required when rightExpression.type is 'AttributeValue'.");
 			}
 
-			ResolveAttributeDescriptor(
-				columnIndex,
-				condition.RightExpression.Path,
-				"rule.condition.conditions[*].rightExpression.path");
+			string rightPath = condition.RightExpression.Path;
+			if (!columnMap.TryGetValue(rightPath, out _)) {
+				throw new ArgumentException($"Unknown attribute '{rightPath}' in rule.condition.conditions[*].rightExpression.path.");
+			}
 			return;
 		}
 
@@ -105,7 +106,7 @@ internal static class BusinessRuleValidator {
 			throw new ArgumentException("rule.condition.conditions[*].rightExpression.value is required when rightExpression.type is 'Const'.");
 		}
 
-		if (string.Equals(leftDescriptor.DataValueTypeName, "Lookup", StringComparison.OrdinalIgnoreCase)) {
+		if (string.Equals(MapDataValueTypeName(leftDescriptor.DataValueType), "Lookup", StringComparison.OrdinalIgnoreCase)) {
 			JsonElement rawValue = condition.RightExpression.Value.Value;
 			if (rawValue.ValueKind != JsonValueKind.String
 				|| !Guid.TryParse(rawValue.GetString(), out _)) {
@@ -117,13 +118,12 @@ internal static class BusinessRuleValidator {
 
 	private static void ValidateAction(
 		BusinessRuleAction action,
-		IReadOnlyDictionary<string, EntityColumnDescriptor> columnIndex) {
-		string normalizedAction = NormalizeActionName(action.Type);
-		if (normalizedAction.Length == 0) {
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
+		if (string.IsNullOrEmpty(action.Type)) {
 			throw new ArgumentException("rule.actions[*].type is required.");
 		}
 
-		if (!SupportedActionTypeNames.ContainsKey(normalizedAction)) {
+		if (!SupportedActionTypeNames.ContainsKey(action.Type)) {
 			throw new ArgumentException(
 				$"Unsupported rule.actions[*].type '{action.Type}'. Supported values: make-editable, make-read-only, make-required, make-optional.");
 		}
@@ -137,7 +137,9 @@ internal static class BusinessRuleValidator {
 				throw new ArgumentException("rule.actions[*].items cannot contain empty attribute names.");
 			}
 
-			ResolveAttributeDescriptor(columnIndex, target, "rule.actions[*].items");
+			if (!columnMap.TryGetValue(target, out _)) {
+				throw new ArgumentException($"Unknown attribute '{target}' in rule.actions[*].items.");
+			}
 		}
 	}
 }
