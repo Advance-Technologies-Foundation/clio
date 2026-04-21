@@ -386,12 +386,15 @@ namespace Clio.Command {
 					Error = "body is required and must not be empty. Reuse get-page raw.body instead of bundle or viewConfig fragments."
 				};
 			}
-			var integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
-			if (!integrityResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = $"Body is missing required marker pairs: {string.Join("; ", integrityResult.Errors)}"
-				};
+			bool isAppendModeValidation = string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase);
+			if (!isAppendModeValidation) {
+				var integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
+				if (!integrityResult.IsValid) {
+					return new PageUpdateResponse {
+						Success = false,
+						Error = $"Body is missing required marker pairs: {string.Join("; ", integrityResult.Errors)}"
+					};
+				}
 			}
 			var syntaxResult = SchemaValidationService.ValidateJsSyntax(options.Body);
 			if (!syntaxResult.IsValid) {
