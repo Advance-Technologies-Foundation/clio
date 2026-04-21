@@ -2524,3 +2524,38 @@ Decision: Rewrote the note to mention only `SCHEMA_VALIDATORS` as a JavaScript o
 Discovery: This was the last remaining converter-specific wording in `.github/skills/clio/references/commands-reference.md`; no matching text remained in `.github/skills/clio/SKILL.md`.
 Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.codex\workspace-diary.md
 Impact: The repository-local clio skill reference now stays fully aligned with the validator-only focus of the branch.
+
+## 2026-04-21 12:40 – Continue JavaScript marker validation after peer failures
+Context: Review found that `ValidateJavaScriptObjectMarkers(...)` stopped on the first malformed JavaScript object marker, which hid later `SCHEMA_VALIDATORS` errors when `SCHEMA_CONVERTERS` failed first.
+Decision: Changed the loop to `continue` after `TryValidateJavaScriptObjectSection(...)` failures and added a regression test that asserts malformed converter and validator sections are both reported in one validation pass.
+Discovery: The early `return` was unnecessary because JavaScript object markers are peer sections and each failure is already added to the shared `SchemaValidationResult`; continuing does not create cascaded parse errors across sections.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: AI-generated page bodies with multiple broken JavaScript object markers now return a complete validation error set in one save attempt instead of forcing iterative rediscovery.
+
+## 2026-04-21 12:48 – Filter diff traversal to attribute-targeted operations only
+Context: Review found that the shared `EnumerateAttributesContainers(...)` helper treated every `viewModelConfigDiff` operation with a `values` object as an attribute container, even when the operation targeted paths such as `handlers` rather than `attributes`.
+Decision: Added `TargetsAttributesPath(...)` and changed diff traversal to yield `values` only for operations whose `path` array contains `attributes`, then added a regression test proving that validator param validation ignores handler-targeted diff payloads even if they contain a validators-like shape.
+Discovery: The same helper feeds validator param binding scans, standard-validator contract checks, and attribute-with-validators collection, so the path filter removes a whole class of false positives across the validator validation pipeline.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `viewModelConfigDiff` validation now inspects only real attribute operations, which prevents unrelated handler/model-config diff entries from being misclassified as validator-bearing attributes.
+
+## 2026-04-21 13:00 – Parse nested custom-validator error objects from return statements only
+Context: Review found that `ExtractReturnErrorProperties(...)` used a flat regex that missed nested error objects, and the first brace-balanced rewrite accidentally matched the top-level validator definition key instead of the returned error object inside `return { ... }`.
+Decision: Anchored extraction to `return { "<validatorType>": { ... } }`, reused brace-balanced object extraction for the nested error payload, and added a regression test for a nested top-level `details` error property whose value is another object.
+Discovery: The correctness boundary here is twofold: the extractor must ignore the `SCHEMA_VALIDATORS` declaration key itself, and it must collect only top-level properties from the returned error object so nested keys like `field` are not misreported as undeclared validator params.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Completeness validation now correctly flags undeclared top-level properties in nested validator error objects without producing false negatives or misclassifying nested child keys.
+
+## 2026-04-21 13:05 – Make standard validator contract cache thread-safe
+Context: Review pointed out that `StandardValidatorContractParser` cached contracts with a static field plus `??=`, which is not a safe lazy-initialization pattern under concurrent MCP calls.
+Decision: Replaced the static nullable cache with `Lazy<IReadOnlyDictionary<string, string[]>>` and kept the external `GetContracts()` API unchanged.
+Discovery: No parser behavior or test expectations changed — existing `McpGuidanceResourceTests` already covered the contract map contents, so a dedicated concurrency test was unnecessary for this framework-provided `Lazy<T>` guarantee.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\StandardValidatorContractParser.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Startup-time guidance contract parsing now has a single-execution, memory-safe cache path under concurrent MCP requests.
+
+## 2026-04-21 14:35 – Restrict diff validator scans to top-level attributes path
+Context: Review found that the new iewModelConfigDiff guard still used Any(...) over path segments, so nested paths such as ["handlers","attributes"] could still be misclassified as attribute operations and trigger false-positive validator binding errors.
+Decision: Tightened TargetsAttributesPath(...) to require the first path segment to be ttributes and added a regression test that proves nested paths merely containing ttributes are ignored.
+Discovery: The existing handler-path regression only covered path: ["handlers"]; it did not protect against nested paths that still slipped through the broader Any(...) predicate.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Validator param scans now align with the intended top-level Freedom UI diff target and stop reading unrelated alues payloads from nested non-attribute operations.
