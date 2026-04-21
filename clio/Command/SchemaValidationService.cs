@@ -192,13 +192,11 @@ public static class SchemaValidationService
 			if (!PageSchemaSectionReader.TryRead(jsBody, out string content, marker)) {
 				continue;
 			}
-			if (!TryValidateJavaScriptObjectSection(content, marker, result)) {
-				return;
-			}
+			ValidateJavaScriptObjectSection(content, marker, result);
 		}
 	}
 
-	private static bool TryValidateJavaScriptObjectSection(
+	private static void ValidateJavaScriptObjectSection(
 		string content,
 		string marker,
 		SchemaValidationResult result) {
@@ -208,17 +206,16 @@ public static class SchemaValidationService
 		    !trimmedContent.EndsWith("}", StringComparison.Ordinal)) {
 			result.IsValid = false;
 			result.Errors.Add($"Invalid JavaScript object section in {marker}: section must remain an object literal.");
-			return false;
+			return;
 		}
 
 		SchemaValidationResult syntaxResult = ValidateJsSyntax($"const __clioSection = {trimmedContent};");
 		if (syntaxResult.IsValid) {
-			return true;
+			return;
 		}
 
 		result.IsValid = false;
 		result.Errors.Add($"Invalid JavaScript object section in {marker}: {string.Join("; ", syntaxResult.Errors)}");
-		return false;
 	}
 
 	public static SchemaValidationResult ValidateColumnBindings(string jsBody) {
@@ -701,25 +698,11 @@ public static class SchemaValidationService
 	/// </summary>
 	private static HashSet<string> ExtractReturnErrorProperties(string snippet, string validatorType) {
 		var props = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		// Match the inner error object: { "usr.Type": { prop: value, ... } }
-		string typeEscaped = Regex.Escape(validatorType);
-		Match inner = Regex.Match(
-			snippet,
-			"\"" + typeEscaped + "\"\\s*:\\s*\\{(?<inner>[^{}]+)\\}",
-			RegexOptions.Singleline,
-			RegexTimeout);
-		if (!inner.Success) {
+		if (!TryExtractReturnedErrorObject(snippet, validatorType, out string errorObject)) {
 			return props;
 		}
-		MatchCollection propMatches = Regex.Matches(
-			inner.Groups["inner"].Value,
-			"(?<name>[a-zA-Z_$][a-zA-Z0-9_$]*)\\s*:",
-			RegexOptions.Singleline,
-			RegexTimeout);
-		foreach (Match m in propMatches) {
-			props.Add(m.Groups["name"].Value);
-		}
-		return props;
+
+		return ExtractTopLevelObjectPropertyNames(errorObject);
 	}
 
 	private static IReadOnlyDictionary<string, HashSet<string>> BuildValidatorParameterContracts(string jsBody) {
@@ -778,10 +761,29 @@ public static class SchemaValidationService
 		}
 
 		foreach (JsonElement op in root.EnumerateArray()) {
+			if (!ShouldScanAsAttributesContainer(op)) {
+				continue;
+			}
+
 			if (op.TryGetProperty(ValuesPropertyName, out JsonElement values)) {
 				yield return values;
 			}
 		}
+	}
+
+	private static bool ShouldScanAsAttributesContainer(JsonElement operation) {
+		if (!operation.TryGetProperty("path", out JsonElement pathElement)) {
+			return true;
+		}
+
+		if (pathElement.ValueKind != JsonValueKind.Array) {
+			return false;
+		}
+
+		using JsonElement.ArrayEnumerator segments = pathElement.EnumerateArray();
+		return segments.MoveNext() &&
+		       segments.Current.ValueKind == JsonValueKind.String &&
+		       string.Equals(segments.Current.GetString(), AttributesPropertyName, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static void ValidateValidatorBindingContractsInMarker(
@@ -1049,6 +1051,222 @@ public static class SchemaValidationService
 		validatorBody = validatorsContent.Substring(markerIndex, index - markerIndex + 1);
 		return true;
 	}
+
+	private static bool TryExtractReturnedErrorObject(string content, string validatorType, out string objectContent) {
+		string typeEscaped = Regex.Escape(validatorType);
+		Match match = Regex.Match(
+			content,
+			"return\\s*\\{\\s*\"" + typeEscaped + "\"\\s*:\\s*\\{",
+			RegexOptions.Singleline,
+			RegexTimeout);
+		if (!match.Success) {
+			objectContent = string.Empty;
+			return false;
+		}
+
+		int braceStart = match.Index + match.Length - 1;
+		return TryExtractBalancedObject(content, braceStart, out objectContent);
+	}
+
+	private static bool TryExtractBalancedObject(string content, int braceStart, out string objectContent) {
+		int depth = 0;
+		bool inString = false;
+		char stringChar = '"';
+		int index = braceStart;
+		while (index < content.Length) {
+			char current = content[index];
+			if (inString) {
+				index = ConsumeStringLiteralCharacter(content, index, ref inString, stringChar);
+				continue;
+			}
+
+			if (current is '"' or '\'' or '`') {
+				inString = true;
+				stringChar = current;
+			} else if (current == '{') {
+				depth++;
+			} else if (current == '}') {
+				depth--;
+				if (depth == 0) {
+					objectContent = content.Substring(braceStart, index - braceStart + 1);
+					return true;
+				}
+			}
+
+			index++;
+		}
+
+		objectContent = string.Empty;
+		return false;
+	}
+
+	private static HashSet<string> ExtractTopLevelObjectPropertyNames(string objectContent) {
+		var props = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		if (string.IsNullOrWhiteSpace(objectContent) || objectContent[0] != '{') {
+			return props;
+		}
+
+		int depth = 0;
+		bool inString = false;
+		char stringChar = '"';
+		int index = 0;
+		while (index < objectContent.Length) {
+			if (TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
+				continue;
+			}
+
+			char current = objectContent[index];
+			if (TryReadTopLevelPropertyName(objectContent, depth, current, ref index, props)) {
+				continue;
+			}
+
+			if (TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
+				continue;
+			}
+
+			index++;
+		}
+
+		return props;
+	}
+
+	private static bool TryConsumeStringLiteralCharacter(
+		string content,
+		ref int index,
+		ref bool inString,
+		char stringChar) {
+		if (!inString) {
+			return false;
+		}
+
+		index = ConsumeStringLiteralCharacter(content, index, ref inString, stringChar);
+		return true;
+	}
+
+	private static bool TryReadTopLevelPropertyName(
+		string content,
+		int depth,
+		char current,
+		ref int index,
+		HashSet<string> props) {
+		if (current is '"' or '\'' or '`' &&
+		    depth == 1 &&
+		    TryReadQuotedPropertyName(content, index, current, out string propertyName, out int nextIndex)) {
+			props.Add(propertyName);
+			index = nextIndex;
+			return true;
+		}
+
+		if (depth == 1 &&
+		    IsIdentifierStart(current) &&
+		    TryReadIdentifierPropertyName(content, index, out string identifierName, out int identifierNextIndex)) {
+			props.Add(identifierName);
+			index = identifierNextIndex;
+			return true;
+		}
+
+		return false;
+	}
+
+	private static bool TryHandleStructuralCharacter(
+		char current,
+		ref int index,
+		ref int depth,
+		ref bool inString,
+		ref char stringChar) {
+		if (current is '"' or '\'' or '`') {
+			inString = true;
+			stringChar = current;
+			index++;
+			return true;
+		}
+
+		if (current == '{') {
+			depth++;
+			index++;
+			return true;
+		}
+
+		if (current == '}') {
+			depth--;
+			index++;
+			return true;
+		}
+
+		return false;
+	}
+
+	private static bool TryReadQuotedPropertyName(
+		string content,
+		int startIndex,
+		char quote,
+		out string propertyName,
+		out int nextIndex) {
+		propertyName = string.Empty;
+		nextIndex = startIndex;
+		int endIndex = startIndex + 1;
+		while (endIndex < content.Length) {
+			if (content[endIndex] == '\\') {
+				endIndex += endIndex + 1 < content.Length ? 2 : 1;
+				continue;
+			}
+
+			if (content[endIndex] == quote) {
+				break;
+			}
+
+			endIndex++;
+		}
+
+		if (endIndex >= content.Length || content[endIndex] != quote) {
+			return false;
+		}
+
+		int colonIndex = SkipWhitespace(content, endIndex + 1);
+		if (colonIndex >= content.Length || content[colonIndex] != ':') {
+			return false;
+		}
+
+		propertyName = content.Substring(startIndex + 1, endIndex - startIndex - 1);
+		nextIndex = colonIndex + 1;
+		return !string.IsNullOrWhiteSpace(propertyName);
+	}
+
+	private static bool TryReadIdentifierPropertyName(
+		string content,
+		int startIndex,
+		out string propertyName,
+		out int nextIndex) {
+		propertyName = string.Empty;
+		nextIndex = startIndex;
+		int index = startIndex + 1;
+		while (index < content.Length && IsIdentifierPart(content[index])) {
+			index++;
+		}
+
+		int colonIndex = SkipWhitespace(content, index);
+		if (colonIndex >= content.Length || content[colonIndex] != ':') {
+			return false;
+		}
+
+		propertyName = content.Substring(startIndex, index - startIndex);
+		nextIndex = colonIndex + 1;
+		return true;
+	}
+
+	private static int SkipWhitespace(string content, int startIndex) {
+		int index = startIndex;
+		while (index < content.Length && char.IsWhiteSpace(content[index])) {
+			index++;
+		}
+		return index;
+	}
+
+	private static bool IsIdentifierStart(char c) =>
+		char.IsLetter(c) || c is '_' or '$';
+
+	private static bool IsIdentifierPart(char c) =>
+		char.IsLetterOrDigit(c) || c is '_' or '$';
 
 	private static int ConsumeStringLiteralCharacter(
 		string validatorsContent,

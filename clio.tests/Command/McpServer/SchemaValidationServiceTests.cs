@@ -298,6 +298,29 @@ public class SchemaValidationServiceTests {
 	}
 
 	[Test]
+	[Description("Invalid converter and validator JavaScript sections are both reported during marker content validation")]
+	public void ValidateMarkerContent_InvalidJsSyntaxInConvertersAndValidators_ReturnsBothErrors() {
+		// Arrange
+		string bodyWithInvalidConverters = ValidFormPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.Bad\": function(value { return value; } }/**SCHEMA_CONVERTERS*/");
+		string body = bodyWithInvalidConverters.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"usr.Bad\": function(config { return null; } }/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		var result = SchemaValidationService.ValidateMarkerContent(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "syntax errors in peer JavaScript object markers must make the body invalid");
+		result.Errors.Should().ContainMatch("*SCHEMA_CONVERTERS*",
+			because: "the converters syntax error should still be reported");
+		result.Errors.Should().ContainMatch("*SCHEMA_VALIDATORS*",
+			because: "the validators syntax error should also be reported instead of being skipped");
+	}
+
+	[Test]
 	[Description("Empty body fails marker content validation")]
 	public void ValidateMarkerContent_EmptyBody_ReturnsInvalid() {
 		var result = SchemaValidationService.ValidateMarkerContent("");
@@ -738,6 +761,81 @@ public class SchemaValidationServiceTests {
 	}
 
 	[Test]
+	[Description("viewModelConfigDiff operations outside the attributes path are ignored by validator param validation")]
+	public void ValidateValidatorParamResourceBindings_NonAttributeDiffOperationWithValidatorsLikeShape_ReturnsValid() {
+		// Arrange
+		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"handlers\"],\"values\":{" +
+		                             "\"UsrPseudoHandler\":{\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
+		                             "\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
+		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorParamResourceBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "only viewModelConfigDiff operations targeting attributes should participate in validator binding scans");
+		result.Errors.Should().BeEmpty(
+			because: "a handlers diff operation must not be misread as an attribute container just because its values object contains a validators-like shape");
+	}
+
+	[Test]
+	[Description("Nested viewModelConfigDiff paths that merely contain attributes are ignored by validator param validation")]
+	public void ValidateValidatorParamResourceBindings_NestedAttributesPathOperation_ReturnsValid() {
+		// Arrange
+		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"handlers\",\"attributes\"],\"values\":{" +
+		                             "\"UsrPseudoHandler\":{\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
+		                             "\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
+		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorParamResourceBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "only operations whose top-level target is attributes should participate in validator binding scans");
+		result.Errors.Should().BeEmpty(
+			because: "a nested path that merely contains attributes must not be treated as an attribute container");
+	}
+
+	[Test]
+	[Description("Root-level diff merge operations without path still participate in validator param validation")]
+	public void ValidateValidatorParamResourceBindings_PathlessRootMergeWithAttributeValidators_ReturnsInvalid() {
+		// Arrange
+		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"values\":{" +
+		                             "\"UsrName\":{\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
+		                             "\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
+		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorParamResourceBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "root-level merge operations without an explicit path are still valid diff shapes and must be validated");
+		result.Errors.Should().ContainSingle(error => error.Contains("#ResourceString(UsrMsg)#"),
+			because: "validator param validation must still run for pathless root merges that bind resource strings reactively");
+	}
+
+	[Test]
+	[Description("Root-level diff merge operations without validators do not produce validator param errors")]
+	public void ValidateValidatorParamResourceBindings_PathlessRootMergeWithoutValidators_ReturnsValid() {
+		// Arrange
+		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"values\":{" +
+		                             "\"UsrPseudoHandler\":{\"request\":\"usr.DoSomething\",\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}]";
+		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorParamResourceBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "pathless root merges should not fail validator validation when their values do not define attribute validators");
+		result.Errors.Should().BeEmpty(
+			because: "non-validator payloads inside a pathless root merge must not be misread as validator bindings");
+	}
+
+	[Test]
 	[Description("Custom validators with any logic are allowed — guidance steers AI toward standard validators; runtime validation does not second-guess custom implementations.")]
 	public void ValidateStandardValidatorUsage_CustomMaxLengthStyleValidator_ReturnsValid() {
 		// Arrange
@@ -1060,6 +1158,29 @@ public class SchemaValidationServiceTests {
 				error.Contains("usr.OnlyDigits") &&
 				error.Contains("message"),
 			because: "the error should identify the validator and explain the missing 'message' param");
+	}
+
+	[Test]
+	[Description("Custom validator with nested error object still reports undeclared top-level params")]
+	public void ValidateCustomValidatorParamCompleteness_ValidatorReturnsNestedErrorObject_ReturnsInvalid() {
+		// Arrange
+		string body = BuildStaticViewModelConfigPageBody("[]", "{}").Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.OnlyDigits\":{\"validator\":function(config){return function(control){" +
+			"var v=control.value;if(v&&!/^\\d+$/.test(v)){return{\"usr.OnlyDigits\":{details:{field:\"UsrName\"},message:config.message}};}" +
+			"return null;};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "top-level error properties such as details must still be declared even when their values are nested objects");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("usr.OnlyDigits") &&
+				error.Contains("details") &&
+				!error.Contains("field"),
+			because: "the validation should report the undeclared top-level property without treating nested object keys as separate validator params");
 	}
 
 	[Test]
