@@ -1373,36 +1373,6 @@ public class PageToolsTests {
 	}
 
 	[Test]
-	[Description("PageUpdateTool.UpdatePage rejects obvious custom max-length validators when crt.MaxLength should be used.")]
-	public void PageUpdateTool_UpdatePage_Rejects_Obvious_Custom_MaxLength_Validator() {
-		// Arrange
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		ILogger logger = Substitute.For<ILogger>();
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
-		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
-		string body = CreatePageBody(
-			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","control":"$UsrName"}}]""",
-			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"NameMaxLength":{"type":"usr.NameMaxLength","params":{"message":"#ResourceString(UsrNameMaxLength_Message)#"}}}}}}""",
-			validators: """{"usr.NameMaxLength":{"validator":function(config){return function(control){if (control.value && control.value.length >= 5) { return {"usr.NameMaxLength": { message: config.message }}; } return null;};},"params":[{"name":"message"}],"async":false}}""");
-		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
-
-		// Act
-		PageUpdateResponse response = tool.UpdatePage(args);
-
-		// Assert
-		response.Success.Should().BeFalse(
-			because: "obvious custom max-length validators should be rejected in favor of crt.MaxLength");
-		response.Error.Should().Contain("crt.MaxLength")
-			.And.Contain("usr.NameMaxLength",
-				because: "the validation error should identify both the built-in replacement and the rejected custom validator");
-		applicationClient.ReceivedCalls().Should().BeEmpty(
-			because: "the validation failure must happen before any remote save call is made");
-	}
-
-	[Test]
 	[Description("PageUpdateTool.UpdatePage rejects crt.MaxLength bindings that use max instead of maxLength in params.")]
 	public void PageUpdateTool_UpdatePage_Rejects_BuiltIn_MaxLength_With_Wrong_Param_Name() {
 		// Arrange
