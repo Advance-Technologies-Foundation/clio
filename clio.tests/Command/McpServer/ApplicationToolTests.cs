@@ -1603,11 +1603,41 @@ public sealed class ApplicationToolTests {
 
 		ArgumentException thrown = (await act.Should().ThrowAsync<ArgumentException>(
 			because: "without an elicitation-capable client the tool must fail fast with a machine-readable error")).Which;
-		thrown.Message.Should().Contain("not in the allowed SysModule palette",
+		thrown.Message.Should().Contain("not a recognised color",
 			because: "the error must name the rejected value and the rule that was broken");
 		thrown.Message.Should().Contain("#A6DE00",
 			because: "the error must include the full palette so AI callers can retry with a valid color");
 		thrown.Message.Should().Contain("#00BFA5");
+		thrown.Message.Should().Contain("color name",
+			because: "the error must tell callers they can also pass named colors not only hex");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("SectionIconPalette.TryNormalize maps English, Ukrainian, and Russian color names to canonical palette hex")]
+	public void SectionIconPalette_Should_Resolve_Named_Colors_To_Hex() {
+		var cases = new (string Input, string ExpectedHex)[] {
+			("red", "#FF4013"),
+			("червоний", "#FF4013"),
+			("красный", "#FF4013"),
+			("blue", "#0058EF"),
+			("синій", "#0058EF"),
+			("синий", "#0058EF"),
+			("green", "#20A959"),
+			("зелений", "#20A959"),
+			("mint", "#00BFA5"),
+			("м'ятний", "#00BFA5"),
+			("#a6de00", "#A6DE00"),
+			("#A6DE00", "#A6DE00")
+		};
+		foreach ((string input, string expected) in cases) {
+			Clio.Command.McpServer.Tools.SectionIconPalette.TryNormalize(input, out string normalized).Should().BeTrue(
+				because: $"'{input}' must resolve to a palette hex");
+			normalized.Should().Be(expected,
+				because: $"'{input}' is canonically {expected}");
+		}
+		Clio.Command.McpServer.Tools.SectionIconPalette.TryNormalize("banana", out _).Should().BeFalse(
+			because: "unrecognised free-form names must not smuggle invalid colors into SaveSchema");
 	}
 
 }
