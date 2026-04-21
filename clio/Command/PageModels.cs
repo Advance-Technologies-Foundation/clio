@@ -260,6 +260,50 @@ public sealed class PageBundleInfo {
 	[JsonProperty("optionalProperties")]
 	[JsonPropertyName("optionalProperties")]
 	public JsonArray OptionalProperties { get; init; } = [];
+
+	/// <summary>
+	/// Gets or sets the flattened list of containers discovered in <see cref="ViewConfig"/>.
+	/// Each entry exposes <c>name</c>, <c>type</c>, <c>childCount</c> and <c>path</c> so AI callers
+	/// can pick a valid <c>parentName</c> when composing <c>viewConfigDiff</c> entries without walking
+	/// the full tree manually.
+	/// </summary>
+	[JsonProperty("containers")]
+	[JsonPropertyName("containers")]
+	public IReadOnlyList<PageContainerInfo> Containers { get; init; } = [];
+}
+
+/// <summary>
+/// Describes a single container node discovered in the merged <c>viewConfig</c>.
+/// </summary>
+public sealed class PageContainerInfo {
+	/// <summary>
+	/// Gets the container name — value to use as <c>parentName</c> in <c>viewConfigDiff</c>.
+	/// </summary>
+	[JsonProperty("name")]
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>
+	/// Gets the component type (e.g. <c>crt.FlexContainer</c>, <c>crt.Grid</c>).
+	/// </summary>
+	[JsonProperty("type")]
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>
+	/// Gets the number of existing children in the container.
+	/// </summary>
+	[JsonProperty("childCount")]
+	[JsonPropertyName("childCount")]
+	public int ChildCount { get; init; }
+
+	/// <summary>
+	/// Gets the ancestor chain path (names joined by <c>/</c>) for disambiguation when the same
+	/// <c>name</c> appears in multiple branches.
+	/// </summary>
+	[JsonProperty("path")]
+	[JsonPropertyName("path")]
+	public string Path { get; init; }
 }
 
 /// <summary>

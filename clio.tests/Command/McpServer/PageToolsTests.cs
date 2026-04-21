@@ -1629,4 +1629,80 @@ public class PageToolsTests {
 		]);
 		return hierarchyClient;
 	}
+
+	[Test]
+	[Description("PageBundleBuilder.ExtractContainers flattens viewConfig into a list that AI callers can use as parentName source")]
+	public void PageBundleBuilder_Containers_Flattens_ViewConfig_Tree() {
+		var parser = Substitute.For<IPageSchemaBodyParser>();
+		parser.Parse(Arg.Any<string>()).Returns(new PageParsedSchemaBody {
+			ViewConfigDiff = new Newtonsoft.Json.Linq.JArray {
+				new Newtonsoft.Json.Linq.JObject {
+					["operation"] = "insert",
+					["name"] = "RootContainer",
+					["values"] = new Newtonsoft.Json.Linq.JObject {
+						["type"] = "crt.FlexContainer",
+						["items"] = new Newtonsoft.Json.Linq.JArray {
+							new Newtonsoft.Json.Linq.JObject {
+								["name"] = "NestedContainer",
+								["type"] = "crt.Grid",
+								["items"] = new Newtonsoft.Json.Linq.JArray {
+									new Newtonsoft.Json.Linq.JObject {
+										["name"] = "LeafButton",
+										["type"] = "crt.Button"
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		});
+		var jsonDiff = Substitute.For<IPageJsonDiffApplier>();
+		jsonDiff.ApplyDiff(Arg.Any<Newtonsoft.Json.Linq.JArray>(), Arg.Any<IReadOnlyList<Newtonsoft.Json.Linq.JArray>>(), Arg.Any<IReadOnlyList<PageJsonDiffApplyOptions>>())
+			.Returns(ci => {
+				var array = new Newtonsoft.Json.Linq.JArray {
+					new Newtonsoft.Json.Linq.JObject {
+						["name"] = "RootContainer",
+						["type"] = "crt.FlexContainer",
+						["items"] = new Newtonsoft.Json.Linq.JArray {
+							new Newtonsoft.Json.Linq.JObject {
+								["name"] = "NestedContainer",
+								["type"] = "crt.Grid",
+								["items"] = new Newtonsoft.Json.Linq.JArray {
+									new Newtonsoft.Json.Linq.JObject {
+										["name"] = "LeafButton",
+										["type"] = "crt.Button"
+									}
+								}
+							}
+						}
+					}
+				};
+				return array;
+			});
+		var pathDiff = Substitute.For<IPageJsonPathDiffApplier>();
+		pathDiff.Apply(Arg.Any<Newtonsoft.Json.Linq.JObject>(), Arg.Any<Newtonsoft.Json.Linq.JArray>())
+			.Returns(ci => new Newtonsoft.Json.Linq.JObject());
+		var builder = new PageBundleBuilder(jsonDiff, pathDiff);
+		var parts = new List<PageSchemaBundlePart> {
+			new(
+				new PageDesignerHierarchySchema { UId = "u", Name = "TestPage", PackageUId = "p", Body = "x" },
+				parser.Parse("x"))
+		};
+
+		PageBundleInfo bundle = builder.Build(parts);
+
+		bundle.Containers.Should().HaveCount(2,
+			because: "extractor must collect both the root container and the nested container (leaf button has no items array so is skipped)");
+		bundle.Containers[0].Name.Should().Be("RootContainer");
+		bundle.Containers[0].Type.Should().Be("crt.FlexContainer");
+		bundle.Containers[0].ChildCount.Should().Be(1,
+			because: "RootContainer holds one nested container");
+		bundle.Containers[0].Path.Should().Be("RootContainer");
+		bundle.Containers[1].Name.Should().Be("NestedContainer");
+		bundle.Containers[1].ChildCount.Should().Be(1,
+			because: "NestedContainer holds one leaf button (buttons are counted as children even though they don't appear as containers themselves)");
+		bundle.Containers[1].Path.Should().Be("RootContainer/NestedContainer",
+			because: "path must expose the ancestry chain so AI can disambiguate when same name appears in multiple branches");
+	}
 }
