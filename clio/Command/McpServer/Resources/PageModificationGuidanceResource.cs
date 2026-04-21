@@ -63,10 +63,11 @@ public sealed class PageModificationGuidanceResource {
 		       - No extra input from the caller — just call `update-page schema-name=<platform page>` with a replacing-style body and the backend creates the replacement.
 
 		       Finding a container for a new component (parentName)
-		       - Never guess a container name. Walk the `bundle.viewConfig` tree from `get-page` to find valid `parentName` values.
-		       - Each node in `bundle.viewConfig` has `type`, `items[]` (children), and either `name` or implicit position.
-		       - Common Freedom UI containers: `FilterGridContainer` (list page filter row), `GridContainer` (column-aligned layout), `CardContainer` (form page), `ActionButtonsContainer`, `GridDetailAddRecordButtonsContainer`.
-		       - Pick a container whose children list already holds similar siblings (e.g. an existing button next to where you want the new one).
+		       - Never guess a container name. Use `bundle.containers` from `get-page` — a flat list of all containers discovered in `viewConfig`.
+		       - Each entry exposes: `name` (value to use as `parentName`), `type` (e.g. `crt.FlexContainer`, `crt.Grid`), `childCount` (existing siblings), `path` (ancestor chain, useful for disambiguation when the same `name` appears in multiple branches).
+		       - Pick a container whose `path` matches the visual region you want to modify and whose `childCount` > 0 for consistency (existing sibling confirms the container is usable).
+		       - Fallback: walk `bundle.viewConfig` tree manually when `bundle.containers` is empty (possible for pages built entirely via diffs without a root viewConfig node).
+		       - Common Freedom UI container types: `crt.FlexContainer` (filter rows, action bars), `crt.Grid` (column layouts), `crt.TabContainer`, `crt.Expansion`.
 
 		       Adding a button with a click handler
 		       Body structure for `update-page` (preserve all marker pairs — do not remove or reorder them):
@@ -120,9 +121,9 @@ public sealed class PageModificationGuidanceResource {
 
 		       Canonical flow to add a Test button to Accounts_ListPage
 		       1. `list-pages filter=Accounts_List` → resolve schema name.
-		       2. `get-page schema-name=Accounts_ListPage` → response contains `bundle.viewConfig` (to find container names) and `raw.body` (empty replacing template if no replacement exists yet).
-		       3. Locate container: walk `bundle.viewConfig` for `FilterGridContainer` or similar.
-		       4. Compose body: start from `raw.body` (or the template above), add button entry to `viewConfigDiff`, add matching handler to `handlers`.
+		       2. `get-page schema-name=Accounts_ListPage` → response contains `bundle.containers` (flat list of valid parentName values) and `raw.body` (empty replacing template if no replacement exists yet).
+		       3. Pick a container from `bundle.containers`: filter by `type == "crt.FlexContainer"` and non-zero `childCount`; use its `name` as `parentName`.
+		       4. Compose body: start from `raw.body` (or the template above), add button entry to `viewConfigDiff` with the chosen `parentName`, add matching handler to `handlers`.
 		       5. `update-page schema-name=Accounts_ListPage body=<composed body> verify:true`.
 		       6. Response includes `page.schemaUId` — the newly-materialized replacing schema in the design package.
 
