@@ -107,7 +107,7 @@ internal static class BusinessRuleMetadataConverter {
 			TypeName = SupportedActionTypeNames[action.Type],
 			UId = Guid.NewGuid().ToString(),
 			Enabled = true,
-			Items = string.Join(",", action.Items.Select(target => target.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+			Items = string.Join(",", action.Items)
 		};
 	}
 

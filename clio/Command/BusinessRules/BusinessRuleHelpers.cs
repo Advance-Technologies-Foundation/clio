@@ -12,7 +12,7 @@ internal static class BusinessRuleHelpers {
 	internal static IReadOnlyDictionary<string, EntitySchemaColumnDto> BuildColumnMap(EntityDesignSchemaDto entitySchema) {
 		ArgumentNullException.ThrowIfNull(entitySchema);
 
-		Dictionary<string, EntitySchemaColumnDto> columns = new(StringComparer.OrdinalIgnoreCase);
+		Dictionary<string, EntitySchemaColumnDto> columns = new(StringComparer.Ordinal);
 
 		foreach (EntitySchemaColumnDto column in entitySchema.Columns
 			         .Concat(entitySchema.InheritedColumns)
@@ -23,10 +23,17 @@ internal static class BusinessRuleHelpers {
 		return columns;
 	}
 
-	internal static string MapDataValueTypeName(int? dataValueType) =>
-		dataValueType.HasValue && BusinessRuleConstants.DataValueTypeNames.TryGetValue(dataValueType.Value, out string? value)
-			? value
-			: "Text";
+	internal static string MapDataValueTypeName(int? dataValueType) {
+		if (!dataValueType.HasValue) {
+			throw new InvalidOperationException("Entity schema column dataValueType is required.");
+		}
+
+		if (!BusinessRuleConstants.DataValueTypeNames.TryGetValue(dataValueType.Value, out string? value)) {
+			throw new InvalidOperationException($"Unsupported entity schema dataValueType '{dataValueType.Value}'.");
+		}
+
+		return value;
+	}
 
 	internal static object? ConvertJsonElement(JsonElement element) {
 		return element.ValueKind switch {

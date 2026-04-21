@@ -39,7 +39,7 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Maps the MCP payload into the business-rule create service request and returns a success exit code.")]
+	[Description("Maps the MCP payload into the business-rule create service request without normalizing action items and returns a success exit code.")]
 	public void BusinessRuleCreate_Should_Map_Arguments_And_Return_Success_Exit_Code() {
 		// Arrange
 		IBusinessRuleService service = Substitute.For<IBusinessRuleService>();
@@ -61,7 +61,7 @@ public sealed class BusinessRuleToolTests {
 							JsonSerializer.Deserialize<JsonElement>("\"Draft\"")))
 				]),
 			[
-				new BusinessRuleAction("make-required", ["Owner", "Amount"]),
+				new BusinessRuleAction("make-required", [" Owner ", "Amount", "Owner"]),
 				new BusinessRuleAction("make-read-only", ["Status"])
 			]);
 
@@ -81,9 +81,10 @@ public sealed class BusinessRuleToolTests {
 				&& request.Rule.Condition.LogicalOperation == "AND"
 				&& request.Rule.Actions.Count == 2
 				&& request.Rule.Actions[0].Type == "make-required"
-				&& request.Rule.Actions[0].Items.Count == 2
-				&& request.Rule.Actions[0].Items[0] == "Owner"
+				&& request.Rule.Actions[0].Items.Count == 3
+				&& request.Rule.Actions[0].Items[0] == " Owner "
 				&& request.Rule.Actions[0].Items[1] == "Amount"
+				&& request.Rule.Actions[0].Items[2] == "Owner"
 				&& request.Rule.Actions[1].Items.Count == 1
 				&& request.Rule.Actions[1].Items[0] == "Status"));
 	}
