@@ -33,7 +33,8 @@ public sealed class ApplicationCreateService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
-	IApplicationInfoService applicationInfoService)
+	IApplicationInfoService applicationInfoService,
+	ILogger logger)
 	: IApplicationCreateService
 {
 	private const string CreateApplicationRoute = "ServiceModel/AppInstallerService.svc/CreateApp";
@@ -73,10 +74,11 @@ public sealed class ApplicationCreateService(
 		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
-		ResolvedApplicationCreateRequest resolvedRequest = ResolveRequest(request, client, environmentSettings, serviceUrlBuilder);
+		ResolvedApplicationCreateRequest resolvedRequest = ResolveRequest(request, client, environmentSettings, serviceUrlBuilder, logger);
 		string requestUrl = serviceUrlBuilder.Build(CreateApplicationRoute, environmentSettings);
 		string requestBody = JsonSerializer.Serialize(CreateRequestDto.From(resolvedRequest), JsonOptions);
 
+		logger.WriteInfo($"Creating application '{resolvedRequest.Name}' ({resolvedRequest.Code})...");
 		try
 		{
 			string responseBody = client.ExecutePostRequest(requestUrl, requestBody);
@@ -95,6 +97,7 @@ public sealed class ApplicationCreateService(
 		}
 		catch (Exception exception) when (IsTimeout(exception))
 		{
+			logger.WriteInfo($"Request timed out, polling for application '{resolvedRequest.Code}'...");
 			return PollApplicationInfo(environmentName, resolvedRequest.Code, exception);
 		}
 	}
@@ -146,7 +149,8 @@ public sealed class ApplicationCreateService(
 		ApplicationCreateRequest request,
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
-		IServiceUrlBuilder serviceUrlBuilder)
+		IServiceUrlBuilder serviceUrlBuilder,
+		ILogger logger)
 	{
 		string? resolvedCode = string.IsNullOrWhiteSpace(request.Code)
 			? null
@@ -159,10 +163,16 @@ public sealed class ApplicationCreateService(
 		string resolvedIconBackground = string.IsNullOrWhiteSpace(request.IconBackground)
 			? GenerateRandomHexColor()
 			: request.IconBackground.Trim();
-		string resolvedIconId = string.IsNullOrWhiteSpace(request.IconId) ||
-			string.Equals(request.IconId, "auto", StringComparison.OrdinalIgnoreCase)
-				? ResolveRandomIconId(client, environmentSettings, serviceUrlBuilder)
-				: Guid.Parse(request.IconId).ToString();
+		bool needsIconResolution = string.IsNullOrWhiteSpace(request.IconId) ||
+			string.Equals(request.IconId, "auto", StringComparison.OrdinalIgnoreCase);
+		if (needsIconResolution)
+		{
+			logger.WriteInfo("Resolving application icon...");
+		}
+
+		string resolvedIconId = needsIconResolution
+			? ResolveRandomIconId(client, environmentSettings, serviceUrlBuilder)
+			: Guid.Parse(request.IconId!).ToString();
 		string? resolvedClientTypeId = string.IsNullOrWhiteSpace(request.ClientTypeId)
 			? null
 			: Guid.Parse(request.ClientTypeId).ToString();
@@ -394,6 +404,7 @@ public sealed class ApplicationCreateService(
 		{
 			try
 			{
+				logger.WriteInfo($"Waiting for application '{appCode}' to be ready... (attempt {attempt}/{PollAttempts})");
 				return applicationInfoService.GetApplicationInfo(environmentName, appId, appCode);
 			}
 			catch (InvalidOperationException exception)
