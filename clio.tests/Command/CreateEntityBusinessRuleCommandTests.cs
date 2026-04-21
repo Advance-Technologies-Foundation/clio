@@ -34,7 +34,7 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 					new BusinessRuleAction("make-required", ["Owner"])
 				])
 		};
-		businessRuleService.Create("dev", Arg.Any<BusinessRuleCreateRequest>())
+		businessRuleService.Create(Arg.Any<BusinessRuleCreateRequest>())
 			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
 
 		// Act
@@ -44,7 +44,6 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 		result.Should().Be(0,
 			because: "successful business-rule creation should return the standard success exit code");
 		businessRuleService.Received(1).Create(
-			"dev",
 			Arg.Is<BusinessRuleCreateRequest>(request =>
 				request.PackageName == "UsrPkg"
 				&& request.EntitySchemaName == "UsrOrder"
@@ -76,7 +75,7 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 		// Assert
 		result.Should().Be(1,
 			because: "the command should fail fast when environment resolution input is missing");
-		businessRuleService.DidNotReceiveWithAnyArgs().Create(default!, default!);
+		businessRuleService.DidNotReceiveWithAnyArgs().Create(default!);
 		logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("environment-name is required.")));
 	}
 }

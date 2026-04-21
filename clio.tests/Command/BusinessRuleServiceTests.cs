@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using Clio.Command;
 using Clio.Command.BusinessRules;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
@@ -15,10 +16,10 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 public sealed class BusinessRuleServiceTests {
-	private ISettingsRepository _settingsRepository = null!;
-	private IApplicationClientFactory _applicationClientFactory = null!;
 	private IApplicationClient _applicationClient = null!;
 	private IApplicationPackageListProvider _applicationPackageListProvider = null!;
+	private IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient = null!;
+	private IServiceUrlBuilder _serviceUrlBuilder = null!;
 	private JsonConverter _jsonConverter = null!;
 	private BusinessRuleService _service = null!;
 	private string? _savedAddonRequestBody;
@@ -26,10 +27,16 @@ public sealed class BusinessRuleServiceTests {
 	[SetUp]
 	public void SetUp() {
 		_savedAddonRequestBody = null;
-		_settingsRepository = Substitute.For<ISettingsRepository>();
-		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_jsonConverter = new JsonConverter();
+		_serviceUrlBuilder = new ServiceUrlBuilder(new EnvironmentSettings {
+			Uri = "http://localhost",
+			IsNetCore = true
+		});
+		_entitySchemaDesignerClient = new RemoteEntitySchemaDesignerClient(
+			_applicationClient,
+			_jsonConverter,
+			_serviceUrlBuilder);
 		_applicationPackageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_applicationPackageListProvider.GetPackages().Returns(new[] {
 			new PackageInfo(new PackageDescriptor {
@@ -37,16 +44,15 @@ public sealed class BusinessRuleServiceTests {
 				UId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 			}, string.Empty, [])
 		});
-		_settingsRepository.FindEnvironment("dev").Returns(new EnvironmentSettings {
-			Uri = "http://localhost",
-			IsNetCore = true
-		});
-		_applicationClientFactory.CreateEnvironmentClient(Arg.Any<EnvironmentSettings>())
-			.Returns(_applicationClient);
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
 				Arg.Any<int>())
 			.Returns(callInfo => BuildResponse((string)callInfo[0], (string)callInfo[1]));
-		_service = new BusinessRuleService(_settingsRepository, _applicationClientFactory, _applicationPackageListProvider, _jsonConverter);
+		_service = new BusinessRuleService(
+			_applicationClient,
+			_serviceUrlBuilder,
+			_entitySchemaDesignerClient,
+			_applicationPackageListProvider,
+			_jsonConverter);
 	}
 
 	[Test]
@@ -73,7 +79,7 @@ public sealed class BusinessRuleServiceTests {
 				]));
 
 		// Act
-		BusinessRuleCreateResult result = _service.Create("dev", request);
+		BusinessRuleCreateResult result = _service.Create(request);
 
 		// Assert
 		result.RuleName.Should().StartWith("BusinessRule_",
@@ -162,7 +168,7 @@ public sealed class BusinessRuleServiceTests {
 				]));
 
 		// Act
-		Action act = () => _service.Create("dev", request);
+		Action act = () => _service.Create(request);
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -199,7 +205,7 @@ public sealed class BusinessRuleServiceTests {
 				]));
 
 		// Act
-		_service.Create("dev", request);
+		_service.Create(request);
 
 		// Assert
 		_savedAddonRequestBody.Should().NotBeNullOrWhiteSpace(
@@ -256,7 +262,7 @@ public sealed class BusinessRuleServiceTests {
 				]));
 
 		// Act
-		_service.Create("dev", request);
+		_service.Create(request);
 
 		// Assert
 		_savedAddonRequestBody.Should().NotBeNullOrWhiteSpace(
@@ -304,7 +310,7 @@ public sealed class BusinessRuleServiceTests {
 				]));
 
 		// Act
-		BusinessRuleCreateResult result = _service.Create("dev", request);
+		BusinessRuleCreateResult result = _service.Create(request);
 
 		// Assert
 		result.RuleName.Should().StartWith("BusinessRule_",

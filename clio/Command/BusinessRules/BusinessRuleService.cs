@@ -5,7 +5,6 @@ using System.Text.Json;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Package;
-using Clio.UserEnvironment;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
 namespace Clio.Command.BusinessRules;
@@ -15,12 +14,11 @@ namespace Clio.Command.BusinessRules;
 /// </summary>
 public interface IBusinessRuleService {
 	/// <summary>
-	/// Creates an entity business rule in the requested package and environment.
+	/// Creates an entity business rule in the requested package.
 	/// </summary>
-	/// <param name="environmentName">Registered clio environment name.</param>
 	/// <param name="request">Structured entity business-rule request.</param>
 	/// <returns>Structured information about the created business rule.</returns>
-	BusinessRuleCreateResult Create(string environmentName, BusinessRuleCreateRequest request);
+	BusinessRuleCreateResult Create(BusinessRuleCreateRequest request);
 }
 
 /// <summary>
@@ -40,36 +38,27 @@ public sealed record BusinessRuleCreateResult(string RuleName);
 /// <summary>
 /// Default entity business-rule creator backed by <c>AddonSchemaDesignerService.svc</c>.
 /// </summary>
-public sealed class BusinessRuleService(
-	ISettingsRepository settingsRepository,
-	IApplicationClientFactory applicationClientFactory,
+internal sealed class BusinessRuleService(
+	IApplicationClient applicationClient,
+	IServiceUrlBuilder serviceUrlBuilder,
+	IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
 	IApplicationPackageListProvider applicationPackageListProvider,
 	IJsonConverter jsonConverter)
 	: IBusinessRuleService {
 
 	/// <inheritdoc />
-	public BusinessRuleCreateResult Create(string environmentName, BusinessRuleCreateRequest request) {
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			throw new ArgumentException("environment-name is required.", nameof(environmentName));
-		}
-
+	public BusinessRuleCreateResult Create(BusinessRuleCreateRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		BusinessRuleValidator.ValidateRequest(request);
-
-		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
-			?? throw new InvalidOperationException(
-				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
-		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
-		ServiceUrlBuilder serviceUrlBuilder = new(environmentSettings);
 
 		Guid packageUId = applicationPackageListProvider.GetPackages()
 			.FirstOrDefault(p => string.Equals(p.Descriptor.Name, request.PackageName.Trim(), StringComparison.OrdinalIgnoreCase))
 			?.Descriptor.UId
 			?? throw new InvalidOperationException($"Package '{request.PackageName}' was not found.");
-		EntityDesignSchemaDto entitySchema = LoadEntitySchema(client, serviceUrlBuilder, request.EntitySchemaName, packageUId);
+		EntityDesignSchemaDto entitySchema = LoadEntitySchema(request.EntitySchemaName, packageUId);
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = BusinessRuleToDtoConverter.BuildColumnMap(entitySchema);
 		BusinessRuleValidator.ValidateRuleAgainstSchema(request.Rule, columnMap);
-		AddonSchemaResponseDto addonResponse = LoadAddonSchema(client, serviceUrlBuilder, entitySchema, packageUId);
+		AddonSchemaResponseDto addonResponse = LoadAddonSchema(entitySchema, packageUId);
 		BusinessRulesAddonMetadata metadata = ParseMetadata(addonResponse.Schema?.MetaData);
 		List<AddonResourceDto> resources = NormalizeResourceKeys(addonResponse.Schema?.Resources?.ToList() ?? []);
 
@@ -82,20 +71,15 @@ public sealed class BusinessRuleService(
 		schema.MetaData = JsonSerializer.Serialize(metadata, JsonOptions);
 		schema.Resources = resources;
 
-		SaveAddonSchema(client, serviceUrlBuilder, schema);
+		SaveAddonSchema(schema);
 
 		return new BusinessRuleCreateResult(createdRule.Name);
 	}
 
 	private EntityDesignSchemaDto LoadEntitySchema(
-		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
 		string entitySchemaName,
 		Guid packageUId) {
-		Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> response = new RemoteEntitySchemaDesignerClient(
-			client,
-			jsonConverter,
-			serviceUrlBuilder).GetSchemaDesignItem(
+		Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> response = entitySchemaDesignerClient.GetSchemaDesignItem(
 			new GetSchemaDesignItemRequestDto {
 				Name = entitySchemaName.Trim(),
 				PackageUId = packageUId,
@@ -108,11 +92,9 @@ public sealed class BusinessRuleService(
 	}
 
 	private AddonSchemaResponseDto LoadAddonSchema(
-		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
 		EntityDesignSchemaDto entitySchema,
 		Guid packageUId) {
-		string responseBody = client.ExecutePostRequest(
+		string responseBody = applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build($"{AddonDesignerBasePath}/GetSchema"),
 			JsonSerializer.Serialize(new AddonGetRequestDto {
 				AddonName = BusinessRuleAddonName,
@@ -132,8 +114,8 @@ public sealed class BusinessRuleService(
 		return response;
 	}
 
-	private void SaveAddonSchema(IApplicationClient client, ServiceUrlBuilder serviceUrlBuilder, AddonSchemaDto schema) {
-		string responseBody = client.ExecutePostRequest(
+	private void SaveAddonSchema(AddonSchemaDto schema) {
+		string responseBody = applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build($"{AddonDesignerBasePath}/SaveSchema"),
 			JsonSerializer.Serialize(schema, JsonOptions));
 		AddonSaveResponseDto response = Deserialize<AddonSaveResponseDto>(
@@ -143,7 +125,7 @@ public sealed class BusinessRuleService(
 			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "AddonSchemaDesignerService.SaveSchema failed.");
 		}
 
-		client.ExecutePostRequest(
+		applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build("/rest/WorkplaceService/ResetScriptCache"),
 			string.Empty);
 	}

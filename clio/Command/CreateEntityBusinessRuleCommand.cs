@@ -37,12 +37,10 @@ public sealed class CreateEntityBusinessRuleCommand(
 		ArgumentNullException.ThrowIfNull(options);
 		try {
 			Validate(options);
-			businessRuleService.Create(
-				options.Environment,
-				new BusinessRuleCreateRequest(
-					options.PackageName,
-					options.EntitySchemaName,
-					options.Rule));
+			businessRuleService.Create(new BusinessRuleCreateRequest(
+				options.PackageName,
+				options.EntitySchemaName,
+				options.Rule));
 			logger.WriteInfo("Done");
 			return 0;
 		} catch (Exception exception) {

@@ -46,7 +46,7 @@ public sealed class BusinessRuleToolTests {
 		CreateEntityBusinessRuleCommand command = new(service, Substitute.For<ILogger>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntityBusinessRuleCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
-		service.Create("dev", Arg.Any<BusinessRuleCreateRequest>())
+		service.Create(Arg.Any<BusinessRuleCreateRequest>())
 			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
 		CreateEntityBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
 		BusinessRule rule = new(
@@ -74,7 +74,6 @@ public sealed class BusinessRuleToolTests {
 		commandResolver.Received(1).Resolve<CreateEntityBusinessRuleCommand>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "dev"));
 		service.Received(1).Create(
-			"dev",
 			Arg.Is<BusinessRuleCreateRequest>(request =>
 				request.PackageName == "UsrPkg"
 				&& request.EntitySchemaName == "UsrOrder"
@@ -98,7 +97,7 @@ public sealed class BusinessRuleToolTests {
 		CreateEntityBusinessRuleCommand command = new(service, Substitute.For<ILogger>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntityBusinessRuleCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
-		service.Create("dev", Arg.Any<BusinessRuleCreateRequest>())
+		service.Create(Arg.Any<BusinessRuleCreateRequest>())
 			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
 		CreateEntityBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
 		BusinessRule rule = new(
