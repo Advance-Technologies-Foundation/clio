@@ -9,7 +9,8 @@
 		<PackageTags>cli ATF clio creatio</PackageTags>
 		<NeutralLanguage>en</NeutralLanguage>
 		<!-- Fallback for environments without git tags; overridden by SetVersionFromGitTag target or CI /p:AssemblyVersion -->
-		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.2.72</AssemblyVersion>
+		<!-- Custom tag 8.0.88.190 encodes ENG-88190 (page-modification work): revision 190 under minor 88 so AI callers can verify MCP server binary was redeployed after the Alfa-04-20 improvements. -->
+		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.88.190</AssemblyVersion>
 		<FileVersion Condition="'$(FileVersion)' == ''">$(AssemblyVersion)</FileVersion>
 		<Version Condition="'$(Version)' == ''">$(AssemblyVersion)</Version>
 		<Description>CLI interface for Creatio</Description>
