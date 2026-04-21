@@ -42,9 +42,18 @@ public class PackageVersion : ICloneable, IComparable
 	#region Methods: Private
 
 	private int CompareSuffix(PackageVersion packageVersion){
-		return string.IsNullOrWhiteSpace(Suffix)
-			? 1
-			: string.Compare(Suffix, packageVersion.Suffix, StringComparison.InvariantCulture);
+		bool thisIsEmpty = string.IsNullOrWhiteSpace(Suffix);
+		bool otherIsEmpty = string.IsNullOrWhiteSpace(packageVersion.Suffix);
+		if (thisIsEmpty && otherIsEmpty) {
+			return 0;
+		}
+		if (thisIsEmpty) {
+			return -1;
+		}
+		if (otherIsEmpty) {
+			return 1;
+		}
+		return string.Compare(Suffix, packageVersion.Suffix, StringComparison.InvariantCulture);
 	}
 
 	#endregion

@@ -1,5 +1,5 @@
 $cliogate_Version="2.0.0.41"
-$clioPath=".\clio\bin\Release\net8.0\clio.dll"
+$clioPath=".\clio\bin\Release\net10.0\clio.dll"
 
 # Update _gateVersion in InfoCommand.cs
 $infoCommandPath = ".\clio\Command\InfoCommand.cs"
