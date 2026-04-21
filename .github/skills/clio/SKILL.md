@@ -38,6 +38,7 @@ clio ver
 - User wants to **find or discover entity schemas** by name, pattern, or UId in Creatio
 - User wants to **read or update Freedom UI pages** (get-page, update-page, list-pages)
 - User wants to **create a new Freedom UI page from a template** (list-page-templates, create-page)
+- User wants to **look up clio MCP workflow guidance** (get-guidance)
 - User wants to **manage package data bindings** (seed data for SysSettings, SysModule, custom entities)
 - **A browser page or HTTP response matches the Creatio fingerprint** (see below)
 
@@ -86,6 +87,7 @@ When you open a web page via browser automation (Chrome DevTools, Playwright, et
    - **Schema changes**: `find-entity-schema` → `create-entity-schema` / `update-entity-schema`
    - **App management**: `list-apps` → `get-app-info` → `create-app-section`
    - **Data seeding**: `create-data-binding-db` / `upsert-data-binding-row-db`
+   - **Workflow guidance**: `get-guidance` to retrieve named clio MCP articles
 5. Use browser only for **final visual verification** after clio MCP changes are applied
 
 ## General Syntax

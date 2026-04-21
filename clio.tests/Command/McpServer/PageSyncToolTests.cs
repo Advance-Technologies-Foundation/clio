@@ -331,7 +331,7 @@ public sealed class PageSyncToolTests {
 				Arg.Is<string>(url => url.Contains("SaveSchema")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject { ["success"] = true }.ToString());
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>());
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), CreateHierarchyClientFor("resource-page-uid"));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
@@ -490,6 +490,15 @@ public sealed class PageSyncToolTests {
 		"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
+	private static IPageDesignerHierarchyClient CreateHierarchyClientFor(string schemaUId, string packageUId = "test-pkg-uid") {
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId(schemaUId).Returns(packageUId);
+		hierarchyClient.GetParentSchemas(schemaUId, packageUId).Returns([
+			new PageDesignerHierarchySchema { UId = schemaUId, PackageUId = packageUId }
+		]);
+		return hierarchyClient;
+	}
+
 	private static PageUpdateCommand CreateSuccessfulPageUpdateCommand() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
@@ -513,7 +522,7 @@ public sealed class PageSyncToolTests {
 				Arg.Is<string>(url => url.Contains("SaveSchema")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject { ["success"] = true }.ToString());
-		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>());
+		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), CreateHierarchyClientFor("test-uid"));
 	}
 
 	private static PageUpdateCommand CreatePageUpdateCommandWithFailureForSchema(string failSchemaName) {
@@ -545,7 +554,7 @@ public sealed class PageSyncToolTests {
 				Arg.Is<string>(url => url.Contains("SaveSchema")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject { ["success"] = true }.ToString());
-		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>());
+		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), CreateHierarchyClientFor("test-uid"));
 	}
 
 	private static PageGetCommand CreateSuccessfulPageGetCommand() {
@@ -569,6 +578,7 @@ public sealed class PageSyncToolTests {
 				}
 			}.ToString());
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("test-uid").Returns("test-package-uid");
 		hierarchyClient.GetParentSchemas("test-uid", "test-package-uid")
 			.Returns([
 				new PageDesignerHierarchySchema {

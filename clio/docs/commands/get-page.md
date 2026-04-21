@@ -17,6 +17,10 @@ designer hierarchy, builds the effective merged bundle, and returns a JSON
 envelope with nested page metadata, bundle data, and raw.body. Use raw.body
 as the editable payload for update-page.
 
+The command resolves the design package for the schema and uses the top of
+the parent-schema hierarchy to load the editable version. This ensures that
+raw.body is always read from the package where the schema can be modified.
+
 ## Synopsis
 
 ```bash

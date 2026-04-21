@@ -17,6 +17,8 @@ public sealed class PageUpdateTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	internal const string ToolName = "update-page";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
@@ -31,6 +33,7 @@ public sealed class PageUpdateTool(
 			Body = args.Body,
 			DryRun = args.DryRun ?? false,
 			Resources = args.Resources,
+			OptionalProperties = args.OptionalProperties,
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
@@ -56,6 +59,23 @@ public sealed class PageUpdateTool(
 				return new PageUpdateResponse { Success = false, Error = ex.Message };
 			}
 			resolvedCommand.TryUpdatePage(options, out response);
+			if (response.Success && args.Verify == true) {
+				try {
+					PageGetOptions getOptions = new() {
+						SchemaName = args.SchemaName,
+						Environment = args.EnvironmentName,
+						Uri = args.Uri,
+						Login = args.Login,
+						Password = args.Password
+					};
+					PageGetCommand getCommand = _commandResolver.Resolve<PageGetCommand>(getOptions);
+					if (getCommand.TryGetPage(getOptions, out PageGetResponse getResponse) && getResponse.Success) {
+						response.Page = getResponse.Page;
+					}
+				} catch {
+					// verify is best-effort; failure does not fail the update
+				}
+			}
 		}
 		response.SamplingReview = samplingReview;
 		return response;
@@ -97,5 +117,11 @@ public sealed record PageUpdateArgs(
 	string? Password,
 	[property: JsonPropertyName("skip-sampling")]
 	[property: Description("If true, skip the AI semantic review before saving. Default: false")]
-	bool? SkipSampling = null
+	bool? SkipSampling = null,
+	[property: JsonPropertyName("optional-properties")]
+	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties, e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]'")]
+	string? OptionalProperties = null,
+	[property: JsonPropertyName("verify")]
+	[property: Description("If true, read the page back after saving and return its metadata. Best-effort — verify failure does not fail the update. Default: false")]
+	bool? Verify = null
 );

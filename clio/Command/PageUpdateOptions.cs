@@ -42,6 +42,12 @@ namespace Clio.Command {
 		/// </summary>
 		[Option("resources", Required = false, HelpText = "JSON object of resource key-value pairs for #ResourceString(key)# macros")]
 		public string Resources { get; set; }
+
+		/// <summary>
+		/// Gets or sets the optional properties to merge into the schema, as a JSON array of {key, value} objects.
+		/// </summary>
+		[Option("optional-properties", Required = false, HelpText = "JSON array of {key, value} objects to merge into schema optionalProperties")]
+		public string? OptionalProperties { get; set; }
 	}
 
 	/// <summary>
@@ -51,6 +57,7 @@ namespace Clio.Command {
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
+		private readonly IPageDesignerHierarchyClient _hierarchyClient;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="PageUpdateCommand"/> class.
@@ -58,13 +65,16 @@ namespace Clio.Command {
 		/// <param name="applicationClient">Remote Creatio client.</param>
 		/// <param name="serviceUrlBuilder">Service URL builder.</param>
 		/// <param name="logger">Logger used for CLI output.</param>
+		/// <param name="hierarchyClient">Hierarchy client for designer schemas.</param>
 		public PageUpdateCommand(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
-			ILogger logger) {
+			ILogger logger,
+			IPageDesignerHierarchyClient hierarchyClient) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
+			_hierarchyClient = hierarchyClient;
 		}
 
 		/// <summary>
@@ -87,7 +97,7 @@ namespace Clio.Command {
 					response = validationError;
 					return false;
 				}
-				if (!TryResolveSchemaUId(options.SchemaName, out string schemaUId, out response)) {
+				if (!TryResolveEditableSchemaUId(options.SchemaName, out string schemaUId, out response)) {
 					return false;
 				}
 				if (options.DryRun) {
@@ -97,7 +107,11 @@ namespace Clio.Command {
 				if (!TryLoadSchemaForSave(options.SchemaName, schemaUId, out JObject schemaToSave, out response)) {
 					return false;
 				}
-				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, options.Body, explicitResources);
+				JArray parsedOptionalProperties = null;
+				if (!string.IsNullOrWhiteSpace(options.OptionalProperties)) {
+					parsedOptionalProperties = JArray.Parse(options.OptionalProperties);
+				}
+				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, options.Body, explicitResources, parsedOptionalProperties);
 				if (!TrySaveSchema(schemaToSave, out response)) {
 					return false;
 				}
@@ -121,7 +135,7 @@ namespace Clio.Command {
 			return success ? 0 : 1;
 		}
 
-		private bool TryResolveSchemaUId(string schemaName, out string schemaUId, out PageUpdateResponse response) {
+		private bool TryResolveEditableSchemaUId(string schemaName, out string schemaUId, out PageUpdateResponse response) {
 			var (metadata, queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
 				_applicationClient,
 				_serviceUrlBuilder,
@@ -132,9 +146,64 @@ namespace Clio.Command {
 				response = new PageUpdateResponse { Success = false, Error = queryError };
 				return false;
 			}
-			schemaUId = metadata["UId"]?.ToString();
+			string rawSchemaUId = metadata["UId"]?.ToString();
+			if (string.IsNullOrWhiteSpace(rawSchemaUId)) {
+				schemaUId = null;
+				response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' metadata is missing UId" };
+				return false;
+			}
+			string designPackageUId;
+			try {
+				designPackageUId = _hierarchyClient.GetDesignPackageUId(rawSchemaUId);
+			} catch (Exception ex) {
+				schemaUId = null;
+				response = new PageUpdateResponse { Success = false, Error = $"Failed to resolve design package for '{schemaName}': {ex.Message}" };
+				return false;
+			}
+			if (string.IsNullOrWhiteSpace(designPackageUId)) {
+				schemaUId = null;
+				response = new PageUpdateResponse { Success = false, Error = $"Failed to resolve design package for '{schemaName}': no package returned" };
+				return false;
+			}
+			var hierarchy = _hierarchyClient.GetParentSchemas(rawSchemaUId, designPackageUId);
+			if (hierarchy == null || hierarchy.Count == 0) {
+				schemaUId = null;
+				response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' hierarchy is empty" };
+				return false;
+			}
+			schemaUId = hierarchy[0].UId;
 			response = null;
 			return true;
+		}
+
+		private static List<string> UpdateSchemaBody(JObject schemaToSave, string body, Dictionary<string, string> explicitResources, JArray optionalProperties = null) {
+			schemaToSave["body"] = body;
+			if (optionalProperties != null) {
+				MergeOptionalProperties(schemaToSave, optionalProperties);
+			}
+			var bodyKeys = ResourceStringHelper.ExtractKeys(body);
+			var existingStrings = schemaToSave["localizableStrings"] as JArray;
+			var (cleaned, registered) = ResourceStringHelper.CleanAndMerge(existingStrings, explicitResources, bodyKeys);
+			schemaToSave["localizableStrings"] = cleaned;
+			return registered.Count > 0 ? registered : null;
+		}
+
+		private static void MergeOptionalProperties(JObject schemaToSave, JArray incoming) {
+			var existing = schemaToSave["optionalProperties"] as JArray ?? new JArray();
+			var merged = new Dictionary<string, JToken>(StringComparer.OrdinalIgnoreCase);
+			foreach (JToken item in existing) {
+				string key = item["key"]?.ToString();
+				if (!string.IsNullOrWhiteSpace(key)) {
+					merged[key] = item;
+				}
+			}
+			foreach (JToken item in incoming) {
+				string key = item["key"]?.ToString();
+				if (!string.IsNullOrWhiteSpace(key)) {
+					merged[key] = item;
+				}
+			}
+			schemaToSave["optionalProperties"] = new JArray(merged.Values);
 		}
 
 		private bool TryLoadSchemaForSave(
@@ -157,15 +226,6 @@ namespace Clio.Command {
 			schemaToSave = schema;
 			response = null;
 			return true;
-		}
-
-		private static List<string> UpdateSchemaBody(JObject schemaToSave, string body, Dictionary<string, string> explicitResources) {
-			schemaToSave["body"] = body;
-			var bodyKeys = ResourceStringHelper.ExtractKeys(body);
-			var existingStrings = schemaToSave["localizableStrings"] as JArray;
-			var (cleaned, registered) = ResourceStringHelper.CleanAndMerge(existingStrings, explicitResources, bodyKeys);
-			schemaToSave["localizableStrings"] = cleaned;
-			return registered.Count > 0 ? registered : null;
 		}
 
 		private bool TrySaveSchema(JObject schemaToSave, out PageUpdateResponse response) {
@@ -247,6 +307,16 @@ namespace Clio.Command {
 					Success = false,
 					Error = "resources must be a valid JSON object string"
 				};
+			}
+			if (!string.IsNullOrWhiteSpace(options.OptionalProperties)) {
+				try {
+					JArray.Parse(options.OptionalProperties);
+				} catch {
+					return new PageUpdateResponse {
+						Success = false,
+						Error = "optional-properties must be a valid JSON array of {key, value} objects"
+					};
+				}
 			}
 			var semanticResult = SchemaValidationService.ValidateStandardFieldBindings(options.Body, explicitResources);
 			if (!semanticResult.IsValid) {

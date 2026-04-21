@@ -16,13 +16,10 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 	/// <summary>
 	/// Returns the canonical DataForge orchestration protocol for AI consumers of clio MCP.
 	/// </summary>
-	[McpServerResource(UriTemplate = ResourceUri, Name = "dataforge-orchestration-guidance")]
-	[Description("Returns the canonical 4-layer DataForge orchestration protocol for AI agents using clio MCP.")]
-	public ResourceContents GetGuide() =>
-		new TextResourceContents {
-			Uri = ResourceUri,
-			MimeType = "text/plain",
-			Text = """
+	internal static readonly TextResourceContents Guide = new() {
+		Uri = ResourceUri,
+		MimeType = "text/plain",
+		Text = """
 			       clio MCP DataForge orchestration guide
 
 			       Architecture split
@@ -82,5 +79,12 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 			       4. If `dataforge-initialize` also fails, surface the failure to the user and proceed without DataForge coverage for this session; the background scheduler will refresh the index.
 			       Stale index in a read-only inspection workflow: if `dataforge-context` or `dataforge-find-tables` returns zero results for a schema known to exist and `dataforge-status` returns `status = "Ready"`, call `dataforge-update` and re-call the search tool once before treating the empty result as authoritative.
 			       """
-		};
+	};
+
+	/// <summary>
+	/// Returns the canonical DataForge orchestration protocol for AI consumers of clio MCP.
+	/// </summary>
+	[McpServerResource(UriTemplate = ResourceUri, Name = "dataforge-orchestration-guidance")]
+	[Description("Returns the canonical 4-layer DataForge orchestration protocol for AI agents using clio MCP.")]
+	public ResourceContents GetGuide() => Guide;
 }

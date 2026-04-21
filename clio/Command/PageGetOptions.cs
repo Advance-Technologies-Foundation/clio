@@ -95,7 +95,13 @@ public class PageGetCommand : Command<PageGetOptions> {
 				return false;
 			}
 
-			var hierarchy = _hierarchyClient.GetParentSchemas(schemaUId, packageUId);
+			string designPackageUId;
+			try {
+				designPackageUId = _hierarchyClient.GetDesignPackageUId(schemaUId);
+			} catch {
+				designPackageUId = packageUId;
+			}
+			var hierarchy = _hierarchyClient.GetParentSchemas(schemaUId, designPackageUId);
 			if (hierarchy.Count == 0) {
 				response = new PageGetResponse {
 					Success = false,
@@ -104,17 +110,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 				return false;
 			}
 
-			PageDesignerHierarchySchema currentSchema = hierarchy
-				.FirstOrDefault(schema => string.Equals(schema.UId, schemaUId, StringComparison.OrdinalIgnoreCase))
-				?? hierarchy.FirstOrDefault(schema => string.Equals(schema.Name, options.SchemaName, StringComparison.OrdinalIgnoreCase))
-				?? hierarchy.FirstOrDefault(schema => string.Equals(schema.PackageUId, packageUId, StringComparison.OrdinalIgnoreCase));
-			if (currentSchema is null) {
-				response = new PageGetResponse {
-					Success = false,
-					Error = $"Schema '{options.SchemaName}' was not found in designer hierarchy"
-				};
-				return false;
-			}
+			PageDesignerHierarchySchema currentSchema = hierarchy[0];
 
 			var parts = hierarchy
 				.Where(schema => !string.IsNullOrWhiteSpace(schema.Body))
@@ -124,10 +120,10 @@ public class PageGetCommand : Command<PageGetOptions> {
 			response = new PageGetResponse {
 				Success = true,
 				Page = new PageMetadataInfo {
-					SchemaName = metadata["Name"]?.ToString(),
-					SchemaUId = schemaUId,
-					PackageName = metadata["PackageName"]?.ToString(),
-					PackageUId = packageUId,
+					SchemaName = currentSchema.Name,
+					SchemaUId = currentSchema.UId,
+					PackageName = currentSchema.PackageName,
+					PackageUId = currentSchema.PackageUId,
 					ParentSchemaName = metadata["ParentSchemaName"]?.ToString()
 				},
 				Bundle = bundle,

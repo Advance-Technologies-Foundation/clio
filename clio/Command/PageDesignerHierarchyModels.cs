@@ -14,6 +14,13 @@ public interface IPageDesignerHierarchyClient {
 	/// <param name="packageUId">Package identifier.</param>
 	/// <returns>Hierarchy schemas returned by the designer service.</returns>
 	IReadOnlyList<PageDesignerHierarchySchema> GetParentSchemas(string schemaUId, string packageUId);
+
+	/// <summary>
+	/// Gets the design package identifier for the specified schema.
+	/// </summary>
+	/// <param name="schemaUId">Schema identifier.</param>
+	/// <returns>Design package identifier.</returns>
+	string GetDesignPackageUId(string schemaUId);
 }
 
 /// <summary>
