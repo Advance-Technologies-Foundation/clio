@@ -2525,6 +2525,13 @@ Discovery: This was the last remaining converter-specific wording in `.github/sk
 Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.codex\workspace-diary.md
 Impact: The repository-local clio skill reference now stays fully aligned with the validator-only focus of the branch.
 
+## 2026-04-21 13:05 – Document clio release flow from GitHub release to NuGet publish
+Context: Needed to answer how a new release is created for the `Advance-Technologies-Foundation/clio` repository without guessing a generic GitHub flow.
+Decision: Verified the release process from the repository-local release prompt, the release workflow, the project fallback version in `clio.csproj`, and the current latest GitHub release/tag.
+Discovery: Publishing a GitHub Release triggers `.github/workflows/reliase-to-nuget.yml` on `release.published`, the workflow accepts `v`-prefixed or plain tags but requires `X.Y.Z.W`, and the repo guidance increments the last version segment plus updates the fallback `AssemblyVersion` in `clio/clio.csproj`.
+Files: C:\Projects\clio\.github\prompts\release.prompt.md, C:\Projects\clio\.github\workflows\reliase-to-nuget.yml, C:\Projects\clio\clio\clio.csproj, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future release questions can be answered with the repository-specific procedure and current versioning expectations instead of a generic GitHub Releases walkthrough.
+
 ## 2026-04-21 12:40 – Continue JavaScript marker validation after peer failures
 Context: Review found that `ValidateJavaScriptObjectMarkers(...)` stopped on the first malformed JavaScript object marker, which hid later `SCHEMA_VALIDATORS` errors when `SCHEMA_CONVERTERS` failed first.
 Decision: Changed the loop to `continue` after `TryValidateJavaScriptObjectSection(...)` failures and added a regression test that asserts malformed converter and validator sections are both reported in one validation pass.
