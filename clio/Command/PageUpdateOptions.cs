@@ -252,31 +252,23 @@ namespace Clio.Command {
 
 		private static JObject BuildNewReplacingSchemaDto(JObject template, EditableSchemaContext context) {
 			string originalName = template["name"]?.ToString() ?? context.SchemaName;
-			int schemaType = template["schemaType"]?.Value<int>() ?? 9;
-			int schemaVersion = template["schemaVersion"]?.Value<int>() ?? 1;
-			return new JObject {
-				["uId"] = context.EditableSchemaUId,
-				["name"] = originalName,
-				["schemaType"] = schemaType,
-				["schemaVersion"] = schemaVersion,
-				["extendParent"] = true,
-				["useFullHierarchy"] = false,
-				["userLevelSchema"] = false,
-				["isReadOnly"] = false,
-				["package"] = new JObject {
-					["uId"] = context.DesignPackageUId,
-					["name"] = string.Empty
-				},
-				["parent"] = new JObject {
-					["uId"] = context.ParentSchemaUId,
-					["name"] = context.ParentSchemaName ?? originalName
-				},
-				["body"] = BuildEmptyReplacingBody(originalName),
-				["localizableStrings"] = null,
-				["caption"] = null,
-				["optionalProperties"] = template["optionalProperties"] as JArray ?? new JArray(),
-				["dependencies"] = new JArray()
+			JObject dto = (JObject)template.DeepClone();
+			dto["uId"] = context.EditableSchemaUId;
+			dto["name"] = originalName;
+			dto["isReadOnly"] = false;
+			dto["extendParent"] = true;
+			dto["caption"] = null;
+			dto["localizableStrings"] = null;
+			dto["package"] = new JObject {
+				["uId"] = context.DesignPackageUId,
+				["name"] = string.Empty
 			};
+			dto["parent"] = new JObject {
+				["uId"] = context.ParentSchemaUId,
+				["name"] = context.ParentSchemaName ?? originalName
+			};
+			dto["body"] = BuildEmptyReplacingBody(originalName);
+			return dto;
 		}
 
 		private static string BuildEmptyReplacingBody(string schemaName) {
