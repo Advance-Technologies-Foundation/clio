@@ -31,6 +31,7 @@ public sealed class PageUpdateTool(
 		PageUpdateOptions options = new() {
 			SchemaName = args.SchemaName,
 			Body = args.Body,
+			BodyFile = args.BodyFile,
 			DryRun = args.DryRun ?? false,
 			Resources = args.Resources,
 			OptionalProperties = args.OptionalProperties,
@@ -90,9 +91,8 @@ public sealed record PageUpdateArgs(
 	string SchemaName,
 
 	[property: JsonPropertyName("body")]
-	[property: Description("Full JavaScript page body with markers. Reuse get-page raw.body.")]
-	[property: Required]
-	string Body,
+	[property: Description("Full JavaScript page body with markers. Pass either `body` (inline string) or `body-file` (path); one is required. WARNING: do NOT send the full get-page `raw.body` back verbatim — that re-applies existing merges and fails server-side with 'Object vs Array'. Send ONLY the new viewConfigDiff/handlers operations plus the required marker envelope.")]
+	string? Body,
 
 	[property: JsonPropertyName("resources")]
 	[property: Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros in the body, e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. Unresolved macros are auto-registered with captions derived from key names.")]
@@ -123,5 +123,8 @@ public sealed record PageUpdateArgs(
 	string? OptionalProperties = null,
 	[property: JsonPropertyName("verify")]
 	[property: Description("If true, read the page back after saving and return its metadata. Best-effort — verify failure does not fail the update. Default: false")]
-	bool? Verify = null
+	bool? Verify = null,
+	[property: JsonPropertyName("body-file")]
+	[property: Description("Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping.")]
+	string? BodyFile = null
 );
