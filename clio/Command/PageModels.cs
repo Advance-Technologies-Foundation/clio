@@ -224,6 +224,43 @@ public sealed class PageOwnBodySummary {
 	[JsonProperty("bodyLength")]
 	[JsonPropertyName("bodyLength")]
 	public int BodyLength { get; init; }
+
+	/// <summary>
+	/// Flat list of <c>viewConfigDiff</c> operations present in the schema's own body.
+	/// Each entry exposes <c>name</c>, <c>operation</c>, <c>type</c>, and <c>parentName</c> so AI
+	/// callers can see which components already exist before composing a new delta.
+	/// </summary>
+	[JsonProperty("viewConfigDiffOps")]
+	[JsonPropertyName("viewConfigDiffOps")]
+	public IReadOnlyList<PageOperationInfo> ViewConfigDiffOps { get; init; } = [];
+
+	/// <summary>
+	/// Flat list of handler requests registered in the schema's own body.
+	/// </summary>
+	[JsonProperty("handlerRequests")]
+	[JsonPropertyName("handlerRequests")]
+	public IReadOnlyList<string> HandlerRequests { get; init; } = [];
+}
+
+/// <summary>
+/// Describes a single <c>viewConfigDiff</c> operation entry from the schema body.
+/// </summary>
+public sealed class PageOperationInfo {
+	[JsonProperty("operation")]
+	[JsonPropertyName("operation")]
+	public string Operation { get; init; }
+
+	[JsonProperty("name")]
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	[JsonProperty("type")]
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	[JsonProperty("parentName")]
+	[JsonPropertyName("parentName")]
+	public string ParentName { get; init; }
 }
 
 /// <summary>
