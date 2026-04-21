@@ -67,7 +67,8 @@ public sealed class ApplicationSectionCreateService(
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
 	IServiceUrlBuilderFactory serviceUrlBuilderFactory,
-	IApplicationInfoService applicationInfoService)
+	IApplicationInfoService applicationInfoService,
+	ILogger logger)
 	: IApplicationSectionCreateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private const string ApplicationIdJsonField = "ApplicationId";
@@ -102,6 +103,7 @@ public sealed class ApplicationSectionCreateService(
 		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		logger.WriteInfo($"Loading application info for '{request.ApplicationCode}'...");
 		ApplicationInfoResult beforeInfo = applicationInfoService.GetApplicationInfo(
 			environmentName,
 			null,
@@ -115,14 +117,23 @@ public sealed class ApplicationSectionCreateService(
 		if (string.IsNullOrWhiteSpace(resolvedRequest.EntitySchemaName)) {
 			CheckEntitySchemaDoesNotExist(client, environmentSettings, resolvedRequest.SectionCode, request.Caption);
 		}
-		string responseBody = client.ExecutePostRequest(
-			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert, environmentSettings),
-			requestBody);
+		logger.BeginSpinner($"Creating section '{resolvedRequest.Caption}' ({resolvedRequest.SectionCode})...");
+		string responseBody;
+		try {
+			responseBody = client.ExecutePostRequest(
+				serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert, environmentSettings),
+				requestBody);
+		} catch {
+			logger.EndSpinner(false);
+			throw;
+		}
 		InsertQueryResponseDto response = JsonSerializer.Deserialize<InsertQueryResponseDto>(responseBody, JsonOptions)
 			?? throw new InvalidOperationException("InsertQuery returned an empty response.");
 		if (!response.Success) {
+			logger.EndSpinner(false);
 			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "InsertQuery failed.");
 		}
+		logger.EndSpinner(true);
 
 		return LoadCreatedSection(environmentName, beforeInfo, resolvedRequest, client, environmentSettings);
 	}
@@ -144,6 +155,7 @@ public sealed class ApplicationSectionCreateService(
 		EnvironmentSettings environmentSettings) {
 		string sectionCode = GenerateCodeFromCaption(request.Caption);
 		string iconBackground = GenerateRandomHexColor();
+		logger.WriteInfo("Resolving section icon...");
 		string iconId = ResolveRandomIconId(client, environmentSettings);
 		return new ResolvedApplicationSectionCreateRequest(
 			Guid.NewGuid().ToString(),
@@ -197,6 +209,7 @@ public sealed class ApplicationSectionCreateService(
 		Exception? lastError = null;
 		for (int attempt = 1; attempt <= PollAttempts; attempt++) {
 			try {
+				logger.WriteInfo($"Waiting for section '{request.SectionCode}' to be ready... (attempt {attempt}/{PollAttempts})");
 				ApplicationInfoResult afterInfo = applicationInfoService.GetApplicationInfo(
 					environmentName,
 					null,

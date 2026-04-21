@@ -20,6 +20,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 	private IApplicationInfoService _applicationInfoService = null!;
 	private EnvironmentSettings _environmentSettings = null!;
 	private ApplicationSectionCreateService _sut = null!;
+	private ILogger _logger = null!;
 
 	[SetUp]
 	public void SetUp() {
@@ -29,6 +30,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_applicationInfoService = Substitute.For<IApplicationInfoService>();
+		_logger = new NullLogger();
 		_environmentSettings = new EnvironmentSettings {
 			Uri = "https://example.invalid",
 			Login = "Supervisor",
@@ -46,7 +48,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 			_applicationClientFactory,
 			_serviceUrlBuilder,
 			serviceUrlBuilderFactory,
-			_applicationInfoService);
+			_applicationInfoService,
+			_logger);
 	}
 
 	[Test]
