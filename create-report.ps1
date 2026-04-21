@@ -37,8 +37,8 @@ dotnet test --filter Category=HotFixCommand  clio.TestsAPI\clio.TestsAPI.csproj;
 # SpecFlow CLI is required to generate the LivingDoc report.
 # dotnet tool install --global SpecFlow.Plus.LivingDoc.CLI
 
-livingdoc test-assembly .\clio.TestsAPI\bin\Debug\net8.0\clio.TestsAPI.dll `
--t .\clio.TestsAPI\bin\Debug\net8.0\TestExecution.json `
+livingdoc test-assembly .\clio.TestsAPI\bin\Debug\net10.0\clio.TestsAPI.dll `
+-t .\clio.TestsAPI\bin\Debug\net10.0\TestExecution.json `
 -o .\TestResults\Api-Test-Results;
 
 # Open the generated LivingDoc report in Edge browser

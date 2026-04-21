@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<TargetFramework>net8.0</TargetFramework>
+		<TargetFramework>net10.0</TargetFramework>
 		<PackAsTool>true</PackAsTool>
 		<PackageId>clio</PackageId>
 		<Company>creatio</Company>
@@ -143,7 +143,7 @@
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" VersionOverride="2.0.0"/>
 		<PackageReference Include="MediatR" VersionOverride="[12.5.0]"/>
 		<PackageReference Include="Microsoft.Dism" VersionOverride="5.0.0" />
-		<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/> <!-- 7.4.13 Is the latest supported on .NET8-->
+		<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/>
 		<PackageReference Include="Microsoft.Web.Administration" VersionOverride="11.1.0"/>
 	</ItemGroup>
 	
