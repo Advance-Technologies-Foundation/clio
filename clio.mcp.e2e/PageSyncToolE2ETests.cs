@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -99,18 +100,11 @@ public sealed class PageSyncToolE2ETests {
 	[Description("Rejects an invalid page body through the real MCP server before any remote save is attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages rejects invalid body during client-side validation")]
-	[AllureDescription("Uses a reachable sandbox environment, sends an invalid page body through sync-pages, and verifies that validation fails without requiring a real page save.")]
+	[AllureDescription("Uses any reachable environment, sends an invalid page body through sync-pages, and verifies that validation fails without requiring a real page save.")]
 	public async Task PageSyncTool_Should_Reject_Invalid_Page_Body_When_Validation_Is_Enabled() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages validation E2E.");
-		}
-
-		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"sync-pages validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
-		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 
 		await using ArrangeContext context = await ArrangeAsync();
 		CallToolResult callResult = await context.Session.CallToolAsync(
@@ -150,17 +144,11 @@ public sealed class PageSyncToolE2ETests {
 	[Description("Keeps JavaScript handlers out of JSON content validation failures.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages ignores handler JavaScript during content validation")]
-	[AllureDescription("Uses a reachable sandbox environment, sends a page body with JavaScript handlers plus a malformed JSON-backed marker, and verifies that validation reports the real JSON marker instead of the handler block.")]
+	[AllureDescription("Uses any reachable environment, sends a page body with JavaScript handlers plus a malformed JSON-backed marker, and verifies that validation reports the real JSON marker instead of the handler block.")]
 	public async Task PageSyncTool_Should_Not_Report_Handler_Marker_As_Invalid_Json() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages validation E2E.");
-		}
-		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"sync-pages validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
-		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 
 		await using ArrangeContext context = await ArrangeAsync();
 		string bodyWithHandlerAndBrokenJson = ValidPageBody
@@ -205,17 +193,11 @@ public sealed class PageSyncToolE2ETests {
 	[Description("Rejects proxy standard field bindings through the real MCP server before any remote save is attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages rejects proxy field bindings during semantic validation")]
-	[AllureDescription("Uses a reachable sandbox environment, sends a page body with a standard field bound through a proxy Usr attribute, and verifies that semantic validation blocks the save with a structured response.")]
+	[AllureDescription("Uses any reachable environment, sends a page body with a standard field bound through a proxy Usr attribute, and verifies that semantic validation blocks the save with a structured response.")]
 	public async Task PageSyncTool_Should_Reject_Proxy_Field_Bindings_Before_Save() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages semantic validation E2E.");
-		}
-		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
-		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 
 		await using ArrangeContext context = await ArrangeAsync();
 		string bodyWithProxyBinding = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
@@ -258,6 +240,32 @@ public sealed class PageSyncToolE2ETests {
 		response.Pages[0].Error.Should().Contain("$UsrStatus")
 			.And.Contain("$PDS_UsrStatus",
 				because: "the failure should explain both the rejected proxy binding and the expected datasource binding");
+	}
+
+	[Test]
+	[Description("Deferred positive coverage for sync-pages save-and-verify when the E2E environment has a known editable page.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages saves and verifies a real page with structured read-back")]
+	[AllureDescription("Placeholder for a future seeded-data E2E that saves and verifies a known editable page through sync-pages.")]
+	public void PageSyncTool_Should_Save_And_Verify_Real_Page_With_NoOp_Body() {
+		Assert.Ignore("TODO: add predefined editable page data to the E2E environment, then restore this positive sync-pages save-and-verify scenario.");
+	}
+
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
+		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
+		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
+			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
+			return configuredEnvironmentName;
+		}
+
+		const string fallbackEnvironmentName = "d2";
+		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
+			return fallbackEnvironmentName;
+		}
+
+		Assert.Ignore(
+			$"sync-pages MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
+		return string.Empty;
 	}
 
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {

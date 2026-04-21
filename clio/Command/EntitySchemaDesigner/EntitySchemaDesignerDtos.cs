@@ -360,6 +360,9 @@ internal sealed class EntitySchemaColumnDto
 	[JsonProperty("isValueMasked")]
 	public bool ValueMasked { get; set; }
 
+	[JsonProperty("valueMaskingSettings")]
+	public EntitySchemaColumnValueMaskingSettingsDto ValueMaskingSettings { get; set; }
+
 	[JsonProperty("isFormatValidated")]
 	public bool FormatValidated { get; set; }
 
@@ -377,6 +380,18 @@ internal sealed class EntitySchemaColumnDto
 
 	[JsonProperty("isSensitiveData")]
 	public bool SensitiveData { get; set; }
+}
+
+internal sealed class EntitySchemaColumnValueMaskingSettingsDto
+{
+	[JsonProperty("pattern")]
+	public string Pattern { get; set; }
+
+	[JsonProperty("replacement")]
+	public string Replacement { get; set; }
+
+	[JsonProperty("adminOperationCode")]
+	public string AdminOperationCode { get; set; }
 }
 
 internal sealed class GetSchemaDesignItemRequestDto

@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -11,17 +12,17 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class PageGetTool(
 	PageGetCommand command,
 	ILogger logger,
-	IToolCommandResolver commandResolver)
+	IToolCommandResolver commandResolver,
+	IFileSystem fileSystem)
 	: BaseTool<PageGetOptions>(command, logger, commandResolver) {
 
 	internal const string ToolName = "get-page";
 
-	/// <summary>
-	/// Reads a Freedom UI page as a merged bundle plus raw editable body.
-	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Get a Freedom UI page bundle plus raw schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
-	public PageGetResponse GetPage([Description("Parameters: schema-name (required); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageGetArgs args) {
+	[Description("Get a Freedom UI page. Writes body.js / bundle.json / meta.json to .clio-pages/{schema-name}/ in the working directory and returns file paths. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	public PageGetResponse GetPage(
+		[Description("Parameters: schema-name (required); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Required] PageGetArgs args) {
 		PageGetOptions options = new() {
 			SchemaName = args.SchemaName,
 			Environment = args.EnvironmentName,
@@ -37,8 +38,36 @@ public sealed class PageGetTool(
 				return new PageGetResponse { Success = false, Error = ex.Message };
 			}
 			resolvedCommand.TryGetPage(options, out PageGetResponse response);
+			if (response.Success) {
+				return WriteFilesAndCompact(response, args.SchemaName);
+			}
 			return response;
 		}
+	}
+
+	private PageGetResponse WriteFilesAndCompact(PageGetResponse response, string schemaName) {
+		string schemaDir = fileSystem.Path.Combine(
+			fileSystem.Directory.GetCurrentDirectory(), ".clio-pages", schemaName);
+		try {
+			fileSystem.Directory.CreateDirectory(schemaDir);
+		} catch (Exception ex) {
+			return new PageGetResponse { Success = false, Error = $"Failed to create output directory '{schemaDir}': {ex.Message}" };
+		}
+		string bodyFile   = fileSystem.Path.Combine(schemaDir, "body.js");
+		string bundleFile = fileSystem.Path.Combine(schemaDir, "bundle.json");
+		string metaFile   = fileSystem.Path.Combine(schemaDir, "meta.json");
+		try {
+			fileSystem.File.WriteAllText(bodyFile,   response.Raw.Body);
+			fileSystem.File.WriteAllText(bundleFile, System.Text.Json.JsonSerializer.Serialize(response.Bundle));
+			fileSystem.File.WriteAllText(metaFile,   System.Text.Json.JsonSerializer.Serialize(response.Page));
+		} catch (Exception ex) {
+			return new PageGetResponse { Success = false, Error = $"Failed to write page files: {ex.Message}" };
+		}
+		return new PageGetResponse {
+			Success = true,
+			Page = response.Page,
+			Files = new PageGetFilesInfo { BodyFile = bodyFile, BundleFile = bundleFile, MetaFile = metaFile }
+		};
 	}
 }
 

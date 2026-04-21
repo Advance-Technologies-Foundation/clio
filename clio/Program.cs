@@ -118,6 +118,7 @@ internal class Program {
 		typeof(PageListOptions),
 		typeof(PageGetOptions),
 		typeof(PageUpdateOptions),
+		typeof(ClientUnitSchemaUpdateOptions),
 		typeof(ConfigureWorkspaceOptions),
 		typeof(GitSyncOptions),
 		typeof(BuildInfoOptions),

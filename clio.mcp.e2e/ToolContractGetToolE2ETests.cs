@@ -127,7 +127,7 @@ public sealed class ToolContractGetToolE2ETests {
 		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
 			.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "pages" &&
-				field.Description.Contains("verified-body", StringComparison.Ordinal) &&
+				field.Description.Contains("verified-body-file", StringComparison.Ordinal) &&
 				field.Description.Contains("page", StringComparison.Ordinal),
 				because: "sync-pages should advertise the richer per-page verify response through get-tool-contract");
 		response.Tools.Single(tool => tool.Name == PageUpdateTool.ToolName)
@@ -191,7 +191,7 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "explicit lookup should still return Data Forge initialize for remediation workflows");
 		explicitResponse.Tools!.Select(tool => tool.Name).Should().Contain(DataForgeTool.DataForgeUpdateToolName,
 			because: "explicit lookup should still return Data Forge update for remediation workflows");
-		explicitResponse.Tools.Single(tool => tool.Name == DataForgeTool.DataForgeHealthToolName)
+		explicitResponse.Tools!.Single(tool => tool.Name == DataForgeTool.DataForgeHealthToolName)
 			.Defaults.Should().Contain(definition =>
 				definition.Name == "scope" && definition.Value == "use_enrichment",
 				because: "the explicit Data Forge contract should advertise the default OAuth scope");
@@ -596,6 +596,50 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "the field path should point to the blank element inside tool-names");
 	}
 
+	[Test]
+	[Description("Returns a top-level MCP invocation error when get-tool-contract is called without the required args wrapper.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract rejects calls without the args wrapper")]
+	public async Task ToolContractGet_Should_Return_Invocation_Error_When_Args_Wrapper_Is_Missing() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?>(),
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		AssertInvocationFailure(callResult,
+			because: "MCP argument binding should reject transport envelopes that omit the required args wrapper");
+	}
+
+	[Test]
+	[Description("Returns a top-level MCP invocation error when get-tool-contract receives args in an invalid transport shape.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract rejects calls with args of the wrong type")]
+	public async Task ToolContractGet_Should_Return_Invocation_Error_When_Args_Has_Invalid_Type() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = "invalid"
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		AssertInvocationFailure(callResult,
+			because: "MCP argument binding should reject transport envelopes whose args payload cannot bind to ToolContractGetArgs");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
@@ -613,6 +657,18 @@ public sealed class ToolContractGetToolE2ETests {
 		callResult.IsError.Should().NotBeTrue(
 			because: "get-tool-contract should return a normal MCP tool result envelope for valid request shapes");
 		return EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(callResult);
+	}
+
+	private static void AssertInvocationFailure(CallToolResult callResult, string because) {
+		callResult.IsError.Should().BeTrue(
+			because: because);
+		callResult.StructuredContent.Should().BeNull(
+			because: "binding-layer failures should not return a structured get-tool-contract payload");
+		callResult.Content.Should().NotBeNullOrEmpty(
+			because: "invocation failures should still expose human-readable diagnostics");
+		callResult.Content!.Select(content => content.ToString()).Should().Contain(message =>
+				message.Contains("An error occurred invoking 'get-tool-contract'.", StringComparison.Ordinal),
+			because: "the transport-level failure should surface as the generic invocation error for the tool");
 	}
 
 	private sealed record ArrangeContext(

@@ -22,10 +22,14 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	#region Fields: Private
 
 	private const string TitleLocalizationsArgumentName = "title-localizations";
+	private const string SchemaNamePrefixSettingCode = "SchemaNamePrefix";
+	private const string DefaultMaskingPattern = ".*";
+	private const string DefaultMaskingReplacement = "********";
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
 	private readonly ILogger _logger;
+	private readonly ISysSettingsManager _sysSettingsManager;
 
 	#endregion
 
@@ -82,11 +86,13 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		IApplicationPackageListProvider applicationPackageListProvider,
 		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
-		ILogger logger) {
+		ILogger logger,
+		ISysSettingsManager sysSettingsManager) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_logger = logger;
+		_sysSettingsManager = sysSettingsManager;
 	}
 
 	#endregion
@@ -112,6 +118,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		schema.Columns ??= [];
 		schema.Indexes ??= [];
 		schema.InheritedColumns ??= [];
+		NormalizeAdministrationMetadata(schema);
 
 		Dictionary<string, ManagerItemDto> referenceSchemas = parsedColumns.Any(c => c.IsLookup)
 			? GetReferenceSchemas(package.Descriptor.UId, options)
@@ -123,7 +130,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 		if (!schema.ParentSchema.HasValue() && columns.All(column => !column.IsGuidType())) {
 			columns.Insert(0, CreateColumn(
-				new ParsedColumn("Id", "guid", "Id", null, null, null, null, null, null, null),
+				new ParsedColumn(ResolvePrimaryColumnName(), "guid", "Id", null, null, null, null, null, null, null),
 				referenceSchemas,
 				cultureName,
 				options));
@@ -132,6 +139,18 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		schema.Columns = columns;
 		schema.PrimaryColumn = columns.FirstOrDefault(column => column.IsGuidType()) ?? schema.PrimaryColumn;
 		schema.PrimaryDisplayColumn ??= columns.FirstOrDefault(column => column.IsTextType());
+	}
+
+	private static void NormalizeAdministrationMetadata(EntityDesignSchemaDto schema) {
+		if (schema.ParentSchema.HasValue()) {
+			return;
+		}
+
+		schema.AdministratedByOperations = false;
+		schema.AdministratedByColumns = false;
+		schema.AdministratedByRecords = false;
+		schema.UseDenyRecordRights = false;
+		schema.RightSchemaName = string.Empty;
 	}
 
 	private EntityDesignSchemaDto AssignParentSchema(
@@ -227,6 +246,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			Masked = parsedColumn.Masked ?? false,
 			ValueMasked = parsedColumn.Masked ?? false
 		};
+		if (column.ValueMasked) {
+			column.ValueMaskingSettings = CreateValueMaskingSettings(options.SchemaName, parsedColumn.Name);
+		}
 		ApplyDefaultValue(column, parsedColumn, options);
 		if (parsedColumn.IsLookup) {
 			if (!referenceSchemas.TryGetValue(parsedColumn.ReferenceSchemaName!, out ManagerItemDto referenceSchema)) {
@@ -249,6 +271,16 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		return column;
 	}
 
+	private static EntitySchemaColumnValueMaskingSettingsDto CreateValueMaskingSettings(
+		string schemaName,
+		string columnName) {
+		return new EntitySchemaColumnValueMaskingSettingsDto {
+			Pattern = DefaultMaskingPattern,
+			Replacement = DefaultMaskingReplacement,
+			AdminOperationCode = $"{schemaName}_{columnName}_UnmaskedValue"
+		};
+	}
+
 	private void ValidateDefaultValue(ParsedColumn parsedColumn, int dataValueType, CreateEntitySchemaOptions options) {
 		if (UsesUnsupportedLegacyBinaryDefaultValue(parsedColumn, dataValueType)) {
 			throw new InvalidOperationException(
@@ -268,6 +300,23 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 		EntitySchemaDesignerSupport.ValidateDefaultValueConfig(defaultValueConfig, dataValueType,
 			$"Column '{parsedColumn.Name}'");
+	}
+
+	private string ResolvePrimaryColumnName() {
+		try {
+			string schemaNamePrefix = NormalizeTextSysSettingValue(
+				_sysSettingsManager.GetSysSettingValueByCode(SchemaNamePrefixSettingCode));
+			return string.IsNullOrWhiteSpace(schemaNamePrefix)
+				? "Id"
+				: $"{schemaNamePrefix}Id";
+		}
+		catch {
+			return "Id";
+		}
+	}
+
+	private static string NormalizeTextSysSettingValue(string? value) {
+		return value?.Trim().Trim('"') ?? string.Empty;
 	}
 
 	private static bool UsesUnsupportedLegacyBinaryDefaultValue(ParsedColumn parsedColumn, int dataValueType) {
@@ -443,6 +492,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 	public void Create(CreateEntitySchemaOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
+		if (!CheckUniqueSchemaName(options.SchemaName, Guid.Empty, options)) {
+			throw new InvalidOperationException($"Schema '{options.SchemaName}' already exists.");
+		}
 		PackageInfo package = ResolvePackage(options.Package);
 		List<ParsedColumn> parsedColumns = ParseColumns(options.Columns).ToList();
 		DesignerResponse<EntityDesignSchemaDto> createResponse = _entitySchemaDesignerClient.CreateNewSchema(
@@ -476,18 +528,29 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			throw new InvalidOperationException(
 				$"Schema '{options.SchemaName}' was saved but is not available in runtime.");
 		}
-		EntityDesignSchemaDto reloadedSchema = _entitySchemaDesignerClient.GetSchemaDesignItem(
+		DesignerResponse<EntityDesignSchemaDto>? designItemResponse = _entitySchemaDesignerClient.TryGetSchemaDesignItem(
 			new GetSchemaDesignItemRequestDto {
 				Name = options.SchemaName,
 				PackageUId = package.Descriptor.UId,
 				UseFullHierarchy = false,
 				Cultures = [EntitySchemaDesignerSupport.GetCurrentCultureName()]
-			},
-			options).Schema ?? throw new InvalidOperationException(
-			$"Schema '{options.SchemaName}' could not be reloaded after save.");
-		if (!string.Equals(reloadedSchema.Name, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
-			throw new InvalidOperationException(
-				$"Schema '{options.SchemaName}' was reloaded with unexpected name '{reloadedSchema.Name}'.");
+			}, options);
+		if (designItemResponse != null) {
+			EntityDesignSchemaDto reloadedSchema = designItemResponse.Schema
+				?? throw new InvalidOperationException(
+					$"Schema '{options.SchemaName}' could not be reloaded after save.");
+			if (!string.Equals(reloadedSchema.Name, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
+				throw new InvalidOperationException(
+					$"Schema '{options.SchemaName}' was reloaded with unexpected name '{reloadedSchema.Name}'.");
+			}
+		} else {
+			string runtimeName = runtimeResponse.Schema.Name;
+			if (!string.Equals(runtimeName, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
+				throw new InvalidOperationException(
+					$"Schema '{options.SchemaName}' was created but runtime schema name '{runtimeName}' does not match.");
+			}
+			_logger.WriteInfo(
+				$"Schema '{options.SchemaName}': designer service returned an HTML response during verification; confirmed accessible at runtime.");
 		}
 		_logger.WriteInfo($"Entity schema '{options.SchemaName}' created in package '{options.Package}'.");
 	}

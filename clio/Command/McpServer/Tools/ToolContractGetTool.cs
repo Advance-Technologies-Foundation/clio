@@ -1366,7 +1366,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every page operation succeeded."),
-				Field(PagesFieldName, ArrayType, "Per-page results with `schema-name`, `success`, `body-length`, `validation`, `error`, `resources-registered`, optional `page` metadata, and optional `verified-body` when `verify=true`.")
+				Field(PagesFieldName, ArrayType, "Per-page results with `schema-name`, `success`, `body-length`, `validation`, `error`, `resources-registered`, optional `page` metadata, and optional `verified-body-file` when `verify=true`.")
 			),
 			CommonErrorContract,
 			[],

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command;
@@ -28,7 +29,7 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class EntitySchemaToolE2ETests {
 	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
-	private const string MaintainerSettingCode = "Maintainer";
+	private const string TextDefaultSettingCode = "UsrEntitySchemaE2EDefaultText";
 	private const string CreateToolName = CreateEntitySchemaTool.CreateEntitySchemaToolName;
 	private const string CreateLookupToolName = CreateLookupTool.CreateLookupToolName;
 	private const string UpdateToolName = UpdateEntitySchemaTool.UpdateEntitySchemaToolName;
@@ -135,6 +136,51 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	[Test]
+	[Description("Creates a remote lookup schema through MCP without custom columns and verifies BaseLookup inheritance plus registration side effects.")]
+	[AllureTag(CreateLookupToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("Create lookup MCP tool creates a BaseLookup schema when columns are omitted")]
+	[AllureDescription("Arranges a unique package in the sandbox environment through the real CLI, then exercises create-lookup without the optional columns argument and verifies real remote side effects plus BaseLookup inheritance and canonical lookup registration.")]
+	public async Task CreateLookup_Should_Create_BaseLookup_Schema_When_Columns_Are_Omitted() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateLookupWithoutCustomColumnsAsync(arrangeContext);
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+		LookupRegistrationSnapshot registrationSnapshot = LookupRegistrationProbe.Read(
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName);
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"create-lookup should succeed when callers omit the optional custom columns collection");
+		AssertIncludesInfoMessage(createResult,
+			"successful lookup creation without custom columns should still emit progress output");
+		schemaProperties.Name.Should().Be(arrangeContext.SchemaName,
+			because: "the created lookup should still be readable through the structured schema properties tool");
+		schemaProperties.ParentSchemaName.Should().Be("BaseLookup",
+			because: "create-lookup should force BaseLookup inheritance even when no custom columns are supplied");
+		schemaProperties.Columns.Should().NotBeNullOrEmpty(
+			because: "lookup schema readback should still expose inherited columns when no custom columns were requested");
+		schemaProperties.Columns!.Should().Contain(column => column.Source == "inherited",
+			because: "BaseLookup-derived schemas should still expose inherited base columns in the read model");
+		schemaProperties.Columns!.Should().NotContain(column => column.Name == arrangeContext.LookupColumnName,
+			because: "omitting columns should not synthesize the custom test-only lookup column from the other create-lookup scenario");
+		registrationSnapshot.LookupRowCount.Should().Be(1,
+			because: "create-lookup should still register the schema exactly once in the Lookup entity when no custom columns are provided");
+		registrationSnapshot.LookupRowTitle.Should().Be("Order status",
+			because: "the Lookup registration row should still reuse the requested business caption");
+		registrationSnapshot.BindingCount.Should().Be(1,
+			because: "create-lookup should still create exactly one canonical package schema data binding");
+		registrationSnapshot.BindingEntitySchemaName.Should().Be("Lookup",
+			because: "the package schema data binding should still target the Lookup entity");
+		registrationSnapshot.BoundRecordIds.Should().Equal([registrationSnapshot.LookupRowId!],
+			because: "the canonical Lookup binding should still point only to the created registration row");
+	}
+
+	[Test]
 	[Description("Adds Binary, Image, and File columns through update-entity-schema and verifies friendly type names through structured readback.")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(UpdateToolName)]
@@ -145,9 +191,9 @@ public sealed class EntitySchemaToolE2ETests {
 	public async Task UpdateEntitySchema_Should_Add_BinaryLike_Columns_And_Read_Back_Friendly_Types() {
 		// Arrange
 		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
-		const string binaryColumnName = "Payload";
-		const string imageColumnName = "Preview";
-		const string fileColumnName = "Document";
+		const string binaryColumnName = "UsrPayload";
+		const string imageColumnName = "UsrPreview";
+		const string fileColumnName = "UsrDocument";
 
 		// Act
 		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
@@ -206,7 +252,12 @@ public sealed class EntitySchemaToolE2ETests {
 			"modify-entity-schema-column should succeed when applying default-value-config after a localized batch add");
 		AssertIncludesInfoMessage(modifyResult,
 			"successful follow-up default-value-config mutations should emit progress output");
-		AssertStructuredSettingsColumnProperties(columnProperties, arrangeContext.SchemaName, localizedColumnName, "Status");
+		AssertStructuredSettingsColumnProperties(
+			columnProperties,
+			arrangeContext.SchemaName,
+			localizedColumnName,
+			"Status",
+			TextDefaultSettingCode);
 	}
 
 	[Test]
@@ -264,7 +315,12 @@ public sealed class EntitySchemaToolE2ETests {
 			"modify-entity-schema-column should succeed when adding a Text column with a settings default");
 		AssertIncludesInfoMessage(addResult,
 			"successful structured settings mutations should emit progress output");
-		AssertStructuredSettingsColumnProperties(columnProperties, arrangeContext.SchemaName, titleColumnName, "Title");
+		AssertStructuredSettingsColumnProperties(
+			columnProperties,
+			arrangeContext.SchemaName,
+			titleColumnName,
+			"Title",
+			TextDefaultSettingCode);
 	}
 
 	[Test]
@@ -435,6 +491,77 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	[Test]
+	[Description("Returns stable structured schema metadata for Contact so callers can inspect existing schemas without destructive setup.")]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("Get entity schema properties returns stable structured metadata for Contact")]
+	[AllureDescription("Uses the real MCP server to call get-entity-schema-properties against the configured sandbox environment for the built-in Contact schema and verifies key output fields are populated for inspection workflows.")]
+	public async Task GetEntitySchemaProperties_Should_Return_Stable_Contact_Metadata() {
+		// Arrange
+		await using SandboxFindEntitySchemaArrangeContext arrangeContext = await ArrangeSandboxFindEntitySchemaAsync();
+
+		// Act
+		CallToolResult callResult = await CallGetSchemaPropertiesAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			"CrtCoreBase",
+			"Contact",
+			arrangeContext.CancellationTokenSource.Token);
+		EntitySchemaPropertiesInfo properties = EntitySchemaStructuredResultParser.Extract<EntitySchemaPropertiesInfo>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "get-entity-schema-properties should return structured MCP data for a valid sandbox environment");
+		properties.Name.Should().Be("Contact",
+			because: "the structured schema readback should identify the requested built-in schema");
+		properties.PackageName.Should().NotBeNullOrWhiteSpace(
+			because: "schema readback should expose package ownership for follow-up maintenance decisions");
+		properties.ParentSchemaName.Should().NotBeNullOrWhiteSpace(
+			because: "schema readback should expose inheritance context for existing-schema inspection");
+		properties.PrimaryColumnName.Should().NotBeNullOrWhiteSpace(
+			because: "schema readback should expose the primary key column");
+		properties.PrimaryDisplayColumnName.Should().NotBeNullOrWhiteSpace(
+			because: "schema readback should expose the primary display column");
+		properties.Columns.Should().NotBeNullOrEmpty(
+			because: "schema readback should expose nested columns for follow-up property inspection");
+		properties.Columns!.Should().Contain(column => column.Name == "Name",
+			because: "the built-in Contact schema should expose the Name column in the nested read model");
+	}
+
+	[Test]
+	[Description("Returns stable structured column metadata for Contact.Name so callers can inspect existing columns without destructive setup.")]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("Get entity schema column properties returns stable metadata for Contact.Name")]
+	[AllureDescription("Uses the real MCP server to call get-entity-schema-column-properties against the configured sandbox environment for Contact.Name and verifies key output fields are populated for column inspection workflows.")]
+	public async Task GetEntitySchemaColumnProperties_Should_Return_Stable_ContactName_Metadata() {
+		// Arrange
+		await using SandboxFindEntitySchemaArrangeContext arrangeContext = await ArrangeSandboxFindEntitySchemaAsync();
+
+		// Act
+		CallToolResult callResult = await CallGetColumnPropertiesAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			"CrtCoreBase",
+			"Contact",
+			"Name",
+			arrangeContext.CancellationTokenSource.Token);
+		EntitySchemaColumnPropertiesInfo properties = EntitySchemaStructuredResultParser.Extract<EntitySchemaColumnPropertiesInfo>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "get-entity-schema-column-properties should return structured MCP data for a valid sandbox environment");
+		properties.SchemaName.Should().Be("Contact",
+			because: "the structured column readback should identify the requested schema");
+		properties.ColumnName.Should().Be("Name",
+			because: "the structured column readback should identify the requested column");
+		properties.Source.Should().NotBeNullOrWhiteSpace(
+			because: "column readback should expose whether the column is inherited or own");
+		properties.Title.Should().NotBeNullOrWhiteSpace(
+			because: "column readback should expose the business caption");
+		properties.Type.Should().NotBeNullOrWhiteSpace(
+			because: "column readback should expose the normalized friendly type name");
+	}
+
+	[Test]
 	[Description("Returns structured schema search results that already include package-name for follow-up MCP calls.")]
 	[AllureTag(FindEntitySchemaTool.FindEntitySchemaToolName)]
 	[AllureName("Find entity schema returns structured package ownership")]
@@ -484,317 +611,356 @@ public sealed class EntitySchemaToolE2ETests {
 			"unknown environment names should be reported before any schema search is executed");
 	}
 
-	[AllureStep("Arrange sandbox MCP session for non-destructive find-entity-schema checks")]
 	private static async Task<SandboxFindEntitySchemaArrangeContext> ArrangeSandboxFindEntitySchemaAsync() {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new SandboxFindEntitySchemaArrangeContext(
-			settings.Sandbox.EnvironmentName!,
-			session,
-			cancellationTokenSource);
+		return await AllureApi.Step("Arrange sandbox MCP session for non-destructive find-entity-schema checks", async () => {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			TestConfiguration.EnsureSandboxIsConfigured(settings);
+			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
+			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			return new SandboxFindEntitySchemaArrangeContext(
+				settings.Sandbox.EnvironmentName!,
+				session,
+				cancellationTokenSource);
+		});
 	}
 
-	[AllureStep("Arrange sandbox package and MCP session for entity schema tools")]
 	private static async Task<EntitySchemaArrangeContext> ArrangeSandboxPackageAsync() {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		if (!settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive entity schema MCP end-to-end tests.");
-		}
+		return await AllureApi.Step("Arrange sandbox package and MCP session for entity schema tools", async () => {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			if (!settings.AllowDestructiveMcpTests) {
+				Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive entity schema MCP end-to-end tests.");
+			}
 
-		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-entity-schema-mcp-e2e-{Guid.NewGuid():N}");
-		Directory.CreateDirectory(rootDirectory);
+			TestConfiguration.EnsureSandboxIsConfigured(settings);
+			string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-entity-schema-mcp-e2e-{Guid.NewGuid():N}");
+			Directory.CreateDirectory(rootDirectory);
 
-		string workspaceName = $"workspace-{Guid.NewGuid():N}";
-		string workspacePath = Path.Combine(rootDirectory, workspaceName);
-		string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
-		string schemaName = $"Usr{Guid.NewGuid():N}".Substring(0, 22);
-		string initialColumnName = "Name";
-		string lookupColumnName = "UsrSortOrder";
-		string addedColumnName = "Code";
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(8));
+			string workspaceName = $"workspace-{Guid.NewGuid():N}";
+			string workspacePath = Path.Combine(rootDirectory, workspaceName);
+			string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
+			string schemaName = $"Usr{Guid.NewGuid():N}".Substring(0, 22);
+			string initialColumnName = "UsrName";
+			string lookupColumnName = "UsrSortOrder";
+			string addedColumnName = "UsrCode";
+			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(8));
 
-		try {
-			await ClioCliCommandRunner.EnsureCliogateInstalledAsync(
+			try {
+				await ClioCliCommandRunner.EnsureCliogateInstalledAsync(
+					settings,
+					settings.Sandbox.EnvironmentName!,
+					cancellationTokenSource.Token);
+			}
+			catch (Exception ex) {
+				Assert.Ignore(
+					$"Skipping destructive entity schema MCP end-to-end test because cliogate could not be installed or verified for '{settings.Sandbox.EnvironmentName}'. {ex.Message}");
+			}
+			await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationTokenSource.Token);
+			await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
+			await PushWorkspaceAsync(
+				settings,
+				workspacePath,
+				settings.Sandbox.EnvironmentName!,
+				packageName,
+				cancellationTokenSource.Token);
+			await EnsureTextSysSettingAsync(
 				settings,
 				settings.Sandbox.EnvironmentName!,
+				TextDefaultSettingCode,
+				"Entity schema MCP E2E default",
 				cancellationTokenSource.Token);
-		}
-		catch (Exception ex) {
-			Assert.Ignore(
-				$"Skipping destructive entity schema MCP end-to-end test because cliogate could not be installed or verified for '{settings.Sandbox.EnvironmentName}'. {ex.Message}");
-		}
-		await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationTokenSource.Token);
-		await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
-		await PushWorkspaceAsync(settings, workspacePath, settings.Sandbox.EnvironmentName!, cancellationTokenSource.Token);
 
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new EntitySchemaArrangeContext(
-			rootDirectory,
-			settings.Sandbox.EnvironmentName!,
-			packageName,
-			schemaName,
-			initialColumnName,
-			lookupColumnName,
-			addedColumnName,
-			session,
-			cancellationTokenSource);
+			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			return new EntitySchemaArrangeContext(
+				rootDirectory,
+				settings.Sandbox.EnvironmentName!,
+				packageName,
+				schemaName,
+				initialColumnName,
+				lookupColumnName,
+				addedColumnName,
+				session,
+				cancellationTokenSource);
+		});
 	}
 
-	[AllureStep("Arrange invalid-environment MCP session for entity schema tools")]
 	private static async Task<InvalidEnvironmentArrangeContext> ArrangeInvalidEnvironmentAsync() {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new InvalidEnvironmentArrangeContext(
-			$"missing-entity-schema-env-{Guid.NewGuid():N}",
-			session,
-			cancellationTokenSource);
+		return await AllureApi.Step("Arrange invalid-environment MCP session for entity schema tools", async () => {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
+			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			return new InvalidEnvironmentArrangeContext(
+				$"missing-entity-schema-env-{Guid.NewGuid():N}",
+				session,
+				cancellationTokenSource);
+		});
 	}
 
-	[AllureStep("Act by invoking create-entity-schema through MCP")]
 	private static async Task<CommandExecutionEnvelope> ActCreateEntitySchemaAsync(EntitySchemaArrangeContext arrangeContext) {
-		CallToolResult callResult = await CallCreateEntitySchemaAsync(
-			arrangeContext.Session,
-			arrangeContext.EnvironmentName,
-			arrangeContext.PackageName,
-			arrangeContext.SchemaName,
-			arrangeContext.CancellationTokenSource.Token,
-			columns: [
-				new Dictionary<string, object?> {
-					["name"] = arrangeContext.InitialColumnName,
-					["type"] = "Text",
-					["title-localizations"] = BuildLocalizations("Vehicle name")
-				}
-			]);
-		return McpCommandExecutionParser.Extract(callResult);
+		return await AllureApi.Step("Act by invoking create-entity-schema through MCP", async () => {
+			CallToolResult callResult = await CallCreateEntitySchemaAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				columns: [
+					new Dictionary<string, object?> {
+						["name"] = arrangeContext.InitialColumnName,
+						["type"] = "Text",
+						["title-localizations"] = BuildLocalizations("Vehicle name")
+					}
+				]);
+			return McpCommandExecutionParser.Extract(callResult);
+		});
 	}
 
-	[AllureStep("Act by invoking create-entity-schema through MCP with a masked text column")]
 	private static async Task<CommandExecutionEnvelope> ActCreateEntitySchemaWithMaskedTextColumnAsync(
 		EntitySchemaArrangeContext arrangeContext,
 		string columnName) {
-		CallToolResult callResult = await CallCreateEntitySchemaAsync(
-			arrangeContext.Session,
-			arrangeContext.EnvironmentName,
-			arrangeContext.PackageName,
-			arrangeContext.SchemaName,
-			arrangeContext.CancellationTokenSource.Token,
-			columns: [
-				new Dictionary<string, object?> {
-					["name"] = columnName,
-					["type"] = "Text",
-					["title-localizations"] = BuildLocalizations("Masked text"),
-					["masked"] = true
-				}
-			]);
-		return McpCommandExecutionParser.Extract(callResult);
+		return await AllureApi.Step("Act by invoking create-entity-schema through MCP with a masked text column", async () => {
+			CallToolResult callResult = await CallCreateEntitySchemaAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				columns: [
+					new Dictionary<string, object?> {
+						["name"] = columnName,
+						["type"] = "Text",
+						["title-localizations"] = BuildLocalizations("Masked text"),
+						["masked"] = true
+					}
+				]);
+			return McpCommandExecutionParser.Extract(callResult);
+		});
 	}
 
-	[AllureStep("Act by invoking get-entity-schema-properties through MCP")]
 	private static async Task<EntitySchemaPropertiesInfo> ActGetSchemaPropertiesAsync(
 		EntitySchemaArrangeContext arrangeContext) {
-		CallToolResult callResult = await CallGetSchemaPropertiesAsync(
-			arrangeContext.Session,
-			arrangeContext.EnvironmentName,
-			arrangeContext.PackageName,
-			arrangeContext.SchemaName,
-			arrangeContext.CancellationTokenSource.Token);
-		return EntitySchemaStructuredResultParser.Extract<EntitySchemaPropertiesInfo>(callResult);
+		return await AllureApi.Step("Act by invoking get-entity-schema-properties through MCP", async () => {
+			CallToolResult callResult = await CallGetSchemaPropertiesAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token);
+			return EntitySchemaStructuredResultParser.Extract<EntitySchemaPropertiesInfo>(callResult);
+		});
 	}
 
-	[AllureStep("Act by invoking modify-entity-schema-column through MCP")]
 	private static async Task<CommandExecutionEnvelope> ActAddEntitySchemaColumnAsync(
 		EntitySchemaArrangeContext arrangeContext) {
-		CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
-			arrangeContext.Session,
-			arrangeContext.EnvironmentName,
-			arrangeContext.PackageName,
-			arrangeContext.SchemaName,
-			"add",
-			arrangeContext.AddedColumnName,
-			arrangeContext.CancellationTokenSource.Token,
-			type: "ShortText",
-			titleLocalizations: BuildLocalizations("Vehicle code"),
-			indexed: true,
-			defaultValueSource: "Const",
-			defaultValue: "Draft");
-		return McpCommandExecutionParser.Extract(callResult);
+		return await AllureApi.Step("Act by invoking modify-entity-schema-column through MCP", async () => {
+			CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"add",
+				arrangeContext.AddedColumnName,
+				arrangeContext.CancellationTokenSource.Token,
+				type: "ShortText",
+				titleLocalizations: BuildLocalizations("Vehicle code"),
+				indexed: true,
+				defaultValueSource: "Const",
+				defaultValue: "Draft");
+			return McpCommandExecutionParser.Extract(callResult);
+		});
 	}
 
-	[AllureStep("Act by invoking create-lookup through MCP")]
 	private static async Task<CommandExecutionEnvelope> ActCreateLookupAsync(EntitySchemaArrangeContext arrangeContext) {
-		CallToolResult callResult = await CallCreateLookupAsync(
-			arrangeContext.Session,
-			arrangeContext.EnvironmentName,
-			arrangeContext.PackageName,
-			arrangeContext.SchemaName,
-			arrangeContext.CancellationTokenSource.Token,
-			columns: [
-				new Dictionary<string, object?> {
-					["name"] = arrangeContext.LookupColumnName,
-					["type"] = "Integer",
-					["title-localizations"] = BuildLocalizations("Sort order")
-				}
-			]);
-		return McpCommandExecutionParser.Extract(callResult);
+		return await AllureApi.Step("Act by invoking create-lookup through MCP", async () => {
+			CallToolResult callResult = await CallCreateLookupAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				columns: [
+					new Dictionary<string, object?> {
+						["name"] = arrangeContext.LookupColumnName,
+						["type"] = "Integer",
+						["title-localizations"] = BuildLocalizations("Sort order")
+					}
+				]);
+			return McpCommandExecutionParser.Extract(callResult);
+		});
 	}
 
-	[AllureStep("Act by invoking modify-entity-schema-column through MCP for modify")]
+	private static async Task<CommandExecutionEnvelope> ActCreateLookupWithoutCustomColumnsAsync(EntitySchemaArrangeContext arrangeContext) {
+		return await AllureApi.Step("Act by invoking create-lookup through MCP without custom columns", async () => {
+			CallToolResult callResult = await CallCreateLookupAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token);
+			return McpCommandExecutionParser.Extract(callResult);
+		});
+	}
+
 	private static async Task<CommandExecutionEnvelope> ActModifyEntitySchemaColumnAsync(
 		EntitySchemaArrangeContext arrangeContext) {
-		CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
-			arrangeContext.Session,
-			arrangeContext.EnvironmentName,
-			arrangeContext.PackageName,
-			arrangeContext.SchemaName,
-			"modify",
-			arrangeContext.AddedColumnName,
-			arrangeContext.CancellationTokenSource.Token,
-			titleLocalizations: BuildLocalizations("Vehicle code updated"),
-			defaultValueSource: "None");
-		return McpCommandExecutionParser.Extract(callResult);
+		return await AllureApi.Step("Act by invoking modify-entity-schema-column through MCP for modify", async () => {
+			CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"modify",
+				arrangeContext.AddedColumnName,
+				arrangeContext.CancellationTokenSource.Token,
+				titleLocalizations: BuildLocalizations("Vehicle code updated"),
+				defaultValueSource: "None");
+			return McpCommandExecutionParser.Extract(callResult);
+		});
 	}
 
-	[AllureStep("Act by invoking modify-entity-schema-column through MCP for remove")]
 	private static async Task<CommandExecutionEnvelope> ActRemoveEntitySchemaColumnAsync(
 		EntitySchemaArrangeContext arrangeContext) {
-		CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
-			arrangeContext.Session,
-			arrangeContext.EnvironmentName,
-			arrangeContext.PackageName,
-			arrangeContext.SchemaName,
-			"remove",
-			arrangeContext.AddedColumnName,
-			arrangeContext.CancellationTokenSource.Token);
-		return McpCommandExecutionParser.Extract(callResult);
+		return await AllureApi.Step("Act by invoking modify-entity-schema-column through MCP for remove", async () => {
+			CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"remove",
+				arrangeContext.AddedColumnName,
+				arrangeContext.CancellationTokenSource.Token);
+			return McpCommandExecutionParser.Extract(callResult);
+		});
 	}
 
-	[AllureStep("Act by invoking modify-entity-schema-column through MCP for a structured system-value default")]
 	private static async Task<CommandExecutionEnvelope> ActAddDateTimeColumnWithStructuredDefaultAsync(
 		EntitySchemaArrangeContext arrangeContext,
 		string columnName) {
-		CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
-			arrangeContext.Session,
-			arrangeContext.EnvironmentName,
-			arrangeContext.PackageName,
-			arrangeContext.SchemaName,
-			"add",
-			columnName,
-			arrangeContext.CancellationTokenSource.Token,
-			type: "DateTime",
-			titleLocalizations: BuildLocalizations("Start date"),
-			defaultValueConfig: BuildSystemValueDefaultValueConfig("Current Time and Date"));
-		return McpCommandExecutionParser.Extract(callResult);
+		return await AllureApi.Step("Act by invoking modify-entity-schema-column through MCP for a structured system-value default", async () => {
+			CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"add",
+				columnName,
+				arrangeContext.CancellationTokenSource.Token,
+				type: "DateTime",
+				titleLocalizations: BuildLocalizations("Start date"),
+				defaultValueConfig: BuildSystemValueDefaultValueConfig("Current Time and Date"));
+			return McpCommandExecutionParser.Extract(callResult);
+		});
 	}
 
-	[AllureStep("Act by invoking modify-entity-schema-column through MCP for a structured settings default")]
 	private static async Task<CommandExecutionEnvelope> ActAddTextColumnWithStructuredSettingsDefaultAsync(
 		EntitySchemaArrangeContext arrangeContext,
 		string columnName) {
-		CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
-			arrangeContext.Session,
-			arrangeContext.EnvironmentName,
-			arrangeContext.PackageName,
-			arrangeContext.SchemaName,
-			"add",
-			columnName,
-			arrangeContext.CancellationTokenSource.Token,
-			type: "Text",
-			titleLocalizations: BuildLocalizations("Title"),
-			defaultValueConfig: BuildSettingsDefaultValueConfig(MaintainerSettingCode));
-		return McpCommandExecutionParser.Extract(callResult);
+		return await AllureApi.Step("Act by invoking modify-entity-schema-column through MCP for a structured settings default", async () => {
+			CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"add",
+				columnName,
+				arrangeContext.CancellationTokenSource.Token,
+				type: "Text",
+				titleLocalizations: BuildLocalizations("Title"),
+				defaultValueConfig: BuildSettingsDefaultValueConfig(TextDefaultSettingCode));
+			return McpCommandExecutionParser.Extract(callResult);
+		});
 	}
 
-	[AllureStep("Act by invoking get-entity-schema-column-properties through MCP")]
 	private static async Task<EntitySchemaColumnPropertiesInfo> ActGetColumnPropertiesAsync(
 		EntitySchemaArrangeContext arrangeContext,
 		string? columnName = null) {
-		CallToolResult callResult = await CallGetColumnPropertiesAsync(
-			arrangeContext.Session,
-			arrangeContext.EnvironmentName,
-			arrangeContext.PackageName,
-			arrangeContext.SchemaName,
-			columnName ?? arrangeContext.AddedColumnName,
-			arrangeContext.CancellationTokenSource.Token);
-		return EntitySchemaStructuredResultParser.Extract<EntitySchemaColumnPropertiesInfo>(callResult);
+		return await AllureApi.Step("Act by invoking get-entity-schema-column-properties through MCP", async () => {
+			CallToolResult callResult = await CallGetColumnPropertiesAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				columnName ?? arrangeContext.AddedColumnName,
+				arrangeContext.CancellationTokenSource.Token);
+			return EntitySchemaStructuredResultParser.Extract<EntitySchemaColumnPropertiesInfo>(callResult);
+		});
 	}
 
-	[AllureStep("Act by invoking update-entity-schema through MCP for binary-like columns")]
 	private static async Task<CommandExecutionEnvelope> ActBatchAddBinaryLikeColumnsAsync(
 		EntitySchemaArrangeContext arrangeContext,
 		string binaryColumnName,
 		string imageColumnName,
 		string fileColumnName) {
-		CallToolResult callResult = await CallUpdateEntitySchemaAsync(
-			arrangeContext.Session,
-			arrangeContext.EnvironmentName,
-			arrangeContext.PackageName,
-			arrangeContext.SchemaName,
-			arrangeContext.CancellationTokenSource.Token,
-			[
-				new Dictionary<string, object?> {
-					["action"] = "add",
-					["column-name"] = binaryColumnName,
-					["type"] = "Binary",
-					["title-localizations"] = BuildLocalizations("Payload")
-				},
-				new Dictionary<string, object?> {
-					["action"] = "add",
-					["column-name"] = imageColumnName,
-					["type"] = "Image",
-					["title-localizations"] = BuildLocalizations("Preview")
-				},
-				new Dictionary<string, object?> {
-					["action"] = "add",
-					["column-name"] = fileColumnName,
-					["type"] = "File",
-					["title-localizations"] = BuildLocalizations("Document")
-				}
-			]);
-		return McpCommandExecutionParser.Extract(callResult);
+		return await AllureApi.Step("Act by invoking update-entity-schema through MCP for binary-like columns", async () => {
+			CallToolResult callResult = await CallUpdateEntitySchemaAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				[
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = binaryColumnName,
+						["type"] = "Binary",
+						["title-localizations"] = BuildLocalizations("Payload")
+					},
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = imageColumnName,
+						["type"] = "Image",
+						["title-localizations"] = BuildLocalizations("Preview")
+					},
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = fileColumnName,
+						["type"] = "File",
+						["title-localizations"] = BuildLocalizations("Document")
+					}
+				]);
+			return McpCommandExecutionParser.Extract(callResult);
+		});
 	}
 
-	[AllureStep("Act by invoking update-entity-schema through MCP for a localized text column")]
 	private static async Task<CommandExecutionEnvelope> ActBatchAddLocalizedTextColumnAsync(
 		EntitySchemaArrangeContext arrangeContext,
 		string columnName) {
-		CallToolResult callResult = await CallUpdateEntitySchemaAsync(
-			arrangeContext.Session,
-			arrangeContext.EnvironmentName,
-			arrangeContext.PackageName,
-			arrangeContext.SchemaName,
-			arrangeContext.CancellationTokenSource.Token,
-			[
-				new Dictionary<string, object?> {
-					["action"] = "add",
-					["column-name"] = columnName,
-					["type"] = "Text",
-					["title-localizations"] = BuildLocalizations("Status")
-				}
-			]);
-		return McpCommandExecutionParser.Extract(callResult);
+		return await AllureApi.Step("Act by invoking update-entity-schema through MCP for a localized text column", async () => {
+			CallToolResult callResult = await CallUpdateEntitySchemaAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				[
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = columnName,
+						["type"] = "Text",
+						["title-localizations"] = BuildLocalizations("Status")
+					}
+				]);
+			return McpCommandExecutionParser.Extract(callResult);
+		});
 	}
 
-	[AllureStep("Act by invoking modify-entity-schema-column through MCP for a localized column follow-up default")]
 	private static async Task<CommandExecutionEnvelope> ActModifyLocalizedTextColumnWithStructuredSettingsDefaultAsync(
 		EntitySchemaArrangeContext arrangeContext,
 		string columnName) {
-		CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
-			arrangeContext.Session,
-			arrangeContext.EnvironmentName,
-			arrangeContext.PackageName,
-			arrangeContext.SchemaName,
-			"modify",
-			columnName,
-			arrangeContext.CancellationTokenSource.Token,
-			defaultValueConfig: BuildSettingsDefaultValueConfig(MaintainerSettingCode));
-		return McpCommandExecutionParser.Extract(callResult);
+		return await AllureApi.Step("Act by invoking modify-entity-schema-column through MCP for a localized column follow-up default", async () => {
+			CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"modify",
+				columnName,
+				arrangeContext.CancellationTokenSource.Token,
+				defaultValueConfig: BuildSettingsDefaultValueConfig(TextDefaultSettingCode));
+			return McpCommandExecutionParser.Extract(callResult);
+		});
 	}
 
 	private static async Task<CallToolResult> CallCreateEntitySchemaAsync(
@@ -1142,7 +1308,8 @@ public sealed class EntitySchemaToolE2ETests {
 		EntitySchemaColumnPropertiesInfo properties,
 		string schemaName,
 		string columnName,
-		string title) {
+		string title,
+		string expectedSettingCode) {
 		properties.SchemaName.Should().Be(schemaName,
 			because: "the structured result should identify the schema that received the settings default");
 		properties.ColumnName.Should().Be(columnName,
@@ -1155,15 +1322,15 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the structured result should preserve the added Text column title");
 		properties.DefaultValueSource.Should().Be("Settings",
 			because: "legacy summary fields should surface the resolved settings source");
-		properties.DefaultValue.Should().Be(MaintainerSettingCode,
+		properties.DefaultValue.Should().Be(expectedSettingCode,
 			because: "legacy summary fields should expose canonical setting code values");
 		properties.DefaultValueConfig.Should().NotBeNull(
 			because: "structured column readback should expose default-value-config metadata for settings defaults");
 		properties.DefaultValueConfig!.Source.Should().Be("Settings",
 			because: "the structured default value config should preserve the resolved settings source");
-		properties.DefaultValueConfig.ValueSource.Should().Be(MaintainerSettingCode,
+		properties.DefaultValueConfig.ValueSource.Should().Be(expectedSettingCode,
 			because: "the structured default value config should preserve canonical setting code values");
-		properties.DefaultValueConfig.ResolvedValueSource.Should().Be(MaintainerSettingCode,
+		properties.DefaultValueConfig.ResolvedValueSource.Should().Be(expectedSettingCode,
 			because: "structured default value readback should include additive resolved-value-source metadata");
 	}
 
@@ -1247,11 +1414,29 @@ public sealed class EntitySchemaToolE2ETests {
 		McpE2ESettings settings,
 		string workspacePath,
 		string environmentName,
+		string packageName,
 		CancellationToken cancellationToken) {
 		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
 			settings,
 			["push-workspace", "-e", environmentName],
 			workingDirectory: workspacePath,
+			cancellationToken: cancellationToken);
+		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
+			settings,
+			["pkg-hotfix", packageName, "true", "-e", environmentName],
+			workingDirectory: workspacePath,
+			cancellationToken: cancellationToken);
+	}
+
+	private static async Task EnsureTextSysSettingAsync(
+		McpE2ESettings settings,
+		string environmentName,
+		string code,
+		string value,
+		CancellationToken cancellationToken) {
+		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
+			settings,
+			["set-syssetting", code, value, "Text", "-e", environmentName],
 			cancellationToken: cancellationToken);
 	}
 

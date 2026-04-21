@@ -2330,6 +2330,12 @@ Discovery: Commands.md doc links must reference canonical filenames — HasComma
 Files: clio/Command/PageGetOptions.cs, PageListOptions.cs, PageUpdateOptions.cs, DeleteSchemaCommand.cs, ListInstalledApplications.cs, Commands.md, CommandHelpCatalog.cs, WikiAnchors.txt
 Impact: All future renames must update Commands.md link paths (not just anchor IDs); test ExecuteCommands_WithUnknownVerb asserts specific canonical names in suggestions.
 
+## 2026-04-16 19:08 – Harden Data Forge config resolution against stale cliogate and poisoned proxy env
+Context: `dataforge-*` MCP/CLI calls could misread `DataForgeServiceUrl` when cliogate was missing, stale, or returned non-setting payloads, while hostile `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` values masked the real cause by forcing traffic to `127.0.0.1:9`.
+Decision: Keep the fix scoped to Data Forge only by adding a Data Forge-specific direct SysSettings reader fallback, strict `DataForgeServiceUrl` validation, and a proxy-safe execution wrapper around `dataforge-*` tool calls; leave general syssetting command behavior unchanged.
+Discovery: The highest-value reuse was already present as local helper files for direct SysSettings reads and proxy-scoped execution, so the remaining work was wiring them into DI, resolver/tool flow, and regression coverage instead of rebuilding them from scratch.
+Files: clio/Common/DataForge/DataForgeConfigResolver.cs, clio/Common/DataForge/DataForgeSysSettingDirectReader.cs, clio/Common/DataForge/DataForgeProxySafeExecutor.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/BindingsModule.cs, clio.tests/Common/DataForgeConfigResolverTests.cs, clio.tests/Common/DataForgeProxySafeExecutorTests.cs, clio.tests/Command/McpServer/DataForgeToolTests.cs, clio.mcp.e2e/DataForgeToolE2ETests.cs, .codex/workspace-diary.md
+Impact: `dataforge-*` calls can now fall back to direct site reads when the gateway path is broken, reject bogus HTML/non-URL values instead of treating them as config, and surface the real downstream TLS/auth/Data Forge failure even when proxy env vars are poisoned.
 ## 2026-04-14 07:17 – PR #527 merged: MCP tool naming + CLI UX improvements
 
 Context: Long CI debugging session to get PR #527 merged into master.
@@ -2351,6 +2357,54 @@ Decision: Kept `uri/login/password` compatibility in MCP tools, but changed reso
 Discovery: Wording-only MCP surface changes were enough to steer agent behavior without changing payload shape or execution paths. Existing E2E assertions still matched because they only depended on the preserved leading resolver text.
 Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageListTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Prompts/RegWebAppPrompt.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, .codex/workspace-diary.md
 Impact: Agents should now prefer registering environments and using `environment-name`, while direct credentials stay available only as a documented emergency fallback.
+## 2026-04-17 11:55 – E2E pushed packages need hotfix to become editable
+Context: Debugged MCP E2E failures where tests created a temp workspace/package, used push-workspace to install it on remote stands, then immediately tried package mutations such as create-lookup, create-data-binding-db, and sync-schemas update flows.
+Decision: Keep push-workspace for package deployment but enable `pkg-hotfix <package> true` immediately after push inside mutation-oriented E2E arrange flows so the remote package becomes editable before designer/schema-data writes.
+Discovery: Core computes package read-only state from `InstallType`, not `InstallBehavior`. `push-workspace` installs `CreatioPackages.zip` through archive/package-installer flow, which leaves packages as `InstallType=Repository` and therefore `IsReadOnly=true`. `PackageService.StartPackageHotfix` flips package editability by setting maintainer/install-type to editable state. Verified that EntitySchema, DataBindingDb, and SchemaSync mutation E2Es pass after hotfixing.
+Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio.mcp.e2e/DataBindingDbToolE2ETests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs
+Impact: Future destructive E2E tests that push a workspace and then mutate remote package contents should hotfix the package after push unless a true SourceControl-mode push flow is introduced.
+
+## 2026-04-17 12:32 – sync-pages contract drifted from verified-body-file wire field
+Context: Investigated the failing `ToolContractGet_Should_Return_Maintenance_Oriented_Canonical_Contracts` E2E after the broader MCP tool run.
+Decision: Keep the existing `PageSyncTool` wire shape and update `ToolContractGetTool.BuildPageSync()` so the advertised `sync-pages` output contract says `verified-body-file`.
+Discovery: `PageSyncTool` serializes `[JsonPropertyName("verified-body-file")]` and unit tests already assert that wire name, but `get-tool-contract` had drifted to `verified-body`, causing only the contract inspection test to fail.
+Files: clio/Command/McpServer/Tools/ToolContractGetTool.cs
+Impact: MCP contract inspection for `sync-pages` now matches the real response payload, avoiding false contract failures when clients rely on `get-tool-contract` for page verify output fields.
+
+## 2026-04-17 12:58 – get-page E2E expected pre-compaction payload
+Context: Investigated the failing `PageGetTool_Should_Return_Stable_Metadata_Contract_For_Real_Page` E2E after restoring an installed application so the test would run instead of skipping.
+Decision: Keep `PageGetTool` behavior unchanged and update the E2E to validate the compact MCP response (`page` + `files`) plus written `body.js`/`bundle.json`/`meta.json` paths on disk.
+Discovery: `PageGetCommand` still builds inline `bundle` and `raw`, but `PageGetTool.WriteFilesAndCompact()` intentionally strips those fields from successful MCP responses after writing them to `.clio-pages/<schema-name>/`. Unit tests in `PageToolsTests` already locked in that contract.
+Files: clio.mcp.e2e/PageGetToolE2ETests.cs
+Impact: The live-environment `get-page` E2E now tracks the real MCP wire contract and verifies the file-based artifacts that update flows actually consume.
+
+## 2026-04-17 13:18 – masked entity-schema creation needs synthetic value-masking settings
+Context: Investigated why `CreateEntitySchema_Should_Apply_Masked_For_Text_Column_Through_Mcp` still failed after normalizing root-schema administration flags.
+Decision: Keep the administration-flag normalization for fresh root schemas, and additionally synthesize `valueMaskingSettings` whenever `masked=true` is requested during create-entity-schema. Use the conventional unmask operation code `<SchemaName>_<ColumnName>_UnmaskedValue` with default masking pattern `.*` and replacement `********`.
+Discovery: Core validator `EntitySchemaValidator.ValidateValueMaskingSettings` rejects any column with `isValueMasked=true` unless `valueMaskingSettings.adminOperationCode`, `pattern`, and `replacement` are all non-empty. The previous clio payload only set `isMasked`/`isValueMasked`, which triggered the server-side error `Operation permission is not selected.`.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDesignerDtos.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs
+Impact: create-entity-schema now produces core-valid masked Text/SecureText payloads, and the live masked-column E2E passes again.
+
+## 2026-04-17 14:05 – entity-schema positive E2Es need Usr-prefixed custom column codes
+Context: Investigated why `UpdateEntitySchema_Should_Add_BinaryLike_Columns_And_Read_Back_Friendly_Types` failed even after the package-editability and masked-column fixes.
+Decision: Update the positive entity-schema E2E fixture to use `Usr...` codes for every custom column created through `create-entity-schema` and `update-entity-schema`, including the shared arrange defaults and the binary-like test-specific columns.
+Discovery: The failure was not in binary/image/file column handling. The initial create step still seeded a custom column named `Name`, which core rejects because custom entity-schema column codes must start with `Usr`. The binary-like test also used unprefixed custom add names (`Payload`, `Preview`, `Document`), so fixing the shared setup and per-test constants together avoids the next validation failure.
+Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs
+Impact: The targeted binary-like entity-schema E2E now passes, and other positive entity-schema flows that reuse the shared arrange helper are less likely to fail on the same prefix validation.
+
+## 2026-04-17 14:52 – Allure async step attributes can deadlock NUnit tests
+Context: Investigated MCP E2E hangs where async helper methods were annotated with `[AllureStep]`.
+Decision: Remove `[AllureStep]` from private static async Task helpers and wrap their bodies with `await AllureApi.Step(...)` instead.
+Discovery: `[AllureStep]` blocks the NUnit test thread while async continuations still need `NUnitSynchronizationContext` to resume on that same thread, which causes a deadlock. Non-async step methods are unaffected.
+Files: clio.mcp.e2e/*.cs
+Impact: Async E2E helper steps can report to Allure without blocking test execution on NUnit.
+
+## 2026-04-17 15:12 – Reuse one deterministic sys setting in entity-schema E2Es
+Context: Review of the settings-default entity-schema E2Es found that creating a unique sys setting per run polluted the shared sandbox.
+Decision: Replace per-run generated setting codes with one deterministic reusable code, `UsrEntitySchemaE2EDefaultText`, and keep updating that setting idempotently during arrange.
+Discovery: The tests only need any resolvable `Text` sys setting; they do not depend on special semantics of the original `Maintainer` value or on unique setting names per run.
+Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs
+Impact: The settings-default E2Es remain self-sufficient without leaking unbounded sys settings into shared environments.
 
 ## 2026-04-16 14:18 – Lookup operands in BusinessRuleTool
 Context: The MCP `create-entity-business-rule` flow needed to accept lookup constant operands when creating entity business rules without introducing `scopeId` or `dataValueType`.

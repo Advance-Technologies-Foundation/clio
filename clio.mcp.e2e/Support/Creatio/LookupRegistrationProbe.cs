@@ -11,6 +11,7 @@ internal static class LookupRegistrationProbe {
 		EnvironmentSettings environmentSettings = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
 		IApplicationClient applicationClient = new ApplicationClientFactory().CreateEnvironmentClient(environmentSettings);
 		ServiceUrlBuilder serviceUrlBuilder = new(environmentSettings);
+		string? entitySchemaUId = ResolveEntitySchemaUId(applicationClient, serviceUrlBuilder, lookupSchemaName);
 		LookupRegistrationSelectResponse lookupRows =
 			SelectQueryHelper.ExecuteSelectQuery<LookupRegistrationSelectResponse>(
 				applicationClient,
@@ -21,12 +22,15 @@ internal static class LookupRegistrationProbe {
 						new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
 						new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name")
 					],
-					[
-						new SelectQueryHelper.SelectQueryFilterDefinition(
-							"SysEntitySchema.Name",
-							lookupSchemaName,
-							SelectQueryHelper.TextDataValueType)
-					]));
+					entitySchemaUId is null
+						? []
+						: [
+							new SelectQueryHelper.SelectQueryFilterDefinition(
+								"SysEntitySchemaUId",
+								entitySchemaUId,
+								SelectQueryHelper.GuidDataValueType)
+						]));
+		string? packageUId = ResolvePackageUId(applicationClient, serviceUrlBuilder, packageName);
 		PackageSchemaDataSelectResponse bindingRows =
 			SelectQueryHelper.ExecuteSelectQuery<PackageSchemaDataSelectResponse>(
 				applicationClient,
@@ -43,15 +47,15 @@ internal static class LookupRegistrationProbe {
 							$"Lookup_{lookupSchemaName}",
 							SelectQueryHelper.TextDataValueType),
 						new SelectQueryHelper.SelectQueryFilterDefinition(
-							"SysPackage.Name",
-							packageName,
-							SelectQueryHelper.TextDataValueType)
+							"SysPackage.UId",
+							packageUId ?? Guid.Empty.ToString(),
+							SelectQueryHelper.GuidDataValueType)
 					]));
-		PackageSchemaDataBindingDto? bindingRow = bindingRows.Rows.SingleOrDefault();
+		PackageSchemaDataBindingDto? bindingRow = bindingRows.Rows.FirstOrDefault();
 		IReadOnlyList<string> boundRecordIds = bindingRow is null || !Guid.TryParse(bindingRow.UId, out Guid bindingUId)
 			? []
 			: FetchBoundRecordIds(applicationClient, serviceUrlBuilder, bindingUId);
-		LookupRegistrationRowDto? lookupRow = lookupRows.Rows.SingleOrDefault();
+		LookupRegistrationRowDto? lookupRow = lookupRows.Rows.FirstOrDefault();
 		return new LookupRegistrationSnapshot(
 			lookupRows.Rows.Count,
 			lookupRow?.Id,
@@ -60,6 +64,45 @@ internal static class LookupRegistrationProbe {
 			bindingRow?.UId,
 			bindingRow?.EntitySchemaName,
 			boundRecordIds);
+	}
+
+	private static string? ResolveEntitySchemaUId(
+		IApplicationClient applicationClient,
+		IServiceUrlBuilder serviceUrlBuilder,
+		string lookupSchemaName) {
+		string responseJson = applicationClient.ExecutePostRequest(
+			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest),
+			$$"""{"Name":"{{lookupSchemaName}}"}""");
+		RuntimeEntitySchemaResponseDto? response = JsonSerializer.Deserialize<RuntimeEntitySchemaResponseDto>(
+			responseJson,
+			RuntimeEntitySchemaJsonOptions);
+		if (response?.Success != true || response.Schema is null) {
+			return null;
+		}
+
+		return response.Schema.UId == Guid.Empty ? null : response.Schema.UId.ToString();
+	}
+
+	private static string? ResolvePackageUId(
+		IApplicationClient applicationClient,
+		IServiceUrlBuilder serviceUrlBuilder,
+		string packageName) {
+		PackageSelectResponse response =
+			SelectQueryHelper.ExecuteSelectQuery<PackageSelectResponse>(
+				applicationClient,
+				serviceUrlBuilder,
+				SelectQueryHelper.BuildSelectQuery(
+					"SysPackage",
+					[
+						new SelectQueryHelper.SelectQueryColumnDefinition("UId", "UId")
+					],
+					[
+						new SelectQueryHelper.SelectQueryFilterDefinition(
+							"Name",
+							packageName,
+							SelectQueryHelper.TextDataValueType)
+					]));
+		return response.Rows.SingleOrDefault()?.UId;
 	}
 
 	private static IReadOnlyList<string> FetchBoundRecordIds(
@@ -112,6 +155,27 @@ internal static class LookupRegistrationProbe {
 	private sealed class PackageSchemaDataSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
 		[JsonPropertyName("rows")]
 		public List<PackageSchemaDataBindingDto> Rows { get; init; } = [];
+	}
+
+	private sealed record RuntimeEntitySchemaResponseDto(
+		[property: JsonPropertyName("success")] bool Success,
+		[property: JsonPropertyName("schema")] RuntimeEntitySchemaPayloadDto? Schema);
+
+	private sealed record RuntimeEntitySchemaPayloadDto(
+		[property: JsonPropertyName("UId")] Guid UId);
+
+	private static readonly JsonSerializerOptions RuntimeEntitySchemaJsonOptions = new() {
+		PropertyNameCaseInsensitive = true
+	};
+
+	private sealed class PackageSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[JsonPropertyName("rows")]
+		public List<PackageRowDto> Rows { get; init; } = [];
+	}
+
+	private sealed class PackageRowDto {
+		[JsonPropertyName("UId")]
+		public string? UId { get; init; }
 	}
 
 	private sealed class PackageSchemaDataBindingDto {

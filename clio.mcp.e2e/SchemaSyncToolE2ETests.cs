@@ -32,6 +32,7 @@ public sealed class SchemaSyncToolE2ETests {
 	private const string ToolName = SchemaSyncTool.ToolName;
 	private const string ReadSchemaToolName = GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName;
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
+	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
 
 	[Test]
 	[Description("Advertises sync-schemas MCP tool in the server tool list so callers can discover and invoke it.")]
@@ -49,6 +50,50 @@ public sealed class SchemaSyncToolE2ETests {
 		// Assert
 		toolNames.Should().Contain(ToolName,
 			because: "sync-schemas must be advertised so MCP clients can discover the composite tool");
+	}
+
+	[Test]
+	[Description("Returns a top-level MCP invocation error when sync-schemas is called without the required args wrapper.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas returns invocation error when args wrapper is missing")]
+	[AllureDescription("Starts the real MCP server, invokes sync-schemas without the args wrapper, and verifies that MCP binding fails at the invocation layer instead of returning a structured SchemaSyncResponse payload.")]
+	public async Task SchemaSyncTool_Should_Return_Invocation_Error_When_Args_Wrapper_Is_Missing() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?>(),
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		AssertInvocationFailure(
+			callResult,
+			because: "missing args should fail during MCP binding before sync-schemas can produce a structured tool response");
+	}
+
+	[Test]
+	[Description("Returns a top-level MCP invocation error when sync-schemas args has the wrong type.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas returns invocation error when args has invalid type")]
+	[AllureDescription("Starts the real MCP server, invokes sync-schemas with args set to a string instead of an object, and verifies that MCP binding fails at the invocation layer instead of returning a structured SchemaSyncResponse payload.")]
+	public async Task SchemaSyncTool_Should_Return_Invocation_Error_When_Args_Has_Invalid_Type() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = "invalid"
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		AssertInvocationFailure(
+			callResult,
+			because: "wrong-type args should fail during MCP binding before sync-schemas can produce a structured tool response");
 	}
 
 	[Test]
@@ -258,14 +303,16 @@ public sealed class SchemaSyncToolE2ETests {
 			because: "the structured column readback should preserve the DateTime type created by sync-schemas");
 		columnProperties.DefaultValueSource.Should().Be("SystemValue",
 			because: "legacy summary fields should expose the resolved system-value source for sync-schemas updates");
-		columnProperties.DefaultValue.Should().Be("CurrentDateTime",
-			because: "legacy summary fields should expose the resolved system value name for sync-schemas updates");
+		columnProperties.DefaultValue.Should().Be(CurrentDateTimeSystemValueUId,
+			because: "legacy summary fields should expose the canonical resolved system value guid for sync-schemas updates");
 		columnProperties.DefaultValueConfig.Should().NotBeNull(
 			because: "structured column readback should expose default-value-config metadata for sync-schemas updates");
 		columnProperties.DefaultValueConfig!.Source.Should().Be("SystemValue",
 			because: "the structured default value config should preserve the resolved system-value source");
-		columnProperties.DefaultValueConfig.ValueSource.Should().Be("CurrentDateTime",
-			because: "the structured default value config should preserve the system value name");
+		columnProperties.DefaultValueConfig.ValueSource.Should().Be(CurrentDateTimeSystemValueUId,
+			because: "the structured default value config should preserve the canonical system value guid");
+		columnProperties.DefaultValueConfig.ResolvedValueSource.Should().Be(CurrentDateTimeSystemValueUId,
+			because: "structured default value readback should include the resolved system value guid");
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireEnvironment) {
@@ -305,7 +352,12 @@ public sealed class SchemaSyncToolE2ETests {
 			entitySchemaName = $"Usr{Guid.NewGuid():N}".Substring(0, 22);
 			lookupSchemaName = $"Usr{Guid.NewGuid():N}".Substring(0, 22);
 			await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
-			await PushWorkspaceAsync(settings, workspacePath, environmentName!, cancellationTokenSource.Token);
+			await PushWorkspaceAsync(
+				settings,
+				workspacePath,
+				environmentName!,
+				packageName,
+				cancellationTokenSource.Token);
 		}
 
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
@@ -373,10 +425,16 @@ public sealed class SchemaSyncToolE2ETests {
 		McpE2ESettings settings,
 		string workspacePath,
 		string environmentName,
+		string packageName,
 		CancellationToken cancellationToken) {
 		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
 			settings,
 			["push-workspace", "-e", environmentName],
+			workingDirectory: workspacePath,
+			cancellationToken: cancellationToken);
+		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
+			settings,
+			["pkg-hotfix", packageName, "true", "-e", environmentName],
 			workingDirectory: workspacePath,
 			cancellationToken: cancellationToken);
 	}
@@ -652,6 +710,18 @@ public sealed class SchemaSyncToolE2ETests {
 					? valueElement.GetString() ?? string.Empty
 					: string.Empty)
 		];
+	}
+
+	private static void AssertInvocationFailure(CallToolResult callResult, string because) {
+		callResult.IsError.Should().BeTrue(
+			because: because);
+		callResult.StructuredContent.Should().BeNull(
+			because: "binding-layer failures should not return a structured sync-schemas payload");
+		callResult.Content.Should().NotBeNullOrEmpty(
+			because: "invocation failures should still expose human-readable diagnostics");
+		callResult.Content!.Select(content => content.ToString()).Should().Contain(message =>
+				message.Contains("An error occurred invoking 'sync-schemas'.", StringComparison.Ordinal),
+			because: "the transport-level failure should surface as the generic invocation error for the tool");
 	}
 
 	[Test]
