@@ -354,7 +354,26 @@ namespace Clio.Command {
 			if (saveResponse["addonsErrors"] is JArray addonsErrors && addonsErrors.Count > 0) {
 				errorMessage = string.Join("; ", addonsErrors.Select(e => e.ToString()));
 			}
-			return errorMessage;
+			return AppendActionableHint(errorMessage);
+		}
+
+		private static string AppendActionableHint(string serverError) {
+			if (string.IsNullOrEmpty(serverError)) {
+				return serverError;
+			}
+			if (serverError.Contains("requires an element of type 'Object'", StringComparison.OrdinalIgnoreCase) &&
+				serverError.Contains("type 'Array'", StringComparison.OrdinalIgnoreCase)) {
+				return serverError + " [hint: this typically happens when re-sending the full get-page raw.body — " +
+					"backend re-applies existing merges that now conflict with parent hierarchy. " +
+					"Send only NEW viewConfigDiff/handlers operations (the new component insert + matching handler), " +
+					"not the entire inherited body. See docs://mcp/guides/page-modification for the minimal-diff pattern.]";
+			}
+			if (serverError.Contains("Item with name", StringComparison.OrdinalIgnoreCase) &&
+				serverError.Contains("not found", StringComparison.OrdinalIgnoreCase)) {
+				return serverError + " [hint: the schema manager cache may be holding a stale phantom replacing schema " +
+					"from an earlier failed save. Restart Creatio to clear the cache, or verify the schema UId via list-pages.]";
+			}
+			return serverError;
 		}
 
 		private static PageUpdateResponse CreateSuccessResponse(

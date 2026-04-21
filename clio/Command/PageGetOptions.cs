@@ -120,6 +120,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 				.Select(schema => new PageSchemaBundlePart(schema, _bodyParser.Parse(schema.Body)))
 				.ToList();
 			PageBundleInfo bundle = _bundleBuilder.Build(parts);
+			PageOwnBodySummary ownBodySummary = BuildOwnBodySummary(currentSchema, _bodyParser);
 			response = new PageGetResponse {
 				Success = true,
 				Page = new PageMetadataInfo {
@@ -127,7 +128,8 @@ public class PageGetCommand : Command<PageGetOptions> {
 					SchemaUId = currentSchema.UId,
 					PackageName = currentSchema.PackageName,
 					PackageUId = currentSchema.PackageUId,
-					ParentSchemaName = metadata["ParentSchemaName"]?.ToString()
+					ParentSchemaName = metadata["ParentSchemaName"]?.ToString(),
+					OwnBodySummary = ownBodySummary
 				},
 				Bundle = bundle,
 				Raw = new PageRawInfo {
@@ -151,5 +153,32 @@ public class PageGetCommand : Command<PageGetOptions> {
 		bool success = TryGetPage(options, out PageGetResponse response);
 		_logger.WriteInfo(JsonSerializer.Serialize(response));
 		return success ? 0 : 1;
+	}
+
+	private static PageOwnBodySummary BuildOwnBodySummary(PageDesignerHierarchySchema schema, IPageSchemaBodyParser parser) {
+		if (schema == null || string.IsNullOrWhiteSpace(schema.Body)) {
+			return new PageOwnBodySummary { BodyLength = 0 };
+		}
+		PageParsedSchemaBody parsed = parser.Parse(schema.Body);
+		int handlerCount = 0;
+		string handlers = parsed.Handlers?.Trim();
+		if (!string.IsNullOrEmpty(handlers) && handlers != "[]") {
+			int depth = 0;
+			foreach (char ch in handlers) {
+				if (ch == '{') {
+					if (depth == 0) handlerCount++;
+					depth++;
+				} else if (ch == '}') {
+					depth--;
+				}
+			}
+		}
+		return new PageOwnBodySummary {
+			BodyLength = schema.Body.Length,
+			ViewConfigDiffOperations = (parsed.ViewConfigDiff as Newtonsoft.Json.Linq.JArray)?.Count ?? 0,
+			ViewModelConfigDiffOperations = (parsed.ViewModelConfigDiff as Newtonsoft.Json.Linq.JArray)?.Count ?? 0,
+			ModelConfigDiffOperations = (parsed.ModelConfigDiff as Newtonsoft.Json.Linq.JArray)?.Count ?? 0,
+			HandlerEntries = handlerCount
+		};
 	}
 }

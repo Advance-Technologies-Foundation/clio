@@ -171,6 +171,59 @@ public sealed class PageMetadataInfo {
 	[JsonProperty("parentSchemaName")]
 	[JsonPropertyName("parentSchemaName")]
 	public string ParentSchemaName { get; init; }
+
+	/// <summary>
+	/// Gets or sets the summary of operations stored in this schema's own body
+	/// (exclusive of inherited operations). Useful for AI callers to decide whether
+	/// the schema is "lightly customized" (few ops) or "heavily customized" (many ops)
+	/// and to avoid re-sending the full body on update-page.
+	/// </summary>
+	[JsonProperty("ownBodySummary")]
+	[JsonPropertyName("ownBodySummary")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public PageOwnBodySummary OwnBodySummary { get; init; }
+}
+
+/// <summary>
+/// Describes how many operations are present in the current schema's own body per section.
+/// </summary>
+public sealed class PageOwnBodySummary {
+	/// <summary>
+	/// Number of operations in the schema's own <c>viewConfigDiff</c>.
+	/// </summary>
+	[JsonProperty("viewConfigDiffOperations")]
+	[JsonPropertyName("viewConfigDiffOperations")]
+	public int ViewConfigDiffOperations { get; init; }
+
+	/// <summary>
+	/// Number of operations in the schema's own <c>viewModelConfigDiff</c>.
+	/// </summary>
+	[JsonProperty("viewModelConfigDiffOperations")]
+	[JsonPropertyName("viewModelConfigDiffOperations")]
+	public int ViewModelConfigDiffOperations { get; init; }
+
+	/// <summary>
+	/// Number of operations in the schema's own <c>modelConfigDiff</c>.
+	/// </summary>
+	[JsonProperty("modelConfigDiffOperations")]
+	[JsonPropertyName("modelConfigDiffOperations")]
+	public int ModelConfigDiffOperations { get; init; }
+
+	/// <summary>
+	/// Number of handler entries registered in the schema.
+	/// </summary>
+	[JsonProperty("handlerEntries")]
+	[JsonPropertyName("handlerEntries")]
+	public int HandlerEntries { get; init; }
+
+	/// <summary>
+	/// Length of the schema's own raw body in characters. A small value (&lt; 1000) indicates
+	/// an empty replacing schema where `raw.body` is safe to resend; a large value is a signal
+	/// to send only new operations rather than the full body.
+	/// </summary>
+	[JsonProperty("bodyLength")]
+	[JsonPropertyName("bodyLength")]
+	public int BodyLength { get; init; }
 }
 
 /// <summary>

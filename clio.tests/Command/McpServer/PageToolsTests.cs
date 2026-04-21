@@ -2003,4 +2003,106 @@ public class PageToolsTests {
 		bundle.Containers[1].Path.Should().Be("RootContainer/NestedContainer",
 			because: "path must expose the ancestry chain so AI can disambiguate when same name appears in multiple branches");
 	}
+
+	[Test]
+	[Description("BuildSaveErrorMessage appends an actionable hint for the 'Object vs Array' server error that typically happens when resending the full raw.body")]
+	public void PageUpdateCommand_Should_Append_Hint_For_Object_Vs_Array_Error() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+		const string designPkg = "11111111-2222-3333-4444-555555555555";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
+		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "Test_FormPage", PackageUId = designPkg, PackageName = "DesignPkg" }
+		});
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = originalUId, ["name"] = "Test_FormPage", ["body"] = "x", ["package"] = new JObject { ["uId"] = designPkg } }
+		};
+		var saveError = new JObject {
+			["success"] = false,
+			["errorInfo"] = new JObject {
+				["message"] = "The requested operation requires an element of type 'Object', but the target element has type 'Array'."
+			}
+		};
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				return callIndex switch {
+					1 => metadataResponse.ToString(),
+					2 => getSchemaResponse.ToString(),
+					_ => saveError.ToString()
+				};
+			});
+		string validBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+
+		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Test_FormPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
+
+		ok.Should().BeFalse();
+		response.Error.Should().Contain("Object", "original server error must be preserved");
+		response.Error.Should().Contain("hint:", "hint annotation must be appended");
+		response.Error.Should().Contain("re-sending the full get-page raw.body",
+			"hint must explain the likely cause");
+		response.Error.Should().Contain("page-modification",
+			"hint must point back to the canonical guide resource");
+	}
+
+	[Test]
+	[Description("PageGetCommand.BuildOwnBodySummary exposes operation counts so AI can detect when raw.body is not safe to resend")]
+	public void PageGetCommand_Should_Populate_OwnBodySummary_On_Response() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		var bodyParser = Substitute.For<IPageSchemaBodyParser>();
+		var bundleBuilder = Substitute.For<IPageBundleBuilder>();
+		const string schemaUId = "c787571c-c8ca-4c9b-b05b-7ccbe0271a76";
+		const string packageUId = "51a0fc55-ce4f-a533-0340-b70a0c04b905";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(schemaUId).Returns(packageUId);
+		var hierarchySchema = new PageDesignerHierarchySchema {
+			UId = schemaUId,
+			Name = "Leads_ListPage",
+			PackageUId = packageUId,
+			PackageName = "CrtLead",
+			Body = new string('x', 14000)
+		};
+		hierarchyClient.GetParentSchemas(schemaUId, packageUId).Returns(new List<PageDesignerHierarchySchema> { hierarchySchema });
+		bodyParser.Parse(Arg.Any<string>()).Returns(new PageParsedSchemaBody {
+			ViewConfigDiff = new Newtonsoft.Json.Linq.JArray { new Newtonsoft.Json.Linq.JObject(), new Newtonsoft.Json.Linq.JObject(), new Newtonsoft.Json.Linq.JObject() },
+			ViewModelConfigDiff = new Newtonsoft.Json.Linq.JArray { new Newtonsoft.Json.Linq.JObject() },
+			ModelConfigDiff = new Newtonsoft.Json.Linq.JArray(),
+			Handlers = "[{request:'a',handler:()=>{}},{request:'b',handler:()=>{}}]"
+		});
+		bundleBuilder.Build(Arg.Any<IReadOnlyList<PageSchemaBundlePart>>()).Returns(new PageBundleInfo());
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = schemaUId, ["Name"] = "Leads_ListPage", ["PackageName"] = "CrtLead", ["PackageUId"] = packageUId, ["ParentSchemaName"] = "ListPageV3Template" } }
+		};
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(metadataResponse.ToString());
+		var command = new PageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient, bodyParser, bundleBuilder);
+
+		bool ok = command.TryGetPage(new PageGetOptions { SchemaName = "Leads_ListPage" }, out PageGetResponse response);
+
+		ok.Should().BeTrue();
+		response.Page.OwnBodySummary.Should().NotBeNull(
+			because: "every successful get-page response must include the own body summary so AI can decide whether raw.body is safe to resend");
+		response.Page.OwnBodySummary.BodyLength.Should().Be(14000);
+		response.Page.OwnBodySummary.ViewConfigDiffOperations.Should().Be(3,
+			because: "viewConfigDiff operation count must match the parsed JArray length");
+		response.Page.OwnBodySummary.ViewModelConfigDiffOperations.Should().Be(1);
+		response.Page.OwnBodySummary.ModelConfigDiffOperations.Should().Be(0);
+		response.Page.OwnBodySummary.HandlerEntries.Should().Be(2,
+			because: "handler entries are counted by top-level object literals in the handlers marker block");
+	}
 }
