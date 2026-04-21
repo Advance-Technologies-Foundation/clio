@@ -1,10 +1,27 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Linq;
+using Clio.Command.EntitySchemaDesigner;
 
 namespace Clio.Command.BusinessRules;
 
 internal static class BusinessRuleHelpers {
+
+	internal static IReadOnlyDictionary<string, EntitySchemaColumnDto> BuildColumnMap(EntityDesignSchemaDto entitySchema) {
+		ArgumentNullException.ThrowIfNull(entitySchema);
+
+		Dictionary<string, EntitySchemaColumnDto> columns = new(StringComparer.OrdinalIgnoreCase);
+
+		foreach (EntitySchemaColumnDto column in entitySchema.Columns
+			         .Concat(entitySchema.InheritedColumns)
+			         .Where(column => !string.IsNullOrWhiteSpace(column.Name))) {
+			columns[column.Name] = column;
+		}
+
+		return columns;
+	}
 
 	internal static string MapDataValueTypeName(int? dataValueType) =>
 		dataValueType.HasValue && BusinessRuleConstants.DataValueTypeNames.TryGetValue(dataValueType.Value, out string? value)

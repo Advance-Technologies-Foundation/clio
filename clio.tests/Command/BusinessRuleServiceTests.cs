@@ -57,6 +57,43 @@ public sealed class BusinessRuleServiceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects create requests with no package name before remote schema lookups start.")]
+	public void Create_Should_Reject_Request_When_Package_Name_Is_Missing() {
+		// Arrange
+		BusinessRuleCreateRequest request = new(
+			"",
+			"UsrOrder",
+			new BusinessRule(
+				"Require owner for drafts",
+				new BusinessRuleConditionGroup(
+					"AND",
+					[
+						new BusinessRuleCondition(
+							new BusinessRuleExpression("AttributeValue", "Status", null),
+							"equal",
+							new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"Draft\"")))
+					]),
+				[
+					new BusinessRuleAction("make-required", ["Owner"])
+				]));
+
+		// Act
+		Action act = () => _service.Create(request);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("package-name is required.",
+				because: "request-level preconditions belong to the create operation even though rule validation is handled separately");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Appends a new entity business rule, preserves existing editable rules, and writes the generated caption resource back through the add-on designer service.")]
 	public void Create_Should_Append_Rule_And_Save_Addon_Metadata() {
 		// Arrange

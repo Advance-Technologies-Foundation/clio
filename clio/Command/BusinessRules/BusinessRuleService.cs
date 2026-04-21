@@ -9,16 +9,30 @@ using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
 namespace Clio.Command.BusinessRules;
 
+/// <summary>
+/// Creates entity business rules by appending add-on metadata to the target entity schema.
+/// </summary>
 public interface IBusinessRuleService {
+	/// <summary>
+	/// Creates a new business rule in the target package and entity schema.
+	/// </summary>
+	/// <param name="request">Business-rule creation input.</param>
+	/// <returns>Generated metadata about the created rule.</returns>
 	BusinessRuleCreateResult Create(BusinessRuleCreateRequest request);
 }
 
+/// <summary>
+/// Describes the package, entity schema, and business-rule definition to create.
+/// </summary>
 public sealed record BusinessRuleCreateRequest(
 	string PackageName,
 	string EntitySchemaName,
 	BusinessRule Rule
 );
 
+/// <summary>
+/// Returns the generated internal rule name created in add-on metadata.
+/// </summary>
 public sealed record BusinessRuleCreateResult(string RuleName);
 
 internal sealed class BusinessRuleService(
@@ -31,20 +45,20 @@ internal sealed class BusinessRuleService(
 	
 	public BusinessRuleCreateResult Create(BusinessRuleCreateRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
-		BusinessRuleValidator.ValidateRequest(request);
+		ValidateCreateRequest(request);
 
 		Guid packageUId = applicationPackageListProvider.GetPackages()
 			.FirstOrDefault(p => string.Equals(p.Descriptor.Name, request.PackageName.Trim(), StringComparison.OrdinalIgnoreCase))
 			?.Descriptor.UId
 			?? throw new InvalidOperationException($"Package '{request.PackageName}' was not found.");
 		EntityDesignSchemaDto entitySchema = LoadEntitySchema(request.EntitySchemaName, packageUId);
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = BusinessRuleToDtoConverter.BuildColumnMap(entitySchema);
-		BusinessRuleValidator.ValidateRuleAgainstSchema(request.Rule, columnMap);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = BusinessRuleHelpers.BuildColumnMap(entitySchema);
+		BusinessRuleValidator.Validate(request.Rule, columnMap);
 		AddonSchemaResponseDto addonResponse = LoadAddonSchema(entitySchema, packageUId);
 		BusinessRulesAddonMetadata metadata = ParseMetadata(addonResponse.Schema?.MetaData);
 		List<AddonResourceDto> resources = NormalizeResourceKeys(addonResponse.Schema?.Resources?.ToList() ?? []);
 
-		BusinessRuleMetadataDto createdRule = BusinessRuleToDtoConverter.BuildRule(columnMap, request.Rule);
+		BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToMetadata(columnMap, request.Rule);
 		metadata.Rules.Add(createdRule);
 		UpsertCaptionResource(resources, createdRule.UId, request.Rule.Caption.Trim());
 
@@ -56,6 +70,20 @@ internal sealed class BusinessRuleService(
 		SaveAddonSchema(schema);
 
 		return new BusinessRuleCreateResult(createdRule.Name);
+	}
+
+	private static void ValidateCreateRequest(BusinessRuleCreateRequest request) {
+		if (string.IsNullOrWhiteSpace(request.PackageName)) {
+			throw new ArgumentException("package-name is required.");
+		}
+
+		if (string.IsNullOrWhiteSpace(request.EntitySchemaName)) {
+			throw new ArgumentException("entity-schema-name is required.");
+		}
+
+		if (request.Rule is null) {
+			throw new ArgumentException("rule is required.");
+		}
 	}
 
 	private EntityDesignSchemaDto LoadEntitySchema(

@@ -7,21 +7,12 @@ using static Clio.Command.BusinessRules.BusinessRuleHelpers;
 
 namespace Clio.Command.BusinessRules;
 
-internal static class BusinessRuleToDtoConverter {
+/// <summary>
+/// Converts validated business-rule definitions into add-on metadata DTOs.
+/// </summary>
+internal static class BusinessRuleMetadataConverter {
 
-	internal static IReadOnlyDictionary<string, EntitySchemaColumnDto> BuildColumnMap(EntityDesignSchemaDto entitySchema) {
-		Dictionary<string, EntitySchemaColumnDto> exact = new(StringComparer.OrdinalIgnoreCase);
-
-		foreach (EntitySchemaColumnDto column in entitySchema.Columns
-			         .Concat(entitySchema.InheritedColumns)
-			         .Where(column => !string.IsNullOrWhiteSpace(column.Name))) {
-			exact[column.Name] = column;
-		}
-
-		return exact;
-	}
-
-	internal static BusinessRuleMetadataDto BuildRule(
+	internal static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
 		BusinessRule rule) {
 		string ruleUId = Guid.NewGuid().ToString();

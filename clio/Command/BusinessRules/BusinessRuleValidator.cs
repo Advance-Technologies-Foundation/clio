@@ -7,37 +7,27 @@ using static Clio.Command.BusinessRules.BusinessRuleHelpers;
 
 namespace Clio.Command.BusinessRules;
 
+/// <summary>
+/// Validates a business-rule definition.
+/// </summary>
 internal static class BusinessRuleValidator {
 
-	internal static void ValidateRequest(BusinessRuleCreateRequest request) {
-		if (string.IsNullOrWhiteSpace(request.PackageName)) {
-			throw new ArgumentException("package-name is required.");
-		}
+	internal static void Validate(
+		BusinessRule rule,
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
+		ArgumentNullException.ThrowIfNull(rule);
 
-		if (string.IsNullOrWhiteSpace(request.EntitySchemaName)) {
-			throw new ArgumentException("entity-schema-name is required.");
-		}
-
-		if (request.Rule is null) {
-			throw new ArgumentException("rule is required.");
-		}
-
-		if (string.IsNullOrWhiteSpace(request.Rule.Caption)) {
+		if (string.IsNullOrWhiteSpace(rule.Caption)) {
 			throw new ArgumentException("rule.caption is required.");
 		}
 
-		if (request.Rule.Condition is null) {
+		if (rule.Condition is null) {
 			throw new ArgumentException("rule.condition is required.");
 		}
 
-		if (request.Rule.Actions is null || request.Rule.Actions.Count == 0) {
+		if (rule.Actions is null || rule.Actions.Count == 0) {
 			throw new ArgumentException("rule.actions must contain at least one action.");
 		}
-	}
-
-	internal static void ValidateRuleAgainstSchema(
-		BusinessRule rule,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
 		if (string.IsNullOrWhiteSpace(rule.Condition.LogicalOperation)) {
 			throw new ArgumentException("rule.condition.logicalOperation is required.");
 		}
