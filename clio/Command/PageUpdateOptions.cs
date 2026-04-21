@@ -398,6 +398,7 @@ namespace Clio.Command {
 			string saveJson = _applicationClient.ExecutePostRequest(saveUrl, schemaToSave.ToString(Formatting.None));
 			var saveResponse = JObject.Parse(saveJson);
 			if (saveResponse["success"]?.Value<bool>() ?? false) {
+				TryResetScriptCache();
 				response = null;
 				return true;
 			}
@@ -406,6 +407,23 @@ namespace Clio.Command {
 				Error = BuildSaveErrorMessage(saveResponse)
 			};
 			return false;
+		}
+
+		/// <summary>
+		/// Mirrors the frontend PageDesigner post-save behaviour by invalidating the workplace
+		/// script cache via <c>/rest/WorkplaceService/ResetScriptCache</c>. Without this call,
+		/// Creatio serves stale bundle JSON after a schema save — runtime pages omit fresh
+		/// replacing schemas and the next <c>GetParentSchemas</c> returns the pre-save hierarchy,
+		/// which tricks subsequent update-page calls into the CREATE branch and spawns duplicate
+		/// replacing schemas in the design package.
+		/// </summary>
+		private void TryResetScriptCache() {
+			try {
+				string resetUrl = _serviceUrlBuilder.Build("/rest/WorkplaceService/ResetScriptCache");
+				_applicationClient.ExecutePostRequest(resetUrl, string.Empty);
+			} catch {
+				// Cache reset is best-effort; never block a successful save on it.
+			}
 		}
 
 		private static string BuildSaveErrorMessage(JObject saveResponse) {
