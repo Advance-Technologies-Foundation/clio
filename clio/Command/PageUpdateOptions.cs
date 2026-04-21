@@ -44,6 +44,7 @@ namespace Clio.Command {
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
+		private readonly IPageDesignerHierarchyClient _hierarchyClient;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="PageUpdateCommand"/> class.
@@ -51,13 +52,16 @@ namespace Clio.Command {
 		/// <param name="applicationClient">Remote Creatio client.</param>
 		/// <param name="serviceUrlBuilder">Service URL builder.</param>
 		/// <param name="logger">Logger used for CLI output.</param>
+		/// <param name="hierarchyClient">Designer hierarchy client used to resolve replacing schemas.</param>
 		public PageUpdateCommand(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
-			ILogger logger) {
+			ILogger logger,
+			IPageDesignerHierarchyClient hierarchyClient = null) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
+			_hierarchyClient = hierarchyClient;
 		}
 
 		/// <summary>
@@ -73,14 +77,14 @@ namespace Clio.Command {
 					response = validationError;
 					return false;
 				}
-				if (!TryResolveSchemaUId(options.SchemaName, out string schemaUId, out response)) {
+				if (!TryResolveEditableSchemaContext(options.SchemaName, out EditableSchemaContext context, out response)) {
 					return false;
 				}
 				if (options.DryRun) {
 					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
 					return true;
 				}
-				if (!TryLoadSchemaForSave(options.SchemaName, schemaUId, out JObject schemaToSave, out response)) {
+				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) {
 					return false;
 				}
 				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, options.Body, explicitResources);
@@ -107,42 +111,160 @@ namespace Clio.Command {
 			return success ? 0 : 1;
 		}
 
-		private bool TryResolveSchemaUId(string schemaName, out string schemaUId, out PageUpdateResponse response) {
+		private bool TryResolveEditableSchemaContext(
+				string schemaName,
+				out EditableSchemaContext context,
+				out PageUpdateResponse response) {
+			context = null;
 			var (metadata, queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
 				_applicationClient,
 				_serviceUrlBuilder,
 				schemaName,
 				("UId", "UId"));
 			if (metadata == null) {
-				schemaUId = null;
 				response = new PageUpdateResponse { Success = false, Error = queryError };
 				return false;
 			}
-			schemaUId = metadata["UId"]?.ToString();
+			string rawSchemaUId = metadata["UId"]?.ToString();
+			if (string.IsNullOrWhiteSpace(rawSchemaUId)) {
+				response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' metadata is missing UId" };
+				return false;
+			}
+			if (_hierarchyClient == null) {
+				context = new EditableSchemaContext {
+					SchemaName = schemaName,
+					EditableSchemaUId = rawSchemaUId,
+					TemplateSchemaUId = rawSchemaUId,
+					IsCreateReplacing = false
+				};
+				response = null;
+				return true;
+			}
+			string designPackageUId;
+			try {
+				designPackageUId = _hierarchyClient.GetDesignPackageUId(rawSchemaUId);
+			} catch (Exception ex) {
+				response = new PageUpdateResponse { Success = false, Error = $"Failed to resolve design package for '{schemaName}': {ex.Message}" };
+				return false;
+			}
+			if (string.IsNullOrWhiteSpace(designPackageUId)) {
+				response = new PageUpdateResponse { Success = false, Error = $"Failed to resolve design package for '{schemaName}': no package returned" };
+				return false;
+			}
+			IReadOnlyList<PageDesignerHierarchySchema> hierarchy;
+			try {
+				hierarchy = _hierarchyClient.GetParentSchemas(rawSchemaUId, designPackageUId);
+			} catch (Exception ex) {
+				response = new PageUpdateResponse { Success = false, Error = $"Failed to load hierarchy for '{schemaName}': {ex.Message}" };
+				return false;
+			}
+			if (hierarchy == null || hierarchy.Count == 0) {
+				response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' hierarchy is empty" };
+				return false;
+			}
+			PageDesignerHierarchySchema head = hierarchy[0];
+			bool headInDesignPackage = string.Equals(head.PackageUId, designPackageUId, StringComparison.OrdinalIgnoreCase);
+			context = new EditableSchemaContext {
+				SchemaName = schemaName,
+				EditableSchemaUId = headInDesignPackage ? head.UId : Guid.NewGuid().ToString(),
+				DesignPackageUId = designPackageUId,
+				IsCreateReplacing = !headInDesignPackage,
+				ParentSchemaUId = headInDesignPackage ? null : head.UId,
+				ParentSchemaName = head.Name,
+				TemplateSchemaUId = head.UId
+			};
 			response = null;
 			return true;
 		}
 
 		private bool TryLoadSchemaForSave(
-			string schemaName,
-			string schemaUId,
-			out JObject schemaToSave,
-			out PageUpdateResponse response) {
-			var getSchemaRequest = new JObject {
+				string schemaName,
+				EditableSchemaContext context,
+				out JObject schemaToSave,
+				out PageUpdateResponse response) {
+			if (!TryGetSchema(context.TemplateSchemaUId, out JObject template, out string loadError)) {
+				schemaToSave = null;
+				response = new PageUpdateResponse {
+					Success = false,
+					Error = loadError ?? $"Failed to load schema '{schemaName}'"
+				};
+				return false;
+			}
+			schemaToSave = context.IsCreateReplacing
+				? BuildNewReplacingSchemaDto(template, context)
+				: template;
+			response = null;
+			return true;
+		}
+
+		private bool TryGetSchema(string schemaUId, out JObject schema, out string error) {
+			var request = new JObject {
 				["schemaUId"] = schemaUId,
 				["useFullHierarchy"] = false
 			};
-			string designerUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
-			string getSchemaJson = _applicationClient.ExecutePostRequest(designerUrl, getSchemaRequest.ToString(Formatting.None));
-			var getSchemaResponse = JObject.Parse(getSchemaJson);
-			if (!(getSchemaResponse["success"]?.Value<bool>() ?? false) || getSchemaResponse["schema"] is not JObject schema) {
-				schemaToSave = null;
-				response = new PageUpdateResponse { Success = false, Error = $"Failed to load schema '{schemaName}'" };
+			string url = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+			string json = _applicationClient.ExecutePostRequest(url, request.ToString(Formatting.None));
+			var response = JObject.Parse(json);
+			if (!(response["success"]?.Value<bool>() ?? false) || response["schema"] is not JObject loaded) {
+				schema = null;
+				error = response["errorInfo"]?["message"]?.ToString() ?? $"Failed to load schema '{schemaUId}'";
 				return false;
 			}
-			schemaToSave = schema;
-			response = null;
+			schema = loaded;
+			error = null;
 			return true;
+		}
+
+		private static JObject BuildNewReplacingSchemaDto(JObject template, EditableSchemaContext context) {
+			string originalName = template["name"]?.ToString() ?? context.SchemaName;
+			int schemaType = template["schemaType"]?.Value<int>() ?? 9;
+			int schemaVersion = template["schemaVersion"]?.Value<int>() ?? 1;
+			return new JObject {
+				["uId"] = context.EditableSchemaUId,
+				["name"] = originalName,
+				["schemaType"] = schemaType,
+				["schemaVersion"] = schemaVersion,
+				["extendParent"] = true,
+				["useFullHierarchy"] = false,
+				["userLevelSchema"] = false,
+				["isReadOnly"] = false,
+				["package"] = new JObject {
+					["uId"] = context.DesignPackageUId,
+					["name"] = string.Empty
+				},
+				["parent"] = new JObject {
+					["uId"] = context.ParentSchemaUId,
+					["name"] = context.ParentSchemaName ?? originalName
+				},
+				["body"] = BuildEmptyReplacingBody(originalName),
+				["localizableStrings"] = null,
+				["caption"] = null,
+				["optionalProperties"] = template["optionalProperties"] as JArray ?? new JArray(),
+				["dependencies"] = new JArray()
+			};
+		}
+
+		private static string BuildEmptyReplacingBody(string schemaName) {
+			return "define(\"" + schemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {\n" +
+				"\treturn {\n" +
+				"\t\tviewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/,\n" +
+				"\t\tviewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,\n" +
+				"\t\tmodelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,\n" +
+				"\t\thandlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,\n" +
+				"\t\tconverters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,\n" +
+				"\t\tvalidators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/\n" +
+				"\t};\n" +
+				"});";
+		}
+
+		internal sealed class EditableSchemaContext {
+			public string SchemaName { get; set; }
+			public string EditableSchemaUId { get; set; }
+			public string DesignPackageUId { get; set; }
+			public bool IsCreateReplacing { get; set; }
+			public string ParentSchemaUId { get; set; }
+			public string ParentSchemaName { get; set; }
+			public string TemplateSchemaUId { get; set; }
 		}
 
 		private static List<string> UpdateSchemaBody(JObject schemaToSave, string body, Dictionary<string, string> explicitResources) {
