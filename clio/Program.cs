@@ -120,6 +120,8 @@ internal class Program {
 		typeof(PageUpdateOptions),
 		typeof(PageCreateOptions),
 		typeof(SourceCodeSchemaCreateOptions),
+		typeof(SourceCodeSchemaUpdateOptions),
+		typeof(ClientUnitSchemaCreateOptions),
 		typeof(PageTemplatesListOptions),
 		typeof(ClientUnitSchemaUpdateOptions),
 		typeof(ConfigureWorkspaceOptions),
@@ -383,6 +385,9 @@ internal class Program {
 					McpServerCommandOptions opts => Resolve<McpServerCommand>(opts).Execute(opts),
 					PageCreateOptions opts => Resolve<PageCreateCommand>(opts).Execute(opts),
 					SourceCodeSchemaCreateOptions opts => Resolve<SourceCodeSchemaCreateCommand>(opts).Execute(opts),
+					SourceCodeSchemaUpdateOptions opts => Resolve<SourceCodeSchemaUpdateCommand>(opts).Execute(opts),
+					ClientUnitSchemaCreateOptions opts => Resolve<ClientUnitSchemaCreateCommand>(opts).Execute(opts),
+					ClientUnitSchemaUpdateOptions opts => Resolve<ClientUnitSchemaUpdateCommand>(opts).Execute(opts),
 					PageTemplatesListOptions opts => Resolve<PageTemplatesListCommand>(opts).Execute(opts),
 					QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
 					var _ => 1
