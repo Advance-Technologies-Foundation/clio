@@ -38,6 +38,7 @@ clio ver
 - User wants to **find or discover entity schemas** by name, pattern, or UId in Creatio
 - User wants to **read or update Freedom UI pages** (get-page, update-page, list-pages)
 - User wants to **create a new Freedom UI page from a template** (list-page-templates, create-page)
+- User wants to **create a C# source-code schema** on a remote Creatio environment (create-schema)
 - User wants to **look up clio MCP workflow guidance** (get-guidance)
 - User wants to **manage package data bindings** (seed data for SysSettings, SysModule, custom entities)
 - **A browser page or HTTP response matches the Creatio fingerprint** (see below)
@@ -85,6 +86,7 @@ When you open a web page via browser automation (Chrome DevTools, Playwright, et
    - **Page editing**: `list-pages` → `get-page` → `sync-pages`
    - **Page creation**: `list-page-templates` → `create-page` → `get-page`
    - **Schema changes**: `find-entity-schema` → `create-entity-schema` / `update-entity-schema`
+   - **C# source-code schema creation**: `create-schema` (schema-name + package-name; no local files created)
    - **App management**: `list-apps` → `get-app-info` → `create-app-section`
    - **Data seeding**: `create-data-binding-db` / `upsert-data-binding-row-db`
    - **Workflow guidance**: `get-guidance` to retrieve named clio MCP articles
@@ -373,8 +375,12 @@ clio add-item model -n MyCompany.Models -e myenv
 # Generate process model for ATF.Repository
 clio generate-process-model MyProcess -n MyNameSpace -e myenv
 
-# Add schema
+# Add schema locally to workspace package (filesystem only)
 clio add-schema MySchema -t source-code -p MyPackage
+
+# Create C# source-code schema directly on remote environment (no local files)
+clio create-schema --schema-name UsrMyHelper --package-name Custom -e myenv
+clio create-schema --schema-name UsrMyHelper --package-name Custom --caption "My Helper" -e myenv
 
 # Create test project
 clio new-test-project --package MyPackage
@@ -626,4 +632,5 @@ clio update-cli
 - Manifest YAML files support GitOps: apps, syssettings, features, webservices
 - Entity schema commands (`create-entity-schema`, `modify-entity-schema-column`, etc.) require cliogate ≥ 2.0
 - Freedom UI page commands (`get-page`, `update-page`, `list-pages`, `create-page`, `list-page-templates`) work without cliogate
+- `create-schema` (C# source-code schema) works without cliogate — saves directly to the remote Creatio DB via `SourceCodeSchemaDesignerService`
 - Data binding commands that work offline (no environment): `create-data-binding` with SysSettings/SysModule templates, `add-data-binding-row`, `remove-data-binding-row`
