@@ -39,6 +39,7 @@ clio ver
 - User wants to **read or update Freedom UI pages** (get-page, update-page, list-pages)
 - User wants to **create a new Freedom UI page from a template** (list-page-templates, create-page)
 - User wants to **create a C# source-code schema** on a remote Creatio environment (create-schema)
+- User wants to **update the body of a C# source-code schema** on a remote Creatio environment (update-schema)
 - User wants to **look up clio MCP workflow guidance** (get-guidance)
 - User wants to **manage package data bindings** (seed data for SysSettings, SysModule, custom entities)
 - **A browser page or HTTP response matches the Creatio fingerprint** (see below)
@@ -87,6 +88,7 @@ When you open a web page via browser automation (Chrome DevTools, Playwright, et
    - **Page creation**: `list-page-templates` → `create-page` → `get-page`
    - **Schema changes**: `find-entity-schema` → `create-entity-schema` / `update-entity-schema`
    - **C# source-code schema creation**: `create-schema` (schema-name + package-name; no local files created)
+   - **C# source-code schema update**: `update-schema` (schema-name + body or body-file; no local files created)
    - **App management**: `list-apps` → `get-app-info` → `create-app-section`
    - **Data seeding**: `create-data-binding-db` / `upsert-data-binding-row-db`
    - **Workflow guidance**: `get-guidance` to retrieve named clio MCP articles
