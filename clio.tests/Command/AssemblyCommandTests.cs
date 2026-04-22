@@ -45,11 +45,13 @@ public class AssemblyCommandTestCase : BaseCommandTests<ExecuteAssemblyOptions>
 	[Test]
 	[Category("Unit")]
 	public void Execute_ShouldWriteResponse_WhenItIsSuccessful(){
-		// Arrange
 		AssemblyCommand command = Container.GetRequiredService<AssemblyCommand>();
 		command.Logger = _loggerMock;
 
 		string executorType = typeof(AssemblyCommand).FullName;
+		string assemblyPath = "/test-assembly.dll";
+		FileSystem.AddFile(assemblyPath, new System.IO.Abstractions.TestingHelpers.MockFileData([0x4D, 0x5A, 0x90, 0x00]));
+
 		_applicationClientMock.ExecutePostRequest(
 				Arg.Is<string>(path => path.EndsWith("/IDE/ExecuteScript")),
 				Arg.Is<string>(request => CheckRequest(request, executorType)),
@@ -57,14 +59,12 @@ public class AssemblyCommandTestCase : BaseCommandTests<ExecuteAssemblyOptions>
 				)
 			.Returns("responseFromServer");
 
-		// Act
 		command.Execute(new ExecuteAssemblyOptions {
 			ExecutorType = executorType,
-			Name = new Uri(typeof(AssemblyCommand).Assembly.Location).LocalPath,
+			Name = assemblyPath,
 			WriteResponse = true,
 		});
 
-		// Assert
 		_loggerMock.Received(1).WriteInfo("responseFromServer");
 		_loggerMock.ClearReceivedCalls();
 	}

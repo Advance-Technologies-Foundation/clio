@@ -53,11 +53,16 @@ namespace Clio
 			protected set => _createdOn = GetDateTimeTillSeconds(value);
 		}
 
-		protected CreatioPackage(string packageName, string maintainer) {
+		protected CreatioPackage(string packageName, string maintainer,
+			ILogger logger = null, IDotnetExecutor dotnetExecutor = null) {
 			PackageName = packageName;
 			Maintainer = maintainer;
 			CreatedOn = DateTime.UtcNow;
 			FullPath = Path.Combine(Environment.CurrentDirectory, packageName);
+			_logger = logger ?? ConsoleLogger.Instance;
+#pragma warning disable CLIO001
+			_dotnetExecutor = dotnetExecutor ?? new DotnetExecutor(new ProcessExecutor(_logger));
+#pragma warning restore CLIO001
 		}
 
 		private static DateTime GetDateTimeTillSeconds(DateTime dateTime) {

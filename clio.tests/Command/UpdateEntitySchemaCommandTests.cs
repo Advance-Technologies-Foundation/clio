@@ -93,7 +93,7 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 		result.Should().Be(1, because: "a batch update without operations is invalid");
 		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumns(default!);
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.Contains("At least one operation is required.")));
+			message.Contains("At least one operation is required")));
 	}
 
 	[Test]
