@@ -68,10 +68,6 @@ internal sealed class PageDesignerHierarchyClient : IPageDesignerHierarchyClient
 		var result = new List<PageDesignerHierarchySchema>(values.Count);
 		foreach (JObject value in values.Children<JObject>()) {
 			string body = value["body"]?.ToString();
-			if (string.IsNullOrWhiteSpace(body)) {
-				continue;
-			}
-
 			JToken package = value["package"];
 			result.Add(new PageDesignerHierarchySchema {
 				UId = value["uId"]?.ToString() ?? value["id"]?.ToString(),
@@ -79,7 +75,7 @@ internal sealed class PageDesignerHierarchyClient : IPageDesignerHierarchyClient
 				PackageUId = package?["uId"]?.ToString() ?? value["packageUId"]?.ToString(),
 				PackageName = package?["name"]?.ToString() ?? value["packageName"]?.ToString(),
 				SchemaVersion = value["schemaVersion"]?.Value<int>() ?? 0,
-				Body = body,
+				Body = string.IsNullOrWhiteSpace(body) ? null : body,
 				Parameters = value["parameters"] as JArray ?? new JArray(),
 				LocalizableStrings = value["localizableStrings"] as JArray ?? new JArray(),
 				OptionalProperties = value["optionalProperties"] as JArray ?? new JArray()

@@ -211,6 +211,16 @@ public sealed class PageMetadataInfo {
 	[JsonProperty("willCreateReplacingInDesignPackage")]
 	[JsonPropertyName("willCreateReplacingInDesignPackage")]
 	public bool WillCreateReplacingInDesignPackage { get; init; }
+
+	/// <summary>
+	/// Gets or sets the root schema identifier — the base schema in the hierarchy that all
+	/// replacing schemas ultimately extend. Pass this as the parent when creating a new
+	/// replacing schema via update-page to match the designer's ApplyParent behaviour.
+	/// </summary>
+	[JsonProperty("rootSchemaUId")]
+	[JsonPropertyName("rootSchemaUId")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public string RootSchemaUId { get; init; }
 }
 
 /// <summary>
@@ -389,6 +399,16 @@ public sealed class PageBundleInfo {
 	[JsonProperty("containers")]
 	[JsonPropertyName("containers")]
 	public IReadOnlyList<PageContainerInfo> Containers { get; init; } = [];
+
+	/// <summary>
+	/// Gets or sets the full inheritance chain ordered from HEAD (most-derived) to ROOT.
+	/// Includes ALL schemas even those with no readable body (compiled platform schemas show
+	/// <c>hasBody: false</c>). Use this list to understand which packages contribute to the page
+	/// and to locate inherited fields that are not visible in <see cref="ViewConfig"/>.
+	/// </summary>
+	[JsonProperty("schemas")]
+	[JsonPropertyName("schemas")]
+	public IReadOnlyList<PageSchemaChainEntry> Schemas { get; init; } = [];
 }
 
 /// <summary>
@@ -423,6 +443,36 @@ public sealed class PageContainerInfo {
 	[JsonProperty("path")]
 	[JsonPropertyName("path")]
 	public string Path { get; init; }
+}
+
+/// <summary>
+/// Represents one schema in the page inheritance chain.
+/// </summary>
+public sealed class PageSchemaChainEntry {
+	[JsonProperty("schemaUId")]
+	[JsonPropertyName("schemaUId")]
+	public string SchemaUId { get; init; }
+
+	[JsonProperty("schemaName")]
+	[JsonPropertyName("schemaName")]
+	public string SchemaName { get; init; }
+
+	[JsonProperty("packageUId")]
+	[JsonPropertyName("packageUId")]
+	public string PackageUId { get; init; }
+
+	[JsonProperty("packageName")]
+	[JsonPropertyName("packageName")]
+	public string PackageName { get; init; }
+
+	/// <summary>
+	/// Gets a value indicating whether this schema has a readable body. When <c>false</c> the
+	/// schema is compiled or empty — its fields are not reflected in <c>viewConfig</c>. Look up
+	/// inherited fields in the package store (~Projects/ps) using the package name.
+	/// </summary>
+	[JsonProperty("hasBody")]
+	[JsonPropertyName("hasBody")]
+	public bool HasBody { get; init; }
 }
 
 /// <summary>

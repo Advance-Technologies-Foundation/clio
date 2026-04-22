@@ -69,6 +69,53 @@ namespace Clio.Command {
 			}
 		}
 
+		internal static string QueryPackageName(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string packageUId) {
+			if (string.IsNullOrWhiteSpace(packageUId)) {
+				return null;
+			}
+			var query = new JObject {
+				["rootSchemaName"] = "SysPackage",
+				["operationType"] = 0,
+				["filters"] = new JObject {
+					["filterType"] = 6,
+					["logicalOperation"] = 0,
+					["isEnabled"] = true,
+					["items"] = new JObject {
+						["byUId"] = new JObject {
+							["filterType"] = 1,
+							["comparisonType"] = 3,
+							["isEnabled"] = true,
+							["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "UId"},
+							["rightExpression"] = new JObject {[ExpressionTypeKey] = 2, ["parameter"] = new JObject {["dataValueType"] = 0, ["value"] = packageUId}}
+						}
+					}
+				},
+				["columns"] = new JObject {
+					["items"] = new JObject {
+						["Name"] = new JObject {
+							["expression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "Name"}
+						}
+					}
+				},
+				["rowCount"] = 1
+			};
+			try {
+				string dataServiceUrl = serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
+				string responseJson = applicationClient.ExecutePostRequest(dataServiceUrl, query.ToString(Formatting.None));
+				JObject response = JObject.Parse(responseJson);
+				if (!(response["success"]?.Value<bool>() ?? false)) {
+					return null;
+				}
+				var rows = response["rows"] as JArray;
+				return rows?.Count > 0 ? rows[0]?["Name"]?.ToString() : null;
+			} catch {
+				return null;
+			}
+		}
+
 		internal static (JToken row, string error) QuerySysSchemaRow(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,

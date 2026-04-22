@@ -104,8 +104,8 @@ public class PageGetCommand : Command<PageGetOptions> {
 			if (string.IsNullOrWhiteSpace(designPackageUId)) {
 				designPackageUId = packageUId;
 			}
-			var hierarchy = _hierarchyClient.GetParentSchemas(schemaUId, designPackageUId);
-			if (hierarchy.Count == 0) {
+			var initialHierarchy = _hierarchyClient.GetParentSchemas(schemaUId, designPackageUId);
+			if (initialHierarchy.Count == 0) {
 				response = new PageGetResponse {
 					Success = false,
 					Error = $"Schema '{options.SchemaName}' hierarchy is empty"
@@ -113,16 +113,39 @@ public class PageGetCommand : Command<PageGetOptions> {
 				return false;
 			}
 
+			string rootSchemaUId = FindRootSchemaUId(initialHierarchy, options.SchemaName) ?? schemaUId;
+			System.Collections.Generic.IReadOnlyList<PageDesignerHierarchySchema> hierarchy;
+			if (!string.Equals(rootSchemaUId, schemaUId, StringComparison.OrdinalIgnoreCase)) {
+				var fullHierarchy = _hierarchyClient.GetParentSchemas(rootSchemaUId, designPackageUId);
+				hierarchy = fullHierarchy.Count > 0 ? fullHierarchy : initialHierarchy;
+			} else {
+				hierarchy = initialHierarchy;
+			}
+
 			PageDesignerHierarchySchema currentSchema = hierarchy[0];
 
 			var parts = hierarchy
-				.Where(schema => !string.IsNullOrWhiteSpace(schema.Body))
+				.Where(schema => schema.Body != null)
 				.Select(schema => new PageSchemaBundlePart(schema, _bodyParser.Parse(schema.Body)))
 				.ToList();
 			PageBundleInfo bundle = _bundleBuilder.Build(parts);
+			var schemaChain = hierarchy
+				.Select(s => new PageSchemaChainEntry {
+					SchemaUId = s.UId,
+					SchemaName = s.Name,
+					PackageUId = s.PackageUId,
+					PackageName = s.PackageName,
+					HasBody = s.Body != null
+				})
+				.ToList();
 			PageOwnBodySummary ownBodySummary = BuildOwnBodySummary(currentSchema, _bodyParser);
 			bool willCreateReplacing = !string.IsNullOrWhiteSpace(designPackageUId)
 				&& !string.Equals(designPackageUId, currentSchema.PackageUId, StringComparison.OrdinalIgnoreCase);
+			string designPackageName = PageSchemaMetadataHelper.QueryPackageName(
+				_applicationClient, _serviceUrlBuilder, designPackageUId);
+			PageDesignerHierarchySchema editableSchema = hierarchy.FirstOrDefault(
+				s => string.Equals(s.PackageUId, designPackageUId, StringComparison.OrdinalIgnoreCase));
+			string editableBody = editableSchema?.Body ?? BuildEmptyBody(options.SchemaName);
 			response = new PageGetResponse {
 				Success = true,
 				Page = new PageMetadataInfo {
@@ -133,11 +156,28 @@ public class PageGetCommand : Command<PageGetOptions> {
 					ParentSchemaName = metadata["ParentSchemaName"]?.ToString(),
 					OwnBodySummary = ownBodySummary,
 					DesignPackageUId = designPackageUId,
+					DesignPackageName = designPackageName,
+					RootSchemaUId = rootSchemaUId,
 					WillCreateReplacingInDesignPackage = willCreateReplacing
 				},
-				Bundle = bundle,
+				Bundle = new PageBundleInfo {
+					Name = bundle.Name,
+					ViewConfig = bundle.ViewConfig,
+					ViewModelConfig = bundle.ViewModelConfig,
+					ModelConfig = bundle.ModelConfig,
+					Resources = bundle.Resources,
+					Handlers = bundle.Handlers,
+					Converters = bundle.Converters,
+					Validators = bundle.Validators,
+					Parameters = bundle.Parameters,
+					Deps = bundle.Deps,
+					Args = bundle.Args,
+					OptionalProperties = bundle.OptionalProperties,
+					Containers = bundle.Containers,
+					Schemas = schemaChain
+				},
 				Raw = new PageRawInfo {
-					Body = currentSchema.Body
+					Body = editableBody
 				},
 				Error = null
 			};
@@ -157,6 +197,19 @@ public class PageGetCommand : Command<PageGetOptions> {
 		bool success = TryGetPage(options, out PageGetResponse response);
 		_logger.WriteInfo(JsonSerializer.Serialize(response));
 		return success ? 0 : 1;
+	}
+
+	private static string FindRootSchemaUId(System.Collections.Generic.IReadOnlyList<PageDesignerHierarchySchema> hierarchy, string schemaName) {
+		for (int i = hierarchy.Count - 1; i >= 0; i--) {
+			if (string.Equals(hierarchy[i].Name, schemaName, StringComparison.OrdinalIgnoreCase)) {
+				return hierarchy[i].UId;
+			}
+		}
+		return null;
+	}
+
+	private static string BuildEmptyBody(string schemaName) {
+		return "define(\"" + schemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {\n\treturn {\n\t\tviewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/,\n\t\tviewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,\n\t\tmodelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,\n\t\thandlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,\n\t\tconverters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,\n\t\tvalidators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/\n\t};\n});";
 	}
 
 	private static PageOwnBodySummary BuildOwnBodySummary(PageDesignerHierarchySchema schema, IPageSchemaBodyParser parser) {

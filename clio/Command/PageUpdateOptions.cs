@@ -242,6 +242,10 @@ namespace Clio.Command {
 				return false;
 			}
 			PageDesignerHierarchySchema head = hierarchy[0];
+			string rootUId = FindRootSchemaUId(hierarchy, schemaName);
+			PageDesignerHierarchySchema root = !string.IsNullOrWhiteSpace(rootUId)
+				? hierarchy.FirstOrDefault(s => string.Equals(s.UId, rootUId, StringComparison.OrdinalIgnoreCase)) ?? head
+				: head;
 			bool headInDesignPackage = string.Equals(head.PackageUId, designPackageUId, StringComparison.OrdinalIgnoreCase);
 			string editableUId;
 			bool isCreateReplacing;
@@ -264,12 +268,31 @@ namespace Clio.Command {
 				EditableSchemaUId = editableUId,
 				DesignPackageUId = designPackageUId,
 				IsCreateReplacing = isCreateReplacing,
-				ParentSchemaUId = isCreateReplacing ? head.UId : null,
-				ParentSchemaName = head.Name,
-				TemplateSchemaUId = isCreateReplacing ? head.UId : editableUId
+				ParentSchemaUId = isCreateReplacing ? root.UId : null,
+				ParentSchemaName = root.Name,
+				TemplateSchemaUId = isCreateReplacing ? root.UId : editableUId
 			};
 			response = null;
 			return true;
+		}
+
+		internal sealed class EditableSchemaContext {
+			public string SchemaName { get; set; }
+			public string EditableSchemaUId { get; set; }
+			public string DesignPackageUId { get; set; }
+			public bool IsCreateReplacing { get; set; }
+			public string ParentSchemaUId { get; set; }
+			public string ParentSchemaName { get; set; }
+			public string TemplateSchemaUId { get; set; }
+		}
+
+		private static string FindRootSchemaUId(IReadOnlyList<PageDesignerHierarchySchema> hierarchy, string schemaName) {
+			for (int i = hierarchy.Count - 1; i >= 0; i--) {
+				if (string.Equals(hierarchy[i].Name, schemaName, StringComparison.OrdinalIgnoreCase)) {
+					return hierarchy[i].UId;
+				}
+			}
+			return null;
 		}
 
 		private static List<string> UpdateSchemaBody(JObject schemaToSave, string body, Dictionary<string, string> explicitResources, JArray optionalProperties = null) {

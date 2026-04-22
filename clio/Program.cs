@@ -401,6 +401,9 @@ internal class Program {
 					SqlSchemaUpdateOptions opts => Resolve<SqlSchemaUpdateCommand>(opts).Execute(opts),
 					SqlSchemaInstallOptions opts => Resolve<SqlSchemaInstallCommand>(opts).Execute(opts),
 					PageTemplatesListOptions opts => Resolve<PageTemplatesListCommand>(opts).Execute(opts),
+					PageGetOptions opts => Resolve<PageGetCommand>(opts).Execute(opts),
+					PageUpdateOptions opts => Resolve<PageUpdateCommand>(opts).Execute(opts),
+					PageListOptions opts => Resolve<PageListCommand>(opts).Execute(opts),
 					QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
 					var _ => 1
 				};
