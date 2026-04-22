@@ -138,14 +138,18 @@ public class PageGetCommand : Command<PageGetOptions> {
 					HasBody = s.Body != null
 				})
 				.ToList();
-			PageOwnBodySummary ownBodySummary = BuildOwnBodySummary(currentSchema, _bodyParser);
-			bool willCreateReplacing = !string.IsNullOrWhiteSpace(designPackageUId)
-				&& !string.Equals(designPackageUId, currentSchema.PackageUId, StringComparison.OrdinalIgnoreCase);
 			string designPackageName = PageSchemaMetadataHelper.QueryPackageName(
 				_applicationClient, _serviceUrlBuilder, designPackageUId);
 			PageDesignerHierarchySchema editableSchema = hierarchy.FirstOrDefault(
 				s => string.Equals(s.PackageUId, designPackageUId, StringComparison.OrdinalIgnoreCase));
+			if (editableSchema is null && !string.IsNullOrWhiteSpace(designPackageUId)) {
+				editableSchema = LoadReplacingSchemaInDesignPackage(options.SchemaName, designPackageUId);
+			}
+			bool willCreateReplacing = editableSchema is null
+				&& !string.IsNullOrWhiteSpace(designPackageUId)
+				&& !string.Equals(designPackageUId, currentSchema.PackageUId, StringComparison.OrdinalIgnoreCase);
 			string editableBody = editableSchema?.Body ?? BuildEmptyBody(options.SchemaName);
+			PageOwnBodySummary ownBodySummary = BuildOwnBodySummary(editableSchema ?? currentSchema, _bodyParser);
 			response = new PageGetResponse {
 				Success = true,
 				Page = new PageMetadataInfo {
@@ -197,6 +201,22 @@ public class PageGetCommand : Command<PageGetOptions> {
 		bool success = TryGetPage(options, out PageGetResponse response);
 		_logger.WriteInfo(JsonSerializer.Serialize(response));
 		return success ? 0 : 1;
+	}
+
+	private PageDesignerHierarchySchema LoadReplacingSchemaInDesignPackage(string schemaName, string designPackageUId) {
+		string replacingUId = PageSchemaMetadataHelper.FindExistingSchemaInPackage(
+			_applicationClient, _serviceUrlBuilder, schemaName, designPackageUId);
+		if (string.IsNullOrWhiteSpace(replacingUId)) {
+			return null;
+		}
+		try {
+			System.Collections.Generic.IReadOnlyList<PageDesignerHierarchySchema> replacingHierarchy =
+				_hierarchyClient.GetParentSchemas(replacingUId, designPackageUId);
+			return replacingHierarchy.FirstOrDefault(
+				s => string.Equals(s.UId, replacingUId, StringComparison.OrdinalIgnoreCase));
+		} catch {
+			return null;
+		}
 	}
 
 	private static string FindRootSchemaUId(System.Collections.Generic.IReadOnlyList<PageDesignerHierarchySchema> hierarchy, string schemaName) {

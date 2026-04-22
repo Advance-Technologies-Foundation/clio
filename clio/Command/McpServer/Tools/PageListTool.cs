@@ -23,6 +23,16 @@ public sealed class PageListTool(
 		["appCode"] = "code",
 		["packageName"] = "package-name",
 		["searchPattern"] = "search-pattern",
+		["search_pattern"] = "search-pattern",
+		["nameFilter"] = "search-pattern",
+		["name-filter"] = "search-pattern",
+		["name_filter"] = "search-pattern",
+		["pattern"] = "search-pattern",
+		["name"] = "search-pattern",
+		["pageName"] = "search-pattern",
+		["page-name"] = "search-pattern",
+		["schemaName"] = "search-pattern",
+		["schema-name"] = "search-pattern",
 		["environmentName"] = "environment-name"
 	};
 
@@ -59,13 +69,30 @@ public sealed class PageListTool(
 	}
 
 	private static string? GetLegacyAliasError(PageListArgs args) {
-		if (args.ExtensionData is null) {
+		if (args.ExtensionData is null || args.ExtensionData.Count == 0) {
 			return null;
 		}
-		return LegacyAliases
-			.Where(legacyAlias => args.ExtensionData.ContainsKey(legacyAlias.Key))
-			.Select(legacyAlias => $"Use '{legacyAlias.Value}' instead of '{legacyAlias.Key}'.")
-			.FirstOrDefault();
+		List<string> mapped = [];
+		List<string> unknown = [];
+		foreach (string key in args.ExtensionData.Keys) {
+			if (LegacyAliases.TryGetValue(key, out string? canonical)) {
+				mapped.Add($"'{key}' -> '{canonical}'");
+			} else {
+				unknown.Add($"'{key}'");
+			}
+		}
+		if (mapped.Count == 0 && unknown.Count == 0) {
+			return null;
+		}
+		List<string> parts = [];
+		if (mapped.Count > 0) {
+			parts.Add("Rename: " + string.Join(", ", mapped));
+		}
+		if (unknown.Count > 0) {
+			parts.Add("Unknown args: " + string.Join(", ", unknown)
+				+ ". Valid: package-name, code, search-pattern, limit, environment-name, uri, login, password.");
+		}
+		return string.Join(" ", parts);
 	}
 }
 
