@@ -19,18 +19,27 @@ Supports any workspace item type: entity, client unit, source code, process,
 DCM, process user task, campaign, service, addon, Copilot intent, localization
 schemas, as well as SQL scripts, data bindings, and assemblies.
 
-This command must be executed from a workspace directory.
+This command must be executed from a workspace directory unless `--remote` is set.
+
+### Remote mode (`--remote`)
+
+Use `--remote` to delete the schema directly from the target environment by name
+without requiring a local workspace. The schema is resolved from SysSchema by name
+(any ManagerName) and deleted via `WorkspaceExplorerService.svc/Delete`.
 
 ## Synopsis
 
 ```bash
-clio delete-schema <SCHEMA_NAME> -e <ENVIRONMENT_NAME>
+clio delete-schema <SCHEMA_NAME> -e <ENVIRONMENT_NAME> [--remote]
 ```
 
 ## Options
 
 ```bash
 Schema name (pos. 0)    Schema name to delete
+
+--remote                Delete the schema directly from the remote environment
+                        instead of requiring a workspace
 
 --Environment       -e  Environment name
 
@@ -47,11 +56,13 @@ Schema name (pos. 0)    Schema name to delete
 
 ```bash
 clio delete-schema UsrSendInvoice -e docker_fix2
-delete schema UsrSendInvoice when it belongs to one of the current
-workspace packages
+# delete schema UsrSendInvoice when it belongs to one of the current workspace packages
 
 clio delete-schema Activity -e docker_fix2
-fail when Activity is not part of the current workspace
+# fail when Activity is not part of the current workspace
+
+clio delete-schema UsrLegacyHelper --remote -e docker_fix2
+# delete UsrLegacyHelper directly from the remote environment (no workspace needed)
 ```
 
 ## Reporting Bugs

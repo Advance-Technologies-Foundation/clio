@@ -27,6 +27,9 @@ create-data-binding-db:create-data-binding-db
 create-entity-schema:create-entity-schema
 create-lookup:create-lookup
 create-k8-files:create-k8-files,ck8f
+create-client-unit-schema:create-client-unit-schema,client-unit-schema-create
+create-schema:create-schema,schema-create
+create-sql-schema:create-sql-schema,sql-schema-create
 create-workspace:create-workspace,createw
 CustomizeDataProtection:CustomizeDataProtection,cdp
 dataservice:dataservice,ds
@@ -51,10 +54,13 @@ get-app-hash:get-app-hash
 get-app-info:get-app-info
 list-apps:list-apps,get-app-list,app-list,apps,apps-list,lia
 get-build-info:get-build-info,bi,buildinfo
+get-client-unit-schema:get-client-unit-schema,client-unit-schema-get
 get-entity-schema-column-properties:get-entity-schema-column-properties
 get-entity-schema-properties:get-entity-schema-properties
 find-entity-schema:find-entity-schema
 get-info:get-info,describe,describe-creatio,instance-info
+get-schema:get-schema,schema-get
+get-sql-schema:get-sql-schema,sql-schema-get
 list-packages:list-packages,get-pkg-list,packages
 get-pkg-version:get-pkg-version,gpv
 get-webservice-url:get-webservice-url,gwu
@@ -66,6 +72,7 @@ install-application:install-application,install-app,push-app
 install-gate:install-gate,gate,installgate,update-gate
 install-nuget-pkg:install-nuget-pkg,installng
 install-skills:install-skills
+install-sql-schema:install-sql-schema,sql-schema-install,execute-sql-schema
 install-tide:install-tide,itide,tide
 last-compilation-log:last-compilation-log,lcl
 link-core-src:link-core-src,lcs
@@ -139,7 +146,9 @@ update-app-section:update-app-section
 update-client-unit-schema:update-client-unit-schema,client-unit-schema-update
 update-cli:update-cli,update
 update-entity-schema:update-entity-schema
+update-schema:update-schema,schema-update
 update-skill:update-skill
+update-sql-schema:update-sql-schema,sql-schema-update
 upload-license:upload-license,license,load-license,loadlicense
 upload-licenses:upload-licenses,lic
 upsert-data-binding-row-db:upsert-data-binding-row-db
