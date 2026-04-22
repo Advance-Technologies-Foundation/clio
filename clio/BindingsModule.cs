@@ -214,6 +214,9 @@ public class BindingsModule {
 		services.AddTransient<PageCreateCommand>();
 		services.AddTransient<PageTemplatesListCommand>();
 		services.AddTransient<SourceCodeSchemaCreateCommand>();
+		services.AddTransient<SourceCodeSchemaUpdateCommand>();
+		services.AddTransient<ClientUnitSchemaCreateCommand>();
+		services.AddTransient<ClientUnitSchemaUpdateCommand>();
 		services.AddTransient<ISchemaTemplateCatalog, SchemaTemplateCatalog>();
 		services.AddTransient<IPageDesignerHierarchyClient, PageDesignerHierarchyClient>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
@@ -238,6 +241,9 @@ public class BindingsModule {
 		services.AddTransient<PageCreateTool>();
 		services.AddTransient<PageTemplatesListTool>();
 		services.AddTransient<SchemaCreateTool>();
+		services.AddTransient<SchemaUpdateTool>();
+		services.AddTransient<ClientUnitSchemaCreateTool>();
+		services.AddTransient<ClientUnitSchemaUpdateTool>();
 		services.AddTransient<PageSyncTool>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
