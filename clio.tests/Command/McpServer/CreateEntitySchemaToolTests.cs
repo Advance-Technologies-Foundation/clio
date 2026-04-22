@@ -263,6 +263,66 @@ public class CreateEntitySchemaToolTests {
 	}
 
 	[Test]
+	[Description("When extend-parent is true and no parent-schema-name is supplied, the tool should return exit code 1 because CreateEntitySchemaCommand.Validate rejects extend-parent without an explicit parent.")]
+	[Category("Unit")]
+	public async Task CreateEntitySchema_Should_Fail_When_ExtendParent_Is_True_And_ParentSchemaName_Is_Omitted() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateEntitySchemaCommand defaultCommand = new();
+		CreateEntitySchemaCommand realCommand = new(
+			Substitute.For<IRemoteEntitySchemaCreator>(),
+			ConsoleLogger.Instance);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(realCommand);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+			"MyPackage",
+			"UsrVehicle",
+			Localizations("Vehicle"),
+			"docker_fix2",
+			ParentSchemaName: null,
+			ExtendParent: true));
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "extend-parent=true without a parent-schema-name must be rejected by the command validation guard, not silently proceed against BaseEntity");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Uses BaseEntity as the default parent schema when parent-schema-name is omitted from the MCP create-entity-schema call.")]
+	[Category("Unit")]
+	public async Task CreateEntitySchema_Should_Use_BaseEntity_As_Default_Parent_When_ParentSchemaName_Is_Omitted() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateEntitySchemaCommand defaultCommand = new();
+		FakeCreateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
+			"MyPackage",
+			"UsrVehicle",
+			Localizations("Vehicle"),
+			"docker_fix2"));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "omitting parent-schema-name should still produce a valid schema creation request");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the mapped options");
+		resolvedCommand.CapturedOptions!.ParentSchemaName.Should().Be("BaseEntity",
+			because: "create-entity-schema should default to BaseEntity when no parent-schema-name is supplied");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Derives the internal schema title from MCP title-localizations and passes provided localizations through as-is without synthesizing additional cultures.")]
 	[Category("Unit")]
 	public async Task CreateEntitySchema_Should_Derive_Internal_Title_From_TitleLocalizations_Without_CultureSynthesis() {
