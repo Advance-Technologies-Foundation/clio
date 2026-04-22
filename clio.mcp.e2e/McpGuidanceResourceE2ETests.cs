@@ -98,6 +98,12 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the article should point callers to the current business-rule creation tool");
 		article.Text.Should().Contain("get-entity-schema-properties",
 			because: "the article should require schema inspection before rule authoring");
+		article.Text.Should().Contain("`equal`, `not-equal`, `is-filled-in`, `is-not-filled-in`, `greater-than`, `greater-than-or-equal`, `less-than`, and `less-than-or-equal`",
+			because: "the article should enumerate the expanded comparison subset");
+		article.Text.Should().Contain("rightExpression` is omitted or null for `is-filled-in` and `is-not-filled-in`",
+			because: "the article should explain the unary operand rule");
+		article.Text.Should().Contain("Temporal scope is `Date`, `DateTime`, and `Time`",
+			because: "the article should scope relational temporal support precisely");
 		article.Text.Should().Contain("raw GUID string",
 			because: "the article should teach the lookup-constant payload constraint");
 		article.Text.Should().Contain("dataforge-find-lookups",

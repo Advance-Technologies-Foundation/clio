@@ -24,14 +24,14 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	private const string TargetEntitySchemaName = "Contact";
 
 	[Test]
-	[Description("Creates an entity-level business rule through the real MCP server and verifies the rule persisted in the BusinessRule add-on payload.")]
+	[Description("Creates a unary entity-level business rule through the real MCP server and verifies the rule persisted in the BusinessRule add-on payload without rightExpression metadata.")]
 	[AllureTag(ToolName)]
-	[AllureName("Entity business-rule MCP tool persists rule metadata in add-on designer storage")]
-	[AllureDescription("Arranges a unique sandbox package through the real CLI, calls create-entity-business-rule through the real MCP server, then fetches the Contact BusinessRule add-on directly from Creatio and verifies the created rule and caption resource were persisted without removing unrelated rules.")]
-	public async Task BusinessRuleCreate_Should_Persist_Rule_Into_Addon_Metadata() {
+	[AllureName("Entity business-rule MCP tool persists unary rule metadata in add-on designer storage")]
+	[AllureDescription("Arranges a unique sandbox package through the real CLI, calls create-entity-business-rule with an is-filled-in comparison through the real MCP server, then fetches the Contact BusinessRule add-on directly from Creatio and verifies the created rule, comparison type, and omitted rightExpression payload.")]
+	public async Task BusinessRuleCreate_Should_Persist_Unary_Rule_Into_Addon_Metadata() {
 		// Arrange
 		await using SandboxPackageArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
-		string caption = $"Codex rule {Guid.NewGuid():N}".Substring(0, 18);
+		string caption = $"Codex unary {Guid.NewGuid():N}".Substring(0, 18);
 
 		// Act
 		CallToolResult callResult = await CallBusinessRuleCreateAsync(
@@ -39,7 +39,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			arrangeContext.EnvironmentName,
 			arrangeContext.PackageName,
 			TargetEntitySchemaName,
-			caption,
+			CreateUnaryRule(caption),
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 		AddonBusinessRuleSnapshot snapshot = FetchAddonSnapshotByCaption(
@@ -53,12 +53,70 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "successful business-rule creation should return a structured MCP envelope rather than a top-level tool error");
 		execution.ExitCode.Should().Be(0,
 			because: "the real MCP tool should report success exit code for a valid sandbox package and entity");
+		execution.Output.Should().Contain(message => message.Value == $"Rule name: {snapshot.RuleName}",
+			because: "the MCP execution log should include the generated internal business-rule name");
 		snapshot.RuleCaption.Should().Be(caption,
 			because: "the persisted add-on metadata should contain the created rule");
 		snapshot.RuleName.Should().StartWith("BusinessRule_",
 			because: "the tool should generate an internal business-rule name automatically");
 		snapshot.TriggerNames.Should().Contain("Name",
-			because: "the persisted rule should include the expected trigger");
+			because: "the persisted unary rule should include the left-attribute trigger");
+		snapshot.ComparisonType.Should().Be(1,
+			because: "is-filled-in should persist the Creatio not-null comparison type");
+		snapshot.HasRightExpression.Should().BeFalse(
+			because: "unary comparisons should omit rightExpression from persisted metadata");
+		snapshot.ResourceCaption.Should().Be(caption,
+			because: "the persisted add-on resources should register the generated caption resource");
+	}
+
+	[Test]
+	[Description("Creates a relational entity-level business rule through the real MCP server and verifies the persisted comparison type and temporal rightExpression metadata.")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tool persists relational rule metadata in add-on designer storage")]
+	[AllureDescription("Arranges a unique sandbox package through the real CLI, calls create-entity-business-rule with a less-than-or-equal DateTime comparison through the real MCP server, then fetches the Contact BusinessRule add-on directly from Creatio and verifies the created rule, comparison type, and temporal rightExpression payload.")]
+	public async Task BusinessRuleCreate_Should_Persist_Relational_Rule_Into_Addon_Metadata() {
+		// Arrange
+		await using SandboxPackageArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		string caption = $"Codex rel {Guid.NewGuid():N}".Substring(0, 18);
+
+		// Act
+		CallToolResult callResult = await CallBusinessRuleCreateAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			TargetEntitySchemaName,
+			CreateTemporalRelationalRule(caption),
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		AddonBusinessRuleSnapshot snapshot = FetchAddonSnapshotByCaption(
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			TargetEntitySchemaName,
+			caption);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "successful relational business-rule creation should return a structured MCP envelope rather than a top-level tool error");
+		execution.ExitCode.Should().Be(0,
+			because: "the real MCP tool should report success exit code for a valid relational business-rule payload");
+		execution.Output.Should().Contain(message => message.Value == $"Rule name: {snapshot.RuleName}",
+			because: "the MCP execution log should include the generated internal business-rule name");
+		snapshot.RuleCaption.Should().Be(caption,
+			because: "the persisted add-on metadata should contain the created relational rule");
+		snapshot.TriggerNames.Should().Contain("CreatedOn",
+			because: "the persisted relational rule should include the left-attribute trigger");
+		snapshot.ComparisonType.Should().Be(6,
+			because: "less-than-or-equal should persist the Creatio relational comparison type");
+		snapshot.HasRightExpression.Should().BeTrue(
+			because: "binary relational comparisons should persist rightExpression metadata");
+		snapshot.RightExpressionType.Should().Be("Const",
+			because: "the relational test uses a constant DateTime operand");
+		snapshot.RightExpressionDataValueTypeName.Should().Be("DateTime",
+			because: "the temporal constant should inherit the DateTime runtime type");
+		snapshot.RightExpressionValue.Should().StartWith("2025-01-01T00:00:00",
+			because: "the persisted DateTime value should preserve the cutoff timestamp");
+		snapshot.RightExpressionValue.Should().EndWith("Z",
+			because: "the persisted DateTime value should be normalized to UTC");
 		snapshot.ResourceCaption.Should().Be(caption,
 			because: "the persisted add-on resources should register the generated caption resource");
 	}
@@ -78,7 +136,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			arrangeContext.EnvironmentName,
 			"UsrPkg",
 			TargetEntitySchemaName,
-			"Broken rule",
+			CreateEqualsRule("Broken rule"),
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 
@@ -127,6 +185,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationTokenSource.Token);
 		await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
 		await PushWorkspaceAsync(settings, workspacePath, settings.Sandbox.EnvironmentName!, cancellationTokenSource.Token);
+		await EnablePackageHotfixAsync(settings, workspacePath, packageName, settings.Sandbox.EnvironmentName!, cancellationTokenSource.Token);
 
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new SandboxPackageArrangeContext(rootDirectory, settings.Sandbox.EnvironmentName!, packageName, session, cancellationTokenSource);
@@ -146,7 +205,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		string environmentName,
 		string packageName,
 		string entitySchemaName,
-		string caption,
+		IReadOnlyDictionary<string, object?> rule,
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(ToolName,
@@ -158,34 +217,90 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				["environmentName"] = environmentName,
 				["packageName"] = packageName,
 				["entitySchemaName"] = entitySchemaName,
-				["rule"] = new Dictionary<string, object?> {
-					["caption"] = caption,
-					["condition"] = new Dictionary<string, object?> {
-						["logicalOperation"] = "AND",
-						["conditions"] = new[] {
-							new Dictionary<string, object?> {
-								["leftExpression"] = new Dictionary<string, object?> {
-									["type"] = "AttributeValue",
-									["path"] = "Name"
-								},
-								["comparisonType"] = "equal",
-								["rightExpression"] = new Dictionary<string, object?> {
-									["type"] = "Const",
-									["value"] = caption
-								}
-							}
-						}
-					},
-					["actions"] = new[] {
-						new Dictionary<string, object?> {
-							["type"] = "make-required",
-							["items"] = new[] { "JobTitle" }
-						}
-					}
-				}
+				["rule"] = rule
 			},
 			cancellationToken);
 	}
+
+	private static IReadOnlyDictionary<string, object?> CreateEqualsRule(string caption) {
+		return CreateRule(
+			caption,
+			"Name",
+			"equal",
+			CreateConstExpression(caption),
+			"make-required",
+			"JobTitle");
+	}
+
+	private static IReadOnlyDictionary<string, object?> CreateUnaryRule(string caption) {
+		return CreateRule(
+			caption,
+			"Name",
+			"is-filled-in",
+			null,
+			"make-read-only",
+			"JobTitle");
+	}
+
+	private static IReadOnlyDictionary<string, object?> CreateTemporalRelationalRule(string caption) {
+		return CreateRule(
+			caption,
+			"CreatedOn",
+			"less-than-or-equal",
+			CreateConstExpression("2025-01-01T00:00:00Z"),
+			"make-required",
+			"JobTitle");
+	}
+
+	private static IReadOnlyDictionary<string, object?> CreateRule(
+		string caption,
+		string leftPath,
+		string comparisonType,
+		IReadOnlyDictionary<string, object?>? rightExpression,
+		string actionType,
+		params string[] actionItems) {
+		return new Dictionary<string, object?> {
+			["caption"] = caption,
+			["condition"] = CreateCondition(leftPath, comparisonType, rightExpression),
+			["actions"] = new[] { CreateAction(actionType, actionItems) }
+		};
+	}
+
+	private static IReadOnlyDictionary<string, object?> CreateCondition(
+		string leftPath,
+		string comparisonType,
+		IReadOnlyDictionary<string, object?>? rightExpression) {
+		Dictionary<string, object?> condition = new() {
+			["leftExpression"] = CreateAttributeExpression(leftPath),
+			["comparisonType"] = comparisonType
+		};
+		if (rightExpression is not null) {
+			condition["rightExpression"] = rightExpression;
+		}
+
+		return new Dictionary<string, object?> {
+			["logicalOperation"] = "AND",
+			["conditions"] = new[] { condition }
+		};
+	}
+
+	private static IReadOnlyDictionary<string, object?> CreateAttributeExpression(string path) =>
+		new Dictionary<string, object?> {
+			["type"] = "AttributeValue",
+			["path"] = path
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateConstExpression(object value) =>
+		new Dictionary<string, object?> {
+			["type"] = "Const",
+			["value"] = value
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateAction(string actionType, params string[] items) =>
+		new Dictionary<string, object?> {
+			["type"] = actionType,
+			["items"] = items
+		};
 
 	private static AddonBusinessRuleSnapshot FetchAddonSnapshotByCaption(
 		string environmentName,
@@ -221,13 +336,33 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		JsonElement resource = response.RootElement.GetProperty("schema").GetProperty("resources")
 			.EnumerateArray()
 			.Single(item => string.Equals(item.GetProperty("key").GetString(), $"AddonConfig.Rules.{ruleId}.Caption", StringComparison.Ordinal));
+		JsonElement createdCondition = createdRule.GetProperty("cases")[0]
+			.GetProperty("condition")
+			.GetProperty("conditions")[0];
+		bool hasRightExpression = createdCondition.TryGetProperty("rightExpression", out JsonElement rightExpression);
+		string? rightExpressionType = hasRightExpression ? rightExpression.GetProperty("type").GetString() : null;
+		string? rightExpressionDataValueTypeName =
+			hasRightExpression && rightExpression.TryGetProperty("dataValueTypeName", out JsonElement dataValueTypeName)
+				? dataValueTypeName.GetString()
+				: null;
+		string? rightExpressionValue =
+			hasRightExpression && rightExpression.TryGetProperty("value", out JsonElement valueElement)
+				? valueElement.ValueKind == JsonValueKind.String
+					? valueElement.GetString()
+					: valueElement.GetRawText()
+				: null;
 		return new AddonBusinessRuleSnapshot(
 			createdRule.GetProperty("name").GetString()!,
 			createdRule.GetProperty("caption").GetString()!,
 			createdRule.GetProperty("triggers").EnumerateArray()
 				.Select(trigger => trigger.GetProperty("name").GetString()!)
 				.ToArray(),
-			resource.GetProperty("value")[0].GetProperty("value").GetString()!);
+			resource.GetProperty("value")[0].GetProperty("value").GetString()!,
+			createdCondition.GetProperty("comparisonType").GetInt32(),
+			hasRightExpression,
+			rightExpressionType,
+			rightExpressionDataValueTypeName,
+			rightExpressionValue);
 	}
 
 	private static Guid ResolvePackageUId(IApplicationClient client, ServiceUrlBuilder serviceUrlBuilder, string packageName) {
@@ -370,6 +505,19 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			cancellationToken: cancellationToken);
 	}
 
+	private static async Task EnablePackageHotfixAsync(
+		McpE2ESettings settings,
+		string workspacePath,
+		string packageName,
+		string environmentName,
+		CancellationToken cancellationToken) {
+		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
+			settings,
+			["pkg-hotfix", packageName, "true", "-e", environmentName],
+			workingDirectory: workspacePath,
+			cancellationToken: cancellationToken);
+	}
+
 	private sealed record SandboxPackageArrangeContext(
 		string RootDirectory,
 		string EnvironmentName,
@@ -399,5 +547,10 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		string RuleName,
 		string RuleCaption,
 		IReadOnlyList<string> TriggerNames,
-		string ResourceCaption);
+		string ResourceCaption,
+		int ComparisonType,
+		bool HasRightExpression,
+		string? RightExpressionType,
+		string? RightExpressionDataValueTypeName,
+		string? RightExpressionValue);
 }

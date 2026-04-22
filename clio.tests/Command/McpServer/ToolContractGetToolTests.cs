@@ -95,9 +95,24 @@ public sealed class ToolContractGetToolTests {
 				validator.Field == "rule.condition.conditions[*].comparisonType",
 			because: "the contract should validate target-architecture comparisonType fields");
 		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "conditional-field" &&
+				validator.Field == "rule.condition.conditions[*].rightExpression" &&
+				validator.Context!.Contains("Omit or null for is-filled-in and is-not-filled-in", StringComparison.Ordinal),
+			because: "the contract should advertise the unary-versus-binary rightExpression rule");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "comparison-family" &&
+				validator.Field == "rule.condition.conditions[*]" &&
+				validator.Context!.Contains("Date, DateTime, Time", StringComparison.Ordinal),
+			because: "the contract should advertise the numeric and temporal scope of relational comparisons");
+		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rule.actions[*].type",
 			because: "the contract should validate target-architecture action type fields");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "enum" &&
+				validator.Field == "rule.condition.conditions[*].comparisonType" &&
+				validator.Context!.Contains("greater-than-or-equal", StringComparison.Ordinal),
+			because: "the contract should advertise the full supported comparison set");
 		contract.Defaults.Should().BeEmpty(
 			because: "the contract should not have defaults after enabled was removed");
 		contract.Aliases.Should().Contain(alias =>
@@ -135,6 +150,29 @@ public sealed class ToolContractGetToolTests {
 			);
 		hasLookupExample.Should().BeTrue(
 			because: "the contract should document that lookup constants are passed as raw GUID strings");
+		bool hasUnaryExample = contract.Examples.Any(example =>
+			example.Arguments["rule"] is Dictionary<string, object?> rule
+			&& rule.TryGetValue("condition", out object? conditionValue)
+			&& conditionValue is Dictionary<string, object?> condition
+			&& condition.TryGetValue("conditions", out object? conditionsValue)
+			&& conditionsValue is object[] conditions
+			&& conditions.Single() is Dictionary<string, object?> predicate
+			&& predicate.TryGetValue("comparisonType", out object? comparisonTypeValue)
+			&& comparisonTypeValue?.ToString() == "is-filled-in"
+			&& !predicate.ContainsKey("rightExpression"));
+		hasUnaryExample.Should().BeTrue(
+			because: "the contract should include a unary filled-in example without rightExpression");
+		bool hasRelationalExample = contract.Examples.Any(example =>
+			example.Arguments["rule"] is Dictionary<string, object?> rule
+			&& rule.TryGetValue("condition", out object? conditionValue)
+			&& conditionValue is Dictionary<string, object?> condition
+			&& condition.TryGetValue("conditions", out object? conditionsValue)
+			&& conditionsValue is object[] conditions
+			&& conditions.Single() is Dictionary<string, object?> predicate
+			&& predicate.TryGetValue("comparisonType", out object? comparisonTypeValue)
+			&& comparisonTypeValue?.ToString() == "less-than-or-equal");
+		hasRelationalExample.Should().BeTrue(
+			because: "the contract should include a relational example for numeric or temporal comparisons");
 	}
 
 	[Test]

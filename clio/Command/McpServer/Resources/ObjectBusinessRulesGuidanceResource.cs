@@ -61,12 +61,16 @@ public sealed class ObjectBusinessRulesGuidanceResource : BaseResource {
 			       - `rule.condition.logicalOperation` supports `AND` and `OR`.
 			       - `rule.condition.conditions[*].leftExpression.type` must be `AttributeValue`.
 			       - `rule.condition.conditions[*].leftExpression.path` must resolve to an existing entity attribute.
-			       - `rule.condition.conditions[*].comparisonType` currently supports `equal` and `not-equal`.
-			       - `rule.condition.conditions[*].rightExpression.type` must be `AttributeValue` or `Const`.
+			       - `rule.condition.conditions[*].comparisonType` currently supports `equal`, `not-equal`, `is-filled-in`, `is-not-filled-in`, `greater-than`, `greater-than-or-equal`, `less-than`, and `less-than-or-equal`.
+			       - `rule.condition.conditions[*].rightExpression` is omitted or null for `is-filled-in` and `is-not-filled-in`.
+			       - `rule.condition.conditions[*].rightExpression.type` must be `AttributeValue` or `Const` for `equal`, `not-equal`, and relational comparisons.
+			       - Relational comparisons only support numeric and temporal left attributes. Temporal scope is `Date`, `DateTime`, and `Time`.
+			       - Attribute-to-attribute relational comparisons must compare the same data value type on both sides.
 			       - `rule.actions[*].type` currently supports `make-editable`, `make-read-only`, `make-required`, and `make-optional`.
 			       - Every item in `rule.actions[*].items` must resolve to an existing entity attribute.
-			       - Use attribute-to-constant and attribute-to-attribute comparisons only.
+			       - Use attribute-to-constant and attribute-to-attribute comparisons only for binary operators.
 			       - For lookup constants, pass only a raw GUID string in `rightExpression.value`.
+			       - For `Date`, `DateTime`, and `Time` constants, pass a JSON string value so clio can normalize it into typed business-rule metadata.
 			       - Do not send older payload shapes such as `if`, `then`, operand `kind`, `targets`, `operator`, `comparison`, `ConstValue`, or `referenceSchemaName`.
 
 			       DataForge-assisted planning
@@ -82,6 +86,8 @@ public sealed class ObjectBusinessRulesGuidanceResource : BaseResource {
 			       Failure policy
 			       - Stop and ask for clarification when the request is for page-level business rules.
 			       - Stop when the requested action type or comparison is outside the supported subset.
+			       - Stop when the comparison family and operand shape do not match, such as a unary comparison with `rightExpression` or a binary comparison without one.
+			       - Stop when a relational comparison targets a non-numeric and non-temporal left attribute.
 			       - Stop when the target entity or target attributes cannot be resolved confidently from schema inspection.
 			       - Stop when the request is really an edit or delete of an existing rule rather than a new rule.
 			       - Do not guess lookup GUIDs, entity attributes, or cross-entity paths just to make the create call succeed.
@@ -98,6 +104,8 @@ public sealed class ObjectBusinessRulesGuidanceResource : BaseResource {
 			       Practical reminders
 			       - Attribute names come from deployed schema metadata, not from captions in the requirement.
 			       - Lookup constants are stricter than page-level UX values: the create tool expects a GUID string, not `{ value, displayValue }`.
+			       - Unary filled-in comparisons do not send `rightExpression`.
+			       - Relational Date, DateTime, and Time constants must stay JSON strings in the request even though clio persists them as typed metadata values.
 			       - If the requirement needs unsupported actions such as visibility, filtering, set-value, formula, or role-based behavior, surface that limitation explicitly instead of improvising.
 			       """
 		};

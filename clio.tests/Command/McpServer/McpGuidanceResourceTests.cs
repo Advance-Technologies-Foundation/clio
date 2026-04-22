@@ -199,8 +199,18 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should reject generated-name input on the create tool");
 		article.Text.Should().Contain("`make-editable`, `make-read-only`, `make-required`, and `make-optional`",
 			because: "the guide should enumerate the supported action subset");
-		article.Text.Should().Contain("`equal` and `not-equal`",
-			because: "the guide should enumerate the supported comparison subset");
+		article.Text.Should().Contain("`equal`, `not-equal`, `is-filled-in`, `is-not-filled-in`, `greater-than`, `greater-than-or-equal`, `less-than`, and `less-than-or-equal`",
+			because: "the guide should enumerate the expanded supported comparison subset");
+		article.Text.Should().Contain("rightExpression` is omitted or null for `is-filled-in` and `is-not-filled-in`",
+			because: "the guide should explain the unary comparison operand rule");
+		article.Text.Should().Contain("Temporal scope is `Date`, `DateTime`, and `Time`",
+			because: "the guide should scope relational temporal support precisely");
+		article.Text.Should().Contain("comparison family and operand shape do not match",
+			because: "the guide should document the failure policy for unary-vs-binary operand mismatches");
+		article.Text.Should().Contain("Unary filled-in comparisons do not send `rightExpression`",
+			because: "the guide should restate the unary payload rule in practical reminders");
+		article.Text.Should().Contain("Relational Date, DateTime, and Time constants must stay JSON strings",
+			because: "the guide should explain the temporal constant request shape");
 		article.Text.Should().Contain("raw GUID string",
 			because: "the guide should teach the lookup-constant payload rule");
 		article.Text.Should().Contain("DataForge is optional assistance",

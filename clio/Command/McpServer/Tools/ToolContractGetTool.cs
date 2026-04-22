@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json.Serialization;
+using Clio.Command.BusinessRules;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -1189,20 +1190,26 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildEntityBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates an entity-level Freedom UI business rule.",
+			"Creates an entity-level Freedom UI business rule with equality, filled-in, and numeric or temporal relational comparisons.",
 			new ToolInputSchemaContract(
 				["environmentName", "packageName", "entitySchemaName", RuleFieldName],
 				[
 					Field("environmentName", StringType, RegisteredEnvironmentNameDescription),
 					Field("packageName", StringType, "Target package name."),
 					Field("entitySchemaName", StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, optional enabled, one top-level condition group, and one or more actions.")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and temporal left attributes (Date, DateTime, Time).")
 				],
 				Validators: [
 					new ToolContractValidator("enum", "unsupported-operator", "rule.condition.logicalOperation",
 						Context: "Supported values: AND, OR."),
 					new ToolContractValidator("enum", "unsupported-comparison", "rule.condition.conditions[*].comparisonType",
-						Context: "Supported values: equal, not-equal."),
+						Context: $"Supported values: {BusinessRuleConstants.SupportedComparisonTypesDescription}."),
+					new ToolContractValidator("conditional-field", "invalid-right-expression-shape", "rule.condition.conditions[*].rightExpression",
+						Context: "Required for equal, not-equal, greater-than, greater-than-or-equal, less-than, and less-than-or-equal. Omit or null for is-filled-in and is-not-filled-in."),
+					new ToolContractValidator("comparison-family", "unsupported-relational-operands", "rule.condition.conditions[*]",
+						Context: "greater-than, greater-than-or-equal, less-than, and less-than-or-equal only support numeric and temporal left attributes (Date, DateTime, Time). Attribute-to-attribute relational comparisons must use matching data value types."),
+					new ToolContractValidator("temporal-constant", "invalid-temporal-constant", "rule.condition.conditions[*].rightExpression.value",
+						Context: "Date, DateTime, and Time constants must be JSON strings in date, date-time, or time format."),
 					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
 						Context: "Supported values: make-editable, make-read-only, make-required, make-optional.")
 				]),
@@ -1254,6 +1261,62 @@ internal static class ToolContractCatalog {
 							new Dictionary<string, object?> {
 								["type"] = "make-required",
 								["items"] = new[] { "Status" }
+							}
+						}
+					}
+				}),
+				Example("Create a readonly rule when a text field is filled in", new Dictionary<string, object?> {
+					["environmentName"] = ExampleEnvironmentName,
+					["packageName"] = ExamplePackageName,
+					["entitySchemaName"] = "UsrTask",
+					[RuleFieldName] = new Dictionary<string, object?> {
+						["caption"] = "Lock planned date when name is filled",
+						["condition"] = new Dictionary<string, object?> {
+							["logicalOperation"] = "AND",
+							["conditions"] = new[] {
+								new Dictionary<string, object?> {
+									["leftExpression"] = new Dictionary<string, object?> {
+										["type"] = "AttributeValue",
+										["path"] = "Name"
+									},
+									["comparisonType"] = "is-filled-in"
+								}
+							}
+						},
+						["actions"] = new[] {
+							new Dictionary<string, object?> {
+								["type"] = "make-read-only",
+								["items"] = new[] { "PlannedDate" }
+							}
+						}
+					}
+				}),
+				Example("Create a required-field rule when created date is before a cutoff", new Dictionary<string, object?> {
+					["environmentName"] = ExampleEnvironmentName,
+					["packageName"] = ExamplePackageName,
+					["entitySchemaName"] = "UsrTask",
+					[RuleFieldName] = new Dictionary<string, object?> {
+						["caption"] = "Require owner before the 2025 cutoff",
+						["condition"] = new Dictionary<string, object?> {
+							["logicalOperation"] = "AND",
+							["conditions"] = new[] {
+								new Dictionary<string, object?> {
+									["leftExpression"] = new Dictionary<string, object?> {
+										["type"] = "AttributeValue",
+										["path"] = "CreatedOn"
+									},
+									["comparisonType"] = "less-than-or-equal",
+									["rightExpression"] = new Dictionary<string, object?> {
+										["type"] = "Const",
+										["value"] = "2025-01-01T00:00:00Z"
+									}
+								}
+							}
+						},
+						["actions"] = new[] {
+							new Dictionary<string, object?> {
+								["type"] = "make-required",
+								["items"] = new[] { "Owner" }
 							}
 						}
 					}

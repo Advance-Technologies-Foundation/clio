@@ -11,6 +11,25 @@ namespace Clio.Tests.Command;
 [TestFixture]
 [Property("Module", "Command")]
 public sealed class BusinessRuleValidatorTests {
+	private static readonly object[] UnarySupportedTypeCases = [
+		new object[] { "is-filled-in", 1, "TextColumn", null },
+		new object[] { "is-filled-in", 10, "Owner", "Contact" },
+		new object[] { "is-filled-in", 12, "Completed", null },
+		new object[] { "is-filled-in", 6, "Amount", null },
+		new object[] { "is-filled-in", 0, "RecordId", null },
+		new object[] { "is-filled-in", 8, "StartDate", null },
+		new object[] { "is-filled-in", 7, "CreatedOn", null },
+		new object[] { "is-filled-in", 9, "ReminderTime", null },
+		new object[] { "is-not-filled-in", 1, "TextColumn", null },
+		new object[] { "is-not-filled-in", 10, "Owner", "Contact" },
+		new object[] { "is-not-filled-in", 12, "Completed", null },
+		new object[] { "is-not-filled-in", 6, "Amount", null },
+		new object[] { "is-not-filled-in", 0, "RecordId", null },
+		new object[] { "is-not-filled-in", 8, "StartDate", null },
+		new object[] { "is-not-filled-in", 7, "CreatedOn", null },
+		new object[] { "is-not-filled-in", 9, "ReminderTime", null }
+	];
+
 	private static readonly object[] TextTypeCases = [
 		new object[] { 1, "Text" },
 		new object[] { 24, "SecureText" },
@@ -29,6 +48,12 @@ public sealed class BusinessRuleValidatorTests {
 		new object[] { 5, "Float" },
 		new object[] { 6, "Money" },
 		new object[] { 47, "Float0" }
+	];
+
+	private static readonly object[] TemporalTypeCases = [
+		new object[] { 8, "StartDate", "2025-01-15" },
+		new object[] { 7, "CreatedOn", "2025-01-15T13:45:00Z" },
+		new object[] { 9, "ReminderTime", "13:45:00" }
 	];
 
 	[Test]
@@ -57,7 +82,7 @@ public sealed class BusinessRuleValidatorTests {
 	public void Validate_Should_Reject_Unsupported_Comparison_Type() {
 		// Arrange
 		BusinessRule rule = CreateRule(
-			comparisonType: "greater-than");
+			comparisonType: "contains");
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
 			CreateColumn("Status", 1),
 			CreateColumn("Owner", 10, "Contact"));
@@ -67,8 +92,8 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("Unsupported rule.condition.conditions[*].comparisonType 'greater-than'. Supported values: equal, not-equal.",
-				because: "the current business-rule flow only supports equality-based comparisons");
+			.WithMessage("Unsupported rule.condition.conditions[*].comparisonType 'contains'. Supported values: equal, not-equal, is-filled-in, is-not-filled-in, greater-than, greater-than-or-equal, less-than, less-than-or-equal.",
+				because: "the validator should reject comparisons outside the supported object business-rule subset");
 	}
 
 	[Test]
@@ -89,6 +114,53 @@ public sealed class BusinessRuleValidatorTests {
 		// Assert
 		act.Should().NotThrow(
 			because: "valid OR groups and not-equal comparisons should pass validator ownership checks");
+	}
+
+	[TestCaseSource(nameof(UnarySupportedTypeCases))]
+	[Category("Unit")]
+	[Description("Accepts unary filled-state comparisons for representative text lookup boolean numeric guid and temporal left attributes.")]
+	public void Validate_Should_Accept_Unary_Comparison_For_Representative_Left_Types(
+		string comparisonType,
+		int dataValueType,
+		string leftPath,
+		string? referenceSchemaName) {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: comparisonType,
+			leftExpression: new BusinessRuleExpression("AttributeValue", leftPath, null),
+			omitRightExpression: true);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn(leftPath, dataValueType, referenceSchemaName),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "filled-in and not-filled-in comparisons should be valid for every supported left-side data family");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects unary filled-state comparisons when a right expression is supplied.")]
+	public void Validate_Should_Reject_Right_Expression_For_Unary_Comparison() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "is-filled-in",
+			leftExpression: new BusinessRuleExpression("AttributeValue", "Status", null),
+			rightExpression: new BusinessRuleExpression("Const", null, Json("\"Draft\"")));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.condition.conditions[*].rightExpression must be omitted when comparisonType is 'is-filled-in'.",
+				because: "unary comparisons do not accept a right-hand operand");
 	}
 
 	[Test]
@@ -253,6 +325,144 @@ public sealed class BusinessRuleValidatorTests {
 		// Assert
 		act.Should().NotThrow(
 			because: "supported numeric attributes should accept JSON numeric constants");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts relational comparisons with numeric constants when the left attribute is numeric.")]
+	public void Validate_Should_Accept_Relational_Number_Constant() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "greater-than",
+			leftExpression: new BusinessRuleExpression("AttributeValue", "Amount", null),
+			rightExpression: new BusinessRuleExpression("Const", null, Json("5")));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Amount", 6),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "numeric relational comparisons should allow numeric constants");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts relational comparisons between numeric attributes of the same data value type.")]
+	public void Validate_Should_Accept_Relational_Number_Attribute_Comparison() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "less-than-or-equal",
+			leftExpression: new BusinessRuleExpression("AttributeValue", "Amount", null),
+			rightExpression: new BusinessRuleExpression("AttributeValue", "Budget", null));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Amount", 6),
+			CreateColumn("Budget", 6),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "relational attribute comparisons should be allowed when both numeric operands have the same type");
+	}
+
+	[TestCaseSource(nameof(TemporalTypeCases))]
+	[Category("Unit")]
+	[Description("Accepts relational comparisons with temporal constants for Date DateTime and Time attributes.")]
+	public void Validate_Should_Accept_Relational_Temporal_Constant(
+		int dataValueType,
+		string leftPath,
+		string constantValue) {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "less-than",
+			leftExpression: new BusinessRuleExpression("AttributeValue", leftPath, null),
+			rightExpression: new BusinessRuleExpression("Const", null, Json($"\"{constantValue}\"")));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn(leftPath, dataValueType),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "temporal relational comparisons should allow valid string constants for Date DateTime and Time");
+	}
+
+	[TestCase(8, "StartDate", "DueDate")]
+	[TestCase(7, "CreatedOn", "ModifiedOn")]
+	[TestCase(9, "ReminderTime", "EndTime")]
+	[Category("Unit")]
+	[Description("Accepts relational comparisons between temporal attributes when both operands use the same temporal data value type.")]
+	public void Validate_Should_Accept_Relational_Temporal_Attribute_Comparison(
+		int dataValueType,
+		string leftPath,
+		string rightPath) {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "greater-than-or-equal",
+			leftExpression: new BusinessRuleExpression("AttributeValue", leftPath, null),
+			rightExpression: new BusinessRuleExpression("AttributeValue", rightPath, null));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn(leftPath, dataValueType),
+			CreateColumn(rightPath, dataValueType),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "temporal relational comparisons should allow matching Date DateTime and Time attribute pairs");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects relational comparisons when the left attribute is not numeric or temporal.")]
+	public void Validate_Should_Reject_Relational_Comparison_For_Unsupported_Left_Type() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "greater-than",
+			leftExpression: new BusinessRuleExpression("AttributeValue", "Status", null),
+			rightExpression: new BusinessRuleExpression("Const", null, Json("\"Draft\"")));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.condition.conditions[*].comparisonType 'greater-than' is only supported for numeric and temporal left attributes. Left attribute 'Status' has type Text.",
+				because: "relational operators should be limited to numeric and temporal columns");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects non-string temporal constants for DateTime attributes.")]
+	public void Validate_Should_Reject_Invalid_Temporal_Constant() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "greater-than",
+			leftExpression: new BusinessRuleExpression("AttributeValue", "CreatedOn", null),
+			rightExpression: new BusinessRuleExpression("Const", null, Json("5")));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("CreatedOn", 7),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a JSON string in ISO 8601 date-time format when the left attribute is DateTime.",
+				because: "temporal comparisons should reject non-string constants before metadata conversion");
 	}
 
 	[Test]
@@ -514,8 +724,8 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].rightExpression is required.",
-				because: "the validator should require an explicit right-hand operand");
+			.WithMessage("rule.condition.conditions[*].rightExpression is required when comparisonType is 'equal'.",
+				because: "binary comparisons should require an explicit right-hand operand");
 	}
 
 	[Test]
@@ -630,7 +840,8 @@ public sealed class BusinessRuleValidatorTests {
 		string comparisonType = "equal",
 		BusinessRuleExpression? leftExpression = null,
 		BusinessRuleExpression? rightExpression = null,
-		List<BusinessRuleAction>? actions = null) =>
+		List<BusinessRuleAction>? actions = null,
+		bool omitRightExpression = false) =>
 		new(
 			caption,
 			new BusinessRuleConditionGroup(
@@ -639,7 +850,9 @@ public sealed class BusinessRuleValidatorTests {
 					new BusinessRuleCondition(
 						leftExpression ?? new BusinessRuleExpression("AttributeValue", "Status", null),
 						comparisonType,
-						rightExpression ?? new BusinessRuleExpression("Const", null, Json("\"Draft\"")))
+						omitRightExpression
+							? null
+							: rightExpression ?? new BusinessRuleExpression("Const", null, Json("\"Draft\"")))
 				]),
 			actions ?? [
 				new BusinessRuleAction("make-required", ["Owner"])

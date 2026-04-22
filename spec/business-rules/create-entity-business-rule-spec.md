@@ -23,13 +23,18 @@ Entity-level rule creation must:
    - currently implemented:
       - equal
       - not equal
-   - planned but not yet implemented:
       - is filled in
       - is not filled in
       - greater than
       - greater than or equal
       - less than
       - less than or equal
+   - operand rules:
+      - `is filled in` and `is not filled in` are unary and omit `rightExpression`
+      - `equal`, `not equal`, `greater than`, `greater than or equal`, `less than`, and `less than or equal` require `rightExpression`
+      - relational operators only support numeric and temporal left attributes
+      - temporal relational scope includes `Date`, `DateTime`, and `Time`
+      - temporal constants must be sent as JSON strings and are normalized to typed metadata values before persistence
    - support multiple conditions 
    - support grouping conditions by AND or OR (without nested groups)
 - actions
@@ -53,6 +58,9 @@ Entity-level rule creation must reject the request when:
 - an action has no targets
 - the request uses an unsupported action type
 - the request uses an unsupported condition shape
+- a unary comparison includes `rightExpression`
+- a binary comparison omits `rightExpression`
+- a relational comparison targets a non-numeric and non-temporal left attribute
 - a referenced condition attribute does not exist in the target entity scope
 - a referenced action target does not exist in the target entity scope
 - persistence fails

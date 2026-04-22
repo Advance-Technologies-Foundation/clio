@@ -12,6 +12,56 @@ namespace Clio.Tests.Command;
 [TestFixture]
 [Property("Module", "Command")]
 public sealed class BusinessRuleMetadataConverterTests {
+	[TestCase("is-not-filled-in", BusinessRuleConstants.ComparisonIsNotFilledIn, false)]
+	[TestCase("is-filled-in", BusinessRuleConstants.ComparisonIsFilledIn, false)]
+	[TestCase("equal", BusinessRuleConstants.ComparisonEqual, true)]
+	[TestCase("not-equal", BusinessRuleConstants.ComparisonNotEqual, true)]
+	[TestCase("less-than", BusinessRuleConstants.ComparisonLessThan, true)]
+	[TestCase("less-than-or-equal", BusinessRuleConstants.ComparisonLessThanOrEqual, true)]
+	[TestCase("greater-than", BusinessRuleConstants.ComparisonGreaterThan, true)]
+	[TestCase("greater-than-or-equal", BusinessRuleConstants.ComparisonGreaterThanOrEqual, true)]
+	[Category("Unit")]
+	[Description("Maps every supported wire comparison type to the expected Creatio metadata value and omits rightExpression for unary comparisons.")]
+	public void ToMetadata_Should_Map_Supported_Comparison_Types(
+		string comparisonType,
+		int expectedMetadataValue,
+		bool shouldIncludeRightExpression) {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("CreatedOn", 7),
+			CreateColumn("Status", 1));
+		BusinessRule rule = new(
+			"Caption",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "CreatedOn", null),
+						comparisonType,
+						shouldIncludeRightExpression
+							? new BusinessRuleExpression("Const", null, Json("2025-01-15T13:45:30Z"))
+							: null)
+				]),
+			[
+				new BusinessRuleAction("make-read-only", ["Status"])
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule);
+
+		// Assert
+		BusinessRuleConditionMetadataDto condition = metadata.Cases[0].Condition!.Conditions[0];
+		condition.ComparisonType.Should().Be(expectedMetadataValue,
+			because: "each supported wire comparison should map to the corresponding Creatio business-rule enum value");
+		if (shouldIncludeRightExpression) {
+			condition.RightExpression.Should().NotBeNull(
+				because: "binary comparisons should persist a right expression in metadata");
+		} else {
+			condition.RightExpression.Should().BeNull(
+				because: "unary comparisons should omit the right expression from serialized metadata");
+		}
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Maps OR conditions, attribute and constant expressions, raw action items, and trigger metadata into business-rule metadata DTOs.")]
@@ -206,6 +256,51 @@ public sealed class BusinessRuleMetadataConverterTests {
 			.GetInt32()
 			.Should()
 			.Be(5, because: "numeric constants should remain JSON numbers after serialization");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Normalizes temporal constants into typed metadata values before JSON serialization.")]
+	public void ToMetadata_Should_Normalize_Temporal_Constant_Metadata() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("CreatedOn", 7),
+			CreateColumn("Status", 1));
+		BusinessRule rule = new(
+			"Readonly status before cutoff",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "CreatedOn", null),
+						"less-than",
+						new BusinessRuleExpression("Const", null, Json("2025-01-15T13:45:30+02:00")))
+				]),
+			[
+				new BusinessRuleAction("make-read-only", ["Status"])
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule);
+		BusinessRuleExpressionMetadataDto rightExpression = metadata.Cases[0].Condition!.Conditions[0].RightExpression!;
+		string json = JsonSerializer.Serialize(metadata, BusinessRuleConstants.JsonOptions);
+
+		// Assert
+		rightExpression.Value.Should().BeOfType<DateTime>(
+			because: "temporal constants should be normalized to typed DateTime values before metadata serialization");
+		((DateTime)rightExpression.Value!).Should().Be(new DateTime(2025, 1, 15, 11, 45, 30, DateTimeKind.Utc),
+			because: "date-time constants with offsets should be normalized to UTC");
+		using JsonDocument document = JsonDocument.Parse(json);
+		document.RootElement
+			.GetProperty("cases")[0]
+			.GetProperty("condition")
+			.GetProperty("conditions")[0]
+			.GetProperty("rightExpression")
+			.GetProperty("value")
+			.GetString()
+			.Should()
+			.Be("2025-01-15T11:45:30Z",
+				because: "typed temporal constants should serialize back to stable UTC JSON strings");
 	}
 
 	private static IReadOnlyDictionary<string, EntitySchemaColumnDto> CreateColumnMap(params EntitySchemaColumnDto[] columns) {

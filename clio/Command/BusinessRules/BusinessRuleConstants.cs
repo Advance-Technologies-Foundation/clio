@@ -25,8 +25,18 @@ internal static class BusinessRuleConstants {
 	internal const int DataLoadedTriggerType = 2;
 	internal const int LogicalAnd = 1;
 	internal const int LogicalOr = 2;
+	internal const int ComparisonIsNotFilledIn = 0;
+	internal const int ComparisonIsFilledIn = 1;
 	internal const int ComparisonEqual = 2;
 	internal const int ComparisonNotEqual = 3;
+	internal const int ComparisonLessThan = 5;
+	internal const int ComparisonLessThanOrEqual = 6;
+	internal const int ComparisonGreaterThan = 7;
+	internal const int ComparisonGreaterThanOrEqual = 8;
+	internal const string SupportedComparisonTypesDescription =
+		"equal, not-equal, is-filled-in, is-not-filled-in, greater-than, greater-than-or-equal, less-than, less-than-or-equal";
+	internal const string SupportedActionTypesDescription =
+		"make-editable, make-read-only, make-required, make-optional";
 
 	internal static readonly JsonSerializerOptions JsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -67,6 +77,61 @@ internal static class BusinessRuleConstants {
 			["make-read-only"] = BusinessRuleReadonlyElementTypeName,
 			["make-required"] = BusinessRuleRequiredElementTypeName,
 			["make-optional"] = BusinessRuleOptionalElementTypeName
+		};
+
+	internal static readonly IReadOnlyDictionary<string, int> SupportedComparisonTypeValues =
+		new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) {
+			["is-not-filled-in"] = ComparisonIsNotFilledIn,
+			["is-filled-in"] = ComparisonIsFilledIn,
+			["equal"] = ComparisonEqual,
+			["not-equal"] = ComparisonNotEqual,
+			["less-than"] = ComparisonLessThan,
+			["less-than-or-equal"] = ComparisonLessThanOrEqual,
+			["greater-than"] = ComparisonGreaterThan,
+			["greater-than-or-equal"] = ComparisonGreaterThanOrEqual
+		};
+
+	internal static readonly IReadOnlySet<string> UnaryComparisonTypeNames =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"is-filled-in",
+			"is-not-filled-in"
+		};
+
+	internal static readonly IReadOnlySet<string> RelationalComparisonTypeNames =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"greater-than",
+			"greater-than-or-equal",
+			"less-than",
+			"less-than-or-equal"
+		};
+
+	internal static readonly IReadOnlySet<string> SupportedTextDataValueTypeNames =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"Text",
+			"SecureText",
+			"ShortText",
+			"MediumText",
+			"MaxSizeText",
+			"LongText",
+			"PhoneText",
+			"RichText",
+			"WebText",
+			"EmailText"
+		};
+
+	internal static readonly IReadOnlySet<string> SupportedNumericDataValueTypeNames =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"Integer",
+			"Float",
+			"Money",
+			"Float0"
+		};
+
+	internal static readonly IReadOnlySet<string> SupportedTemporalDataValueTypeNames =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"Date",
+			"DateTime",
+			"Time"
 		};
 
 }

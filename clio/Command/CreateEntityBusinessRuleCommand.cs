@@ -4,6 +4,9 @@ using Clio.Common;
 
 namespace Clio.Command;
 
+/// <summary>
+/// Contains the environment-scoped arguments required to create an entity business rule.
+/// </summary>
 public sealed class CreateEntityBusinessRuleOptions : EnvironmentNameOptions {
 	public string PackageName { get; set; } = string.Empty;
 	
@@ -12,6 +15,9 @@ public sealed class CreateEntityBusinessRuleOptions : EnvironmentNameOptions {
 	public BusinessRule Rule { get; set; } = null!;
 }
 
+/// <summary>
+/// Creates an entity-level Freedom UI business rule through the business-rule service.
+/// </summary>
 public sealed class CreateEntityBusinessRuleCommand(
 	IBusinessRuleService businessRuleService,
 	ILogger logger)
@@ -21,10 +27,11 @@ public sealed class CreateEntityBusinessRuleCommand(
 		ArgumentNullException.ThrowIfNull(options);
 		try {
 			Validate(options);
-			businessRuleService.Create(new BusinessRuleCreateRequest(
+			BusinessRuleCreateResult result = businessRuleService.Create(new BusinessRuleCreateRequest(
 				options.PackageName,
 				options.EntitySchemaName,
 				options.Rule));
+			logger.WriteInfo($"Rule name: {result.RuleName}");
 			logger.WriteInfo("Done");
 			return 0;
 		} catch (Exception exception) {

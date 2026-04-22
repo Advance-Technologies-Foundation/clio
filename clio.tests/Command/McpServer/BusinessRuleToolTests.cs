@@ -43,7 +43,7 @@ public sealed class BusinessRuleToolTests {
 	public void BusinessRuleCreate_Should_Map_Arguments_And_Return_Success_Exit_Code() {
 		// Arrange
 		IBusinessRuleService service = Substitute.For<IBusinessRuleService>();
-		CreateEntityBusinessRuleCommand command = new(service, Substitute.For<ILogger>());
+		CreateEntityBusinessRuleCommand command = new(service, ConsoleLogger.Instance);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntityBusinessRuleCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
 		service.Create(Arg.Any<BusinessRuleCreateRequest>())
@@ -71,6 +71,8 @@ public sealed class BusinessRuleToolTests {
 		// Assert
 		result.ExitCode.Should().Be(0,
 			because: "a successful service call should return the standard success exit code");
+		result.Output.Select(message => (string)message.Value).Should().Contain("Rule name: BusinessRule_1234567",
+			because: "the MCP tool should preserve the generated internal rule name in execution logs");
 		commandResolver.Received(1).Resolve<CreateEntityBusinessRuleCommand>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "dev"));
 		service.Received(1).Create(
@@ -95,7 +97,7 @@ public sealed class BusinessRuleToolTests {
 	public void BusinessRuleCreate_Should_Resolve_Command_From_Requested_Environment() {
 		// Arrange
 		IBusinessRuleService service = Substitute.For<IBusinessRuleService>();
-		CreateEntityBusinessRuleCommand command = new(service, Substitute.For<ILogger>());
+		CreateEntityBusinessRuleCommand command = new(service, ConsoleLogger.Instance);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntityBusinessRuleCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
 		service.Create(Arg.Any<BusinessRuleCreateRequest>())
@@ -122,6 +124,8 @@ public sealed class BusinessRuleToolTests {
 		// Assert
 		result.ExitCode.Should().Be(0,
 			because: "the environment-aware resolver should return a command instance for the requested MCP environment");
+		result.Output.Select(message => (string)message.Value).Should().Contain("Rule name: BusinessRule_1234567",
+			because: "the generated internal rule name should be available through the standard execution log stream");
 		commandResolver.Received(1).Resolve<CreateEntityBusinessRuleCommand>(Arg.Is<EnvironmentOptions>(options =>
 			options is CreateEntityBusinessRuleOptions
 			&& options.Environment == "dev"
@@ -204,6 +208,52 @@ public sealed class BusinessRuleToolTests {
 			because: "lookup constant payloads should preserve the GUID string value for downstream validation");
 		payloadArgs.Rule.Condition.Conditions[0].RightExpression.Value!.Value.ValueKind.Should().Be(JsonValueKind.String,
 			because: "lookup constants are only supported as string GUIDs on the MCP surface");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Deserializes unary business-rule payloads that omit rightExpression for filled-state comparisons.")]
+	public void BusinessRuleCreate_Should_Deserialize_Unary_Payload_Without_Right_Expression() {
+		// Arrange
+		string payload = """
+		{
+		  "environment-name": "dev",
+		  "package-name": "UsrPkg",
+		  "entity-schema-name": "UsrOrder",
+		  "rule": {
+		    "caption": "Lock status when name is filled",
+		    "condition": {
+		      "logicalOperation": "AND",
+		      "conditions": [
+		        {
+		          "leftExpression": {
+		            "type": "AttributeValue",
+		            "path": "Name"
+		          },
+		          "comparisonType": "is-filled-in"
+		        }
+		      ]
+		    },
+		    "actions": [
+		      {
+		        "type": "make-read-only",
+		        "items": [ "Status" ]
+		      }
+		    ]
+		  }
+		}
+		""";
+
+		// Act
+		BusinessRuleToolPayload? payloadArgs = JsonSerializer.Deserialize<BusinessRuleToolPayload>(payload);
+
+		// Assert
+		payloadArgs.Should().NotBeNull(
+			because: "unary business-rule payloads should deserialize from JSON without a rightExpression");
+		payloadArgs!.Rule.Condition.Conditions[0].ComparisonType.Should().Be("is-filled-in",
+			because: "the filled-state comparison should preserve its wire value");
+		payloadArgs.Rule.Condition.Conditions[0].RightExpression.Should().BeNull(
+			because: "unary comparisons should omit the rightExpression payload");
 	}
 
 	private sealed record BusinessRuleToolPayload(

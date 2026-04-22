@@ -466,9 +466,24 @@ public sealed class ToolContractGetToolE2ETests {
 				validator.Field == "rule.condition.conditions[*].comparisonType",
 			because: "the contract should advertise the target architecture comparisonType field");
 		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "conditional-field" &&
+				validator.Field == "rule.condition.conditions[*].rightExpression" &&
+				validator.Context!.Contains("Omit or null for is-filled-in and is-not-filled-in", StringComparison.Ordinal),
+			because: "the contract should advertise the unary-versus-binary rightExpression rule");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "comparison-family" &&
+				validator.Field == "rule.condition.conditions[*]" &&
+				validator.Context!.Contains("Date, DateTime, Time", StringComparison.Ordinal),
+			because: "the contract should advertise the numeric and temporal scope of relational comparisons");
+		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rule.actions[*].type",
 			because: "the contract should advertise the target architecture action field");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "enum" &&
+				validator.Field == "rule.condition.conditions[*].comparisonType" &&
+				validator.Context!.Contains("greater-than-or-equal", StringComparison.Ordinal),
+			because: "the contract should advertise the full supported comparison set");
 		contract.Defaults.Should().BeEmpty(
 			because: "the contract should not have defaults after enabled was removed");
 		contract.Aliases.Should().Contain(alias =>
@@ -476,8 +491,8 @@ public sealed class ToolContractGetToolE2ETests {
 				alias.Alias == "entity-schema-name" &&
 				alias.Status == "rejected",
 			because: "the contract should reject stale kebab-case entity schema aliases now that runtime binding is camelCase");
-		contract.OutputContract.Fields.Should().Contain(field => field.Name == "rule-name",
-			because: "the published contract should match the actual create-entity-business-rule success payload");
+		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "rule-name",
+			because: "the generated internal rule name is surfaced through execution logs rather than a dedicated top-level field");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "rule",
 			because: "the contract should not advertise a structured rule object that the tool does not return today");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "package-u-id",
@@ -490,6 +505,14 @@ public sealed class ToolContractGetToolE2ETests {
 					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				},
 				because: "the contract should advertise schema inspection before destructive business-rule creation");
+		bool hasUnaryExample = contract.Examples.Any(example =>
+			string.Equals(example.Summary, "Create a readonly rule when a text field is filled in", StringComparison.Ordinal));
+		hasUnaryExample.Should().BeTrue(
+			because: "the contract should include a unary example without rightExpression");
+		bool hasRelationalExample = contract.Examples.Any(example =>
+			string.Equals(example.Summary, "Create a required-field rule when created date is before a cutoff", StringComparison.Ordinal));
+		hasRelationalExample.Should().BeTrue(
+			because: "the contract should include a relational example for numeric or temporal comparisons");
 	}
 
 	[Test]

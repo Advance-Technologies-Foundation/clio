@@ -29,7 +29,7 @@ internal sealed class BusinessRuleMetadataDto {
 	public string Name { get; set; } = string.Empty;
 
 	[JsonPropertyName("enabled")]
-	public bool Enabled { get; set; }
+	public bool? Enabled { get; set; }
 
 	[JsonPropertyName("caption")]
 	public string? Caption { get; set; }
@@ -70,7 +70,7 @@ internal sealed class BusinessRuleConditionMetadataDto : BaseBusinessRuleConditi
 	public BusinessRuleExpressionMetadataDto LeftExpression { get; set; } = default!;
 
 	[JsonPropertyName("rightExpression")]
-	public BusinessRuleExpressionMetadataDto RightExpression { get; set; } = default!;
+	public BusinessRuleExpressionMetadataDto? RightExpression { get; set; }
 
 	[JsonPropertyName("comparisonType")]
 	public int ComparisonType { get; set; }

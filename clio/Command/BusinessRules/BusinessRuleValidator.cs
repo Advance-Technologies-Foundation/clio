@@ -62,85 +62,18 @@ internal static class BusinessRuleValidator {
 		}
 
 		string leftPath = condition.LeftExpression.Path;
-		if (!columnMap.TryGetValue(leftPath, out EntitySchemaColumnDto? leftDescriptor)) {
-			throw new ArgumentException($"Unknown attribute '{leftPath}' in rule.condition.conditions[*].leftExpression.path.");
-		}
-
-		if (!string.Equals(condition.ComparisonType, "equal", StringComparison.OrdinalIgnoreCase)
-			&& !string.Equals(condition.ComparisonType, "not-equal", StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException(
-				$"Unsupported rule.condition.conditions[*].comparisonType '{condition.ComparisonType}'. Supported values: equal, not-equal.");
-		}
-
-		if (condition.RightExpression is null) {
-			throw new ArgumentException("rule.condition.conditions[*].rightExpression is required.");
-		}
-
-		if (string.Equals(condition.RightExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
-			if (string.IsNullOrWhiteSpace(condition.RightExpression.Path)) {
-				throw new ArgumentException("rule.condition.conditions[*].rightExpression.path is required when rightExpression.type is 'AttributeValue'.");
-			}
-
-			string rightPath = condition.RightExpression.Path;
-			if (!columnMap.TryGetValue(rightPath, out EntitySchemaColumnDto? rightDescriptor)) {
-				throw new ArgumentException($"Unknown attribute '{rightPath}' in rule.condition.conditions[*].rightExpression.path.");
-			}
-
-			string leftTypeName = MapDataValueTypeName(leftDescriptor.DataValueType);
-			string rightTypeName = MapDataValueTypeName(rightDescriptor.DataValueType);
-			if (!string.Equals(leftTypeName, rightTypeName, StringComparison.OrdinalIgnoreCase)) {
-				throw new ArgumentException(
-					$"rule.condition.conditions[*] compares left attribute '{leftPath}' ({leftTypeName}) to right attribute '{rightPath}' ({rightTypeName}). Both attributes must have the same data value type.");
-			}
-			return;
-		}
-
-		if (!string.Equals(condition.RightExpression.Type, "Const", StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue' or 'Const'.");
-		}
-
-		if (condition.RightExpression.Value is null) {
-			throw new ArgumentException("rule.condition.conditions[*].rightExpression.value is required when rightExpression.type is 'Const'.");
-		}
-
-		if (string.Equals(MapDataValueTypeName(leftDescriptor.DataValueType), "Lookup", StringComparison.OrdinalIgnoreCase)) {
-			JsonElement rawValue = condition.RightExpression.Value.Value;
-			if (rawValue.ValueKind != JsonValueKind.String
-				|| !Guid.TryParse(rawValue.GetString(), out _)) {
-				throw new ArgumentException(
-					"rule.condition.conditions[*].rightExpression.value must be a GUID string when the left attribute is a Lookup.");
-			}
-			return;
-		}
-
+		EntitySchemaColumnDto leftDescriptor = ResolveColumn(
+			columnMap,
+			leftPath,
+			"rule.condition.conditions[*].leftExpression.path");
+		string comparisonType = GetSupportedComparisonType(condition.ComparisonType);
 		string leftDataValueTypeName = MapDataValueTypeName(leftDescriptor.DataValueType);
-		JsonElement rightValue = condition.RightExpression.Value.Value;
-		if (string.Equals(leftDataValueTypeName, "Guid", StringComparison.OrdinalIgnoreCase)) {
-			if (rightValue.ValueKind != JsonValueKind.String
-				|| !Guid.TryParse(rightValue.GetString(), out _)) {
-				throw new ArgumentException(
-					"rule.condition.conditions[*].rightExpression.value must be a GUID string when the left attribute is Guid.");
-			}
-			return;
-		}
-
-		if (string.Equals(leftDataValueTypeName, "Boolean", StringComparison.OrdinalIgnoreCase)) {
-			if (rightValue.ValueKind != JsonValueKind.True && rightValue.ValueKind != JsonValueKind.False) {
-				throw new ArgumentException(
-					"rule.condition.conditions[*].rightExpression.value must be a JSON boolean when the left attribute is Boolean.");
-			}
-			return;
-		}
-
-		if (IsTextDataValueType(leftDataValueTypeName) && rightValue.ValueKind != JsonValueKind.String) {
-			throw new ArgumentException(
-				"rule.condition.conditions[*].rightExpression.value must be a JSON string when the left attribute is a text type.");
-		}
-
-		if (IsNumericDataValueType(leftDataValueTypeName) && rightValue.ValueKind != JsonValueKind.Number) {
-			throw new ArgumentException(
-				"rule.condition.conditions[*].rightExpression.value must be a JSON number when the left attribute is a numeric type.");
-		}
+		ValidateComparisonOperands(
+			condition.RightExpression,
+			comparisonType,
+			leftPath,
+			leftDataValueTypeName,
+			columnMap);
 	}
 
 	private static void ValidateAction(
@@ -152,7 +85,7 @@ internal static class BusinessRuleValidator {
 
 		if (!SupportedActionTypeNames.ContainsKey(action.Type)) {
 			throw new ArgumentException(
-				$"Unsupported rule.actions[*].type '{action.Type}'. Supported values: make-editable, make-read-only, make-required, make-optional.");
+				$"Unsupported rule.actions[*].type '{action.Type}'. Supported values: {SupportedActionTypesDescription}.");
 		}
 
 		if (action.Items is null || action.Items.Count == 0) {
@@ -164,27 +97,140 @@ internal static class BusinessRuleValidator {
 				throw new ArgumentException("rule.actions[*].items cannot contain empty attribute names.");
 			}
 
-			if (!columnMap.TryGetValue(target, out _)) {
-				throw new ArgumentException($"Unknown attribute '{target}' in rule.actions[*].items.");
-			}
+			ResolveColumn(columnMap, target, "rule.actions[*].items");
 		}
 	}
 
-	private static bool IsTextDataValueType(string dataValueTypeName) =>
-		string.Equals(dataValueTypeName, "Text", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(dataValueTypeName, "SecureText", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(dataValueTypeName, "ShortText", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(dataValueTypeName, "MediumText", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(dataValueTypeName, "MaxSizeText", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(dataValueTypeName, "LongText", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(dataValueTypeName, "PhoneText", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(dataValueTypeName, "RichText", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(dataValueTypeName, "WebText", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(dataValueTypeName, "EmailText", StringComparison.OrdinalIgnoreCase);
+	private static string GetSupportedComparisonType(string comparisonType) {
+		if (!IsSupportedComparisonType(comparisonType)) {
+			throw new ArgumentException(
+				$"Unsupported rule.condition.conditions[*].comparisonType '{comparisonType}'. Supported values: {SupportedComparisonTypesDescription}.");
+		}
 
-	private static bool IsNumericDataValueType(string dataValueTypeName) =>
-		string.Equals(dataValueTypeName, "Integer", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(dataValueTypeName, "Float", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(dataValueTypeName, "Money", StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(dataValueTypeName, "Float0", StringComparison.OrdinalIgnoreCase);
+		return comparisonType.Trim();
+	}
+
+	private static void ValidateComparisonOperands(
+		BusinessRuleExpression? rightExpression,
+		string comparisonType,
+		string leftPath,
+		string leftDataValueTypeName,
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
+		if (IsUnaryComparisonType(comparisonType)) {
+			if (rightExpression is not null) {
+				throw new ArgumentException(
+					$"rule.condition.conditions[*].rightExpression must be omitted when comparisonType is '{comparisonType}'.");
+			}
+
+			return;
+		}
+
+		if (rightExpression is null) {
+			throw new ArgumentException(
+				$"rule.condition.conditions[*].rightExpression is required when comparisonType is '{comparisonType}'.");
+		}
+
+		if (IsRelationalComparisonType(comparisonType) && !IsRelationalDataValueType(leftDataValueTypeName)) {
+			throw new ArgumentException(
+				$"rule.condition.conditions[*].comparisonType '{comparisonType}' is only supported for numeric and temporal left attributes. Left attribute '{leftPath}' has type {leftDataValueTypeName}.");
+		}
+
+		ValidateRightExpression(rightExpression, columnMap, leftPath, leftDataValueTypeName);
+	}
+
+	private static void ValidateRightExpression(
+		BusinessRuleExpression rightExpression,
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		string leftPath,
+		string leftDataValueTypeName) {
+		if (string.Equals(rightExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
+			ValidateAttributeRightExpression(rightExpression, columnMap, leftPath, leftDataValueTypeName);
+			return;
+		}
+
+		if (!string.Equals(rightExpression.Type, "Const", StringComparison.OrdinalIgnoreCase)) {
+			throw new ArgumentException("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue' or 'Const'.");
+		}
+
+		ValidateConstantRightExpression(rightExpression, leftDataValueTypeName);
+	}
+
+	private static void ValidateAttributeRightExpression(
+		BusinessRuleExpression rightExpression,
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		string leftPath,
+		string leftDataValueTypeName) {
+		if (string.IsNullOrWhiteSpace(rightExpression.Path)) {
+			throw new ArgumentException("rule.condition.conditions[*].rightExpression.path is required when rightExpression.type is 'AttributeValue'.");
+		}
+
+		string rightPath = rightExpression.Path;
+		EntitySchemaColumnDto rightDescriptor = ResolveColumn(
+			columnMap,
+			rightPath,
+			"rule.condition.conditions[*].rightExpression.path");
+		string rightDataValueTypeName = MapDataValueTypeName(rightDescriptor.DataValueType);
+		if (!string.Equals(leftDataValueTypeName, rightDataValueTypeName, StringComparison.OrdinalIgnoreCase)) {
+			throw new ArgumentException(
+				$"rule.condition.conditions[*] compares left attribute '{leftPath}' ({leftDataValueTypeName}) to right attribute '{rightPath}' ({rightDataValueTypeName}). Both attributes must have the same data value type.");
+		}
+	}
+
+	private static void ValidateConstantRightExpression(
+		BusinessRuleExpression rightExpression,
+		string leftDataValueTypeName) {
+		if (rightExpression.Value is null) {
+			throw new ArgumentException("rule.condition.conditions[*].rightExpression.value is required when rightExpression.type is 'Const'.");
+		}
+
+		JsonElement rightValue = rightExpression.Value.Value;
+		switch (leftDataValueTypeName) {
+			case "Lookup":
+				ValidateGuidString(rightValue,
+					"rule.condition.conditions[*].rightExpression.value must be a GUID string when the left attribute is a Lookup.");
+				return;
+			case "Guid":
+				ValidateGuidString(rightValue,
+					"rule.condition.conditions[*].rightExpression.value must be a GUID string when the left attribute is Guid.");
+				return;
+			case "Boolean":
+				if (rightValue.ValueKind != JsonValueKind.True && rightValue.ValueKind != JsonValueKind.False) {
+					throw new ArgumentException(
+						"rule.condition.conditions[*].rightExpression.value must be a JSON boolean when the left attribute is Boolean.");
+				}
+				return;
+		}
+
+		if (IsTextDataValueType(leftDataValueTypeName) && rightValue.ValueKind != JsonValueKind.String) {
+			throw new ArgumentException(
+				"rule.condition.conditions[*].rightExpression.value must be a JSON string when the left attribute is a text type.");
+		}
+
+		if (IsNumericDataValueType(leftDataValueTypeName) && rightValue.ValueKind != JsonValueKind.Number) {
+			throw new ArgumentException(
+				"rule.condition.conditions[*].rightExpression.value must be a JSON number when the left attribute is a numeric type.");
+		}
+
+		if (IsTemporalDataValueType(leftDataValueTypeName)
+			&& !TryConvertTemporalConstant(rightValue, leftDataValueTypeName, out _)) {
+			throw new ArgumentException(GetTemporalConstantValidationMessage(leftDataValueTypeName));
+		}
+	}
+
+	private static void ValidateGuidString(JsonElement value, string errorMessage) {
+		if (value.ValueKind != JsonValueKind.String || !Guid.TryParse(value.GetString(), out _)) {
+			throw new ArgumentException(errorMessage);
+		}
+	}
+
+	private static EntitySchemaColumnDto ResolveColumn(
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		string path,
+		string fieldName) {
+		if (!columnMap.TryGetValue(path, out EntitySchemaColumnDto? descriptor)) {
+			throw new ArgumentException($"Unknown attribute '{path}' in {fieldName}.");
+		}
+
+		return descriptor;
+	}
 }

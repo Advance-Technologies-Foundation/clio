@@ -51,6 +51,7 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 				&& request.Rule.Actions.Count == 1
 				&& request.Rule.Actions[0].Items.Count == 1
 				&& request.Rule.Actions[0].Items[0] == "Owner"));
+		logger.Received(1).WriteInfo("Rule name: BusinessRule_1234567");
 		logger.Received(1).WriteInfo("Done");
 	}
 
@@ -71,7 +72,7 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 				new BusinessRuleConditionGroup("AND", []),
 				[])
 		});
-
+		
 		// Assert
 		result.Should().Be(1,
 			because: "the command should fail fast when environment resolution input is missing");
