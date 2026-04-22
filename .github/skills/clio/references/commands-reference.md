@@ -1281,6 +1281,49 @@ Options: `--package` (required), `--binding-name` (required), `--values` (JSON, 
 
 ---
 
+## C# Source-Code Schema Management
+
+### create-schema
+Create a new C# source-code schema on a remote Creatio environment. **Alias:** `schema-create`
+```bash
+clio create-schema --schema-name UsrMyHelper --package-name Custom -e <ENV>
+
+clio create-schema --schema-name UsrMyHelper --package-name Custom --caption "My Helper" -e <ENV>
+```
+Required: `--schema-name`, `--package-name`.
+Optional: `--caption` (defaults to schema-name), `--description`.
+
+The command validates schema-name uniqueness and resolves package UId before calling `SourceCodeSchemaDesignerService.svc/CreateNewSchema` then `SaveSchema`. The final JSON response includes `schemaUId`, `packageUId`, `caption`.
+
+Failure modes (all return exit code 1 + readable `error`):
+- Duplicate `schema-name` (schema already exists in the environment)
+- Unknown `package-name`
+- Malformed `schema-name` (must start with a letter; letters, digits, underscores only)
+
+### update-schema
+Replace the body of an existing C# source-code schema on a remote Creatio environment. **Alias:** `schema-update`
+```bash
+clio update-schema --schema-name UsrMyHelper --body-file ./UsrMyHelper.cs -e <ENV>
+
+clio update-schema --schema-name UsrMyHelper --body-file ./UsrMyHelper.cs --dry-run -e <ENV>
+
+clio update-schema --schema-name UsrMyHelper --body "namespace Terrasoft {...}" -e <ENV>
+```
+Required: `--schema-name`; one of `--body` or `--body-file`.
+Optional: `--dry-run` (resolve schema without saving, default: false).
+
+When both `--body` and `--body-file` are provided, `--body-file` takes precedence.
+
+The command resolves the schema UId via SelectQuery (ManagerName=SourceCodeSchemaManager), loads the full schema via `SourceCodeSchemaDesignerService.svc/GetSchema`, patches the body, and saves via `SaveSchema`. The final JSON response includes `schemaName`, `bodyLength`, `dryRun`.
+
+Failure modes (all return exit code 1 + readable `error`):
+- Schema not found (wrong name or wrong manager)
+- `body-file` path does not exist
+- Empty body
+- SaveSchema service error
+
+---
+
 ## Schema & Process User Task CRUD
 
 ### delete-schema

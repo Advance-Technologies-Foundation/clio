@@ -284,6 +284,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create an entity schema in a remote Creatio package
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
+<a id="create-schema"></a>
+<a id="schema-create"></a>
+- [`create-schema`](docs/commands/create-schema.md) - Create a new C# source-code schema on a remote Creatio environment, `schema-create`
 <a id="dataservice"></a>
 <a id="ds"></a>
 - [`dataservice`](docs/commands/dataservice.md) - Send a Creatio DataService request, `ds`
@@ -375,6 +378,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`show-package-file-content`](docs/commands/show-package-file-content.md) - Show files that belong to a package, `files`, `show-files`
 <a id="update-entity-schema"></a>
 - [`update-entity-schema`](docs/commands/update-entity-schema.md) - Apply batch column operations to a remote Creatio entity schema
+<a id="update-schema"></a>
+<a id="schema-update"></a>
+- [`update-schema`](docs/commands/update-schema.md) - Update the body of a C# source-code schema on a remote Creatio environment, `schema-update`
 
 ## Deployment & Infrastructure
 
