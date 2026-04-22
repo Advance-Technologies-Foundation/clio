@@ -44,6 +44,7 @@ public class StopCommandTestCase : BaseCommandTests<StopOptions>
 	}
 
 	[Test]
+	[Platform("Win")]
 	[Description("Stops IIS app pool when IIS site is detected for the environment")]
 	public void Execute_StopsIISAppPool_WhenIISSiteDetected()
 	{
@@ -128,6 +129,7 @@ public class StopCommandTestCase : BaseCommandTests<StopOptions>
 	}
 
 	[Test]
+	[Platform("Win")]
 	[Description("Continues with other stop methods when IIS app pool stop fails")]
 	public void Execute_ContinuesWithOtherMethods_WhenIISStopFails()
 	{
@@ -157,6 +159,7 @@ public class StopCommandTestCase : BaseCommandTests<StopOptions>
 	}
 
 	[Test]
+	[Platform("Win")]
 	[Description("Reports success when at least one stop method succeeds")]
 	public void Execute_ReportsSuccess_WhenAtLeastOneMethodSucceeds()
 	{
