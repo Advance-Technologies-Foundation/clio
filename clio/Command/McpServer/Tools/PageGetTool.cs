@@ -46,28 +46,56 @@ public sealed class PageGetTool(
 	}
 
 	private PageGetResponse WriteFilesAndCompact(PageGetResponse response, string schemaName) {
-		string schemaDir = fileSystem.Path.Combine(
-			fileSystem.Directory.GetCurrentDirectory(), ".clio-pages", schemaName);
+		string rootDir = fileSystem.Path.Combine(
+			fileSystem.Directory.GetCurrentDirectory(), ".clio-pages");
+		string schemaDir = fileSystem.Path.Combine(rootDir, schemaName);
 		try {
+			if (fileSystem.Directory.Exists(schemaDir)) {
+				fileSystem.Directory.Delete(schemaDir, recursive: true);
+			}
 			fileSystem.Directory.CreateDirectory(schemaDir);
+			EnsureGitIgnoreEntry(rootDir);
 		} catch (Exception ex) {
-			return new PageGetResponse { Success = false, Error = $"Failed to create output directory '{schemaDir}': {ex.Message}" };
+			return new PageGetResponse { Success = false, Error = $"Failed to prepare output directory '{schemaDir}': {ex.Message}" };
 		}
 		string bodyFile   = fileSystem.Path.Combine(schemaDir, "body.js");
 		string bundleFile = fileSystem.Path.Combine(schemaDir, "bundle.json");
 		string metaFile   = fileSystem.Path.Combine(schemaDir, "meta.json");
+		string fetchedAt = DateTime.UtcNow.ToString("o");
 		try {
 			fileSystem.File.WriteAllText(bodyFile,   PageBodyNormalizer.NormalizeProxyBindings(response.Raw.Body));
 			fileSystem.File.WriteAllText(bundleFile, System.Text.Json.JsonSerializer.Serialize(response.Bundle));
-			fileSystem.File.WriteAllText(metaFile,   System.Text.Json.JsonSerializer.Serialize(response.Page));
+			fileSystem.File.WriteAllText(metaFile,   System.Text.Json.JsonSerializer.Serialize(new {
+				fetchedAt,
+				page = response.Page
+			}));
 		} catch (Exception ex) {
 			return new PageGetResponse { Success = false, Error = $"Failed to write page files: {ex.Message}" };
 		}
 		return new PageGetResponse {
 			Success = true,
 			Page = response.Page,
-			Files = new PageGetFilesInfo { BodyFile = bodyFile, BundleFile = bundleFile, MetaFile = metaFile }
+			Files = new PageGetFilesInfo {
+				BodyFile = bodyFile,
+				BundleFile = bundleFile,
+				MetaFile = metaFile,
+				FetchedAt = fetchedAt
+			}
 		};
+	}
+
+	private void EnsureGitIgnoreEntry(string rootDir) {
+		try {
+			if (!fileSystem.Directory.Exists(rootDir)) {
+				fileSystem.Directory.CreateDirectory(rootDir);
+			}
+			string gitignorePath = fileSystem.Path.Combine(rootDir, ".gitignore");
+			if (!fileSystem.File.Exists(gitignorePath)) {
+				fileSystem.File.WriteAllText(gitignorePath, "*\n!.gitignore\n");
+			}
+		} catch {
+			// ignore — gitignore is best-effort hygiene; never block a successful get-page.
+		}
 	}
 }
 

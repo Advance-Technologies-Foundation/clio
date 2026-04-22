@@ -514,6 +514,18 @@ public sealed class PageGetFilesInfo {
 	[JsonProperty("metaFile")]
 	[JsonPropertyName("metaFile")]
 	public string MetaFile { get; init; }
+
+	/// <summary>
+	/// Gets or sets the ISO-8601 UTC timestamp when these files were written to disk.
+	/// Callers should treat the on-disk files as stale whenever <c>fetchedAt</c> in the
+	/// response differs from the value they observed previously; <c>get-page</c> wipes
+	/// the schema directory on every invocation so the presence of a stale timestamp
+	/// means the caller is inspecting a cache that has since been replaced.
+	/// </summary>
+	[JsonProperty("fetchedAt")]
+	[JsonPropertyName("fetchedAt")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public string FetchedAt { get; init; }
 }
 
 /// <summary>

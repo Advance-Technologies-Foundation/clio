@@ -149,7 +149,7 @@ public class PageToolsTests {
 
 		response.Success.Should().BeFalse(
 			because: "legacy aliases should be rejected before list-pages runs an unscoped discovery query");
-		response.Error.Should().Be("Use 'code' instead of 'app-code'.",
+		response.Error.Should().Contain("'app-code' -> 'code'",
 			because: "the MCP tool should direct callers to the canonical selector field");
 	}
 
@@ -1703,6 +1703,46 @@ public class PageToolsTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("get-page wipes the schema directory before writing so stale files from prior fetches or AI-authored drafts do not leak into the fresh response")]
+	public void PageGetTool_WhenSchemaDirHasStaleFiles_WipesBeforeWriting() {
+		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(CreatePageBody());
+		string schemaDir = System.IO.Path.Combine(mockFs.Directory.GetCurrentDirectory(), ".clio-pages", "UsrMcp_FormPage");
+		mockFs.Directory.CreateDirectory(schemaDir);
+		string stalePath = System.IO.Path.Combine(schemaDir, "body.new.js");
+		mockFs.File.WriteAllText(stalePath, "stale draft content");
+		string oldBodyPath = System.IO.Path.Combine(schemaDir, "body.js");
+		mockFs.File.WriteAllText(oldBodyPath, "previous session body");
+
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+
+		response.Success.Should().BeTrue();
+		mockFs.File.Exists(stalePath).Should().BeFalse(
+			because: "stale AI-authored files in the schema dir must not survive a fresh get-page call");
+		mockFs.File.ReadAllText(oldBodyPath).Should().NotBe("previous session body",
+			because: "body.js must be overwritten with the fresh fetched body");
+		response.Files.FetchedAt.Should().NotBeNullOrEmpty(
+			because: "get-page must report the ISO-8601 fetch timestamp so callers can detect cache staleness");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-page writes a .gitignore entry under .clio-pages so the working tree stays clean by default")]
+	public void PageGetTool_WhenWriting_AddsGitIgnoreEntry() {
+		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(CreatePageBody());
+
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+
+		response.Success.Should().BeTrue();
+		string gitignorePath = System.IO.Path.Combine(mockFs.Directory.GetCurrentDirectory(), ".clio-pages", ".gitignore");
+		mockFs.File.Exists(gitignorePath).Should().BeTrue(
+			because: "the .clio-pages directory is ephemeral MCP state and must be git-ignored by default");
+		string content = mockFs.File.ReadAllText(gitignorePath);
+		content.Should().Contain("*",
+			because: "the gitignore must exclude all cached page files");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("get-page returns error response when directory creation fails")]
 	public void PageGetTool_WhenDirectoryCreationFails_ReturnsError() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
@@ -1737,7 +1777,7 @@ public class PageToolsTests {
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
 
 		response.Success.Should().BeFalse(because: "directory creation failure should produce a failed response");
-		response.Error.Should().Contain("Failed to create output directory",
+		response.Error.Should().Contain("Failed to prepare output directory",
 			because: "the error must explain what failed");
 		response.Files.Should().BeNull(because: "no files block should be returned on failure");
 	}

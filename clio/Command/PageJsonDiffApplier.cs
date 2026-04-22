@@ -141,8 +141,10 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 		List<JObject> allInserts = [..inserts, ..moveInserts];
 		allInserts = OrderOperationsByPath(allInserts, op => op, isAscending: true);
 		List<JObject> unsuccessful = ApplyInsertGroup(allInserts);
-		if (unsuccessful.Count > 0) {
-			ApplyUnsuccessfulInserts(unsuccessful);
+		int previousCount = allInserts.Count;
+		while (unsuccessful.Count > 0 && unsuccessful.Count < previousCount) {
+			previousCount = unsuccessful.Count;
+			unsuccessful = ApplyInsertGroup(unsuccessful);
 		}
 	}
 
@@ -218,22 +220,6 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 			}
 		}
 		return unsuccessful;
-	}
-
-	private void ApplyUnsuccessfulInserts(List<JObject> unsuccessful) {
-		List<JObject> retry = [];
-		foreach (JObject operation in unsuccessful) {
-			string parentName = operation.Value<string>(ParentNameField);
-			if (string.IsNullOrWhiteSpace(parentName) || FindItemByName(parentName) is not null) {
-				JObject moveForm = (JObject)operation.DeepClone();
-				moveForm[OperationField] = "move";
-				retry.Add(moveForm);
-			}
-		}
-		if (retry.Count == 0) {
-			return;
-		}
-		ApplyChangePositionOperations([], unsuccessful, retry);
 	}
 
 	private bool TryInsert(JObject operation) {
