@@ -36,7 +36,7 @@ public sealed class CreateEntitySchemaTool(
 				 local source files. The package must already exist on the target environment.
 				 """)]
 	public async Task<CommandExecutionResult> CreateEntitySchema(
-		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name, extend-parent (optional)")] [Required] CreateEntitySchemaArgs args
+		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to BaseEntity), extend-parent (optional)")] [Required] CreateEntitySchemaArgs args
 	) {
 		ApplicationDataForgeResult? dataForge = enrichmentService is not null
 			? await enrichmentService.EnrichAsync(
@@ -83,7 +83,7 @@ public sealed class CreateEntitySchemaTool(
 			Title = titleNormalization.EffectiveTitle
 				?? EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context),
 			TitleLocalizations = titleNormalization.Localizations ?? titleLocalizations,
-			ParentSchemaName = parentSchemaName,
+			ParentSchemaName = string.IsNullOrWhiteSpace(parentSchemaName) ? "BaseEntity" : parentSchemaName,
 			ExtendParent = extendParent,
 			Columns = SerializeColumns(args.Columns, context),
 			Environment = args.EnvironmentName

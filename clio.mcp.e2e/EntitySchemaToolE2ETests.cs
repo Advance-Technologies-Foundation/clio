@@ -24,7 +24,16 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for entity schema MCP tools.
 /// </summary>
 [TestFixture]
-[AllureNUnit]
+// [AllureNUnit] is intentionally omitted.
+// Root cause: [AllureNUnit] installs NUnit lifecycle hooks that interact with
+// NUnit's single-threaded SynchronizationContext in a way that deadlocks tests
+// containing many sequential async operations. Short tests (1-2 awaits) complete
+// fine, but longer flows (6+ sequential async MCP calls) hang indefinitely with
+// no timeout or error — the test process simply never makes progress past the
+// last awaited call. Confirmed by: commenting out [AllureNUnit] alone reduced
+// the hanging test from 30+ minutes to ~50 seconds, with all steps completing
+// normally. Individual [AllureStep] attributes on sync void assert methods are
+// unaffected and remain in place.
 [AllureFeature("entity-schema")]
 [NonParallelizable]
 public sealed class EntitySchemaToolE2ETests {
@@ -1176,6 +1185,8 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the created schema should be readable through the structured schema properties tool");
 		properties.PackageName.Should().Be(arrangeContext.PackageName,
 			because: "the structured result should report the package that owns the created schema");
+		properties.ParentSchemaName.Should().NotBeNullOrWhiteSpace(
+			because: "create-entity-schema should assign a parent schema so the entity has a valid inheritance chain");
 		properties.Title.Should().Be("Vehicle",
 			because: "the structured result should preserve the schema title from creation");
 		properties.OwnColumnCount.Should().BeGreaterThan(0,
