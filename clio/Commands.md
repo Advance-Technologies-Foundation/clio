@@ -280,6 +280,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="cs"></a>
 <a id="callservice"></a>
 - [`call-service`](docs/commands/call-service.md) - Call a Creatio service endpoint, `cs`
+<a id="create-client-unit-schema"></a>
+<a id="client-unit-schema-create"></a>
+- [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
 - [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create an entity schema in a remote Creatio package
 <a id="create-lookup"></a>
@@ -287,6 +290,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="create-schema"></a>
 <a id="schema-create"></a>
 - [`create-schema`](docs/commands/create-schema.md) - Create a new C# source-code schema on a remote Creatio environment, `schema-create`
+<a id="create-sql-schema"></a>
+<a id="sql-schema-create"></a>
+- [`create-sql-schema`](docs/commands/create-sql-schema.md) - Create a new SQL script schema on a remote Creatio environment, `sql-schema-create`
 <a id="dataservice"></a>
 <a id="ds"></a>
 - [`dataservice`](docs/commands/dataservice.md) - Send a Creatio DataService request, `ds`
@@ -304,12 +310,21 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="generate-process-model"></a>
 <a id="gpm"></a>
 - [`generate-process-model`](docs/commands/generate-process-model.md) - Generate process model for ATF.Repository, `gpm`
+<a id="get-client-unit-schema"></a>
+<a id="client-unit-schema-get"></a>
+- [`get-client-unit-schema`](docs/commands/get-client-unit-schema.md) - Read body and metadata of a client unit (JavaScript) schema on a remote Creatio environment, `client-unit-schema-get`
 <a id="get-entity-schema-column-properties"></a>
 - [`get-entity-schema-column-properties`](docs/commands/get-entity-schema-column-properties.md) - Get column properties from a remote Creatio entity schema
 <a id="find-entity-schema"></a>
 - [`find-entity-schema`](docs/commands/find-entity-schema.md) - Find entity schemas in a Creatio environment by name, pattern, or UId
 <a id="get-entity-schema-properties"></a>
 - [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema
+<a id="get-schema"></a>
+<a id="schema-get"></a>
+- [`get-schema`](docs/commands/get-schema.md) - Read body and metadata of a C# source-code schema on a remote Creatio environment, `schema-get`
+<a id="get-sql-schema"></a>
+<a id="sql-schema-get"></a>
+- [`get-sql-schema`](docs/commands/get-sql-schema.md) - Read body and metadata of a SQL script schema on a remote Creatio environment, `sql-schema-get`
 <a id="git-sync"></a>
 <a id="sync"></a>
 - [`git-sync`](docs/commands/git-sync.md) - Syncs environment with Git repository, `sync`
@@ -318,6 +333,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="i"></a>
 <a id="ver"></a>
 - [`info`](docs/commands/info.md) - Show clio, cliogate, and .NET runtime versions, `get-version`, `i`, `ver`
+<a id="install-sql-schema"></a>
+<a id="sql-schema-install"></a>
+<a id="execute-sql-schema"></a>
+- [`install-sql-schema`](docs/commands/install-sql-schema.md) - Execute a SQL script schema on a remote Creatio environment (irreversible raw SQL), `sql-schema-install`, `execute-sql-schema`
 <a id="listen"></a>
 - [`listen`](docs/commands/listen.md) - Stream Creatio log events over WebSocket
 <a id="mock-data"></a>
@@ -381,6 +400,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="update-schema"></a>
 <a id="schema-update"></a>
 - [`update-schema`](docs/commands/update-schema.md) - Update the body of a C# source-code schema on a remote Creatio environment, `schema-update`
+<a id="update-sql-schema"></a>
+<a id="sql-schema-update"></a>
+- [`update-sql-schema`](docs/commands/update-sql-schema.md) - Update the body of a SQL script schema on a remote Creatio environment, `sql-schema-update`
 
 ## Deployment & Infrastructure
 

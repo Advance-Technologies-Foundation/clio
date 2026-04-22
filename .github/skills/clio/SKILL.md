@@ -40,6 +40,10 @@ clio ver
 - User wants to **create a new Freedom UI page from a template** (list-page-templates, create-page)
 - User wants to **create a C# source-code schema** on a remote Creatio environment (create-schema)
 - User wants to **update the body of a C# source-code schema** on a remote Creatio environment (update-schema)
+- User wants to **read the body/metadata of a C# source-code schema** (get-schema)
+- User wants to **read the body/metadata of a client unit (JavaScript) schema** (get-client-unit-schema)
+- User wants to **create, read, update, or execute a SQL script schema** on a remote Creatio environment (create-sql-schema, get-sql-schema, update-sql-schema, install-sql-schema)
+- User wants to **delete a schema directly from a remote environment** without a workspace (delete-schema --remote)
 - User wants to **look up clio MCP workflow guidance** (get-guidance)
 - User wants to **manage package data bindings** (seed data for SysSettings, SysModule, custom entities)
 - **A browser page or HTTP response matches the Creatio fingerprint** (see below)
@@ -88,7 +92,11 @@ When you open a web page via browser automation (Chrome DevTools, Playwright, et
    - **Page creation**: `list-page-templates` → `create-page` → `get-page`
    - **Schema changes**: `find-entity-schema` → `create-entity-schema` / `update-entity-schema`
    - **C# source-code schema creation**: `create-schema` (schema-name + package-name; no local files created)
+   - **C# source-code schema read**: `get-schema` (inspect body before update-schema)
    - **C# source-code schema update**: `update-schema` (schema-name + body or body-file; no local files created)
+   - **Client unit (JS) schema read**: `get-client-unit-schema` (inspect body before update-client-unit-schema)
+   - **SQL script schema CRUD**: `create-sql-schema` → `get-sql-schema` → `update-sql-schema` → `install-sql-schema` (executes the script on the DB)
+   - **Remote schema deletion**: `delete-schema --remote` (no workspace; deletes any schema from SysSchema by name)
    - **App management**: `list-apps` → `get-app-info` → `create-app-section`
    - **Data seeding**: `create-data-binding-db` / `upsert-data-binding-row-db`
    - **Workflow guidance**: `get-guidance` to retrieve named clio MCP articles
@@ -384,6 +392,23 @@ clio add-schema MySchema -t source-code -p MyPackage
 clio create-schema --schema-name UsrMyHelper --package-name Custom -e myenv
 clio create-schema --schema-name UsrMyHelper --package-name Custom --caption "My Helper" -e myenv
 
+# Read C# source-code schema body/metadata (inspect before update-schema)
+clio get-schema --schema-name UsrMyHelper -e myenv
+clio get-schema --schema-name UsrMyHelper --output-file /tmp/UsrMyHelper.cs -e myenv
+
+# Read client unit (JavaScript) schema body/metadata
+clio get-client-unit-schema --schema-name NetworkUtilities -e myenv
+clio get-client-unit-schema --schema-name NetworkUtilities --output-file /tmp/NetworkUtilities.js -e myenv
+
+# SQL script schema CRUD (ScriptSchemaDesignerService)
+clio create-sql-schema --schema-name UsrReseedContactId --package-name Custom -e myenv
+clio get-sql-schema --schema-name UsrReseedContactId -e myenv
+clio update-sql-schema --schema-name UsrReseedContactId --body-file ./reseed.sql -e myenv
+clio install-sql-schema --schema-name UsrReseedContactId -e myenv   # irreversible — executes raw SQL
+
+# Delete a schema directly from the remote environment (no workspace)
+clio delete-schema UsrLegacyHelper --remote -e myenv
+
 # Create test project
 clio new-test-project --package MyPackage
 
@@ -634,5 +659,8 @@ clio update-cli
 - Manifest YAML files support GitOps: apps, syssettings, features, webservices
 - Entity schema commands (`create-entity-schema`, `modify-entity-schema-column`, etc.) require cliogate ≥ 2.0
 - Freedom UI page commands (`get-page`, `update-page`, `list-pages`, `create-page`, `list-page-templates`) work without cliogate
-- `create-schema` (C# source-code schema) works without cliogate — saves directly to the remote Creatio DB via `SourceCodeSchemaDesignerService`
+- `create-schema` / `get-schema` / `update-schema` (C# source-code schema) work without cliogate — talk directly to `SourceCodeSchemaDesignerService`
+- `get-client-unit-schema` / `update-client-unit-schema` (client unit JS schema) work without cliogate — talk to `ClientUnitSchemaDesignerService`
+- `create-sql-schema` / `get-sql-schema` / `update-sql-schema` / `install-sql-schema` work without cliogate — talk to `ScriptSchemaDesignerService`. `install-sql-schema` runs the script on the DB and is irreversible
+- `delete-schema --remote` works without a workspace: resolves `SysSchema` by name, then calls `WorkspaceExplorerService.svc/Delete`
 - Data binding commands that work offline (no environment): `create-data-binding` with SysSettings/SysModule templates, `add-data-binding-row`, `remove-data-binding-row`

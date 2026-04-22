@@ -1322,16 +1322,109 @@ Failure modes (all return exit code 1 + readable `error`):
 - Empty body
 - SaveSchema service error
 
+### get-schema
+Read the body and metadata of a C# source-code schema on a remote Creatio environment. **Alias:** `schema-get`
+```bash
+clio get-schema --schema-name UsrMyHelper -e <ENV>
+
+clio get-schema --schema-name UsrMyHelper --output-file /tmp/UsrMyHelper.cs -e <ENV>
+```
+Required: `--schema-name`.
+Optional: `--output-file` (absolute path). When set, the body is written to the file and omitted from the JSON response; `bodyLength` is kept.
+
+The command resolves the schema UId via SelectQuery (ManagerName=SourceCodeSchemaManager) then calls `SourceCodeSchemaDesignerService.svc/GetSchema`. Use before `update-schema` to inspect current body.
+
+---
+
+## Client Unit Schema Management
+
+### create-client-unit-schema
+Create a new client unit (JavaScript) schema on a remote Creatio environment. **Alias:** `client-unit-schema-create`
+```bash
+clio create-client-unit-schema --schema-name UsrHelperModule --package-name Custom -e <ENV>
+```
+Required: `--schema-name`, `--package-name`.
+Optional: `--caption` (defaults to schema-name), `--description`.
+
+### update-client-unit-schema
+Replace the body of an existing client unit (JavaScript) schema. **Alias:** `client-unit-schema-update`
+```bash
+clio update-client-unit-schema --schema-name NetworkUtilities --body-file ./NetworkUtilities.js -e <ENV>
+```
+Required: `--schema-name`; one of `--body` or `--body-file`.
+Optional: `--dry-run`.
+
+### get-client-unit-schema
+Read the body and metadata of a client unit (JavaScript) schema. **Alias:** `client-unit-schema-get`
+```bash
+clio get-client-unit-schema --schema-name NetworkUtilities -e <ENV>
+
+clio get-client-unit-schema --schema-name NetworkUtilities --output-file /tmp/NetworkUtilities.js -e <ENV>
+```
+Required: `--schema-name`.
+Optional: `--output-file`. When set, the body is written to the file and omitted from the JSON response.
+
+Resolves schema UId via SelectQuery (no ManagerName filter) then calls `ClientUnitSchemaDesignerService.svc/GetSchema`. Use before `update-client-unit-schema`.
+
+---
+
+## SQL Script Schema Management
+
+All four commands target `ScriptSchemaDesignerService` and filter SysSchema by `ManagerName=ScriptSchemaManager`.
+
+### create-sql-schema
+Create a new SQL script schema on a remote Creatio environment. **Alias:** `sql-schema-create`
+```bash
+clio create-sql-schema --schema-name UsrReseedContactId --package-name Custom -e <ENV>
+
+clio create-sql-schema --schema-name UsrReseedContactId --package-name Custom --caption "Reseed contact id" -e <ENV>
+```
+Required: `--schema-name`, `--package-name`.
+Optional: `--caption` (defaults to schema-name), `--description`.
+
+### get-sql-schema
+Read the body and metadata of a SQL script schema. **Alias:** `sql-schema-get`
+```bash
+clio get-sql-schema --schema-name UsrReseedContactId -e <ENV>
+
+clio get-sql-schema --schema-name UsrReseedContactId --output-file /tmp/reseed.sql -e <ENV>
+```
+Required: `--schema-name`.
+Optional: `--output-file`.
+
+### update-sql-schema
+Replace the body of an existing SQL script schema. **Alias:** `sql-schema-update`
+```bash
+clio update-sql-schema --schema-name UsrReseedContactId --body-file ./reseed.sql -e <ENV>
+
+clio update-sql-schema --schema-name UsrReseedContactId --body "SELECT 1;" --dry-run -e <ENV>
+```
+Required: `--schema-name`; one of `--body` or `--body-file`.
+Optional: `--dry-run`.
+
+### install-sql-schema
+Execute a SQL script schema on the remote environment via `ScriptSchemaDesignerService.svc/ExecuteScript`. **Aliases:** `sql-schema-install`, `execute-sql-schema`
+```bash
+clio install-sql-schema --schema-name UsrReseedContactId -e <ENV>
+```
+Required: `--schema-name`.
+
+**WARNING:** runs the script directly against the Creatio database. Irreversible — back up first if the script mutates data.
+
 ---
 
 ## Schema & Process User Task CRUD
 
 ### delete-schema
-Delete any workspace item (schema or non-schema) from a workspace package. Supports all item types: entity, client unit, source code, process, DCM, process user task, campaign, service, addon, Copilot intent, localization schemas, SQL scripts, data bindings, and assemblies. Must be run from a workspace directory.
+Delete any workspace item (schema or non-schema) from a workspace package, or — with `--remote` — delete any SysSchema record directly from the remote environment. Supports all item types: entity, client unit, source code, process, DCM, process user task, campaign, service, addon, Copilot intent, localization schemas, SQL scripts, data bindings, and assemblies.
 ```bash
+# Workspace mode (default) — must be run from a workspace directory
 clio delete-schema UsrSendInvoice -e <ENV>
+
+# Remote mode — no workspace required
+clio delete-schema UsrLegacyHelper --remote -e <ENV>
 ```
-Only items whose package belongs to the current local workspace can be deleted.
+In workspace mode only items whose package belongs to the current local workspace can be deleted. In `--remote` mode the command resolves the schema from SysSchema by name (any ManagerName) and deletes it via `WorkspaceExplorerService.svc/Delete`.
 
 ### add-user-task
 Create a process user task schema in a workspace package. Must be run from a workspace directory.
