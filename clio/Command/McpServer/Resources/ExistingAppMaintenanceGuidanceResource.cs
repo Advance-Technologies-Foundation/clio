@@ -13,13 +13,6 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 	private const string ResourcePath = "mcp/guides/existing-app-maintenance";
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
-	/// <summary>
-	/// Returns the canonical guidance article for discovering, inspecting, and minimally mutating an existing app.
-	/// </summary>
-	[McpServerResource(UriTemplate = ResourceUri, Name = "existing-app-maintenance-guidance")]
-	[Description("Returns canonical MCP guidance for existing-app discovery, inspection, and minimal mutation workflows.")]
-	public ResourceContents GetGuide() => Guide;
-
 	internal static readonly TextResourceContents Guide = new() {
 			Uri = ResourceUri,
 			MimeType = "text/plain",

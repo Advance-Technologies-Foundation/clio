@@ -13,13 +13,6 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 	private const string ResourcePath = "mcp/guides/dataforge-orchestration";
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
-	/// <summary>
-	/// Returns the canonical DataForge orchestration protocol for AI consumers of clio MCP.
-	/// </summary>
-	[McpServerResource(UriTemplate = ResourceUri, Name = "dataforge-orchestration-guidance")]
-	[Description("Returns the canonical 4-layer DataForge orchestration protocol for AI agents using clio MCP.")]
-	public ResourceContents GetGuide() => Guide;
-
 	internal static readonly TextResourceContents Guide = new() {
 			Uri = ResourceUri,
 			MimeType = "text/plain",

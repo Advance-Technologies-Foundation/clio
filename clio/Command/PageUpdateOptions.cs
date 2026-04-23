@@ -397,25 +397,6 @@ namespace Clio.Command {
 				"});";
 		}
 
-		internal sealed class EditableSchemaContext {
-			public string SchemaName { get; set; }
-			public string EditableSchemaUId { get; set; }
-			public string DesignPackageUId { get; set; }
-			public bool IsCreateReplacing { get; set; }
-			public string ParentSchemaUId { get; set; }
-			public string ParentSchemaName { get; set; }
-			public string TemplateSchemaUId { get; set; }
-		}
-
-		private static List<string> UpdateSchemaBody(JObject schemaToSave, string body, Dictionary<string, string> explicitResources) {
-			schemaToSave["body"] = body;
-			var bodyKeys = ResourceStringHelper.ExtractKeys(body);
-			var existingStrings = schemaToSave["localizableStrings"] as JArray;
-			var (cleaned, registered) = ResourceStringHelper.CleanAndMerge(existingStrings, explicitResources, bodyKeys);
-			schemaToSave["localizableStrings"] = cleaned;
-			return registered.Count > 0 ? registered : null;
-		}
-
 		private bool TrySaveSchema(JObject schemaToSave, out PageUpdateResponse response) {
 			string saveUrl = _serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
 			string saveJson = _applicationClient.ExecutePostRequest(saveUrl, schemaToSave.ToString(Formatting.None));
