@@ -15,6 +15,10 @@ internal static class GuidanceCatalog {
 				"app-modeling",
 				"Canonical MCP guidance for Creatio application modeling, schema design, and page-editing workflows.",
 				AppModelingGuidanceResource.Guide),
+			["data-bindings"] = Create(
+				"data-bindings",
+				"Canonical MCP guidance for generic lookup seeding and local or remote data-binding workflows.",
+				DataBindingsGuidanceResource.Guide),
 			["existing-app-maintenance"] = Create(
 				"existing-app-maintenance",
 				"Canonical MCP guidance for existing-app discovery, inspection, and minimal mutation workflows.",

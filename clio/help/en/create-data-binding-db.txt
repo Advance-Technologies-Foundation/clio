@@ -18,6 +18,11 @@ BEHAVIOR:
   Resolves the package UId from the remote environment, fetches the entity schema column
   list from Creatio, and calls SchemaDataDesignerService.svc/SaveSchema to create or
   update the binding schema data record in the DB.
+  SaveSchema metadata is projected to the primary key plus the columns referenced by
+  currently bound or requested rows, so unrelated runtime-only columns do not block
+  Account-like schemas. Explicitly requested unsupported runtime columns still fail.
+  After remote mutation, read back from Creatio instead of treating the request payload
+  or install log as proof.
   To sync the result to a local workspace, use restore-workspace separately.
 
 EXAMPLES:

@@ -194,6 +194,7 @@ public sealed class GuidanceGetToolTests {
 			because: "the failure should name the rejected guide explicitly");
 		result.AvailableGuides.Should().Contain([
 				"app-modeling",
+				"data-bindings",
 				"existing-app-maintenance",
 				"page-schema-handlers",
 				"page-schema-sdk-common",

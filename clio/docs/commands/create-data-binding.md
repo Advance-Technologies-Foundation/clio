@@ -19,8 +19,8 @@ clio create-data-binding [OPTIONS]
 Creates or updates a data-binding folder under the target package.
 
 When the requested schema has a built-in offline template, clio uses that
-template and does not require Creatio access. In v1, SysSettings and
-SysModule are supported offline templates and template metadata always
+template and does not require Creatio access. In v1, SysSettings is the
+supported offline template and template metadata always
 takes precedence over runtime schema fetches.
 
 For schemas that are not covered by the built-in template catalog, clio
@@ -80,24 +80,22 @@ clio create-data-binding -e dev --package Custom --schema UsrCustomEntity --work
 # Create a binding with explicit localizations
 clio create-data-binding -e dev --package Custom --schema SysSettings --values "{\"Name\":\"Setting name\"}" --localizations '{\"ru-RU\":{\"Name\":\"Настройка\"}}'
 
-# Create a SysModule binding with an image file for Image16
-clio create-data-binding --package Custom --schema SysModule --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrModule\",\"Image16\":\"assets\\icon.png\"}"
+# Create a binding that uses an image-content column from a runtime schema
+clio create-data-binding -e dev --package Custom --schema UsrImageBinding --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrImageBinding\",\"UsrImage\":\"assets\\icon.png\"}"
 
-# Create a SysModule binding with explicit lookup display text
-clio create-data-binding --package Custom --schema SysModule --values "{\"Code\":\"UsrModule\",\"FolderMode\":{\"value\":\"b659d704-3955-e011-981f-00155d043204\",\"displayValue\":\"Folders\"}}"
+# Create a binding with explicit lookup display text
+clio create-data-binding -e dev --package Custom --schema UsrLookupBinding --values "{\"Code\":\"UsrLookupBinding\",\"UsrStatus\":{\"value\":\"b659d704-3955-e011-981f-00155d043204\",\"displayValue\":\"In Progress\"}}"
 ```
 
 ## Notes
 
-- For templated schemas such as SysSettings and SysModule, --environment and --uri are optional
+- For the templated schema SysSettings, --environment and --uri are optional
 - For non-templated schemas, the command requires either --environment or --uri
 - Unknown columns in --values or --localizations are rejected
 - If the primary key column is a Guid and is omitted or null in --values, create-data-binding generates it automatically
 - For lookup and image-reference columns, clio writes SchemaColumnUId, Value, and DisplayValue in data.json
 - For create-data-binding, lookup and image-reference values may use {"value":"...","displayValue":"..."}; if displayValue is omitted and Creatio runtime lookup data is available, clio resolves it automatically
 - For image-content columns, a string value that points to an existing local file inside the workspace is encoded to base64 before writing data.json
-- SysModule IconBackground only accepts these colors:
-#A6DE00, #20A959, #22AC14, #FFAC07, #FF8800, #F9307F, #FF602E, #FF4013, #B87CCF, #7848EE, #247EE5, #0058EF, #009DE3, #4F43C2, #08857E, #00BFA5
 - If the target binding folder already exists for another schema, the
 command fails instead of overwriting it
 - filter.json is always created as an empty file

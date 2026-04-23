@@ -31,6 +31,7 @@ public sealed class AppModelingGuidanceResource {
 			       - Use discovered tool names exactly as advertised.
 			       - Newer design tools use kebab-case JSON argument names such as `environment-name`, `package-name`, and `schema-name`.
 			       - For existing-app minimal edits, call `get-guidance` with `name` set to `existing-app-maintenance`.
+			       - For canonical data-binding workflow selection, call `get-guidance` with `name` set to `data-bindings`.
 			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
 
 			       Discovery before invocation
@@ -73,6 +74,7 @@ public sealed class AppModelingGuidanceResource {
 			       - If the app needs localized entity or column captions, create the app first and then apply those captions through `sync-schemas`, `create-entity-schema`, `update-entity-schema`, or related entity-schema MCP tools.
 			       - Use `create-lookup` or `sync-schemas` `create-lookup` for managed enum-like values such as status or type catalogs.
 			       - `create-lookup` always uses `BaseLookup`. `Name` and `Description` are inherited, and `Name` remains the display field. Do not add duplicate title-like columns just to mirror the lookup caption.
+			       - For standalone lookup seeding or local binding artifacts, follow `get-guidance` with `name` set to `data-bindings` instead of relying on consumer-repo binding notes.
 			       - When the workflow cannot stay inside `sync-schemas`, seed lookup rows through `create-data-binding-db` or `upsert-data-binding-row-db` instead of direct SQL helpers so the agent stays on the supported MCP contract.
 			       - When a data binding row contains lookup (reference) columns and the correct lookup GUID is not already known, call `dataforge-find-lookups` with `schema-name` set to the reference schema and a descriptive query term before calling `create-data-binding`, `create-data-binding-db`, or `upsert-data-binding-row-db`. Use the `lookup-id` from the best-matching result as the column value.
 			       - When adding a reference (Lookup) column via `update-entity-schema` and the correct `reference-schema-name` is not certain, call `dataforge-find-tables` first to confirm a matching schema exists.

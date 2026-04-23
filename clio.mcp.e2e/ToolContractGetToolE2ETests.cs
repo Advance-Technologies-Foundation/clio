@@ -326,6 +326,8 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "the response should preserve the requested binding tool order");
 
 		ToolContractDefinition createContract = response.Tools.Single(tool => tool.Name == CreateDataBindingDbTool.CreateDataBindingDbToolName);
+		createContract.Description.Should().Contain("primary key plus columns referenced",
+			because: "the canonical DB-first create contract should explain the subset-column projection rule");
 		createContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					SchemaSyncTool.ToolName
@@ -349,6 +351,8 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "the canonical contract should expose a realistic multi-row lookup seeding example");
 
 		ToolContractDefinition upsertContract = response.Tools.Single(tool => tool.Name == UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName);
+		upsertContract.Description.Should().Contain("bound rows and the requested upsert payload",
+			because: "the canonical DB-first upsert contract should explain how projected binding metadata is rebuilt");
 		upsertContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					CreateDataBindingDbTool.CreateDataBindingDbToolName,
@@ -359,8 +363,64 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "the DB-first upsert contract should advertise the missing-binding failure mode");
 
 		ToolContractDefinition removeContract = response.Tools.Single(tool => tool.Name == RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName);
+		removeContract.Description.Should().Contain("remaining bound rows",
+			because: "the canonical DB-first remove contract should explain how projected binding metadata is rebuilt after deletion");
 		removeContract.Description.Should().Contain("package schema data record",
 			because: "the DB-first remove contract should document the final-row lifecycle cleanup");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract returns canonical local binding contracts from clio")]
+	public async Task ToolContractGet_Should_Return_Canonical_Local_Binding_Surface() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					CreateDataBindingTool.CreateDataBindingToolName,
+					AddDataBindingRowTool.AddDataBindingRowToolName,
+					RemoveDataBindingRowTool.RemoveDataBindingRowToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the local binding contract surface should be discoverable through the MCP server");
+		response.Tools.Should().NotBeNull(
+			because: "a successful lookup should return the requested local binding contracts");
+		response.Tools!.Select(tool => tool.Name).Should().Equal(
+			new[] {
+				CreateDataBindingTool.CreateDataBindingToolName,
+				AddDataBindingRowTool.AddDataBindingRowToolName,
+				RemoveDataBindingRowTool.RemoveDataBindingRowToolName
+			},
+			because: "the response should preserve the requested local binding tool order");
+
+		ToolContractDefinition createContract = response.Tools.Single(tool => tool.Name == CreateDataBindingTool.CreateDataBindingToolName);
+		createContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "environment-name" &&
+				field.Description.Contains("Required when schema-name is not SysSettings", StringComparison.Ordinal),
+			because: "the canonical contract should advertise the runtime-schema environment requirement");
+		createContract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "require-environment-name-for-runtime-schema"
+				&& validator.Code == "missing-required-parameter"
+				&& validator.Required == true
+				&& validator.Fields != null
+				&& validator.Fields.SequenceEqual(new[] { "schema-name", "environment-name" }),
+			because: "the serialized contract should expose the conditional environment requirement for non-template schemas");
+		createContract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					CreateDataBindingTool.CreateDataBindingToolName,
+					AddDataBindingRowTool.AddDataBindingRowToolName
+				},
+				because: "the local binding contract should advertise the create-then-edit artifact flow");
 	}
 
 	[Test]
