@@ -862,6 +862,30 @@ public sealed class BusinessRuleValidatorTests {
 				because: "the left side of a business-rule condition must always reference an entity attribute");
 	}
 
+	[TestCase(11, "Enum")]
+	[TestCase(13, "Blob")]
+	[TestCase(14, "Image")]
+	[TestCase(25, "File")]
+	[Category("Unit")]
+	[Description("Rejects Const right expressions when the left attribute has a type that does not support constant comparison (Enum, Blob, Image, File).")]
+	public void Validate_Should_Reject_Const_For_Unsupported_Left_Type(int dataValueType, string expectedTypeName) {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			leftExpression: new BusinessRuleExpression("AttributeValue", "UnsupportedCol", null),
+			rightExpression: new BusinessRuleExpression("Const", null, Json("\"any-value\"")));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("UnsupportedCol", dataValueType),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage($"Const rightExpression is not supported for left attribute type '{expectedTypeName}'.",
+				because: $"{expectedTypeName} columns do not have a defined constant comparison contract and should be rejected before metadata is serialized");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects right expressions that are neither attribute references nor constants.")]
