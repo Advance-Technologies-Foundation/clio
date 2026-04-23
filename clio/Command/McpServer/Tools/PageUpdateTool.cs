@@ -24,19 +24,12 @@ public sealed class PageUpdateTool(
 	internal const string ToolName = "update-page";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-<<<<<<< HEAD
-	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
-		"Section authoring rules for the body payload: " +
-		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first.")]
-	public PageUpdateResponse UpdatePage([Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageUpdateArgs args) {
-=======
 	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("Parameters: schema-name, body (required); resources, dry-run, skip-sampling (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageUpdateArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
->>>>>>> 794b3777 (feat(mcp): add AI sampling review, add-form-fields and add-list-columns tools)
 		PageUpdateOptions options = new() {
 			SchemaName = args.SchemaName,
 			Body = args.Body,
