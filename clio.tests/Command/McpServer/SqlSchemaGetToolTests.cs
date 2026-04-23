@@ -22,8 +22,8 @@ public class SqlSchemaGetToolTests {
 			.Returns(resolvedCommand);
 		SqlSchemaGetTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		SqlSchemaGetResponse response = tool.GetSchema(new SqlSchemaGetArgs(
-			"UsrScript", "/tmp/out.sql", "dev", null, null, null));
+		SqlSchemaGetResponse response = tool.GetSchema(new SqlSchemaGetArgs("UsrScript") {
+			OutputFile = "/tmp/out.sql", EnvironmentName = "dev" });
 
 		response.Success.Should().BeTrue();
 		resolvedCommand.CapturedOptions.Should().NotBeNull();
@@ -44,8 +44,8 @@ public class SqlSchemaGetToolTests {
 			.Returns(_ => throw new System.InvalidOperationException("boom"));
 		SqlSchemaGetTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		SqlSchemaGetResponse response = tool.GetSchema(new SqlSchemaGetArgs(
-			"UsrScript", null, "missing", null, null, null));
+		SqlSchemaGetResponse response = tool.GetSchema(new SqlSchemaGetArgs("UsrScript") {
+			EnvironmentName = "missing" });
 
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("boom");

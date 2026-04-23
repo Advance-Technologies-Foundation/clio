@@ -22,8 +22,8 @@ public class GetSchemaToolTests {
 			.Returns(resolvedCommand);
 		GetSchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		GetSourceCodeSchemaResponse response = tool.GetSchema(new GetSchemaArgs(
-			"UsrHelper", "/tmp/out.cs", "docker_fix2", null, null, null));
+		GetSourceCodeSchemaResponse response = tool.GetSchema(new GetSchemaArgs("UsrHelper") {
+			OutputFile = "/tmp/out.cs", EnvironmentName = "docker_fix2" });
 
 		response.Success.Should().BeTrue();
 		resolvedCommand.CapturedOptions.Should().NotBeNull();
@@ -44,8 +44,8 @@ public class GetSchemaToolTests {
 			.Returns(_ => throw new System.InvalidOperationException("Environment 'missing' is not registered."));
 		GetSchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		GetSourceCodeSchemaResponse response = tool.GetSchema(new GetSchemaArgs(
-			"UsrHelper", null, "missing", null, null, null));
+		GetSourceCodeSchemaResponse response = tool.GetSchema(new GetSchemaArgs("UsrHelper") {
+			EnvironmentName = "missing" });
 
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("missing");

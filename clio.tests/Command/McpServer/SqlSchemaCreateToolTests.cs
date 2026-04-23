@@ -22,8 +22,8 @@ public class SqlSchemaCreateToolTests {
 			.Returns(resolvedCommand);
 		SqlSchemaCreateTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		SqlSchemaCreateResponse response = tool.CreateSchema(new SqlSchemaCreateArgs(
-			"UsrScript", "Custom", "Script caption", "Script description", "dev", null, null, null));
+		SqlSchemaCreateResponse response = tool.CreateSchema(new SqlSchemaCreateArgs("UsrScript", "Custom") {
+			Caption = "Script caption", Description = "Script description", EnvironmentName = "dev" });
 
 		response.Success.Should().BeTrue();
 		resolvedCommand.CapturedOptions.Should().NotBeNull();
@@ -46,8 +46,8 @@ public class SqlSchemaCreateToolTests {
 			.Returns(_ => throw new System.InvalidOperationException("boom"));
 		SqlSchemaCreateTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		SqlSchemaCreateResponse response = tool.CreateSchema(new SqlSchemaCreateArgs(
-			"UsrScript", "Custom", null, null, "missing", null, null, null));
+		SqlSchemaCreateResponse response = tool.CreateSchema(new SqlSchemaCreateArgs("UsrScript", "Custom") {
+			EnvironmentName = "missing" });
 
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("boom");

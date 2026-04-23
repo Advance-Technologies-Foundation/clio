@@ -22,8 +22,8 @@ public class GetClientUnitSchemaToolTests {
 			.Returns(resolvedCommand);
 		GetClientUnitSchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		GetClientUnitSchemaResponse response = tool.GetSchema(new GetClientUnitSchemaArgs(
-			"NetworkUtilities", "/tmp/out.js", "dev", null, null, null));
+		GetClientUnitSchemaResponse response = tool.GetSchema(new GetClientUnitSchemaArgs("NetworkUtilities") {
+			OutputFile = "/tmp/out.js", EnvironmentName = "dev" });
 
 		response.Success.Should().BeTrue();
 		resolvedCommand.CapturedOptions.Should().NotBeNull();
@@ -44,8 +44,8 @@ public class GetClientUnitSchemaToolTests {
 			.Returns(_ => throw new System.InvalidOperationException("boom"));
 		GetClientUnitSchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		GetClientUnitSchemaResponse response = tool.GetSchema(new GetClientUnitSchemaArgs(
-			"NetworkUtilities", null, "dev", null, null, null));
+		GetClientUnitSchemaResponse response = tool.GetSchema(new GetClientUnitSchemaArgs("NetworkUtilities") {
+			EnvironmentName = "dev" });
 
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("boom");
