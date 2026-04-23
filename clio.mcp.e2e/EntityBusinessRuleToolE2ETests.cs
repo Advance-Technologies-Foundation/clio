@@ -156,7 +156,6 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the error should identify the missing environment");
 	}
 
-	[AllureStep("Arrange sandbox package for entity business-rule MCP tests")]
 	private static async Task<SandboxPackageArrangeContext> ArrangeSandboxPackageAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -191,7 +190,6 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		return new SandboxPackageArrangeContext(rootDirectory, settings.Sandbox.EnvironmentName!, packageName, session, cancellationTokenSource);
 	}
 
-	[AllureStep("Arrange invalid-environment MCP session for entity business-rule tool")]
 	private static async Task<InvalidEnvironmentArrangeContext> ArrangeInvalidEnvironmentAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
