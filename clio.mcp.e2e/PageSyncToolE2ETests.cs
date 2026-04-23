@@ -303,6 +303,59 @@ public sealed class PageSyncToolE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects non-array handlers through the real MCP server before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects non-array handlers during semantic validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body with SCHEMA_HANDLERS authored as an object instead of an array, and verifies that client-side validation blocks the save with a structured response.")]
+	public async Task PageSyncTool_Should_Reject_NonArray_Handlers_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithNonArrayHandlers = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_HANDLERS*/{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await next?.handle(request); } }/**SCHEMA_HANDLERS*/, " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrInvalidHandlers_{Guid.NewGuid():N}",
+							["body"] = bodyWithNonArrayHandlers
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "handler validation failures should stay in the structured tool response");
+		response.Success.Should().BeFalse(
+			because: "sync-pages should reject schemas where SCHEMA_HANDLERS is no longer an array literal");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail handler-shape validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "handler-shape validation contributes to the content-ok decision");
+		response.Pages[0].Error.Should().Contain("SCHEMA_HANDLERS")
+			.And.Contain("array literal",
+				because: "the failure should explain that the handlers section must stay an array");
+	}
+
+	[Test]
 	[Description("Deferred positive coverage for sync-pages save-and-verify when the E2E environment has a known editable page.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages saves and verifies a real page with structured read-back")]

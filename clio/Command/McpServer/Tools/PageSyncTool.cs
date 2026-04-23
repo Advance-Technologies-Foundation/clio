@@ -30,7 +30,9 @@ public sealed class PageSyncTool(
 		"For each page: validates body client-side (optional), saves to Creatio, " +
 		"and verifies the update (optional). Continues processing remaining pages on failure. " +
 		"Section authoring rules for the body payload: " +
-		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first. ")]
+		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
+		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
+		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-sdk-common` before editing SCHEMA_DEPS or SDK calls. ")]
 	public PageSyncResponse SyncPages(
 		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional)")]
 		[Required] PageSyncArgs args) {
@@ -160,6 +162,8 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources));
 		SchemaValidationResult validatorBindingResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateValidatorControlBindings(body));
+		SchemaValidationResult validatorPlacementResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateValidatorBindingPlacement(body));
 		SchemaValidationResult validatorParamResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateValidatorParamResourceBindings(body));
 		SchemaValidationResult standardValidatorResult = RunContentValidation(
@@ -174,6 +178,7 @@ public sealed class PageSyncTool(
 			contentResult,
 			fieldResult,
 			validatorBindingResult,
+			validatorPlacementResult,
 			validatorParamResult,
 			standardValidatorResult,
 			validatorParamCompletenessResult);
@@ -182,6 +187,7 @@ public sealed class PageSyncTool(
 			contentResult,
 			fieldResult,
 			validatorBindingResult,
+			validatorPlacementResult,
 			validatorParamResult,
 			standardValidatorResult,
 			validatorParamCompletenessResult);

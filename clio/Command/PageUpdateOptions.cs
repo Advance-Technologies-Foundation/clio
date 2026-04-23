@@ -228,6 +228,13 @@ namespace Clio.Command {
 					Error = $"Body contains invalid JavaScript syntax: {string.Join("; ", syntaxResult.Errors)}"
 				};
 			}
+			var handlerResult = SchemaValidationService.ValidateHandlerStructure(options.Body);
+			if (!handlerResult.IsValid) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = $"Body contains invalid handlers: {string.Join("; ", handlerResult.Errors)}"
+				};
+			}
 			if (!SchemaValidationService.TryParseResources(options.Resources, out explicitResources, out _)) {
 				return new PageUpdateResponse {
 					Success = false,
@@ -239,6 +246,13 @@ namespace Clio.Command {
 				return new PageUpdateResponse {
 					Success = false,
 					Error = $"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}"
+				};
+			}
+			var validatorPlacementResult = SchemaValidationService.ValidateValidatorBindingPlacement(options.Body);
+			if (!validatorPlacementResult.IsValid) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = $"Body contains invalid validator bindings: {string.Join("; ", validatorPlacementResult.Errors)}"
 				};
 			}
 			return null;

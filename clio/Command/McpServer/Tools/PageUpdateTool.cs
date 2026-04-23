@@ -21,7 +21,9 @@ public sealed class PageUpdateTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
 		"Section authoring rules for the body payload: " +
-		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first.")]
+		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
+		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
+		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-sdk-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public PageUpdateResponse UpdatePage([Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageUpdateArgs args) {
 		PageUpdateOptions options = new() {
 			SchemaName = args.SchemaName,
@@ -34,6 +36,10 @@ public sealed class PageUpdateTool(
 			Password = args.Password
 		};
 		var validationErrors = new List<string>();
+		SchemaValidationResult handlerResult = SchemaValidationService.ValidateHandlerStructure(args.Body);
+		if (!handlerResult.IsValid) {
+			validationErrors.AddRange(handlerResult.Errors);
+		}
 		SchemaValidationResult validatorParamResult = SchemaValidationService.ValidateValidatorParamResourceBindings(args.Body);
 		if (!validatorParamResult.IsValid) {
 			validationErrors.AddRange(validatorParamResult.Errors);
@@ -41,6 +47,10 @@ public sealed class PageUpdateTool(
 		SchemaValidationResult validatorBindingResult = SchemaValidationService.ValidateValidatorControlBindings(args.Body);
 		if (!validatorBindingResult.IsValid) {
 			validationErrors.AddRange(validatorBindingResult.Errors);
+		}
+		SchemaValidationResult validatorPlacementResult = SchemaValidationService.ValidateValidatorBindingPlacement(args.Body);
+		if (!validatorPlacementResult.IsValid) {
+			validationErrors.AddRange(validatorPlacementResult.Errors);
 		}
 		SchemaValidationResult standardValidatorResult = SchemaValidationService.ValidateStandardValidatorUsage(args.Body);
 		if (!standardValidatorResult.IsValid) {

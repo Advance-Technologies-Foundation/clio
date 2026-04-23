@@ -23,6 +23,14 @@ internal static class GuidanceCatalog {
 				"dataforge-orchestration",
 				"Canonical MCP guidance for DataForge orchestration across active and passive enrichment flows.",
 				DataForgeOrchestrationGuidanceResource.Guide),
+			["page-schema-handlers"] = Create(
+				"page-schema-handlers",
+				"Canonical MCP guidance for creating and editing Freedom UI page handlers inside raw page schema bodies.",
+				PageSchemaHandlersGuidanceResource.Guide),
+			["page-schema-sdk-common"] = Create(
+				"page-schema-sdk-common",
+				"Canonical MCP guidance for using @creatio-devkit/common in Freedom UI page handlers validators and related frontend-source patterns.",
+				PageSchemaSdkCommonGuidanceResource.Guide),
 			["page-schema-validators"] = Create(
 				"page-schema-validators",
 				"Canonical MCP guidance for creating and editing Freedom UI page validators inside raw page schema bodies.",

@@ -30,11 +30,15 @@ Available MCP tool categories:
 Available MCP guidance resources:
 - docs://mcp/guides/app-modeling
 - docs://mcp/guides/existing-app-maintenance
+- docs://mcp/guides/page-schema-handlers
+- docs://mcp/guides/page-schema-sdk-common
 - docs://mcp/guides/page-schema-validators
 
 Preferred guidance access:
 - get-guidance {"name":"app-modeling"}
 - get-guidance {"name":"existing-app-maintenance"}
+- get-guidance {"name":"page-schema-handlers"}
+- get-guidance {"name":"page-schema-sdk-common"}
 - get-guidance {"name":"page-schema-validators"}
 
 ## Synopsis
@@ -61,6 +65,12 @@ Bootstrap page inspection/editing and discover whether get-component-info is nee
 
 Use your MCP client to call get-guidance {"name":"page-schema-validators"}.
 Read the canonical validator authoring guide through a tool call instead of relying on docs:// URI routing in the client.
+
+Use your MCP client to call get-guidance {"name":"page-schema-handlers"}.
+Read the canonical handler authoring guide through a tool call before editing SCHEMA_HANDLERS in raw page bodies.
+
+Use your MCP client to call get-guidance {"name":"page-schema-sdk-common"}.
+Read the canonical page-schema SDK guide through a tool call before adding or editing @creatio-devkit/common usage in raw page bodies.
 ```
 
 ## Prerequisites
@@ -76,7 +86,7 @@ Read the canonical validator authoring guide through a tool call instead of rely
 - "get-component-info" is local and read-only, so it does not require environment or connection args
 - Start each MCP workflow with "get-tool-contract" so the client reads the authoritative clio MCP contract before the first discovery, inspection, or mutation call
 - Preferred existing-app flow starts with get-tool-contract, then list-apps -> get-app-info, then page or schema inspection, then sync-pages / modify-entity-schema-column / sync-schemas as needed
-- For Freedom UI page-body validator work, prefer get-guidance instead of relying on client-specific docs:// resource routing
+- For Freedom UI page-body handler, validator, or `@creatio-devkit/common` page-schema work, prefer get-guidance instead of relying on client-specific docs:// resource routing
 - This repository documents the MCP server surface; it does not ship a generic stdio helper client
 - If you use an external MCP client wrapper, follow that wrapper's own parsing and transport guarantees
 - Boolean parameters must be JSON booleans (true/false), not strings

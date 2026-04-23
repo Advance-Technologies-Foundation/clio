@@ -525,9 +525,11 @@ clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
 
 For updating multiple pages in one call, use the `sync-pages` MCP tool.
 
-For raw Freedom UI page-body edits through MCP, keep validator logic inside clio-owned runtime guidance by calling `get-guidance` with `name` set to `page-schema-validators`.
+For raw Freedom UI page-body edits through MCP, route handler logic through `get-guidance` with `name` set to `page-schema-handlers` and validator logic through `get-guidance` with `name` set to `page-schema-validators`. When the page-body edit adds `@creatio-devkit/common`, also read `get-guidance` with `name` set to `page-schema-sdk-common` before editing `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service calls.
 
-Use validators for field-value validation. For deployed schema editing, read the live page with `get-page`, edit `raw.body`, and save through `sync-pages`.
+Use handlers for lifecycle, orchestration, and domain-specific page workflows. Use validators for field-value validation. For deployed schema editing, read the live page with `get-page`, edit `raw.body`, and save through `sync-pages`.
+Keep each field control bound to the declared view-model attribute from `viewModelConfig` / `viewModelConfigDiff`. If handler or validator logic moves to a different attribute for the same field, rebind the control to that attribute too.
+If the field control is inherited from a parent schema and there is no local `viewConfigDiff` item for it yet, add one local `merge` for that control name.
 
 ### 10. Data Bindings
 

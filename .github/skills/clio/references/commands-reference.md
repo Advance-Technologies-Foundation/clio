@@ -1115,7 +1115,7 @@ clio get-page --schema-name UsrTodo_FormPage -e <ENV>
 ```
 Returns a JSON envelope with page metadata, bundle data, and `raw.body`. Use `raw.body` as the editable payload for `update-page`.
 
-For MCP-guided page-body authoring, call `get-guidance` with `name` set to `page-schema-validators` instead of relying on repository-local notes from another workspace.
+For MCP-guided page-body authoring, call `get-guidance` with `name` set to `page-schema-handlers` for handler work and `page-schema-validators` for validator work instead of relying on repository-local notes from another workspace. If the edit adds or changes `@creatio-devkit/common`, also read `page-schema-sdk-common` before changing `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service calls.
 
 ### update-page
 Update the raw schema body of a Freedom UI page. **Alias:** `page-update`
@@ -1131,13 +1131,15 @@ clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
   --resources '{"UsrDetailsTab_caption":"Details"}' -e <ENV>
 ```
 Options: `--schema-name` (required), `--body` (required), `--dry-run`, `--resources` (JSON object)
+Keep each field control on the declared view-model attribute from `viewModelConfig` / `viewModelConfigDiff`. If handler or validator logic moves to a different attribute for the same field, rebind the control to that same attribute.
+If the field control is inherited from a parent schema and has no local `viewConfigDiff` entry, add one local `merge` for that control name.
 
 ### sync-pages
 Update multiple Freedom UI page schemas in one MCP call. **MCP-only tool** — not available as a standalone CLI command.
 
 Each page is processed independently; failures do not stop remaining pages. Supports client-side validation (`validate: true`, default) and read-back verification (`verify: false`, default).
 
-Client-side validation keeps JSON-backed markers strict, but treats `SCHEMA_VALIDATORS` as a JavaScript object section so function-based validator entries remain valid.
+Client-side validation keeps JSON-backed markers strict, treats `SCHEMA_HANDLERS` as a JavaScript array section, and treats `SCHEMA_VALIDATORS` as a JavaScript object section so runtime handler and validator entries remain valid.
 
 Input:
 ```json

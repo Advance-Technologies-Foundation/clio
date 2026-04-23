@@ -14,6 +14,7 @@ public static class SchemaValidationService
 	private const string SchemaViewModelConfig = "SCHEMA_VIEW_MODEL_CONFIG";
 	private const string SchemaDiffMarker = "SCHEMA_DIFF";
 	private const string SchemaValidatorsMarker = "SCHEMA_VALIDATORS";
+	internal const string SchemaHandlersMarker = "SCHEMA_HANDLERS";
 	private const string ValuesPropertyName = "values";
 	private const string AttributesPropertyName = "attributes";
 	private const string ValidatorsPropertyName = "validators";
@@ -24,7 +25,7 @@ public static class SchemaValidationService
 		"SCHEMA_DEPS",
 		"SCHEMA_ARGS",
 		SchemaViewConfigDiff,
-		"SCHEMA_HANDLERS",
+		SchemaHandlersMarker,
 		"SCHEMA_CONVERTERS",
 		SchemaValidatorsMarker
 	};
@@ -155,7 +156,20 @@ public static class SchemaValidationService
 			return result;
 		}
 		ValidateJavaScriptObjectMarkers(jsBody, JavaScriptObjectMarkers, result);
+		MergeResult(result, ValidateHandlerStructure(jsBody));
 		return result;
+	}
+
+	/// <summary>
+	/// Validates the structure of the JavaScript handler array in <paramref name="jsBody"/>.
+	/// </summary>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> describing the first structural violation found,
+	/// or a passing result when no violations are detected.
+	/// </returns>
+	public static SchemaValidationResult ValidateHandlerStructure(string jsBody) {
+		return SchemaHandlerValidationService.Validate(jsBody);
 	}
 
 	private static bool ValidateMarkers(
@@ -218,6 +232,16 @@ public static class SchemaValidationService
 		result.Errors.Add($"Invalid JavaScript object section in {marker}: {string.Join("; ", syntaxResult.Errors)}");
 	}
 
+	private static void MergeResult(SchemaValidationResult target, SchemaValidationResult source) {
+		target.Warnings.AddRange(source.Warnings);
+		if (source.IsValid) {
+			return;
+		}
+
+		target.IsValid = false;
+		target.Errors.AddRange(source.Errors);
+	}
+
 	public static SchemaValidationResult ValidateColumnBindings(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrEmpty(jsBody)) {
@@ -263,11 +287,16 @@ public static class SchemaValidationService
 			return result;
 		}
 		Dictionary<string, string> modelPaths = CollectViewModelPaths(jsBody);
-		var attributesWithValidators = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		CollectAttributesWithValidatorsFromMarker(jsBody, SchemaViewModelConfig, false, attributesWithValidators);
-		CollectAttributesWithValidatorsFromMarker(jsBody, SchemaViewModelConfigDiff, true, attributesWithValidators);
+		HashSet<string> declaredAttributes = CollectDeclaredViewModelAttributes(jsBody);
+		HashSet<string> attributesWrittenByHandlers = CollectAttributesWrittenByHandlers(jsBody);
 		using (viewConfigDocument) {
-			ValidateFieldComponents(viewConfigDocument.RootElement, modelPaths, explicitResources, attributesWithValidators, result);
+			ValidateFieldComponents(
+				viewConfigDocument.RootElement,
+				declaredAttributes,
+				modelPaths,
+				explicitResources,
+				attributesWrittenByHandlers,
+				result);
 		}
 		if (result.Errors.Count > 0) {
 			result.IsValid = false;
@@ -345,25 +374,66 @@ public static class SchemaValidationService
 		}
 	}
 
+	private static HashSet<string> CollectDeclaredViewModelAttributes(string jsBody) {
+		var attributeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		CollectDeclaredViewModelAttributesFromMarker(jsBody, SchemaViewModelConfig, false, attributeNames);
+		CollectDeclaredViewModelAttributesFromMarker(jsBody, SchemaViewModelConfigDiff, true, attributeNames);
+		return attributeNames;
+	}
+
+	private static void CollectDeclaredViewModelAttributesFromMarker(
+		string jsBody,
+		string markerName,
+		bool isArray,
+		HashSet<string> attributeNames) {
+		ForEachMarkerAttributesContainer(jsBody, markerName, isArray, attributes => {
+			foreach (JsonProperty attribute in attributes.EnumerateObject()) {
+				attributeNames.Add(attribute.Name);
+			}
+		});
+	}
+
 	private static void ValidateFieldComponents(
 		JsonElement element,
+		IReadOnlySet<string> declaredAttributes,
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
-		IReadOnlySet<string> attributesWithValidators,
+		IReadOnlySet<string> attributesWrittenByHandlers,
 		SchemaValidationResult result,
 		bool checkSelf = true) {
 		if (element.ValueKind == JsonValueKind.Object) {
 			bool wrappedValues = false;
 			if (checkSelf && TryResolveFieldComponent(element, out JsonElement componentValues, out string fieldName, out string componentType, out wrappedValues)) {
-				ValidateFieldComponent(componentValues, fieldName, componentType, modelPaths, explicitResources, attributesWithValidators, result);
+				ValidateFieldComponent(
+					componentValues,
+					fieldName,
+					componentType,
+					declaredAttributes,
+					modelPaths,
+					explicitResources,
+					attributesWrittenByHandlers,
+					result);
 			}
 			foreach (JsonProperty property in element.EnumerateObject()) {
 				bool childCheckSelf = !(wrappedValues && property.NameEquals(ValuesPropertyName));
-				ValidateFieldComponents(property.Value, modelPaths, explicitResources, attributesWithValidators, result, childCheckSelf);
+				ValidateFieldComponents(
+					property.Value,
+					declaredAttributes,
+					modelPaths,
+					explicitResources,
+					attributesWrittenByHandlers,
+					result,
+					childCheckSelf);
 			}
 		} else if (element.ValueKind == JsonValueKind.Array) {
 			foreach (JsonElement item in element.EnumerateArray()) {
-				ValidateFieldComponents(item, modelPaths, explicitResources, attributesWithValidators, result);
+				ValidateFieldComponents(
+					item,
+					declaredAttributes,
+					modelPaths,
+					explicitResources,
+					attributesWrittenByHandlers,
+					result);
 			}
 		}
 	}
@@ -428,18 +498,21 @@ public static class SchemaValidationService
 		JsonElement componentValues,
 		string fieldName,
 		string componentType,
+		IReadOnlySet<string> declaredAttributes,
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
-		IReadOnlySet<string> attributesWithValidators,
+		IReadOnlySet<string> attributesWrittenByHandlers,
 		SchemaValidationResult result) {
 		string fieldDisplayName = !string.IsNullOrWhiteSpace(fieldName) ? fieldName : componentType;
 		if (TryGetBindingAttribute(componentValues, out string bindingProperty, out string bindingExpression, out string bindingAttribute) &&
-		    !IsAllowedDirectFieldBinding(bindingAttribute) &&
-		    !attributesWithValidators.Contains(bindingAttribute) &&
-		    modelPaths.TryGetValue(bindingAttribute, out string modelPath) &&
-		    modelPath.StartsWith("PDS.", StringComparison.OrdinalIgnoreCase)) {
+		    !declaredAttributes.Contains(bindingAttribute)) {
 			result.Errors.Add(
-				$"Standard field '{fieldDisplayName}' uses proxy binding '{bindingExpression}' via '{bindingProperty}' for datasource path '{modelPath}'. Use '{BuildExpectedBinding(modelPath)}' instead.");
+				$"Standard field '{fieldDisplayName}' binds to undeclared attribute '{bindingAttribute}' via '{bindingProperty}' ('{bindingExpression}'). " +
+				"Bind the control to an attribute declared in viewModelConfig/viewModelConfigDiff.");
+		} else if (TryFindAlternativeAttributesForSamePath(bindingAttribute, modelPaths, attributesWrittenByHandlers, out string handlerAttribute)) {
+			result.Errors.Add(
+				$"Control '{fieldDisplayName}' binds to '${bindingAttribute}' but handlers write attribute '{handlerAttribute}' through $context.set(...). " +
+				$"Bind the control to '${handlerAttribute}' or move the handler writes to '{bindingAttribute}' so the control and handler use the same declared view-model attribute.");
 		}
 		if (TryGetStringProperty(componentValues, "label", out string labelExpression) &&
 		    TryGetDatasourceCaptionKey(labelExpression, out string datasourceKey) &&
@@ -544,22 +617,38 @@ public static class SchemaValidationService
 		return !string.IsNullOrWhiteSpace(resourceKey);
 	}
 
-	private static bool IsAllowedDirectFieldBinding(string bindingAttribute) {
-		return string.Equals(bindingAttribute, "Name", StringComparison.OrdinalIgnoreCase)
-			|| bindingAttribute.StartsWith("PDS_", StringComparison.OrdinalIgnoreCase);
-	}
-
-	private static string BuildExpectedBinding(string modelPath) {
-		if (string.Equals(modelPath, "PDS.Name", StringComparison.OrdinalIgnoreCase)) {
-			return "$Name";
+	private static bool TryFindAlternativeAttributesForSamePath(
+		string bindingAttribute,
+		IReadOnlyDictionary<string, string> modelPaths,
+		IReadOnlySet<string> candidateAttributes,
+		out string alternativeAttributeDisplay) {
+		alternativeAttributeDisplay = string.Empty;
+		if (string.IsNullOrWhiteSpace(bindingAttribute) ||
+		    !modelPaths.TryGetValue(bindingAttribute, out string bindingPath) ||
+		    string.IsNullOrWhiteSpace(bindingPath)) {
+			return false;
 		}
-		return "$" + modelPath.Replace(".", "_", StringComparison.Ordinal);
+
+		string[] matches = candidateAttributes
+			.Where(attribute => !string.Equals(attribute, bindingAttribute, StringComparison.OrdinalIgnoreCase))
+			.Where(attribute => modelPaths.TryGetValue(attribute, out string candidatePath) &&
+				string.Equals(candidatePath, bindingPath, StringComparison.OrdinalIgnoreCase))
+			.OrderBy(attribute => attribute, StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+		if (matches.Length == 0) {
+			return false;
+		}
+
+		alternativeAttributeDisplay = matches.Length == 1
+			? matches[0]
+			: $"one of: {string.Join(", ", matches)}";
+		return true;
 	}
 
 	/// <summary>
-	/// Validates that UI controls bound to <c>$PDS_AttrName</c> do not belong to view-model
-	/// attributes that carry <c>validators</c>. Validators only fire on view-model attribute
-	/// bindings (<c>$AttrName</c>), never on raw PDS data-source bindings (<c>$PDS_AttrName</c>).
+	/// Validates that field controls stay bound to the same declared view-model attribute
+	/// that carries the <c>validators</c> object. If validators are moved to a different
+	/// attribute for the same underlying model path, the control must be rebound as well.
 	/// </summary>
 	public static SchemaValidationResult ValidateValidatorControlBindings(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
@@ -572,6 +661,7 @@ public static class SchemaValidationService
 		if (attributesWithValidators.Count == 0) {
 			return result;
 		}
+		Dictionary<string, string> modelPaths = CollectViewModelPaths(jsBody);
 		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
 			return result;
 		}
@@ -579,7 +669,32 @@ public static class SchemaValidationService
 			return result;
 		}
 		using (viewConfigDocument) {
-			CheckValidatorControlBindings(viewConfigDocument.RootElement, attributesWithValidators, result);
+			CheckValidatorControlBindings(viewConfigDocument.RootElement, attributesWithValidators, modelPaths, result);
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Validates that validator bindings are not declared directly on UI elements inside
+	/// <c>viewConfigDiff</c>. Creatio evaluates validators from the view-model attribute
+	/// definition, so placing a <c>validators</c> property on the control is ignored at runtime.
+	/// </summary>
+	public static SchemaValidationResult ValidateValidatorBindingPlacement(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string viewConfigContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
+			return result;
+		}
+		if (!TryParseJsonDocument(viewConfigContent, out JsonDocument viewConfigDocument, out _)) {
+			return result;
+		}
+		using (viewConfigDocument) {
+			CheckInlineValidatorPlacement(viewConfigDocument.RootElement, result);
 		}
 		if (result.Errors.Count > 0) {
 			result.IsValid = false;
@@ -1331,6 +1446,36 @@ public static class SchemaValidationService
 		ForEachMarkerAttributesContainer(jsBody, markerName, isArray, attributes => ExtractAttributesWithValidators(attributes, attributeNames));
 	}
 
+	/// <summary>
+	/// Collects attribute names written through direct <c>$context.set(...)</c> calls inside handlers.
+	/// </summary>
+	/// <remarks>
+	/// This helper intentionally uses a narrow regex heuristic that only recognizes direct
+	/// <c>request.$context.set("Attr", ...)</c> and <c>$context.set("Attr", ...)</c> forms.
+	/// It does not resolve aliases, destructured variables, or chained expressions, so false
+	/// negatives are possible. The collected names are used only to enrich diagnostics when a
+	/// control and a handler appear to target different declared attributes for the same model path.
+	/// </remarks>
+	private static HashSet<string> CollectAttributesWrittenByHandlers(string jsBody) {
+		var attributeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string handlersContent, SchemaHandlersMarker)) {
+			return attributeNames;
+		}
+
+		foreach (Match match in Regex.Matches(
+			         handlersContent,
+			         @"(?:request\.\$context|\$context)\.set\s*\(\s*[""'](?<name>[A-Za-z_][A-Za-z0-9_]*)[""']",
+			         RegexOptions.Singleline,
+			         RegexTimeout)) {
+			string attributeName = match.Groups["name"].Value;
+			if (!string.IsNullOrWhiteSpace(attributeName)) {
+				attributeNames.Add(attributeName);
+			}
+		}
+
+		return attributeNames;
+	}
+
 	private static void ExtractAttributesWithValidators(JsonElement attributesObject, HashSet<string> names) {
 		foreach (JsonProperty attr in EnumerateAttributesWithValidatorObjects(attributesObject)
 			         .Where(attr => EnumerateValidatorObjects(attr).Any())) {
@@ -1341,10 +1486,11 @@ public static class SchemaValidationService
 	private static void CheckValidatorControlBindings(
 		JsonElement element,
 		HashSet<string> attributesWithValidators,
+		IReadOnlyDictionary<string, string> modelPaths,
 		SchemaValidationResult result) {
 		if (element.ValueKind == JsonValueKind.Array) {
 			foreach (JsonElement item in element.EnumerateArray()) {
-				CheckValidatorControlBindings(item, attributesWithValidators, result);
+				CheckValidatorControlBindings(item, attributesWithValidators, modelPaths, result);
 			}
 			return;
 		}
@@ -1355,37 +1501,74 @@ public static class SchemaValidationService
 		                     valuesElement.ValueKind == JsonValueKind.Object
 			? valuesElement
 			: element;
-		AddValidatorControlBindingErrorIfNeeded(element, target, attributesWithValidators, result);
+		AddValidatorControlBindingErrorIfNeeded(element, target, attributesWithValidators, modelPaths, result);
 		foreach (JsonProperty property in element.EnumerateObject()
 		             .Where(property => !property.NameEquals(ValuesPropertyName))) {
-			CheckValidatorControlBindings(property.Value, attributesWithValidators, result);
+			CheckValidatorControlBindings(property.Value, attributesWithValidators, modelPaths, result);
 		}
+	}
+
+	private static void CheckInlineValidatorPlacement(
+		JsonElement element,
+		SchemaValidationResult result,
+		bool checkSelf = true) {
+		if (element.ValueKind == JsonValueKind.Array) {
+			foreach (JsonElement item in element.EnumerateArray()) {
+				CheckInlineValidatorPlacement(item, result);
+			}
+			return;
+		}
+		if (element.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		bool wrappedValues = false;
+		if (checkSelf &&
+		    TryResolveFieldComponent(element, out JsonElement componentValues, out string fieldName, out string componentType, out wrappedValues)) {
+			AddInlineValidatorPlacementErrorIfNeeded(element, componentValues, fieldName, componentType, result);
+		}
+		foreach (JsonProperty property in element.EnumerateObject()) {
+			bool childCheckSelf = !(wrappedValues && property.NameEquals(ValuesPropertyName));
+			CheckInlineValidatorPlacement(property.Value, result, childCheckSelf);
+		}
+	}
+
+	private static void AddInlineValidatorPlacementErrorIfNeeded(
+		JsonElement element,
+		JsonElement target,
+		string fieldName,
+		string componentType,
+		SchemaValidationResult result) {
+		if (!target.TryGetProperty(ValidatorsPropertyName, out _)) {
+			return;
+		}
+
+		string fieldDisplayName = !string.IsNullOrWhiteSpace(fieldName) ? fieldName : componentType;
+		string bindingHint = TryGetBindingAttribute(target, out _, out _, out string bindingAttribute)
+			? $"Declare validators on attribute '{bindingAttribute}' in viewModelConfig/viewModelConfigDiff and keep the control bound to '${bindingAttribute}'."
+			: "Declare validators on the bound attribute in viewModelConfig/viewModelConfigDiff, not on the UI element.";
+		result.Errors.Add(
+			$"Control '{fieldDisplayName}' declares 'validators' inside viewConfigDiff. Validators must be declared on the view-model attribute in viewModelConfig/viewModelConfigDiff, not on the UI element. {bindingHint}");
 	}
 
 	private static void AddValidatorControlBindingErrorIfNeeded(
 		JsonElement element,
 		JsonElement target,
 		HashSet<string> attributesWithValidators,
+		IReadOnlyDictionary<string, string> modelPaths,
 		SchemaValidationResult result) {
-		if (!TryGetStringProperty(target, "control", out string controlBinding) ||
-		    !controlBinding.StartsWith("$PDS_", StringComparison.OrdinalIgnoreCase)) {
-			return;
-		}
-
-		string attributeName = controlBinding["$PDS_".Length..];
-		if (!attributesWithValidators.Contains(attributeName)) {
+		if (!TryGetBindingAttribute(target, out _, out _, out string bindingAttribute) ||
+		    !TryFindAlternativeAttributesForSamePath(bindingAttribute, modelPaths, attributesWithValidators, out string validatorAttribute)) {
 			return;
 		}
 
 		string fieldName = element.TryGetProperty("name", out JsonElement nameEl) &&
-		                   nameEl.ValueKind == JsonValueKind.String
-			? nameEl.GetString() ?? attributeName
-			: attributeName;
+		                   nameEl.ValueKind == JsonValueKind.String &&
+		                   !string.IsNullOrWhiteSpace(nameEl.GetString())
+			? nameEl.GetString() ?? bindingAttribute
+			: bindingAttribute;
 		result.Errors.Add(
-			$"Control '{fieldName}' binds to '$PDS_{attributeName}' but attribute " +
-			$"'{attributeName}' has validators. Validators only fire on view-model attribute " +
-			"bindings \u2014 use '$" + attributeName +
-			"' instead of '$PDS_" + attributeName + "'.");
+			$"Control '{fieldName}' binds to '${bindingAttribute}' but validators are declared on attribute '{validatorAttribute}'. " +
+			$"Bind the control to '${validatorAttribute}' or move the validators to '{bindingAttribute}' so the control and validators use the same declared view-model attribute.");
 	}
 
 	private static bool TryGetDataTableColumns(JsonElement item, out JsonElement columns) {

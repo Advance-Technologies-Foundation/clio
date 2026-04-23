@@ -37,6 +37,34 @@ public sealed class GuidanceGetToolE2ETests {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical handler guidance article")]
+	public async Task GuidanceGet_Should_Return_Page_Schema_Handlers_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-schema-handlers"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-schema-handlers is a registered guidance name");
+		response.Guidance.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Guidance!.Uri.Should().Be("docs://mcp/guides/page-schema-handlers",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Guidance.Text.Should().Contain("clio MCP page-schema handlers guide",
+			because: "the guidance tool should return the canonical handler guide text");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical validator guidance article")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Validators_Guide() {
 		// Arrange
@@ -61,6 +89,34 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the canonical resource URI should still be visible in the tool response");
 		response.Guidance.Text.Should().Contain("clio MCP page-schema validators guide",
 			because: "the guidance tool should return the canonical validator guide text");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical sdk common guidance article")]
+	public async Task GuidanceGet_Should_Return_Page_Schema_Sdk_Common_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-schema-sdk-common"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-schema-sdk-common is a registered guidance name");
+		response.Guidance.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Guidance!.Uri.Should().Be("docs://mcp/guides/page-schema-sdk-common",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Guidance.Text.Should().Contain("clio MCP page-schema sdk common guide",
+			because: "the guidance tool should return the canonical sdk common guide text");
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
