@@ -30,7 +30,7 @@ public sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, 
 public sealed record RegisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType) { }
 
 /// <summary>Provides discovery of Creatio sites registered in IIS.</summary>
-public interface IIISScanner {
+public interface IIisScanner {
 	IEnumerable<UnregisteredSite> FindAllCreatioSites();
 	IEnumerable<RegisteredSite> FindAllRegisteredCreatioSites();
 }
@@ -95,7 +95,7 @@ internal class DeleteInstanceByNameRequest : IRequest {
 /// </remarks>
 /// <example>
 /// </example>
-internal class IISScannerHandler : BaseExternalLinkHandler, IIISScanner, IRequestHandler<IISScannerRequest>,
+internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IRequestHandler<IISScannerRequest>,
 	IRequestHandler<AllUnregisteredSitesRequest>, IRequestHandler<DeleteInstanceByNameRequest>,
 	IRequestHandler<StopInstanceByNameRequest>,IRequestHandler<AllRegisteredSitesRequest> {
 
@@ -206,7 +206,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IIISScanner, IReques
 
 	#region Constructors: Public
 
-	public IISScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand,
+	public IisScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand,
 		PowerShellFactory powerShellFactory, ILogger logger, IProcessExecutor processExecutor) {
 		_settingsRepository = settingsRepository;
 		_regCommand = regCommand;
@@ -251,7 +251,8 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IIISScanner, IReques
 					siteBindings = siteElement.Attribute("bindings")?.Value ?? string.Empty;
 					siteState = siteElement.Attribute("state")?.Value ?? string.Empty;
 				}
-			} catch {
+			} catch (Exception ex) {
+				System.Diagnostics.Trace.TraceWarning(ex.Message);
 			}
 		}
 		string vdirPath = string.IsNullOrEmpty(appPath) ? $"{siteName}/" : $"{siteName}{appPath}/";

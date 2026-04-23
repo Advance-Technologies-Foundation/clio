@@ -13,7 +13,7 @@ internal sealed class IisEnvironmentDiscoveryService(IPowerShellFactory powerShe
 	: IIisEnvironmentDiscoveryService {
 	public IReadOnlyCollection<IisEnvironmentDescriptor> Discover(string? login, string? password, string? host) {
 		powerShellFactory.Initialize(login, password, host);
-		return IISScannerHandler.GetSites(powerShellFactory)
+		return IisScannerHandler.GetSites(powerShellFactory)
 			.Select(site => new IisEnvironmentDescriptor(
 				site.Key,
 				site.Value.PhysicalPath,

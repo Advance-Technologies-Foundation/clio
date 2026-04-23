@@ -13,11 +13,10 @@ public class LinuxSystemServiceManager : ISystemServiceManager
 {
 	private const string SystemdUnitDirectory = "/etc/systemd/system";
 	private const string UserSystemdUnitDirectory = "~/.local/share/systemd/user";
-	private readonly IAbstractionsFileSystem _fileSystem;
 
 	public LinuxSystemServiceManager(IAbstractionsFileSystem fileSystem)
 	{
-		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+		ArgumentNullException.ThrowIfNull(fileSystem);
 	}
 
 	/// <summary>

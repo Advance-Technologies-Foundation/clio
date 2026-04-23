@@ -406,8 +406,8 @@ public class BindingsModule {
 			cfg.RegisterServicesFromAssembly(typeof(BindingsModule).Assembly);
 			cfg.AddOpenBehavior(typeof(ValidationBehaviour<,>));
 		});
-		services.AddTransient<IISScannerHandler>();
-		services.AddTransient<IIISScanner, IISScannerHandler>();
+		services.AddTransient<IisScannerHandler>();
+		services.AddTransient<IIisScanner, IisScannerHandler>();
 
 		services.AddTransient<ExternalLinkOptionsValidator>();
 		services.AddTransient<SetFsmConfigOptionsValidator>();

@@ -56,9 +56,9 @@ namespace Clio.Command
         private readonly IValidator<TurnFarmModeOptions> _validator;
         private readonly ISettingsRepository _settingsRepository;
         private readonly ILogger _logger;
-        private readonly IIISScanner _iisScanner;
+        private readonly IIisScanner _iisScanner;
 
-        public TurnFarmModeCommand(IValidator<TurnFarmModeOptions> validator, ISettingsRepository settingsRepository, ILogger logger, IIISScanner iisScanner)
+        public TurnFarmModeCommand(IValidator<TurnFarmModeOptions> validator, ISettingsRepository settingsRepository, ILogger logger, IIisScanner iisScanner)
         {
             _validator = validator;
             _settingsRepository = settingsRepository;

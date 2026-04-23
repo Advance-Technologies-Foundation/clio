@@ -39,10 +39,7 @@ internal static class ApplicationSectionColorPalette {
 	internal static bool IsInPalette(string value) {
 		if (string.IsNullOrWhiteSpace(value)) return false;
 		string normalized = value.Trim().ToUpperInvariant();
-		foreach (string color in Colors) {
-			if (string.Equals(color, normalized, StringComparison.Ordinal)) return true;
-		}
-		return false;
+		return Colors.Any(color => string.Equals(color, normalized, StringComparison.Ordinal));
 	}
 
 	internal static void ValidateOrThrow(string value) {

@@ -131,13 +131,8 @@ public sealed class ConsoleOutputAnalyzer : DiagnosticAnalyzer {
 		}
 
 		string namespaceName = containingClass.ContainingNamespace.ToDisplayString();
-		foreach (string exempt in ExemptNamespaces) {
-			if (namespaceName == exempt || namespaceName.StartsWith(exempt + ".", StringComparison.Ordinal)) {
-				return true;
-			}
-		}
-
-		return false;
+		return ExemptNamespaces.Any(exempt =>
+			namespaceName == exempt || namespaceName.StartsWith(exempt + ".", StringComparison.Ordinal));
 	}
 
 	private static bool IsConsoleType(INamedTypeSymbol typeSymbol) {

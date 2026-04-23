@@ -15,8 +15,8 @@ namespace Clio.Tests.Requests;
 [Description("Integration tests for IISScannerHandler to verify discovery of top-level sites and nested applications")]
 public class IISScannerHandlerTests
 {
-	private IIISScanner CreateScanner() =>
-		new IISScannerHandler(
+	private IIisScanner CreateScanner() =>
+		new IisScannerHandler(
 			Substitute.For<ISettingsRepository>(),
 			null,
 			new PowerShellFactory(),

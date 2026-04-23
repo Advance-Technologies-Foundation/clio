@@ -34,7 +34,7 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_fileSystem = new Clio.Common.FileSystem(new System.IO.Abstractions.FileSystem());
 		_logger = Substitute.For<ILogger>();
-		_iisScanner = Substitute.For<IIISScanner>();
+		_iisScanner = Substitute.For<IIisScanner>();
 		_command = new SetFsmConfigCommand(_validator, _settingsRepository, _fileSystem, _logger, _iisScanner);
 	}
 
@@ -46,7 +46,7 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	private ISettingsRepository _settingsRepository;
 	private Clio.Common.IFileSystem _fileSystem;
 	private ILogger _logger;
-	private IIISScanner _iisScanner;
+	private IIisScanner _iisScanner;
 	private SetFsmConfigCommand _command;
 
 	#endregion

@@ -92,7 +92,7 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
-	private readonly IIISScanner _iisScanner;
+	private readonly IIisScanner _iisScanner;
 
 	#endregion
 
@@ -107,7 +107,7 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 	/// <param name="logger">Logger used for command output.</param>
 	/// <param name="iisScanner">IIS scanner for discovering Creatio sites.</param>
 	public SetFsmConfigCommand(IValidator<SetFsmConfigOptions> validator, ISettingsRepository settingsRepository,
-		IFileSystem fileSystem, ILogger logger, IIISScanner iisScanner) {
+		IFileSystem fileSystem, ILogger logger, IIisScanner iisScanner) {
 		_validator = validator;
 		_settingsRepository = settingsRepository;
 		_fileSystem = fileSystem;

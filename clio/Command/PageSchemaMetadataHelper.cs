@@ -17,7 +17,7 @@ namespace Clio.Command {
 		private const string ColumnsKey = "columns";
 		private const string RowCountKey = "rowCount";
 
-		private static JArray ExecuteSelectQuery(
+		private static (JArray rows, bool success) ExecuteSelectQuery(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
 			JObject query) {
@@ -25,11 +25,10 @@ namespace Clio.Command {
 				string url = serviceUrlBuilder.Build(SelectQueryUrl);
 				string responseJson = applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
 				JObject response = JObject.Parse(responseJson);
-				return (response["success"]?.Value<bool>() ?? false)
-					? response["rows"] as JArray ?? new JArray()
-					: null;
+				bool ok = response["success"]?.Value<bool>() ?? false;
+				return ok ? (response["rows"] as JArray ?? new JArray(), true) : (new JArray(), false);
 			} catch {
-				return null;
+				return (new JArray(), false);
 			}
 		}
 
@@ -90,8 +89,8 @@ namespace Clio.Command {
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
 			};
-			var rows = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
-			return rows?.Count > 0 ? rows[0]?["UId"]?.ToString() : null;
+			var (rows, _) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			return rows.Count > 0 ? rows[0]?["UId"]?.ToString() : null;
 		}
 
 		internal static string QueryPackageName(
@@ -110,8 +109,8 @@ namespace Clio.Command {
 				},
 				[RowCountKey] = 1
 			};
-			var rows = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
-			return rows?.Count > 0 ? rows[0]?["Name"]?.ToString() : null;
+			var (rows, _) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			return rows.Count > 0 ? rows[0]?["Name"]?.ToString() : null;
 		}
 
 		internal static (string uId, string error) QueryPackageUId(
@@ -124,8 +123,8 @@ namespace Clio.Command {
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
 			};
-			var rows = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
-			if (rows is null)
+			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (!success)
 				return (null, "Failed to query SysPackage");
 			if (rows.Count == 0)
 				return (null, $"Package '{packageName}' not found in the target environment.");
@@ -147,8 +146,8 @@ namespace Clio.Command {
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
 			};
-			var rows = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
-			if (rows is null)
+			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (!success)
 				return (null, "Failed to query entity schema metadata");
 			if (rows.Count == 0)
 				return (null, $"Entity schema '{entitySchemaName}' not found.");

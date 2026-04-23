@@ -23,7 +23,7 @@ namespace Clio.Tests.Command
         private IValidator<TurnFarmModeOptions> _validator;
         private ISettingsRepository _settingsRepository;
         private ILogger _logger;
-        private IIISScanner _iisScanner;
+        private IIisScanner _iisScanner;
         private TurnFarmModeCommand _command;
         private string _testSitePath;
         private string _testWebConfigPath;
@@ -35,7 +35,7 @@ namespace Clio.Tests.Command
             _validator = Substitute.For<IValidator<TurnFarmModeOptions>>();
             _settingsRepository = Substitute.For<ISettingsRepository>();
             _logger = Substitute.For<ILogger>();
-            _iisScanner = Substitute.For<IIISScanner>();
+            _iisScanner = Substitute.For<IIisScanner>();
             _command = new TurnFarmModeCommand(_validator, _settingsRepository, _logger, _iisScanner);
 
             // Set up test paths
