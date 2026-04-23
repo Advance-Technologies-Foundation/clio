@@ -190,6 +190,33 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 	}
 
 	[Test]
+	[Description("Creates a SysModule binding from the built-in offline template and preserves the checked-in image data-type identifiers for Image16 and Image20 without calling Creatio.")]
+	public void Execute_Should_Create_SysModule_Template_With_Image_DataType_Guids() {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			PackageName = PackageName,
+			SchemaName = "SysModule"
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "the built-in SysModule template should allow offline binding creation");
+		string descriptorJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "SysModule", "descriptor.json"));
+		descriptorJson.Should().Contain("\"ColumnName\": \"Image16\"",
+			because: "the SysModule template should include the small image column");
+		descriptorJson.Should().Contain("\"ColumnName\": \"Image20\"",
+			because: "the SysModule template should include the medium image column");
+		descriptorJson.Should().Contain("\"DataTypeValueUId\": \"fa6e6e49-b996-475e-a77e-73904e4c5a88\"",
+			because: "Image16 and Image20 must keep the filesystem-compatible image-content data type identifier from the checked-in binding");
+		descriptorJson.Should().Contain("\"DataTypeValueUId\": \"b039feb0-ee7c-4884-8aa6-d6d45d84316f\"",
+			because: "Logo and Image32 must keep the checked-in image-reference data type identifier from the checked-in binding");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
+	}
+
+	[Test]
 	[Description("Writes the caller-provided DisplayValue for generic runtime lookup columns when create-data-binding receives the structured object payload shape.")]
 	public void Execute_Should_Write_Caller_Provided_DisplayValue_For_Runtime_Lookup_Columns() {
 		// Arrange

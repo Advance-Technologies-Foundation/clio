@@ -248,7 +248,7 @@ internal static class ToolContractCatalog {
 	private const string SectionCodeFieldName = "section-code";
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
-	private const string ExampleWorkspacePath = @"C:\Work\UsrTaskApp";
+	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
 	private const string ValuesFieldName = "values";
 	private const string BindingNameDescription = "Binding name.";
 	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
