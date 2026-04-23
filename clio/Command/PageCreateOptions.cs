@@ -56,8 +56,12 @@ namespace Clio.Command {
 		}
 
 		public bool TryCreatePage(PageCreateOptions options, out PageCreateResponse response) {
+			if (options is null) {
+				response = new PageCreateResponse { Success = false, Error = "options is required" };
+				return false;
+			}
 			try {
-				bool hasEntity = options is not null && !string.IsNullOrWhiteSpace(options.EntitySchemaName);
+				bool hasEntity = !string.IsNullOrWhiteSpace(options.EntitySchemaName);
 				int totalSteps = 5 + (hasEntity ? 1 : 0);
 				int stepNumber = 0;
 				LogStep(ref stepNumber, totalSteps, "Validating inputs");
@@ -200,113 +204,13 @@ namespace Clio.Command {
 		}
 
 		private bool TryResolvePackageUId(string packageName, out string packageUId, out string error) {
-			packageUId = null;
-			error = null;
-			var query = new JObject {
-				["rootSchemaName"] = "SysPackage",
-				["operationType"] = 0,
-				["columns"] = new JObject {
-					["items"] = new JObject {
-						["UId"] = new JObject {
-							["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "UId" }
-						}
-					}
-				},
-				["filters"] = new JObject {
-					["filterType"] = 6,
-					["logicalOperation"] = 0,
-					["isEnabled"] = true,
-					["items"] = new JObject {
-						["filter0"] = new JObject {
-							["filterType"] = 1,
-							["comparisonType"] = 3,
-							["isEnabled"] = true,
-							["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "Name" },
-							["rightExpression"] = new JObject {
-								["expressionType"] = 2,
-								["parameter"] = new JObject { ["dataValueType"] = 1, ["value"] = packageName }
-							}
-						}
-					}
-				},
-				["rowCount"] = 1
-			};
-			string url = _serviceUrlBuilder.Build(SelectQueryRoute);
-			string responseJson = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
-			var response = JObject.Parse(responseJson);
-			if (!(response["success"]?.Value<bool>() ?? false)) {
-				error = "Failed to query SysPackage";
-				return false;
-			}
-			var rows = response["rows"] as JArray ?? [];
-			if (rows.Count == 0) {
-				error = $"Package '{packageName}' not found in the target environment.";
-				return false;
-			}
-			packageUId = rows[0]["UId"]?.ToString();
-			if (string.IsNullOrWhiteSpace(packageUId)) {
-				error = $"Package '{packageName}' has no UId in the SysPackage response.";
-				return false;
-			}
-			return true;
+			(packageUId, error) = PageSchemaMetadataHelper.QueryPackageUId(_applicationClient, _serviceUrlBuilder, packageName);
+			return error is null;
 		}
 
 		private bool TryResolveEntitySchemaUId(string entitySchemaName, out string entitySchemaUId, out string error) {
-			entitySchemaUId = null;
-			error = null;
-			var query = new JObject {
-				["rootSchemaName"] = "SysSchema",
-				["operationType"] = 0,
-				["columns"] = new JObject {
-					["items"] = new JObject {
-						["UId"] = new JObject {
-							["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "UId" }
-						}
-					}
-				},
-				["filters"] = new JObject {
-					["filterType"] = 6,
-					["logicalOperation"] = 0,
-					["isEnabled"] = true,
-					["items"] = new JObject {
-						["filter0"] = new JObject {
-							["filterType"] = 1,
-							["comparisonType"] = 3,
-							["isEnabled"] = true,
-							["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "Name" },
-							["rightExpression"] = new JObject {
-								["expressionType"] = 2,
-								["parameter"] = new JObject { ["dataValueType"] = 1, ["value"] = entitySchemaName }
-							}
-						},
-						["filter1"] = new JObject {
-							["filterType"] = 1,
-							["comparisonType"] = 3,
-							["isEnabled"] = true,
-							["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "ManagerName" },
-							["rightExpression"] = new JObject {
-								["expressionType"] = 2,
-								["parameter"] = new JObject { ["dataValueType"] = 1, ["value"] = "EntitySchemaManager" }
-							}
-						}
-					}
-				},
-				["rowCount"] = 1
-			};
-			string url = _serviceUrlBuilder.Build(SelectQueryRoute);
-			string responseJson = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
-			var response = JObject.Parse(responseJson);
-			if (!(response["success"]?.Value<bool>() ?? false)) {
-				error = "Failed to query entity schema metadata";
-				return false;
-			}
-			var rows = response["rows"] as JArray ?? [];
-			if (rows.Count == 0) {
-				error = $"Entity schema '{entitySchemaName}' not found.";
-				return false;
-			}
-			entitySchemaUId = rows[0]["UId"]?.ToString();
-			return true;
+			(entitySchemaUId, error) = PageSchemaMetadataHelper.QueryEntitySchemaUId(_applicationClient, _serviceUrlBuilder, entitySchemaName);
+			return error is null;
 		}
 
 		private static JObject BuildSaveSchemaPayload(
@@ -357,24 +261,7 @@ namespace Clio.Command {
 			return false;
 		}
 
-		private static string BuildSaveErrorMessage(JObject saveResponse) {
-			string errorMessage = "Failed to create page schema";
-			if (saveResponse["errorInfo"] is JObject errorInfo) {
-				string infoMessage = errorInfo["message"]?.ToString();
-				if (!string.IsNullOrWhiteSpace(infoMessage)) {
-					errorMessage = infoMessage;
-				}
-			}
-			if (saveResponse["validationErrors"] is JArray validationErrors && validationErrors.Count > 0) {
-				IEnumerable<string> messages = validationErrors
-					.Select(e => e["message"]?.ToString() ?? e["caption"]?.ToString())
-					.Where(m => !string.IsNullOrWhiteSpace(m));
-				errorMessage = string.Join("; ", messages);
-			}
-			if (saveResponse["addonsErrors"] is JArray addonsErrors && addonsErrors.Count > 0) {
-				errorMessage = string.Join("; ", addonsErrors.Select(e => e.ToString()));
-			}
-			return errorMessage;
-		}
+		private static string BuildSaveErrorMessage(JObject saveResponse) =>
+			PageSchemaMetadataHelper.ParseSaveErrorMessage(saveResponse, "Failed to create page schema");
 	}
 }

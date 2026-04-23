@@ -398,25 +398,8 @@ namespace Clio.Command {
 			}
 		}
 
-		private static string BuildSaveErrorMessage(JObject saveResponse) {
-			string errorMessage = "Failed to save page schema";
-			if (saveResponse["errorInfo"] is JObject errorInfo) {
-				string infoMessage = errorInfo["message"]?.ToString();
-				if (!string.IsNullOrWhiteSpace(infoMessage)) {
-					errorMessage = infoMessage;
-				}
-			}
-			if (saveResponse["validationErrors"] is JArray validationErrors && validationErrors.Count > 0) {
-				IEnumerable<string> messages = validationErrors
-					.Select(e => e["message"]?.ToString() ?? e["caption"]?.ToString())
-					.Where(m => !string.IsNullOrWhiteSpace(m));
-				errorMessage = string.Join("; ", messages);
-			}
-			if (saveResponse["addonsErrors"] is JArray addonsErrors && addonsErrors.Count > 0) {
-				errorMessage = string.Join("; ", addonsErrors.Select(e => e.ToString()));
-			}
-			return AppendActionableHint(errorMessage);
-		}
+		private static string BuildSaveErrorMessage(JObject saveResponse) =>
+			AppendActionableHint(PageSchemaMetadataHelper.ParseSaveErrorMessage(saveResponse, "Failed to save page schema"));
 
 		private static string AppendActionableHint(string serverError) {
 			if (string.IsNullOrEmpty(serverError)) {
