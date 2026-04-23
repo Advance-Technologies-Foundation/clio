@@ -12,18 +12,21 @@ namespace Clio.Command.McpServer.Resources;
 
 [McpServerResourceType]
 public class GetHelpResources(IFileSystem fileSystem){
+	private const string RestartWebAppCommand = "restart-web-app";
+	private const string ClearRedisDbCommand = "clear-redis-db";
+
 	private static readonly IReadOnlyDictionary<string, string> McpToCliCommandMap =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			["show-web-app-list"] = "show-web-app-list",
 			["show-webApp-list"] = "show-web-app-list",
-			["restart-by-environment"] = "restart-web-app",
-			["restart-by-environment-name"] = "restart-web-app",
-			["restart-by-environmentName"] = "restart-web-app",
-			["restart-by-credentials"] = "restart-web-app",
-			["clear-redis-by-environment"] = "clear-redis-db",
-			["clear-redis-db-by-environment"] = "clear-redis-db",
-			["clear-redis-by-credentials"] = "clear-redis-db",
-			["clear-redis-db-by-credentials"] = "clear-redis-db",
+			["restart-by-environment"] = RestartWebAppCommand,
+			["restart-by-environment-name"] = RestartWebAppCommand,
+			["restart-by-environmentName"] = RestartWebAppCommand,
+			["restart-by-credentials"] = RestartWebAppCommand,
+			["clear-redis-by-environment"] = ClearRedisDbCommand,
+			["clear-redis-db-by-environment"] = ClearRedisDbCommand,
+			["clear-redis-by-credentials"] = ClearRedisDbCommand,
+			["clear-redis-db-by-credentials"] = ClearRedisDbCommand,
 			["start-creatio"] = "start",
 			["stop-creatio"] = "stop",
 			["stop-all-creatio"] = "stop",

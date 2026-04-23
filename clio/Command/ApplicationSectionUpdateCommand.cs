@@ -57,6 +57,7 @@ public sealed class ApplicationSectionUpdateService(
 	IApplicationInfoService applicationInfoService)
 	: IApplicationSectionUpdateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
+	private const string ApplicationIdField = "ApplicationId";
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		PropertyNameCaseInsensitive = true
@@ -190,7 +191,7 @@ public sealed class ApplicationSectionUpdateService(
 			ApplicationSectionSchemaName,
 			[
 				new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
-				new SelectQueryHelper.SelectQueryColumnDefinition("ApplicationId", "ApplicationId"),
+				new SelectQueryHelper.SelectQueryColumnDefinition(ApplicationIdField, ApplicationIdField),
 				new SelectQueryHelper.SelectQueryColumnDefinition("Caption", "Caption"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("Code", "Code"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("Description", "Description"),
@@ -203,7 +204,7 @@ public sealed class ApplicationSectionUpdateService(
 			],
 			[
 				new SelectQueryHelper.SelectQueryFilterDefinition(
-					"ApplicationId",
+					ApplicationIdField,
 					applicationId,
 					SelectQueryHelper.GuidDataValueType)
 			]);
@@ -211,7 +212,7 @@ public sealed class ApplicationSectionUpdateService(
 	private static object BuildUpdateBody(ApplicationSectionRecord previousSection, ResolvedApplicationSectionUpdateRequest request) {
 		Dictionary<string, object> items = new(StringComparer.Ordinal) {
 			["Id"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.Id),
-			["ApplicationId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.ApplicationId),
+			[ApplicationIdField] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.ApplicationId),
 			["LogoId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType,
 				request.ShouldUpdateIconId && request.IconId is not null ? request.IconId : previousSection.LogoId ?? string.Empty),
 			["PackageId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.PackageId ?? string.Empty),

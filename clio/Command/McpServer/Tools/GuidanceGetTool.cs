@@ -42,14 +42,12 @@ public sealed class GuidanceGetTool {
 			string? effectiveName = args.Name;
 			string? aliasHint = null;
 			if (string.IsNullOrWhiteSpace(effectiveName) && args.ExtensionData is not null) {
-				foreach (string key in args.ExtensionData.Keys) {
-					if (LegacyAliases.ContainsKey(key)) {
-						JsonElement value = args.ExtensionData[key];
-						if (value.ValueKind == JsonValueKind.String) {
-							effectiveName = value.GetString();
-							aliasHint = $"Accepted '{key}' as 'name' (rename to 'name' in future calls).";
-							break;
-						}
+				foreach (string key in args.ExtensionData.Keys.Where(k => LegacyAliases.ContainsKey(k))) {
+					JsonElement value = args.ExtensionData[key];
+					if (value.ValueKind == JsonValueKind.String) {
+						effectiveName = value.GetString();
+						aliasHint = $"Accepted '{key}' as 'name' (rename to 'name' in future calls).";
+						break;
 					}
 				}
 			}

@@ -19,6 +19,8 @@ public interface IPageBundleBuilder {
 }
 
 internal sealed class PageBundleBuilder : IPageBundleBuilder {
+	private const string PathSeparator = "/";
+
 	private readonly IPageJsonDiffApplier _jsonDiffApplier;
 	private readonly IPageJsonPathDiffApplier _jsonPathDiffApplier;
 
@@ -86,7 +88,7 @@ internal sealed class PageBundleBuilder : IPageBundleBuilder {
 				string type = obj["type"]?.ToString();
 				JArray items = obj["items"] as JArray;
 				if (items != null && !string.IsNullOrWhiteSpace(name)) {
-					string path = string.IsNullOrEmpty(parentPath) ? name : parentPath + "/" + name;
+					string path = string.IsNullOrEmpty(parentPath) ? name : parentPath + PathSeparator + name;
 					sink.Add(new PageContainerInfo {
 						Name = name,
 						Type = type,

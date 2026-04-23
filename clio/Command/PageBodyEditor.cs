@@ -10,6 +10,11 @@ namespace Clio.Command;
 
 internal static class PageBodyEditor {
 
+	private const string AttributesKey = "attributes";
+	private const string ValuesKey = "values";
+	private const string SchemaViewConfigDiffMarker = "SCHEMA_VIEW_CONFIG_DIFF";
+	private const string OperationKey = "operation";
+
 	private static readonly HashSet<string> FormFieldTypes = new(StringComparer.OrdinalIgnoreCase) {
 		"crt.Input", "crt.NumberInput", "crt.Checkbox", "crt.DateTimePicker",
 		"crt.ComboBox", "crt.RichTextEditor", "crt.PhoneInput", "crt.EmailInput",
@@ -26,7 +31,7 @@ internal static class PageBodyEditor {
 
 	public static string AddFormFields(string body, IReadOnlyList<FormFieldSpec> fields) {
 		ValidateFormFields(fields);
-		var viewConfigDiff = ParseMarkerJson(body, "SCHEMA_VIEW_CONFIG_DIFF").AsArray();
+		var viewConfigDiff = ParseMarkerJson(body, SchemaViewConfigDiffMarker).AsArray();
 		string vmMarker = DetectVmMarker(body)
 			?? throw new InvalidOperationException("No viewModelConfig marker found in body");
 		JsonNode vmData = ParseMarkerJson(body, vmMarker);
@@ -63,14 +68,14 @@ internal static class PageBodyEditor {
 			viewConfigDiff.Add(BuildFormFieldInsert(field, maxRow, maxIndex, parent));
 			existingNames.Add(attrKey);
 		}
-		return ReplaceMarkerContent(body, "SCHEMA_VIEW_CONFIG_DIFF", SerializeJson(viewConfigDiff));
+		return ReplaceMarkerContent(body, SchemaViewConfigDiffMarker, SerializeJson(viewConfigDiff));
 	}
 
 	private static string ApplyFormFieldsToViewModel(string body, string vmMarker, JsonNode vmData, IReadOnlyList<FormFieldSpec> fields) {
 		if (vmMarker == "SCHEMA_VIEW_MODEL_CONFIG") {
 			var vmObj = vmData is JsonObject obj ? obj : new JsonObject();
-			if (!vmObj.ContainsKey("attributes")) vmObj["attributes"] = new JsonObject();
-			JsonObject attrs = vmObj["attributes"]!.AsObject();
+			if (!vmObj.ContainsKey(AttributesKey)) vmObj[AttributesKey] = new JsonObject();
+			JsonObject attrs = vmObj[AttributesKey]!.AsObject();
 			foreach (FormFieldSpec field in fields) {
 				string attrKey = DeriveAttrKey(field);
 				if (!attrs.ContainsKey(attrKey))
@@ -79,9 +84,9 @@ internal static class PageBodyEditor {
 			return ReplaceMarkerContent(body, vmMarker, SerializeJson(vmObj));
 		}
 		var vmArray = vmData.AsArray();
-		JsonObject mergeOp = FindOrCreateMergeOp(vmArray, ["attributes"]);
-		if (!mergeOp.ContainsKey("values")) mergeOp["values"] = new JsonObject();
-		JsonObject values = mergeOp["values"]!.AsObject();
+		JsonObject mergeOp = FindOrCreateMergeOp(vmArray, [AttributesKey]);
+		if (!mergeOp.ContainsKey(ValuesKey)) mergeOp[ValuesKey] = new JsonObject();
+		JsonObject values = mergeOp[ValuesKey]!.AsObject();
 		foreach (FormFieldSpec field in fields) {
 			string attrKey = DeriveAttrKey(field);
 			if (!values.ContainsKey(attrKey))
@@ -91,7 +96,7 @@ internal static class PageBodyEditor {
 	}
 
 	public static string AddListColumns(string body, IReadOnlyList<ListColumnSpec> columns) {
-		var viewConfigDiff = ParseMarkerJson(body, "SCHEMA_VIEW_CONFIG_DIFF").AsArray();
+		var viewConfigDiff = ParseMarkerJson(body, SchemaViewConfigDiffMarker).AsArray();
 		body = ApplyListColumnsToViewConfig(body, viewConfigDiff, columns);
 		string vmMarker = DetectVmMarker(body)
 			?? throw new InvalidOperationException("No viewModelConfig marker found in body");
@@ -105,8 +110,8 @@ internal static class PageBodyEditor {
 		JsonObject datatableOp = viewConfigDiff.OfType<JsonObject>()
 			.FirstOrDefault(o => o["name"]?.GetValue<string>() == "DataTable")
 			?? throw new InvalidOperationException("DataTable operation not found in SCHEMA_VIEW_CONFIG_DIFF");
-		if (!datatableOp.ContainsKey("values")) datatableOp["values"] = new JsonObject();
-		JsonObject dtValues = datatableOp["values"]!.AsObject();
+		if (!datatableOp.ContainsKey(ValuesKey)) datatableOp[ValuesKey] = new JsonObject();
+		JsonObject dtValues = datatableOp[ValuesKey]!.AsObject();
 		if (!dtValues.ContainsKey("columns")) dtValues["columns"] = new JsonArray();
 		JsonArray existingColumns = dtValues["columns"]!.AsArray();
 		var existingCodes = new HashSet<string>(
@@ -124,26 +129,25 @@ internal static class PageBodyEditor {
 			existingColumns.Add(entry);
 			existingCodes.Add(col.Code);
 		}
-		return ReplaceMarkerContent(body, "SCHEMA_VIEW_CONFIG_DIFF", SerializeJson(viewConfigDiff));
+		return ReplaceMarkerContent(body, SchemaViewConfigDiffMarker, SerializeJson(viewConfigDiff));
 	}
 
 	private static string ApplyListColumnsToViewModel(string body, string vmMarker, JsonNode vmData, IReadOnlyList<ListColumnSpec> columns) {
 		if (vmMarker == "SCHEMA_VIEW_MODEL_CONFIG") {
 			var vmObj = vmData is JsonObject obj ? obj : new JsonObject();
-			if (!vmObj.ContainsKey("attributes")) vmObj["attributes"] = new JsonObject();
-			AddListColumnAttributes(vmObj["attributes"]!.AsObject(), columns);
+			if (!vmObj.ContainsKey(AttributesKey)) vmObj[AttributesKey] = new JsonObject();
+			AddListColumnAttributes(vmObj[AttributesKey]!.AsObject(), columns);
 			return ReplaceMarkerContent(body, vmMarker, SerializeJson(vmObj));
 		}
 		var vmArray = vmData.AsArray();
-		JsonObject mergeOp = FindOrCreateMergeOp(vmArray, ["attributes", "Items", "viewModelConfig", "attributes"]);
-		if (!mergeOp.ContainsKey("values")) mergeOp["values"] = new JsonObject();
-		AddListColumnAttributes(mergeOp["values"]!.AsObject(), columns);
+		JsonObject mergeOp = FindOrCreateMergeOp(vmArray, [AttributesKey, "Items", "viewModelConfig", AttributesKey]);
+		if (!mergeOp.ContainsKey(ValuesKey)) mergeOp[ValuesKey] = new JsonObject();
+		AddListColumnAttributes(mergeOp[ValuesKey]!.AsObject(), columns);
 		return ReplaceMarkerContent(body, vmMarker, SerializeJson(vmArray));
 	}
 
 	private static void AddListColumnAttributes(JsonObject target, IReadOnlyList<ListColumnSpec> columns) {
-		foreach (ListColumnSpec col in columns) {
-			if (target.ContainsKey(col.Code)) continue;
+		foreach (ListColumnSpec col in columns.Where(col => !target.ContainsKey(col.Code))) {
 			string entityCol = col.Code.StartsWith("PDS_", StringComparison.Ordinal) ? col.Code[4..] : col.Code;
 			target[col.Code] = JsonNode.Parse($"{{\"modelConfig\":{{\"path\":\"PDS.{entityCol}\"}}}}");
 		}
@@ -212,9 +216,9 @@ internal static class PageBodyEditor {
 	private static string DiscoverFormContainer(JsonArray viewConfigDiff) {
 		var counts = new Dictionary<string, int>(StringComparer.Ordinal);
 		foreach (JsonObject item in viewConfigDiff.OfType<JsonObject>()) {
-			if (item["operation"]?.GetValue<string>() != "insert")
+			if (item[OperationKey]?.GetValue<string>() != "insert")
 				continue;
-			JsonObject values = item["values"] as JsonObject;
+			JsonObject values = item[ValuesKey] as JsonObject;
 			if (values?["layoutConfig"] == null)
 				continue;
 			string type = values["type"]?.GetValue<string>() ?? string.Empty;
@@ -230,11 +234,11 @@ internal static class PageBodyEditor {
 	private static (int maxRow, int maxIndex) FindMaxRowIndex(JsonArray viewConfigDiff, string parentName) {
 		int maxRow = 0, maxIndex = -1;
 		foreach (JsonObject item in viewConfigDiff.OfType<JsonObject>()) {
-			if (item["operation"]?.GetValue<string>() != "insert")
+			if (item[OperationKey]?.GetValue<string>() != "insert")
 				continue;
 			if (item["parentName"]?.GetValue<string>() != parentName)
 				continue;
-			JsonObject layout = (item["values"] as JsonObject)?["layoutConfig"] as JsonObject;
+			JsonObject layout = (item[ValuesKey] as JsonObject)?["layoutConfig"] as JsonObject;
 			int row = layout?["row"]?.GetValue<int>() ?? 0;
 			int index = item["index"]?.GetValue<int>() ?? 0;
 			if (row > maxRow) maxRow = row;
@@ -276,9 +280,9 @@ internal static class PageBodyEditor {
 		if (field.Type == "crt.NumberInput" && field.DecimalPrecision.HasValue)
 			values["format"] = new JsonObject { ["decimalPrecision"] = field.DecimalPrecision.Value };
 		return new JsonObject {
-			["operation"] = "insert",
+			[OperationKey] = "insert",
 			["name"] = attrKey,
-			["values"] = values,
+			[ValuesKey] = values,
 			["parentName"] = field.ParentName ?? parentName,
 			["propertyName"] = "items",
 			["index"] = index
@@ -297,9 +301,9 @@ internal static class PageBodyEditor {
 		foreach (string seg in pathSegments)
 			pathNode.Add(JsonValue.Create(seg));
 		var mergeOp = new JsonObject {
-			["operation"] = "merge",
+			[OperationKey] = "merge",
 			["path"] = pathNode,
-			["values"] = new JsonObject()
+			[ValuesKey] = new JsonObject()
 		};
 		vmArray.Add(mergeOp);
 		return mergeOp;

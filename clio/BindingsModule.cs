@@ -456,10 +456,13 @@ public class BindingsModule {
 		services.AddTransient<DotNetDeploymentStrategy>();
 		services.AddTransient<DeploymentStrategyFactory>();
 		services.AddTransient<OpenAppCommand>();
-		services.AddSingleton<ISystemServiceManager>(sp =>
-			RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? new LinuxSystemServiceManager(sp.GetRequiredService<System.IO.Abstractions.IFileSystem>()) :
-			RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? new MacOSSystemServiceManager(sp.GetRequiredService<IProcessExecutor>()) :
-			new WindowsSystemServiceManager());
+		services.AddSingleton<ISystemServiceManager>(sp => {
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+				return new LinuxSystemServiceManager(sp.GetRequiredService<System.IO.Abstractions.IFileSystem>());
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+				return new MacOSSystemServiceManager(sp.GetRequiredService<IProcessExecutor>());
+			return new WindowsSystemServiceManager();
+		});
 		services.AddSingleton<Common.IIS.IIISSiteDetector>(sp =>
 			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
 				? new Common.IIS.WindowsIISSiteDetector(sp.GetRequiredService<IProcessExecutor>())

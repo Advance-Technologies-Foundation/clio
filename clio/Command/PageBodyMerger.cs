@@ -114,8 +114,8 @@ internal static class PageBodyMerger {
 
 	private static string StripArrayBrackets(string value) {
 		string trimmed = value.Trim();
-		if (trimmed.StartsWith("[")) trimmed = trimmed.Substring(1);
-		if (trimmed.EndsWith("]")) trimmed = trimmed.Substring(0, trimmed.Length - 1);
+		if (trimmed.StartsWith('[')) trimmed = trimmed.Substring(1);
+		if (trimmed.EndsWith(']')) trimmed = trimmed.Substring(0, trimmed.Length - 1);
 		return trimmed.Trim();
 	}
 

@@ -43,7 +43,6 @@ public class LinuxSystemServiceManager : ISystemServiceManager
 				autoStart
 			);
 
-			var unitFilePath = _fileSystem.Path.Combine(SystemdUnitDirectory, $"{serviceName}.service");
 
 			// Note: In real implementation, this would require sudo privileges
 			// For now, we generate the content and return success

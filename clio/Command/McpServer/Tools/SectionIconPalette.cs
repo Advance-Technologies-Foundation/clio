@@ -20,6 +20,23 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 internal static class SectionIconPalette {
 
+	private const string HexLime = "#A6DE00";
+	private const string HexGreen = "#20A959";
+	private const string HexEmerald = "#22AC14";
+	private const string HexAmber = "#FFAC07";
+	private const string HexOrange = "#FF8800";
+	private const string HexPink = "#F9307F";
+	private const string HexCoral = "#FF602E";
+	private const string HexRed = "#FF4013";
+	private const string HexLavender = "#B87CCF";
+	private const string HexViolet = "#7848EE";
+	private const string HexSky = "#247EE5";
+	private const string HexBlue = "#0058EF";
+	private const string HexCyan = "#009DE3";
+	private const string HexIndigo = "#4F43C2";
+	private const string HexTeal = "#08857E";
+	private const string HexMint = "#00BFA5";
+
 	/// <summary>
 	/// Palette entry with canonical hex value and human-readable English name. The name is
 	/// picked to match how the Creatio UI typically labels the swatch; AI callers and users
@@ -33,22 +50,22 @@ internal static class SectionIconPalette {
 	/// what the human sees in the UI.
 	/// </summary>
 	internal static readonly IReadOnlyList<PaletteEntry> Entries = [
-		new("#A6DE00", "Lime"),
-		new("#20A959", "Green"),
-		new("#22AC14", "Emerald"),
-		new("#FFAC07", "Amber"),
-		new("#FF8800", "Orange"),
-		new("#F9307F", "Pink"),
-		new("#FF602E", "Coral"),
-		new("#FF4013", "Red"),
-		new("#B87CCF", "Lavender"),
-		new("#7848EE", "Violet"),
-		new("#247EE5", "Sky"),
-		new("#0058EF", "Blue"),
-		new("#009DE3", "Cyan"),
-		new("#4F43C2", "Indigo"),
-		new("#08857E", "Teal"),
-		new("#00BFA5", "Mint")
+		new(HexLime, "Lime"),
+		new(HexGreen, "Green"),
+		new(HexEmerald, "Emerald"),
+		new(HexAmber, "Amber"),
+		new(HexOrange, "Orange"),
+		new(HexPink, "Pink"),
+		new(HexCoral, "Coral"),
+		new(HexRed, "Red"),
+		new(HexLavender, "Lavender"),
+		new(HexViolet, "Violet"),
+		new(HexSky, "Sky"),
+		new(HexBlue, "Blue"),
+		new(HexCyan, "Cyan"),
+		new(HexIndigo, "Indigo"),
+		new(HexTeal, "Teal"),
+		new(HexMint, "Mint")
 	];
 
 	/// <summary>
@@ -66,22 +83,22 @@ internal static class SectionIconPalette {
 	/// </summary>
 	private static readonly IReadOnlyDictionary<string, string> Aliases =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-			["lime"] = "#A6DE00", ["лайм"] = "#A6DE00",
-			["green"] = "#20A959", ["зелений"] = "#20A959", ["зеленый"] = "#20A959",
-			["emerald"] = "#22AC14", ["смарагд"] = "#22AC14", ["изумруд"] = "#22AC14", ["emerald green"] = "#22AC14",
-			["amber"] = "#FFAC07", ["бурштин"] = "#FFAC07", ["янтарь"] = "#FFAC07", ["yellow"] = "#FFAC07", ["жовтий"] = "#FFAC07", ["жёлтый"] = "#FFAC07", ["желтый"] = "#FFAC07",
-			["orange"] = "#FF8800", ["помаранчевий"] = "#FF8800", ["оранжевый"] = "#FF8800",
-			["pink"] = "#F9307F", ["рожевий"] = "#F9307F", ["розовый"] = "#F9307F", ["magenta"] = "#F9307F",
-			["coral"] = "#FF602E", ["корал"] = "#FF602E", ["коралл"] = "#FF602E",
-			["red"] = "#FF4013", ["червоний"] = "#FF4013", ["красный"] = "#FF4013",
-			["lavender"] = "#B87CCF", ["лаванда"] = "#B87CCF", ["бузковий"] = "#B87CCF", ["сиреневый"] = "#B87CCF",
-			["violet"] = "#7848EE", ["purple"] = "#7848EE", ["фіолетовий"] = "#7848EE", ["фиолетовый"] = "#7848EE",
-			["sky"] = "#247EE5", ["sky blue"] = "#247EE5", ["небесний"] = "#247EE5", ["небесный"] = "#247EE5", ["голубий"] = "#247EE5", ["голубой"] = "#247EE5",
-			["blue"] = "#0058EF", ["синій"] = "#0058EF", ["синий"] = "#0058EF",
-			["cyan"] = "#009DE3", ["циан"] = "#009DE3", ["бірюзовий"] = "#009DE3", ["бирюзовый"] = "#009DE3",
-			["indigo"] = "#4F43C2", ["індиго"] = "#4F43C2", ["индиго"] = "#4F43C2",
-			["teal"] = "#08857E", ["темно-бірюзовий"] = "#08857E", ["тёмно-бирюзовый"] = "#08857E",
-			["mint"] = "#00BFA5", ["м'ятний"] = "#00BFA5", ["мятный"] = "#00BFA5"
+			["lime"] = HexLime, ["лайм"] = HexLime,
+			["green"] = HexGreen, ["зелений"] = HexGreen, ["зеленый"] = HexGreen,
+			["emerald"] = HexEmerald, ["смарагд"] = HexEmerald, ["изумруд"] = HexEmerald, ["emerald green"] = HexEmerald,
+			["amber"] = HexAmber, ["бурштин"] = HexAmber, ["янтарь"] = HexAmber, ["yellow"] = HexAmber, ["жовтий"] = HexAmber, ["жёлтый"] = HexAmber, ["желтый"] = HexAmber,
+			["orange"] = HexOrange, ["помаранчевий"] = HexOrange, ["оранжевый"] = HexOrange,
+			["pink"] = HexPink, ["рожевий"] = HexPink, ["розовый"] = HexPink, ["magenta"] = HexPink,
+			["coral"] = HexCoral, ["корал"] = HexCoral, ["коралл"] = HexCoral,
+			["red"] = HexRed, ["червоний"] = HexRed, ["красный"] = HexRed,
+			["lavender"] = HexLavender, ["лаванда"] = HexLavender, ["бузковий"] = HexLavender, ["сиреневый"] = HexLavender,
+			["violet"] = HexViolet, ["purple"] = HexViolet, ["фіолетовий"] = HexViolet, ["фиолетовый"] = HexViolet,
+			["sky"] = HexSky, ["sky blue"] = HexSky, ["небесний"] = HexSky, ["небесный"] = HexSky, ["голубий"] = HexSky, ["голубой"] = HexSky,
+			["blue"] = HexBlue, ["синій"] = HexBlue, ["синий"] = HexBlue,
+			["cyan"] = HexCyan, ["циан"] = HexCyan, ["бірюзовий"] = HexCyan, ["бирюзовый"] = HexCyan,
+			["indigo"] = HexIndigo, ["індиго"] = HexIndigo, ["индиго"] = HexIndigo,
+			["teal"] = HexTeal, ["темно-бірюзовий"] = HexTeal, ["тёмно-бирюзовый"] = HexTeal,
+			["mint"] = HexMint, ["м'ятний"] = HexMint, ["мятный"] = HexMint
 		};
 
 	/// <summary>

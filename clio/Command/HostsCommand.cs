@@ -217,14 +217,16 @@ public class HostsCommand(
 						}
 					}
 				}
-				catch {
+				catch (Exception ex) {
+					System.Diagnostics.Trace.TraceWarning(ex.Message);
 				}
 			}
 #pragma warning restore CLIO004
 
 			return null;
 		}
-		catch {
+		catch (Exception ex) {
+			System.Diagnostics.Trace.TraceWarning(ex.Message);
 			return null;
 		}
 	}

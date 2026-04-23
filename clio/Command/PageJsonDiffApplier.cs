@@ -131,7 +131,7 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 			if (movesByName.TryGetValue(capture.Name ?? string.Empty, out List<JObject> nameMoves)) {
 				foreach (JObject moveOperation in nameMoves) {
 					JObject insertOperation = ConvertMoveToInsert(moveOperation, capture.Item);
-					if (insertOperation is not null) {
+					if (insertOperation.HasValues) {
 						moveInserts.Add(insertOperation);
 					}
 				}
@@ -200,7 +200,7 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 
 	private static JObject ConvertMoveToInsert(JObject moveOperation, JToken capturedItem) {
 		if (capturedItem is null) {
-			return null;
+			return new JObject();
 		}
 		JObject insertOperation = (JObject)moveOperation.DeepClone();
 		insertOperation[OperationField] = "insert";
@@ -214,10 +214,8 @@ internal sealed class PageJsonDiffApplier : IPageJsonDiffApplier {
 
 	private List<JObject> ApplyInsertGroup(IReadOnlyList<JObject> operations) {
 		List<JObject> unsuccessful = [];
-		foreach (JObject operation in operations) {
-			if (!TryInsert(operation)) {
-				unsuccessful.Add(operation);
-			}
+		foreach (JObject operation in operations.Where(op => !TryInsert(op))) {
+			unsuccessful.Add(operation);
 		}
 		return unsuccessful;
 	}

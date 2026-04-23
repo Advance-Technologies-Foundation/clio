@@ -6,11 +6,9 @@ using System.IO;
 namespace Clio
 {
 	public class CreatioPackage{
-		private readonly ILogger _logger;
 		private readonly IDotnetExecutor _dotnetExecutor;
 
 		public CreatioPackage(ILogger logger, IDotnetExecutor dotnetExecutor) {
-			_logger = logger;
 			_dotnetExecutor = dotnetExecutor;
 		}
 		
@@ -59,9 +57,9 @@ namespace Clio
 			Maintainer = maintainer;
 			CreatedOn = DateTime.UtcNow;
 			FullPath = Path.Combine(Environment.CurrentDirectory, packageName);
-			_logger = logger ?? ConsoleLogger.Instance;
+			ILogger resolvedLogger = logger ?? ConsoleLogger.Instance;
 #pragma warning disable CLIO001
-			_dotnetExecutor = dotnetExecutor ?? new DotnetExecutor(new ProcessExecutor(_logger));
+			_dotnetExecutor = dotnetExecutor ?? new DotnetExecutor(new ProcessExecutor(resolvedLogger));
 #pragma warning restore CLIO001
 		}
 

@@ -34,6 +34,7 @@ namespace Clio.Package
 		#region Constants: Private
 
 		private const string SplitName = "#OriginalMaintainer:";
+		private const string MaintainerField = "Maintainer";
 
 		#endregion
 
@@ -74,7 +75,7 @@ namespace Clio.Package
 			_applicationClientFactory.CreateClient(_environmentSettings);
 
 		private string GetMaintainerCode() =>
-			_dataProvider.GetSysSettingValue<string>("Maintainer") ?? string.Empty;
+			_dataProvider.GetSysSettingValue<string>(MaintainerField) ?? string.Empty;
 
 		private (string Maintainer, string Description) GetPackageInfo(IApplicationClient client, string packageName) {
 			object query = new {
@@ -88,7 +89,7 @@ namespace Clio.Package
 				isPageable = false,
 				columns = new {
 					items = new Dictionary<string, object>(StringComparer.Ordinal) {
-						["Maintainer"] = new { expression = new { expressionType = 0, columnPath = "Maintainer" }, orderDirection = 0, orderPosition = -1, isVisible = true },
+						[MaintainerField] = new { expression = new { expressionType = 0, columnPath = MaintainerField }, orderDirection = 0, orderPosition = -1, isVisible = true },
 						["Description"] = new { expression = new { expressionType = 0, columnPath = "Description" }, orderDirection = 0, orderPosition = -1, isVisible = true }
 					}
 				},
@@ -122,7 +123,7 @@ namespace Clio.Package
 				columnValues = new {
 					items = new Dictionary<string, object>(StringComparer.Ordinal) {
 						["InstallType"] = new { expressionType = 2, parameter = new { dataValueType = 4, value = installType } },
-						["Maintainer"] = new { expressionType = 2, parameter = new { dataValueType = 1, value = maintainer } },
+						[MaintainerField] = new { expressionType = 2, parameter = new { dataValueType = 1, value = maintainer } },
 						["Description"] = new { expressionType = 2, parameter = new { dataValueType = 1, value = description } }
 					}
 				},
@@ -154,7 +155,7 @@ namespace Clio.Package
 					comparisonType = 3,
 					isEnabled = true,
 					trimDateTimeParameterToDate = false,
-					leftExpression = new { expressionType = 0, columnPath = "Maintainer" },
+					leftExpression = new { expressionType = 0, columnPath = MaintainerField },
 					rightExpression = new { expressionType = 2, parameter = new { value = maintainerCode, dataValueType = 1 } }
 				}
 			};
@@ -221,7 +222,7 @@ namespace Clio.Package
 			foreach (string package in packageList) {
 				var (pkgMaintainer, pkgDescription) = GetPackageInfo(client, package);
 				string[] parts = pkgDescription.Split(new[] {SplitName}, StringSplitOptions.None);
-				string maintainer = parts.Length > 1 ? parts.Last() : pkgMaintainer;
+				string maintainer = parts.Length > 1 ? parts[^1] : pkgMaintainer;
 				string cleanDescription = parts[0];
 				UpdatePackage(client, package, 1, maintainer, cleanDescription);
 			}
@@ -239,7 +240,7 @@ namespace Clio.Package
 		}
 
 		private sealed class PackageRow {
-			[JsonPropertyName("Maintainer")]
+			[JsonPropertyName(MaintainerField)]
 			public string Maintainer { get; set; }
 
 			[JsonPropertyName("Description")]

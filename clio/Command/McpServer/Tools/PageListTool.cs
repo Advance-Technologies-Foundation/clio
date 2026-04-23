@@ -18,21 +18,23 @@ public sealed class PageListTool(
 	: BaseTool<PageListOptions>(command, logger, commandResolver) {
 
 	internal const string ToolName = "list-pages";
+	private const string SearchPatternParam = "search-pattern";
+
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
 		["app-code"] = "code",
 		["appCode"] = "code",
 		["packageName"] = "package-name",
-		["searchPattern"] = "search-pattern",
-		["search_pattern"] = "search-pattern",
-		["nameFilter"] = "search-pattern",
-		["name-filter"] = "search-pattern",
-		["name_filter"] = "search-pattern",
-		["pattern"] = "search-pattern",
-		["name"] = "search-pattern",
-		["pageName"] = "search-pattern",
-		["page-name"] = "search-pattern",
-		["schemaName"] = "search-pattern",
-		["schema-name"] = "search-pattern",
+		["searchPattern"] = SearchPatternParam,
+		["search_pattern"] = SearchPatternParam,
+		["nameFilter"] = SearchPatternParam,
+		["name-filter"] = SearchPatternParam,
+		["name_filter"] = SearchPatternParam,
+		["pattern"] = SearchPatternParam,
+		["name"] = SearchPatternParam,
+		["pageName"] = SearchPatternParam,
+		["page-name"] = SearchPatternParam,
+		["schemaName"] = SearchPatternParam,
+		["schema-name"] = SearchPatternParam,
 		["environmentName"] = "environment-name"
 	};
 

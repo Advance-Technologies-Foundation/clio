@@ -364,7 +364,8 @@ public class StopCommand : Command<StopOptions>{
 							}
 						}
 					}
-					catch {
+					catch (Exception ex) {
+						System.Diagnostics.Trace.TraceWarning(ex.Message);
 					}
 				}
 #pragma warning restore CLIO004

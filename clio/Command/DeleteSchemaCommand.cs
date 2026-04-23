@@ -48,6 +48,10 @@ public sealed class DeleteSchemaRemoteResponse {
 }
 
 public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
+	private const string ExpressionKey = "expression";
+	private const string ExpressionTypeKey = "expressionType";
+	private const string ColumnPathKey = "columnPath";
+
 	private static readonly JsonSerializerOptions SerializerOptions = new() {
 		PropertyNameCaseInsensitive = true
 	};
@@ -162,19 +166,19 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 			["columns"] = new JObject {
 				["items"] = new JObject {
 					["Id"] = new JObject {
-						["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "Id" }
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Id" }
 					},
 					["UId"] = new JObject {
-						["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "UId" }
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "UId" }
 					},
 					["ManagerName"] = new JObject {
-						["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "ManagerName" }
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "ManagerName" }
 					},
 					["PackageUId"] = new JObject {
-						["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "SysPackage.UId" }
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "SysPackage.UId" }
 					},
 					["PackageName"] = new JObject {
-						["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "SysPackage.Name" }
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "SysPackage.Name" }
 					}
 				}
 			},
@@ -187,9 +191,9 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 						["filterType"] = 1,
 						["comparisonType"] = 3,
 						["isEnabled"] = true,
-						["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "Name" },
+						["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" },
 						["rightExpression"] = new JObject {
-							["expressionType"] = 2,
+							[ExpressionTypeKey] = 2,
 							["parameter"] = new JObject { ["dataValueType"] = 1, ["value"] = schemaName }
 						}
 					}

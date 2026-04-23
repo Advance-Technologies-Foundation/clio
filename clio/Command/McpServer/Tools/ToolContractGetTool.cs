@@ -37,14 +37,16 @@ public sealed class ToolContractGetTool {
 	}
 
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
-		["toolNames"] = "tool-names",
-		["tool_names"] = "tool-names",
-		["toolName"] = "tool-names",
-		["tool-name"] = "tool-names",
-		["tool_name"] = "tool-names",
-		["name"] = "tool-names",
-		["names"] = "tool-names"
+		["toolNames"] = ToolNamesParam,
+		["tool_names"] = ToolNamesParam,
+		["toolName"] = ToolNamesParam,
+		["tool-name"] = ToolNamesParam,
+		["tool_name"] = ToolNamesParam,
+		["name"] = ToolNamesParam,
+		["names"] = ToolNamesParam
 	};
+
+	private const string ToolNamesParam = "tool-names";
 
 	private static string? CollectLegacyAliasError(ToolContractGetArgs args) {
 		if (args.ExtensionData is null || args.ExtensionData.Count == 0) {

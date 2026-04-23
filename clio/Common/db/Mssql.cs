@@ -71,20 +71,6 @@ public class Mssql : IMssql {
 		_logger = logger ?? NullLogger.Instance;
 	}
 
-	/// <inheritdoc />
-	public void Init(string host, int port, string username, string password, bool isWindowsAuth = false) {
-		_builder = new SqlConnectionStringBuilder {
-			DataSource = !isWindowsAuth ? $"{host},{port}" : host,
-			InitialCatalog = "master",
-			Encrypt = false,
-			IntegratedSecurity = isWindowsAuth
-		};
-		if (!isWindowsAuth) {
-			_builder.UserID = username;
-			_builder.Password = password;
-		}
-	}
-
 	/// <summary>
 	/// Initializes a new instance of the <see cref="Mssql"/> class with explicit connection settings.
 	/// </summary>
@@ -112,6 +98,20 @@ public class Mssql : IMssql {
 			InitialCatalog = "master",
 			Encrypt = false
 		};
+	}
+
+	/// <inheritdoc />
+	public void Init(string host, int port, string username, string password, bool isWindowsAuth = false) {
+		_builder = new SqlConnectionStringBuilder {
+			DataSource = !isWindowsAuth ? $"{host},{port}" : host,
+			InitialCatalog = "master",
+			Encrypt = false,
+			IntegratedSecurity = isWindowsAuth
+		};
+		if (!isWindowsAuth) {
+			_builder.UserID = username;
+			_builder.Password = password;
+		}
 	}
 
 	/// <inheritdoc />

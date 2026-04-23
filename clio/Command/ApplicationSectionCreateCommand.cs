@@ -75,6 +75,8 @@ public sealed class ApplicationSectionCreateService(
 	: IApplicationSectionCreateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private const string ApplicationIdJsonField = "ApplicationId";
+	private const string LogoIdField = "LogoId";
+	private const string PackageIdField = "PackageId";
 	private const string WebClientTypeId = "195785B4-F55A-4E72-ACE3-6480B54C8FA5";
 	private const string SelectQueryRoute = "DataService/json/SyncReply/SelectQuery";
 	private const int SectionTypeNormal = 0;
@@ -287,8 +289,8 @@ public sealed class ApplicationSectionCreateService(
 		Dictionary<string, object> columnItems = new(StringComparer.Ordinal) {
 			["Id"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.Id),
 			["ApplicationId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.ApplicationId),
-			["LogoId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.LogoId ?? string.Empty),
-			["PackageId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.PackageId ?? string.Empty),
+			[LogoIdField] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.LogoId ?? string.Empty),
+			[PackageIdField] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, section.PackageId ?? string.Empty),
 			["IconBackground"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, iconBackground)
 		};
 		return new Dictionary<string, object> {
@@ -344,9 +346,9 @@ public sealed class ApplicationSectionCreateService(
 					new SelectQueryHelper.SelectQueryColumnDefinition("Code", "Code"),
 					new SelectQueryHelper.SelectQueryColumnDefinition("Description", "Description"),
 					new SelectQueryHelper.SelectQueryColumnDefinition("EntitySchemaName", "EntitySchemaName"),
-					new SelectQueryHelper.SelectQueryColumnDefinition("PackageId", "PackageId"),
+					new SelectQueryHelper.SelectQueryColumnDefinition(PackageIdField, PackageIdField),
 					new SelectQueryHelper.SelectQueryColumnDefinition("SectionSchemaUId", "SectionSchemaUId"),
-					new SelectQueryHelper.SelectQueryColumnDefinition("LogoId", "LogoId"),
+					new SelectQueryHelper.SelectQueryColumnDefinition(LogoIdField, LogoIdField),
 					new SelectQueryHelper.SelectQueryColumnDefinition("IconBackground", "IconBackground"),
 					new SelectQueryHelper.SelectQueryColumnDefinition("ClientTypeId", "ClientTypeId")
 				],
@@ -424,8 +426,8 @@ public sealed class ApplicationSectionCreateService(
 				SelectQueryHelper.TextDataValueType,
 				request.Caption),
 			[ApplicationIdJsonField] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, request.ApplicationId),
-			["PackageId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, request.PackageUId),
-			["LogoId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, request.IconId),
+			[PackageIdField] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, request.PackageUId),
+			[LogoIdField] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, request.IconId),
 			["IconBackground"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, request.IconBackground),
 			["Type"] = CreateParameterExpression(SelectQueryHelper.IntDataValueType, SectionTypeNormal),
 			["Code"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, request.SectionCode)

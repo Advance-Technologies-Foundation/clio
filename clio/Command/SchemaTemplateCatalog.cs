@@ -105,9 +105,14 @@ public sealed class SchemaTemplateCatalog : ISchemaTemplateCatalog {
 				+ "2) `IsNetCore` flag matches the target instance (omit for .NET Framework, add --IsNetCore for .NET Core); "
 				+ "3) the target Creatio version exposes `/rest/schema.template.api/templates` (Creatio 7.18+).";
 		}
-		string snippet = string.IsNullOrWhiteSpace(responseBody)
-			? "<empty body>"
-			: responseBody.Length > 200 ? responseBody[..200] + "…" : responseBody;
+		string snippet;
+		if (string.IsNullOrWhiteSpace(responseBody)) {
+			snippet = "<empty body>";
+		} else if (responseBody.Length > 200) {
+			snippet = responseBody[..200] + "…";
+		} else {
+			snippet = responseBody;
+		}
 		return $"Page template catalog endpoint returned an unparseable response (URL: {url}). "
 			+ $"Parser error: {parseException.Message}. Response preview: {snippet}";
 	}

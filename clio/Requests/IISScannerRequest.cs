@@ -277,7 +277,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IIISScanner, IReques
 			IEnumerable<SiteBinding> nestedApps = appsRoot.Elements("APP")
 				.Where(app => {
 					string appName = app.Attribute("APP.NAME")?.Value ?? string.Empty;
-					return !string.IsNullOrEmpty(appName) && !appName.EndsWith("/") && appName.Contains("/");
+					return !string.IsNullOrEmpty(appName) && !appName.EndsWith('/') && appName.Contains('/');
 				})
 				.Select(app => GetApplicationBinding(app));
 			result.AddRange(nestedApps);

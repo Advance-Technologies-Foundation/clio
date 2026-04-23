@@ -37,6 +37,8 @@ internal sealed record SchemaDesignerKind(
 internal static class SchemaDesignerHelper {
 
 	private const string SelectQueryRoute = "/DataService/json/SyncReply/SelectQuery";
+	private const string ValueKey = "value";
+	private const string ExpressionTypeKey = "expressionType";
 
 	internal static string ValidateCreateInput(string schemaName, string packageName) {
 		if (string.IsNullOrWhiteSpace(schemaName))
@@ -127,15 +129,15 @@ internal static class SchemaDesignerHelper {
 	internal static void ApplySchemaMetadata(
 		JObject schema, string name, string caption, string description) {
 		schema["name"] = name;
-		schema["caption"] = new JArray(new JObject { ["cultureName"] = "en-US", ["value"] = caption });
+		schema["caption"] = new JArray(new JObject { ["cultureName"] = "en-US", [ValueKey] = caption });
 		if (!string.IsNullOrWhiteSpace(description))
 			schema["description"] = new JArray(
-				new JObject { ["cultureName"] = "en-US", ["value"] = description });
+				new JObject { ["cultureName"] = "en-US", [ValueKey] = description });
 	}
 
 	internal static string ExtractCaption(JObject schema) {
 		if (schema["caption"] is JArray captions && captions.Count > 0)
-			return captions[0]?["value"]?.ToString();
+			return captions[0]?[ValueKey]?.ToString();
 		return schema["caption"]?.ToString();
 	}
 
@@ -157,7 +159,7 @@ internal static class SchemaDesignerHelper {
 			["columns"] = new JObject {
 				["items"] = new JObject {
 					["UId"] = new JObject {
-						["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "UId" }
+						["expression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = "UId" }
 					}
 				}
 			},
@@ -170,20 +172,20 @@ internal static class SchemaDesignerHelper {
 						["filterType"] = 1,
 						["comparisonType"] = 3,
 						["isEnabled"] = true,
-						["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "Name" },
+						["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = "Name" },
 						["rightExpression"] = new JObject {
-							["expressionType"] = 2,
-							["parameter"] = new JObject { ["dataValueType"] = 1, ["value"] = schemaName }
+							[ExpressionTypeKey] = 2,
+							["parameter"] = new JObject { ["dataValueType"] = 1, [ValueKey] = schemaName }
 						}
 					},
 					["byManager"] = new JObject {
 						["filterType"] = 1,
 						["comparisonType"] = 3,
 						["isEnabled"] = true,
-						["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "ManagerName" },
+						["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = "ManagerName" },
 						["rightExpression"] = new JObject {
-							["expressionType"] = 2,
-							["parameter"] = new JObject { ["dataValueType"] = 1, ["value"] = managerName }
+							[ExpressionTypeKey] = 2,
+							["parameter"] = new JObject { ["dataValueType"] = 1, [ValueKey] = managerName }
 						}
 					}
 				}

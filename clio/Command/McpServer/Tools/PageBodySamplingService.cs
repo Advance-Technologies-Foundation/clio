@@ -64,7 +64,7 @@ internal static class PageBodySamplingService {
 
 	internal static List<string> ParseStringArray(JsonElement root, string propertyName) {
 		if (!root.TryGetProperty(propertyName, out JsonElement el) || el.ValueKind != JsonValueKind.Array)
-			return null;
+			return [];
 		return el.EnumerateArray()
 			.Select(e => e.GetString())
 			.Where(s => !string.IsNullOrWhiteSpace(s))

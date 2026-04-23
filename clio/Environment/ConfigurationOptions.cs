@@ -541,18 +541,23 @@ namespace Clio
 			var settingsRepository = new SettingsRepository();
 			bool hasExplicitEnvironment = !string.IsNullOrWhiteSpace(options.Environment);
 			bool hasDirectUri = !string.IsNullOrEmpty(options.Uri);
-			var _settings = hasExplicitEnvironment
-				? settingsRepository.FindEnvironment(options.Environment)
-				: hasDirectUri ? null : settingsRepository.FindEnvironment(null);
-			if (_settings == null) {
+			EnvironmentSettings envSettings;
+			if (hasExplicitEnvironment) {
+				envSettings = settingsRepository.FindEnvironment(options.Environment);
+			} else if (hasDirectUri) {
+				envSettings = null;
+			} else {
+				envSettings = settingsRepository.FindEnvironment(null);
+			}
+			if (envSettings == null) {
 				var envName = options.Environment ?? settingsRepository.GetDefaultEnvironmentName();
 				if (!settingsRepository.IsEnvironmentExists(envName) && !hasDirectUri) {
 					throw new Exception($"Environment with key '{envName}' not found. Check youre config file or command arguments.");
 				} else {
-					_settings = new EnvironmentSettings();
+					envSettings = new EnvironmentSettings();
 				}
 			}
-			EnvironmentSettings result = _settings.Fill(options);
+			EnvironmentSettings result = envSettings.Fill(options);
 			return result;
 		}
 
