@@ -38,11 +38,11 @@ EXAMPLES
     # Replace an existing row and update localization data
     clio add-data-binding-row --package Custom --binding-name SysSettings --workspace-path C:\Work\MyWorkspace --values '{\"Name\":\"New name\"}" --localizations "{\"en-US\":{\"Name\":\"Localized name\"}}'
 
-    # Add a SysModule row using a local image file for Image16
-    clio add-data-binding-row --package Custom --binding-name SysModule --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrModule\",\"Image16\":\"assets\\icon.png\"}"
+    # Add a row using a local image file for an image-content column
+    clio add-data-binding-row --package Custom --binding-name UsrImageBinding --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrImageBinding\",\"UsrImage\":\"assets\\icon.png\"}"
 
-    # Add a SysModule row with explicit lookup display text
-    clio add-data-binding-row --package Custom --binding-name SysModule --values "{\"Code\":\"UsrModule\",\"FolderMode\":{\"value\":\"b659d704-3955-e011-981f-00155d043204\",\"displayValue\":\"Folders\"}}"
+    # Add a row with explicit lookup display text
+    clio add-data-binding-row --package Custom --binding-name UsrLookupBinding --values "{\"Code\":\"UsrLookupBinding\",\"UsrStatus\":{\"value\":\"b659d704-3955-e011-981f-00155d043204\",\"displayValue\":\"In Progress\"}}"
 
 NOTES
     - The binding must already exist locally
@@ -50,8 +50,6 @@ NOTES
     - If that primary key is Guid-based and omitted or null in --values, add-data-binding-row generates it automatically
     - For non-null lookup and image-reference columns, use {"value":"...","displayValue":"..."} so data.json keeps both Value and DisplayValue
     - For image-content columns, a string value that points to an existing local file inside the workspace is encoded to base64 before writing data.json
-    - SysModule IconBackground only accepts these colors:
-      #A6DE00, #20A959, #22AC14, #FFAC07, #FF8800, #F9307F, #FF602E, #FF4013, #B87CCF, #7848EE, #247EE5, #0058EF, #009DE3, #4F43C2, #08857E, #00BFA5
     - Unknown columns in --values or --localizations are rejected
     - Existing rows with the same primary key are replaced instead of duplicated
 
