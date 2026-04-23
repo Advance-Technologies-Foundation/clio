@@ -30,7 +30,36 @@ public sealed class PageUpdateTool(
 		[Required] PageUpdateArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
-		PageUpdateOptions options = new() {
+		PageUpdateOptions options = BuildOptions(args);
+		if (!string.IsNullOrWhiteSpace(options.Body)) {
+			string validationError = CollectValidatorErrors(options.Body);
+			if (validationError != null)
+				return new PageUpdateResponse { Success = false, Error = validationError };
+		}
+		PageSamplingReview samplingReview = null;
+		if (!options.DryRun && args.SkipSampling != true) {
+			samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(server, args.SchemaName, args.Body, cancellationToken);
+			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0)
+				return new PageUpdateResponse { Success = false, Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues), SamplingReview = samplingReview };
+		}
+		PageUpdateResponse response;
+		lock (CommandExecutionSyncRoot) {
+			PageUpdateCommand resolvedCommand;
+			try {
+				resolvedCommand = ResolveCommand<PageUpdateCommand>(options);
+			} catch (Exception ex) {
+				return new PageUpdateResponse { Success = false, Error = ex.Message };
+			}
+			resolvedCommand.TryUpdatePage(options, out response);
+			if (response.Success && args.Verify == true)
+				TryVerifyPage(args, response);
+		}
+		response.SamplingReview = samplingReview;
+		return response;
+	}
+
+	private static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>
+		new() {
 			SchemaName = args.SchemaName,
 			Body = args.Body,
 			BodyFile = args.BodyFile,
@@ -45,63 +74,35 @@ public sealed class PageUpdateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		if (!string.IsNullOrWhiteSpace(options.Body)) {
-			var validationErrors = new List<string>();
-			SchemaValidationResult validatorParamResult = SchemaValidationService.ValidateValidatorParamResourceBindings(options.Body);
-			if (!validatorParamResult.IsValid) validationErrors.AddRange(validatorParamResult.Errors);
-			SchemaValidationResult validatorBindingResult = SchemaValidationService.ValidateValidatorControlBindings(options.Body);
-			if (!validatorBindingResult.IsValid) validationErrors.AddRange(validatorBindingResult.Errors);
-			SchemaValidationResult standardValidatorResult = SchemaValidationService.ValidateStandardValidatorUsage(options.Body);
-			if (!standardValidatorResult.IsValid) validationErrors.AddRange(standardValidatorResult.Errors);
-			SchemaValidationResult validatorParamCompletenessResult = SchemaValidationService.ValidateCustomValidatorParamCompleteness(options.Body);
-			if (!validatorParamCompletenessResult.IsValid) validationErrors.AddRange(validatorParamCompletenessResult.Errors);
-			if (validationErrors.Count > 0) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = "Validation failed: " + string.Join("; ", validationErrors)
-				};
-			}
+
+	private static string CollectValidatorErrors(string body) {
+		var errors = new List<string>();
+		Collect(SchemaValidationService.ValidateValidatorParamResourceBindings(body), errors);
+		Collect(SchemaValidationService.ValidateValidatorControlBindings(body), errors);
+		Collect(SchemaValidationService.ValidateStandardValidatorUsage(body), errors);
+		Collect(SchemaValidationService.ValidateCustomValidatorParamCompleteness(body), errors);
+		return errors.Count > 0 ? "Validation failed: " + string.Join("; ", errors) : null;
+	}
+
+	private static void Collect(SchemaValidationResult result, List<string> errors) {
+		if (!result.IsValid) errors.AddRange(result.Errors);
+	}
+
+	private void TryVerifyPage(PageUpdateArgs args, PageUpdateResponse response) {
+		try {
+			PageGetOptions getOptions = new() {
+				SchemaName = args.SchemaName,
+				Environment = args.EnvironmentName,
+				Uri = args.Uri,
+				Login = args.Login,
+				Password = args.Password
+			};
+			PageGetCommand getCommand = _commandResolver.Resolve<PageGetCommand>(getOptions);
+			if (getCommand.TryGetPage(getOptions, out PageGetResponse getResponse) && getResponse.Success)
+				response.Page = getResponse.Page;
+		} catch {
+			// verify is best-effort; failure does not fail the update
 		}
-		PageSamplingReview samplingReview = null;
-		if (!options.DryRun && args.SkipSampling != true) {
-			samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(server, args.SchemaName, args.Body, cancellationToken);
-			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues),
-					SamplingReview = samplingReview
-				};
-			}
-		}
-		PageUpdateResponse response;
-		lock (CommandExecutionSyncRoot) {
-			PageUpdateCommand resolvedCommand;
-			try {
-				resolvedCommand = ResolveCommand<PageUpdateCommand>(options);
-			} catch (Exception ex) {
-				return new PageUpdateResponse { Success = false, Error = ex.Message };
-			}
-			resolvedCommand.TryUpdatePage(options, out response);
-			if (response.Success && args.Verify == true) {
-				try {
-					PageGetOptions getOptions = new() {
-						SchemaName = args.SchemaName,
-						Environment = args.EnvironmentName,
-						Uri = args.Uri,
-						Login = args.Login,
-						Password = args.Password
-					};
-					PageGetCommand getCommand = _commandResolver.Resolve<PageGetCommand>(getOptions);
-					if (getCommand.TryGetPage(getOptions, out PageGetResponse getResponse) && getResponse.Success) {
-						response.Page = getResponse.Page;
-					}
-				} catch {
-					// verify is best-effort; failure does not fail the update
-				}
-			}
-		}
-		response.SamplingReview = samplingReview;
-		return response;
 	}
 
 }

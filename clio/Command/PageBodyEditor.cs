@@ -25,104 +25,112 @@ internal static class PageBodyEditor {
 	};
 
 	public static string AddFormFields(string body, IReadOnlyList<FormFieldSpec> fields) {
+		ValidateFormFields(fields);
+		var viewConfigDiff = ParseMarkerJson(body, "SCHEMA_VIEW_CONFIG_DIFF").AsArray();
+		string vmMarker = DetectVmMarker(body)
+			?? throw new InvalidOperationException("No viewModelConfig marker found in body");
+		JsonNode vmData = ParseMarkerJson(body, vmMarker);
+		body = ApplyFormFieldsToViewConfig(body, viewConfigDiff, fields);
+		body = ApplyFormFieldsToViewModel(body, vmMarker, vmData, fields);
+		ThrowIfMarkerIntegrityFailed(body);
+		return body;
+	}
+
+	private static void ValidateFormFields(IReadOnlyList<FormFieldSpec> fields) {
 		foreach (FormFieldSpec field in fields) {
 			if (string.IsNullOrWhiteSpace(field.Path))
-				throw new InvalidOperationException(
-					$"Field '{field.Name ?? "?"}' missing required path (e.g. 'PDS.UsrName')");
+				throw new InvalidOperationException($"Field '{field.Name ?? "?"}' missing required path (e.g. 'PDS.UsrName')");
 			if (string.IsNullOrWhiteSpace(field.Type))
 				throw new InvalidOperationException($"Field '{field.Name ?? "?"}' missing required type");
 			if (!FormFieldTypes.Contains(field.Type))
 				throw new InvalidOperationException($"Field type '{field.Type}' is not a valid form field type");
 		}
-		var viewConfigDiff = ParseMarkerJson(body, "SCHEMA_VIEW_CONFIG_DIFF").AsArray();
-		string vmMarker = DetectVmMarker(body)
-			?? throw new InvalidOperationException("No viewModelConfig marker found in body");
-		JsonNode vmData = ParseMarkerJson(body, vmMarker);
+	}
+
+	private static string ApplyFormFieldsToViewConfig(string body, JsonArray viewConfigDiff, IReadOnlyList<FormFieldSpec> fields) {
 		string parent = fields.FirstOrDefault()?.ParentName
 			?? DiscoverFormContainer(viewConfigDiff)
 			?? "SideAreaProfileContainer";
 		(int maxRow, int maxIndex) = FindMaxRowIndex(viewConfigDiff, parent);
 		var existingNames = new HashSet<string>(
-			viewConfigDiff.OfType<JsonObject>()
-				.Select(o => o["name"]?.GetValue<string>())
-				.Where(n => n != null)!,
+			viewConfigDiff.OfType<JsonObject>().Select(o => o["name"]?.GetValue<string>()).Where(n => n != null)!,
 			StringComparer.Ordinal);
 		foreach (FormFieldSpec field in fields) {
 			string attrKey = DeriveAttrKey(field);
-			if (existingNames.Contains(attrKey))
-				continue;
+			if (existingNames.Contains(attrKey)) continue;
 			maxRow++;
 			maxIndex++;
 			viewConfigDiff.Add(BuildFormFieldInsert(field, maxRow, maxIndex, parent));
 			existingNames.Add(attrKey);
 		}
-		body = ReplaceMarkerContent(body, "SCHEMA_VIEW_CONFIG_DIFF", SerializeJson(viewConfigDiff));
+		return ReplaceMarkerContent(body, "SCHEMA_VIEW_CONFIG_DIFF", SerializeJson(viewConfigDiff));
+	}
+
+	private static string ApplyFormFieldsToViewModel(string body, string vmMarker, JsonNode vmData, IReadOnlyList<FormFieldSpec> fields) {
 		if (vmMarker == "SCHEMA_VIEW_MODEL_CONFIG") {
 			var vmObj = vmData is JsonObject obj ? obj : new JsonObject();
-			if (!vmObj.ContainsKey("attributes"))
-				vmObj["attributes"] = new JsonObject();
+			if (!vmObj.ContainsKey("attributes")) vmObj["attributes"] = new JsonObject();
 			JsonObject attrs = vmObj["attributes"]!.AsObject();
 			foreach (FormFieldSpec field in fields) {
 				string attrKey = DeriveAttrKey(field);
 				if (!attrs.ContainsKey(attrKey))
 					attrs[attrKey] = JsonNode.Parse($"{{\"modelConfig\":{{\"path\":\"{field.Path}\"}}}}");
 			}
-			body = ReplaceMarkerContent(body, vmMarker, SerializeJson(vmObj));
-		} else {
-			var vmArray = vmData.AsArray();
-			JsonObject mergeOp = FindOrCreateMergeOp(vmArray, ["attributes"]);
-			if (!mergeOp.ContainsKey("values"))
-				mergeOp["values"] = new JsonObject();
-			JsonObject values = mergeOp["values"]!.AsObject();
-			foreach (FormFieldSpec field in fields) {
-				string attrKey = DeriveAttrKey(field);
-				if (!values.ContainsKey(attrKey))
-					values[attrKey] = JsonNode.Parse($"{{\"modelConfig\":{{\"path\":\"{field.Path}\"}}}}");
-			}
-			body = ReplaceMarkerContent(body, vmMarker, SerializeJson(vmArray));
+			return ReplaceMarkerContent(body, vmMarker, SerializeJson(vmObj));
 		}
-		ThrowIfMarkerIntegrityFailed(body);
-		return body;
+		var vmArray = vmData.AsArray();
+		JsonObject mergeOp = FindOrCreateMergeOp(vmArray, ["attributes"]);
+		if (!mergeOp.ContainsKey("values")) mergeOp["values"] = new JsonObject();
+		JsonObject values = mergeOp["values"]!.AsObject();
+		foreach (FormFieldSpec field in fields) {
+			string attrKey = DeriveAttrKey(field);
+			if (!values.ContainsKey(attrKey))
+				values[attrKey] = JsonNode.Parse($"{{\"modelConfig\":{{\"path\":\"{field.Path}\"}}}}");
+		}
+		return ReplaceMarkerContent(body, vmMarker, SerializeJson(vmArray));
 	}
 
 	public static string AddListColumns(string body, IReadOnlyList<ListColumnSpec> columns) {
 		var viewConfigDiff = ParseMarkerJson(body, "SCHEMA_VIEW_CONFIG_DIFF").AsArray();
+		body = ApplyListColumnsToViewConfig(body, viewConfigDiff, columns);
+		string vmMarker = DetectVmMarker(body)
+			?? throw new InvalidOperationException("No viewModelConfig marker found in body");
+		JsonNode vmData = ParseMarkerJson(body, vmMarker);
+		body = ApplyListColumnsToViewModel(body, vmMarker, vmData, columns);
+		ThrowIfMarkerIntegrityFailed(body);
+		return body;
+	}
+
+	private static string ApplyListColumnsToViewConfig(string body, JsonArray viewConfigDiff, IReadOnlyList<ListColumnSpec> columns) {
 		JsonObject datatableOp = viewConfigDiff.OfType<JsonObject>()
 			.FirstOrDefault(o => o["name"]?.GetValue<string>() == "DataTable")
 			?? throw new InvalidOperationException("DataTable operation not found in SCHEMA_VIEW_CONFIG_DIFF");
-		if (!datatableOp.ContainsKey("values"))
-			datatableOp["values"] = new JsonObject();
+		if (!datatableOp.ContainsKey("values")) datatableOp["values"] = new JsonObject();
 		JsonObject dtValues = datatableOp["values"]!.AsObject();
-		if (!dtValues.ContainsKey("columns"))
-			dtValues["columns"] = new JsonArray();
+		if (!dtValues.ContainsKey("columns")) dtValues["columns"] = new JsonArray();
 		JsonArray existingColumns = dtValues["columns"]!.AsArray();
 		var existingCodes = new HashSet<string>(
-			existingColumns.OfType<JsonObject>()
-				.Select(c => c["code"]?.GetValue<string>())
-				.Where(c => c != null)!,
+			existingColumns.OfType<JsonObject>().Select(c => c["code"]?.GetValue<string>()).Where(c => c != null)!,
 			StringComparer.Ordinal);
 		foreach (ListColumnSpec col in columns) {
-			if (existingCodes.Contains(col.Code))
-				continue;
+			if (existingCodes.Contains(col.Code)) continue;
 			var entry = new JsonObject {
 				["id"] = col.Id ?? Guid.NewGuid().ToString(),
 				["code"] = col.Code,
 				["caption"] = col.Caption ?? col.Code,
 				["dataValueType"] = col.DataValueType
 			};
-			if (col.Width.HasValue)
-				entry["width"] = col.Width.Value;
+			if (col.Width.HasValue) entry["width"] = col.Width.Value;
 			existingColumns.Add(entry);
 			existingCodes.Add(col.Code);
 		}
-		body = ReplaceMarkerContent(body, "SCHEMA_VIEW_CONFIG_DIFF", SerializeJson(viewConfigDiff));
-		string vmMarker = DetectVmMarker(body)
-			?? throw new InvalidOperationException("No viewModelConfig marker found in body");
-		JsonNode vmData = ParseMarkerJson(body, vmMarker);
+		return ReplaceMarkerContent(body, "SCHEMA_VIEW_CONFIG_DIFF", SerializeJson(viewConfigDiff));
+	}
+
+	private static string ApplyListColumnsToViewModel(string body, string vmMarker, JsonNode vmData, IReadOnlyList<ListColumnSpec> columns) {
 		if (vmMarker == "SCHEMA_VIEW_MODEL_CONFIG") {
 			var vmObj = vmData is JsonObject obj ? obj : new JsonObject();
-			if (!vmObj.ContainsKey("attributes"))
-				vmObj["attributes"] = new JsonObject();
+			if (!vmObj.ContainsKey("attributes")) vmObj["attributes"] = new JsonObject();
 			JsonObject attrs = vmObj["attributes"]!.AsObject();
 			foreach (ListColumnSpec col in columns) {
 				if (!attrs.ContainsKey(col.Code)) {
@@ -130,24 +138,19 @@ internal static class PageBodyEditor {
 					attrs[col.Code] = JsonNode.Parse($"{{\"modelConfig\":{{\"path\":\"PDS.{entityCol}\"}}}}");
 				}
 			}
-			body = ReplaceMarkerContent(body, vmMarker, SerializeJson(vmObj));
-		} else {
-			var vmArray = vmData.AsArray();
-			JsonObject mergeOp = FindOrCreateMergeOp(vmArray,
-				["attributes", "Items", "viewModelConfig", "attributes"]);
-			if (!mergeOp.ContainsKey("values"))
-				mergeOp["values"] = new JsonObject();
-			JsonObject values = mergeOp["values"]!.AsObject();
-			foreach (ListColumnSpec col in columns) {
-				if (!values.ContainsKey(col.Code)) {
-					string entityCol = col.Code.StartsWith("PDS_", StringComparison.Ordinal) ? col.Code[4..] : col.Code;
-					values[col.Code] = JsonNode.Parse($"{{\"modelConfig\":{{\"path\":\"PDS.{entityCol}\"}}}}");
-				}
-			}
-			body = ReplaceMarkerContent(body, vmMarker, SerializeJson(vmArray));
+			return ReplaceMarkerContent(body, vmMarker, SerializeJson(vmObj));
 		}
-		ThrowIfMarkerIntegrityFailed(body);
-		return body;
+		var vmArray = vmData.AsArray();
+		JsonObject mergeOp = FindOrCreateMergeOp(vmArray, ["attributes", "Items", "viewModelConfig", "attributes"]);
+		if (!mergeOp.ContainsKey("values")) mergeOp["values"] = new JsonObject();
+		JsonObject values = mergeOp["values"]!.AsObject();
+		foreach (ListColumnSpec col in columns) {
+			if (!values.ContainsKey(col.Code)) {
+				string entityCol = col.Code.StartsWith("PDS_", StringComparison.Ordinal) ? col.Code[4..] : col.Code;
+				values[col.Code] = JsonNode.Parse($"{{\"modelConfig\":{{\"path\":\"PDS.{entityCol}\"}}}}");
+			}
+		}
+		return ReplaceMarkerContent(body, vmMarker, SerializeJson(vmArray));
 	}
 
 	private static void ThrowIfMarkerIntegrityFailed(string body) {
