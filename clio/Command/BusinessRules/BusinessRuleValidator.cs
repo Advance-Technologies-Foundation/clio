@@ -211,9 +211,22 @@ internal static class BusinessRuleValidator {
 				"rule.condition.conditions[*].rightExpression.value must be a JSON number when the left attribute is a numeric type.");
 		}
 
+		if (IsNumericDataValueType(leftDataValueTypeName)
+			&& !TryConvertSupportedNumericConstant(rightValue, out _)) {
+			throw new ArgumentException(
+				"rule.condition.conditions[*].rightExpression.value must be a JSON number representable as Int64 or Decimal when the left attribute is a numeric type.");
+		}
+
 		if (IsTemporalDataValueType(leftDataValueTypeName)
 			&& !TryConvertTemporalConstant(rightValue, leftDataValueTypeName, out _)) {
 			throw new ArgumentException(GetTemporalConstantValidationMessage(leftDataValueTypeName));
+		}
+
+		if (!IsTextDataValueType(leftDataValueTypeName)
+			&& !IsNumericDataValueType(leftDataValueTypeName)
+			&& !IsTemporalDataValueType(leftDataValueTypeName)) {
+			throw new ArgumentException(
+				$"Const rightExpression is not supported for left attribute type '{leftDataValueTypeName}'.");
 		}
 	}
 

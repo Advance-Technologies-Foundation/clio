@@ -77,6 +77,27 @@ internal static class BusinessRuleHelpers {
 	internal static bool IsRelationalDataValueType(string dataValueTypeName) =>
 		IsNumericDataValueType(dataValueTypeName) || IsTemporalDataValueType(dataValueTypeName);
 
+	internal static bool TryConvertSupportedNumericConstant(
+		JsonElement element,
+		out object? numericValue) {
+		numericValue = null;
+		if (element.ValueKind != JsonValueKind.Number) {
+			return false;
+		}
+
+		if (element.TryGetInt64(out long intValue)) {
+			numericValue = intValue;
+			return true;
+		}
+
+		if (element.TryGetDecimal(out decimal decimalValue)) {
+			numericValue = decimalValue;
+			return true;
+		}
+
+		return false;
+	}
+
 	internal static string GetTemporalConstantValidationMessage(string dataValueTypeName) =>
 		dataValueTypeName switch {
 			"Date" => "rule.condition.conditions[*].rightExpression.value must be a JSON string in 'yyyy-MM-dd' format when the left attribute is Date.",
@@ -147,6 +168,16 @@ internal static class BusinessRuleHelpers {
 			&& IsTemporalDataValueType(dataValueTypeName)
 			&& TryConvertTemporalConstant(element, dataValueTypeName, out DateTime temporalValue)) {
 			return temporalValue;
+		}
+
+		if (!string.IsNullOrWhiteSpace(dataValueTypeName)
+			&& IsNumericDataValueType(dataValueTypeName)) {
+			if (TryConvertSupportedNumericConstant(element, out object? numericValue)) {
+				return numericValue;
+			}
+
+			throw new InvalidOperationException(
+				$"Numeric constant '{element}' is not supported for data value type '{dataValueTypeName}'.");
 		}
 
 		return element.ValueKind switch {

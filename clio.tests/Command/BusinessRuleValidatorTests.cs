@@ -348,6 +348,27 @@ public sealed class BusinessRuleValidatorTests {
 			because: "numeric relational comparisons should allow numeric constants");
 	}
 
+	[TestCase("1e100")]
+	[Category("Unit")]
+	[Description("Rejects numeric constants that cannot be represented as Int64 or Decimal.")]
+	public void Validate_Should_Reject_Numeric_Constant_Outside_Supported_Range(string numericJson) {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			leftExpression: new BusinessRuleExpression("AttributeValue", "Amount", null),
+			rightExpression: new BusinessRuleExpression("Const", null, Json(numericJson)));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Amount", 6),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a JSON number representable as Int64 or Decimal when the left attribute is a numeric type.",
+				because: "numeric constants outside the supported CLR range should be rejected before metadata serialization");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Accepts relational comparisons between numeric attributes of the same data value type.")]
