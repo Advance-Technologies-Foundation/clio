@@ -52,6 +52,20 @@ namespace Clio.Command {
 				}
 			};
 
+		internal static bool IsValidSchemaName(string name) {
+			if (string.IsNullOrEmpty(name) || !char.IsLetter(name[0]))
+				return false;
+			return name.All(c => char.IsLetterOrDigit(c) || c == '_');
+		}
+
+		internal static bool SchemaNameExists(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string schemaName) {
+			(JToken row, _) = QuerySysSchemaRow(applicationClient, serviceUrlBuilder, schemaName, ("UId", "UId"));
+			return row != null;
+		}
+
 		internal static string FindExistingSchemaInPackage(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,

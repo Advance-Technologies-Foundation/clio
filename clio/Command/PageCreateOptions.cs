@@ -97,7 +97,7 @@ namespace Clio.Command {
 				}
 				_logger.WriteInfo($"         package : {options.PackageName} (uId={packageUId})");
 				LogStep(ref stepNumber, totalSteps, $"Checking schema-name uniqueness for '{options.SchemaName}'");
-				if (SchemaNameExists(options.SchemaName)) {
+				if (PageSchemaMetadataHelper.SchemaNameExists(_applicationClient, _serviceUrlBuilder, options.SchemaName)) {
 					response = new PageCreateResponse {
 						Success = false,
 						Error = $"Page schema '{options.SchemaName}' already exists in this environment."
@@ -175,7 +175,7 @@ namespace Clio.Command {
 			if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 				return new PageCreateResponse { Success = false, Error = "schema-name is required" };
 			}
-			if (!IsValidSchemaName(options.SchemaName)) {
+			if (!PageSchemaMetadataHelper.IsValidSchemaName(options.SchemaName)) {
 				return new PageCreateResponse {
 					Success = false,
 					Error = "schema-name must start with a letter and contain only letters, digits, or underscores"
@@ -188,19 +188,6 @@ namespace Clio.Command {
 				return new PageCreateResponse { Success = false, Error = "package-name is required" };
 			}
 			return null;
-		}
-
-		private static bool IsValidSchemaName(string name) {
-			if (string.IsNullOrEmpty(name) || !char.IsLetter(name[0])) {
-				return false;
-			}
-			return name.All(c => char.IsLetterOrDigit(c) || c == '_');
-		}
-
-		private bool SchemaNameExists(string schemaName) {
-			(JToken row, _) = PageSchemaMetadataHelper.QuerySysSchemaRow(
-				_applicationClient, _serviceUrlBuilder, schemaName, ("UId", "UId"));
-			return row != null;
 		}
 
 		private bool TryResolvePackageUId(string packageName, out string packageUId, out string error) {
