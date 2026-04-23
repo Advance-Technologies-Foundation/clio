@@ -2937,3 +2937,10 @@ Discovery: Existing validator guidance already described attribute-level binding
 Files: C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio\Command\PageUpdateOptions.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Future MCP/CLI page edits are steered toward validators for syssetting-backed value rules and invalid inline control validators now fail client-side before save.
 
+
+## 2026-04-23 19:03 - Extracted shared JS parser utilities to JsParserHelper
+Context: SonarQube reported 12.4% code duplication in SchemaHandlerValidationService.cs (TryExtractBalancedJavaScriptObject)
+Decision: Created JsParserHelper.cs with 10 shared methods; removed duplicates from both SchemaHandlerValidationService.cs and SchemaValidationService.cs
+Discovery: SchemaValidationService.SkipBlockComment has SchemaValidationResult parameter so stays in-file; ConsumeStringLiteralCharacter is called directly (not just via TryConsumeStringLiteralCharacter) in a validator-body-extraction loop
+Files: clio\Command\JsParserHelper.cs, clio\Command\SchemaHandlerValidationService.cs, clio\Command\SchemaValidationService.cs
+Impact: All 865 Module=Command + 97 SchemaValidation tests pass; duplication eliminated

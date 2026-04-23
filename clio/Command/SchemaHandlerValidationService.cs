@@ -64,7 +64,7 @@ internal static class SchemaHandlerValidationService
 				return;
 			}
 
-			if (!TryExtractBalancedJavaScriptObject(handlersContent, index, out string handlerBody, out int nextIndex)) {
+			if (!JsParserHelper.TryExtractBalancedJavaScriptObject(handlersContent, index, out string handlerBody, out int nextIndex)) {
 				result.IsValid = false;
 				result.Errors.Add(
 					$"Handler entry at index {entryIndex} in {SchemaValidationService.SchemaHandlersMarker} contains unbalanced JavaScript object syntax.");
@@ -125,11 +125,11 @@ internal static class SchemaHandlerValidationService
 
 			if (current == '/' && index + 1 < content.Length) {
 				if (content[index + 1] == '/') {
-					index = SkipLineComment(content, index, content.Length);
+					index = JsParserHelper.SkipLineComment(content, index, content.Length);
 					continue;
 				}
 				if (content[index + 1] == '*') {
-					index = SkipBlockCommentWithoutValidation(content, index, content.Length);
+					index = JsParserHelper.SkipBlockComment(content, index, content.Length);
 					continue;
 				}
 			}
@@ -137,70 +137,6 @@ internal static class SchemaHandlerValidationService
 			return true;
 		}
 
-		return false;
-	}
-
-	private static int SkipBlockCommentWithoutValidation(string content, int index, int length) {
-		index += 2;
-		while (index + 1 < length) {
-			if (content[index] == '*' && content[index + 1] == '/') {
-				return index + 2;
-			}
-			index++;
-		}
-		return length;
-	}
-
-	private static bool TryExtractBalancedJavaScriptObject(
-		string content,
-		int braceStart,
-		out string objectContent,
-		out int nextIndex) {
-		int depth = 0;
-		bool inString = false;
-		char stringChar = '"';
-		int index = braceStart;
-		while (index < content.Length) {
-			if (inString) {
-				index = ConsumeStringLiteralCharacter(content, index, ref inString, stringChar);
-				continue;
-			}
-
-			if (content[index] == '/' && index + 1 < content.Length) {
-				if (content[index + 1] == '/') {
-					index = SkipLineComment(content, index, content.Length);
-					continue;
-				}
-				if (content[index + 1] == '*') {
-					index = SkipBlockCommentWithoutValidation(content, index, content.Length);
-					continue;
-				}
-			}
-
-			char current = content[index];
-			if (current is '"' or '\'' or '`') {
-				inString = true;
-				stringChar = current;
-				index++;
-				continue;
-			}
-
-			if (current == '{') {
-				depth++;
-			} else if (current == '}') {
-				depth--;
-				if (depth == 0) {
-					objectContent = content.Substring(braceStart, index - braceStart + 1);
-					nextIndex = index + 1;
-					return true;
-				}
-			}
-
-			index++;
-		}
-
-		objectContent = string.Empty;
-		nextIndex = braceStart;
 		return false;
 	}
 
@@ -218,7 +154,7 @@ internal static class SchemaHandlerValidationService
 		char stringChar = '"';
 		int index = 0;
 		while (index < objectContent.Length) {
-			if (TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
+			if (JsParserHelper.TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
 				continue;
 			}
 
@@ -233,7 +169,7 @@ internal static class SchemaHandlerValidationService
 				return TryReadTopLevelValueExpression(objectContent, valueStartIndex, out expression);
 			}
 
-			if (TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
+			if (JsParserHelper.TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
 				continue;
 			}
 
@@ -255,12 +191,12 @@ internal static class SchemaHandlerValidationService
 
 		if (content[index] == '/' && index + 1 < content.Length) {
 			if (content[index + 1] == '/') {
-				index = SkipLineComment(content, index, content.Length);
+				index = JsParserHelper.SkipLineComment(content, index, content.Length);
 				return true;
 			}
 
 			if (content[index + 1] == '*') {
-				index = SkipBlockCommentWithoutValidation(content, index, content.Length);
+				index = JsParserHelper.SkipBlockComment(content, index, content.Length);
 				return true;
 			}
 		}
@@ -279,10 +215,10 @@ internal static class SchemaHandlerValidationService
 
 		if (current is '"' or '\'' or '`') {
 			return TryReadQuotedMethodShorthandProperty(content, startIndex, current, out propertyName, out valueStartIndex) ||
-			       TryReadQuotedPropertyName(content, startIndex, current, out propertyName, out valueStartIndex);
+			       JsParserHelper.TryReadQuotedPropertyName(content, startIndex, current, out propertyName, out valueStartIndex);
 		}
 
-		if (IsIdentifierStart(current)) {
+		if (JsParserHelper.IsIdentifierStart(current)) {
 			return TryReadMethodShorthandProperty(content, startIndex, current, out propertyName, out valueStartIndex) ||
 			       TryReadIdentifierPropertyName(content, startIndex, out propertyName, out valueStartIndex);
 		}
@@ -294,7 +230,7 @@ internal static class SchemaHandlerValidationService
 		string content,
 		int valueStartIndex,
 		out string expression) {
-		int startIndex = SkipWhitespace(content, valueStartIndex);
+		int startIndex = JsParserHelper.SkipWhitespace(content, valueStartIndex);
 		int index = startIndex;
 		int braceDepth = 0;
 		int bracketDepth = 0;
@@ -303,7 +239,7 @@ internal static class SchemaHandlerValidationService
 		char stringChar = '"';
 
 		while (index < content.Length) {
-			if (TryConsumeStringLiteralCharacter(content, ref index, ref inString, stringChar)) {
+			if (JsParserHelper.TryConsumeStringLiteralCharacter(content, ref index, ref inString, stringChar)) {
 				continue;
 			}
 
@@ -408,7 +344,7 @@ internal static class SchemaHandlerValidationService
 			return false;
 		}
 
-		int index = SkipWhitespace(expression, 0);
+		int index = JsParserHelper.SkipWhitespace(expression, 0);
 		if (index >= expression.Length) {
 			return false;
 		}
@@ -418,7 +354,7 @@ internal static class SchemaHandlerValidationService
 			return TryReadQuotedMethodShorthandProperty(expression, index, current, out _, out _);
 		}
 
-		return IsIdentifierStart(current) &&
+		return JsParserHelper.IsIdentifierStart(current) &&
 		       TryReadMethodShorthandProperty(expression, index, current, out _, out _);
 	}
 
@@ -431,7 +367,7 @@ internal static class SchemaHandlerValidationService
 		int index = 0;
 
 		while (index < expression.Length) {
-			if (TryConsumeStringLiteralCharacter(expression, ref index, ref inString, stringChar)) {
+			if (JsParserHelper.TryConsumeStringLiteralCharacter(expression, ref index, ref inString, stringChar)) {
 				continue;
 			}
 
@@ -564,7 +500,7 @@ internal static class SchemaHandlerValidationService
 			index++;
 		}
 
-		while (index < expression.Length && IsIdentifierPart(expression[index])) {
+		while (index < expression.Length && JsParserHelper.IsIdentifierPart(expression[index])) {
 			index++;
 		}
 
@@ -582,7 +518,7 @@ internal static class SchemaHandlerValidationService
 		char stringChar = '"';
 		int index = 0;
 		while (index < objectContent.Length) {
-			if (TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
+			if (JsParserHelper.TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
 				continue;
 			}
 
@@ -591,7 +527,7 @@ internal static class SchemaHandlerValidationService
 				continue;
 			}
 
-			if (TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
+			if (JsParserHelper.TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
 				continue;
 			}
 
@@ -601,18 +537,6 @@ internal static class SchemaHandlerValidationService
 		return props;
 	}
 
-	private static bool TryConsumeStringLiteralCharacter(
-		string content,
-		ref int index,
-		ref bool inString,
-		char stringChar) {
-		if (!inString) {
-			return false;
-		}
-
-		index = ConsumeStringLiteralCharacter(content, index, ref inString, stringChar);
-		return true;
-	}
 
 	private static bool TryReadTopLevelPropertyName(
 		string content,
@@ -630,14 +554,14 @@ internal static class SchemaHandlerValidationService
 
 		if (current is '"' or '\'' or '`' &&
 		    depth == 1 &&
-		    TryReadQuotedPropertyName(content, index, current, out string propertyName, out int nextIndex)) {
+		    JsParserHelper.TryReadQuotedPropertyName(content, index, current, out string propertyName, out int nextIndex)) {
 			props.Add(propertyName);
 			index = nextIndex;
 			return true;
 		}
 
 		if (depth == 1 &&
-		    IsIdentifierStart(current) &&
+		    JsParserHelper.IsIdentifierStart(current) &&
 		    TryReadMethodShorthandPropertyName(content, index, current, out string methodIdentifierName, out int methodIdentifierNextIndex)) {
 			props.Add(methodIdentifierName);
 			index = methodIdentifierNextIndex;
@@ -645,7 +569,7 @@ internal static class SchemaHandlerValidationService
 		}
 
 		if (depth == 1 &&
-		    IsIdentifierStart(current) &&
+		    JsParserHelper.IsIdentifierStart(current) &&
 		    TryReadIdentifierPropertyName(content, index, out string identifierName, out int identifierNextIndex)) {
 			props.Add(identifierName);
 			index = identifierNextIndex;
@@ -655,69 +579,6 @@ internal static class SchemaHandlerValidationService
 		return false;
 	}
 
-	private static bool TryHandleStructuralCharacter(
-		char current,
-		ref int index,
-		ref int depth,
-		ref bool inString,
-		ref char stringChar) {
-		if (current is '"' or '\'' or '`') {
-			inString = true;
-			stringChar = current;
-			index++;
-			return true;
-		}
-
-		if (current == '{') {
-			depth++;
-			index++;
-			return true;
-		}
-
-		if (current == '}') {
-			depth--;
-			index++;
-			return true;
-		}
-
-		return false;
-	}
-
-	private static bool TryReadQuotedPropertyName(
-		string content,
-		int startIndex,
-		char quote,
-		out string propertyName,
-		out int nextIndex) {
-		propertyName = string.Empty;
-		nextIndex = startIndex;
-		int endIndex = startIndex + 1;
-		while (endIndex < content.Length) {
-			if (content[endIndex] == '\\') {
-				endIndex += endIndex + 1 < content.Length ? 2 : 1;
-				continue;
-			}
-
-			if (content[endIndex] == quote) {
-				break;
-			}
-
-			endIndex++;
-		}
-
-		if (endIndex >= content.Length || content[endIndex] != quote) {
-			return false;
-		}
-
-		int colonIndex = SkipWhitespace(content, endIndex + 1);
-		if (colonIndex >= content.Length || content[colonIndex] != ':') {
-			return false;
-		}
-
-		propertyName = content.Substring(startIndex + 1, endIndex - startIndex - 1);
-		nextIndex = colonIndex + 1;
-		return !string.IsNullOrWhiteSpace(propertyName);
-	}
 
 	private static bool TryReadQuotedMethodShorthandProperty(
 		string content,
@@ -731,7 +592,7 @@ internal static class SchemaHandlerValidationService
 			return false;
 		}
 
-		int methodStartIndex = SkipWhitespace(content, nameEndIndex);
+		int methodStartIndex = JsParserHelper.SkipWhitespace(content, nameEndIndex);
 		if (!TryReadMethodShorthandContinuation(content, methodStartIndex)) {
 			return false;
 		}
@@ -752,7 +613,7 @@ internal static class SchemaHandlerValidationService
 			return false;
 		}
 
-		int methodStartIndex = SkipWhitespace(content, nameEndIndex);
+		int methodStartIndex = JsParserHelper.SkipWhitespace(content, nameEndIndex);
 		if (!TryReadMethodShorthandContinuation(content, methodStartIndex)) {
 			return false;
 		}
@@ -772,7 +633,7 @@ internal static class SchemaHandlerValidationService
 			return false;
 		}
 
-		int colonIndex = SkipWhitespace(content, index);
+		int colonIndex = JsParserHelper.SkipWhitespace(content, index);
 		if (colonIndex >= content.Length || content[colonIndex] != ':') {
 			return false;
 		}
@@ -828,20 +689,20 @@ internal static class SchemaHandlerValidationService
 				return false;
 			}
 
-			return TryReadMethodShorthandContinuation(content, SkipWhitespace(content, nameEndIndex));
+			return TryReadMethodShorthandContinuation(content, JsParserHelper.SkipWhitespace(content, nameEndIndex));
 		}
 
 		if (!TryReadIdentifierToken(content, startIndex, out string firstToken, out int firstTokenEndIndex)) {
 			return false;
 		}
 
-		int nextTokenIndex = SkipWhitespace(content, firstTokenEndIndex);
+		int nextTokenIndex = JsParserHelper.SkipWhitespace(content, firstTokenEndIndex);
 		if (string.Equals(firstToken, "async", StringComparison.Ordinal) &&
 		    nextTokenIndex < content.Length &&
-		    IsIdentifierStart(content[nextTokenIndex]) &&
+		    JsParserHelper.IsIdentifierStart(content[nextTokenIndex]) &&
 		    TryReadIdentifierToken(content, nextTokenIndex, out propertyName, out nameEndIndex)) {
 			valueStartIndex = startIndex;
-			return TryReadMethodShorthandContinuation(content, SkipWhitespace(content, nameEndIndex));
+			return TryReadMethodShorthandContinuation(content, JsParserHelper.SkipWhitespace(content, nameEndIndex));
 		}
 
 		propertyName = firstToken;
@@ -859,7 +720,7 @@ internal static class SchemaHandlerValidationService
 			return false;
 		}
 
-		int bodyStartIndex = SkipWhitespace(content, afterParametersIndex);
+		int bodyStartIndex = JsParserHelper.SkipWhitespace(content, afterParametersIndex);
 		return bodyStartIndex < content.Length && content[bodyStartIndex] == '{';
 	}
 
@@ -877,7 +738,7 @@ internal static class SchemaHandlerValidationService
 		int index = startIndex;
 
 		while (index < content.Length) {
-			if (TryConsumeStringLiteralCharacter(content, ref index, ref inString, stringChar)) {
+			if (JsParserHelper.TryConsumeStringLiteralCharacter(content, ref index, ref inString, stringChar)) {
 				continue;
 			}
 
@@ -965,12 +826,12 @@ internal static class SchemaHandlerValidationService
 		out int nextIndex) {
 		token = string.Empty;
 		nextIndex = startIndex;
-		if (startIndex >= content.Length || !IsIdentifierStart(content[startIndex])) {
+		if (startIndex >= content.Length || !JsParserHelper.IsIdentifierStart(content[startIndex])) {
 			return false;
 		}
 
 		int index = startIndex + 1;
-		while (index < content.Length && IsIdentifierPart(content[index])) {
+		while (index < content.Length && JsParserHelper.IsIdentifierPart(content[index])) {
 			index++;
 		}
 
@@ -979,41 +840,4 @@ internal static class SchemaHandlerValidationService
 		return true;
 	}
 
-	private static int SkipWhitespace(string content, int startIndex) {
-		int index = startIndex;
-		while (index < content.Length && char.IsWhiteSpace(content[index])) {
-			index++;
-		}
-		return index;
-	}
-
-	private static bool IsIdentifierStart(char c) =>
-		char.IsLetter(c) || c is '_' or '$';
-
-	private static bool IsIdentifierPart(char c) =>
-		char.IsLetterOrDigit(c) || c is '_' or '$';
-
-	private static int ConsumeStringLiteralCharacter(
-		string content,
-		int index,
-		ref bool inString,
-		char stringChar) {
-		if (content[index] == '\\') {
-			return index + 1 < content.Length ? index + 2 : index + 1;
-		}
-
-		if (content[index] == stringChar) {
-			inString = false;
-		}
-
-		return index + 1;
-	}
-
-	private static int SkipLineComment(string content, int index, int length) {
-		index += 2;
-		while (index < length && content[index] != '\n' && content[index] != '\r') {
-			index++;
-		}
-		return index;
-	}
 }

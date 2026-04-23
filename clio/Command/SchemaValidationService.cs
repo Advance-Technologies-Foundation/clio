@@ -1124,7 +1124,7 @@ public static class SchemaValidationService
 		while (index < validatorsContent.Length) {
 			char current = validatorsContent[index];
 			if (inString) {
-				index = ConsumeStringLiteralCharacter(validatorsContent, index, ref inString, stringChar);
+				index = JsParserHelper.ConsumeStringLiteralCharacter(validatorsContent, index, ref inString, stringChar);
 				continue;
 			}
 
@@ -1180,39 +1180,7 @@ public static class SchemaValidationService
 		}
 
 		int braceStart = match.Index + match.Length - 1;
-		return TryExtractBalancedObject(content, braceStart, out objectContent);
-	}
-
-	private static bool TryExtractBalancedObject(string content, int braceStart, out string objectContent) {
-		int depth = 0;
-		bool inString = false;
-		char stringChar = '"';
-		int index = braceStart;
-		while (index < content.Length) {
-			char current = content[index];
-			if (inString) {
-				index = ConsumeStringLiteralCharacter(content, index, ref inString, stringChar);
-				continue;
-			}
-
-			if (current is '"' or '\'' or '`') {
-				inString = true;
-				stringChar = current;
-			} else if (current == '{') {
-				depth++;
-			} else if (current == '}') {
-				depth--;
-				if (depth == 0) {
-					objectContent = content.Substring(braceStart, index - braceStart + 1);
-					return true;
-				}
-			}
-
-			index++;
-		}
-
-		objectContent = string.Empty;
-		return false;
+		return JsParserHelper.TryExtractBalancedJavaScriptObject(content, braceStart, out objectContent, out _);
 	}
 
 	private static HashSet<string> ExtractTopLevelObjectPropertyNames(string objectContent) {
@@ -1226,7 +1194,7 @@ public static class SchemaValidationService
 		char stringChar = '"';
 		int index = 0;
 		while (index < objectContent.Length) {
-			if (TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
+			if (JsParserHelper.TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
 				continue;
 			}
 
@@ -1235,7 +1203,7 @@ public static class SchemaValidationService
 				continue;
 			}
 
-			if (TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
+			if (JsParserHelper.TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
 				continue;
 			}
 
@@ -1245,18 +1213,6 @@ public static class SchemaValidationService
 		return props;
 	}
 
-	private static bool TryConsumeStringLiteralCharacter(
-		string content,
-		ref int index,
-		ref bool inString,
-		char stringChar) {
-		if (!inString) {
-			return false;
-		}
-
-		index = ConsumeStringLiteralCharacter(content, index, ref inString, stringChar);
-		return true;
-	}
 
 	private static bool TryReadTopLevelPropertyName(
 		string content,
@@ -1266,14 +1222,14 @@ public static class SchemaValidationService
 		HashSet<string> props) {
 		if (current is '"' or '\'' or '`' &&
 		    depth == 1 &&
-		    TryReadQuotedPropertyName(content, index, current, out string propertyName, out int nextIndex)) {
+		    JsParserHelper.TryReadQuotedPropertyName(content, index, current, out string propertyName, out int nextIndex)) {
 			props.Add(propertyName);
 			index = nextIndex;
 			return true;
 		}
 
 		if (depth == 1 &&
-		    IsIdentifierStart(current) &&
+		    JsParserHelper.IsIdentifierStart(current) &&
 		    TryReadIdentifierPropertyName(content, index, out string identifierName, out int identifierNextIndex)) {
 			props.Add(identifierName);
 			index = identifierNextIndex;
@@ -1283,69 +1239,6 @@ public static class SchemaValidationService
 		return false;
 	}
 
-	private static bool TryHandleStructuralCharacter(
-		char current,
-		ref int index,
-		ref int depth,
-		ref bool inString,
-		ref char stringChar) {
-		if (current is '"' or '\'' or '`') {
-			inString = true;
-			stringChar = current;
-			index++;
-			return true;
-		}
-
-		if (current == '{') {
-			depth++;
-			index++;
-			return true;
-		}
-
-		if (current == '}') {
-			depth--;
-			index++;
-			return true;
-		}
-
-		return false;
-	}
-
-	private static bool TryReadQuotedPropertyName(
-		string content,
-		int startIndex,
-		char quote,
-		out string propertyName,
-		out int nextIndex) {
-		propertyName = string.Empty;
-		nextIndex = startIndex;
-		int endIndex = startIndex + 1;
-		while (endIndex < content.Length) {
-			if (content[endIndex] == '\\') {
-				endIndex += endIndex + 1 < content.Length ? 2 : 1;
-				continue;
-			}
-
-			if (content[endIndex] == quote) {
-				break;
-			}
-
-			endIndex++;
-		}
-
-		if (endIndex >= content.Length || content[endIndex] != quote) {
-			return false;
-		}
-
-		int colonIndex = SkipWhitespace(content, endIndex + 1);
-		if (colonIndex >= content.Length || content[colonIndex] != ':') {
-			return false;
-		}
-
-		propertyName = content.Substring(startIndex + 1, endIndex - startIndex - 1);
-		nextIndex = colonIndex + 1;
-		return !string.IsNullOrWhiteSpace(propertyName);
-	}
 
 	private static bool TryReadIdentifierPropertyName(
 		string content,
@@ -1355,11 +1248,11 @@ public static class SchemaValidationService
 		propertyName = string.Empty;
 		nextIndex = startIndex;
 		int index = startIndex + 1;
-		while (index < content.Length && IsIdentifierPart(content[index])) {
+		while (index < content.Length && JsParserHelper.IsIdentifierPart(content[index])) {
 			index++;
 		}
 
-		int colonIndex = SkipWhitespace(content, index);
+		int colonIndex = JsParserHelper.SkipWhitespace(content, index);
 		if (colonIndex >= content.Length || content[colonIndex] != ':') {
 			return false;
 		}
@@ -1369,35 +1262,6 @@ public static class SchemaValidationService
 		return true;
 	}
 
-	private static int SkipWhitespace(string content, int startIndex) {
-		int index = startIndex;
-		while (index < content.Length && char.IsWhiteSpace(content[index])) {
-			index++;
-		}
-		return index;
-	}
-
-	private static bool IsIdentifierStart(char c) =>
-		char.IsLetter(c) || c is '_' or '$';
-
-	private static bool IsIdentifierPart(char c) =>
-		char.IsLetterOrDigit(c) || c is '_' or '$';
-
-	private static int ConsumeStringLiteralCharacter(
-		string validatorsContent,
-		int index,
-		ref bool inString,
-		char stringChar) {
-		if (validatorsContent[index] == '\\') {
-			return index + 1 < validatorsContent.Length ? index + 2 : index + 1;
-		}
-
-		if (validatorsContent[index] == stringChar) {
-			inString = false;
-		}
-
-		return index + 1;
-	}
 
 	private static IEnumerable<(string ValidatorType, HashSet<string> ParamNames)> ExtractCustomValidatorContracts(
 		string validatorsContent) {
@@ -1668,7 +1532,7 @@ public static class SchemaValidationService
 		Stack<(char bracket, int position)> stack, SchemaValidationResult result) {
 		if (c == '/' && i + 1 < length) {
 			if (jsBody[i + 1] == '/') {
-				return SkipLineComment(jsBody, i, length);
+				return JsParserHelper.SkipLineComment(jsBody, i, length);
 			}
 			if (jsBody[i + 1] == '*') {
 				return SkipBlockComment(jsBody, i, length, result);
@@ -1690,13 +1554,6 @@ public static class SchemaValidationService
 		return i;
 	}
 
-	private static int SkipLineComment(string jsBody, int i, int length) {
-		i += 2;
-		while (i < length && jsBody[i] != '\n' && jsBody[i] != '\r') {
-			i++;
-		}
-		return i;
-	}
 
 	private static int SkipBlockComment(string jsBody, int i, int length, SchemaValidationResult result) {
 		int commentStart = i;
