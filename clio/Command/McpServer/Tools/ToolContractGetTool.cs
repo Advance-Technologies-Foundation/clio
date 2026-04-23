@@ -240,20 +240,26 @@ internal static class ToolContractCatalog {
 	private const string InstalledApplicationIdentifierDescription = "Installed application identifier.";
 	private const string InstalledApplicationVersionDescription = "Installed application version.";
 	private const string InvalidWorkflowShapeCode = "invalid-workflow-shape";
+	private const string MissingRequiredParameterCode = "missing-required-parameter";
 	private const string PackageUIdFieldName = "package-u-id";
+	private const string PackageNameDescription = "Target package name.";
 	private const string PrimaryPackageIdentifierDescription = "Primary package identifier.";
 	private const string PrimaryPackageNameDescription = "Primary package name.";
 	private const string SectionCodeFieldName = "section-code";
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
+	private const string ExampleWorkspacePath = @"C:\Work\UsrTaskApp";
+	private const string ValuesFieldName = "values";
+	private const string BindingNameDescription = "Binding name.";
+	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
 	private const string WorkspacePathFieldName = "workspace-path";
 
-	private static readonly ToolErrorContract CommonErrorContract = new([
-		new ToolErrorCodeContract("tool-not-found", "Requested tool name is not registered by clio MCP."),
-		new ToolErrorCodeContract("missing-required-parameter", "A required parameter is missing."),
-		new ToolErrorCodeContract("invalid-parameter-alias", "A legacy or unsupported parameter alias was used."),
-		new ToolErrorCodeContract("invalid-parameter-type", "A parameter value type does not match the tool contract."),
-		new ToolErrorCodeContract(InvalidLocalizationMapCode, "A localization map is malformed or missing en-US."),
+		private static readonly ToolErrorContract CommonErrorContract = new([
+			new ToolErrorCodeContract("tool-not-found", "Requested tool name is not registered by clio MCP."),
+			new ToolErrorCodeContract(MissingRequiredParameterCode, "A required parameter is missing."),
+			new ToolErrorCodeContract("invalid-parameter-alias", "A legacy or unsupported parameter alias was used."),
+			new ToolErrorCodeContract("invalid-parameter-type", "A parameter value type does not match the tool contract."),
+			new ToolErrorCodeContract(InvalidLocalizationMapCode, "A localization map is malformed or missing en-US."),
 		new ToolErrorCodeContract(InvalidWorkflowShapeCode, "The request shape is structurally invalid for the target tool.")
 	]);
 
@@ -349,10 +355,10 @@ internal static class ToolContractCatalog {
 				return new ToolContractGetResponse(
 					false,
 					Error: new ToolContractError(
-						"missing-required-parameter",
+						MissingRequiredParameterCode,
 						"tool-names must contain non-empty tool names.",
 						FieldErrors: [
-							new ToolContractFieldError($"tool-names[{index}]", "missing-required-parameter",
+							new ToolContractFieldError($"tool-names[{index}]", MissingRequiredParameterCode,
 								"Provide a non-empty tool name.")
 						]));
 			}
@@ -1708,10 +1714,10 @@ internal static class ToolContractCatalog {
 			"SaveSchema metadata is rebuilt from the primary key plus columns present in the bound rows and the requested upsert payload. " +
 			"For workflow selection and verification discipline, call get-guidance with name `data-bindings`.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, BindingNameFieldName, "values"],
-				EnvironmentPackageFields(
-					Field(BindingNameFieldName, StringType, "Binding name."),
-					Field("values", StringType, "JSON object keyed by column name. Referenced columns become part of the projected binding metadata."))),
+					[EnvironmentNameFieldName, PackageNameFieldName, BindingNameFieldName, ValuesFieldName],
+					EnvironmentPackageFields(
+						Field(BindingNameFieldName, StringType, BindingNameDescription),
+						Field(ValuesFieldName, StringType, "JSON object keyed by column name. Referenced columns become part of the projected binding metadata."))),
 			CommandExecutionOutput(),
 			new ToolErrorContract([
 				..CommonErrorContract.Codes,
@@ -1727,7 +1733,7 @@ internal static class ToolContractCatalog {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName,
 					[BindingNameFieldName] = ExampleTaskStatusSchemaName,
-					["values"] = "{\"Name\":\"New\"}"
+						[ValuesFieldName] = "{\"Name\":\"New\"}"
 				})
 			],
 			Flow(["create-data-binding-db", UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName],
@@ -1743,8 +1749,8 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, BindingNameFieldName, KeyValueFieldName],
 				EnvironmentPackageFields(
-					Field(BindingNameFieldName, StringType, "Binding name."),
-					Field(KeyValueFieldName, StringType, "Primary-key value of the row to remove."))),
+						Field(BindingNameFieldName, StringType, BindingNameDescription),
+						Field(KeyValueFieldName, StringType, "Primary-key value of the row to remove."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			[
@@ -1774,18 +1780,18 @@ internal static class ToolContractCatalog {
 				[PackageNameFieldName, SchemaNameFieldName, WorkspacePathFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings because the MCP tool does not expose a uri fallback."),
-					Field(PackageNameFieldName, StringType, "Target package name."),
-					Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings."),
-					Field(WorkspacePathFieldName, StringType, "Absolute local workspace path. Network-share paths are not supported."),
-					Field(BindingNameFieldName, StringType, "Optional binding name; defaults to the schema name."),
-					Field("install-type", NumberType, "Optional descriptor install type; defaults to 0."),
-					Field("values", StringType, "Optional JSON object keyed by column name for the initial row."),
-					Field("localizations", StringType, "Optional JSON object keyed by culture then column name.")
-				],
-				Validators: [
-					new ToolContractValidator(
-						"require-environment-name-for-runtime-schema",
-						"missing-required-parameter",
+						Field(PackageNameFieldName, StringType, PackageNameDescription),
+						Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings."),
+						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(BindingNameFieldName, StringType, "Optional binding name; defaults to the schema name."),
+						Field("install-type", NumberType, "Optional descriptor install type; defaults to 0."),
+						Field(ValuesFieldName, StringType, "Optional JSON object keyed by column name for the initial row."),
+						Field("localizations", StringType, "Optional JSON object keyed by culture then column name.")
+					],
+					Validators: [
+						new ToolContractValidator(
+							"require-environment-name-for-runtime-schema",
+							MissingRequiredParameterCode,
 						Fields: [
 							SchemaNameFieldName,
 							EnvironmentNameFieldName
@@ -1810,16 +1816,16 @@ internal static class ToolContractCatalog {
 				Example("Create a local SysSettings binding artifact", new Dictionary<string, object?> {
 					[PackageNameFieldName] = ExamplePackageName,
 					[SchemaNameFieldName] = "SysSettings",
-					[WorkspacePathFieldName] = @"C:\Work\UsrTaskApp",
-					["values"] = "{\"Code\":\"UsrTaskSetting\",\"Name\":\"Task setting\"}"
-				}),
-				Example("Create a local binding for a non-templated schema", new Dictionary<string, object?> {
-					[EnvironmentNameFieldName] = ExampleEnvironmentName,
-					[PackageNameFieldName] = ExamplePackageName,
-					[SchemaNameFieldName] = ExampleTaskStatusSchemaName,
-					[WorkspacePathFieldName] = @"C:\Work\UsrTaskApp"
-				})
-			],
+						[WorkspacePathFieldName] = ExampleWorkspacePath,
+						[ValuesFieldName] = "{\"Code\":\"UsrTaskSetting\",\"Name\":\"Task setting\"}"
+					}),
+					Example("Create a local binding for a non-templated schema", new Dictionary<string, object?> {
+						[EnvironmentNameFieldName] = ExampleEnvironmentName,
+						[PackageNameFieldName] = ExamplePackageName,
+						[SchemaNameFieldName] = ExampleTaskStatusSchemaName,
+						[WorkspacePathFieldName] = ExampleWorkspacePath
+					})
+				],
 			Flow(
 				[
 					CreateDataBindingTool.CreateDataBindingToolName,
@@ -1846,14 +1852,14 @@ internal static class ToolContractCatalog {
 			AddDataBindingRowTool.AddDataBindingRowToolName,
 			"Adds or replaces one row in an existing local package data binding. For workflow selection and verification discipline, call get-guidance with name `data-bindings`.",
 			new ToolInputSchemaContract(
-				[PackageNameFieldName, BindingNameFieldName, WorkspacePathFieldName, "values"],
-				[
-					Field(PackageNameFieldName, StringType, "Target package name."),
-					Field(BindingNameFieldName, StringType, "Binding name."),
-					Field(WorkspacePathFieldName, StringType, "Absolute local workspace path. Network-share paths are not supported."),
-					Field("values", StringType, "JSON object keyed by column name for the row to add or replace."),
-					Field("localizations", StringType, "Optional JSON object keyed by culture then column name.")
-				]),
+					[PackageNameFieldName, BindingNameFieldName, WorkspacePathFieldName, ValuesFieldName],
+					[
+						Field(PackageNameFieldName, StringType, PackageNameDescription),
+						Field(BindingNameFieldName, StringType, BindingNameDescription),
+						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(ValuesFieldName, StringType, "JSON object keyed by column name for the row to add or replace."),
+						Field("localizations", StringType, "Optional JSON object keyed by culture then column name.")
+					]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			[
@@ -1866,8 +1872,8 @@ internal static class ToolContractCatalog {
 				Example("Add one row to an existing local binding", new Dictionary<string, object?> {
 					[PackageNameFieldName] = ExamplePackageName,
 					[BindingNameFieldName] = ExampleTaskStatusSchemaName,
-					[WorkspacePathFieldName] = @"C:\Work\UsrTaskApp",
-					["values"] = "{\"Name\":\"In Progress\"}"
+					[WorkspacePathFieldName] = ExampleWorkspacePath,
+					[ValuesFieldName] = "{\"Name\":\"In Progress\"}"
 				})
 			],
 			Flow(
@@ -1887,11 +1893,11 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[PackageNameFieldName, BindingNameFieldName, WorkspacePathFieldName, KeyValueFieldName],
 				[
-					Field(PackageNameFieldName, StringType, "Target package name."),
-					Field(BindingNameFieldName, StringType, "Binding name."),
-					Field(WorkspacePathFieldName, StringType, "Absolute local workspace path. Network-share paths are not supported."),
-					Field(KeyValueFieldName, StringType, "Primary-key value of the row to remove.")
-				]),
+						Field(PackageNameFieldName, StringType, PackageNameDescription),
+						Field(BindingNameFieldName, StringType, BindingNameDescription),
+						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(KeyValueFieldName, StringType, "Primary-key value of the row to remove.")
+					]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			[
@@ -1905,7 +1911,7 @@ internal static class ToolContractCatalog {
 				Example("Remove one row from a local binding", new Dictionary<string, object?> {
 					[PackageNameFieldName] = ExamplePackageName,
 					[BindingNameFieldName] = ExampleTaskStatusSchemaName,
-					[WorkspacePathFieldName] = @"C:\Work\UsrTaskApp",
+					[WorkspacePathFieldName] = ExampleWorkspacePath,
 					[KeyValueFieldName] = "00000000-0000-0000-0000-000000000001"
 				})
 			],
