@@ -58,64 +58,49 @@ private static void AnalyzeObjectCreation(
 		ImmutableHashSet<INamedTypeSymbol> registeredTypes,
 		ImmutableHashSet<string> registeredFullyQualifiedTypeNames,
 		ImmutableHashSet<string> registeredSimpleTypeNames) {
-		if (IsInsideRegistrationInvocation(context.SemanticModel, context.Node, context.CancellationToken)) {
-			return;
-		}
+		if (IsInsideRegistrationInvocation(context.SemanticModel, context.Node, context.CancellationToken)) return;
 
 		ITypeSymbol? creationType = context.SemanticModel.GetTypeInfo(context.Node, context.CancellationToken).Type
 			?? context.SemanticModel.GetTypeInfo(context.Node, context.CancellationToken).ConvertedType;
 		INamedTypeSymbol? namedType = creationType as INamedTypeSymbol;
-
-		if (namedType?.IsRecord == true) {
-			return;
-		}
-
 		INamedTypeSymbol? containingType = context.ContainingSymbol?.ContainingType;
-		if (namedType is not null && SymbolEqualityComparer.Default.Equals(namedType.OriginalDefinition, containingType?.OriginalDefinition)) {
-			return;
-		}
 
-		if (containingType is not null && ExemptContainingTypeFullNames.Contains(containingType.ToDisplayString())) {
-			return;
-		}
-
-		if (IsInsideFactoryClass(context)) {
-			return;
-		}
-
-		if (namedType is not null
-			&& ExemptTypeFullNames.Contains(namedType.ToDisplayString())) {
-			return;
-		}
+		if (IsExemptCreation(namedType, containingType, context)) return;
 
 		string typeName = namedType?.Name ?? GetTypeNameFromCreationSyntax(context.Node);
 		string displayName = namedType?.ToDisplayString() ?? typeName;
 
 		bool isRegisteredBySymbol = namedType is not null && registeredTypes.Contains(namedType.OriginalDefinition);
-		bool isRegisteredByName = false;
-
-		if (namedType is not null) {
-			string fullyQualifiedName = NormalizeTypeName(
-				namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
-			isRegisteredByName = registeredFullyQualifiedTypeNames.Contains(fullyQualifiedName);
-		}
-		else {
-			// Fall back to simple-name matching only when semantic binding is unavailable.
-			string syntaxTypeName = NormalizeTypeName(GetTypeTextFromCreationSyntax(context.Node));
-			isRegisteredByName = registeredFullyQualifiedTypeNames.Contains(syntaxTypeName);
-			if (!isRegisteredByName && IsSimpleCreationSyntax(context.Node)) {
-				isRegisteredByName = registeredSimpleTypeNames.Contains(typeName);
-			}
-		}
-
+		bool isRegisteredByName = ResolveIsRegisteredByName(namedType, context.Node, registeredFullyQualifiedTypeNames, registeredSimpleTypeNames, typeName);
 		bool isLikelyDiService = namedType is not null && IsLikelyDiServiceType(namedType);
 
-		if (!isRegisteredBySymbol && !isRegisteredByName && !isLikelyDiService) {
-			return;
-		}
+		if (!isRegisteredBySymbol && !isRegisteredByName && !isLikelyDiService) return;
 
-		Diagnostic diagnostic = Diagnostic.Create(Rule, context.Node.GetLocation(), displayName);
-		context.ReportDiagnostic(diagnostic);
+		context.ReportDiagnostic(Diagnostic.Create(Rule, context.Node.GetLocation(), displayName));
+	}
+
+	private static bool IsExemptCreation(INamedTypeSymbol? namedType, INamedTypeSymbol? containingType, SyntaxNodeAnalysisContext context) {
+		if (namedType?.IsRecord == true) return true;
+		if (namedType is not null && SymbolEqualityComparer.Default.Equals(namedType.OriginalDefinition, containingType?.OriginalDefinition)) return true;
+		if (containingType is not null && ExemptContainingTypeFullNames.Contains(containingType.ToDisplayString())) return true;
+		if (IsInsideFactoryClass(context)) return true;
+		if (namedType is not null && ExemptTypeFullNames.Contains(namedType.ToDisplayString())) return true;
+		return false;
+	}
+
+	private static bool ResolveIsRegisteredByName(
+		INamedTypeSymbol? namedType,
+		SyntaxNode node,
+		ImmutableHashSet<string> registeredFullyQualifiedTypeNames,
+		ImmutableHashSet<string> registeredSimpleTypeNames,
+		string typeName) {
+		if (namedType is not null) {
+			string fullyQualifiedName = NormalizeTypeName(namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+			return registeredFullyQualifiedTypeNames.Contains(fullyQualifiedName);
+		}
+		string syntaxTypeName = NormalizeTypeName(GetTypeTextFromCreationSyntax(node));
+		if (registeredFullyQualifiedTypeNames.Contains(syntaxTypeName)) return true;
+		return IsSimpleCreationSyntax(node) && registeredSimpleTypeNames.Contains(typeName);
 	}
 
 	private static bool IsInsideFactoryClass(SyntaxNodeAnalysisContext context) {

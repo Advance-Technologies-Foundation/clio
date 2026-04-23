@@ -111,66 +111,56 @@ namespace Clio.Command {
 		/// <returns><c>true</c> when the page was updated successfully; otherwise <c>false</c>.</returns>
 		public bool TryUpdatePage(PageUpdateOptions options, out PageUpdateResponse response) {
 			try {
-				if (string.IsNullOrWhiteSpace(options.Body) && !string.IsNullOrWhiteSpace(options.BodyFile)) {
-					if (!File.Exists(options.BodyFile)) {
-						response = new PageUpdateResponse { Success = false, Error = $"File not found: {options.BodyFile}" };
-						return false;
-					}
-					options.Body = File.ReadAllText(options.BodyFile);
-				}
+				if (!TryLoadBodyFromFile(options, out response)) return false;
 				PageUpdateResponse validationError = ValidateInput(options, out Dictionary<string, string> explicitResources);
-				if (validationError != null) {
-					response = validationError;
-					return false;
-				}
-				EditableSchemaContext context;
-				if (!string.IsNullOrWhiteSpace(options.TargetSchemaUId)) {
-					context = new EditableSchemaContext {
-						SchemaName = options.SchemaName,
-						EditableSchemaUId = options.TargetSchemaUId,
-						TemplateSchemaUId = options.TargetSchemaUId,
-						IsCreateReplacing = false
-					};
-					response = null;
-				} else if (!TryResolveEditableSchemaContext(options.SchemaName, options.TargetPackageUId, out context, out response)) {
-					return false;
-				}
-				if (options.DryRun) {
-					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
-					return true;
-				}
-				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) {
-					return false;
-				}
-				JArray parsedOptionalProperties = null;
-				if (!string.IsNullOrWhiteSpace(options.OptionalProperties)) {
-					parsedOptionalProperties = JArray.Parse(options.OptionalProperties);
-				}
-				string bodyToWrite = options.Body;
-				bool isAppendMode = string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase);
-				if (isAppendMode) {
-					string currentBody = schemaToSave["body"]?.ToString();
-					if (!string.IsNullOrWhiteSpace(currentBody)) {
-						try {
-							bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body);
-						} catch (Exception ex) {
-							response = new PageUpdateResponse {
-								Success = false,
-								Error = $"Append merge failed: {ex.Message} [hint: the incoming body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]"
-							};
-							return false;
-						}
-					}
-				}
+				if (validationError != null) { response = validationError; return false; }
+				if (!TryResolveContext(options, out EditableSchemaContext context, out response)) return false;
+				if (options.DryRun) { response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null); return true; }
+				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
+				JArray parsedOptionalProperties = string.IsNullOrWhiteSpace(options.OptionalProperties)
+					? null : JArray.Parse(options.OptionalProperties);
+				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
 				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, explicitResources, parsedOptionalProperties);
-				if (!TrySaveSchema(schemaToSave, out response)) {
-					return false;
-				}
+				if (!TrySaveSchema(schemaToSave, out response)) return false;
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
 				return true;
-			}
-			catch (Exception ex) {
+			} catch (Exception ex) {
 				response = new PageUpdateResponse { Success = false, Error = ex.Message };
+				return false;
+			}
+		}
+
+		private static bool TryLoadBodyFromFile(PageUpdateOptions options, out PageUpdateResponse response) {
+			response = null;
+			if (!string.IsNullOrWhiteSpace(options.Body) || string.IsNullOrWhiteSpace(options.BodyFile)) return true;
+			if (!File.Exists(options.BodyFile)) {
+				response = new PageUpdateResponse { Success = false, Error = $"File not found: {options.BodyFile}" };
+				return false;
+			}
+			options.Body = File.ReadAllText(options.BodyFile);
+			return true;
+		}
+
+		private bool TryResolveContext(PageUpdateOptions options, out EditableSchemaContext context, out PageUpdateResponse response) {
+			if (!string.IsNullOrWhiteSpace(options.TargetSchemaUId)) {
+				context = new EditableSchemaContext { SchemaName = options.SchemaName, EditableSchemaUId = options.TargetSchemaUId, TemplateSchemaUId = options.TargetSchemaUId, IsCreateReplacing = false };
+				response = null;
+				return true;
+			}
+			return TryResolveEditableSchemaContext(options.SchemaName, options.TargetPackageUId, out context, out response);
+		}
+
+		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options, out string bodyToWrite, out PageUpdateResponse response) {
+			bodyToWrite = options.Body;
+			response = null;
+			if (!string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase)) return true;
+			string currentBody = schemaToSave["body"]?.ToString();
+			if (string.IsNullOrWhiteSpace(currentBody)) return true;
+			try {
+				bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body);
+				return true;
+			} catch (Exception ex) {
+				response = new PageUpdateResponse { Success = false, Error = $"Append merge failed: {ex.Message} [hint: the incoming body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]" };
 				return false;
 			}
 		}
@@ -191,89 +181,67 @@ namespace Clio.Command {
 		private bool TryResolveEditableSchemaContext(string schemaName, string targetPackageUIdOverride, out EditableSchemaContext context, out PageUpdateResponse response) {
 			TargetPackageUIdOverride = targetPackageUIdOverride;
 			context = null;
-			var (metadata, queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
-				_applicationClient,
-				_serviceUrlBuilder,
-				schemaName,
-				("UId", "UId"));
-			if (metadata == null) {
-				response = new PageUpdateResponse { Success = false, Error = queryError };
-				return false;
-			}
+			var (metadata, queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(_applicationClient, _serviceUrlBuilder, schemaName, ("UId", "UId"));
+			if (metadata == null) { response = new PageUpdateResponse { Success = false, Error = queryError }; return false; }
 			string rawSchemaUId = metadata["UId"]?.ToString();
-			if (string.IsNullOrWhiteSpace(rawSchemaUId)) {
-				response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' metadata is missing UId" };
-				return false;
-			}
+			if (string.IsNullOrWhiteSpace(rawSchemaUId)) { response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' metadata is missing UId" }; return false; }
 			if (_hierarchyClient == null) {
-				context = new EditableSchemaContext {
-					SchemaName = schemaName,
-					EditableSchemaUId = rawSchemaUId,
-					TemplateSchemaUId = rawSchemaUId,
-					IsCreateReplacing = false
-				};
+				context = new EditableSchemaContext { SchemaName = schemaName, EditableSchemaUId = rawSchemaUId, TemplateSchemaUId = rawSchemaUId, IsCreateReplacing = false };
 				response = null;
 				return true;
 			}
-			string designPackageUId;
-			if (!string.IsNullOrWhiteSpace(TargetPackageUIdOverride)) {
-				designPackageUId = TargetPackageUIdOverride;
-			} else {
-				try {
-					designPackageUId = _hierarchyClient.GetDesignPackageUId(rawSchemaUId);
-				} catch (Exception ex) {
-					response = new PageUpdateResponse { Success = false, Error = $"Failed to resolve design package for '{schemaName}': {ex.Message}" };
-					return false;
-				}
-				if (string.IsNullOrWhiteSpace(designPackageUId)) {
-					response = new PageUpdateResponse { Success = false, Error = $"Failed to resolve design package for '{schemaName}': no package returned" };
-					return false;
-				}
-			}
-			IReadOnlyList<PageDesignerHierarchySchema> hierarchy;
-			try {
-				hierarchy = _hierarchyClient.GetParentSchemas(rawSchemaUId, designPackageUId);
-			} catch (Exception ex) {
-				response = new PageUpdateResponse { Success = false, Error = $"Failed to load hierarchy for '{schemaName}': {ex.Message}" };
-				return false;
-			}
-			if (hierarchy == null || hierarchy.Count == 0) {
-				response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' hierarchy is empty" };
-				return false;
-			}
+			if (!TryGetDesignPackageUId(rawSchemaUId, schemaName, out string designPackageUId, out response)) return false;
+			if (!TryGetHierarchy(rawSchemaUId, designPackageUId, schemaName, out IReadOnlyList<PageDesignerHierarchySchema> hierarchy, out response)) return false;
 			PageDesignerHierarchySchema head = hierarchy[0];
 			string rootUId = FindRootSchemaUId(hierarchy, schemaName);
 			PageDesignerHierarchySchema root = !string.IsNullOrWhiteSpace(rootUId)
-				? hierarchy.FirstOrDefault(s => string.Equals(s.UId, rootUId, StringComparison.OrdinalIgnoreCase)) ?? head
-				: head;
-			bool headInDesignPackage = string.Equals(head.PackageUId, designPackageUId, StringComparison.OrdinalIgnoreCase);
-			string editableUId;
-			bool isCreateReplacing;
-			if (headInDesignPackage) {
-				editableUId = head.UId;
-				isCreateReplacing = false;
-			} else {
-				string existingInPkg = PageSchemaMetadataHelper.FindExistingSchemaInPackage(
-					_applicationClient, _serviceUrlBuilder, schemaName, designPackageUId);
-				if (!string.IsNullOrWhiteSpace(existingInPkg)) {
-					editableUId = existingInPkg;
-					isCreateReplacing = false;
-				} else {
-					editableUId = Guid.NewGuid().ToString();
-					isCreateReplacing = true;
-				}
-			}
+				? hierarchy.FirstOrDefault(s => string.Equals(s.UId, rootUId, StringComparison.OrdinalIgnoreCase)) ?? head : head;
+			(string editableUId, bool isCreateReplacing) = ResolveEditableUId(head, schemaName, designPackageUId);
 			context = new EditableSchemaContext {
-				SchemaName = schemaName,
-				EditableSchemaUId = editableUId,
-				DesignPackageUId = designPackageUId,
-				IsCreateReplacing = isCreateReplacing,
-				ParentSchemaUId = isCreateReplacing ? root.UId : null,
-				ParentSchemaName = root.Name,
-				TemplateSchemaUId = isCreateReplacing ? root.UId : editableUId
+				SchemaName = schemaName, EditableSchemaUId = editableUId, DesignPackageUId = designPackageUId,
+				IsCreateReplacing = isCreateReplacing, ParentSchemaUId = isCreateReplacing ? root.UId : null,
+				ParentSchemaName = root.Name, TemplateSchemaUId = isCreateReplacing ? root.UId : editableUId
 			};
 			response = null;
 			return true;
+		}
+
+		private bool TryGetDesignPackageUId(string rawSchemaUId, string schemaName, out string designPackageUId, out PageUpdateResponse response) {
+			if (!string.IsNullOrWhiteSpace(TargetPackageUIdOverride)) {
+				designPackageUId = TargetPackageUIdOverride;
+				response = null;
+				return true;
+			}
+			try {
+				designPackageUId = _hierarchyClient.GetDesignPackageUId(rawSchemaUId);
+			} catch (Exception ex) {
+				designPackageUId = null;
+				response = new PageUpdateResponse { Success = false, Error = $"Failed to resolve design package for '{schemaName}': {ex.Message}" };
+				return false;
+			}
+			if (!string.IsNullOrWhiteSpace(designPackageUId)) { response = null; return true; }
+			response = new PageUpdateResponse { Success = false, Error = $"Failed to resolve design package for '{schemaName}': no package returned" };
+			return false;
+		}
+
+		private bool TryGetHierarchy(string rawSchemaUId, string designPackageUId, string schemaName, out IReadOnlyList<PageDesignerHierarchySchema> hierarchy, out PageUpdateResponse response) {
+			try {
+				hierarchy = _hierarchyClient.GetParentSchemas(rawSchemaUId, designPackageUId);
+			} catch (Exception ex) {
+				hierarchy = null;
+				response = new PageUpdateResponse { Success = false, Error = $"Failed to load hierarchy for '{schemaName}': {ex.Message}" };
+				return false;
+			}
+			if (hierarchy != null && hierarchy.Count > 0) { response = null; return true; }
+			response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' hierarchy is empty" };
+			return false;
+		}
+
+		private (string editableUId, bool isCreateReplacing) ResolveEditableUId(PageDesignerHierarchySchema head, string schemaName, string designPackageUId) {
+			if (string.Equals(head.PackageUId, designPackageUId, StringComparison.OrdinalIgnoreCase))
+				return (head.UId, false);
+			string existingInPkg = PageSchemaMetadataHelper.FindExistingSchemaInPackage(_applicationClient, _serviceUrlBuilder, schemaName, designPackageUId);
+			return string.IsNullOrWhiteSpace(existingInPkg) ? (Guid.NewGuid().ToString(), true) : (existingInPkg, false);
 		}
 
 		internal sealed class EditableSchemaContext {

@@ -233,45 +233,12 @@ public class PageGetCommand : Command<PageGetOptions> {
 	}
 
 	private static PageOwnBodySummary BuildOwnBodySummary(PageDesignerHierarchySchema schema, IPageSchemaBodyParser parser) {
-		if (schema == null || string.IsNullOrWhiteSpace(schema.Body)) {
+		if (schema == null || string.IsNullOrWhiteSpace(schema.Body))
 			return new PageOwnBodySummary { BodyLength = 0 };
-		}
 		PageParsedSchemaBody parsed = parser.Parse(schema.Body);
-		int handlerCount = 0;
-		var handlerRequests = new System.Collections.Generic.List<string>();
 		string handlers = parsed.Handlers?.Trim();
-		if (!string.IsNullOrEmpty(handlers) && handlers != "[]") {
-			int depth = 0;
-			foreach (char ch in handlers) {
-				if (ch == '{') {
-					if (depth == 0) handlerCount++;
-					depth++;
-				} else if (ch == '}') {
-					depth--;
-				}
-			}
-			var requestRegex = new System.Text.RegularExpressions.Regex(
-				@"request\s*:\s*[""']([^""']+)[""']",
-				System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.Compiled,
-				System.TimeSpan.FromSeconds(1));
-			foreach (System.Text.RegularExpressions.Match m in requestRegex.Matches(handlers)) {
-				handlerRequests.Add(m.Groups[1].Value);
-			}
-		}
-		var ops = new System.Collections.Generic.List<PageOperationInfo>();
-		if (parsed.ViewConfigDiff is Newtonsoft.Json.Linq.JArray viewDiff) {
-			foreach (Newtonsoft.Json.Linq.JToken item in viewDiff) {
-				if (item is not Newtonsoft.Json.Linq.JObject obj) {
-					continue;
-				}
-				ops.Add(new PageOperationInfo {
-					Operation = obj["operation"]?.ToString(),
-					Name = obj["name"]?.ToString(),
-					Type = obj["values"]?["type"]?.ToString(),
-					ParentName = obj["parentName"]?.ToString()
-				});
-			}
-		}
+		(int handlerCount, var handlerRequests) = ExtractHandlerInfo(handlers);
+		var ops = ExtractViewConfigOps(parsed);
 		return new PageOwnBodySummary {
 			BodyLength = schema.Body.Length,
 			ViewConfigDiffOperations = (parsed.ViewConfigDiff as Newtonsoft.Json.Linq.JArray)?.Count ?? 0,
@@ -281,5 +248,40 @@ public class PageGetCommand : Command<PageGetOptions> {
 			ViewConfigDiffOps = ops,
 			HandlerRequests = handlerRequests
 		};
+	}
+
+	private static (int count, System.Collections.Generic.List<string> requests) ExtractHandlerInfo(string handlers) {
+		int count = 0;
+		var requests = new System.Collections.Generic.List<string>();
+		if (string.IsNullOrEmpty(handlers) || handlers == "[]")
+			return (count, requests);
+		int depth = 0;
+		foreach (char ch in handlers) {
+			if (ch == '{') { if (depth == 0) count++; depth++; }
+			else if (ch == '}') { depth--; }
+		}
+		var requestRegex = new System.Text.RegularExpressions.Regex(
+			@"request\s*:\s*[""']([^""']+)[""']",
+			System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.Compiled,
+			System.TimeSpan.FromSeconds(1));
+		foreach (System.Text.RegularExpressions.Match m in requestRegex.Matches(handlers))
+			requests.Add(m.Groups[1].Value);
+		return (count, requests);
+	}
+
+	private static System.Collections.Generic.List<PageOperationInfo> ExtractViewConfigOps(PageParsedSchemaBody parsed) {
+		var ops = new System.Collections.Generic.List<PageOperationInfo>();
+		if (parsed.ViewConfigDiff is not Newtonsoft.Json.Linq.JArray viewDiff)
+			return ops;
+		foreach (Newtonsoft.Json.Linq.JToken item in viewDiff) {
+			if (item is not Newtonsoft.Json.Linq.JObject obj) continue;
+			ops.Add(new PageOperationInfo {
+				Operation = obj["operation"]?.ToString(),
+				Name = obj["name"]?.ToString(),
+				Type = obj["values"]?["type"]?.ToString(),
+				ParentName = obj["parentName"]?.ToString()
+			});
+		}
+		return ops;
 	}
 }
