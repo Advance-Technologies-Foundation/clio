@@ -145,7 +145,8 @@ public sealed class ApplicationCreateTool(
 			throw new ArgumentException("code is required.");
 		}
 
-		if (!KnownTemplates.Contains((args.TemplateCode ?? "AppFreedomUI").Trim(), StringComparer.OrdinalIgnoreCase)) {
+		string effectiveTemplate = string.IsNullOrWhiteSpace(args.TemplateCode) ? "AppFreedomUI" : args.TemplateCode.Trim();
+		if (!KnownTemplates.Contains(effectiveTemplate, StringComparer.OrdinalIgnoreCase)) {
 			string available = string.Join(", ", KnownTemplates);
 			throw new ArgumentException(
 				$"Unknown template-code '{args.TemplateCode}'. " +

@@ -87,7 +87,7 @@ public class SqlSchemaUpdateCommand : Command<SqlSchemaUpdateOptions> {
 				return true;
 			}
 			(JObject schemaToSave, string loadError) = SchemaDesignerHelper.LoadSchema(
-				_applicationClient, _serviceUrlBuilder, schemaUId, Kind);
+				_applicationClient, _serviceUrlBuilder, schemaUId, Kind, options.SchemaName);
 			if (loadError != null) {
 				response = new SqlSchemaUpdateResponse { Success = false, Error = loadError };
 				return false;

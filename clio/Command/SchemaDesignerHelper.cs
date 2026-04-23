@@ -7,24 +7,28 @@ using Newtonsoft.Json.Linq;
 
 internal sealed record SchemaDesignerKind(
 	string ManagerName,
+	string ServiceName,
 	string GetRoute,
 	string SaveRoute,
 	string CreateRoute = null) {
 
 	internal static readonly SchemaDesignerKind SourceCode = new(
 		"SourceCodeSchemaManager",
+		"SourceCodeSchemaDesignerService",
 		"ServiceModel/SourceCodeSchemaDesignerService.svc/GetSchema",
 		"ServiceModel/SourceCodeSchemaDesignerService.svc/SaveSchema",
 		"ServiceModel/SourceCodeSchemaDesignerService.svc/CreateNewSchema");
 
 	internal static readonly SchemaDesignerKind SqlScript = new(
 		"ScriptSchemaManager",
+		"ScriptSchemaDesignerService",
 		"ServiceModel/ScriptSchemaDesignerService.svc/GetSchema",
 		"ServiceModel/ScriptSchemaDesignerService.svc/SaveSchema",
 		"ServiceModel/ScriptSchemaDesignerService.svc/CreateNewSchema");
 
 	internal static readonly SchemaDesignerKind ClientUnit = new(
 		"ClientUnitSchemaManager",
+		"ClientUnitSchemaDesignerService",
 		"/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema",
 		"/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema",
 		"/ServiceModel/ClientUnitSchemaDesignerService.svc/CreateNewSchema");
@@ -75,7 +79,8 @@ internal static class SchemaDesignerHelper {
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
 		string schemaUId,
-		SchemaDesignerKind kind) {
+		SchemaDesignerKind kind,
+		string schemaName = null) {
 		var request = new JObject {
 			["schemaUId"] = schemaUId,
 			["useFullHierarchy"] = false
@@ -83,8 +88,10 @@ internal static class SchemaDesignerHelper {
 		string designerUrl = urlBuilder.Build(kind.GetRoute);
 		string json = client.ExecutePostRequest(designerUrl, request.ToString(Formatting.None));
 		JObject response = JObject.Parse(json);
-		if (response["schema"] is not JObject loaded)
-			return (null, "Designer service did not return a schema payload");
+		if (response["schema"] is not JObject loaded) {
+			string label = schemaName ?? schemaUId;
+			return (null, $"Failed to load schema '{label}' via {kind.ServiceName}");
+		}
 		return (loaded, null);
 	}
 

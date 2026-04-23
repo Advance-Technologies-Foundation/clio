@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using ATF.Repository.Providers;
 using Clio.Command;
@@ -1518,7 +1519,15 @@ public sealed class ApplicationToolTests {
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
 		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 		applicationCreateService.CreateApplication(Arg.Any<string>(), Arg.Any<ApplicationCreateRequest>())
-			.Returns(new ApplicationCreateResponse { ApplicationId = Guid.NewGuid(), PackageName = "UsrCodexApp" });
+			.Returns(new ApplicationInfoResult(
+				PackageUId: Guid.NewGuid().ToString(),
+				PackageName: "UsrCodexApp",
+				Entities: Array.Empty<ApplicationEntityInfoResult>(),
+				ApplicationId: Guid.NewGuid().ToString()));
+		enrichmentService.EnrichAsync(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
+			.Returns(new ApplicationDataForgeResult(
+				Used: false, Health: null, Status: null, Coverage: null,
+				Warnings: Array.Empty<string>(), ContextSummary: null));
 
 		// Act
 		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(

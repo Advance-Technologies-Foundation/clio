@@ -76,7 +76,7 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 				return false;
 			}
 			(JObject schema, string loadError) = SchemaDesignerHelper.LoadSchema(
-				_applicationClient, _serviceUrlBuilder, schemaUId, Kind);
+				_applicationClient, _serviceUrlBuilder, schemaUId, Kind, options.SchemaName);
 			if (loadError != null) {
 				response = new GetClientUnitSchemaResponse { Success = false, Error = loadError };
 				return false;
