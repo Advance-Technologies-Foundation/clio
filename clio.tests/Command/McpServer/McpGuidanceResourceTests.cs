@@ -48,6 +48,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should publish the preferred page inspection and write sequence as MCP-owned guidance");
 		article.Text.Should().Contain("get-guidance",
 			because: "the creation-oriented guide should point callers to the dedicated existing-app maintenance guide through the guidance tool");
+		article.Text.Should().Contain("data-bindings",
+			because: "the creation-oriented guide should point callers to the dedicated binding guide when workflow selection depends on data bindings");
 		article.Text.Should().Contain("scalar-only for app shell fields",
 			because: "the guide should state that create-app keeps shell fields as plain strings");
 		article.Text.Should().Contain("Do not send localization-map fields",
@@ -158,6 +160,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should explain the concrete resources payload shape expected by page tools");
 		article.Text.Should().Contain("create-data-binding-db",
 			because: "the guide should steer standalone lookup seeding back to MCP-native data-binding tools");
+		article.Text.Should().Contain("data-bindings",
+			because: "the guide should point callers to the dedicated binding guide for workflow selection and section registration");
 		article.Text.Should().Contain("Read before write, and read back after mutations",
 			because: "the guide should set the canonical verification discipline for existing-app edits");
 		article.Text.Should().Contain("Absence of a tab, detail, or grid on the page does not prove the backing entity is missing",
@@ -168,6 +172,46 @@ public sealed class McpGuidanceResourceTests {
 			because: "the maintenance guide should explicitly document the canonical sync-schemas request field");
 		article.Text.Should().Contain("operations[*].operation",
 			because: "the maintenance guide should explicitly warn callers away from the legacy request field");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for generic lookup seeding and local binding workflows.")]
+	public void DataBindingsGuidanceResource_Should_Return_Canonical_Data_Bindings_Guide() {
+		// Arrange
+		DataBindingsGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = (TextResourceContents)result;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/data-bindings",
+			because: "the binding guide should expose a stable MCP URI for generic cross-tool binding guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the binding guide should be discoverable as plain text");
+		article.Text.Should().Contain("get-tool-contract",
+			because: "the guide should route exact field-level questions to the executable contract tool");
+		article.Text.Should().Contain("sync-schemas",
+			because: "the guide should identify inline seed rows as a canonical batched path");
+		article.Text.Should().Contain("create-data-binding-db",
+			because: "the guide should advertise the standalone DB-first binding path");
+		article.Text.Should().Contain("create-data-binding",
+			because: "the guide should advertise the local binding artifact path");
+		article.Text.Should().NotContain(".agents/skills/clio-data-bindings",
+			because: "the guide should stay valid after install-skills copies the bundle outside the source repo layout");
+		article.Text.Should().NotContain("CardSchemaUId",
+			because: "section page linkage invariants do not belong in the generic binding guide");
+		article.Text.Should().NotContain("assets/bindings-lookup.json",
+			because: "section-specific stable ID sourcing does not belong in the generic binding guide");
+		article.Text.Should().Contain("runtime-only columns are not blockers",
+			because: "the guide should explain the DB-first subset-column projection rule for Account-like schemas");
+		article.Text.Should().Contain("install logs or planned payloads",
+			because: "the guide should reject install-log-only verification for remote binding mutations");
+		article.Text.Should().Contain("Seed rows do not implement defaults",
+			because: "the guide should keep lookup seeding separate from default semantics");
+		article.Text.Should().Contain("DisplayValue",
+			because: "the guide should make lookup and image-reference display semantics explicit");
 	}
 
 	[Test]

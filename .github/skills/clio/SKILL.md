@@ -37,7 +37,7 @@ clio ver
 - User wants to **create or modify entity schemas** (columns, types, lookups) in Creatio
 - User wants to **find or discover entity schemas** by name, pattern, or UId in Creatio
 - User wants to **read or update Freedom UI pages** (get-page, update-page, list-pages)
-- User wants to **manage package data bindings** (seed data for SysSettings, SysModule, custom entities)
+- User wants to **manage package data bindings** (seed data for SysSettings and custom entities)
 - **A browser page or HTTP response matches the Creatio fingerprint** (see below)
 
 ## Creatio Platform Detection (Fingerprinting)
@@ -532,6 +532,11 @@ Use validators for field-value validation. For deployed schema editing, read the
 ### 10. Data Bindings
 
 Create and manage package data bindings for seed data.
+For canonical workflow selection across lookup seeding and binding artifacts, call `get-guidance` with `name` set to `data-bindings`.
+Use `get-tool-contract` for exact MCP field names and request shapes.
+For DB-first flows, SaveSchema metadata is projected to the primary key plus the columns referenced by currently bound or requested rows.
+Unrelated runtime-only columns do not block Account-like schemas; explicitly requested unsupported runtime columns still fail.
+After remote mutation, read back from Creatio instead of treating the request payload or install log as proof.
 
 ```bash
 # Create SysSettings binding (offline — no environment needed)
@@ -608,4 +613,4 @@ clio update-cli
 - Manifest YAML files support GitOps: apps, syssettings, features, webservices
 - Entity schema commands (`create-entity-schema`, `modify-entity-schema-column`, etc.) require cliogate ≥ 2.0
 - Freedom UI page commands (`get-page`, `update-page`, `list-pages`) work without cliogate
-- Data binding commands that work offline (no environment): `create-data-binding` with SysSettings/SysModule templates, `add-data-binding-row`, `remove-data-binding-row`
+- Data binding commands that work offline (no environment): `create-data-binding` with the SysSettings template, `add-data-binding-row`, `remove-data-binding-row`

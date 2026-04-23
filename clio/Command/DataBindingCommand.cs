@@ -624,7 +624,6 @@ internal sealed class DataBindingService(
 			}
 
 			row.Add(BuildMainRowValue(
-				descriptor.Name,
 				column,
 				node,
 				allowEmptyPrimaryKey || !column.IsKey,
@@ -715,7 +714,6 @@ internal sealed class DataBindingService(
 	}
 
 	private DataBindingRowValue BuildMainRowValue(
-		string bindingName,
 		DataBindingColumnDefinition column,
 		JsonNode? node,
 		bool allowEmptyString,
@@ -728,7 +726,6 @@ internal sealed class DataBindingService(
 			column.ColumnName,
 			allowEmptyString,
 			fileBasePath: valueFileBasePath);
-		converted = DataBindingDomainRules.NormalizeValue(bindingName, column.ColumnName, converted);
 		object? normalizedValue = NormalizeBindingRowValue(column, converted);
 		DataBindingRowValue rowValue = new() {
 			SchemaColumnUId = column.ColumnUId,
@@ -1186,40 +1183,6 @@ internal sealed class DataBindingTemplateCatalog : IDataBindingTemplateSchemaCat
 						28,
 						null)
 				]),
-			["SysModule"] = new(
-				new Guid("2b2ed767-0b4b-4a7b-9de2-d48e14a2c0c5"),
-				"SysModule",
-				new Guid("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"),
-				[
-					new DataBindingSchemaColumn(new Guid("bd3cf32d-f9b5-471b-a0ca-f541296b979d"), "Attribute", 27, null),
-					new DataBindingSchemaColumn(new Guid("327a0dc4-df63-4f6e-9d33-bc403d284cb6"), "CardSchemaUId", 0, null),
-					new DataBindingSchemaColumn(new Guid("cb4bb1d2-d369-406e-8150-502dd7af2199"), "CardModuleUId", 0, null),
-					new DataBindingSchemaColumn(new Guid("3da3c3b2-02fb-4cca-80c3-7946d4e8f565"), "Caption", 27, null),
-					new DataBindingSchemaColumn(new Guid("e0c474a3-e4bc-457e-bb67-c1ec1b399f60"), "Code", 28, null),
-					new DataBindingSchemaColumn(new Guid("48b260f5-5aad-608c-73a9-2b835ef697f4"), "Description", 29, null),
-					new DataBindingSchemaColumn(new Guid("d3afc924-2d21-4c0e-b2f3-9f8c180221f9"), "FolderMode", 10, null),
-					new DataBindingSchemaColumn(new Guid("eea74681-e019-4885-9a1e-e8261f2665ea"), "GlobalSearchAvailable", 12, null),
-					new DataBindingSchemaColumn(new Guid("a0fd39b2-b680-4515-ac3c-72322db4f1b8"), "HasActions", 12, null),
-					new DataBindingSchemaColumn(new Guid("34dfc288-1b25-4d53-bdf3-16b58a84e276"), "HasAnalytics", 12, null),
-					new DataBindingSchemaColumn(new Guid("80769c54-f4f4-43cb-93f8-0824715969a6"), "HasRecent", 12, null),
-					new DataBindingSchemaColumn(new Guid("9a366fd1-19c8-4ba7-9bdd-039f164c08ec"), "HelpContextId", 28, null),
-					new DataBindingSchemaColumn(new Guid("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0, null),
-					new DataBindingSchemaColumn(new Guid("48ed5be5-6dcd-44ba-6294-a29c8daef880"), "IconBackground", 27, null),
-					new DataBindingSchemaColumn(new Guid("6d827ba7-a622-47cc-8f11-b40b91c7441a"), "Image16", 14, null, new Guid("fa6e6e49-b996-475e-a77e-73904e4c5a88")),
-					new DataBindingSchemaColumn(new Guid("ed272316-b65f-41db-a9b4-e53ab939e4d6"), "Image20", 14, null, new Guid("fa6e6e49-b996-475e-a77e-73904e4c5a88")),
-					new DataBindingSchemaColumn(new Guid("63f1eb37-455a-4a53-ace2-fa5ef4c3d10f"), "Image32", 1, null, new Guid("b039feb0-ee7c-4884-8aa6-d6d45d84316f")),
-					new DataBindingSchemaColumn(new Guid("dedaabd6-732d-47ac-b229-50a8ee02292c"), "IsSystem", 12, null),
-					new DataBindingSchemaColumn(new Guid("380d55b9-487c-429b-9aff-e04101ffc307"), "Logo", 1, null, new Guid("b039feb0-ee7c-4884-8aa6-d6d45d84316f")),
-					new DataBindingSchemaColumn(new Guid("74a0895a-c418-9012-441c-0c888293e434"), "MobileSectionSchemaUId", 0, null),
-					new DataBindingSchemaColumn(new Guid("7b904e78-84bf-408c-a7a1-1287e66837d3"), "ModuleHeader", 27, null),
-					new DataBindingSchemaColumn(new Guid("af5bbb5e-9c78-44b7-8fdd-2bfc4353b4a8"), "SectionSchemaUId", 0, null),
-					new DataBindingSchemaColumn(new Guid("d57c3c34-e293-4aed-bff6-91dc90408958"), "SectionModuleSchemaUId", 0, null),
-					new DataBindingSchemaColumn(new Guid("3f098e0d-6cbd-4e8f-bc3e-00709f2d8d82"), "SysModuleEntity", 10, null),
-					new DataBindingSchemaColumn(new Guid("e6243d2b-cc8f-4b2d-8646-36bac9fb48e9"), "SysModuleVisa", 10, null),
-					new DataBindingSchemaColumn(new Guid("b3fefb7f-2aab-4b16-97aa-6ca3f3bd7ac2"), "SysPageSchemaUId", 0, null),
-					new DataBindingSchemaColumn(new Guid("1e4741cc-9a6e-446f-9865-5f5910fadd67"), "Type", 4, null),
-					new DataBindingSchemaColumn(new Guid("f3a29fb6-f13d-443e-8360-d4f51e8bcec8"), "TypeColumnValue", 0, null)
-				])
 		};
 
 	public bool HasTemplate(string schemaName) {
@@ -1243,66 +1206,6 @@ internal sealed class DataBindingSerializer : IDataBindingSerializer {
 
 	public string SerializePackageData(DataBindingPackageDataFile dataFile) {
 		return JsonSerializer.Serialize(dataFile, DataBindingJson.Options);
-	}
-}
-
-internal enum SysModuleAllowedIconBackgroundColor {
-	HexA6DE00,
-	Hex20A959,
-	Hex22AC14,
-	HexFFAC07,
-	HexFF8800,
-	HexF9307F,
-	HexFF602E,
-	HexFF4013,
-	HexB87CCF,
-	Hex7848EE,
-	Hex247EE5,
-	Hex0058EF,
-	Hex009DE3,
-	Hex4F43C2,
-	Hex08857E,
-	Hex00BFA5
-}
-
-internal static class DataBindingDomainRules {
-	private static readonly IReadOnlyDictionary<SysModuleAllowedIconBackgroundColor, string> SysModuleIconBackgroundPalette =
-		new Dictionary<SysModuleAllowedIconBackgroundColor, string> {
-			[SysModuleAllowedIconBackgroundColor.HexA6DE00] = "#A6DE00",
-			[SysModuleAllowedIconBackgroundColor.Hex20A959] = "#20A959",
-			[SysModuleAllowedIconBackgroundColor.Hex22AC14] = "#22AC14",
-			[SysModuleAllowedIconBackgroundColor.HexFFAC07] = "#FFAC07",
-			[SysModuleAllowedIconBackgroundColor.HexFF8800] = "#FF8800",
-			[SysModuleAllowedIconBackgroundColor.HexF9307F] = "#F9307F",
-			[SysModuleAllowedIconBackgroundColor.HexFF602E] = "#FF602E",
-			[SysModuleAllowedIconBackgroundColor.HexFF4013] = "#FF4013",
-			[SysModuleAllowedIconBackgroundColor.HexB87CCF] = "#B87CCF",
-			[SysModuleAllowedIconBackgroundColor.Hex7848EE] = "#7848EE",
-			[SysModuleAllowedIconBackgroundColor.Hex247EE5] = "#247EE5",
-			[SysModuleAllowedIconBackgroundColor.Hex0058EF] = "#0058EF",
-			[SysModuleAllowedIconBackgroundColor.Hex009DE3] = "#009DE3",
-			[SysModuleAllowedIconBackgroundColor.Hex4F43C2] = "#4F43C2",
-			[SysModuleAllowedIconBackgroundColor.Hex08857E] = "#08857E",
-			[SysModuleAllowedIconBackgroundColor.Hex00BFA5] = "#00BFA5"
-		};
-
-	private static readonly IReadOnlyDictionary<string, string> SysModuleIconBackgroundLookup =
-		SysModuleIconBackgroundPalette.Values.ToDictionary(color => color, color => color, StringComparer.OrdinalIgnoreCase);
-
-	public static object? NormalizeValue(string bindingName, string columnName, object? value) {
-		if (!string.Equals(bindingName, "SysModule", StringComparison.OrdinalIgnoreCase) ||
-			!string.Equals(columnName, "IconBackground", StringComparison.OrdinalIgnoreCase) ||
-			value is not string stringValue ||
-			string.IsNullOrWhiteSpace(stringValue)) {
-			return value;
-		}
-
-		if (SysModuleIconBackgroundLookup.TryGetValue(stringValue, out string? normalizedColor)) {
-			return normalizedColor;
-		}
-
-		throw new InvalidOperationException(
-			$"Column 'IconBackground' for binding 'SysModule' must use one of the predefined colors: {string.Join(", ", SysModuleIconBackgroundPalette.Values)}.");
 	}
 }
 

@@ -310,6 +310,10 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 			because: "the create prompt should highlight the required environment-name argument");
 		createPrompt.Should().Contain("restore-workspace",
 			because: "the create prompt should guide users to restore-workspace for syncing");
+		createPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the create prompt should route callers to the canonical binding guide for workflow selection");
+		createPrompt.Should().Contain("data-bindings",
+			because: "the create prompt should name the canonical binding guide explicitly");
 		createPrompt.Should().Contain("sync-schemas",
 			because: "the create prompt should advertise sync-schemas as the canonical batched path");
 		createPrompt.Should().Contain("explicit fallback",
@@ -318,18 +322,38 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 			because: "the prompt should steer standalone lookup seeding back to the supported MCP path");
 		createPrompt.Should().Contain("values",
 			because: "the create prompt should explain the required row wrapper shape");
+		createPrompt.Should().Contain("projected from the primary key plus the columns referenced",
+			because: "the create prompt should explain the DB-first subset-column projection rule");
+		createPrompt.Should().Contain("read back from Creatio",
+			because: "the create prompt should require remote read-back instead of trusting mutation intent");
 		upsertPrompt.Should().Contain(UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName,
 			because: "the upsert prompt should reference the exact production MCP tool name");
 		upsertPrompt.Should().Contain("environment-name",
 			because: "the upsert prompt should reference the environment-name argument");
+		upsertPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the upsert prompt should route callers to the canonical binding guide for workflow selection");
+		upsertPrompt.Should().Contain("data-bindings",
+			because: "the upsert prompt should name the canonical binding guide explicitly");
 		upsertPrompt.Should().Contain("must already exist",
 			because: "the upsert prompt should state the existing-binding precondition");
 		upsertPrompt.Should().Contain(CreateDataBindingDbTool.CreateDataBindingDbToolName,
 			because: "the upsert prompt should tell callers to create the binding first when needed");
+		upsertPrompt.Should().Contain("bound rows and the requested upsert payload",
+			because: "the upsert prompt should explain how projected binding metadata is rebuilt");
+		upsertPrompt.Should().Contain("read back from Creatio",
+			because: "the upsert prompt should require remote read-back instead of trusting mutation intent");
 		removePrompt.Should().Contain(RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName,
 			because: "the remove prompt should reference the exact production MCP tool name");
+		removePrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the remove prompt should route callers to the canonical binding guide for workflow selection");
+		removePrompt.Should().Contain("data-bindings",
+			because: "the remove prompt should name the canonical binding guide explicitly");
 		removePrompt.Should().Contain("package schema data record",
 			because: "the remove prompt should mention the cleanup of orphaned package schema data");
+		removePrompt.Should().Contain("remaining bound rows",
+			because: "the remove prompt should explain how projected binding metadata is rebuilt after deletion");
+		removePrompt.Should().Contain("read back from Creatio",
+			because: "the remove prompt should require remote read-back instead of trusting mutation intent");
 	}
 
 	private static string BuildApplicationClientResponse(string url) {

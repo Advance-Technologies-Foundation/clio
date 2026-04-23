@@ -190,41 +190,15 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 	}
 
 	[Test]
-	[Description("Creates a SysModule binding from the built-in offline template and preserves the checked-in image data-type identifiers for Image16 and Image20 without calling Creatio.")]
-	public void Execute_Should_Create_SysModule_Template_With_Image_DataType_Guids() {
+	[Description("Writes the caller-provided DisplayValue for generic runtime lookup columns when create-data-binding receives the structured object payload shape.")]
+	public void Execute_Should_Write_Caller_Provided_DisplayValue_For_Runtime_Lookup_Columns() {
 		// Arrange
 		CreateDataBindingOptions options = new() {
+			Environment = "dev",
 			PackageName = PackageName,
-			SchemaName = "SysModule"
-		};
-
-		// Act
-		int result = _command.Execute(options);
-
-		// Assert
-		result.Should().Be(0,
-			because: "the built-in SysModule template should allow offline binding creation");
-		string descriptorJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "SysModule", "descriptor.json"));
-		descriptorJson.Should().Contain("\"ColumnName\": \"Image16\"",
-			because: "the SysModule template should include the small image column");
-		descriptorJson.Should().Contain("\"ColumnName\": \"Image20\"",
-			because: "the SysModule template should include the medium image column");
-		descriptorJson.Should().Contain("\"DataTypeValueUId\": \"fa6e6e49-b996-475e-a77e-73904e4c5a88\"",
-			because: "Image16 and Image20 must keep the filesystem-compatible image-content data type identifier from the checked-in binding");
-		descriptorJson.Should().Contain("\"DataTypeValueUId\": \"b039feb0-ee7c-4884-8aa6-d6d45d84316f\"",
-			because: "Logo and Image32 must keep the checked-in image-reference data type identifier from the checked-in binding");
-		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
-	}
-
-	[Test]
-	[Description("Writes the caller-provided DisplayValue for lookup and image-reference columns when create-data-binding receives the structured object payload shape.")]
-	public void Execute_Should_Write_Caller_Provided_DisplayValue_For_Lookup_And_ImageReference_Columns() {
-		// Arrange
-		CreateDataBindingOptions options = new() {
-			PackageName = PackageName,
-			SchemaName = "SysModule",
+			SchemaName = "UsrLookupBinding",
 			ValuesJson =
-				"""{"Code":"UsrModule","FolderMode":{"value":"b659d704-3955-e011-981f-00155d043204","displayValue":"Provided folder mode"},"Logo":{"value":"1171d0f0-63eb-4bd1-a50b-001ecbaf0001","displayValue":"Provided module logo"}}"""
+				"""{"Name":"Lookup row","StatusId":{"value":"b659d704-3955-e011-981f-00155d043204","displayValue":"Provided status"}}"""
 		};
 
 		// Act
@@ -232,12 +206,10 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 
 		// Assert
 		result.Should().Be(0,
-			because: "structured lookup and image-reference payloads with explicit displayValue should be accepted");
-		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "SysModule", "data.json"));
-		dataJson.Should().Contain("\"DisplayValue\": \"Provided folder mode\"",
+			because: "structured lookup payloads with explicit displayValue should be accepted");
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "UsrLookupBinding", "data.json"));
+		dataJson.Should().Contain("\"DisplayValue\": \"Provided status\"",
 			because: "lookup columns should preserve the caller-supplied display value");
-		dataJson.Should().Contain("\"DisplayValue\": \"Provided module logo\"",
-			because: "image-reference columns should preserve the caller-supplied display value");
 	}
 
 	[Test]
@@ -264,37 +236,16 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 	}
 
 	[Test]
-	[Description("Rejects non-null lookup payloads without DisplayValue during create-data-binding when no runtime lookup data is available to resolve it.")]
-	public void Execute_Should_Fail_When_Lookup_DisplayValue_Is_Missing_Offline() {
+	[Description("Base64-encodes a local file path when create-data-binding writes a generic runtime image-content column instead of requiring the caller to supply an already encoded string.")]
+	public void Execute_Should_Encode_Image_File_For_Runtime_Image_Content_Column() {
 		// Arrange
 		CreateDataBindingOptions options = new() {
+			Environment = "dev",
 			PackageName = PackageName,
-			SchemaName = "SysModule",
-			ValuesJson =
-				"""{"Code":"UsrModule","FolderMode":"b659d704-3955-e011-981f-00155d043204"}"""
-		};
-
-		// Act
-		int result = _command.Execute(options);
-
-		// Assert
-		result.Should().Be(1,
-			because: "offline create-data-binding cannot infer lookup display text from local template metadata alone");
-		_logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.Contains("FolderMode") &&
-			message.Contains("requires displayValue")));
-	}
-
-	[Test]
-	[Description("Base64-encodes a local file path when create-data-binding writes an image-content column instead of requiring the caller to supply an already encoded string.")]
-	public void Execute_Should_Encode_Image_File_For_ImageContent_Column() {
-		// Arrange
-		CreateDataBindingOptions options = new() {
-			PackageName = PackageName,
-			SchemaName = "SysModule",
+			SchemaName = "UsrImageBinding",
 			ValuesJson = JsonSerializer.Serialize(new Dictionary<string, string> {
-				["Code"] = "UsrImageModule",
-				["Image16"] = Path.Combine("assets", "icon.png")
+				["Name"] = "UsrImageBinding row",
+				["UsrImage"] = Path.Combine("assets", "icon.png")
 			})
 		};
 
@@ -303,52 +254,12 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 
 		// Assert
 		result.Should().Be(0,
-			because: "create-data-binding should accept a local image file path for image-content columns");
-		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "SysModule", "data.json"));
-		dataJson.Should().Contain("\"SchemaColumnUId\": \"6d827ba7-a622-47cc-8f11-b40b91c7441a\"",
+			because: "create-data-binding should accept a local image file path for runtime image-content columns");
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "UsrImageBinding", "data.json"));
+		dataJson.Should().Contain("\"SchemaColumnUId\": \"66666666-6666-6666-6666-666666666666\"",
 			because: "the selected image-content column should be written to the row payload");
 		dataJson.Should().Contain("\"Value\": \"AQID\"",
 			because: "the command should base64-encode the file bytes for image-content values");
-	}
-
-	[Test]
-	[Description("Normalizes SysModule IconBackground to the predefined palette value when create-data-binding receives an allowed color.")]
-	public void Execute_Should_Normalize_Allowed_SysModule_IconBackground_Color() {
-		// Arrange
-		CreateDataBindingOptions options = new() {
-			PackageName = PackageName,
-			SchemaName = "SysModule",
-			ValuesJson = """{"Code":"UsrModule","IconBackground":"#a6de00"}"""
-		};
-
-		// Act
-		int result = _command.Execute(options);
-
-		// Assert
-		result.Should().Be(0,
-			because: "allowed SysModule colors should pass validation during create-data-binding");
-		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "SysModule", "data.json"));
-		dataJson.Should().Contain("\"Value\": \"#A6DE00\"",
-			because: "allowed SysModule colors should be normalized to the predefined palette value");
-	}
-
-	[Test]
-	[Description("Rejects SysModule IconBackground values that are not part of the predefined 16-color palette.")]
-	public void Execute_Should_Reject_Invalid_SysModule_IconBackground_Color() {
-		// Arrange
-		CreateDataBindingOptions options = new() {
-			PackageName = PackageName,
-			SchemaName = "SysModule",
-			ValuesJson = """{"Code":"UsrModule","IconBackground":"#123456"}"""
-		};
-
-		// Act
-		int result = _command.Execute(options);
-
-		// Assert
-		result.Should().Be(1,
-			because: "create-data-binding should reject SysModule IconBackground colors outside the allowed palette");
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("must use one of the predefined colors")));
 	}
 
 	[Test]
@@ -356,11 +267,12 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 	public void Execute_Should_Reject_Image_File_Outside_Workspace() {
 		// Arrange
 		CreateDataBindingOptions options = new() {
+			Environment = "dev",
 			PackageName = PackageName,
-			SchemaName = "SysModule",
+			SchemaName = "UsrImageBinding",
 			ValuesJson = JsonSerializer.Serialize(new Dictionary<string, string> {
-				["Code"] = "UsrImageModule",
-				["Image16"] = Path.Combine(Path.GetTempPath(), "outside", "icon.png")
+				["Name"] = "UsrImageBinding row",
+				["UsrImage"] = Path.Combine(Path.GetTempPath(), "outside", "icon.png")
 			})
 		};
 
@@ -482,6 +394,36 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 	}
 	""";
 
+	private const string ImageBindingSchemaResponseJson = """
+	{
+	  "schema": {
+	    "columns": {
+	      "Items": {
+	        "ae0e45ca-c495-4fe7-a39d-3ab7278e1617": {
+	          "uId": "ae0e45ca-c495-4fe7-a39d-3ab7278e1617",
+	          "name": "Id",
+	          "dataValueType": 0
+	        },
+	        "736c30a7-c0ec-4fa9-b034-2552b319b633": {
+	          "uId": "736c30a7-c0ec-4fa9-b034-2552b319b633",
+	          "name": "Name",
+	          "dataValueType": 28
+	        },
+	        "66666666-6666-6666-6666-666666666666": {
+	          "uId": "66666666-6666-6666-6666-666666666666",
+	          "name": "UsrImage",
+	          "dataValueType": 13
+	        }
+	      }
+	    },
+	    "primaryColumnUId": "ae0e45ca-c495-4fe7-a39d-3ab7278e1617",
+	    "uId": "77777777-7777-7777-7777-777777777777",
+	    "name": "UsrImageBinding"
+	  },
+	  "success": true
+	}
+	""";
+
 	private const string StatusSchemaResponseJson = """
 	{
 	  "schema": {
@@ -526,6 +468,10 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 
 		if (requestBody.Contains("\"Name\":\"UsrLookupBinding\"", StringComparison.Ordinal)) {
 			return LookupBindingSchemaResponseJson;
+		}
+
+		if (requestBody.Contains("\"Name\":\"UsrImageBinding\"", StringComparison.Ordinal)) {
+			return ImageBindingSchemaResponseJson;
 		}
 
 		if (requestBody.Contains("\"Name\":\"UsrStatus\"", StringComparison.Ordinal)) {
@@ -630,15 +576,15 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 			}
 			""")
 			,
-			[WorkspacePath("packages", PackageName, "Data", "SysModule", "descriptor.json")] = new("""
+			[WorkspacePath("packages", PackageName, "Data", "UsrImageBinding", "descriptor.json")] = new("""
 			{
 			  "Descriptor": {
 			    "UId": "0c75996c-164e-af1b-81c9-c0fa2c3ab0ab",
-			    "Name": "SysModule",
+			    "Name": "UsrImageBinding",
 			    "InstallType": 0,
 			    "Schema": {
-			      "UId": "2b2ed767-0b4b-4a7b-9de2-d48e14a2c0c5",
-			      "Name": "SysModule"
+			      "UId": "77777777-7777-7777-7777-777777777777",
+			      "Name": "UsrImageBinding"
 			    },
 			    "Columns": [
 			      {
@@ -649,45 +595,65 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 			        "DataTypeValueUId": "23018567-a13c-4320-8687-fd6f9e3699bd"
 			      },
 			      {
-			        "ColumnUId": "e0c474a3-e4bc-457e-bb67-c1ec1b399f60",
+			        "ColumnUId": "736c30a7-c0ec-4fa9-b034-2552b319b633",
 			        "IsForceUpdate": false,
 			        "IsKey": false,
-			        "ColumnName": "Code",
+			        "ColumnName": "Name",
 			        "DataTypeValueUId": "ddb3a1ee-07e8-4d62-b7a9-d0e618b00fbd"
 			      },
 			      {
-			        "ColumnUId": "6d827ba7-a622-47cc-8f11-b40b91c7441a",
+			        "ColumnUId": "66666666-6666-6666-6666-666666666666",
 			        "IsForceUpdate": false,
 			        "IsKey": false,
-			        "ColumnName": "Image16",
+			        "ColumnName": "UsrImage",
 			        "DataTypeValueUId": "fa6e6e49-b996-475e-a77e-73904e4c5a88"
-			      },
-			      {
-			        "ColumnUId": "48ed5be5-6dcd-44ba-6294-a29c8daef880",
-			        "IsForceUpdate": false,
-			        "IsKey": false,
-			        "ColumnName": "IconBackground",
-			        "DataTypeValueUId": "325a73b8-0f47-44a0-8412-7606f78003ac"
-			      },
-			      {
-			        "ColumnUId": "d3afc924-2d21-4c0e-b2f3-9f8c180221f9",
-			        "IsForceUpdate": false,
-			        "IsKey": false,
-			        "ColumnName": "FolderMode",
-			        "DataTypeValueUId": "b295071f-7ea9-4e62-8d1a-919bf3732ff2"
-			      },
-			      {
-			        "ColumnUId": "380d55b9-487c-429b-9aff-e04101ffc307",
-			        "IsForceUpdate": false,
-			        "IsKey": false,
-			        "ColumnName": "Logo",
-			        "DataTypeValueUId": "b039feb0-ee7c-4884-8aa6-d6d45d84316f"
 			      }
 			    ]
 			  }
 			}
 			"""),
-			[WorkspacePath("packages", PackageName, "Data", "SysModule", "data.json")] = new("""
+			[WorkspacePath("packages", PackageName, "Data", "UsrImageBinding", "data.json")] = new("""
+			{
+			  "PackageData": []
+			}
+			"""),
+			[WorkspacePath("packages", PackageName, "Data", "UsrLookupBinding", "descriptor.json")] = new("""
+			{
+			  "Descriptor": {
+			    "UId": "0c75996c-164e-af1b-81c9-c0fa2c3ab0ac",
+			    "Name": "UsrLookupBinding",
+			    "InstallType": 0,
+			    "Schema": {
+			      "UId": "22222222-2222-2222-2222-222222222222",
+			      "Name": "UsrLookupBinding"
+			    },
+			    "Columns": [
+			      {
+			        "ColumnUId": "ae0e45ca-c495-4fe7-a39d-3ab7278e1617",
+			        "IsForceUpdate": false,
+			        "IsKey": true,
+			        "ColumnName": "Id",
+			        "DataTypeValueUId": "23018567-a13c-4320-8687-fd6f9e3699bd"
+			      },
+			      {
+			        "ColumnUId": "736c30a7-c0ec-4fa9-b034-2552b319b633",
+			        "IsForceUpdate": false,
+			        "IsKey": false,
+			        "ColumnName": "Name",
+			        "DataTypeValueUId": "ddb3a1ee-07e8-4d62-b7a9-d0e618b00fbd"
+			      },
+			      {
+			        "ColumnUId": "11111111-1111-1111-1111-111111111111",
+			        "IsForceUpdate": false,
+			        "IsKey": false,
+			        "ColumnName": "StatusId",
+			        "DataTypeValueUId": "b295071f-7ea9-4e62-8d1a-919bf3732ff2"
+			      }
+			    ]
+			  }
+			}
+			"""),
+			[WorkspacePath("packages", PackageName, "Data", "UsrLookupBinding", "data.json")] = new("""
 			{
 			  "PackageData": []
 			}
@@ -794,15 +760,15 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 	}
 
 	[Test]
-	[Description("Base64-encodes a local file path when add-data-binding-row writes an image-content column instead of requiring a pre-encoded string.")]
-	public void Execute_Should_Encode_Image_File_For_ImageContent_Column() {
+	[Description("Base64-encodes a local file path when add-data-binding-row writes a generic image-content column instead of requiring a pre-encoded string.")]
+	public void Execute_Should_Encode_Image_File_For_Image_Content_Column() {
 		// Arrange
 		AddDataBindingRowOptions options = new() {
 			PackageName = PackageName,
-			BindingName = "SysModule",
+			BindingName = "UsrImageBinding",
 			ValuesJson = JsonSerializer.Serialize(new Dictionary<string, string> {
-				["Code"] = "UsrImageModule",
-				["Image16"] = Path.Combine("assets", "icon.png")
+				["Name"] = "UsrImageBinding row",
+				["UsrImage"] = Path.Combine("assets", "icon.png")
 			})
 		};
 
@@ -812,39 +778,20 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 		// Assert
 		result.Should().Be(0,
 			because: "add-data-binding-row should accept a local image file path for image-content columns");
-		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "SysModule", "data.json"));
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "UsrImageBinding", "data.json"));
 		dataJson.Should().Contain("\"Value\": \"AQID\"",
 			because: "the command should base64-encode the file bytes before writing the binding row");
 	}
 
 	[Test]
-	[Description("Rejects SysModule IconBackground values outside the predefined 16-color palette when add-data-binding-row updates a local binding.")]
-	public void Execute_Should_Reject_Invalid_SysModule_IconBackground_Color() {
+	[Description("Writes caller-provided DisplayValue for local lookup columns when add-data-binding-row receives the structured object payload shape.")]
+	public void Execute_Should_Write_Caller_Provided_DisplayValue_For_Local_Lookup_Columns() {
 		// Arrange
 		AddDataBindingRowOptions options = new() {
 			PackageName = PackageName,
-			BindingName = "SysModule",
-			ValuesJson = """{"Code":"UsrModule","IconBackground":"#123456"}"""
-		};
-
-		// Act
-		int result = _command.Execute(options);
-
-		// Assert
-		result.Should().Be(1,
-			because: "add-data-binding-row should reject SysModule IconBackground colors outside the allowed palette");
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("must use one of the predefined colors")));
-	}
-
-	[Test]
-	[Description("Writes caller-provided DisplayValue for local lookup and image-reference columns when add-data-binding-row receives the structured object payload shape.")]
-	public void Execute_Should_Write_Caller_Provided_DisplayValue_For_Local_Lookup_And_ImageReference_Columns() {
-		// Arrange
-		AddDataBindingRowOptions options = new() {
-			PackageName = PackageName,
-			BindingName = "SysModule",
+			BindingName = "UsrLookupBinding",
 			ValuesJson =
-				"""{"Code":"UsrModule","FolderMode":{"value":"b659d704-3955-e011-981f-00155d043204","displayValue":"Folder mode display"},"Logo":{"value":"1171d0f0-63eb-4bd1-a50b-001ecbaf0001","displayValue":"Logo display"}}"""
+				"""{"Name":"Lookup row","StatusId":{"value":"b659d704-3955-e011-981f-00155d043204","displayValue":"Status display"}}"""
 		};
 
 		// Act
@@ -852,12 +799,10 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 
 		// Assert
 		result.Should().Be(0,
-			because: "local add-data-binding-row should keep explicit display values for lookup and image-reference columns");
-		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "SysModule", "data.json"));
-		dataJson.Should().Contain("\"DisplayValue\": \"Folder mode display\"",
+			because: "local add-data-binding-row should keep explicit display values for lookup columns");
+		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "UsrLookupBinding", "data.json"));
+		dataJson.Should().Contain("\"DisplayValue\": \"Status display\"",
 			because: "lookup rows should serialize the provided display text");
-		dataJson.Should().Contain("\"DisplayValue\": \"Logo display\"",
-			because: "image-reference rows should serialize the provided display text");
 	}
 
 	[Test]
@@ -866,8 +811,8 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 		// Arrange
 		AddDataBindingRowOptions options = new() {
 			PackageName = PackageName,
-			BindingName = "SysModule",
-			ValuesJson = """{"Code":"UsrModule","FolderMode":"b659d704-3955-e011-981f-00155d043204"}"""
+			BindingName = "UsrLookupBinding",
+			ValuesJson = """{"Name":"Lookup row","StatusId":"b659d704-3955-e011-981f-00155d043204"}"""
 		};
 
 		// Act
@@ -877,7 +822,7 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 		result.Should().Be(1,
 			because: "local add-data-binding-row cannot infer lookup display text from the descriptor alone");
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.Contains("FolderMode") &&
+			message.Contains("StatusId") &&
 			message.Contains("requires displayValue")));
 	}
 }
