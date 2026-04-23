@@ -1,5 +1,4 @@
-﻿using Clio.Command;
-using Clio.Common;
+﻿using Clio.Common;
 using Clio.Requests;
 using Clio.UserEnvironment;
 using Clio.Utilities;
@@ -19,11 +18,7 @@ public class IISScannerHandlerTests
 	private IIISScanner CreateScanner() =>
 		new IISScannerHandler(
 			Substitute.For<ISettingsRepository>(),
-			Substitute.For<RegAppCommand>(
-				Substitute.For<ISettingsRepository>(),
-				Substitute.For<IApplicationClientFactory>(),
-				Substitute.For<IPowerShellFactory>(),
-				Substitute.For<ILogger>()),
+			null,
 			new PowerShellFactory(),
 			Substitute.For<ILogger>(),
 			new ProcessExecutor(Substitute.For<ILogger>()));
