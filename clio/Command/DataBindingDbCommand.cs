@@ -594,7 +594,7 @@ internal sealed class DataBindingDbService(
 			InsertEntityRow(entitySchemaName, values, schema.SchemaColumns);
 			existingIds.Add(rowId);
 		}
-		DataBindingDbSchema bindingSchema = BuildBindingSchemaProjection(schema, existingBoundRows, [values]);
+			DataBindingDbSchema bindingSchema = BuildBindingSchemaProjection(schema, existingBoundRows, SingleRowSet(values));
 
 		string requestBody = BuildSaveSchemaDataRequest(
 			packageRef, options.BindingName, schema.SchemaName, bindingSchema,
@@ -1089,6 +1089,10 @@ internal sealed class DataBindingDbService(
 			runtimeSchema.SchemaName,
 			projectedColumns.Select(col => col.Name).ToList(),
 			projectedColumns);
+	}
+
+	private static IEnumerable<Dictionary<string, JsonNode?>> SingleRowSet(Dictionary<string, JsonNode?> row) {
+		yield return row;
 	}
 
 	private static HashSet<string> CollectReferencedColumnNames(IEnumerable<Dictionary<string, JsonNode?>>?[] rowSets) {
