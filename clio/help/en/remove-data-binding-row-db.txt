@@ -16,7 +16,11 @@ BEHAVIOR:
   Looks up the entity schema name from the remote SysPackageSchemaData table.
   Fetches bound rows via GetBoundSchemaData to locate the target row.
   Deletes the entity record via DeleteQuery.
+  When rows remain, rebuilds SaveSchema metadata from the primary key plus the columns
+  present in the remaining bound rows.
   When no rows remain, deletes the binding schema data record via DeletePackageSchemaDataRequest.
+  After remote mutation, read back from Creatio instead of treating the request payload
+  or install log as proof.
 
 EXAMPLE:
   clio remove-data-binding-row-db -e dev --package Custom --binding-name SysSettings \

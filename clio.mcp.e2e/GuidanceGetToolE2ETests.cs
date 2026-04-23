@@ -37,6 +37,34 @@ public sealed class GuidanceGetToolE2ETests {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical data-bindings guidance article")]
+	public async Task GuidanceGet_Should_Return_Data_Bindings_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "data-bindings"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "data-bindings is a registered guidance name");
+		response.Guidance.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Guidance!.Uri.Should().Be("docs://mcp/guides/data-bindings",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Guidance.Text.Should().Contain("clio MCP data-bindings guide",
+			because: "the guidance tool should return the canonical binding guide text");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical validator guidance article")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Validators_Guide() {
 		// Arrange

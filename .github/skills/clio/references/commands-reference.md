@@ -1211,10 +1211,13 @@ After success, read the page back with `get-page` to verify it loads through the
 
 ## Data Bindings
 
+For canonical workflow selection across lookup seeding and binding artifacts, call `get-guidance` with `name` set to `data-bindings`.
+Use `get-tool-contract` for exact MCP field names and request shapes.
+
 ### create-data-binding
 Create or regenerate a package data binding from a runtime schema.
 ```bash
-# SysSettings / SysModule — no environment required (offline template)
+# SysSettings — no environment required (offline template)
 clio create-data-binding --package Custom --schema SysSettings
 
 # Non-templated schema — environment required
@@ -1238,6 +1241,7 @@ clio create-data-binding-db -e dev --package Custom --schema SysSettings \
   --rows '[{"values":{"Name":"Row","Code":"UsrRow"}}]'
 ```
 Options: `--package` (required), `--schema` (required), `--binding-name`, `--rows` (JSON array)
+Behavior: SaveSchema metadata is projected to the primary key plus the columns referenced by currently bound or requested rows. Unrelated runtime-only columns do not block Account-like schemas; explicitly requested unsupported runtime columns still fail. After remote mutation, read back from Creatio instead of treating the request payload or install log as proof.
 
 > **Lookup value resolution** — When a row contains reference (lookup) columns and the correct GUID is not already known, call `dataforge-find-lookups` (MCP tool) with `schema-name` set to the reference schema and a descriptive query term **before** calling this tool. Use the `lookup-id` from the best-matching result as the column value.
 
@@ -1248,8 +1252,8 @@ clio add-data-binding-row --package Custom --binding-name SysSettings \
   --values '{"Name":"Setting name"}'
 
 # With lookup column
-clio add-data-binding-row --package Custom --binding-name SysModule \
-  --values '{"Code":"UsrModule","FolderMode":{"value":"b659d704-...","displayValue":"Folders"}}'
+clio add-data-binding-row --package Custom --binding-name UsrLookupBinding \
+  --values '{"Code":"UsrLookupBinding","UsrStatus":{"value":"b659d704-...","displayValue":"In Progress"}}'
 ```
 Options: `--package` (required), `--binding-name` (required), `--values` (JSON, required), `--workspace-path`, `--localizations` (JSON)
 
@@ -1268,6 +1272,7 @@ clio remove-data-binding-row-db -e dev --package Custom --binding-name SysSettin
   --key-value 4f41bcc2-7ed0-45e8-a1fd-474918966d15
 ```
 Options: `--package` (required), `--binding-name` (required), `--key-value` (required)
+Behavior: when rows remain, SaveSchema metadata is rebuilt from the primary key plus the columns present in the remaining bound rows. After remote mutation, read back from Creatio instead of treating the request payload or install log as proof.
 
 ### upsert-data-binding-row-db
 Upsert a single row in a DB-first package data binding.
@@ -1276,6 +1281,7 @@ clio upsert-data-binding-row-db -e dev --package Custom --binding-name SysSettin
   --values '{"Name":"Updated name","Code":"UsrSetting"}'
 ```
 Options: `--package` (required), `--binding-name` (required), `--values` (JSON, required)
+Behavior: SaveSchema metadata is rebuilt from the primary key plus the columns present in the existing bound rows and the requested upsert payload. After remote mutation, read back from Creatio instead of treating the request payload or install log as proof.
 
 > **Lookup value resolution** — When the row contains reference (lookup) columns and the correct GUID is not known, call `dataforge-find-lookups` (MCP tool) with `schema-name` set to the reference schema before calling this tool. Use the returned `lookup-id` as the column value.
 

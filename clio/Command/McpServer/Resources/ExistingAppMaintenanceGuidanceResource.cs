@@ -27,6 +27,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - For deleting a section from an existing app, prefer `list-apps -> get-app-info -> list-app-sections -> delete-app-section`.
 			       - Prefer `list-pages -> get-page -> sync-pages -> get-page` as the canonical page workflow, including single-page saves when the caller wants the clio-advertised path.
 			       - Read before write, and read back after mutations when the tool or workflow allows it.
+			       - For canonical data-binding workflow selection, call `get-guidance` with `name` set to `data-bindings`.
 			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
 
 			       Discover the target app
@@ -69,7 +70,8 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Use `sync-schemas` when the work spans multiple ordered schema steps, mixes create/update/seed operations, or must stay batched.
 			       - `sync-schemas` requests use `operations[*].type`. Responses also use `type`; do not send `operations[*].operation` in requests.
 			       - Treat `create-lookup`, `create-entity-schema`, `update-entity-schema`, `create-data-binding-db`, and `update-page` as fallback-oriented tools when the preferred batched workflow is not the right fit for the requested scope.
-			       - For standalone lookup seeding in an MCP workflow, prefer `create-data-binding-db` or `upsert-data-binding-row-db` over direct SQL commands.
+			       - For standalone lookup seeding or local binding artifacts in an MCP workflow, follow `get-guidance` with `name` set to `data-bindings`.
+			       - When that guide resolves to a DB-first binding path, prefer `create-data-binding-db` or `upsert-data-binding-row-db` over direct SQL commands.
 
 			       Verification
 			       - `sync-pages` keeps client-side validation enabled by default.
