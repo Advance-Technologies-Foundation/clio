@@ -45,6 +45,23 @@ public sealed class PageUpdateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
+		if (!string.IsNullOrWhiteSpace(options.Body)) {
+			var validationErrors = new List<string>();
+			SchemaValidationResult validatorParamResult = SchemaValidationService.ValidateValidatorParamResourceBindings(options.Body);
+			if (!validatorParamResult.IsValid) validationErrors.AddRange(validatorParamResult.Errors);
+			SchemaValidationResult validatorBindingResult = SchemaValidationService.ValidateValidatorControlBindings(options.Body);
+			if (!validatorBindingResult.IsValid) validationErrors.AddRange(validatorBindingResult.Errors);
+			SchemaValidationResult standardValidatorResult = SchemaValidationService.ValidateStandardValidatorUsage(options.Body);
+			if (!standardValidatorResult.IsValid) validationErrors.AddRange(standardValidatorResult.Errors);
+			SchemaValidationResult validatorParamCompletenessResult = SchemaValidationService.ValidateCustomValidatorParamCompleteness(options.Body);
+			if (!validatorParamCompletenessResult.IsValid) validationErrors.AddRange(validatorParamCompletenessResult.Errors);
+			if (validationErrors.Count > 0) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = "Validation failed: " + string.Join("; ", validationErrors)
+				};
+			}
+		}
 		PageSamplingReview samplingReview = null;
 		if (!options.DryRun && args.SkipSampling != true) {
 			samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(server, args.SchemaName, args.Body, cancellationToken);

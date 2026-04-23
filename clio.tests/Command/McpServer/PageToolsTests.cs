@@ -1380,7 +1380,7 @@ public class PageToolsTests {
 		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
 
 		// Act
-		PageUpdateResponse response = tool.UpdatePage(args);
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -1413,7 +1413,7 @@ public class PageToolsTests {
 		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
 
 		// Act
-		PageUpdateResponse response = tool.UpdatePage(args);
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
 
 		// Assert
 		response.Error.Should().NotContain("Validation failed",
@@ -1437,7 +1437,7 @@ public class PageToolsTests {
 		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
 
 		// Act
-		PageUpdateResponse response = tool.UpdatePage(args);
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -2239,5 +2239,14 @@ public class PageToolsTests {
 
 		merged.Should().Contain("'new'", because: "incoming handler wins when request string matches");
 		merged.Should().NotContain("'old'", because: "old handler with the same request is dropped");
+	}
+
+	private static IPageDesignerHierarchyClient CreateHierarchyClientFor(string schemaUId, string packageUId = "test-pkg-uid") {
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId(schemaUId).Returns(packageUId);
+		hierarchyClient.GetParentSchemas(schemaUId, packageUId).Returns([
+			new PageDesignerHierarchySchema { UId = schemaUId, PackageUId = packageUId }
+		]);
+		return hierarchyClient;
 	}
 }

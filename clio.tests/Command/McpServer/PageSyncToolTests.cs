@@ -254,7 +254,7 @@ public sealed class PageSyncToolTests {
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithConverterAndValidator)],
 			Validate: true);
 
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = tool.SyncPages(args, null).Result;
 
 		response.Success.Should().BeTrue(
 			because: "sync-pages should not reject function-based converter and validator sections as JSON errors");
