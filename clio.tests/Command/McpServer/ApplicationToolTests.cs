@@ -881,10 +881,10 @@ public sealed class ApplicationToolTests {
 			nameof(ApplicationCreateArgs.EnvironmentName),
 			nameof(ApplicationCreateArgs.Name),
 			nameof(ApplicationCreateArgs.Code),
-			nameof(ApplicationCreateArgs.TemplateCode),
 			nameof(ApplicationCreateArgs.IconBackground)
 		];
 		string[] optionalProperties = [
+			nameof(ApplicationCreateArgs.TemplateCode),
 			nameof(ApplicationCreateArgs.IconId),
 			nameof(ApplicationCreateArgs.ClientTypeId),
 			nameof(ApplicationCreateArgs.Description),
@@ -1511,12 +1511,14 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a structured error envelope when template-code is missing from the minimal create-app shell.")]
-	public async Task ApplicationCreate_Should_Return_Error_When_TemplateCode_Is_Missing() {
+	[Description("Uses AppFreedomUI as default when template-code is null or empty.")]
+	public async Task ApplicationCreate_Should_Use_Default_Template_When_TemplateCode_Is_Empty() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
 		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+		applicationCreateService.CreateApplication(Arg.Any<string>(), Arg.Any<ApplicationCreateRequest>())
+			.Returns(new ApplicationCreateResponse { ApplicationId = Guid.NewGuid(), PackageName = "UsrCodexApp" });
 
 		// Act
 		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
@@ -1531,14 +1533,11 @@ public sealed class ApplicationToolTests {
 			OptionalTemplateDataJson: null));
 
 		// Assert
-		result.Success.Should().BeFalse(
-			because: "missing required shell fields should fail before the backend create flow starts");
-		result.Error.Should().Contain("template-code is required",
-			because: "the validation message should identify the missing contract field");
-		result.Error.Should().Contain("AppFreedomUI",
-			because: "the validation message should point callers to a usable technical template example");
-		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
-		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
+		result.Success.Should().BeTrue(
+			because: "empty template-code should fall back to AppFreedomUI and succeed");
+		applicationCreateService.Received(1).CreateApplication(
+			"sandbox",
+			Arg.Is<ApplicationCreateRequest>(r => r.TemplateCode == "AppFreedomUI"));
 	}
 
 	[Test]
