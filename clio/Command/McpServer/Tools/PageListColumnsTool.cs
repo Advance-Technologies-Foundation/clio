@@ -50,33 +50,18 @@ public sealed class PageListColumnsTool(IToolCommandResolver commandResolver) {
 		PageSamplingReview samplingReview = null;
 		if (args.SkipSampling != true) {
 			samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(server, args.SchemaName, editedBody, cancellationToken);
-			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
+			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0)
 				return new PageAddColumnsResponse {
 					Success = false,
 					Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues),
 					SamplingReview = samplingReview
 				};
-			}
 		}
-		PageUpdateResponse saveResponse;
-		lock (McpToolExecutionLock.SyncRoot) {
-			var updateOptions = new PageUpdateOptions {
-				SchemaName = args.SchemaName,
-				Body = editedBody,
-				Environment = args.EnvironmentName,
-				Uri = args.Uri,
-				Login = args.Login,
-				Password = args.Password,
-				Resources = args.Resources
-			};
-			PageUpdateCommand updateCommand;
-			try {
-				updateCommand = commandResolver.Resolve<PageUpdateCommand>(updateOptions);
-			} catch (Exception ex) {
-				return new PageAddColumnsResponse { Success = false, Error = ex.Message };
-			}
-			updateCommand.TryUpdatePage(updateOptions, out saveResponse);
-		}
+		var (saveResponse, resolveError) = PageEditToolHelpers.TryExecuteSaveBody(
+			commandResolver, args.SchemaName, editedBody,
+			args.EnvironmentName, args.Uri, args.Login, args.Password, args.Resources);
+		if (saveResponse is null)
+			return new PageAddColumnsResponse { Success = false, Error = resolveError };
 		return new PageAddColumnsResponse {
 			Success = saveResponse.Success,
 			SchemaName = args.SchemaName,
@@ -98,29 +83,5 @@ public sealed record PageListColumnsArgs(
 	[property: JsonPropertyName("columns")]
 	[property: Description("Array of column specs to add. Each requires 'code' (e.g. 'PDS_UsrName') and 'data-value-type' (Creatio DataValueType int).")]
 	[property: Required]
-	IReadOnlyList<ListColumnSpec> Columns,
-
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name. Preferred for normal MCP work.")]
-	string? EnvironmentName = null,
-
-	[property: JsonPropertyName("uri")]
-	[property: Description("Direct Creatio URL. Emergency fallback only.")]
-	string? Uri = null,
-
-	[property: JsonPropertyName("login")]
-	[property: Description("Direct Creatio login paired with uri. Emergency fallback only.")]
-	string? Login = null,
-
-	[property: JsonPropertyName("password")]
-	[property: Description("Direct Creatio password paired with uri. Emergency fallback only.")]
-	string? Password = null,
-
-	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros in the field labels")]
-	string? Resources = null,
-
-	[property: JsonPropertyName("skip-sampling")]
-	[property: Description("If true, skip AI semantic review before saving. Default: false")]
-	bool? SkipSampling = null
-);
+	IReadOnlyList<ListColumnSpec> Columns
+) : PageEditToolArgs;
