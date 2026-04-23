@@ -35,9 +35,8 @@ public sealed class SqlSchemaInstallResponse {
 
 public class SqlSchemaInstallCommand : Command<SqlSchemaInstallOptions> {
 
-	private const string SelectQueryRoute = "/DataService/json/SyncReply/SelectQuery";
+	private static readonly SchemaDesignerKind Kind = SchemaDesignerKind.SqlScript;
 	private const string ExecuteScriptRoute = "ServiceModel/ScriptSchemaDesignerService.svc/ExecuteScript";
-	private const string ScriptSchemaManagerName = "ScriptSchemaManager";
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -58,7 +57,10 @@ public class SqlSchemaInstallCommand : Command<SqlSchemaInstallOptions> {
 				response = new SqlSchemaInstallResponse { Success = false, Error = "schema-name is required" };
 				return false;
 			}
-			if (!TryResolveSchemaUId(options.SchemaName, out string schemaUId, out response)) {
+			(string schemaUId, string resolveError) = SchemaDesignerHelper.ResolveSchemaUId(
+				_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind);
+			if (resolveError != null) {
+				response = new SqlSchemaInstallResponse { Success = false, Error = resolveError };
 				return false;
 			}
 			var executeRequest = new JObject { ["schemaUId"] = schemaUId };
@@ -92,34 +94,5 @@ public class SqlSchemaInstallCommand : Command<SqlSchemaInstallOptions> {
 		bool success = TryInstall(options, out SqlSchemaInstallResponse response);
 		_logger.WriteInfo(JsonConvert.SerializeObject(response));
 		return success ? 0 : 1;
-	}
-
-	private bool TryResolveSchemaUId(
-		string schemaName,
-		out string schemaUId,
-		out SqlSchemaInstallResponse response) {
-		var query = SqlSchemaQueries.BuildSelectUIdByName(schemaName, ScriptSchemaManagerName);
-		string url = _serviceUrlBuilder.Build(SelectQueryRoute);
-		string responseJson = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
-		JObject selectResponse = JObject.Parse(responseJson);
-		var rows = selectResponse["rows"] as JArray ?? [];
-		if (rows.Count == 0) {
-			schemaUId = null;
-			response = new SqlSchemaInstallResponse {
-				Success = false,
-				Error = $"Schema '{schemaName}' not found (ManagerName='{ScriptSchemaManagerName}')"
-			};
-			return false;
-		}
-		schemaUId = rows[0]["UId"]?.ToString();
-		if (string.IsNullOrWhiteSpace(schemaUId)) {
-			response = new SqlSchemaInstallResponse {
-				Success = false,
-				Error = $"Schema '{schemaName}' metadata is missing UId"
-			};
-			return false;
-		}
-		response = null;
-		return true;
 	}
 }

@@ -48,7 +48,7 @@ public sealed class GetClientUnitSchemaResponse {
 
 public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 
-	private const string GetSchemaRoute = "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema";
+	private static readonly SchemaDesignerKind Kind = SchemaDesignerKind.ClientUnit;
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -66,20 +66,23 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 	public virtual bool TryGetSchema(GetClientUnitSchemaOptions options, out GetClientUnitSchemaResponse response) {
 		try {
 			if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-				response = new GetClientUnitSchemaResponse {
-					Success = false,
-					Error = "schema-name is required"
-				};
+				response = new GetClientUnitSchemaResponse { Success = false, Error = "schema-name is required" };
 				return false;
 			}
-			if (!TryResolveSchemaUId(options.SchemaName, out string schemaUId, out response)) {
+			(string schemaUId, string resolveError) = SchemaDesignerHelper.ResolveSchemaUId(
+				_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind);
+			if (resolveError != null) {
+				response = new GetClientUnitSchemaResponse { Success = false, Error = resolveError };
 				return false;
 			}
-			if (!TryLoadSchema(options.SchemaName, schemaUId, out JObject schema, out response)) {
+			(JObject schema, string loadError) = SchemaDesignerHelper.LoadSchema(
+				_applicationClient, _serviceUrlBuilder, schemaUId, Kind);
+			if (loadError != null) {
+				response = new GetClientUnitSchemaResponse { Success = false, Error = loadError };
 				return false;
 			}
 			string body = schema["body"]?.ToString() ?? string.Empty;
-			string caption = ExtractCaption(schema);
+			string caption = SchemaDesignerHelper.ExtractCaption(schema);
 			string packageName = schema["package"]?["name"]?.ToString();
 			string schemaName = schema["name"]?.ToString() ?? options.SchemaName;
 			response = new GetClientUnitSchemaResponse {
@@ -107,59 +110,5 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 		bool success = TryGetSchema(options, out GetClientUnitSchemaResponse response);
 		_logger.WriteInfo(System.Text.Json.JsonSerializer.Serialize(response));
 		return success ? 0 : 1;
-	}
-
-	private bool TryResolveSchemaUId(
-		string schemaName,
-		out string schemaUId,
-		out GetClientUnitSchemaResponse response) {
-		(JToken row, string error) = PageSchemaMetadataHelper.QuerySysSchemaRow(
-			_applicationClient, _serviceUrlBuilder, schemaName, ("UId", "UId"));
-		if (row is null) {
-			schemaUId = null;
-			response = new GetClientUnitSchemaResponse { Success = false, Error = error };
-			return false;
-		}
-		schemaUId = row["UId"]?.ToString();
-		if (string.IsNullOrWhiteSpace(schemaUId)) {
-			response = new GetClientUnitSchemaResponse { Success = false, Error = $"Schema '{schemaName}' metadata is missing UId" };
-			return false;
-		}
-		response = null;
-		return true;
-	}
-
-	private bool TryLoadSchema(
-		string schemaName,
-		string schemaUId,
-		out JObject schema,
-		out GetClientUnitSchemaResponse response) {
-		var getSchemaRequest = new JObject {
-			["schemaUId"] = schemaUId,
-			["useFullHierarchy"] = false
-		};
-		string designerUrl = _serviceUrlBuilder.Build(GetSchemaRoute);
-		string getSchemaJson = _applicationClient.ExecutePostRequest(
-			designerUrl,
-			getSchemaRequest.ToString(Formatting.None));
-		JObject getSchemaResponse = JObject.Parse(getSchemaJson);
-		if (getSchemaResponse["schema"] is not JObject loaded) {
-			schema = null;
-			response = new GetClientUnitSchemaResponse {
-				Success = false,
-				Error = $"Failed to load schema '{schemaName}' via ClientUnitSchemaDesignerService"
-			};
-			return false;
-		}
-		schema = loaded;
-		response = null;
-		return true;
-	}
-
-	private static string ExtractCaption(JObject schema) {
-		if (schema["caption"] is JArray captions && captions.Count > 0) {
-			return captions[0]?["value"]?.ToString();
-		}
-		return schema["caption"]?.ToString();
 	}
 }

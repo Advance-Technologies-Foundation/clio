@@ -56,9 +56,7 @@ public sealed class SqlSchemaGetResponse {
 
 public class SqlSchemaGetCommand : Command<SqlSchemaGetOptions> {
 
-	private const string SelectQueryRoute = "/DataService/json/SyncReply/SelectQuery";
-	private const string GetSchemaRoute = "ServiceModel/ScriptSchemaDesignerService.svc/GetSchema";
-	private const string ScriptSchemaManagerName = "ScriptSchemaManager";
+	private static readonly SchemaDesignerKind Kind = SchemaDesignerKind.SqlScript;
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -76,20 +74,23 @@ public class SqlSchemaGetCommand : Command<SqlSchemaGetOptions> {
 	public virtual bool TryGetSchema(SqlSchemaGetOptions options, out SqlSchemaGetResponse response) {
 		try {
 			if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-				response = new SqlSchemaGetResponse {
-					Success = false,
-					Error = "schema-name is required"
-				};
+				response = new SqlSchemaGetResponse { Success = false, Error = "schema-name is required" };
 				return false;
 			}
-			if (!TryResolveSchemaUId(options.SchemaName, out string schemaUId, out response)) {
+			(string schemaUId, string resolveError) = SchemaDesignerHelper.ResolveSchemaUId(
+				_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind);
+			if (resolveError != null) {
+				response = new SqlSchemaGetResponse { Success = false, Error = resolveError };
 				return false;
 			}
-			if (!TryLoadSchema(options.SchemaName, schemaUId, out JObject schema, out response)) {
+			(JObject schema, string loadError) = SchemaDesignerHelper.LoadSchema(
+				_applicationClient, _serviceUrlBuilder, schemaUId, Kind);
+			if (loadError != null) {
+				response = new SqlSchemaGetResponse { Success = false, Error = loadError };
 				return false;
 			}
 			string body = schema["body"]?.ToString() ?? string.Empty;
-			string caption = ExtractCaption(schema);
+			string caption = SchemaDesignerHelper.ExtractCaption(schema);
 			string packageName = schema["package"]?["name"]?.ToString();
 			string schemaName = schema["name"]?.ToString() ?? options.SchemaName;
 			response = new SqlSchemaGetResponse {
@@ -117,113 +118,5 @@ public class SqlSchemaGetCommand : Command<SqlSchemaGetOptions> {
 		bool success = TryGetSchema(options, out SqlSchemaGetResponse response);
 		_logger.WriteInfo(JsonConvert.SerializeObject(response));
 		return success ? 0 : 1;
-	}
-
-	private bool TryResolveSchemaUId(
-		string schemaName,
-		out string schemaUId,
-		out SqlSchemaGetResponse response) {
-		var query = SqlSchemaQueries.BuildSelectUIdByName(schemaName, ScriptSchemaManagerName);
-		string url = _serviceUrlBuilder.Build(SelectQueryRoute);
-		string responseJson = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
-		JObject selectResponse = JObject.Parse(responseJson);
-		var rows = selectResponse["rows"] as JArray ?? [];
-		if (rows.Count == 0) {
-			schemaUId = null;
-			response = new SqlSchemaGetResponse {
-				Success = false,
-				Error = $"Schema '{schemaName}' not found (ManagerName='{ScriptSchemaManagerName}')"
-			};
-			return false;
-		}
-		schemaUId = rows[0]["UId"]?.ToString();
-		if (string.IsNullOrWhiteSpace(schemaUId)) {
-			response = new SqlSchemaGetResponse {
-				Success = false,
-				Error = $"Schema '{schemaName}' metadata is missing UId"
-			};
-			return false;
-		}
-		response = null;
-		return true;
-	}
-
-	private bool TryLoadSchema(
-		string schemaName,
-		string schemaUId,
-		out JObject schema,
-		out SqlSchemaGetResponse response) {
-		var getSchemaRequest = new JObject {
-			["schemaUId"] = schemaUId,
-			["useFullHierarchy"] = false
-		};
-		string designerUrl = _serviceUrlBuilder.Build(GetSchemaRoute);
-		string getSchemaJson = _applicationClient.ExecutePostRequest(
-			designerUrl,
-			getSchemaRequest.ToString(Formatting.None));
-		JObject getSchemaResponse = JObject.Parse(getSchemaJson);
-		if (getSchemaResponse["schema"] is not JObject loaded) {
-			schema = null;
-			response = new SqlSchemaGetResponse {
-				Success = false,
-				Error = $"Failed to load schema '{schemaName}' via ScriptSchemaDesignerService"
-			};
-			return false;
-		}
-		schema = loaded;
-		response = null;
-		return true;
-	}
-
-	private static string ExtractCaption(JObject schema) {
-		if (schema["caption"] is JArray captions && captions.Count > 0) {
-			return captions[0]?["value"]?.ToString();
-		}
-		return schema["caption"]?.ToString();
-	}
-}
-
-internal static class SqlSchemaQueries {
-
-	internal static JObject BuildSelectUIdByName(string schemaName, string managerName) {
-		return new JObject {
-			["rootSchemaName"] = "SysSchema",
-			["operationType"] = 0,
-			["columns"] = new JObject {
-				["items"] = new JObject {
-					["UId"] = new JObject {
-						["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "UId" }
-					}
-				}
-			},
-			["filters"] = new JObject {
-				["filterType"] = 6,
-				["logicalOperation"] = 0,
-				["isEnabled"] = true,
-				["items"] = new JObject {
-					["byName"] = new JObject {
-						["filterType"] = 1,
-						["comparisonType"] = 3,
-						["isEnabled"] = true,
-						["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "Name" },
-						["rightExpression"] = new JObject {
-							["expressionType"] = 2,
-							["parameter"] = new JObject { ["dataValueType"] = 1, ["value"] = schemaName }
-						}
-					},
-					["byManager"] = new JObject {
-						["filterType"] = 1,
-						["comparisonType"] = 3,
-						["isEnabled"] = true,
-						["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "ManagerName" },
-						["rightExpression"] = new JObject {
-							["expressionType"] = 2,
-							["parameter"] = new JObject { ["dataValueType"] = 1, ["value"] = managerName }
-						}
-					}
-				}
-			},
-			["rowCount"] = 1
-		};
 	}
 }
