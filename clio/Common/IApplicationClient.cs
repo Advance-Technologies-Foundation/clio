@@ -54,7 +54,7 @@ public class CreatioClientAdapter : IApplicationClient{
 
 	#region Constructors: Private
 
-	private CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IServiceUrlBuilder serviceUrlBuilder = null, JsonConverter jsonConverter = null) {
+	private CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IServiceUrlBuilder serviceUrlBuilder, JsonConverter jsonConverter) {
 		_lazyClient = lazyClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_jsonConverter = jsonConverter ?? new JsonConverter();
@@ -67,19 +67,19 @@ public class CreatioClientAdapter : IApplicationClient{
 	public CreatioClientAdapter(string appUrl, string userName, string userPassword, bool isNetCore = false,
 		IServiceUrlBuilder serviceUrlBuilder = null)
 		: this(new Lazy<CreatioClient>(() => new CreatioClient(appUrl, userName, userPassword, true, isNetCore)),
-			serviceUrlBuilder) { }
+			serviceUrlBuilder, null) { }
 
 	public CreatioClientAdapter(string appUrl, string clientId, string clientSecret, string authAppUrl,
 		bool isNetCore = false, IServiceUrlBuilder serviceUrlBuilder = null)
 		: this(new Lazy<CreatioClient>(() =>
 			CreatioClient.CreateOAuth20Client(appUrl, authAppUrl, clientId, clientSecret, isNetCore)),
-			serviceUrlBuilder) { }
+			serviceUrlBuilder, null) { }
 
 	public CreatioClientAdapter(CreatioClient creatioClient)
-		: this(new Lazy<CreatioClient>(() => creatioClient), null) { }
+		: this(new Lazy<CreatioClient>(() => creatioClient), null, null) { }
 
 	public CreatioClientAdapter(Lazy<CreatioClient> lazyClient)
-		: this(lazyClient, null) { }
+		: this(lazyClient, null, null) { }
 
 	#endregion
 

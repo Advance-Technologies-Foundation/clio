@@ -51,11 +51,6 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 	private readonly ILogger _logger;
 	private readonly IEnvManageUiService _service;
 	private readonly IApplicationClientFactory _applicationClientFactory;
-	private readonly IClioGateway _clioGateway;
-	private readonly IWebBrowser _webBrowser;
-	private readonly IProcessExecutor _processExecutor;
-	private readonly IServiceUrlBuilder _serviceUrlBuilder;
-	private readonly IDataProvider _dataProvider;
 	private readonly IDataAdapter _dataAdapter;
 
 	#endregion
@@ -67,22 +62,13 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 		ISettingsRepository settingsRepository,
 		ILogger logger,
 		IEnvManageUiService service,
-		IApplicationClientFactory applicationClientFactory,
-		IClioGateway clioGateway,
-		IWebBrowser webBrowser,
-		IProcessExecutor processExecutor, IServiceUrlBuilder serviceUrlBuilder, 
-		IDataProvider dataProvider)
+		IApplicationClientFactory applicationClientFactory)
 	{
 		_serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_service = service ?? throw new ArgumentNullException(nameof(service));
 		_applicationClientFactory = applicationClientFactory ?? throw new ArgumentNullException(nameof(applicationClientFactory));
-		_clioGateway = clioGateway ?? throw new ArgumentNullException(nameof(clioGateway));
-		_webBrowser = webBrowser ?? throw new ArgumentNullException(nameof(webBrowser));
-		_processExecutor = processExecutor ?? throw new ArgumentNullException(nameof(processExecutor));
-		_serviceUrlBuilder = serviceUrlBuilder;
-		_dataProvider = dataProvider;
 	}
 
 	#endregion
