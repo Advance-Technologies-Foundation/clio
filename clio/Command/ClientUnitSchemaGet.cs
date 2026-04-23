@@ -21,42 +21,33 @@ public class GetClientUnitSchemaOptions : EnvironmentOptions {
 
 public sealed class GetClientUnitSchemaResponse {
 
-	[JsonProperty("success")]
 	[System.Text.Json.Serialization.JsonPropertyName("success")]
 	public bool Success { get; set; }
 
-	[JsonProperty("schemaName")]
 	[System.Text.Json.Serialization.JsonPropertyName("schemaName")]
 	public string SchemaName { get; set; }
 
-	[JsonProperty("schemaUId")]
 	[System.Text.Json.Serialization.JsonPropertyName("schemaUId")]
 	public string SchemaUId { get; set; }
 
-	[JsonProperty("packageName")]
 	[System.Text.Json.Serialization.JsonPropertyName("packageName")]
 	public string PackageName { get; set; }
 
-	[JsonProperty("caption")]
 	[System.Text.Json.Serialization.JsonPropertyName("caption")]
 	public string Caption { get; set; }
 
-	[JsonProperty("body")]
 	[System.Text.Json.Serialization.JsonPropertyName("body")]
 	public string Body { get; set; }
 
-	[JsonProperty("bodyLength")]
 	[System.Text.Json.Serialization.JsonPropertyName("bodyLength")]
 	public int BodyLength { get; set; }
 
-	[JsonProperty("error")]
 	[System.Text.Json.Serialization.JsonPropertyName("error")]
 	public string Error { get; set; }
 }
 
 public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 
-	private const string SelectQueryRoute = "/DataService/json/SyncReply/SelectQuery";
 	private const string GetSchemaRoute = "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema";
 
 	private readonly IApplicationClient _applicationClient;
@@ -114,7 +105,7 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 
 	public override int Execute(GetClientUnitSchemaOptions options) {
 		bool success = TryGetSchema(options, out GetClientUnitSchemaResponse response);
-		_logger.WriteInfo(JsonConvert.SerializeObject(response));
+		_logger.WriteInfo(System.Text.Json.JsonSerializer.Serialize(response));
 		return success ? 0 : 1;
 	}
 
@@ -122,53 +113,16 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 		string schemaName,
 		out string schemaUId,
 		out GetClientUnitSchemaResponse response) {
-		var query = new JObject {
-			["rootSchemaName"] = "SysSchema",
-			["operationType"] = 0,
-			["columns"] = new JObject {
-				["items"] = new JObject {
-					["UId"] = new JObject {
-						["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "UId" }
-					}
-				}
-			},
-			["filters"] = new JObject {
-				["filterType"] = 6,
-				["logicalOperation"] = 0,
-				["isEnabled"] = true,
-				["items"] = new JObject {
-					["byName"] = new JObject {
-						["filterType"] = 1,
-						["comparisonType"] = 3,
-						["isEnabled"] = true,
-						["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "Name" },
-						["rightExpression"] = new JObject {
-							["expressionType"] = 2,
-							["parameter"] = new JObject { ["dataValueType"] = 1, ["value"] = schemaName }
-						}
-					}
-				}
-			},
-			["rowCount"] = 1
-		};
-		string url = _serviceUrlBuilder.Build(SelectQueryRoute);
-		string responseJson = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
-		JObject selectResponse = JObject.Parse(responseJson);
-		var rows = selectResponse["rows"] as JArray ?? [];
-		if (rows.Count == 0) {
+		(JToken row, string error) = PageSchemaMetadataHelper.QuerySysSchemaRow(
+			_applicationClient, _serviceUrlBuilder, schemaName, ("UId", "UId"));
+		if (row is null) {
 			schemaUId = null;
-			response = new GetClientUnitSchemaResponse {
-				Success = false,
-				Error = $"Schema '{schemaName}' not found"
-			};
+			response = new GetClientUnitSchemaResponse { Success = false, Error = error };
 			return false;
 		}
-		schemaUId = rows[0]["UId"]?.ToString();
+		schemaUId = row["UId"]?.ToString();
 		if (string.IsNullOrWhiteSpace(schemaUId)) {
-			response = new GetClientUnitSchemaResponse {
-				Success = false,
-				Error = $"Schema '{schemaName}' metadata is missing UId"
-			};
+			response = new GetClientUnitSchemaResponse { Success = false, Error = $"Schema '{schemaName}' metadata is missing UId" };
 			return false;
 		}
 		response = null;

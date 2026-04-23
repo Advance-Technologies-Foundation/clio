@@ -58,29 +58,5 @@ public sealed record SqlSchemaCreateArgs(
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Target package name that will own the new schema.")]
 	[property: Required]
-	string PackageName,
-
-	[property: JsonPropertyName("caption")]
-	[property: Description("Optional display caption. Defaults to schema-name when omitted.")]
-	string? Caption,
-
-	[property: JsonPropertyName("description")]
-	[property: Description("Optional schema description.")]
-	string? Description,
-
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'dev_5001'. Preferred for normal MCP work.")]
-	string? EnvironmentName,
-
-	[property: JsonPropertyName("uri")]
-	[property: Description("Direct Creatio URL. Use only for bootstrap or before environment registration.")]
-	string? Uri,
-
-	[property: JsonPropertyName("login")]
-	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
-	string? Login,
-
-	[property: JsonPropertyName("password")]
-	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password
-);
+	string PackageName
+) : SchemaCreateBaseArgs;

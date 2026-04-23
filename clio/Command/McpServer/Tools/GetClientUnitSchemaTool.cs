@@ -51,25 +51,5 @@ public sealed record GetClientUnitSchemaArgs(
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("Client unit schema name, e.g. 'NetworkUtilities'")]
 	[property: Required]
-	string SchemaName,
-
-	[property: JsonPropertyName("output-file")]
-	[property: Description("Optional absolute path to write the schema body to. When set, body is omitted from the response.")]
-	string? OutputFile,
-
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'dev_5001'. Preferred for normal MCP work.")]
-	string? EnvironmentName,
-
-	[property: JsonPropertyName("uri")]
-	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
-	string? Uri,
-
-	[property: JsonPropertyName("login")]
-	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
-	string? Login,
-
-	[property: JsonPropertyName("password")]
-	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password
-);
+	string SchemaName
+) : SchemaGetBaseArgs;

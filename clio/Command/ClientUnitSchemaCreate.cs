@@ -1,6 +1,5 @@
 namespace Clio.Command {
 	using System;
-	using System.Linq;
 	using Clio.Common;
 	using CommandLine;
 	using Newtonsoft.Json;
@@ -33,7 +32,6 @@ namespace Clio.Command {
 	}
 
 	public class ClientUnitSchemaCreateCommand : Command<ClientUnitSchemaCreateOptions> {
-		private const string SelectQueryRoute = "/DataService/json/SyncReply/SelectQuery";
 		private const string SaveSchemaRoute = "/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema";
 		private const string ClientUnitManagerName = "ClientUnitSchemaManager";
 
@@ -64,7 +62,8 @@ namespace Clio.Command {
 				}
 
 				LogStep(ref stepNumber, totalSteps, $"Resolving package '{options.PackageName}'");
-				if (!TryResolvePackageUId(options.PackageName, out string packageUId, out string packageError)) {
+				(string packageUId, string packageError) = PageSchemaMetadataHelper.QueryPackageUId(_applicationClient, _serviceUrlBuilder, options.PackageName);
+				if (packageError is not null) {
 					response = new ClientUnitSchemaCreateResponse { Success = false, Error = packageError };
 					LogFailure(response.Error);
 					return false;
@@ -132,7 +131,7 @@ namespace Clio.Command {
 			if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 				return new ClientUnitSchemaCreateResponse { Success = false, Error = "schema-name is required" };
 			}
-			if (!IsValidSchemaName(options.SchemaName)) {
+			if (!PageSchemaMetadataHelper.IsValidSchemaName(options.SchemaName)) {
 				return new ClientUnitSchemaCreateResponse {
 					Success = false,
 					Error = "schema-name must start with a letter and contain only letters, digits, or underscores"
@@ -144,69 +143,10 @@ namespace Clio.Command {
 			return null;
 		}
 
-		private static bool IsValidSchemaName(string name) {
-			if (string.IsNullOrEmpty(name) || !char.IsLetter(name[0])) {
-				return false;
-			}
-			return name.All(c => char.IsLetterOrDigit(c) || c == '_');
-		}
-
 		private bool SchemaNameExists(string schemaName) {
 			(JToken row, _) = PageSchemaMetadataHelper.QuerySysSchemaRow(
 				_applicationClient, _serviceUrlBuilder, schemaName, ("UId", "UId"));
 			return row != null;
-		}
-
-		private bool TryResolvePackageUId(string packageName, out string packageUId, out string error) {
-			packageUId = null;
-			error = null;
-			var query = new JObject {
-				["rootSchemaName"] = "SysPackage",
-				["operationType"] = 0,
-				["columns"] = new JObject {
-					["items"] = new JObject {
-						["UId"] = new JObject {
-							["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "UId" }
-						}
-					}
-				},
-				["filters"] = new JObject {
-					["filterType"] = 6,
-					["logicalOperation"] = 0,
-					["isEnabled"] = true,
-					["items"] = new JObject {
-						["filter0"] = new JObject {
-							["filterType"] = 1,
-							["comparisonType"] = 3,
-							["isEnabled"] = true,
-							["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "Name" },
-							["rightExpression"] = new JObject {
-								["expressionType"] = 2,
-								["parameter"] = new JObject { ["dataValueType"] = 1, ["value"] = packageName }
-							}
-						}
-					}
-				},
-				["rowCount"] = 1
-			};
-			string url = _serviceUrlBuilder.Build(SelectQueryRoute);
-			string responseJson = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
-			JObject response = JObject.Parse(responseJson);
-			if (!(response["success"]?.Value<bool>() ?? false)) {
-				error = "Failed to query SysPackage";
-				return false;
-			}
-			var rows = response["rows"] as JArray ?? [];
-			if (rows.Count == 0) {
-				error = $"Package '{packageName}' not found in the target environment.";
-				return false;
-			}
-			packageUId = rows[0]["UId"]?.ToString();
-			if (string.IsNullOrWhiteSpace(packageUId)) {
-				error = $"Package '{packageName}' has no UId in the SysPackage response.";
-				return false;
-			}
-			return true;
 		}
 
 		private static JObject BuildSaveSchemaPayload(string newSchemaUId, string schemaName, string caption,
@@ -242,28 +182,9 @@ namespace Clio.Command {
 			if (response["success"]?.Value<bool>() ?? false) {
 				return true;
 			}
-			error = BuildSaveErrorMessage(response);
+			error = PageSchemaMetadataHelper.ParseSaveErrorMessage(response, "Failed to create schema");
 			return false;
 		}
 
-		private static string BuildSaveErrorMessage(JObject saveResponse) {
-			string errorMessage = "Failed to create schema";
-			if (saveResponse["errorInfo"] is JObject errorInfo) {
-				string infoMessage = errorInfo["message"]?.ToString();
-				if (!string.IsNullOrWhiteSpace(infoMessage)) {
-					errorMessage = infoMessage;
-				}
-			}
-			if (saveResponse["validationErrors"] is JArray validationErrors && validationErrors.Count > 0) {
-				var messages = validationErrors
-					.Select(e => e["message"]?.ToString() ?? e["caption"]?.ToString())
-					.Where(m => !string.IsNullOrWhiteSpace(m));
-				errorMessage = string.Join("; ", messages);
-			}
-			if (saveResponse["addonsErrors"] is JArray addonsErrors && addonsErrors.Count > 0) {
-				errorMessage = string.Join("; ", addonsErrors.Select(e => e.ToString()));
-			}
-			return errorMessage;
-		}
 	}
 }
