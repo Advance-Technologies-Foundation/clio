@@ -52,15 +52,14 @@ public sealed record ApplicationCreateArgs(
 	[property: Required]
 	string Code,
 
-	[property: JsonPropertyName("template-code")]
-	[property: Description("Technical template name (NOT display name). Known values: AppFreedomUI, AppFreedomUIv2, AppWithHomePage, EmptyApp")]
-	[property: Required]
-	string TemplateCode,
-
 	[property: JsonPropertyName("icon-background")]
 	[property: Description("Application icon background color in #RRGGBB format, e.g. '#1F5F8B'")]
 	[property: Required]
 	string IconBackground,
+
+	[property: JsonPropertyName("template-code")]
+	[property: Description("Technical template name (NOT display name). Known values: AppFreedomUI, AppFreedomUIv2, AppWithHomePage, EmptyApp. Defaults to AppFreedomUI when omitted — use this default unless you have a specific reason to change it.")]
+	string? TemplateCode = "AppFreedomUI",
 
 	[property: JsonPropertyName("description")]
 	[property: Description("Application description")]

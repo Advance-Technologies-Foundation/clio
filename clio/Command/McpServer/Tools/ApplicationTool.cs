@@ -102,11 +102,12 @@ public sealed class ApplicationCreateTool(
 		OpenWorld = false)]
 	[Description("Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context.")]
 	public async Task<ApplicationContextResponse> ApplicationCreate(
-		[Description("Parameters: environment-name, name, code, template-code, icon-background (all required); description, icon-id, client-type-id (optional)")]
+		[Description("Parameters: environment-name, name, code, icon-background (required); template-code (optional, defaults to AppFreedomUI — the stable recommended template); description, icon-id, client-type-id (optional)")]
 		[Required]
 		ApplicationCreateArgs args) {
 		try {
 			ValidateCreateArgs(args);
+			string effectiveTemplateCode = string.IsNullOrWhiteSpace(args.TemplateCode) ? "AppFreedomUI" : args.TemplateCode.Trim();
 			ApplicationOptionalTemplateData? optionalTemplateData = ApplicationToolHelper.ParseOptionalTemplateData(args.OptionalTemplateDataJson);
 			ApplicationDataForgeResult dataForge = await enrichmentService.EnrichAsync(
 				args,
@@ -118,7 +119,7 @@ public sealed class ApplicationCreateTool(
 					args.Name,
 					args.Code,
 					args.Description,
-					args.TemplateCode,
+					effectiveTemplateCode,
 					args.IconId,
 					args.IconBackground,
 					args.ClientTypeId,
@@ -144,18 +145,12 @@ public sealed class ApplicationCreateTool(
 			throw new ArgumentException("code is required.");
 		}
 
-		if (string.IsNullOrWhiteSpace(args.TemplateCode)) {
-			throw new ArgumentException(
-				"template-code is required. " +
-				"Provide the technical template name as a top-level field, for example AppFreedomUI.");
-		}
-
-		if (!KnownTemplates.Contains(args.TemplateCode.Trim(), StringComparer.OrdinalIgnoreCase)) {
+		if (!KnownTemplates.Contains((args.TemplateCode ?? "AppFreedomUI").Trim(), StringComparer.OrdinalIgnoreCase)) {
 			string available = string.Join(", ", KnownTemplates);
 			throw new ArgumentException(
 				$"Unknown template-code '{args.TemplateCode}'. " +
 				$"Use the technical template name, not the display name. " +
-				$"Known templates: {available}");
+				$"Known templates: {available}. Omit template-code to use the default AppFreedomUI.");
 		}
 
 		if (string.IsNullOrWhiteSpace(args.IconBackground)) {
