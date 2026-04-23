@@ -257,8 +257,12 @@ public class PageGetCommand : Command<PageGetOptions> {
 			return (count, requests);
 		int depth = 0;
 		foreach (char ch in handlers) {
-			if (ch == '{') { if (depth == 0) count++; depth++; }
-			else if (ch == '}') { depth--; }
+			if (ch == '{') {
+				if (depth == 0) count++;
+				depth++;
+			} else if (ch == '}') {
+				depth--;
+			}
 		}
 		var requestRegex = new System.Text.RegularExpressions.Regex(
 			@"request\s*:\s*[""']([^""']+)[""']",

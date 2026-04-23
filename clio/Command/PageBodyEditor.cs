@@ -131,26 +131,22 @@ internal static class PageBodyEditor {
 		if (vmMarker == "SCHEMA_VIEW_MODEL_CONFIG") {
 			var vmObj = vmData is JsonObject obj ? obj : new JsonObject();
 			if (!vmObj.ContainsKey("attributes")) vmObj["attributes"] = new JsonObject();
-			JsonObject attrs = vmObj["attributes"]!.AsObject();
-			foreach (ListColumnSpec col in columns) {
-				if (!attrs.ContainsKey(col.Code)) {
-					string entityCol = col.Code.StartsWith("PDS_", StringComparison.Ordinal) ? col.Code[4..] : col.Code;
-					attrs[col.Code] = JsonNode.Parse($"{{\"modelConfig\":{{\"path\":\"PDS.{entityCol}\"}}}}");
-				}
-			}
+			AddListColumnAttributes(vmObj["attributes"]!.AsObject(), columns);
 			return ReplaceMarkerContent(body, vmMarker, SerializeJson(vmObj));
 		}
 		var vmArray = vmData.AsArray();
 		JsonObject mergeOp = FindOrCreateMergeOp(vmArray, ["attributes", "Items", "viewModelConfig", "attributes"]);
 		if (!mergeOp.ContainsKey("values")) mergeOp["values"] = new JsonObject();
-		JsonObject values = mergeOp["values"]!.AsObject();
-		foreach (ListColumnSpec col in columns) {
-			if (!values.ContainsKey(col.Code)) {
-				string entityCol = col.Code.StartsWith("PDS_", StringComparison.Ordinal) ? col.Code[4..] : col.Code;
-				values[col.Code] = JsonNode.Parse($"{{\"modelConfig\":{{\"path\":\"PDS.{entityCol}\"}}}}");
-			}
-		}
+		AddListColumnAttributes(mergeOp["values"]!.AsObject(), columns);
 		return ReplaceMarkerContent(body, vmMarker, SerializeJson(vmArray));
+	}
+
+	private static void AddListColumnAttributes(JsonObject target, IReadOnlyList<ListColumnSpec> columns) {
+		foreach (ListColumnSpec col in columns) {
+			if (target.ContainsKey(col.Code)) continue;
+			string entityCol = col.Code.StartsWith("PDS_", StringComparison.Ordinal) ? col.Code[4..] : col.Code;
+			target[col.Code] = JsonNode.Parse($"{{\"modelConfig\":{{\"path\":\"PDS.{entityCol}\"}}}}");
+		}
 	}
 
 	private static void ThrowIfMarkerIntegrityFailed(string body) {
