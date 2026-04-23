@@ -211,6 +211,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should restate the unary payload rule in practical reminders");
 		article.Text.Should().Contain("Relational Date, DateTime, and Time constants must stay JSON strings",
 			because: "the guide should explain the temporal constant request shape");
+		article.Text.Should().Contain("DateTime` constants must include a timezone suffix", 
+			because: "the guide should make timezone requirements explicit for DateTime constants");
+		article.Text.Should().Contain("Time` constants must include a timezone suffix",
+			because: "the guide should make timezone requirements explicit for Time constants");
+		article.Text.Should().Contain("Do not send timezone-less `DateTime` or `Time` constants",
+			because: "the guide should warn agents away from ambiguous temporal payloads");
 		article.Text.Should().Contain("raw GUID string",
 			because: "the guide should teach the lookup-constant payload rule");
 		article.Text.Should().Contain("DataForge is optional assistance",

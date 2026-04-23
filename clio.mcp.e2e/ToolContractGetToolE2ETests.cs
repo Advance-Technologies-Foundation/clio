@@ -476,6 +476,11 @@ public sealed class ToolContractGetToolE2ETests {
 				validator.Context!.Contains("Date, DateTime, Time", StringComparison.Ordinal),
 			because: "the contract should advertise the numeric and temporal scope of relational comparisons");
 		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "temporal-constant" &&
+				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Context!.Contains("timezone suffix", StringComparison.Ordinal),
+			because: "the contract should require timezone-aware DateTime and Time constants");
+		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rule.actions[*].type",
 			because: "the contract should advertise the target architecture action field");
@@ -513,6 +518,10 @@ public sealed class ToolContractGetToolE2ETests {
 			string.Equals(example.Summary, "Create a required-field rule when created date is before a cutoff", StringComparison.Ordinal));
 		hasRelationalExample.Should().BeTrue(
 			because: "the contract should include a relational example for numeric or temporal comparisons");
+		bool hasTimezoneAwareTimeExample = contract.Examples.Any(example =>
+			string.Equals(example.Summary, "Create a readonly rule when reminder time is after a timezone-aware cutoff", StringComparison.Ordinal));
+		hasTimezoneAwareTimeExample.Should().BeTrue(
+			because: "the contract should include a timezone-aware Time example for agent callers");
 	}
 
 	[Test]

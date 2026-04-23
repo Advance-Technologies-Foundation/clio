@@ -1197,7 +1197,7 @@ internal static class ToolContractCatalog {
 					Field("environmentName", StringType, RegisteredEnvironmentNameDescription),
 					Field("packageName", StringType, "Target package name."),
 					Field("entitySchemaName", StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and temporal left attributes (Date, DateTime, Time).")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and temporal left attributes (Date, DateTime, Time). DateTime and Time constants must include a timezone suffix ('Z' or '+/-HH:mm').")
 				],
 				Validators: [
 					new ToolContractValidator("enum", "unsupported-operator", "rule.condition.logicalOperation",
@@ -1209,7 +1209,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("comparison-family", "unsupported-relational-operands", "rule.condition.conditions[*]",
 						Context: "greater-than, greater-than-or-equal, less-than, and less-than-or-equal only support numeric and temporal left attributes (Date, DateTime, Time). Attribute-to-attribute relational comparisons must use matching data value types."),
 					new ToolContractValidator("temporal-constant", "invalid-temporal-constant", "rule.condition.conditions[*].rightExpression.value",
-						Context: "Date, DateTime, and Time constants must be JSON strings in date, date-time, or time format."),
+						Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm')."),
 					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
 						Context: "Supported values: make-editable, make-read-only, make-required, make-optional.")
 				]),
@@ -1317,6 +1317,36 @@ internal static class ToolContractCatalog {
 							new Dictionary<string, object?> {
 								["type"] = "make-required",
 								["items"] = new[] { "Owner" }
+							}
+						}
+					}
+				}),
+				Example("Create a readonly rule when reminder time is after a timezone-aware cutoff", new Dictionary<string, object?> {
+					["environmentName"] = ExampleEnvironmentName,
+					["packageName"] = ExamplePackageName,
+					["entitySchemaName"] = "UsrTask",
+					[RuleFieldName] = new Dictionary<string, object?> {
+						["caption"] = "Lock reminder note after local noon",
+						["condition"] = new Dictionary<string, object?> {
+							["logicalOperation"] = "AND",
+							["conditions"] = new[] {
+								new Dictionary<string, object?> {
+									["leftExpression"] = new Dictionary<string, object?> {
+										["type"] = "AttributeValue",
+										["path"] = "ReminderTime"
+									},
+									["comparisonType"] = "greater-than",
+									["rightExpression"] = new Dictionary<string, object?> {
+										["type"] = "Const",
+										["value"] = "12:00:00+02:00"
+									}
+								}
+							}
+						},
+						["actions"] = new[] {
+							new Dictionary<string, object?> {
+								["type"] = "make-read-only",
+								["items"] = new[] { "ReminderNote" }
 							}
 						}
 					}

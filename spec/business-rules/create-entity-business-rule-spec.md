@@ -35,6 +35,9 @@ Entity-level rule creation must:
       - relational operators only support numeric and temporal left attributes
       - temporal relational scope includes `Date`, `DateTime`, and `Time`
       - temporal constants must be sent as JSON strings and are normalized to typed metadata values before persistence
+      - `Date` constants use `yyyy-MM-dd`
+      - `DateTime` constants use ISO 8601 date-time with a required timezone suffix (`Z` or `±HH:mm`)
+      - `Time` constants use ISO 8601 time with a required timezone suffix (`Z` or `±HH:mm`)
    - support multiple conditions 
    - support grouping conditions by AND or OR (without nested groups)
 - actions

@@ -71,6 +71,9 @@ public sealed class ObjectBusinessRulesGuidanceResource : BaseResource {
 			       - Use attribute-to-constant and attribute-to-attribute comparisons only for binary operators.
 			       - For lookup constants, pass only a raw GUID string in `rightExpression.value`.
 			       - For `Date`, `DateTime`, and `Time` constants, pass a JSON string value so clio can normalize it into typed business-rule metadata.
+			       - `Date` constants use `yyyy-MM-dd` and do not carry a timezone suffix.
+			       - `DateTime` constants must include a timezone suffix such as `Z` or `+02:00`.
+			       - `Time` constants must include a timezone suffix such as `Z` or `+02:00`.
 			       - Do not send older payload shapes such as `if`, `then`, operand `kind`, `targets`, `operator`, `comparison`, `ConstValue`, or `referenceSchemaName`.
 
 			       DataForge-assisted planning
@@ -106,6 +109,7 @@ public sealed class ObjectBusinessRulesGuidanceResource : BaseResource {
 			       - Lookup constants are stricter than page-level UX values: the create tool expects a GUID string, not `{ value, displayValue }`.
 			       - Unary filled-in comparisons do not send `rightExpression`.
 			       - Relational Date, DateTime, and Time constants must stay JSON strings in the request even though clio persists them as typed metadata values.
+			       - Do not send timezone-less `DateTime` or `Time` constants. Include `Z` or an explicit offset so the stored UTC value matches the intended Creatio behavior.
 			       - If the requirement needs unsupported actions such as visibility, filtering, set-value, formula, or role-based behavior, surface that limitation explicitly instead of improvising.
 			       """
 		};

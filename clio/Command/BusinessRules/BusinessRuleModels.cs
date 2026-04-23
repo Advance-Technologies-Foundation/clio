@@ -64,7 +64,7 @@ public sealed record BusinessRuleCondition(
 	string ComparisonType,
 
 	[property: JsonPropertyName("rightExpression")]
-	[property: Description("Right expression. Supports AttributeValue or Const for equal, not-equal, and relational comparisons. Omit or null for is-filled-in and is-not-filled-in. For lookup constants pass only a GUID string.")]
+	[property: Description("Right expression. Supports AttributeValue or Const for equal, not-equal, and relational comparisons. Omit or null for is-filled-in and is-not-filled-in. For lookup constants pass only a GUID string. For DateTime and Time constants, include a timezone suffix ('Z' or '+/-HH:mm').")]
 	BusinessRuleExpression? RightExpression
 );
 
@@ -85,7 +85,7 @@ public sealed record BusinessRuleExpression(
 	string? Path,
 
 	[property: JsonPropertyName("value")]
-	[property: Description("Constant value when type is Const. For lookup constants pass a GUID string.")]
+	[property: Description("Constant value when type is Const. For lookup constants pass a GUID string. Date constants use yyyy-MM-dd. DateTime constants use ISO 8601 with a timezone suffix ('Z' or '+/-HH:mm'). Time constants use ISO 8601 time with a timezone suffix ('Z' or '+/-HH:mm').")]
 	JsonElement? Value
 );
 

@@ -104,6 +104,12 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the article should explain the unary operand rule");
 		article.Text.Should().Contain("Temporal scope is `Date`, `DateTime`, and `Time`",
 			because: "the article should scope relational temporal support precisely");
+		article.Text.Should().Contain("DateTime` constants must include a timezone suffix",
+			because: "the article should make timezone requirements explicit for DateTime constants");
+		article.Text.Should().Contain("Time` constants must include a timezone suffix",
+			because: "the article should make timezone requirements explicit for Time constants");
+		article.Text.Should().Contain("Do not send timezone-less `DateTime` or `Time` constants",
+			because: "the article should warn callers away from ambiguous temporal payloads");
 		article.Text.Should().Contain("raw GUID string",
 			because: "the article should teach the lookup-constant payload constraint");
 		article.Text.Should().Contain("dataforge-find-lookups",

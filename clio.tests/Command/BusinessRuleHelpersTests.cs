@@ -10,8 +10,8 @@ namespace Clio.Tests.Command;
 [Property("Module", "Command")]
 public sealed class BusinessRuleHelpersTests {
 	[TestCase("Date", "\"2025-01-15\"", 2025, 1, 15, 0, 0, 0)]
-	[TestCase("DateTime", "\"2025-01-15T13:45:30Z\"", 2025, 1, 15, 13, 45, 30)]
-	[TestCase("Time", "\"13:45:30\"", 1, 1, 1, 13, 45, 30)]
+	[TestCase("DateTime", "\"2025-01-15T13:45:30+02:00\"", 2025, 1, 15, 11, 45, 30)]
+	[TestCase("Time", "\"13:45:30+02:00\"", 1, 1, 1, 11, 45, 30)]
 	[Category("Unit")]
 	[Description("Normalizes Date DateTime and Time constants into UTC DateTime values before metadata serialization.")]
 	public void TryConvertTemporalConstant_Should_Normalize_Supported_Temporal_Constants(
@@ -37,6 +37,8 @@ public sealed class BusinessRuleHelpersTests {
 	}
 
 	[TestCase("Date", "\"2025-01-15T13:45:30Z\"")]
+	[TestCase("DateTime", "\"2025-01-15T13:45:30\"")]
+	[TestCase("Time", "\"13:45:30\"")]
 	[TestCase("DateTime", "5")]
 	[TestCase("Time", "\"not-a-time\"")]
 	[Category("Unit")]

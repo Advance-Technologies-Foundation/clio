@@ -52,8 +52,8 @@ public sealed class BusinessRuleValidatorTests {
 
 	private static readonly object[] TemporalTypeCases = [
 		new object[] { 8, "StartDate", "2025-01-15" },
-		new object[] { 7, "CreatedOn", "2025-01-15T13:45:00Z" },
-		new object[] { 9, "ReminderTime", "13:45:00" }
+		new object[] { 7, "CreatedOn", "2025-01-15T13:45:00+02:00" },
+		new object[] { 9, "ReminderTime", "13:45:00+02:00" }
 	];
 
 	[Test]
@@ -461,8 +461,35 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a JSON string in ISO 8601 date-time format when the left attribute is DateTime.",
+			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a JSON string in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm') when the left attribute is DateTime.",
 				because: "temporal comparisons should reject non-string constants before metadata conversion");
+	}
+
+	[TestCase("CreatedOn", 7, "2025-01-15T13:45:00", "rule.condition.conditions[*].rightExpression.value must be a JSON string in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm') when the left attribute is DateTime.")]
+	[TestCase("ReminderTime", 9, "13:45:00", "rule.condition.conditions[*].rightExpression.value must be a JSON string in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm') when the left attribute is Time.")]
+	[Category("Unit")]
+	[Description("Rejects timezone-less temporal constants when DateTime or Time comparisons require explicit timezone semantics.")]
+	public void Validate_Should_Reject_Temporal_Constant_Without_Explicit_Timezone(
+		string leftPath,
+		int dataValueType,
+		string constantValue,
+		string expectedMessage) {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "greater-than",
+			leftExpression: new BusinessRuleExpression("AttributeValue", leftPath, null),
+			rightExpression: new BusinessRuleExpression("Const", null, Json($"\"{constantValue}\"")));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn(leftPath, dataValueType),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage(expectedMessage,
+				because: "DateTime and Time comparisons should require an explicit timezone suffix");
 	}
 
 	[Test]

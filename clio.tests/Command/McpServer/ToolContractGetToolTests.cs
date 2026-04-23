@@ -105,6 +105,11 @@ public sealed class ToolContractGetToolTests {
 				validator.Context!.Contains("Date, DateTime, Time", StringComparison.Ordinal),
 			because: "the contract should advertise the numeric and temporal scope of relational comparisons");
 		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "temporal-constant" &&
+				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Context!.Contains("timezone suffix", StringComparison.Ordinal),
+			because: "the contract should explicitly require timezone-aware DateTime and Time constants");
+		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rule.actions[*].type",
 			because: "the contract should validate target-architecture action type fields");
@@ -173,6 +178,19 @@ public sealed class ToolContractGetToolTests {
 			&& comparisonTypeValue?.ToString() == "less-than-or-equal");
 		hasRelationalExample.Should().BeTrue(
 			because: "the contract should include a relational example for numeric or temporal comparisons");
+		bool hasTimezoneAwareTimeExample = contract.Examples.Any(example =>
+			example.Arguments["rule"] is Dictionary<string, object?> rule
+			&& rule.TryGetValue("condition", out object? conditionValue)
+			&& conditionValue is Dictionary<string, object?> condition
+			&& condition.TryGetValue("conditions", out object? conditionsValue)
+			&& conditionsValue is object[] conditions
+			&& conditions.Single() is Dictionary<string, object?> predicate
+			&& predicate.TryGetValue("rightExpression", out object? rightExpressionValue)
+			&& rightExpressionValue is Dictionary<string, object?> rightExpression
+			&& rightExpression.TryGetValue("value", out object? constantValue)
+			&& string.Equals(constantValue?.ToString(), "12:00:00+02:00", StringComparison.Ordinal));
+		hasTimezoneAwareTimeExample.Should().BeTrue(
+			because: "the contract should show a timezone-aware Time constant example for coding agents");
 	}
 
 	[Test]

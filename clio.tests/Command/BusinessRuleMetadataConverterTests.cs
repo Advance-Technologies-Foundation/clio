@@ -303,6 +303,51 @@ public sealed class BusinessRuleMetadataConverterTests {
 				because: "typed temporal constants should serialize back to stable UTC JSON strings");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Normalizes timezone-aware time constants into UTC time-of-day metadata values before JSON serialization.")]
+	public void ToMetadata_Should_Normalize_Time_Constant_Metadata() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("ReminderTime", 9),
+			CreateColumn("Status", 1));
+		BusinessRule rule = new(
+			"Readonly status after local noon",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "ReminderTime", null),
+						"greater-than",
+						new BusinessRuleExpression("Const", null, Json("12:00:00+02:00")))
+				]),
+			[
+				new BusinessRuleAction("make-read-only", ["Status"])
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule);
+		BusinessRuleExpressionMetadataDto rightExpression = metadata.Cases[0].Condition!.Conditions[0].RightExpression!;
+		string json = JsonSerializer.Serialize(metadata, BusinessRuleConstants.JsonOptions);
+
+		// Assert
+		rightExpression.Value.Should().BeOfType<DateTime>(
+			because: "timezone-aware time constants should be normalized before metadata serialization");
+		((DateTime)rightExpression.Value!).Should().Be(new DateTime(1, 1, 1, 10, 0, 0, DateTimeKind.Utc),
+			because: "a +02:00 time constant should be converted to the equivalent UTC time-of-day");
+		using JsonDocument document = JsonDocument.Parse(json);
+		document.RootElement
+			.GetProperty("cases")[0]
+			.GetProperty("condition")
+			.GetProperty("conditions")[0]
+			.GetProperty("rightExpression")
+			.GetProperty("value")
+			.GetString()
+			.Should()
+			.Be("0001-01-01T10:00:00Z",
+				because: "normalized time constants should serialize as stable UTC strings in add-on metadata");
+	}
+
 	private static IReadOnlyDictionary<string, EntitySchemaColumnDto> CreateColumnMap(params EntitySchemaColumnDto[] columns) {
 		Dictionary<string, EntitySchemaColumnDto> result = new(StringComparer.Ordinal);
 		foreach (EntitySchemaColumnDto column in columns) {
