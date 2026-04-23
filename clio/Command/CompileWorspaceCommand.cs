@@ -53,20 +53,27 @@ namespace Clio.Command
 					Logger.WriteError($"Endpoint: {ServiceUri}");
 					return;
 				}
-				CreatioResponse model = JsonSerializer.Deserialize<CreatioResponse>(response);
-				CommandSuccess = _isSuccess = model.Success;
-				if (!model.Success) {
-					Logger.WriteError($"{model.ErrorInfo.ErrorCode}: {model.ErrorInfo.Message}");
-				}
+				ApplyCreatioModel(JsonSerializer.Deserialize<CreatioResponse>(response));
 			}
 			catch (Exception e) {
-				CommandSuccess = _isSuccess = false;
-				Logger.WriteError(e.Message);
-				Logger.WriteError($"Endpoint: {ServiceUri}");
-				if (!string.IsNullOrWhiteSpace(response)) {
-					Logger.WriteError("Full response:");
-					Logger.WriteLine(response);
-				}
+				SetFailure(e, response);
+			}
+		}
+
+		private void ApplyCreatioModel(CreatioResponse model) {
+			CommandSuccess = _isSuccess = model.Success;
+			if (!model.Success) {
+				Logger.WriteError($"{model.ErrorInfo.ErrorCode}: {model.ErrorInfo.Message}");
+			}
+		}
+
+		private void SetFailure(Exception e, string response) {
+			CommandSuccess = _isSuccess = false;
+			Logger.WriteError(e.Message);
+			Logger.WriteError($"Endpoint: {ServiceUri}");
+			if (!string.IsNullOrWhiteSpace(response)) {
+				Logger.WriteError("Full response:");
+				Logger.WriteLine(response);
 			}
 		}
 	}
