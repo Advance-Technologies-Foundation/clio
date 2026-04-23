@@ -252,7 +252,8 @@ public class PageGetCommand : Command<PageGetOptions> {
 			}
 			var requestRegex = new System.Text.RegularExpressions.Regex(
 				@"request\s*:\s*[""']([^""']+)[""']",
-				System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.Compiled);
+				System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.Compiled,
+				System.TimeSpan.FromSeconds(1));
 			foreach (System.Text.RegularExpressions.Match m in requestRegex.Matches(handlers)) {
 				handlerRequests.Add(m.Groups[1].Value);
 			}
