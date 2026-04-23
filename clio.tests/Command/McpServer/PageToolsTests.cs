@@ -1849,8 +1849,8 @@ public class PageToolsTests {
 				callIndex++;
 				if (callIndex == 1) return metadataResponse.ToString();
 				if (callIndex == 2) return getSchemaResponse.ToString();
-				lastSavePayload = ci.ArgAt<string>(1);
-				return saveResponse.ToString();
+				if (callIndex == 3) { lastSavePayload = ci.ArgAt<string>(1); return saveResponse.ToString(); }
+				return new JObject { ["success"] = true }.ToString();
 			});
 
 		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
@@ -1900,6 +1900,7 @@ public class PageToolsTests {
 			}
 		};
 		var saveResponse = new JObject { ["success"] = true };
+		var noRowsResponse = new JObject { ["success"] = true, ["rows"] = new JArray() };
 		string lastSavePayload = null;
 		int callIndex = 0;
 		applicationClient.ExecutePostRequest(
@@ -1907,9 +1908,10 @@ public class PageToolsTests {
 			.Returns(ci => {
 				callIndex++;
 				if (callIndex == 1) return metadataResponse.ToString();
-				if (callIndex == 2) return getSchemaResponse.ToString();
-				lastSavePayload = ci.ArgAt<string>(1);
-				return saveResponse.ToString();
+				if (callIndex == 2) return noRowsResponse.ToString();
+				if (callIndex == 3) return getSchemaResponse.ToString();
+				if (callIndex == 4) { lastSavePayload = ci.ArgAt<string>(1); return saveResponse.ToString(); }
+				return new JObject { ["success"] = true }.ToString();
 			});
 
 		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);

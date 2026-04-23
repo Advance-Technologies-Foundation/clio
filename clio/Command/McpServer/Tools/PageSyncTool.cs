@@ -28,7 +28,8 @@ public sealed class PageSyncTool(
 		Idempotent = false, OpenWorld = false)]
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
 		"For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
-		"and verifies the update (optional). Continues processing remaining pages on failure.")]
+		"and verifies the update (optional). Continues processing remaining pages on failure. " +
+		"Before authoring SCHEMA_VALIDATORS, call get-guidance with name `page-schema-validators` first.")]
 	public async Task<PageSyncResponse> SyncPages(
 		[Description("Parameters: environment-name (required); pages array (required); validate, verify, skip-sampling (optional)")]
 		[Required] PageSyncArgs args,

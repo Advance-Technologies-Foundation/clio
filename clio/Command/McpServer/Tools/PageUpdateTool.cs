@@ -24,7 +24,7 @@ public sealed class PageUpdateTool(
 	internal const string ToolName = "update-page";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	[Description("Update Freedom UI page schema body. Before authoring SCHEMA_VALIDATORS, call get-guidance with name `page-schema-validators` first. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("Parameters: schema-name, body (required); resources, dry-run, skip-sampling (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageUpdateArgs args,
