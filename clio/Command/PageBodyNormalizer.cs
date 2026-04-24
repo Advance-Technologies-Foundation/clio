@@ -13,10 +13,10 @@ internal static class PageBodyNormalizer {
 	private static readonly string[] BindingProperties = { "control", "value" };
 
 	/// <summary>
-	/// Rewrites proxy-style bindings (e.g. <c>"control": "$UsrStatus"</c>) in
-	/// <c>SCHEMA_VIEW_CONFIG_DIFF</c> to their canonical <c>$PDS_*</c> / <c>$Name</c> form
-	/// so the body passes <see cref="SchemaValidationService.ValidateStandardFieldBindings"/>
-	/// without a manual rewrite loop.
+	/// Rewrites legacy direct datasource bindings (for example
+	/// <c>"control": "$PDS_UsrStatus"</c>) in <c>SCHEMA_VIEW_CONFIG_DIFF</c> to the
+	/// declared view-model attribute binding that targets the same model path when such an
+	/// attribute already exists in viewModelConfig/viewModelConfigDiff.
 	/// Returns the original body unchanged on any parse or write failure.
 	/// </summary>
 	internal static string NormalizeProxyBindings(string body) {
@@ -82,17 +82,25 @@ internal static class PageBodyNormalizer {
 		    expression.Length < 2) {
 			return false;
 		}
-		string attr = expression[1..];
-		if (SchemaValidationService.IsAllowedDirectFieldBinding(attr)) {
+		string bindingAttribute = expression[1..];
+		if (!IsDirectPdsBinding(bindingAttribute)) {
 			return false;
 		}
-		if (!modelPaths.TryGetValue(attr, out string? modelPath) ||
-		    !modelPath.StartsWith("PDS.", StringComparison.OrdinalIgnoreCase)) {
+		string expectedModelPath = "PDS." + bindingAttribute["PDS_".Length..];
+		string? declaredAttribute = modelPaths
+			.Where(pair => string.Equals(pair.Value, expectedModelPath, StringComparison.OrdinalIgnoreCase))
+			.Select(pair => pair.Key)
+			.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+			.FirstOrDefault();
+		if (string.IsNullOrWhiteSpace(declaredAttribute)) {
 			return false;
 		}
-		values[bindingProp] = SchemaValidationService.BuildExpectedBinding(modelPath);
+		values[bindingProp] = "$" + declaredAttribute;
 		return true;
 	}
+
+	private static bool IsDirectPdsBinding(string bindingAttribute) =>
+		bindingAttribute.StartsWith("PDS_", StringComparison.OrdinalIgnoreCase);
 
 	private static bool TryGetString(JsonObject obj, string key, out string value) {
 		value = string.Empty;

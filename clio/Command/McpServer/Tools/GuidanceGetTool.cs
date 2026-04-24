@@ -35,7 +35,7 @@ public sealed class GuidanceGetTool {
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Returns a named clio MCP guidance article, or lists all available guide names when the requested name is unknown. Known names include: app-modeling, existing-app-maintenance, dataforge-orchestration, page-schema-handlers, page-schema-sdk-common, page-schema-validators.")]
 	public Task<GuidanceGetResponse> GetGuidance(
-		[Description("Parameters: name (required).")]
+		[Description("Parameters: name (required). Use one of the known guidance names such as page-schema-handlers, page-schema-sdk-common, page-schema-validators, or existing-app-maintenance.")]
 		[Required] GuidanceGetArgs args,
 		CancellationToken cancellationToken = default) {
 		try {

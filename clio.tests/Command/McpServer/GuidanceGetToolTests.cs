@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using ModelContextProtocol.Server;
@@ -36,7 +37,7 @@ public sealed class GuidanceGetToolTests {
 		ParameterInfo argsParameter = typeof(GuidanceGetTool)
 			.GetMethod(nameof(GuidanceGetTool.GetGuidance))!
 			.GetParameters()
-			.Single();
+			.Single(parameter => parameter.ParameterType == typeof(GuidanceGetArgs));
 		PropertyInfo nameProperty = typeof(GuidanceGetArgs).GetProperty(nameof(GuidanceGetArgs.Name))!;
 
 		// Act
@@ -59,44 +60,44 @@ public sealed class GuidanceGetToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns the canonical handler guidance article when the caller requests page-schema-handlers.")]
-	public void GuidanceGet_Should_Return_Page_Schema_Handlers_Article() {
+	public async Task GuidanceGet_Should_Return_Page_Schema_Handlers_Article() {
 		// Arrange
 		GuidanceGetTool tool = new();
 
 		// Act
-		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("page-schema-handlers"));
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-schema-handlers"));
 
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "page-schema-handlers is a registered guidance name");
-		result.Guidance.Should().NotBeNull(
+		result.Article.Should().NotBeNull(
 			because: "successful guidance lookups should return the resolved article");
-		result.Guidance!.Uri.Should().Be("docs://mcp/guides/page-schema-handlers",
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-handlers",
 			because: "the guidance tool should preserve the canonical handler guide URI in the response");
-		result.Guidance.Text.Should().Contain("clio MCP page-schema handlers guide",
+		result.Article.Text.Should().Contain("clio MCP page-schema handlers guide",
 			because: "the guidance tool should return the canonical handler article text");
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Returns the canonical SDK common guidance article when the caller requests page-schema-sdk-common.")]
-	public void GuidanceGet_Should_Return_Page_Schema_Sdk_Common_Article() {
+	public async Task GuidanceGet_Should_Return_Page_Schema_Sdk_Common_Article() {
 		// Arrange
 		GuidanceGetTool tool = new();
 
 		// Act
-		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("page-schema-sdk-common"));
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-schema-sdk-common"));
 
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "page-schema-sdk-common is a registered guidance name");
-		result.Guidance.Should().NotBeNull(
+		result.Article.Should().NotBeNull(
 			because: "successful guidance lookups should return the resolved article");
-		result.Guidance!.Uri.Should().Be("docs://mcp/guides/page-schema-sdk-common",
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-sdk-common",
 			because: "the guidance tool should preserve the canonical SDK common guide URI in the response");
-		result.Guidance.Text.Should().Contain("clio MCP page-schema sdk common guide",
+		result.Article.Text.Should().Contain("clio MCP page-schema sdk common guide",
 			because: "the guidance tool should return the canonical SDK common article text");
-		result.Guidance.Text.Should().Contain("Pattern selection order for handler-side data/service work is mandatory",
+		result.Article.Text.Should().Contain("Pattern selection order for handler-side data/service work is mandatory",
 			because: "the guidance tool should return the updated SDK common routing rules for request sdk and fetch selection");
 	}
 

@@ -1467,7 +1467,7 @@ public class PageToolsTests {
 		PageUpdateArgs args = new("UsrTest_FormPage", bodyWithBadJson, null, null, null, null, null, null);
 
 		// Act
-		PageUpdateResponse response = tool.UpdatePage(args);
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -1551,7 +1551,7 @@ public class PageToolsTests {
 		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
 
 		// Act
-		PageUpdateResponse response = tool.UpdatePage(args);
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -1580,7 +1580,7 @@ public class PageToolsTests {
 		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
 
 		// Act
-		PageUpdateResponse response = tool.UpdatePage(args);
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -1640,7 +1640,7 @@ public class PageToolsTests {
 		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
 
 		// Act
-		PageUpdateResponse response = tool.UpdatePage(args);
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -1713,7 +1713,7 @@ public class PageToolsTests {
 			false);
 
 		// Act
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = tool.SyncPages(args, null).Result;
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -1757,7 +1757,7 @@ public class PageToolsTests {
 			false);
 
 		// Act
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = tool.SyncPages(args, null).Result;
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -1802,7 +1802,7 @@ public class PageToolsTests {
 			false);
 
 		// Act
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = tool.SyncPages(args, null).Result;
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -1847,7 +1847,7 @@ public class PageToolsTests {
 			false);
 
 		// Act
-		PageSyncResponse response = tool.SyncPages(args);
+		PageSyncResponse response = tool.SyncPages(args, null).Result;
 
 		// Assert
 		response.Pages.Should().ContainSingle(
@@ -2035,11 +2035,11 @@ public class PageToolsTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("get-page normalizes proxy bindings before writing body.js so the file passes sync-pages validation.")]
-	public void PageGetTool_WhenBodyHasProxyBindings_WritesNormalizedBodyFile() {
+	[Description("get-page rewrites legacy direct datasource bindings before writing body.js so the file uses declared view-model attributes.")]
+	public void PageGetTool_WhenBodyHasDirectDatasourceBindings_WritesNormalizedBodyFile() {
 		// Arrange
 		string proxyBody = CreatePageBody(
-			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","label":"$Resources.Strings.PDS_UsrStatus","control":"$UsrStatus"}}]""",
+			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","label":"$Resources.Strings.PDS_UsrStatus","control":"$PDS_UsrStatus"}}]""",
 			viewModelConfigDiff: """[{"operation":"merge","values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}}]""");
 		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(proxyBody);
 
@@ -2047,12 +2047,12 @@ public class PageToolsTests {
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
 
 		// Assert
-		response.Success.Should().BeTrue(because: "get-page should succeed even when the source body has proxy bindings");
+		response.Success.Should().BeTrue(because: "get-page should succeed even when the source body has legacy direct datasource bindings");
 		string writtenBody = mockFs.File.ReadAllText(response.Files.BodyFile);
-		writtenBody.Should().Contain("$PDS_UsrStatus",
-			because: "get-page must normalize proxy binding $UsrStatus to $PDS_UsrStatus before writing body.js");
-		writtenBody.Should().NotContain("\"$UsrStatus\"",
-			because: "the proxy binding must not remain in the written body.js");
+		writtenBody.Should().Contain("$UsrStatus",
+			because: "get-page must normalize direct datasource binding $PDS_UsrStatus to the declared attribute before writing body.js");
+		writtenBody.Should().NotContain("\"$PDS_UsrStatus\"",
+			because: "the legacy direct datasource binding must not remain in the written body.js");
 	}
 
 	[Test]

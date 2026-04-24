@@ -43,39 +43,39 @@ public class PageBodyNormalizerTests {
 	}
 
 	[Test]
-	[Description("Proxy binding on a standard field is rewritten to $PDS_* form.")]
-	public void NormalizeProxyBindings_ProxyField_RewritesToPdsBinding() {
+	[Description("Legacy direct datasource binding on a standard field is rewritten to the declared view-model attribute.")]
+	public void NormalizeProxyBindings_DirectDatasourceBinding_RewritesToDeclaredAttribute() {
 		// Arrange
 		string body = CreatePageBody(
-			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","label":"$Resources.Strings.PDS_UsrStatus","control":"$UsrStatus"}}]""",
+			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","label":"$Resources.Strings.PDS_UsrStatus","control":"$PDS_UsrStatus"}}]""",
 			viewModelConfigDiff: """[{"operation":"merge","values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}}]""");
 
 		// Act
 		string result = PageBodyNormalizer.NormalizeProxyBindings(body);
 
 		// Assert
-		result.Should().Contain("$PDS_UsrStatus",
-			because: "proxy binding $UsrStatus pointing to PDS.UsrStatus should be rewritten to $PDS_UsrStatus");
-		result.Should().NotContain("\"$UsrStatus\"",
-			because: "the proxy binding must be replaced");
+		result.Should().Contain("$UsrStatus",
+			because: "legacy direct datasource binding should be rewritten to the declared view-model attribute");
+		result.Should().NotContain("\"$PDS_UsrStatus\"",
+			because: "the direct datasource binding must be replaced");
 	}
 
 	[Test]
-	[Description("Proxy binding for the primary Name field is rewritten to $Name (special case).")]
-	public void NormalizeProxyBindings_NameField_RewritesToDollarName() {
+	[Description("Legacy direct datasource binding is rewritten to whichever declared attribute targets the same model path.")]
+	public void NormalizeProxyBindings_NameField_RewritesToDeclaredAttributeForSamePath() {
 		// Arrange
 		string body = CreatePageBody(
-			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","label":"$Resources.Strings.PDS_Name","control":"$UsrName"}}]""",
+			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","label":"$Resources.Strings.PDS_Name","control":"$PDS_Name"}}]""",
 			viewModelConfigDiff: """[{"operation":"merge","values":{"UsrName":{"modelConfig":{"path":"PDS.Name"}}}}]""");
 
 		// Act
 		string result = PageBodyNormalizer.NormalizeProxyBindings(body);
 
 		// Assert
-		result.Should().Contain("\"$Name\"",
-			because: "PDS.Name has the special-case expected binding $Name, not $PDS_Name");
-		result.Should().NotContain("\"$UsrName\"",
-			because: "the proxy binding must be replaced");
+		result.Should().Contain("\"$UsrName\"",
+			because: "direct datasource binding should be rewritten to the declared attribute that targets PDS.Name");
+		result.Should().NotContain("\"$PDS_Name\"",
+			because: "the direct datasource binding must be replaced");
 	}
 
 	[Test]
@@ -154,15 +154,15 @@ public class PageBodyNormalizerTests {
 	}
 
 	[Test]
-	[Description("Multiple proxy fields in one body are all rewritten in a single call.")]
-	public void NormalizeProxyBindings_MultipleProxyFields_AllRewritten() {
+	[Description("Multiple legacy direct datasource bindings in one body are all rewritten in a single call.")]
+	public void NormalizeProxyBindings_MultipleDirectDatasourceBindings_AllRewritten() {
 		// Arrange
 		string body = CreatePageBody(
 			viewConfigDiff: """
 				[
-					{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","control":"$UsrStatus"}},
-					{"operation":"insert","name":"UsrDueDate","values":{"type":"crt.DateTimePicker","control":"$UsrDueDate"}},
-					{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","control":"$UsrName"}}
+					{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","control":"$PDS_UsrStatus"}},
+					{"operation":"insert","name":"UsrDueDate","values":{"type":"crt.DateTimePicker","control":"$PDS_UsrDueDate"}},
+					{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","control":"$PDS_Name"}}
 				]
 				""",
 			viewModelConfigDiff: """
@@ -177,32 +177,36 @@ public class PageBodyNormalizerTests {
 		string result = PageBodyNormalizer.NormalizeProxyBindings(body);
 
 		// Assert
-		result.Should().Contain("$PDS_UsrStatus",
-			because: "UsrStatus proxy binding must be rewritten");
-		result.Should().Contain("$PDS_UsrDueDate",
-			because: "UsrDueDate proxy binding must be rewritten");
-		result.Should().Contain("\"$Name\"",
-			because: "UsrName pointing to PDS.Name must use the special-case $Name binding");
-		result.Should().NotMatchRegex("\"\\$Usr[A-Za-z]",
-			because: "no proxy bindings should remain after normalization");
+		result.Should().Contain("$UsrStatus",
+			because: "UsrStatus direct datasource binding must be rewritten to the declared attribute");
+		result.Should().Contain("$UsrDueDate",
+			because: "UsrDueDate direct datasource binding must be rewritten to the declared attribute");
+		result.Should().Contain("\"$UsrName\"",
+			because: "PDS.Name should be rebound to the declared attribute that targets the same path");
+		result.Should().NotContain("\"$PDS_UsrStatus\"",
+			because: "legacy direct datasource bindings should not remain after normalization");
+		result.Should().NotContain("\"$PDS_UsrDueDate\"",
+			because: "legacy direct datasource bindings should not remain after normalization");
+		result.Should().NotContain("\"$PDS_Name\"",
+			because: "legacy direct datasource bindings should not remain after normalization");
 	}
 
 	[Test]
-	[Description("A proxy binding expressed via 'value' property (not 'control') is also rewritten.")]
+	[Description("A legacy direct datasource binding expressed via 'value' property (not 'control') is also rewritten.")]
 	public void NormalizeProxyBindings_ValueProperty_Rewritten() {
 		// Arrange
 		string body = CreatePageBody(
-			viewConfigDiff: """[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$UsrPhoto"}}]""",
+			viewConfigDiff: """[{"operation":"insert","name":"UsrPhoto","values":{"type":"crt.ImageInput","value":"$PDS_UsrPhoto"}}]""",
 			viewModelConfigDiff: """[{"operation":"merge","values":{"UsrPhoto":{"modelConfig":{"path":"PDS.UsrPhoto"}}}}]""");
 
 		// Act
 		string result = PageBodyNormalizer.NormalizeProxyBindings(body);
 
 		// Assert
-		result.Should().Contain("$PDS_UsrPhoto",
-			because: "'value' bindings are also checked for proxy patterns");
-		result.Should().NotContain("\"$UsrPhoto\"",
-			because: "the proxy 'value' binding must be replaced");
+		result.Should().Contain("$UsrPhoto",
+			because: "'value' bindings are also checked for legacy direct datasource patterns");
+		result.Should().NotContain("\"$PDS_UsrPhoto\"",
+			because: "the direct datasource 'value' binding must be replaced");
 	}
 
 	[Test]
@@ -210,32 +214,32 @@ public class PageBodyNormalizerTests {
 	public void NormalizeProxyBindings_FlatShapeComponent_Rewritten() {
 		// Arrange
 		string body = CreatePageBody(
-			viewConfigDiff: """[{"type":"crt.Input","control":"$UsrStatus"}]""",
+			viewConfigDiff: """[{"type":"crt.Input","control":"$PDS_UsrStatus"}]""",
 			viewModelConfigDiff: """[{"operation":"merge","values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}}]""");
 
 		// Act
 		string result = PageBodyNormalizer.NormalizeProxyBindings(body);
 
 		// Assert
-		result.Should().Contain("$PDS_UsrStatus",
-			because: "flat-shape components without a 'values' wrapper must also be normalized");
+		result.Should().Contain("$UsrStatus",
+			because: "flat-shape components without a 'values' wrapper must also be rebound to the declared attribute");
 	}
 
 	[Test]
 	[Description("A body that uses the SCHEMA_DIFF alias instead of SCHEMA_VIEW_CONFIG_DIFF is also normalized.")]
-	public void NormalizeProxyBindings_SchemaDiffAlias_RewritesProxyBinding() {
+	public void NormalizeProxyBindings_SchemaDiffAlias_RewritesDirectDatasourceBinding() {
 		// Arrange
 		string body = CreatePageBodyWithSchemaDiffMarker(
-			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","control":"$UsrStatus"}}]""",
+			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","control":"$PDS_UsrStatus"}}]""",
 			viewModelConfigDiff: """[{"operation":"merge","values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}}]""");
 
 		// Act
 		string result = PageBodyNormalizer.NormalizeProxyBindings(body);
 
 		// Assert
-		result.Should().Contain("$PDS_UsrStatus",
-			because: "SCHEMA_DIFF is a supported alias for SCHEMA_VIEW_CONFIG_DIFF and must trigger proxy binding rewrite");
-		result.Should().NotContain("\"$UsrStatus\"",
-			because: "the proxy binding must be replaced even when the body uses the SCHEMA_DIFF marker");
+		result.Should().Contain("$UsrStatus",
+			because: "SCHEMA_DIFF is a supported alias for SCHEMA_VIEW_CONFIG_DIFF and must trigger direct datasource binding rewrite");
+		result.Should().NotContain("\"$PDS_UsrStatus\"",
+			because: "the direct datasource binding must be replaced even when the body uses the SCHEMA_DIFF marker");
 	}
 }

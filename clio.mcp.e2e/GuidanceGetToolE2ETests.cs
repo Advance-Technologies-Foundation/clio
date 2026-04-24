@@ -55,11 +55,11 @@ public sealed class GuidanceGetToolE2ETests {
 		// Assert
 		response.Success.Should().BeTrue(
 			because: "page-schema-handlers is a registered guidance name");
-		response.Guidance.Should().NotBeNull(
+		response.Article.Should().NotBeNull(
 			because: "successful guidance lookups should return the resolved article payload");
-		response.Guidance!.Uri.Should().Be("docs://mcp/guides/page-schema-handlers",
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-handlers",
 			because: "the canonical resource URI should still be visible in the tool response");
-		response.Guidance.Text.Should().Contain("clio MCP page-schema handlers guide",
+		response.Article.Text.Should().Contain("clio MCP page-schema handlers guide",
 			because: "the guidance tool should return the canonical handler guide text");
 	}
 
@@ -111,11 +111,11 @@ public sealed class GuidanceGetToolE2ETests {
 		// Assert
 		response.Success.Should().BeTrue(
 			because: "page-schema-sdk-common is a registered guidance name");
-		response.Guidance.Should().NotBeNull(
+		response.Article.Should().NotBeNull(
 			because: "successful guidance lookups should return the resolved article payload");
-		response.Guidance!.Uri.Should().Be("docs://mcp/guides/page-schema-sdk-common",
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-sdk-common",
 			because: "the canonical resource URI should still be visible in the tool response");
-		response.Guidance.Text.Should().Contain("clio MCP page-schema sdk common guide",
+		response.Article.Text.Should().Contain("clio MCP page-schema sdk common guide",
 			because: "the guidance tool should return the canonical sdk common guide text");
 	}
 

@@ -308,7 +308,7 @@ public sealed class PageUpdateToolE2ETests {
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["schema-name"] = "UsrOptionalProps_FormPage",
-					["body"] = ValidPageBody,
+					["body"] = MinimalMarkerPageBody,
 					["dry-run"] = true,
 					["environment-name"] = environmentName,
 					["optional-properties"] = "[{\"key\":\"layout\",\"value\":\"sidebar\"}]",
@@ -346,7 +346,7 @@ public sealed class PageUpdateToolE2ETests {
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["schema-name"] = "UsrBadOptionalProps_FormPage",
-					["body"] = ValidPageBody,
+					["body"] = MinimalMarkerPageBody,
 					["dry-run"] = true,
 					["environment-name"] = environmentName,
 					["optional-properties"] = "{not-an-array}"

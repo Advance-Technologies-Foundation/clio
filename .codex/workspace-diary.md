@@ -3021,3 +3021,17 @@ Discovery: Removing PackageUId from metadata query in PageUpdateOptions fixed "m
 Discovery: --no-incremental is mandatory; stale binaries caused 2 tests to appear failing after fixes were already in source.
 Files: clio/Command/PageUpdateOptions.cs, clio/Command/PageGetOptions.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs
 Impact: 412 McpServer unit tests pass. Docs updated for update-page (--optional-properties), get-page (hierarchy note), sync-pages (optional-properties in page input), get-guidance (new MCP tool).
+
+## 2026-04-24 16:25 – Reconciled page-schema merge fallout with new direct-binding rules
+Context: Build broke after a partial merge left `SchemaValidationService` on the new direct-PDS rejection model while `PageBodyNormalizer` and several MCP tests still expected the old `$PDS_*` normalization from master.
+Decision: Kept the new validation model where direct `$PDS_*` bindings are legacy and rewrote `PageBodyNormalizer` to normalize legacy direct datasource bindings back to declared view-model attributes by matching `modelConfig.path`. Updated MCP tests and `GuidanceGetTool` argument hints to match the merged async MCP contracts.
+Discovery: The compile error about missing `IsAllowedDirectFieldBinding`/`BuildExpectedBinding` was only the surface symptom; the deeper merge conflict was semantic, because restoring those helpers would have reintroduced the old `$UsrStatus -> $PDS_UsrStatus` normalization that now contradicts page validation.
+Files: C:\Projects\clio\clio\Command\PageBodyNormalizer.cs, C:\Projects\clio\clio\Command\McpServer\Tools\GuidanceGetTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageBodyNormalizerTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The merged workspace now builds, the Command/McpServer targeted test suite passes, and get-page/body normalization is aligned with the newer rule that declared view-model attributes are canonical while raw `$PDS_*` bindings are rejected.
+
+## 2026-04-24 17:05 – Fixed remaining GuidanceGet/PageUpdate E2E contract drift
+Context: `clio.mcp.e2e` still failed to compile after the earlier merge cleanup because two fixtures referenced pre-merge API shapes from before the async/article MCP changes landed in `master`.
+Decision: Switched `GuidanceGetToolE2ETests` from `response.Guidance` to `response.Article` and replaced stale `ValidPageBody` usages with `MinimalMarkerPageBody` in `PageUpdateToolE2ETests`.
+Discovery: Production code was already merged correctly for these contracts; the remaining fallout was limited to E2E assertions and a renamed test fixture constant.
+Files: C:\Projects\clio\clio.mcp.e2e\GuidanceGetToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `clio.mcp.e2e` now builds cleanly, and the targeted GuidanceGet/PageUpdate E2E selection runs without MCP contract mismatches.
