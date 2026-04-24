@@ -2944,3 +2944,10 @@ Decision: Created JsParserHelper.cs with 10 shared methods; removed duplicates f
 Discovery: SchemaValidationService.SkipBlockComment has SchemaValidationResult parameter so stays in-file; ConsumeStringLiteralCharacter is called directly (not just via TryConsumeStringLiteralCharacter) in a validator-body-extraction loop
 Files: clio\Command\JsParserHelper.cs, clio\Command\SchemaHandlerValidationService.cs, clio\Command\SchemaValidationService.cs
 Impact: All 865 Module=Command + 97 SchemaValidation tests pass; duplication eliminated
+
+## 2026-07-14 10:00 - Inverted PDS binding validation direction
+Context: Initial implementation incorrectly rejected \ (correct viewModel binding) and accepted \* direct binding. User clarified the rule: \* is old/legacy and must be a hard error; \ with viewModelConfigDiff is the correct new pattern.
+Decision: Removed TryDetectProxyPdsBinding entirely. IsDirectPdsBinding now generates a hard error with suggestion to declare a viewModelConfig attribute. Tests updated across PageSyncToolTests, SchemaValidationServiceTests, PageToolsTests to reflect correct semantics.
+Discovery: The validator placement check (test 11) requires control: "\" (declared attribute) not \ — so the undeclared check passes and validator-on-viewConfigDiff check fires correctly.
+Files: clio/Command/SchemaValidationService.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs
+Impact: All 497 McpServer tests pass. AI-generated code must always use viewModelConfig/viewModelConfigDiff declarations; old \* bindings are rejected when validation is enabled.

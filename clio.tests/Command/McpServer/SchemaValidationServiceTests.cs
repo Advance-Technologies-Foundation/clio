@@ -653,7 +653,7 @@ public sealed class SchemaValidationServiceTests {
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
 
-		result.IsValid.Should().BeTrue("because the field binds to a declared attribute that resolves to the datasource path and uses datasource captioning");
+		result.IsValid.Should().BeTrue("because the field binds to a declared view-model attribute with a datasource caption");
 		result.Errors.Should().BeEmpty();
 		result.Warnings.Should().BeEmpty();
 	}

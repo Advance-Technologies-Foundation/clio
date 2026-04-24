@@ -1339,7 +1339,7 @@ public class PageToolsTests {
 	}
 
 	[Test]
-	[Description("TryUpdatePage dry-run rejects controls that stay on a different declared attribute when handlers write the field.")]
+	[Description("TryUpdatePage dry-run rejects controls bound to a handler-updated attribute at a different name than the declared binding.")]
 	public void TryUpdatePage_WhenHandlerDrivenFieldStaysOnDifferentDeclaredAttribute_ReturnsValidationError() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
@@ -1357,14 +1357,14 @@ public class PageToolsTests {
 		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
 
 		result.Should().BeFalse(
-			because: "update-page should fail fast when handlers write one declared attribute but the control stays bound to a different declared attribute for the same field");
+			because: "update-page should fail fast when the control binds to a different declared attribute than the handler updates");
 		response.Success.Should().BeFalse(
 			because: "the validation failure should be surfaced in the response envelope");
 		response.Error.Should().Contain("invalid form field bindings")
 			.And.Contain("$UsrNameField")
 			.And.Contain("$UsrName")
 			.And.Contain("$context.set",
-				because: "the response should explain that the handler and the control must use the same declared attribute");
+				because: "the response should guide toward the correct declared attribute written by the handler");
 		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
 			because: "validation should fail before the command builds any service URLs");
 		applicationClient.ReceivedCalls().Should().BeEmpty(

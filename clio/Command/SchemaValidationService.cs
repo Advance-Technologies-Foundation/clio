@@ -504,8 +504,17 @@ public static class SchemaValidationService
 		IReadOnlySet<string> attributesWrittenByHandlers,
 		SchemaValidationResult result) {
 		string fieldDisplayName = !string.IsNullOrWhiteSpace(fieldName) ? fieldName : componentType;
-		if (TryGetBindingAttribute(componentValues, out string bindingProperty, out string bindingExpression, out string bindingAttribute) &&
-		    !declaredAttributes.Contains(bindingAttribute)) {
+		if (!TryGetBindingAttribute(componentValues, out string bindingProperty, out string bindingExpression, out string bindingAttribute)) {
+			return;
+		}
+		if (IsDirectPdsBinding(bindingAttribute)) {
+			string suggestedAttrName = bindingAttribute["PDS_".Length..];
+			string suggestedPath = "PDS." + suggestedAttrName;
+			result.Errors.Add(
+				$"Standard field '{fieldDisplayName}' binds directly to datasource attribute '${bindingAttribute}'. " +
+				$"Declare a view-model attribute in viewModelConfig/viewModelConfigDiff (e.g. '{suggestedAttrName}' with modelConfig.path '{suggestedPath}') " +
+				$"and bind the control to '${suggestedAttrName}' instead.");
+		} else if (!declaredAttributes.Contains(bindingAttribute)) {
 			result.Errors.Add(
 				$"Standard field '{fieldDisplayName}' binds to undeclared attribute '{bindingAttribute}' via '{bindingProperty}' ('{bindingExpression}'). " +
 				"Bind the control to an attribute declared in viewModelConfig/viewModelConfigDiff.");
@@ -577,6 +586,9 @@ public static class SchemaValidationService
 		bindingAttribute = bindingExpression[1..];
 		return true;
 	}
+
+	private static bool IsDirectPdsBinding(string bindingAttribute) =>
+		bindingAttribute.StartsWith("PDS_", StringComparison.OrdinalIgnoreCase);
 
 	private static bool TryGetCaptionExpression(JsonElement componentValues, out string captionExpression) {
 		return TryGetStringProperty(componentValues, "label", out captionExpression)

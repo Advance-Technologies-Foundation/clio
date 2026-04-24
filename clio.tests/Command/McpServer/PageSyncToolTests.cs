@@ -261,41 +261,41 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Client-side validation rejects proxy standard field bindings before save")]
+	[Description("Client-side validation rejects direct datasource field bindings (PDS_ prefix) and guides toward view-model attribute declaration")]
 	public void SyncPages_Should_Reject_Proxy_Field_Bindings_When_Validation_Is_Enabled() {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem());
-		string bodyWithProxyBinding = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		string bodyWithDirectPdsBinding = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
-			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
 			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		PageSyncArgs args = new(
 			"dev",
-			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithProxyBinding)],
+			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithDirectPdsBinding)],
 			Validate: true);
 
 		PageSyncResponse response = tool.SyncPages(args);
 
 		response.Success.Should().BeFalse(
-			because: "sync-pages should block the known broken proxy field pattern before save");
+			because: "sync-pages should block direct datasource bindings and require a view-model attribute declaration");
 		response.Pages[0].Success.Should().BeFalse(
 			because: "the page should fail semantic validation");
 		response.Pages[0].Validation.Should().NotBeNull(
 			because: "sync-pages should return validation details for blocked field bindings");
 		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
 			because: "semantic field validation contributes to the content-ok decision");
-		response.Pages[0].Error.Should().Contain("$UsrStatus")
-			.And.Contain("$PDS_UsrStatus",
-				because: "the failure should explain both the rejected proxy binding and the expected datasource binding");
+		response.Pages[0].Error.Should().Contain("$PDS_UsrStatus")
+			.And.Contain("$UsrStatus",
+				because: "the failure should name the rejected direct binding and suggest the view-model attribute alternative");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Client-side validation surfaces warnings for explicit custom field caption resources")]
+	[Description("Client-side validation surfaces warnings for explicit custom field caption resources when the field uses a declared view-model attribute")]
 	public void SyncPages_Should_Surface_FieldCaptionWarnings_When_ExplicitResources_Are_Provided() {
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -304,8 +304,8 @@ public sealed class PageSyncToolTests {
 		PageSyncTool tool = new(commandResolver, new MockFileSystem());
 		string bodyWithExplicitFieldCaption = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
-			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_caption)#\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_caption)#\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
 			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
