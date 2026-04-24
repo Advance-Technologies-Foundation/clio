@@ -2979,3 +2979,10 @@ Decision: Updated both unit and E2E handler guidance assertions to expect the ex
 Discovery: The guidance resource had already been updated correctly; the failure risk was only in stale test expectations.
 Files: C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Handler guidance tests now track the strengthened anti-pattern contract and will catch future drift between resource text and the intended canonical handler API.
+
+## 2026-04-24 13:14 – Added explicit timeout to forbidden handler API regex rules
+Context: Security hotspot review flagged the precompiled forbidden-handler API regexes because they were created without an explicit execution timeout.
+Decision: Introduced a shared one-second timeout constant and applied it to every `ForbiddenHandlerApiRule` regex in `SchemaHandlerValidationService` without changing the patterns or diagnostics.
+Discovery: This change is internal to the handler validation heuristic, so docs, MCP contracts, and the clio skill remain accurate with no updates required.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Handler API validation now satisfies regex timeout guidance and is less exposed to pathological regex execution while preserving existing behavior.
