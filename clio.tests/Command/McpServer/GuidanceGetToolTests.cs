@@ -35,16 +35,16 @@ public sealed class GuidanceGetToolTests {
 		GuidanceGetTool tool = new();
 
 		// Act
-		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("data-bindings"));
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("data-bindings")).Result;
 
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "data-bindings is a registered guidance name");
-		result.Guidance.Should().NotBeNull(
+		result.Article.Should().NotBeNull(
 			because: "successful guidance lookups should return the resolved article");
-		result.Guidance!.Uri.Should().Be("docs://mcp/guides/data-bindings",
+		result.Article!.Uri.Should().Be("docs://mcp/guides/data-bindings",
 			because: "the guidance tool should preserve the canonical binding resource URI in the response");
-		result.Guidance.Text.Should().Contain("clio MCP data-bindings guide",
+		result.Article.Text.Should().Contain("clio MCP data-bindings guide",
 			because: "the guidance tool should return the canonical binding article text");
 	}
 
