@@ -12,7 +12,7 @@ public class PackageHotfixTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<PackageHotFixCommandOptions>(packageHotFixCommand, logger, commandResolver) {
 
-	[McpServerTool(Name = "unlock-for-hotfix", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpServerTool(Name = "unlock-for-hotfix", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Unlocks a Creatio package for hotfix editing by starting hotfix state on the remote environment.")]
 	public CommandExecutionResult UnlockForHotfix(
 		[Description("unlock-for-hotfix parameters")] [Required] PackageHotfixArgs args

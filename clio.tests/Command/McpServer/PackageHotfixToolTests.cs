@@ -63,9 +63,9 @@ public class PackageHotfixToolTests {
 	}
 
 	[Test]
-	[Description("UnlockForHotfix preserves the package name and environment from args.")]
+	[Description("FinishHotfix preserves the package name and environment from args.")]
 	[Category("Unit")]
-	public void UnlockForHotfix_Should_Forward_PackageName_And_Environment() {
+	public void FinishHotfix_Should_Forward_PackageName_And_Environment() {
 		ConsoleLogger.Instance.ClearMessages();
 		FakePackageHotFixCommand defaultCommand = new();
 		FakePackageHotFixCommand resolvedCommand = new();
@@ -73,7 +73,7 @@ public class PackageHotfixToolTests {
 		commandResolver.Resolve<PackageHotFixCommand>(Arg.Any<PackageHotFixCommandOptions>()).Returns(resolvedCommand);
 		PackageHotfixTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		tool.UnlockForHotfix(new PackageHotfixArgs("MyPackage", "production"));
+		tool.FinishHotfix(new PackageHotfixArgs("MyPackage", "production"));
 
 		resolvedCommand.CapturedOptions!.Environment.Should().Be("production",
 			because: "environment name must be forwarded from args");
@@ -82,16 +82,35 @@ public class PackageHotfixToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Description("UnlockForHotfix returns non-zero ExitCode when the command fails.")]
+	[Category("Unit")]
+	public void UnlockForHotfix_Should_Return_NonZero_ExitCode_When_Command_Fails() {
+		ConsoleLogger.Instance.ClearMessages();
+		FakePackageHotFixCommand defaultCommand = new();
+		FakePackageHotFixCommand resolvedCommand = new(exitCode: 1);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PackageHotFixCommand>(Arg.Any<PackageHotFixCommandOptions>()).Returns(resolvedCommand);
+		PackageHotfixTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		CommandExecutionResult result = tool.UnlockForHotfix(new PackageHotfixArgs("CrtNUI", "dev"));
+
+		result.ExitCode.Should().NotBe(0, because: "failed command must propagate non-zero exit code");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	private sealed class FakePackageHotFixCommand : PackageHotFixCommand {
+		private readonly int _exitCode;
 		public PackageHotFixCommandOptions? CapturedOptions { get; private set; }
 
-		public FakePackageHotFixCommand()
+		public FakePackageHotFixCommand(int exitCode = 0)
 			: base(Substitute.For<IPackageEditableMutator>(), new EnvironmentSettings()) {
+			_exitCode = exitCode;
 		}
 
 		public override int Execute(PackageHotFixCommandOptions options) {
 			CapturedOptions = options;
-			return 0;
+			return _exitCode;
 		}
 	}
 }
