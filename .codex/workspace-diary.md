@@ -2951,3 +2951,31 @@ Decision: Removed TryDetectProxyPdsBinding entirely. IsDirectPdsBinding now gene
 Discovery: The validator placement check (test 11) requires control: "\" (declared attribute) not \ — so the undeclared check passes and validator-on-viewConfigDiff check fires correctly.
 Files: clio/Command/SchemaValidationService.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs
 Impact: All 497 McpServer tests pass. AI-generated code must always use viewModelConfig/viewModelConfigDiff declarations; old \* bindings are rejected when validation is enabled.
+
+## 2026-04-24 11:15 – Copilot session drifted from validators into inferred handler API
+Context: User asked why a Copilot session generated a `crt.HandleViewModelAttributeChangeRequest` handler for `UsrParkingRequired` that used `request.viewModel.get(...)`, `request.viewModel.set(...)`, and `setAttributePropertyValue(...)` incorrectly.
+Decision: Confirmed from the exported session that the model mixed two separate patterns: validator guidance for conditional required state and an invented MVVM-style handler API. No code changes were needed; the key issue was diagnosis of the prompting and reasoning path.
+Discovery: The session loaded `page-schema-validators` but did not load `page-schema-handlers`; validator guidance told the model that dynamic `required`/`visible`/`readonly` state belongs to handler/business-rule style logic, then the model explicitly admitted it was unsure about the correct `HandleViewModelAttributeChangeRequest` API and still proceeded. Current handler guidance says to use `request.value` for the triggering attribute and `request.$context[...]` / `await request.$context.set(...)` for reads and writes, and the repository has no examples of `request.viewModel.get(...)`.
+Files: C:\Users\d.krestov\copilot-session-0df9b71f-f0a0-4c84-9e09-98cec6c74df8.md, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaValidatorsGuidanceResource.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future prompt hardening should ensure that once a task crosses from validator logic into handler logic, the agent must load handler guidance before emitting API-specific code; otherwise it may hallucinate generic `viewModel` accessors even when the business choice of a handler is reasonable.
+
+## 2026-04-24 11:30 – Handler API validation now includes a recovery hint back to clio guidance
+Context: User suggested that when AI generates the wrong handler-side attribute API, clio should not only reject the code but also tell the model to reread handler documentation and examples.
+Decision: Updated `SchemaHandlerValidationService` so forbidden handler APIs such as `request.viewModel.*` now return an explicit recovery hint that points callers to `get-guidance page-schema-handlers` and canonical clio handler examples. Added unit coverage for the new message and tool-level coverage through `PageSyncTool`; added a dry-run MCP E2E for `update-page`.
+Discovery: The new recovery hint fits naturally into the existing handler-shape validation path, so `update-page` and `sync-pages` inherit it automatically without extra command-flow branching.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: When AI drifts into invented handler APIs, clio now blocks the save and gives a direct recovery path back to the supported handler guidance and examples instead of forcing another guess.
+
+## 2026-04-24 11:44 – Completed forbidden handler API coverage and renamed misleading E2E fixture
+Context: Review noted that only one of five forbidden handler API rules had unit coverage, and `PageUpdateToolE2ETests` used a fixture name that implied semantic page validity even though it only guaranteed marker presence.
+Decision: Added one regression test each for `request.$context.get(...)`, `request.sender`, `.$get(...)`, and `.$set(...)`, all asserting the recovery hint back to `page-schema-handlers` and canonical clio examples. Renamed `ValidPageBody` to `MinimalMarkerPageBody` in the E2E fixture to match its real purpose.
+Discovery: The E2E fixture did not need semantic changes; only the name was misleading. The new handler API checks fit the existing test pattern exactly, so the coverage gap was straightforward to close without changing validator logic.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future regex regressions in forbidden handler API detection are now caught by focused unit tests, and the E2E fixture no longer suggests stronger validity guarantees than it actually provides.
+
+## 2026-04-24 12:22 – Updated stale handler guidance assertions after request.viewModel hardening
+Context: User asked to check `PageSchemaHandlersGuidanceResource_Should_Return_Canonical_Handler_Guide`; the test still expected the pre-hardening anti-pattern string and missed the new `request.viewModel` guidance.
+Decision: Updated both unit and E2E handler guidance assertions to expect the expanded anti-pattern line with `request.viewModel` plus the new canonical attribute-change rule that explicitly says to use `request.value` instead of `request.viewModel.get(...)`.
+Discovery: The guidance resource had already been updated correctly; the failure risk was only in stale test expectations.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Handler guidance tests now track the strengthened anti-pattern contract and will catch future drift between resource text and the intended canonical handler API.

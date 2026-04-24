@@ -257,8 +257,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should classify direct $context property writes as transient-runtime exceptions instead of a competing page-attribute write style");
 		article.Text.Should().Contain("Prefer `request.value` over re-reading the triggering attribute through the view-model context.",
 			because: "handler guidance should keep simple attribute mirroring on request.value instead of redundant reads");
-		article.Text.Should().Contain("Do NOT use `request.sender`, `.$get(...)`, `.$set(...)`, or `request.$context.get(...)` in deployed page-body handlers.",
-			because: "handler guidance should explicitly reject legacy sender/get/set access patterns");
+		article.Text.Should().Contain("Do NOT use `request.viewModel`, `request.sender`, `.$get(...)`, `.$set(...)`, or `request.$context.get(...)` in deployed page-body handlers.",
+			because: "handler guidance should explicitly reject invented and legacy sender/get/set access patterns");
+		article.Text.Should().Contain("Canonical rule for `crt.HandleViewModelAttributeChangeRequest`: use `request.value` for the triggering attribute, not `request.viewModel.get(...)`.",
+			because: "handler guidance should spell out the exact attribute-change API that prevents invented request.viewModel reads");
 		article.Text.Should().Contain("Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-sdk-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.",
 			because: "the handler anti-pattern list should stop callers from defaulting to raw platform fetches");
 		article.Text.Should().Contain("A field control MUST bind to the same declared view-model attribute that handlers read or write through `$context.set(\"<AttributeName>\", ...)`.",

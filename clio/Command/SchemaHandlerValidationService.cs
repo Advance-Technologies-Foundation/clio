@@ -2,6 +2,8 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Text;
+using System.Text.RegularExpressions;
 using McpServer.Resources;
 
 /// <summary>
@@ -11,6 +13,25 @@ internal static class SchemaHandlerValidationService
 {
 	private const string RequestPropertyName = "request";
 	private const string HandlerPropertyName = "handler";
+	private const string HandlerGuidanceRecoveryHint =
+		"Read get-guidance with name `page-schema-handlers` and reuse the canonical clio handler examples before rewriting this handler.";
+	private static readonly ForbiddenHandlerApiRule[] ForbiddenHandlerApiRules = [
+		new(
+			new Regex(@"\brequest\s*\.\s*viewModel\b", RegexOptions.Compiled),
+			$"Do not use request.viewModel in SCHEMA_HANDLERS. {HandlerGuidanceRecoveryHint} Use request.value for the triggering attribute and request.$context / await request.$context.set(...) for page-state reads and writes."),
+		new(
+			new Regex(@"\brequest\s*\.\s*\$context\s*\.\s*get\s*\(", RegexOptions.Compiled),
+			$"Do not use request.$context.get(...) in SCHEMA_HANDLERS. {HandlerGuidanceRecoveryHint} Read page attributes through await request.$context[\"Attr\"]."),
+		new(
+			new Regex(@"\brequest\s*\.\s*sender\b", RegexOptions.Compiled),
+			$"Do not use request.sender in SCHEMA_HANDLERS. {HandlerGuidanceRecoveryHint} Use the documented request runtime fields and request.$context instead."),
+		new(
+			new Regex(@"\.\s*\$get\s*\(", RegexOptions.Compiled),
+			$"Do not use .$get(...) in SCHEMA_HANDLERS. {HandlerGuidanceRecoveryHint} Read page attributes through await request.$context[\"Attr\"]."),
+		new(
+			new Regex(@"\.\s*\$set\s*\(", RegexOptions.Compiled),
+			$"Do not use .$set(...) in SCHEMA_HANDLERS. {HandlerGuidanceRecoveryHint} Write page attributes through await request.$context.set(\"Attr\", value).")
+	];
 
 	/// <summary>
 	/// Validates handler entries in the supplied Freedom UI page body.
@@ -108,7 +129,27 @@ internal static class SchemaHandlerValidationService
 			result.IsValid = false;
 			result.Errors.Add(
 				$"Handler entry at index {entryIndex} in {SchemaValidationService.SchemaHandlersMarker} must declare a callable '{HandlerPropertyName}' property.");
+			return;
 		}
+
+		if (TryGetForbiddenHandlerApiError(handlerExpression, out string? handlerApiError)) {
+			result.IsValid = false;
+			result.Errors.Add(
+				$"Handler entry at index {entryIndex} in {SchemaValidationService.SchemaHandlersMarker} uses an unsupported handler API. {handlerApiError}");
+		}
+	}
+
+	private static bool TryGetForbiddenHandlerApiError(string expression, out string? error) {
+		string sanitizedExpression = SanitizeForHandlerApiScan(expression);
+		foreach (ForbiddenHandlerApiRule rule in ForbiddenHandlerApiRules) {
+			if (rule.Pattern.IsMatch(sanitizedExpression)) {
+				error = rule.Error;
+				return true;
+			}
+		}
+
+		error = null;
+		return false;
 	}
 
 	private static bool TryAdvanceToNextMeaningfulCharacter(string content, ref int index) {
@@ -374,6 +415,41 @@ internal static class SchemaHandlerValidationService
 		return false;
 	}
 
+	private static string SanitizeForHandlerApiScan(string expression) {
+		var builder = new StringBuilder(expression.Length);
+		bool inString = false;
+		char stringChar = '"';
+		int index = 0;
+		while (index < expression.Length) {
+			if (JsParserHelper.TryConsumeStringLiteralCharacter(expression, ref index, ref inString, stringChar)) {
+				builder.Append(' ');
+				continue;
+			}
+			if (TrySkipTriviaAndComments(expression, ref index)) {
+				builder.Append(' ');
+				continue;
+			}
+			if (TrySkipRegexLiteral(expression, ref index)) {
+				builder.Append(' ');
+				continue;
+			}
+
+			char current = expression[index];
+			if (current is '"' or '\'' or '`') {
+				inString = true;
+				stringChar = current;
+				builder.Append(' ');
+				index++;
+				continue;
+			}
+
+			builder.Append(current);
+			index++;
+		}
+
+		return builder.ToString();
+	}
+
 	private static bool TrySkipRegexLiteral(string expression, ref int index) {
 		if (!LooksLikeRegexLiteralStart(expression, index)) {
 			return false;
@@ -583,6 +659,8 @@ internal static class SchemaHandlerValidationService
 		valueStartIndex = methodValueStartIndex;
 		return true;
 	}
+
+	private sealed record ForbiddenHandlerApiRule(Regex Pattern, string Error);
 
 	private static bool TryReadMethodShorthandPropertyName(
 		string content,

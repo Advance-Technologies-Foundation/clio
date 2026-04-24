@@ -33,7 +33,7 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 
 			       Decision tree
 			       - If the requirement is field-value validation, continue here.
-			       - If the requirement is dynamic `required`, `visible`, or `readonly` state, use business rules or `setAttributePropertyValue(...)`.
+			       - If the requirement is dynamic `required`, `visible`, or `readonly` state, stop validator authoring, read `page-schema-handlers`, and only then choose business rules or `setAttributePropertyValue(...)`.
 			       - First inspect the live page body: if it uses `viewModelConfig`, edit that object directly; if it uses `viewModelConfigDiff`, edit the merge on `path: ["attributes"]`.
 			       - If the validator body actually `await`s I/O, use `"async": true`; otherwise use `"async": false`.
 

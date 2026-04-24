@@ -22,7 +22,7 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class PageUpdateToolE2ETests {
 	private const string ToolName = PageUpdateTool.ToolName;
-	private const string ValidPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+	private const string MinimalMarkerPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 		"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 		"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
@@ -65,7 +65,7 @@ public sealed class PageUpdateToolE2ETests {
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["schema-name"] = "UsrMissing_FormPage",
-					["body"] = ValidPageBody,
+					["body"] = MinimalMarkerPageBody,
 					["dry-run"] = true,
 					["environment-name"] = invalidEnvironmentName
 				}
@@ -101,7 +101,7 @@ public sealed class PageUpdateToolE2ETests {
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["schema-name"] = "UsrValidationOnly_FormPage",
-					["body"] = ValidPageBody,
+					["body"] = MinimalMarkerPageBody,
 					["dry-run"] = true,
 					["environment-name"] = environmentName,
 					["resources"] = "{\"UsrTitle\":"
@@ -244,6 +244,50 @@ public sealed class PageUpdateToolE2ETests {
 		response.Error.Should().Contain("SCHEMA_HANDLERS")
 			.And.Contain("array literal",
 				because: "the failure should explain that the handlers section must stay an array");
+	}
+
+	[Test]
+	[Description("Rejects request.viewModel handler APIs through update-page dry-run and returns a handler-guidance recovery hint.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects request.viewModel handler APIs in dry-run mode")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with SCHEMA_HANDLERS that use request.viewModel accessors, and verifies that the tool returns a structured validation error with a handler-guidance recovery hint.")]
+	public async Task PageUpdateTool_Should_Reject_Request_ViewModel_Handler_Apis_In_DryRun_Mode() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string invalidHandlerApiBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelAttributeChangeRequest\", handler: async (request, next) => { const current = await request.viewModel.get(\"UsrParkingRequired\"); await request.viewModel.set(\"UsrVehicleNumber\", current ? \"A-01\" : null); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrInvalidHandlerApi_FormPage",
+					["body"] = invalidHandlerApiBody,
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "handler API validation failures should be surfaced as structured update-page responses");
+		response.Success.Should().BeFalse(
+			because: "update-page should reject handlers that invent request.viewModel accessors");
+		response.Error.Should().Contain("request.viewModel")
+			.And.Contain("page-schema-handlers")
+			.And.Contain("canonical clio handler examples")
+			.And.Contain("request.value")
+			.And.Contain("request.$context",
+				because: "the failure should redirect callers to the clio handler guidance and canonical handler patterns");
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {

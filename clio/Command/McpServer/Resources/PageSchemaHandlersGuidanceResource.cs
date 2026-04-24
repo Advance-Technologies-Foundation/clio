@@ -104,12 +104,14 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - When the handler is pure pass-through for non-matching branches, prefer `return next?.handle(request);` so the downstream result is preserved explicitly.
 
 		       Context read/write patterns
+		       - If the task reached handler logic from validator reasoning about dynamic `required`, `visible`, or `readonly` state, stop and use the canonical handler API in this section before writing code.
 		       - Use `request.value` / `request.oldValue` for the field that triggered `crt.HandleViewModelAttributeChangeRequest`.
 		       - Use `await request.$context["<AttributeName>"]` to read any other page attribute in deployed page-body handlers.
 		       - Use `await request.$context.set("<AttributeName>", <value>)` to write back into the live ViewModel.
 		       - Direct property assignment on `request.$context` is allowed only for transient runtime references such as subscriptions or service handles; page attributes still use `await request.$context.set(...)`.
 		       - Prefer `request.value` over re-reading the triggering attribute through the view-model context.
-		       - Do NOT use `request.sender`, `.$get(...)`, `.$set(...)`, or `request.$context.get(...)` in deployed page-body handlers.
+		       - Do NOT use `request.viewModel`, `request.sender`, `.$get(...)`, `.$set(...)`, or `request.$context.get(...)` in deployed page-body handlers.
+		       - Canonical rule for `crt.HandleViewModelAttributeChangeRequest`: use `request.value` for the triggering attribute, not `request.viewModel.get(...)`.
 		       - A field control MUST bind to the same declared view-model attribute that handlers read or write through `$context.set("<AttributeName>", ...)`.
 		       - Default page bodies already bind field controls to attributes declared in `viewModelConfig` / `viewModelConfigDiff`. Keep using that declared attribute unless you intentionally create a different one.
 		       - If you create a new attribute for handler-driven logic on the same field, rebind the control to that new attribute. Do NOT leave the control on the old attribute while handlers update the new one.
@@ -447,7 +449,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-sdk-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.
 		       - Do NOT invent placeholder SDK services such as `<Service>.subscribe(...)`; when SDK-based subscriptions are required, use a concrete service such as `sdk.MessageChannelService` and keep `SCHEMA_DEPS` / `SCHEMA_ARGS` aligned.
 		       - Do NOT write `type: "crt.ShowDialog"` in imperative request code; use `type: "crt.ShowDialogRequest"`.
-		       - Do NOT use `request.sender`, `.$get(...)`, `.$set(...)`, or `request.$context.get(...)` in deployed page-body handlers.
+		       - Do NOT use `request.viewModel`, `request.sender`, `.$get(...)`, `.$set(...)`, or `request.$context.get(...)` in deployed page-body handlers.
 		       - Do NOT omit `$context` or `scopes` when forwarding a request from one handler into another page-scoped handler chain.
 		       - Do NOT mutate unrelated request fields; only use documented control flags such as `preventAttributeChangeRequest` when that request type explicitly supports them.
 		       - Do NOT parallelize multiple `$context.set(...)` calls with `Promise.all(...)` unless order independence is proven.

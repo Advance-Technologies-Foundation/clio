@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using Clio.Command;
@@ -440,6 +441,111 @@ public sealed class SchemaValidationServiceTests {
 			because: "object-literal method shorthand is still a callable handler form in JavaScript");
 		result.Errors.Should().BeEmpty(
 			because: "valid method shorthand handlers should not be rejected as missing or non-callable");
+	}
+
+	[Test]
+	[Description("Handler entries that use request.viewModel APIs are rejected with a recovery hint to read handler guidance")]
+	public void ValidateHandlerStructure_HandlerEntryWithRequestViewModelApi_ReturnsInvalid_WithRecoveryHint() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelAttributeChangeRequest\", handler: async (request, next) => { const current = await request.viewModel.get(\"UsrParkingRequired\"); await request.viewModel.set(\"UsrVehicleNumber\", current ? \"A-01\" : null); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "invented request.viewModel accessors are not part of the canonical page-body handler API");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("request.viewModel", StringComparison.Ordinal) &&
+				error.Contains("page-schema-handlers", StringComparison.Ordinal) &&
+				error.Contains("canonical clio handler examples", StringComparison.Ordinal),
+			because: "the validation error should both reject the API and tell the caller to reread the handler guidance and examples");
+	}
+
+	[Test]
+	[Description("Handler entries that use request.$context.get are rejected with a recovery hint to read handler guidance")]
+	public void ValidateHandlerStructure_HandlerEntryWithContextGetApi_ReturnsInvalid_WithRecoveryHint() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const current = await request.$context.get(\"UsrParkingRequired\"); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "request.$context.get is not part of the canonical page-body handler API");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("request.$context.get", StringComparison.Ordinal) &&
+				error.Contains("page-schema-handlers", StringComparison.Ordinal) &&
+				error.Contains("canonical clio handler examples", StringComparison.Ordinal),
+			because: "the validation error should reject the unsupported getter and point the caller back to handler guidance and examples");
+	}
+
+	[Test]
+	[Description("Handler entries that use request.sender are rejected with a recovery hint to read handler guidance")]
+	public void ValidateHandlerStructure_HandlerEntryWithSenderApi_ReturnsInvalid_WithRecoveryHint() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const sender = request.sender; return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "request.sender is not part of the supported deployed page-body handler contract");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("request.sender", StringComparison.Ordinal) &&
+				error.Contains("page-schema-handlers", StringComparison.Ordinal) &&
+				error.Contains("canonical clio handler examples", StringComparison.Ordinal),
+			because: "the validation error should reject request.sender and point the caller back to handler guidance and examples");
+	}
+
+	[Test]
+	[Description("Handler entries that use .$get are rejected with a recovery hint to read handler guidance")]
+	public void ValidateHandlerStructure_HandlerEntryWithDollarGetApi_ReturnsInvalid_WithRecoveryHint() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const current = await request.$context.$get(\"UsrParkingRequired\"); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: ".$get is not part of the canonical deployed page-body handler API");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains(".$get", StringComparison.Ordinal) &&
+				error.Contains("page-schema-handlers", StringComparison.Ordinal) &&
+				error.Contains("canonical clio handler examples", StringComparison.Ordinal),
+			because: "the validation error should reject .$get and point the caller back to handler guidance and examples");
+	}
+
+	[Test]
+	[Description("Handler entries that use .$set are rejected with a recovery hint to read handler guidance")]
+	public void ValidateHandlerStructure_HandlerEntryWithDollarSetApi_ReturnsInvalid_WithRecoveryHint() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await request.$context.$set(\"UsrParkingRequired\", true); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: ".$set is not part of the canonical deployed page-body handler API");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains(".$set", StringComparison.Ordinal) &&
+				error.Contains("page-schema-handlers", StringComparison.Ordinal) &&
+				error.Contains("canonical clio handler examples", StringComparison.Ordinal),
+			because: "the validation error should reject .$set and point the caller back to handler guidance and examples");
 	}
 
 	[Test]

@@ -1686,6 +1686,49 @@ public class PageToolsTests {
 	}
 
 	[Test]
+	[Description("sync-pages rejects request.viewModel handler APIs and tells callers to read handler guidance before any save attempt.")]
+	public void PageSyncTool_SyncPages_Rejects_Request_ViewModel_Handler_Api_With_Recovery_Hint() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		MockFileSystem fileSystem = new();
+		PageSyncTool tool = new(commandResolver, fileSystem);
+		PageSyncArgs args = new(
+			"local",
+			[
+				new PageSyncPageInput(
+					"UsrInvalidHandlerApi_FormPage",
+					CreatePageBody(
+						handlers: """[{ request: "crt.HandleViewModelAttributeChangeRequest", handler: async (request, next) => { const current = await request.viewModel.get("UsrParkingRequired"); await request.viewModel.set("UsrVehicleNumber", current ? "A-01" : null); return next?.handle(request); } }]"""))
+			],
+			true,
+			false);
+
+		// Act
+		PageSyncResponse response = tool.SyncPages(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "sync-pages must reject invented request.viewModel handler APIs");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the invalid handler API should fail client-side validation");
+		response.Pages[0].Error.Should().Contain("request.viewModel")
+			.And.Contain("page-schema-handlers")
+			.And.Contain("canonical clio handler examples")
+			.And.Contain("request.value")
+			.And.Contain("request.$context",
+				because: "the error should reject the invented API and redirect the caller to the clio guidance and canonical handler patterns");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "client-side handler API validation must fail before any remote save call is made");
+	}
+
+	[Test]
 	[Description("sync-pages rejects validators declared directly on a viewConfigDiff control before any save attempt.")]
 	public void PageSyncTool_SyncPages_Rejects_Validators_Declared_On_ViewConfigDiff_Control() {
 		// Arrange
