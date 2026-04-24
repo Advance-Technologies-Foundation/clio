@@ -2413,6 +2413,13 @@ Discovery: PageToolsTests had accumulated assertions against the old inline vali
 Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Validator authoring rules now have one canonical maintenance point, reducing MCP contract drift when guidance changes again.
 
+## 2026-04-20 15:40 – Stop MCP E2E from running in GitHub Actions
+Context: MCP end-to-end coverage is being moved off GitHub Actions so the repo should stop scheduling that suite there for now.
+Decision: Remove the dedicated `mcp-e2e-tests` workflow job and the now-unused `mcp` change-detection output/filter from `.github/workflows/build.yml`; keep the `clio.mcp.e2e` project in the repo for future TeamCity ownership.
+Discovery: GitHub Actions invoked MCP E2E only from the dedicated workflow job, so no project or test code changes were required for the stopgap.
+Files: .github/workflows/build.yml, .codex/workspace-diary.md
+Impact: PRs and branch builds on GitHub no longer queue MCP E2E, reducing CI time while preserving the suite for a later TeamCity migration.
+
 ## 2026-04-20 19:20 – Add explicit get-guidance MCP tool
 Context: Replaced prompt and tool guidance references from raw `docs://mcp/guides/...` URIs with an explicit MCP tool because external clients routed the custom URI scheme inconsistently through web fetch or help resolvers.
 Decision: Added a `get-guidance` MCP tool backed by a shared guidance catalog, rewired MCP prompts/tool descriptions/resources to instruct agents to call `get-guidance`, and covered the contract with unit plus E2E tests.
@@ -2580,3 +2587,24 @@ Decision: Treat pathless diff operations as root-level merges and therefore elig
 Discovery: The stricter irst segment == attributes guard fixed nested false positives, but it also created a silent skip for existing pathless merge shapes until an explicit regression test covered them.
 Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Validator resource and contract validation now covers both supported diff shapes: root merges without path and explicit top-level ttributes merges, while still excluding unrelated nested paths.
+
+## 2025-07-10 – Wave 3: Eliminate CLIO004 warnings via IProcessExecutor
+
+Context: Refactoring roadmap Wave 3 — remove all `System.Diagnostics.Process` direct usage
+Decision: Extract nested types from IISScannerHandler, introduce IIISScanner interface, inject IProcessExecutor
+Discovery:
+- IISScannerHandler constructor requires 5 deps: ISettingsRepository, RegAppCommand, PowerShellFactory, ILogger, IProcessExecutor — tests must pass all args for compilation
+- SetFsmConfigCommand gained IIISScanner as 5th ctor param — 4 test files needed updating (SetFsmConfigCommand.Tests.cs, FsmModeToolTests.cs, TurnFsmCommand.LoginRetry.Tests.cs, IISScannerHandler.Tests.cs)
+- StopCommand IIS tests fail on macOS due to RuntimeInformation.IsOSPlatform(Windows) guard — pre-existing issue, not Wave 3 regression
+- 13 pre-existing failures remain (DeleteSection 3, DeletePackageCommand 3, InstallTideCommand 3, StopCommand 3, NewPkgCommand 1)
+Files: clio/Requests/IISScannerRequest.cs, clio/BindingsModule.cs, clio/Command/SetFsmConfigCommand.cs, clio/Command/TurnFarmModeCommand.cs, clio.tests/ (8 files)
+Impact: Build clean, 0 CLIO004 warnings, Wave 3 complete. Branch Alfa-04-20 pushed.
+
+## 2025-07-17 – ENG-88190 hierarchy-aware page resolution (complete)
+Context: ENG-88190 required get-page and update-page to resolve the editable schema from the design package (hierarchy[0]) rather than the schema's own package.
+Decision: Called GetDesignPackageUId before GetParentSchemas; fail-open in get-page (fallback to schemaUId) and fail-closed in update-page (error on missing UId).
+Discovery: NSubstitute returns null (not empty list) for unmocked IReadOnlyList<T>; always add null guard after GetDesignPackageUId and GetParentSchemas calls.
+Discovery: Removing PackageUId from metadata query in PageUpdateOptions fixed "missing identifiers" failures — design package UID comes only from GetDesignPackageUId.
+Discovery: --no-incremental is mandatory; stale binaries caused 2 tests to appear failing after fixes were already in source.
+Files: clio/Command/PageUpdateOptions.cs, clio/Command/PageGetOptions.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs
+Impact: 412 McpServer unit tests pass. Docs updated for update-page (--optional-properties), get-page (hierarchy note), sync-pages (optional-properties in page input), get-guidance (new MCP tool).

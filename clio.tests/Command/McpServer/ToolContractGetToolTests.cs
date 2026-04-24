@@ -660,4 +660,48 @@ public sealed class ToolContractGetToolTests {
 		result.Error.FieldErrors![0].Field.Should().Be("tool-names[0]",
 			because: "the field path should point to the blank element inside tool-names");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns structured invalid-parameter-alias error when caller sends camelCase legacy aliases instead of tool-names")]
+	public void ToolContractGet_Should_Return_Alias_Error_For_Legacy_CamelCase_Args() {
+		ToolContractGetTool tool = new();
+		var element = System.Text.Json.JsonDocument.Parse("\"list-pages\"").RootElement;
+		ToolContractGetArgs args = new() {
+			ExtensionData = new System.Collections.Generic.Dictionary<string, System.Text.Json.JsonElement> {
+				["toolName"] = element
+			}
+		};
+
+		ToolContractGetResponse result = tool.GetToolContracts(args);
+
+		result.Success.Should().BeFalse(
+			because: "unknown args should not silently fall back to listing all tools");
+		result.Error.Should().NotBeNull();
+		result.Error!.Code.Should().Be("invalid-parameter-alias",
+			because: "legacy camelCase args should be reported as alias errors");
+		result.Error.Message.Should().Contain("tool-names",
+			because: "the error should teach the caller the canonical argument name");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns structured error listing valid args when caller sends an entirely unknown key")]
+	public void ToolContractGet_Should_Report_Unknown_Args_With_Valid_List() {
+		ToolContractGetTool tool = new();
+		var element = System.Text.Json.JsonDocument.Parse("\"list-pages\"").RootElement;
+		ToolContractGetArgs args = new() {
+			ExtensionData = new System.Collections.Generic.Dictionary<string, System.Text.Json.JsonElement> {
+				["foo"] = element
+			}
+		};
+
+		ToolContractGetResponse result = tool.GetToolContracts(args);
+
+		result.Success.Should().BeFalse();
+		result.Error!.Message.Should().Contain("'foo'",
+			because: "unknown args should be quoted back so the caller sees what was rejected");
+		result.Error.Message.Should().Contain("tool-names",
+			because: "the error should point to the canonical valid args");
+	}
 }

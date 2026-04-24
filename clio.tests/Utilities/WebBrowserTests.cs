@@ -25,7 +25,7 @@ public class WebBrowserTests
 	public void Setup() {
 		_processExecutorMock = Substitute.For<IProcessExecutor>();
 		_platformCheckerMock = Substitute.For<IOSPlatformChecker>();
-		_sut = new WebBrowser(_processExecutorMock, _platformCheckerMock);
+		_sut = new WebBrowser(_processExecutorMock, _platformCheckerMock, Substitute.For<ILogger>());
 	}
 
 	#endregion

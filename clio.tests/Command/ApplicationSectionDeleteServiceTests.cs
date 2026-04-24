@@ -117,7 +117,10 @@ public sealed class ApplicationSectionDeleteServiceTests {
 		if (requestBody == string.Empty) {
 			return """{"items":[]}""";
 		}
-		if (requestBody.Contains("SelectQuery", System.StringComparison.Ordinal)
+		bool isDeleteQuery = requestBody.Contains(
+			"\"__type\":\"Terrasoft.Nui.ServiceModel.DataContract.DeleteQuery\"",
+			System.StringComparison.Ordinal);
+		if (!isDeleteQuery
 			&& requestBody.Contains("\"rootSchemaName\":\"ApplicationSection\"", System.StringComparison.Ordinal)) {
 			return BuildSectionSelectResponse();
 		}

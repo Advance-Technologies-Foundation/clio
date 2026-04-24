@@ -1129,8 +1129,12 @@ clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" -e <ENV>
 # Save with missing resource string registration
 clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
   --resources '{"UsrDetailsTab_caption":"Details"}' -e <ENV>
+
+# Save with optional-properties merge
+clio update-page --schema-name UsrTodo_FormPage --body "<edited body>" \
+  --optional-properties '[{"key":"entitySchemaName","value":"UsrTodo"}]' -e <ENV>
 ```
-Options: `--schema-name` (required), `--body` (required), `--dry-run`, `--resources` (JSON object)
+Options: `--schema-name` (required), `--body` (required), `--dry-run`, `--resources` (JSON object), `--optional-properties` (JSON array of `{key,value}` objects)
 
 ### sync-pages
 Update multiple Freedom UI page schemas in one MCP call. **MCP-only tool** — not available as a standalone CLI command.
@@ -1145,12 +1149,63 @@ Input:
   "environment-name": "dev",
   "pages": [
     { "schema-name": "UsrTodo_FormPage", "body": "define(...)" },
-    { "schema-name": "UsrTodo_ListPage", "body": "define(...)", "resources": "{\"caption\":\"List\"}" }
+    { "schema-name": "UsrTodo_ListPage", "body": "define(...)", "resources": "{\"caption\":\"List\"}", "optional-properties": "[{\"key\":\"entitySchemaName\",\"value\":\"UsrTodo\"}]" }
   ],
   "validate": true,
   "verify": false
 }
 ```
+
+### get-guidance
+Return a named clio MCP guidance article, or list all available guide names when the requested name is unknown. **MCP-only tool** — not available as a standalone CLI command.
+
+```json
+{ "name": "freedom-ui-page-editing" }
+```
+
+When the requested name is not found, the response lists all available article names so the caller can discover valid values.
+
+### list-page-templates
+List Freedom UI page templates available for `create-page`. **Aliases:** `page-templates`, `page-templates-list`
+```bash
+clio list-page-templates -e <ENV>
+clio list-page-templates --schema-type web -e <ENV>
+clio list-page-templates --schema-type mobile -e <ENV>
+```
+Options: `--schema-type` (`web` for FreedomUIPage=9, `mobile` for MobilePage=10; default returns both).
+
+CLI output is a column table (Name / Title / Group / Type / UId). MCP response is a structured `PageTemplateListResponse { success, count, items[], error }`.
+
+The visible subset is driven by platform feature flags (`ShowSidebarTemplate`, `UseListPageV3Template`, `UseMobilePageDesigner`) and may differ per environment. Always call this before `create-page` to discover valid `--template` values.
+
+### create-page
+Create a new Freedom UI page from a supported template. **Alias:** `page-create`
+```bash
+# Minimal call: blank page in Custom package
+clio create-page --schema-name UsrTodo_BlankPage --template BlankPageTemplate \
+  --package-name Custom -e <ENV>
+
+# Record page bound to an existing entity schema
+clio create-page --schema-name UsrTodo_FormPage --template PageWithTabsFreedomTemplate \
+  --package-name Custom --entity-schema-name UsrTodo -e <ENV>
+
+# Mobile page from a mobile template
+clio create-page --schema-name UsrTodo_MobileBlank --template BlankMobilePageTemplate \
+  --package-name Custom -e <ENV>
+```
+Required: `--schema-name`, `--template`, `--package-name`.
+Optional: `--caption` (defaults to schema-name), `--description`, `--entity-schema-name`.
+
+The command emits step-by-step progress (`[N/total] ...`) for input validation, template resolution, package resolution, schema-name uniqueness, optional entity-schema resolution, and SaveSchema. It writes the new schema via `ClientUnitSchemaDesignerService.svc/SaveSchema`; the final JSON response includes `schemaUId`, `packageUId`, `templateName`, `templateUId`.
+
+Failure modes (all return exit code 1 + readable `error`):
+- Duplicate `schema-name` (schema already exists in the environment)
+- Unknown `template` (call `list-page-templates` first)
+- Missing `package-name`
+- Malformed `schema-name` (must start with a letter; letters, digits, underscores only)
+- Missing `entity-schema-name` target when the flag is provided
+
+After success, read the page back with `get-page` to verify it loads through the canonical page flow.
 
 ---
 
@@ -1226,14 +1281,150 @@ Options: `--package` (required), `--binding-name` (required), `--values` (JSON, 
 
 ---
 
+## C# Source-Code Schema Management
+
+### create-schema
+Create a new C# source-code schema on a remote Creatio environment. **Alias:** `schema-create`
+```bash
+clio create-schema --schema-name UsrMyHelper --package-name Custom -e <ENV>
+
+clio create-schema --schema-name UsrMyHelper --package-name Custom --caption "My Helper" -e <ENV>
+```
+Required: `--schema-name`, `--package-name`.
+Optional: `--caption` (defaults to schema-name), `--description`.
+
+The command validates schema-name uniqueness and resolves package UId before calling `SourceCodeSchemaDesignerService.svc/CreateNewSchema` then `SaveSchema`. The final JSON response includes `schemaUId`, `packageUId`, `caption`.
+
+Failure modes (all return exit code 1 + readable `error`):
+- Duplicate `schema-name` (schema already exists in the environment)
+- Unknown `package-name`
+- Malformed `schema-name` (must start with a letter; letters, digits, underscores only)
+
+### update-schema
+Replace the body of an existing C# source-code schema on a remote Creatio environment. **Alias:** `schema-update`
+```bash
+clio update-schema --schema-name UsrMyHelper --body-file ./UsrMyHelper.cs -e <ENV>
+
+clio update-schema --schema-name UsrMyHelper --body-file ./UsrMyHelper.cs --dry-run -e <ENV>
+
+clio update-schema --schema-name UsrMyHelper --body "namespace Terrasoft {...}" -e <ENV>
+```
+Required: `--schema-name`; one of `--body` or `--body-file`.
+Optional: `--dry-run` (resolve schema without saving, default: false).
+
+When both `--body` and `--body-file` are provided, `--body-file` takes precedence.
+
+The command resolves the schema UId via SelectQuery (ManagerName=SourceCodeSchemaManager), loads the full schema via `SourceCodeSchemaDesignerService.svc/GetSchema`, patches the body, and saves via `SaveSchema`. The final JSON response includes `schemaName`, `bodyLength`, `dryRun`.
+
+Failure modes (all return exit code 1 + readable `error`):
+- Schema not found (wrong name or wrong manager)
+- `body-file` path does not exist
+- Empty body
+- SaveSchema service error
+
+### get-schema
+Read the body and metadata of a C# source-code schema on a remote Creatio environment. **Alias:** `schema-get`
+```bash
+clio get-schema --schema-name UsrMyHelper -e <ENV>
+
+clio get-schema --schema-name UsrMyHelper --output-file /tmp/UsrMyHelper.cs -e <ENV>
+```
+Required: `--schema-name`.
+Optional: `--output-file` (absolute path). When set, the body is written to the file and omitted from the JSON response; `bodyLength` is kept.
+
+The command resolves the schema UId via SelectQuery (ManagerName=SourceCodeSchemaManager) then calls `SourceCodeSchemaDesignerService.svc/GetSchema`. Use before `update-schema` to inspect current body.
+
+---
+
+## Client Unit Schema Management
+
+### create-client-unit-schema
+Create a new client unit (JavaScript) schema on a remote Creatio environment. **Alias:** `client-unit-schema-create`
+```bash
+clio create-client-unit-schema --schema-name UsrHelperModule --package-name Custom -e <ENV>
+```
+Required: `--schema-name`, `--package-name`.
+Optional: `--caption` (defaults to schema-name), `--description`.
+
+### update-client-unit-schema
+Replace the body of an existing client unit (JavaScript) schema. **Alias:** `client-unit-schema-update`
+```bash
+clio update-client-unit-schema --schema-name NetworkUtilities --body-file ./NetworkUtilities.js -e <ENV>
+```
+Required: `--schema-name`; one of `--body` or `--body-file`.
+Optional: `--dry-run`.
+
+### get-client-unit-schema
+Read the body and metadata of a client unit (JavaScript) schema. **Alias:** `client-unit-schema-get`
+```bash
+clio get-client-unit-schema --schema-name NetworkUtilities -e <ENV>
+
+clio get-client-unit-schema --schema-name NetworkUtilities --output-file /tmp/NetworkUtilities.js -e <ENV>
+```
+Required: `--schema-name`.
+Optional: `--output-file`. When set, the body is written to the file and omitted from the JSON response.
+
+Resolves schema UId via SelectQuery (no ManagerName filter) then calls `ClientUnitSchemaDesignerService.svc/GetSchema`. Use before `update-client-unit-schema`.
+
+---
+
+## SQL Script Schema Management
+
+All four commands target `ScriptSchemaDesignerService` and filter SysSchema by `ManagerName=ScriptSchemaManager`.
+
+### create-sql-schema
+Create a new SQL script schema on a remote Creatio environment. **Alias:** `sql-schema-create`
+```bash
+clio create-sql-schema --schema-name UsrReseedContactId --package-name Custom -e <ENV>
+
+clio create-sql-schema --schema-name UsrReseedContactId --package-name Custom --caption "Reseed contact id" -e <ENV>
+```
+Required: `--schema-name`, `--package-name`.
+Optional: `--caption` (defaults to schema-name), `--description`.
+
+### get-sql-schema
+Read the body and metadata of a SQL script schema. **Alias:** `sql-schema-get`
+```bash
+clio get-sql-schema --schema-name UsrReseedContactId -e <ENV>
+
+clio get-sql-schema --schema-name UsrReseedContactId --output-file /tmp/reseed.sql -e <ENV>
+```
+Required: `--schema-name`.
+Optional: `--output-file`.
+
+### update-sql-schema
+Replace the body of an existing SQL script schema. **Alias:** `sql-schema-update`
+```bash
+clio update-sql-schema --schema-name UsrReseedContactId --body-file ./reseed.sql -e <ENV>
+
+clio update-sql-schema --schema-name UsrReseedContactId --body "SELECT 1;" --dry-run -e <ENV>
+```
+Required: `--schema-name`; one of `--body` or `--body-file`.
+Optional: `--dry-run`.
+
+### install-sql-schema
+Execute a SQL script schema on the remote environment via `ScriptSchemaDesignerService.svc/ExecuteScript`. **Aliases:** `sql-schema-install`, `execute-sql-schema`
+```bash
+clio install-sql-schema --schema-name UsrReseedContactId -e <ENV>
+```
+Required: `--schema-name`.
+
+**WARNING:** runs the script directly against the Creatio database. Irreversible — back up first if the script mutates data.
+
+---
+
 ## Schema & Process User Task CRUD
 
 ### delete-schema
-Delete any workspace item (schema or non-schema) from a workspace package. Supports all item types: entity, client unit, source code, process, DCM, process user task, campaign, service, addon, Copilot intent, localization schemas, SQL scripts, data bindings, and assemblies. Must be run from a workspace directory.
+Delete any workspace item (schema or non-schema) from a workspace package, or — with `--remote` — delete any SysSchema record directly from the remote environment. Supports all item types: entity, client unit, source code, process, DCM, process user task, campaign, service, addon, Copilot intent, localization schemas, SQL scripts, data bindings, and assemblies.
 ```bash
+# Workspace mode (default) — must be run from a workspace directory
 clio delete-schema UsrSendInvoice -e <ENV>
+
+# Remote mode — no workspace required
+clio delete-schema UsrLegacyHelper --remote -e <ENV>
 ```
-Only items whose package belongs to the current local workspace can be deleted.
+In workspace mode only items whose package belongs to the current local workspace can be deleted. In `--remote` mode the command resolves the schema from SysSchema by name (any ManagerName) and deletes it via `WorkspaceExplorerService.svc/Delete`.
 
 ### add-user-task
 Create a process user task schema in a workspace package. Must be run from a workspace directory.

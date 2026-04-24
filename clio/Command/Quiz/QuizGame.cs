@@ -1,6 +1,6 @@
 using System;
-using System.IO;
 using System.Reflection;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.Quiz;
 
@@ -9,7 +9,7 @@ namespace Clio.Command.Quiz;
 /// </summary>
 public static class QuizGame
 {
-	public static void Run()
+	public static void Run(IAbstractionsFileSystem fileSystem)
 	{
 		// Check console size and show warning if too small
 		const int optimalWidth = 96;
@@ -36,10 +36,10 @@ public static class QuizGame
 
 		try
 		{
-			var assemblyLocation = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
+			var assemblyLocation = fileSystem.Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
 				?? throw new InvalidOperationException("Could not determine assembly location");
-			var questionFilePath = Path.Combine(assemblyLocation, "resources", "quiz", "questions.txt");
-			var repository = QuestionRepository.Load(questionFilePath);
+			var questionFilePath = fileSystem.Path.Combine(assemblyLocation, "resources", "quiz", "questions.txt");
+			var repository = QuestionRepository.Load(questionFilePath, fileSystem);
 
 			while (true)
 			{

@@ -172,7 +172,7 @@ public class k8Commands : Ik8Commands
 			return await sr.ReadToEndAsync();
 		}
 		catch (Exception e){
-			Console.WriteLine(e);
+			ConsoleLogger.Instance.WriteError(e.Message);
 		}
 		return "";
 	}

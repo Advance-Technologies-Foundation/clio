@@ -1,11 +1,10 @@
-﻿using System.IO.Abstractions.TestingHelpers;
-
-namespace Clio.Tests.Command;
+﻿namespace Clio.Tests.Command;
 
 using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Common;
+using Clio.UserEnvironment;
 using Clio.YAML;
 using FluentAssertions;
 using NSubstitute;
@@ -23,8 +22,7 @@ public class ScenarioRunnerCommandTests
 	private readonly ScenarioRunnerCommand _sut;
 	private readonly IDeserializer _deserializer = new DeserializerBuilder().Build();
 	private readonly List<object> _receivedOptions = new();
-	private readonly MockFileSystem _mockFs;
-	
+
 	#endregion
 
 	#region Constructors: Public
@@ -32,13 +30,13 @@ public class ScenarioRunnerCommandTests
 	public ScenarioRunnerCommandTests() {
 		IScenario script = new Scenario(_deserializer);
 		ILogger logger = Substitute.For<ILogger>();
-		_sut = new ScenarioRunnerCommand(script, logger);
-		_mockFs = new MockFileSystem();
-		_sut.FileSystem = _mockFs;
-		
-		var filePath = System.IO.Path.Combine(SettingsRepository.AppSettingsFolderPath, "appsettings.json");
-		var json = System.IO.File.ReadAllText("Examples/clio/appsettings.json");
-		_mockFs.AddFile(filePath, json);
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.FindEnvironment(Arg.Any<string>()).Returns(new EnvironmentSettings {
+			Uri = "http://localhost",
+			Login = "Supervisor",
+			Password = "Supervisor"
+		});
+		_sut = new ScenarioRunnerCommand(script, logger, settingsRepository);
 		Program.ExecuteCommandWithOption = instance => {
 			_receivedOptions.Add(instance);
 			return 0;

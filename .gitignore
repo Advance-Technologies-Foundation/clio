@@ -227,3 +227,4 @@ These files are used on local dev environment only
 **/HAR Files/
 .DS_Store
 .claude/settings.local.json
+.claude/worktrees/

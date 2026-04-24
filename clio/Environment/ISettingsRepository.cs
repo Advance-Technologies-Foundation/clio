@@ -170,5 +170,11 @@ namespace Clio.UserEnvironment
 		/// <param name="environmentName"></param>
 		/// <returns></returns>
 		string GetActualEnvironmentName(string environmentName);
+
+		/// <summary>
+		/// Gets the AutoUpdate setting.
+		/// </summary>
+		/// <returns>true if auto-update is enabled; otherwise false.</returns>
+		bool GetAutoupdate();
 	}
 }

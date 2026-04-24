@@ -40,7 +40,9 @@ public sealed class GetPkgListTool(
 		try {
 			resolvedCommand = ResolveCommand<GetPkgListCommand>(options);
 		} catch (Exception ex) {
-			throw new InvalidOperationException($"Failed to resolve environment: {ex.Message}", ex);
+			throw new InvalidOperationException(
+				$"Failed to resolve environment '{args.EnvironmentName}': {ex.Message}. " +
+				"Verify the environment is registered with 'reg-web-app' and accessible.", ex);
 		}
 		if (!resolvedCommand.TryGetFilteredPackages(options, out IReadOnlyList<PackageInfo> packages,
 				out string errorMessage, out string remediationMessage)) {

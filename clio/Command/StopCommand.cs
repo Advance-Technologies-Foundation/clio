@@ -32,6 +32,7 @@ public class StopCommand : Command<StopOptions>{
 	private readonly IIISAppPoolManager _iisAppPoolManager;
 	private readonly IIISSiteDetector _iisSiteDetector;
 	private readonly ILogger _logger;
+	private readonly IProcessExecutor _processExecutor;
 	private readonly ISystemServiceManager _serviceManager;
 	private readonly ISettingsRepository _settingsRepository;
 
@@ -40,12 +41,14 @@ public class StopCommand : Command<StopOptions>{
 	#region Constructors: Public
 
 	public StopCommand(ISettingsRepository settingsRepository, ISystemServiceManager serviceManager,
-		ILogger logger, IIISAppPoolManager iisAppPoolManager, IIISSiteDetector iisSiteDetector) {
+		ILogger logger, IIISAppPoolManager iisAppPoolManager, IIISSiteDetector iisSiteDetector,
+		IProcessExecutor processExecutor) {
 		_settingsRepository = settingsRepository;
 		_serviceManager = serviceManager;
 		_logger = logger;
 		_iisAppPoolManager = iisAppPoolManager;
 		_iisSiteDetector = iisSiteDetector;
+		_processExecutor = processExecutor;
 	}
 
 	#endregion
@@ -284,7 +287,7 @@ public class StopCommand : Command<StopOptions>{
 
 	private async Task<bool> KillProcessesByPath(string targetPath) {
 		try {
-			// First, get all dotnet processes
+#pragma warning disable CLIO004 // Process enumeration cannot be abstracted via IProcessExecutor
 			Process[] allProcesses = Process.GetProcesses();
 			List<Process> dotnetProcesses = allProcesses.Where(p => {
 				try {
@@ -294,27 +297,17 @@ public class StopCommand : Command<StopOptions>{
 					return false;
 				}
 			}).ToList();
+#pragma warning restore CLIO004
 
 			bool killedAny = false;
 
+#pragma warning disable CLIO004 // Process member access on already-obtained Process instances cannot be abstracted
 			foreach (Process dotnetProcess in dotnetProcesses) {
 				try {
-					// Use lsof to check if the process is running from the target path
-					ProcessStartInfo lsofStartInfo = new() {
-						FileName = "lsof",
-						Arguments = $"-p {dotnetProcess.Id}",
-						RedirectStandardOutput = true,
-						UseShellExecute = false,
-						CreateNoWindow = true
-					};
+					ProcessExecutionResult lsofResult = await _processExecutor.ExecuteAndCaptureAsync(
+						new ProcessExecutionOptions("lsof", $"-p {dotnetProcess.Id}"));
+					string output = lsofResult.StandardOutput;
 
-					Process lsofProcess = new() { StartInfo = lsofStartInfo };
-					lsofProcess.Start();
-
-					string output = await lsofProcess.StandardOutput.ReadToEndAsync();
-					await lsofProcess.WaitForExitAsync();
-
-					// Check if the output contains the target path (working directory)
 					if (output.Contains(targetPath)) {
 						_logger.WriteInfo(
 							$"Killing process {dotnetProcess.ProcessName} (PID: {dotnetProcess.Id}) running from {targetPath}");
@@ -324,10 +317,10 @@ public class StopCommand : Command<StopOptions>{
 					}
 				}
 				catch (Exception ex) {
-					// Process might have already exited or we don't have permission
 					_logger.WriteWarning($"Could not check/kill process {dotnetProcess.Id}: {ex.Message}");
 				}
 			}
+#pragma warning restore CLIO004
 
 			return killedAny;
 		}
@@ -351,7 +344,7 @@ public class StopCommand : Command<StopOptions>{
 				processFound = await KillProcessesByPath(targetPath);
 			}
 			else {
-				// On Windows, use Process.Modules
+#pragma warning disable CLIO004 // Process enumeration and kill cannot be abstracted via IProcessExecutor
 				Process[] processes = Process.GetProcesses();
 
 				foreach (Process process in processes) {
@@ -359,23 +352,23 @@ public class StopCommand : Command<StopOptions>{
 						string processName = process.ProcessName.ToLower();
 						if (processName.Contains("dotnet") || processName.Contains("creatio") ||
 							processName.Contains("terrasoft") || processName.Contains("webhost")) {
-							// Try to get modules to see if any DLL is from target path
 							ProcessModuleCollection modules = process.Modules;
 							foreach (ProcessModule module in modules) {
 								if (module.FileName.Contains(targetPath, StringComparison.OrdinalIgnoreCase)) {
 									_logger.WriteInfo($"Killing process {processName} (PID: {process.Id})");
 									process.Kill();
-									await Task.Delay(1000); // Wait for process to terminate
+									await Task.Delay(1000);
 									processFound = true;
 									break;
 								}
 							}
 						}
 					}
-					catch {
-						// Ignore errors when checking specific processes (access denied, etc.)
+					catch (Exception ex) {
+						System.Diagnostics.Trace.TraceWarning(ex.Message);
 					}
 				}
+#pragma warning restore CLIO004
 			}
 
 			if (processFound) {

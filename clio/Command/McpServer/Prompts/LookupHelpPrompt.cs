@@ -13,11 +13,27 @@ public static class LookupHelpPrompt {
 	/// <summary>
 	/// Builds a prompt that directs the agent to the command help resource.
 	/// </summary>
-	[McpServerPrompt(Name = "Lookup up help"), Description("Prompt to open a command help resource")]
-	public static string PromptByEnvironmentName(
+	[McpServerPrompt(Name = "lookup-help"), Description("Prompt to open a command help resource")]
+	public static string LookupCommand(
 		[Required] 
-		[Description("Command name to lookup, by name or alias")]
+		[Description("Command name to lookup, by name or alias (e.g. 'restart-web-app', 'compile-configuration')")]
 		string commandName) =>
-		$"Use `docs://help/command/{commandName}` resource to look up help for command `{commandName}`.";
+		$"""
+		 Look up detailed usage for the `{commandName}` command by reading the
+		 `docs://help/command/{commandName}` resource. This returns the CLI help text
+		 including all available options, examples, and notes. Both MCP tool names
+		 and CLI command names are accepted — aliases are resolved automatically.
+		 """;
+
+	/// <summary>
+	/// Deprecated alias of <see cref="LookupCommand"/> preserved for clients configured
+	/// against the original prompt name (which contained a space).
+	/// </summary>
+	[McpServerPrompt(Name = "Lookup up help"),
+	 Description("[Deprecated: use lookup-help] Prompt to open a command help resource")]
+	public static string LookupCommandLegacy(
+		[Required]
+		[Description("Command name to lookup, by name or alias")]
+		string commandName) => LookupCommand(commandName);
 
 }

@@ -21,16 +21,13 @@ public sealed class GetPkgListToolTests {
 	[Category("Unit")]
 	[Description("Advertises the stable MCP tool name for list-packages so tests and callers reference the same production constant.")]
 	public void GetPkgList_Should_Advertise_Stable_Tool_Name() {
-		// Arrange
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(GetPkgListTool)
 			.GetMethod(nameof(GetPkgListTool.GetPkgList))!
 			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
 			.Single();
 
-		// Act
 		string toolName = attribute.Name;
 
-		// Assert
 		toolName.Should().Be(GetPkgListTool.GetPkgListToolName,
 			because: "unit tests must reference the production MCP tool-name constant instead of duplicating the string literal");
 	}
@@ -39,37 +36,30 @@ public sealed class GetPkgListToolTests {
 	[Category("Unit")]
 	[Description("Resolves a fresh list-packages command for the requested environment and returns structured package data filtered by the requested search pattern.")]
 	public void GetPkgList_Should_Resolve_Command_And_Return_Filtered_Structured_Result() {
-		// Arrange
 		IApplicationPackageListProvider packageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		packageListProvider.GetPackages().Returns(new[] {
 			CreatePackageInfo("AlphaPkg", "1.2.3", "Maintainer A"),
 			CreatePackageInfo("BetaPkg", "2.0.0", "Maintainer B")
 		});
 		IJsonResponseFormater jsonResponseFormater = Substitute.For<IJsonResponseFormater>();
-		IClioGateway clioGateway = Substitute.For<IClioGateway>();
-		clioGateway.IsCompatibleWith("2.0.0.0").Returns(true);
 		ILogger logger = Substitute.For<ILogger>();
 		GetPkgListCommand defaultCommand = new(
 			new EnvironmentSettings(),
 			packageListProvider,
 			jsonResponseFormater,
-			logger,
-			clioGateway);
+			logger);
 		GetPkgListCommand resolvedCommand = new(
 			new EnvironmentSettings(),
 			packageListProvider,
 			jsonResponseFormater,
-			logger,
-			clioGateway);
+			logger);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<GetPkgListCommand>(Arg.Any<EnvironmentOptions>())
 			.Returns(resolvedCommand);
 		GetPkgListTool tool = new(defaultCommand, logger, commandResolver);
 
-		// Act
 		IReadOnlyList<PackageListItemResult> result = tool.GetPkgList(new GetPkgListArgs("sandbox", "beta"));
 
-		// Assert
 		commandResolver.Received(1).Resolve<GetPkgListCommand>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "sandbox"));
 		result.Should().ContainSingle(because: "the filter should narrow the structured MCP payload to matching packages only");
@@ -86,12 +76,8 @@ public sealed class GetPkgListToolTests {
 	[Category("Unit")]
 	[Description("Prompt guidance for list-packages references the exact production tool name and keeps the optional filter visible to agents.")]
 	public void GetPkgListPrompt_Should_Mention_Tool_Name_And_Filter() {
-		// Arrange
-
-		// Act
 		string prompt = WorkspacePackagePrompt.GetPkgList("sandbox", "PkgA");
 
-		// Assert
 		prompt.Should().Contain(GetPkgListTool.GetPkgListToolName,
 			because: "the prompt should reference the production MCP tool name");
 		prompt.Should().Contain("filter",

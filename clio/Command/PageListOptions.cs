@@ -58,6 +58,8 @@ namespace Clio.Command {
 				}
 				var filters = new JObject {
 					[FilterTypeKey] = 6,
+					["logicalOperation"] = 0,
+					["isEnabled"] = true,
 					[ItemsKey] = new JObject {
 						["ManagerName"] = BuildComparisonFilter("ManagerName", "ClientUnitSchemaManager", 1, 3)
 					}

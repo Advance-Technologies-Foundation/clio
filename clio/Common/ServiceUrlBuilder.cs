@@ -57,7 +57,6 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		CompileAll = 13,
 		DownloadPackageDllFile = 14,
 		ClearFeaturesCacheForAllUsers = 15,
-		GetSysSettingValueByCode = 16,
 		SendEventToUi = 17,
 		
 		/// <summary>
@@ -122,7 +121,6 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.CompileAll, "ServiceModel/WorkspaceExplorerService.svc/Rebuild"},
 		{KnownRoute.DownloadPackageDllFile, "/rest/CreatioApiGateway/DownloadFile"},
 		{KnownRoute.ClearFeaturesCacheForAllUsers, "/rest/FeatureService/ClearFeaturesCacheForAllUsers"},
-		{KnownRoute.GetSysSettingValueByCode, "/rest/CreatioApiGateway/GetSysSettingValueByCode"},
 		{KnownRoute.SendEventToUi, "/rest/CreatioApiGateway/SendEventToUI"},
 		{KnownRoute.ProcessSchemaRequest, "DataService/json/SyncReply/ProcessSchemaRequest"},
 		{KnownRoute.StartLogBroadcast, "/rest/ATFLogService/StartLogBroadcast"},

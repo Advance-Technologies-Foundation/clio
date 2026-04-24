@@ -374,8 +374,8 @@ These tools are operational rather than design-oriented.
 
 - `start-creatio`
 - `stop-creatio`
-- `StopAllCreatio`
-- `restart-by-environmentName`
+- `stop-all-creatio`
+- `restart-by-environment-name`
 - `restart-by-credentials`
 - `clear-redis-db-by-environment`
 - `clear-redis-db-by-credentials`
@@ -469,18 +469,12 @@ From an external AI point of view, the strongest aspects are:
 
 This surface is powerful, but a third-party AI will still notice several inconsistencies.
 
-### 1. Mixed naming styles
+### 1. ~~Mixed naming styles~~ (Fixed)
 
-Examples:
-
-- `restart-by-environmentName`
-- `show-webApp-list`
-- `StopAllCreatio`
-
-Implication:
-
-- clients should use exact discovered names
-- do not normalize case or assume strict kebab-case
+All tool names now use strict kebab-case. Previous inconsistencies such as
+`restart-by-environmentName`, `StopAllCreatio`, and `show-webApp-list` have been
+corrected to `restart-by-environment-name`, `stop-all-creatio`, and
+`show-web-app-list` respectively.
 
 ### 2. Mixed argument styles
 
@@ -498,19 +492,18 @@ Implication:
 - external AI should inspect each tool schema literally
 - argument-name conventions are not globally uniform
 
-### 3. Mixed metadata richness
+### 3. ~~Mixed metadata richness~~ (Fixed)
 
-Most newer tools declare safety metadata.
-
-Legacy lifecycle tools such as:
+All lifecycle tools now declare explicit safety metadata (`ReadOnly`, `Destructive`,
+`Idempotent`, `OpenWorld` flags). This includes:
 
 - `start-creatio`
 - `stop-creatio`
-- `StopAllCreatio`
-- `restart-by-*`
-- `clear-redis-db-by-*`
-
-do not currently expose the same explicit safety fields inline.
+- `stop-all-creatio`
+- `restart-by-environment-name`
+- `restart-by-credentials`
+- `clear-redis-db-by-environment`
+- `clear-redis-db-by-credentials`
 
 ### 4. Mixed response shapes
 

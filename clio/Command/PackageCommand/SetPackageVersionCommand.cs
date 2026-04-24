@@ -3,6 +3,7 @@ using System.IO;
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.PackageCommand
 {
@@ -29,14 +30,16 @@ namespace Clio.Command.PackageCommand
 		#region Fields: Public
 
 		protected readonly IJsonConverter _jsonConverter;
+		private readonly IFileSystem _fileSystem;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public SetPackageVersionCommand(IJsonConverter jsonConverter) {
+		public SetPackageVersionCommand(IJsonConverter jsonConverter, IFileSystem fileSystem) {
 			jsonConverter.CheckArgumentNull(nameof(jsonConverter));
 			_jsonConverter = jsonConverter;
+			_fileSystem = fileSystem;
 		}
 
 		#endregion
@@ -44,7 +47,7 @@ namespace Clio.Command.PackageCommand
 		#region Methods: Public
 
 		public override int Execute(SetPackageVersionOptions options) {
-			string packageDescriptorPath = Path.Combine(options.PackagePath, CreatioPackage.DescriptorName);
+			string packageDescriptorPath = _fileSystem.Path.Combine(options.PackagePath, CreatioPackage.DescriptorName);
 			try {
 				var dto = _jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(packageDescriptorPath);
 				dto.Descriptor.PackageVersion = options.PackageVersion;

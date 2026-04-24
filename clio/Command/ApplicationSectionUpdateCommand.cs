@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
@@ -58,11 +57,11 @@ public sealed class ApplicationSectionUpdateService(
 	IApplicationInfoService applicationInfoService)
 	: IApplicationSectionUpdateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
+	private const string ApplicationIdField = "ApplicationId";
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		PropertyNameCaseInsensitive = true
 	};
-	private static readonly Regex HexColorRegex = new("^#[0-9A-Fa-f]{6}$", RegexOptions.None, TimeSpan.FromSeconds(5));
 
 	/// <inheritdoc />
 	public ApplicationSectionUpdateResult UpdateSection(string environmentName, ApplicationSectionUpdateRequest request) {
@@ -93,7 +92,7 @@ public sealed class ApplicationSectionUpdateService(
 			applicationId,
 			request.SectionCode);
 		ResolvedApplicationSectionUpdateRequest resolvedRequest = ResolveRequest(request);
-		string requestBody = JsonSerializer.Serialize(BuildUpdateBody(previousSection.Id, resolvedRequest), JsonOptions);
+		string requestBody = JsonSerializer.Serialize(BuildUpdateBody(previousSection, resolvedRequest), JsonOptions);
 		string responseBody = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Update, environmentSettings),
 			requestBody);
@@ -149,13 +148,7 @@ public sealed class ApplicationSectionUpdateService(
 		}
 
 		if (hasIconBackground) {
-			if (string.IsNullOrWhiteSpace(request.IconBackground)) {
-				throw new ArgumentException("icon-background cannot be empty.");
-			}
-
-			if (!HexColorRegex.IsMatch(request.IconBackground.Trim())) {
-				throw new ArgumentException("icon-background must use #RRGGBB format.");
-			}
+			ApplicationSectionColorPalette.ValidateOrThrow(request.IconBackground!);
 		}
 	}
 
@@ -198,7 +191,7 @@ public sealed class ApplicationSectionUpdateService(
 			ApplicationSectionSchemaName,
 			[
 				new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
-				new SelectQueryHelper.SelectQueryColumnDefinition("ApplicationId", "ApplicationId"),
+				new SelectQueryHelper.SelectQueryColumnDefinition(ApplicationIdField, ApplicationIdField),
 				new SelectQueryHelper.SelectQueryColumnDefinition("Caption", "Caption"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("Code", "Code"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("Description", "Description"),
@@ -211,13 +204,21 @@ public sealed class ApplicationSectionUpdateService(
 			],
 			[
 				new SelectQueryHelper.SelectQueryFilterDefinition(
-					"ApplicationId",
+					ApplicationIdField,
 					applicationId,
 					SelectQueryHelper.GuidDataValueType)
 			]);
 
-	private static object BuildUpdateBody(string sectionId, ResolvedApplicationSectionUpdateRequest request) {
-		Dictionary<string, object> items = new(StringComparer.Ordinal);
+	private static object BuildUpdateBody(ApplicationSectionRecord previousSection, ResolvedApplicationSectionUpdateRequest request) {
+		Dictionary<string, object> items = new(StringComparer.Ordinal) {
+			["Id"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.Id),
+			[ApplicationIdField] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.ApplicationId),
+			["LogoId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType,
+				request.ShouldUpdateIconId && request.IconId is not null ? request.IconId : previousSection.LogoId ?? string.Empty),
+			["PackageId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, previousSection.PackageId ?? string.Empty),
+			["IconBackground"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType,
+				request.ShouldUpdateIconBackground && request.IconBackground is not null ? request.IconBackground : previousSection.IconBackground ?? string.Empty)
+		};
 		if (request.ShouldUpdateCaption && request.Caption is not null) {
 			items["Caption"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, request.Caption);
 		}
@@ -226,20 +227,15 @@ public sealed class ApplicationSectionUpdateService(
 			items["Description"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, request.Description);
 		}
 
-		if (request.ShouldUpdateIconId && request.IconId is not null) {
-			items["LogoId"] = CreateParameterExpression(SelectQueryHelper.GuidDataValueType, request.IconId);
-		}
-
-		if (request.ShouldUpdateIconBackground && request.IconBackground is not null) {
-			items["IconBackground"] = CreateParameterExpression(SelectQueryHelper.TextDataValueType, request.IconBackground);
-		}
-
-		return new {
-			rootSchemaName = ApplicationSectionSchemaName,
-			columnValues = new {
+		return new Dictionary<string, object> {
+			["__type"] = "Terrasoft.Nui.ServiceModel.DataContract.UpdateQuery",
+			["operationType"] = 2,
+			["rootSchemaName"] = ApplicationSectionSchemaName,
+			["isForceUpdate"] = false,
+			["columnValues"] = new {
 				items
 			},
-			filters = BuildPrimaryKeyFilter(sectionId)
+			["filters"] = BuildPrimaryKeyFilter(previousSection.Id)
 		};
 	}
 
@@ -271,7 +267,7 @@ public sealed class ApplicationSectionUpdateService(
 					rightExpression = new {
 						expressionType = 2,
 						parameter = new {
-							dataValueType = 0,
+							dataValueType = SelectQueryHelper.TextDataValueType,
 							value = keyValue
 						}
 					}

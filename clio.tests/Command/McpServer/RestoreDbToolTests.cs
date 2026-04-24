@@ -249,6 +249,7 @@ public sealed class RestoreDbToolTests {
 			: base(
 				logger,
 				Substitute.For<IFileSystem>(),
+				new System.IO.Abstractions.FileSystem(),
 				Substitute.For<IDbClientFactory>(),
 				Substitute.For<ISettingsRepository>(),
 				Substitute.For<ICreatioInstallerService>(),

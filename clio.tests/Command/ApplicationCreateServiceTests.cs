@@ -18,6 +18,7 @@ public sealed class ApplicationCreateServiceTests {
 	private IApplicationClient _applicationClient = null!;
 	private IServiceUrlBuilder _serviceUrlBuilder = null!;
 	private IApplicationInfoService _applicationInfoService = null!;
+	private ILogger _logger = null!;
 	private ApplicationCreateService _sut = null!;
 	private EnvironmentSettings _environment = null!;
 	private ApplicationCreateRequest _fullRequest = null!;
@@ -30,6 +31,7 @@ public sealed class ApplicationCreateServiceTests {
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_applicationInfoService = Substitute.For<IApplicationInfoService>();
+		_logger = new NullLogger();
 		_environment = new EnvironmentSettings {
 			Uri = "https://example.invalid",
 			Login = "Supervisor",
@@ -57,7 +59,8 @@ public sealed class ApplicationCreateServiceTests {
 			_settingsRepository,
 			_applicationClientFactory,
 			_serviceUrlBuilder,
-			_applicationInfoService);
+			_applicationInfoService,
+			_logger);
 	}
 
 	[Test]

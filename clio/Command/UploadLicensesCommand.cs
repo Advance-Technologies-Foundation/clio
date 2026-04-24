@@ -1,21 +1,25 @@
 ﻿namespace Clio.Command.PackageCommand
 {
 	using System;
-	using System.IO;
 	using System.Text.Json;
 	using Clio.Common;
+	using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 	public class UploadLicensesCommand : RemoteCommand<UploadLicensesOptions>
 	{
 
-		public UploadLicensesCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+		private readonly IFileSystem _fileSystem;
+
+		public UploadLicensesCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
+			IFileSystem fileSystem)
 			: base(applicationClient, settings) {
+			_fileSystem = fileSystem;
 		}
 
 		protected override string ServicePath => @"/ServiceModel/LicenseService.svc/UploadLicenses";
 
 		protected override string GetRequestData(UploadLicensesOptions options) {
-			string fileBody = File.ReadAllText(options.FilePath);
+			string fileBody = _fileSystem.File.ReadAllText(options.FilePath);
 			fileBody = fileBody.Replace("\"", "\\\"");
 			return "{\"licData\":\"" + fileBody + "\"}";
 		}

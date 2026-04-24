@@ -24,19 +24,21 @@ namespace Clio.Command
 	public class PushNuGetPackagesCommand : Command<PushNuGetPkgsOptions>
 	{
 		private INuGetManager _nugetManager;
+		private readonly ILogger _logger;
 
-		public PushNuGetPackagesCommand(INuGetManager nugetManager) {
+		public PushNuGetPackagesCommand(INuGetManager nugetManager, ILogger logger) {
 			nugetManager.CheckArgumentNull(nameof(nugetManager));
 			_nugetManager = nugetManager;
+			_logger = logger;
 		}
 
 		public override int Execute(PushNuGetPkgsOptions options) {
 			try {
 				_nugetManager.Push(options.NugetPkgPath, options.ApiKey, options.SourceUrl);
-				Console.WriteLine("Done");
+				_logger.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e.Message);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}
