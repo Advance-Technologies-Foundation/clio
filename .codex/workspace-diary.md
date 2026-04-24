@@ -2986,3 +2986,10 @@ Decision: Introduced a shared one-second timeout constant and applied it to ever
 Discovery: This change is internal to the handler validation heuristic, so docs, MCP contracts, and the clio skill remain accurate with no updates required.
 Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Handler API validation now satisfies regex timeout guidance and is less exposed to pathological regex execution while preserving existing behavior.
+
+## 2026-04-24 13:29 – Replaced forbidden handler API loop with first-match lookup
+Context: User asked to rewrite the `TryGetForbiddenHandlerApiError(...)` loop after a review comment suggested simplifying the iteration.
+Decision: Replaced the manual `foreach` with a `FirstOrDefault(...)` lookup over `ForbiddenHandlerApiRules`, preserving the same first-match behavior and returned error text.
+Discovery: The change is a local readability refactor only; no docs, MCP artifacts, or skill text required updates.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The forbidden-handler API lookup now uses a more declarative first-match form without changing validation semantics.

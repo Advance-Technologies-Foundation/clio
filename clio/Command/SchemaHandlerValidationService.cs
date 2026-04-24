@@ -2,6 +2,7 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using McpServer.Resources;
@@ -142,11 +143,11 @@ internal static class SchemaHandlerValidationService
 
 	private static bool TryGetForbiddenHandlerApiError(string expression, out string? error) {
 		string sanitizedExpression = SanitizeForHandlerApiScan(expression);
-		foreach (ForbiddenHandlerApiRule rule in ForbiddenHandlerApiRules) {
-			if (rule.Pattern.IsMatch(sanitizedExpression)) {
-				error = rule.Error;
-				return true;
-			}
+		ForbiddenHandlerApiRule? matchingRule = ForbiddenHandlerApiRules
+			.FirstOrDefault(rule => rule.Pattern.IsMatch(sanitizedExpression));
+		if (matchingRule is not null) {
+			error = matchingRule.Error;
+			return true;
 		}
 
 		error = null;
