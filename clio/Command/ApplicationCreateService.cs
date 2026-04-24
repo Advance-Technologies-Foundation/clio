@@ -33,7 +33,8 @@ public sealed class ApplicationCreateService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
-	IApplicationInfoService applicationInfoService)
+	IApplicationInfoService applicationInfoService,
+	ILogger logger)
 	: IApplicationCreateService
 {
 	private const string CreateApplicationRoute = "ServiceModel/AppInstallerService.svc/CreateApp";
@@ -73,30 +74,43 @@ public sealed class ApplicationCreateService(
 		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
-		ResolvedApplicationCreateRequest resolvedRequest = ResolveRequest(request, client, environmentSettings, serviceUrlBuilder);
+		ResolvedApplicationCreateRequest resolvedRequest = ResolveRequest(request, client, environmentSettings, serviceUrlBuilder, logger);
 		string requestUrl = serviceUrlBuilder.Build(CreateApplicationRoute, environmentSettings);
 		string requestBody = JsonSerializer.Serialize(CreateRequestDto.From(resolvedRequest), JsonOptions);
 
+		logger.BeginSpinner($"Creating application '{resolvedRequest.Name}' ({resolvedRequest.Code})...");
+		string responseBody;
 		try
 		{
-			string responseBody = client.ExecutePostRequest(requestUrl, requestBody);
-			CreateApplicationResponseDto response = DeserializeResponse(responseBody);
-			if (!response.Success)
-			{
-				throw new InvalidOperationException(BuildFailureMessage(response));
-			}
-
-			if (!Guid.TryParse(response.Value, out _))
-			{
-				throw new InvalidOperationException("CreateApp returned an invalid application identifier.");
-			}
-
-			return LoadCreatedApplication(environmentName, resolvedRequest.Code, response.Value);
+			responseBody = client.ExecutePostRequest(requestUrl, requestBody);
 		}
 		catch (Exception exception) when (IsTimeout(exception))
 		{
+			logger.EndSpinner(false);
+			logger.WriteInfo($"Request timed out, polling for application '{resolvedRequest.Code}'...");
 			return PollApplicationInfo(environmentName, resolvedRequest.Code, exception);
 		}
+		catch
+		{
+			logger.EndSpinner(false);
+			throw;
+		}
+
+		CreateApplicationResponseDto response = DeserializeResponse(responseBody);
+		if (!response.Success)
+		{
+			logger.EndSpinner(false);
+			throw new InvalidOperationException(BuildFailureMessage(response));
+		}
+
+		if (!Guid.TryParse(response.Value, out _))
+		{
+			logger.EndSpinner(false);
+			throw new InvalidOperationException("CreateApp returned an invalid application identifier.");
+		}
+
+		logger.EndSpinner(true);
+		return LoadCreatedApplication(environmentName, resolvedRequest.Code, response.Value);
 	}
 
 	private static void ValidateRequest(ApplicationCreateRequest request)
@@ -146,7 +160,8 @@ public sealed class ApplicationCreateService(
 		ApplicationCreateRequest request,
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
-		IServiceUrlBuilder serviceUrlBuilder)
+		IServiceUrlBuilder serviceUrlBuilder,
+		ILogger logger)
 	{
 		string? resolvedCode = string.IsNullOrWhiteSpace(request.Code)
 			? null
@@ -159,10 +174,16 @@ public sealed class ApplicationCreateService(
 		string resolvedIconBackground = string.IsNullOrWhiteSpace(request.IconBackground)
 			? GenerateRandomHexColor()
 			: request.IconBackground.Trim();
-		string resolvedIconId = string.IsNullOrWhiteSpace(request.IconId) ||
-			string.Equals(request.IconId, "auto", StringComparison.OrdinalIgnoreCase)
-				? ResolveRandomIconId(client, environmentSettings, serviceUrlBuilder)
-				: Guid.Parse(request.IconId).ToString();
+		bool needsIconResolution = string.IsNullOrWhiteSpace(request.IconId) ||
+			string.Equals(request.IconId, "auto", StringComparison.OrdinalIgnoreCase);
+		if (needsIconResolution)
+		{
+			logger.WriteInfo("Resolving application icon...");
+		}
+
+		string resolvedIconId = needsIconResolution
+			? ResolveRandomIconId(client, environmentSettings, serviceUrlBuilder)
+			: Guid.Parse(request.IconId!).ToString();
 		string? resolvedClientTypeId = string.IsNullOrWhiteSpace(request.ClientTypeId)
 			? null
 			: Guid.Parse(request.ClientTypeId).ToString();
@@ -394,6 +415,7 @@ public sealed class ApplicationCreateService(
 		{
 			try
 			{
+				logger.WriteInfo($"Waiting for application '{appCode}' to be ready... (attempt {attempt}/{PollAttempts})");
 				return applicationInfoService.GetApplicationInfo(environmentName, appId, appCode);
 			}
 			catch (InvalidOperationException exception)

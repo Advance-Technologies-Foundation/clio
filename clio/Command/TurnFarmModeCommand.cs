@@ -56,12 +56,14 @@ namespace Clio.Command
         private readonly IValidator<TurnFarmModeOptions> _validator;
         private readonly ISettingsRepository _settingsRepository;
         private readonly ILogger _logger;
+        private readonly IIisScanner _iisScanner;
 
-        public TurnFarmModeCommand(IValidator<TurnFarmModeOptions> validator, ISettingsRepository settingsRepository, ILogger logger)
+        public TurnFarmModeCommand(IValidator<TurnFarmModeOptions> validator, ISettingsRepository settingsRepository, ILogger logger, IIisScanner iisScanner)
         {
             _validator = validator;
             _settingsRepository = settingsRepository;
             _logger = logger;
+            _iisScanner = iisScanner;
         }
 
         public override int Execute(TurnFarmModeOptions options)
@@ -114,8 +116,8 @@ namespace Clio.Command
                     throw new Exception($"Could not find environment: '{options.Environment}'");
                 }
 
-                IEnumerable<IISScannerHandler.UnregisteredSite> sites = IISScannerHandler.FindAllCreatioSites();
-                foreach (IISScannerHandler.UnregisteredSite site in sites)
+                IEnumerable<UnregisteredSite> sites = _iisScanner.FindAllCreatioSites();
+                foreach (UnregisteredSite site in sites)
                 {
                     foreach (Uri siteUri in site.Uris)
                     {

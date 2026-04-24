@@ -8,6 +8,7 @@ using Clio.Common;
 using Clio.Common.ScenarioHandlers;
 using MediatR;
 using OneOf;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Common.DeploymentStrategies;
 
@@ -19,14 +20,16 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 {
 	private readonly IMediator _mediator;
 	private readonly ILogger _logger;
+	private readonly IAbstractionsFileSystem _fileSystem;
 
 	/// <summary>
 	/// Initializes a new instance of the IISDeploymentStrategy class.
 	/// </summary>
-	public IISDeploymentStrategy(IMediator mediator, ILogger logger)
+	public IISDeploymentStrategy(IMediator mediator, ILogger logger, IAbstractionsFileSystem fileSystem)
 	{
 		_mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
+		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 	}
 
 	/// <summary>
@@ -67,7 +70,7 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 					{ "siteName", options.SiteName },
 					{ "port", options.SitePort.ToString() },
 					{ "sourceDirectory", appDirectoryPath },
-					{ "destinationDirectory", System.IO.Path.GetDirectoryName(appDirectoryPath) ?? string.Empty }, // Will be filled from settings
+					{ "destinationDirectory", _fileSystem.Path.GetDirectoryName(appDirectoryPath) ?? string.Empty },
 					{ "isNetFramework", (frameworkType == InstallerHelper.FrameworkType.NetFramework).ToString() }
 				}
 			};

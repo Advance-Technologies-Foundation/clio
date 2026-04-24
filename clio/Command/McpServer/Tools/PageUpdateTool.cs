@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Common;
+using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -16,6 +19,8 @@ public sealed class PageUpdateTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	internal const string ToolName = "update-page";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
@@ -24,48 +29,28 @@ public sealed class PageUpdateTool(
 		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
 		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-sdk-common` before editing SCHEMA_DEPS or SDK calls.")]
-	public PageUpdateResponse UpdatePage([Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageUpdateArgs args) {
-		PageUpdateOptions options = new() {
-			SchemaName = args.SchemaName,
-			Body = args.Body,
-			DryRun = args.DryRun ?? false,
-			Resources = args.Resources,
-			Environment = args.EnvironmentName,
-			Uri = args.Uri,
-			Login = args.Login,
-			Password = args.Password
-		};
-		var validationErrors = new List<string>();
-		SchemaValidationResult markerResult = SchemaValidationService.ValidateMarkerContent(args.Body);
-		if (!markerResult.IsValid) {
-			validationErrors.AddRange(markerResult.Errors);
+	public async Task<PageUpdateResponse> UpdatePage(
+		[Description("Parameters: schema-name, body (required); resources, dry-run, skip-sampling (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Required] PageUpdateArgs args,
+		McpServerLib.McpServer server,
+		CancellationToken cancellationToken = default) {
+		PageUpdateOptions options = BuildOptions(args);
+		if (!string.IsNullOrWhiteSpace(options.Body)) {
+			string validationError = CollectValidatorErrors(options.Body);
+			if (validationError != null)
+				return new PageUpdateResponse { Success = false, Error = validationError };
 		}
-		SchemaValidationResult validatorParamResult = SchemaValidationService.ValidateValidatorParamResourceBindings(args.Body);
-		if (!validatorParamResult.IsValid) {
-			validationErrors.AddRange(validatorParamResult.Errors);
+		PageSamplingReview samplingReview = null;
+		if (!options.DryRun && args.SkipSampling != true) {
+			samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(server, args.SchemaName, args.Body, cancellationToken);
+			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0)
+				return new PageUpdateResponse {
+					Success = false,
+					Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues),
+					SamplingReview = samplingReview
+				};
 		}
-		SchemaValidationResult validatorBindingResult = SchemaValidationService.ValidateValidatorControlBindings(args.Body);
-		if (!validatorBindingResult.IsValid) {
-			validationErrors.AddRange(validatorBindingResult.Errors);
-		}
-		SchemaValidationResult validatorPlacementResult = SchemaValidationService.ValidateValidatorBindingPlacement(args.Body);
-		if (!validatorPlacementResult.IsValid) {
-			validationErrors.AddRange(validatorPlacementResult.Errors);
-		}
-		SchemaValidationResult standardValidatorResult = SchemaValidationService.ValidateStandardValidatorUsage(args.Body);
-		if (!standardValidatorResult.IsValid) {
-			validationErrors.AddRange(standardValidatorResult.Errors);
-		}
-		SchemaValidationResult validatorParamCompletenessResult = SchemaValidationService.ValidateCustomValidatorParamCompleteness(args.Body);
-		if (!validatorParamCompletenessResult.IsValid) {
-			validationErrors.AddRange(validatorParamCompletenessResult.Errors);
-		}
-		if (validationErrors.Count > 0) {
-			return new PageUpdateResponse {
-				Success = false,
-				Error = "Validation failed: " + string.Join("; ", validationErrors)
-			};
-		}
+		PageUpdateResponse response;
 		lock (CommandExecutionSyncRoot) {
 			PageUpdateCommand resolvedCommand;
 			try {
@@ -73,10 +58,63 @@ public sealed class PageUpdateTool(
 			} catch (Exception ex) {
 				return new PageUpdateResponse { Success = false, Error = ex.Message };
 			}
-			resolvedCommand.TryUpdatePage(options, out PageUpdateResponse response);
-			return response;
+			resolvedCommand.TryUpdatePage(options, out response);
+			if (response.Success && args.Verify == true)
+				TryVerifyPage(args, response);
+		}
+		response.SamplingReview = samplingReview;
+		return response;
+	}
+
+	private static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>
+		new() {
+			SchemaName = args.SchemaName,
+			Body = args.Body,
+			BodyFile = args.BodyFile,
+			DryRun = args.DryRun ?? false,
+			Resources = args.Resources,
+			OptionalProperties = args.OptionalProperties,
+			Mode = args.Mode,
+			TargetPackageUId = args.TargetPackageUId,
+			TargetSchemaUId = args.TargetSchemaUId,
+			Environment = args.EnvironmentName,
+			Uri = args.Uri,
+			Login = args.Login,
+			Password = args.Password
+		};
+
+	private static string CollectValidatorErrors(string body) {
+		var errors = new List<string>();
+		Collect(SchemaValidationService.ValidateMarkerContent(body), errors);
+		Collect(SchemaValidationService.ValidateValidatorParamResourceBindings(body), errors);
+		Collect(SchemaValidationService.ValidateValidatorControlBindings(body), errors);
+		Collect(SchemaValidationService.ValidateValidatorBindingPlacement(body), errors);
+		Collect(SchemaValidationService.ValidateStandardValidatorUsage(body), errors);
+		Collect(SchemaValidationService.ValidateCustomValidatorParamCompleteness(body), errors);
+		return errors.Count > 0 ? "Validation failed: " + string.Join("; ", errors) : null;
+	}
+
+	private static void Collect(SchemaValidationResult result, List<string> errors) {
+		if (!result.IsValid) errors.AddRange(result.Errors);
+	}
+
+	private void TryVerifyPage(PageUpdateArgs args, PageUpdateResponse response) {
+		try {
+			PageGetOptions getOptions = new() {
+				SchemaName = args.SchemaName,
+				Environment = args.EnvironmentName,
+				Uri = args.Uri,
+				Login = args.Login,
+				Password = args.Password
+			};
+			PageGetCommand getCommand = _commandResolver.Resolve<PageGetCommand>(getOptions);
+			if (getCommand.TryGetPage(getOptions, out PageGetResponse getResponse) && getResponse.Success)
+				response.Page = getResponse.Page;
+		} catch {
+			// verify is best-effort; failure does not fail the update
 		}
 	}
+
 }
 
 public sealed record PageUpdateArgs(
@@ -86,9 +124,8 @@ public sealed record PageUpdateArgs(
 	string SchemaName,
 
 	[property: JsonPropertyName("body")]
-	[property: Description("Full JavaScript page body with markers. Reuse get-page raw.body.")]
-	[property: Required]
-	string Body,
+	[property: Description("Full JavaScript page body with markers. Pass either `body` (inline string) or `body-file` (path); one is required. WARNING: do NOT send the full get-page `raw.body` back verbatim — that re-applies existing merges and fails server-side with 'Object vs Array'. Send ONLY the new viewConfigDiff/handlers operations plus the required marker envelope.")]
+	string? Body,
 
 	[property: JsonPropertyName("resources")]
 	[property: Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros in the body, e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. Unresolved macros are auto-registered with captions derived from key names.")]
@@ -110,5 +147,26 @@ public sealed record PageUpdateArgs(
 	string? Login,
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password
+	string? Password,
+	[property: JsonPropertyName("skip-sampling")]
+	[property: Description("If true, skip the AI semantic review before saving. Default: false")]
+	bool? SkipSampling = null,
+	[property: JsonPropertyName("optional-properties")]
+	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties, e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]'")]
+	string? OptionalProperties = null,
+	[property: JsonPropertyName("verify")]
+	[property: Description("If true, read the page back after saving and return its metadata. Best-effort — verify failure does not fail the update. Default: false")]
+	bool? Verify = null,
+	[property: JsonPropertyName("body-file")]
+	[property: Description("Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping.")]
+	string? BodyFile = null,
+	[property: JsonPropertyName("mode")]
+	[property: Description("Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming body fragment with the schema's current body on the server — viewConfigDiff entries dedupe by `name` (incoming wins), handlers dedupe by `request`. Use 'append' when adding a component without clobbering existing customizations.")]
+	string? Mode = null,
+	[property: JsonPropertyName("target-package-uid")]
+	[property: Description("Explicit target package UId for the replacing schema. Overrides automatic design-package resolution. Required when multiple apps replace the same platform page and automatic resolution would land the edit in the wrong app's design package.")]
+	string? TargetPackageUId = null,
+	[property: JsonPropertyName("target-schema-uid")]
+	[property: Description("Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely. Use when you already know the exact replacing schema you want to modify (obtained via list-pages filter by name) and want to skip the design-package inference.")]
+	string? TargetSchemaUId = null
 );

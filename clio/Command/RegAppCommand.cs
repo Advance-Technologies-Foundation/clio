@@ -147,12 +147,12 @@ public class RegAppCommand : Command<RegAppOptions> {
 		}
 
 		_powerShellFactory.Initialize(options.Login, options.Password, options.Host);
-		return IISScannerHandler.GetSites(_powerShellFactory)
+		return IisScannerHandler.GetSites(_powerShellFactory)
 			.Select(site => new IisEnvironmentDescriptor(
 				site.Key,
 				site.Value.PhysicalPath,
 				site.Value.Url.ToString().TrimEnd('/'),
-				site.Value.SiteType == IISScannerHandler.SiteType.Core));
+				site.Value.SiteType == SiteType.Core));
 	}
 
 	private bool ResolveIsNetCore(RegAppOptions options, EnvironmentSettings? existingEnvironment) {

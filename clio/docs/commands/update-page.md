@@ -21,6 +21,9 @@ register missing child-schema localizableStrings before saving. Pass
 --resources when you need explicit captions, or let clio derive captions
 automatically for missing Usr* keys.
 
+Use --optional-properties to merge custom key-value pairs into the schema's
+`optionalProperties` array (for example to set `entitySchemaName`).
+
 Keep each field control bound to the declared view-model attribute from
 `viewModelConfig` / `viewModelConfigDiff`. If you add validator or
 handler logic on a different attribute for the same field, rebind the
@@ -50,6 +53,10 @@ pairs for #ResourceString(key)# macros
 Malformed JSON is rejected during
 validation
 
+--optional-properties              JSON array of {key, value} objects to
+merge into schema optionalProperties,
+e.g. '[{"key":"entitySchemaName","value":"UsrMyEntity"}]'
+
 --uri                    -u       Application uri
 
 --Password               -p       User password
@@ -72,6 +79,9 @@ save the edited raw Freedom UI body to the registered dev environment
 
 clio update-page --schema-name UsrTodo_FormPage --body "<edited raw body>" --resources "{\"UsrDetailsTab_caption\":\"Details\"}" -e dev
 save the page and register the missing child-schema localizable string
+
+clio update-page --schema-name UsrTodo_FormPage --body "<edited raw body>" --optional-properties "[{\"key\":\"entitySchemaName\",\"value\":\"UsrTodo\"}]" -e dev
+save the page and merge custom optional properties into the schema
 ```
 
 ## Reporting Bugs

@@ -375,15 +375,18 @@ namespace Clio
 		internal static string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
 
 		public SettingsRepository(IFileSystem fileSystem = null, ISettingsBootstrapService settingsBootstrapService = null) {
-			if (fileSystem != null) {
-				FileSystem = fileSystem;
-			}
-			ISettingsBootstrapService bootstrapService = settingsBootstrapService ?? new SettingsBootstrapService(FileSystem);
-			SettingsBootstrapResult bootstrapResult = bootstrapService.GetResult();
-			_settings = bootstrapResult.Settings ?? new Settings();
-			EnsureSettingsCollections();
-			AttachDbServers(_settings);
-		}
+	if (fileSystem != null) {
+		FileSystem = fileSystem;
+	}
+	ISettingsBootstrapService bootstrapService = settingsBootstrapService;
+	if (bootstrapService == null) {
+		bootstrapService = new SettingsBootstrapService(FileSystem);
+	}
+	SettingsBootstrapResult bootstrapResult = bootstrapService.GetResult();
+	_settings = bootstrapResult.Settings ?? new Settings();
+	EnsureSettingsCollections();
+	AttachDbServers(_settings);
+}
 
 		internal static Settings CreateDefaultSettings(Settings settings = null) {
 			Settings result = settings ?? new Settings();
@@ -536,16 +539,25 @@ namespace Clio
 
 		public EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
 			var settingsRepository = new SettingsRepository();
-			var _settings = settingsRepository.FindEnvironment(options.Environment);
-			if (_settings == null) {
+			bool hasExplicitEnvironment = !string.IsNullOrWhiteSpace(options.Environment);
+			bool hasDirectUri = !string.IsNullOrEmpty(options.Uri);
+			EnvironmentSettings envSettings;
+			if (hasExplicitEnvironment) {
+				envSettings = settingsRepository.FindEnvironment(options.Environment);
+			} else if (hasDirectUri) {
+				envSettings = null;
+			} else {
+				envSettings = settingsRepository.FindEnvironment(null);
+			}
+			if (envSettings == null) {
 				var envName = options.Environment ?? settingsRepository.GetDefaultEnvironmentName();
-				if (!settingsRepository.IsEnvironmentExists(envName) && string.IsNullOrEmpty(options.Uri)) {
+				if (!settingsRepository.IsEnvironmentExists(envName) && !hasDirectUri) {
 					throw new Exception($"Environment with key '{envName}' not found. Check youre config file or command arguments.");
 				} else {
-					_settings = new EnvironmentSettings();
+					envSettings = new EnvironmentSettings();
 				}
 			}
-			EnvironmentSettings result = _settings.Fill(options);
+			EnvironmentSettings result = envSettings.Fill(options);
 			return result;
 		}
 
@@ -573,7 +585,7 @@ namespace Clio
 			return _settings.Environments.FirstOrDefault(pair => pair.Value.Uri == safeUri).Key;
 		}
 
-		internal bool GetAutoupdate() {
+		public bool GetAutoupdate() {
 			return _settings.Autoupdate;
 		}
 

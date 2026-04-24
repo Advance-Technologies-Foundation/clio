@@ -80,9 +80,9 @@ internal class Cp
                 }
 
                 using StreamReader streamReader = new StreamReader(stdError);
-                while (streamReader.EndOfStream == false)
+                string error = await streamReader.ReadToEndAsync();
+                if (!string.IsNullOrEmpty(error))
                 {
-                    string error = await streamReader.ReadToEndAsync();
                     throw new IOException($"Copy command failed: {error}");
                 }
             });

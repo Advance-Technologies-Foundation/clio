@@ -19,7 +19,57 @@ public sealed class ToolContractGetTool {
 		[Description("Parameters: tool-names (optional array of tool names). Omit to return the canonical clio MCP contract set.")]
 		[Required]
 		ToolContractGetArgs args) {
-		return ToolContractCatalog.GetContracts(args.ToolNames);
+		try {
+			string? aliasError = CollectLegacyAliasError(args);
+			if (aliasError is not null) {
+				return new ToolContractGetResponse(
+					false,
+					Error: new ToolContractError("invalid-parameter-alias", aliasError));
+			}
+			return ToolContractCatalog.GetContracts(args.ToolNames);
+		} catch (Exception ex) {
+			return new ToolContractGetResponse(
+				false,
+				Error: new ToolContractError(
+					"internal-error",
+					$"get-tool-contract failed: {ex.Message}. Expected args shape: {{\"tool-names\": [\"list-pages\", ...] }} or omit tool-names to list all."));
+		}
+	}
+
+	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
+		["toolNames"] = ToolNamesParam,
+		["tool_names"] = ToolNamesParam,
+		["toolName"] = ToolNamesParam,
+		["tool-name"] = ToolNamesParam,
+		["tool_name"] = ToolNamesParam,
+		["name"] = ToolNamesParam,
+		["names"] = ToolNamesParam
+	};
+
+	private const string ToolNamesParam = "tool-names";
+
+	private static string? CollectLegacyAliasError(ToolContractGetArgs args) {
+		if (args.ExtensionData is null || args.ExtensionData.Count == 0) {
+			return null;
+		}
+		List<string> mapped = [];
+		List<string> unknown = [];
+		foreach (string key in args.ExtensionData.Keys) {
+			if (LegacyAliases.TryGetValue(key, out string? canonical)) {
+				mapped.Add($"'{key}' -> '{canonical}'");
+			} else {
+				unknown.Add($"'{key}'");
+			}
+		}
+		List<string> parts = [];
+		if (mapped.Count > 0) {
+			parts.Add("Rename: " + string.Join(", ", mapped) + ". tool-names must be an array of strings.");
+		}
+		if (unknown.Count > 0) {
+			parts.Add("Unknown args: " + string.Join(", ", unknown)
+				+ ". Valid: tool-names (array of strings). Omit args to list all tools.");
+		}
+		return parts.Count > 0 ? string.Join(" ", parts) : null;
 	}
 }
 
@@ -27,7 +77,10 @@ public sealed record ToolContractGetArgs(
 	[property: JsonPropertyName("tool-names")]
 	[property: Description("Optional array of tool names. Omit to return the canonical clio MCP contract set.")]
 	IReadOnlyList<string>? ToolNames = null
-);
+) {
+	[System.Text.Json.Serialization.JsonExtensionData]
+	public Dictionary<string, System.Text.Json.JsonElement>? ExtensionData { get; init; }
+}
 
 public sealed record ToolContractGetResponse(
 	[property: JsonPropertyName("success")] bool Success,

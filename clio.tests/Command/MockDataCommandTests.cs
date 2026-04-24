@@ -36,7 +36,7 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 	public void CreateDataFiles(){
 		FileSystem clioFileSystem = new FileSystem(FileSystem);
 		// Arrange
-		MockDataCommand command = new MockDataCommand(null, null, clioFileSystem);
+		MockDataCommand command = new MockDataCommand(null, null, clioFileSystem, FileSystem);
 		MockDataCommandOptions options = Environment.OSVersion.Platform == PlatformID.Win32NT 
 			?new MockDataCommandOptions {
 			Models = @"T:\MockDataProjects",
@@ -55,7 +55,7 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 	public void FindModels(){
 		// Arrange
 		FileSystem clioFileSystem = new FileSystem(FileSystem);
-		MockDataCommand command = new MockDataCommand(null, null, clioFileSystem);
+		MockDataCommand command = new MockDataCommand(null, null, clioFileSystem, FileSystem);
 		MockDataCommandOptions options = Environment.OSVersion.Platform == PlatformID.Win32NT 
 			?new MockDataCommandOptions {
 				Models = @"T:\MockDataProjects",
@@ -95,7 +95,7 @@ internal class MockDataCommandTests : BaseCommandTests<MockDataCommandOptions>
 		mockCreatioClient
 			.ExecuteGetRequest(Arg.Is<string>(s => s.EndsWith("Account")), Arg.Any<int>(), Arg.Any<int>(),
 				Arg.Any<int>()).Returns(accountExpectedContent);
-		MockDataCommand command = new MockDataCommand(mockCreatioClient, new EnvironmentSettings(), clioFileSystem);
+		MockDataCommand command = new MockDataCommand(mockCreatioClient, new EnvironmentSettings(), clioFileSystem, FileSystem);
 		
 		MockDataCommandOptions options = Environment.OSVersion.Platform == PlatformID.Win32NT 
 			?new MockDataCommandOptions {

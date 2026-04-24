@@ -108,16 +108,16 @@ public sealed class GuidanceGetToolTests {
 		GuidanceGetTool tool = new();
 
 		// Act
-		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("page-schema-validators"));
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("page-schema-validators")).Result;
 
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "page-schema-validators is a registered guidance name");
-		result.Guidance.Should().NotBeNull(
+		result.Article.Should().NotBeNull(
 			because: "successful guidance lookups should return the resolved article");
-		result.Guidance!.Uri.Should().Be("docs://mcp/guides/page-schema-validators",
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-validators",
 			because: "the guidance tool should preserve the canonical resource URI in the response");
-		result.Guidance.Text.Should().Contain("clio MCP page-schema validators guide",
+		result.Article.Text.Should().Contain("clio MCP page-schema validators guide",
 			because: "the guidance tool should return the canonical validator article text");
 	}
 
@@ -129,15 +129,51 @@ public sealed class GuidanceGetToolTests {
 		GuidanceGetTool tool = new();
 
 		// Act
-		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("PAGE-SCHEMA-VALIDATORS"));
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("PAGE-SCHEMA-VALIDATORS")).Result;
 
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "the guidance catalog stores names with an ordinal-ignore-case comparer");
-		result.Guidance.Should().NotBeNull(
+		result.Article.Should().NotBeNull(
 			because: "a case-insensitive match should still return the canonical guidance article");
-		result.Guidance!.Uri.Should().Be("docs://mcp/guides/page-schema-validators",
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-validators",
 			because: "case-insensitive lookup should still resolve to the canonical validator guide URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns structured error with availableGuides when args omit the required name parameter")]
+	public void GuidanceGet_Should_Return_Structured_Error_On_Missing_Name() {
+		GuidanceGetTool tool = new();
+
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs(null)).Result;
+
+		result.Success.Should().BeFalse();
+		result.Error.Should().Contain("Missing required parameter 'name'",
+			because: "calling without name should surface a clear structured error instead of throwing");
+		result.AvailableGuides.Should().NotBeNullOrEmpty(
+			because: "missing-name errors should still return the list of valid guides to unblock the caller");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Legacy alias 'topic' is accepted as 'name' with a hint when ExtensionData carries the value")]
+	public void GuidanceGet_Should_Accept_Legacy_Alias_Topic() {
+		GuidanceGetTool tool = new();
+		var element = System.Text.Json.JsonDocument.Parse("\"page-schema-validators\"").RootElement;
+		GuidanceGetArgs args = new(null) {
+			ExtensionData = new System.Collections.Generic.Dictionary<string, System.Text.Json.JsonElement> {
+				["topic"] = element
+			}
+		};
+
+		GuidanceGetResponse result = tool.GetGuidance(args).Result;
+
+		result.Success.Should().BeTrue(
+			because: "legacy 'topic' alias should resolve to 'name' so the caller's first attempt succeeds");
+		result.Article!.Name.Should().Be("page-schema-validators");
+		result.Hint.Should().Contain("rename to 'name'",
+			because: "the hint should teach the caller the canonical field name");
 	}
 
 	[Test]
@@ -148,7 +184,7 @@ public sealed class GuidanceGetToolTests {
 		GuidanceGetTool tool = new();
 
 		// Act
-		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("not-a-guide"));
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("not-a-guide")).Result;
 
 		// Assert
 		result.Success.Should().BeFalse(

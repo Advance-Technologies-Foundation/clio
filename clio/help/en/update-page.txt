@@ -40,6 +40,11 @@ OPTIONS
                                        Malformed JSON is rejected during
                                        validation
 
+    --optional-properties              JSON array of {key, value} objects to
+                                       merge into schema optionalProperties,
+                                       e.g. '[{"key":"entitySchemaName",
+                                       "value":"UsrMyEntity"}]'
+
     --uri                    -u       Application uri
 
     --Password               -p       User password
@@ -59,6 +64,9 @@ EXAMPLE
 
     clio update-page --schema-name UsrTodo_FormPage --body "<edited raw body>" --resources "{\"UsrDetailsTab_caption\":\"Details\"}" -e dev
         save the page and register the missing child-schema localizable string
+
+    clio update-page --schema-name UsrTodo_FormPage --body "<edited raw body>" --optional-properties "[{\"key\":\"entitySchemaName\",\"value\":\"UsrTodo\"}]" -e dev
+        save the page and merge custom optional properties into the schema
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

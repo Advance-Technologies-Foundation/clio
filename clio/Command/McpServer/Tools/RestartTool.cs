@@ -10,10 +10,14 @@ public class RestartTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver) : BaseTool<RestartOptions>(command, logger, commandResolver) {
 
-	[McpServerTool(Name = "restart-by-environmentName"), Description("Restarts Creatio instance by environment name")]
+	[McpServerTool(Name = "restart-by-environment-name", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
+	 Description("Restarts Creatio instance by environment name")]
 	public CommandExecutionResult RestartInstanceByName(
 		[Description("Target Environment name to restart")] [Required] string environmentName
 	) {
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+		}
 		RestartOptions options = new() {
 			Environment = environmentName,
 			TimeOut = 30_000
@@ -21,13 +25,29 @@ public class RestartTool(
 		return InternalExecute<RestartCommand>(options);
 	}
 
-	[McpServerTool(Name = "restart-by-credentials"), Description("Restarts Creatio instance by credentials")]
+	/// <summary>
+	/// Deprecated camelCase alias preserved for backwards compatibility with clients
+	/// configured against the original tool name. New clients should use
+	/// <c>restart-by-environment-name</c>.
+	/// </summary>
+	[McpServerTool(Name = "restart-by-environmentName", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
+	 Description("[Deprecated: use restart-by-environment-name] Restarts Creatio instance by environment name")]
+	public CommandExecutionResult RestartInstanceByNameLegacy(
+		[Description("Target Environment name to restart")] [Required] string environmentName
+	) => RestartInstanceByName(environmentName);
+
+	[McpServerTool(Name = "restart-by-credentials", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
+	 Description("Restarts Creatio instance by credentials")]
 	public CommandExecutionResult RestartInstanceByCredentials(
 		[Description("Creatio instance url")] [Required] string url,
 		[Description("Creatio instance Username")] [Required] string userName,
 		[Description("Creatio instance Password")] [Required] string password,
 		[DefaultValue(false)][Description("Specifies if creatio runtime is a NET8 or NET472, default: false")] bool isNetCore = false
 	) {
+		CommandExecutionResult validationError = CommandExecutionResult.ValidateCredentials(url, userName, password);
+		if (validationError != null) {
+			return validationError;
+		}
 		RestartOptions options = new() {
 			Login = userName,
 			Password = password,

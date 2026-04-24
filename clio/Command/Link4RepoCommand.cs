@@ -179,19 +179,19 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 
 	#region Properties: Private
 
-	private IEnumerable<IISScannerHandler.RegisteredSite> AllSites { get; set; }
+	private IEnumerable<RegisteredSite> AllSites { get; set; }
 
 	/// <summary>
 	/// Gets the action that stores all discovered registered IIS sites.
 	/// </summary>
-	private Action<IEnumerable<IISScannerHandler.RegisteredSite>> OnAllSitesRequestCompleted =>
+	private Action<IEnumerable<RegisteredSite>> OnAllSitesRequestCompleted =>
 		sites => { AllSites = sites; };
 
 	#endregion
 
 	#region Methods: Private
 
-	private void ExecuteMediatorRequest(Action<IEnumerable<IISScannerHandler.RegisteredSite>> callback){
+	private void ExecuteMediatorRequest(Action<IEnumerable<RegisteredSite>> callback){
 		AllRegisteredSitesRequest request = new() {
 			Callback = callback
 		};
@@ -572,7 +572,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 			return 1;
 		}
 
-		List<IISScannerHandler.RegisteredSite> sites = AllSites
+		List<RegisteredSite> sites = AllSites
 			.Where(s => s.Uris.Any(iisRegisteredUrl =>
 				Uri.Compare(envUri,
 					iisRegisteredUrl,
@@ -580,9 +580,9 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 					UriFormat.SafeUnescaped,
 					StringComparison.InvariantCulture) == 0)).ToList();
 		if (sites.Count == 1) {
-			IISScannerHandler.RegisteredSite site = sites[0];
+			RegisteredSite site = sites[0];
 			string sitePath = site.siteType switch {
-				IISScannerHandler.SiteType.NetFramework => _fileSystem.Combine(site.siteBinding.path,
+				SiteType.NetFramework => _fileSystem.Combine(site.siteBinding.path,
 					"Terrasoft.WebApp", "Terrasoft.Configuration", "Pkg"),
 				var _ => _fileSystem.Combine(site.siteBinding.path, "Terrasoft.Configuration", "Pkg")
 			};

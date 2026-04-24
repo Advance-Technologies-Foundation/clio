@@ -100,7 +100,10 @@ namespace Clio.Common
 		/// </remarks>
 		/// <param name="value">The string value to be written to the log.</param>
 		void WriteDebug(string value);
-		
+
+		void BeginSpinner(string message) { }
+		void EndSpinner(bool success = true) { }
+
 		/// <summary>
 		/// Prints ConsoleTable to the log.
 		/// </summary>

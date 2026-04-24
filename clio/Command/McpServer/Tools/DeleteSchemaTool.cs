@@ -14,12 +14,13 @@ public class DeleteSchemaTool(
 	internal const string DeleteSchemaToolName = "delete-schema";
 	[McpServerTool(Name = DeleteSchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("""
-				 Deletes a schema from a Creatio environment, but only when the schema belongs to
-				 one of the packages in the specified local workspace.
+				 Deletes a schema from a Creatio environment.
 
-				 The tool first loads workspace packages from the supplied workspace path, then queries
-				 WorkspaceExplorerService.svc/GetWorkspaceItems, and finally submits the matching item
-				 to WorkspaceExplorerService.svc/Delete.
+				 Two modes:
+				 - workspace (default): schema must belong to a package listed in the supplied workspace path.
+				   Uses WorkspaceExplorerService.svc/GetWorkspaceItems + Delete.
+				 - remote (`remote: true`): deletes the schema directly from the target environment by name,
+				   bypassing workspace validation. Supply only `schema-name` and `environment-name`.
 
 				 Supports any workspace item type, including entity, client unit, source code, process,
 				 DCM, process user task, campaign, service, addon, Copilot intent, localization schemas,
@@ -33,7 +34,8 @@ public class DeleteSchemaTool(
 		DeleteSchemaOptions options = new() {
 			SchemaName = args.SchemaName,
 			Environment = args.EnvironmentName,
-			WorkspacePath = args.WorkspacePath
+			WorkspacePath = args.WorkspacePath,
+			Remote = args.Remote ?? false
 		};
 		return InternalExecute<DeleteSchemaCommand>(options);
 	}
@@ -51,7 +53,10 @@ public record DeleteSchemaArgs(
 	string EnvironmentName,
 
 	[property:JsonPropertyName("workspace-path")]
-	[Description("Absolute path to the local workspace that owns the schema")]
-	[Required]
-	string WorkspacePath
+	[Description("Absolute path to the local workspace that owns the schema. Required when `remote` is false.")]
+	string WorkspacePath,
+
+	[property:JsonPropertyName("remote")]
+	[Description("If true, delete the schema directly from the remote environment by name, no workspace required. Default: false")]
+	bool? Remote
 );

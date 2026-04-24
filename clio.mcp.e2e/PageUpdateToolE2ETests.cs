@@ -290,6 +290,80 @@ public sealed class PageUpdateToolE2ETests {
 				because: "the failure should redirect callers to the clio handler guidance and canonical handler patterns");
 	}
 
+	[Test]
+	[Description("Accepts optional-properties JSON array and verify flag through update-page dry-run without rejecting them as invalid parameters.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page accepts optional-properties and verify in dry-run")]
+	[AllureDescription("Verifies the new ENG-88190 parameters (optional-properties merge payload and verify flag) flow through the dry-run path without triggering parameter-validation errors.")]
+	public async Task PageUpdateTool_Should_Accept_OptionalProperties_And_Verify_In_DryRun() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrOptionalProps_FormPage",
+					["body"] = ValidPageBody,
+					["dry-run"] = true,
+					["environment-name"] = environmentName,
+					["optional-properties"] = "[{\"key\":\"layout\",\"value\":\"sidebar\"}]",
+					["verify"] = true
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the new optional-properties and verify parameters must flow through the tool without triggering envelope-level errors");
+		response.Error.Should().NotMatch(
+			"*optional-properties*invalid*",
+			because: "a valid JSON array for optional-properties must not be rejected at the parameter-validation stage");
+		response.Error.Should().NotContain("verify",
+			because: "verify is a tool-layer read-back flag and must not surface as a validation error");
+	}
+
+	[Test]
+	[Description("Rejects malformed optional-properties JSON through update-page dry-run before any remote calls are attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects malformed optional-properties JSON")]
+	[AllureDescription("Verifies that optional-properties validation rejects payloads that are not valid JSON arrays with a readable structured error.")]
+	public async Task PageUpdateTool_Should_Reject_Invalid_OptionalProperties_Json() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrBadOptionalProps_FormPage",
+					["body"] = ValidPageBody,
+					["dry-run"] = true,
+					["environment-name"] = environmentName,
+					["optional-properties"] = "{not-an-array}"
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "malformed optional-properties payloads should be surfaced as structured validation failures");
+		response.Success.Should().BeFalse(
+			because: "update-page should reject malformed optional-properties JSON before save or dry-run validation continues");
+		response.Error.Should().MatchRegex("(?i)optional-properties",
+			because: "the error message must identify the offending parameter");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();

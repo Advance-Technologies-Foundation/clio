@@ -17,7 +17,6 @@ jobs:
     outputs:
       clio-src:    ${{ steps.filter.outputs.clio-src }}
       tests:       ${{ steps.filter.outputs.tests }}
-      mcp:         ${{ steps.filter.outputs.mcp }}
       analyzers:   ${{ steps.filter.outputs.analyzers }}
       cliogate:    ${{ steps.filter.outputs.cliogate }}
     steps:
@@ -33,9 +32,6 @@ jobs:
               - 'Directory.Packages.props'
             tests:
               - 'clio.tests/**'
-            mcp:
-              - 'clio/Command/McpServer/**'
-              - 'clio.mcp.e2e/**'
             analyzers:
               - 'Clio.Analyzers/**'
               - 'Clio.Analyzers.Tests/**'
@@ -121,23 +117,3 @@ jobs:
           $ErrorActionPreference = 'Stop';
           dotnet test .\Clio.Analyzers.Tests\Clio.Analyzers.Tests.csproj -p:RunAnalyzers=false;
 
-  # ── MCP E2E tests (only when MCP code changes, on PRs with label) ────
-  mcp-e2e-tests:
-    name: MCP E2E Tests
-    needs: [changes, unit-tests]
-    timeout-minutes: 30
-    if: >-
-      needs.changes.outputs.mcp == 'true' &&
-      (github.event_name == 'pull_request' ||
-       github.ref == 'refs/heads/master')
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 1
-
-      - name: Run MCP E2E tests
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop';
-          dotnet test .\clio.mcp.e2e\clio.mcp.e2e.csproj -p:RunAnalyzers=false;

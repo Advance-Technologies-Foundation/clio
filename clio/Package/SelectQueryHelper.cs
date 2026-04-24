@@ -38,7 +38,8 @@ internal static class SelectQueryHelper
 			?? throw new InvalidOperationException("SelectQuery returned an empty response.");
 		if (!response.Success)
 		{
-			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "SelectQuery failed.");
+			string detail = response.ErrorInfo?.Message ?? responseJson;
+			throw new InvalidOperationException($"SelectQuery failed: {detail}");
 		}
 		return response;
 	}
@@ -98,25 +99,9 @@ internal static class SelectQueryHelper
 			allColumns = false,
 			isDistinct = false,
 			ignoreDisplayValues = false,
-			rowCount = -1,
+			rowCount = 10000,
 			rowsOffset = -1,
 			isPageable = false,
-			conditionalValues = (object?)null,
-			isHierarchical = false,
-			hierarchicalMaxDepth = 0,
-			hierarchicalColumnFiltersValue = new
-			{
-				filterType = 6,
-				isEnabled = true,
-				items = new Dictionary<string, object>(),
-				logicalOperation = 0,
-				trimDateTimeParameterToDate = false
-			},
-			hierarchicalColumnName = (string?)null,
-			hierarchicalColumnValue = (object?)null,
-			hierarchicalFullDataLoad = false,
-			useLocalization = true,
-			useRecordDeactivation = false,
 			columns = new
 			{
 				items = columnItems
@@ -128,18 +113,7 @@ internal static class SelectQueryHelper
 				trimDateTimeParameterToDate = false,
 				logicalOperation = 0,
 				items = filterItems
-			},
-			__type = "Terrasoft.Nui.ServiceModel.DataContract.SelectQuery",
-			queryKind = 0,
-			serverESQCacheParameters = new
-			{
-				cacheLevel = 0,
-				cacheGroup = string.Empty,
-				cacheItemName = string.Empty
-			},
-			queryOptimize = false,
-			useMetrics = false,
-			querySource = 0
+			}
 		};
 	}
 

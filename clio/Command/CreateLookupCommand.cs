@@ -11,8 +11,14 @@ namespace Clio.Command;
 [Verb("create-lookup", HelpText = "Create a lookup entity schema in a remote Creatio package")]
 public sealed class CreateLookupOptions : RemoteCommandOptions
 {
-	[Option("package", Required = true, HelpText = "Target package name")]
+	[Option("package", Required = false, HelpText = "Target package name")]
 	public string Package { get; set; } = string.Empty;
+
+	[Option("package-name", Required = false, Hidden = true, HelpText = "Alias for --package")]
+	public string? PackageNameAlias {
+		get => Package;
+		set { if (!string.IsNullOrEmpty(value)) Package = value; }
+	}
 
 	[Option("name", Required = true, HelpText = "Schema name (max 22 characters)")]
 	public string SchemaName { get; set; } = string.Empty;
