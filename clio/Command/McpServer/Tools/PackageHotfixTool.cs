@@ -12,7 +12,10 @@ public class PackageHotfixTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<PackageHotFixCommandOptions>(packageHotFixCommand, logger, commandResolver) {
 
-	[McpServerTool(Name = "unlock-for-hotfix", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+	internal const string UnlockForHotfixToolName = "unlock-for-hotfix";
+	internal const string FinishHotfixToolName = "finish-hotfix";
+
+	[McpServerTool(Name = UnlockForHotfixToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Unlocks a Creatio package for hotfix editing by starting hotfix state on the remote environment.")]
 	public CommandExecutionResult UnlockForHotfix(
 		[Description("unlock-for-hotfix parameters")] [Required] PackageHotfixArgs args
@@ -25,7 +28,7 @@ public class PackageHotfixTool(
 		return InternalExecute<PackageHotFixCommand>(options);
 	}
 
-	[McpServerTool(Name = "finish-hotfix", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpServerTool(Name = FinishHotfixToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[Description("Finishes hotfix state for a Creatio package, locking it back after hotfix editing.")]
 	public CommandExecutionResult FinishHotfix(
 		[Description("finish-hotfix parameters")] [Required] PackageHotfixArgs args

@@ -30,7 +30,9 @@ public class GetHelpResources(IFileSystem fileSystem){
 			["start-creatio"] = "start",
 			["stop-creatio"] = "stop",
 			["stop-all-creatio"] = "stop",
-			["StopAllCreatio"] = "stop"
+			["StopAllCreatio"] = "stop",
+			["unlock-for-hotfix"] = "pkg-hotfix",
+			["finish-hotfix"] = "pkg-hotfix"
 		};
 	
 	[McpServerResource(UriTemplate = "docs://help/command/{commandName}", Name = "Help Article")]
