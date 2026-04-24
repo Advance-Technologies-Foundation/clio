@@ -15,21 +15,22 @@ internal static class SchemaHandlerValidationService
 	private const string HandlerPropertyName = "handler";
 	private const string HandlerGuidanceRecoveryHint =
 		"Read get-guidance with name `page-schema-handlers` and reuse the canonical clio handler examples before rewriting this handler.";
+	private static readonly TimeSpan ForbiddenHandlerApiRegexTimeout = TimeSpan.FromSeconds(1);
 	private static readonly ForbiddenHandlerApiRule[] ForbiddenHandlerApiRules = [
 		new(
-			new Regex(@"\brequest\s*\.\s*viewModel\b", RegexOptions.Compiled),
+			new Regex(@"\brequest\s*\.\s*viewModel\b", RegexOptions.Compiled, ForbiddenHandlerApiRegexTimeout),
 			$"Do not use request.viewModel in SCHEMA_HANDLERS. {HandlerGuidanceRecoveryHint} Use request.value for the triggering attribute and request.$context / await request.$context.set(...) for page-state reads and writes."),
 		new(
-			new Regex(@"\brequest\s*\.\s*\$context\s*\.\s*get\s*\(", RegexOptions.Compiled),
+			new Regex(@"\brequest\s*\.\s*\$context\s*\.\s*get\s*\(", RegexOptions.Compiled, ForbiddenHandlerApiRegexTimeout),
 			$"Do not use request.$context.get(...) in SCHEMA_HANDLERS. {HandlerGuidanceRecoveryHint} Read page attributes through await request.$context[\"Attr\"]."),
 		new(
-			new Regex(@"\brequest\s*\.\s*sender\b", RegexOptions.Compiled),
+			new Regex(@"\brequest\s*\.\s*sender\b", RegexOptions.Compiled, ForbiddenHandlerApiRegexTimeout),
 			$"Do not use request.sender in SCHEMA_HANDLERS. {HandlerGuidanceRecoveryHint} Use the documented request runtime fields and request.$context instead."),
 		new(
-			new Regex(@"\.\s*\$get\s*\(", RegexOptions.Compiled),
+			new Regex(@"\.\s*\$get\s*\(", RegexOptions.Compiled, ForbiddenHandlerApiRegexTimeout),
 			$"Do not use .$get(...) in SCHEMA_HANDLERS. {HandlerGuidanceRecoveryHint} Read page attributes through await request.$context[\"Attr\"]."),
 		new(
-			new Regex(@"\.\s*\$set\s*\(", RegexOptions.Compiled),
+			new Regex(@"\.\s*\$set\s*\(", RegexOptions.Compiled, ForbiddenHandlerApiRegexTimeout),
 			$"Do not use .$set(...) in SCHEMA_HANDLERS. {HandlerGuidanceRecoveryHint} Write page attributes through await request.$context.set(\"Attr\", value).")
 	];
 
