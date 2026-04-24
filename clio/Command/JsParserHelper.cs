@@ -59,6 +59,26 @@ internal static class JsParserHelper
 		return true;
 	}
 
+	/// <summary>
+	/// When the character at <paramref name="index"/> starts a line or block comment,
+	/// advances past it and writes the new index into <paramref name="nextIndex"/>.
+	/// </summary>
+	internal static bool TrySkipComment(string content, int index, out int nextIndex) {
+		nextIndex = index;
+		if (index + 1 >= content.Length || content[index] != '/') {
+			return false;
+		}
+		if (content[index + 1] == '/') {
+			nextIndex = SkipLineComment(content, index, content.Length);
+			return true;
+		}
+		if (content[index + 1] == '*') {
+			nextIndex = SkipBlockComment(content, index, content.Length);
+			return true;
+		}
+		return false;
+	}
+
 	/// <summary>Skips a <c>//</c> line comment and returns the index of the first character after it.</summary>
 	internal static int SkipLineComment(string content, int index, int length) {
 		index += 2;
@@ -182,18 +202,10 @@ internal static class JsParserHelper
 				index = ConsumeStringLiteralCharacter(content, index, ref inString, stringChar);
 				continue;
 			}
-
-			if (content[index] == '/' && index + 1 < content.Length) {
-				if (content[index + 1] == '/') {
-					index = SkipLineComment(content, index, content.Length);
-					continue;
-				}
-				if (content[index + 1] == '*') {
-					index = SkipBlockComment(content, index, content.Length);
-					continue;
-				}
+			if (TrySkipComment(content, index, out int commentEnd)) {
+				index = commentEnd;
+				continue;
 			}
-
 			char current = content[index];
 			if (current is '"' or '\'' or '`') {
 				inString = true;
@@ -201,7 +213,6 @@ internal static class JsParserHelper
 				index++;
 				continue;
 			}
-
 			if (current == '{') {
 				depth++;
 			} else if (current == '}') {
@@ -212,10 +223,8 @@ internal static class JsParserHelper
 					return true;
 				}
 			}
-
 			index++;
 		}
-
 		objectContent = string.Empty;
 		nextIndex = braceStart;
 		return false;

@@ -289,14 +289,14 @@ public static class SchemaValidationService
 		Dictionary<string, string> modelPaths = CollectViewModelPaths(jsBody);
 		HashSet<string> declaredAttributes = CollectDeclaredViewModelAttributes(jsBody);
 		HashSet<string> attributesWrittenByHandlers = CollectAttributesWrittenByHandlers(jsBody);
+		var ctx = new FieldValidationContext(
+			declaredAttributes,
+			modelPaths,
+			explicitResources,
+			attributesWrittenByHandlers,
+			result);
 		using (viewConfigDocument) {
-			ValidateFieldComponents(
-				viewConfigDocument.RootElement,
-				declaredAttributes,
-				modelPaths,
-				explicitResources,
-				attributesWrittenByHandlers,
-				result);
+			ValidateFieldComponents(viewConfigDocument.RootElement, in ctx);
 		}
 		if (result.Errors.Count > 0) {
 			result.IsValid = false;
@@ -393,47 +393,30 @@ public static class SchemaValidationService
 		});
 	}
 
+	/// <summary>Captures the shared validation context for field-component validation passes.</summary>
+	private readonly record struct FieldValidationContext(
+		IReadOnlySet<string> DeclaredAttributes,
+		IReadOnlyDictionary<string, string> ModelPaths,
+		IReadOnlyDictionary<string, string>? ExplicitResources,
+		IReadOnlySet<string> AttributesWrittenByHandlers,
+		SchemaValidationResult Result);
+
 	private static void ValidateFieldComponents(
 		JsonElement element,
-		IReadOnlySet<string> declaredAttributes,
-		IReadOnlyDictionary<string, string> modelPaths,
-		IReadOnlyDictionary<string, string>? explicitResources,
-		IReadOnlySet<string> attributesWrittenByHandlers,
-		SchemaValidationResult result,
+		in FieldValidationContext ctx,
 		bool checkSelf = true) {
 		if (element.ValueKind == JsonValueKind.Object) {
 			bool wrappedValues = false;
 			if (checkSelf && TryResolveFieldComponent(element, out JsonElement componentValues, out string fieldName, out string componentType, out wrappedValues)) {
-				ValidateFieldComponent(
-					componentValues,
-					fieldName,
-					componentType,
-					declaredAttributes,
-					modelPaths,
-					explicitResources,
-					attributesWrittenByHandlers,
-					result);
+				ValidateFieldComponent(componentValues, fieldName, componentType, in ctx);
 			}
 			foreach (JsonProperty property in element.EnumerateObject()) {
 				bool childCheckSelf = !(wrappedValues && property.NameEquals(ValuesPropertyName));
-				ValidateFieldComponents(
-					property.Value,
-					declaredAttributes,
-					modelPaths,
-					explicitResources,
-					attributesWrittenByHandlers,
-					result,
-					childCheckSelf);
+				ValidateFieldComponents(property.Value, in ctx, childCheckSelf);
 			}
 		} else if (element.ValueKind == JsonValueKind.Array) {
 			foreach (JsonElement item in element.EnumerateArray()) {
-				ValidateFieldComponents(
-					item,
-					declaredAttributes,
-					modelPaths,
-					explicitResources,
-					attributesWrittenByHandlers,
-					result);
+				ValidateFieldComponents(item, in ctx);
 			}
 		}
 	}
@@ -498,11 +481,7 @@ public static class SchemaValidationService
 		JsonElement componentValues,
 		string fieldName,
 		string componentType,
-		IReadOnlySet<string> declaredAttributes,
-		IReadOnlyDictionary<string, string> modelPaths,
-		IReadOnlyDictionary<string, string>? explicitResources,
-		IReadOnlySet<string> attributesWrittenByHandlers,
-		SchemaValidationResult result) {
+		in FieldValidationContext ctx) {
 		string fieldDisplayName = !string.IsNullOrWhiteSpace(fieldName) ? fieldName : componentType;
 		if (!TryGetBindingAttribute(componentValues, out string bindingProperty, out string bindingExpression, out string bindingAttribute)) {
 			return;
@@ -510,24 +489,24 @@ public static class SchemaValidationService
 		if (IsDirectPdsBinding(bindingAttribute)) {
 			string suggestedAttrName = bindingAttribute["PDS_".Length..];
 			string suggestedPath = "PDS." + suggestedAttrName;
-			result.Errors.Add(
+			ctx.Result.Errors.Add(
 				$"Standard field '{fieldDisplayName}' binds directly to datasource attribute '${bindingAttribute}'. " +
 				$"Declare a view-model attribute in viewModelConfig/viewModelConfigDiff (e.g. '{suggestedAttrName}' with modelConfig.path '{suggestedPath}') " +
 				$"and bind the control to '${suggestedAttrName}' instead.");
-		} else if (!declaredAttributes.Contains(bindingAttribute)) {
-			result.Errors.Add(
+		} else if (!ctx.DeclaredAttributes.Contains(bindingAttribute)) {
+			ctx.Result.Errors.Add(
 				$"Standard field '{fieldDisplayName}' binds to undeclared attribute '{bindingAttribute}' via '{bindingProperty}' ('{bindingExpression}'). " +
 				"Bind the control to an attribute declared in viewModelConfig/viewModelConfigDiff.");
-		} else if (TryFindAlternativeAttributesForSamePath(bindingAttribute, modelPaths, attributesWrittenByHandlers, out string handlerAttribute)) {
-			result.Errors.Add(
+		} else if (TryFindAlternativeAttributesForSamePath(bindingAttribute, ctx.ModelPaths, ctx.AttributesWrittenByHandlers, out string handlerAttribute)) {
+			ctx.Result.Errors.Add(
 				$"Control '{fieldDisplayName}' binds to '${bindingAttribute}' but handlers write attribute '{handlerAttribute}' through $context.set(...). " +
 				$"Bind the control to '${handlerAttribute}' or move the handler writes to '{bindingAttribute}' so the control and handler use the same declared view-model attribute.");
 		}
 		if (TryGetStringProperty(componentValues, "label", out string labelExpression) &&
 		    TryGetDatasourceCaptionKey(labelExpression, out string datasourceKey) &&
-		    explicitResources != null &&
-		    !explicitResources.ContainsKey(datasourceKey)) {
-			result.Warnings.Add(
+		    ctx.ExplicitResources != null &&
+		    !ctx.ExplicitResources.ContainsKey(datasourceKey)) {
+			ctx.Result.Warnings.Add(
 				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{datasourceKey}' is not in the provided resources — the label will render blank in the designer.");
 		}
 		if (!TryGetCaptionExpression(componentValues, out string captionExpression) ||
@@ -535,15 +514,15 @@ public static class SchemaValidationService
 		    !CustomFieldResourcePattern.IsMatch(resourceKey)) {
 			return;
 		}
-		string preferredCaption = TryResolvePreferredCaption(modelPaths, bindingAttribute, out string preferredCaptionBinding)
+		string preferredCaption = TryResolvePreferredCaption(ctx.ModelPaths, bindingAttribute, out string preferredCaptionBinding)
 			? preferredCaptionBinding
 			: "$Resources.Strings.<datasource-caption>";
-		if (explicitResources == null || !explicitResources.TryGetValue(resourceKey, out string explicitValue) || string.IsNullOrWhiteSpace(explicitValue)) {
-			result.Errors.Add(
+		if (ctx.ExplicitResources == null || !ctx.ExplicitResources.TryGetValue(resourceKey, out string explicitValue) || string.IsNullOrWhiteSpace(explicitValue)) {
+			ctx.Result.Errors.Add(
 				$"Standard field '{fieldDisplayName}' uses '{captionExpression}' without an explicit resources entry. Prefer datasource caption '{preferredCaption}' for data-bound fields.");
 			return;
 		}
-		result.Warnings.Add(
+		ctx.Result.Warnings.Add(
 			$"Standard field '{fieldDisplayName}' uses custom resource key '{resourceKey}'. Prefer datasource caption '{preferredCaption}' for data-bound fields.");
 	}
 
@@ -1400,7 +1379,7 @@ public static class SchemaValidationService
 		bool wrappedValues = false;
 		if (checkSelf &&
 		    TryResolveFieldComponent(element, out JsonElement componentValues, out string fieldName, out string componentType, out wrappedValues)) {
-			AddInlineValidatorPlacementErrorIfNeeded(element, componentValues, fieldName, componentType, result);
+			AddInlineValidatorPlacementErrorIfNeeded(componentValues, fieldName, componentType, result);
 		}
 		foreach (JsonProperty property in element.EnumerateObject()) {
 			bool childCheckSelf = !(wrappedValues && property.NameEquals(ValuesPropertyName));
@@ -1409,7 +1388,6 @@ public static class SchemaValidationService
 	}
 
 	private static void AddInlineValidatorPlacementErrorIfNeeded(
-		JsonElement element,
 		JsonElement target,
 		string fieldName,
 		string componentType,

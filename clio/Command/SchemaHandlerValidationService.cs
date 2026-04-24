@@ -204,6 +204,26 @@ internal static class SchemaHandlerValidationService
 		return false;
 	}
 
+	private static void TrackDepth(char c, ref int braceDepth, ref int bracketDepth, ref int parenDepth) {
+		switch (c) {
+			case '{': braceDepth++; break;
+			case '}': braceDepth--; break;
+			case '[': bracketDepth++; break;
+			case ']': bracketDepth--; break;
+			case '(': parenDepth++; break;
+			case ')': parenDepth--; break;
+		}
+	}
+
+	private static bool IsArrowAt(string expression, int index) =>
+		expression[index] == '=' && index + 1 < expression.Length && expression[index + 1] == '>';
+
+	private static bool TryConsumeRegexCharClassBoundary(char c, ref bool inCharClass, ref int index) {
+		if (c == '[') { inCharClass = true; index++; return true; }
+		if (c == ']' && inCharClass) { inCharClass = false; index++; return true; }
+		return false;
+	}
+
 	private static bool TryReadPropertyName(
 		string content,
 		int startIndex,
@@ -242,11 +262,9 @@ internal static class SchemaHandlerValidationService
 			if (JsParserHelper.TryConsumeStringLiteralCharacter(content, ref index, ref inString, stringChar)) {
 				continue;
 			}
-
 			if (TrySkipTriviaAndComments(content, ref index)) {
 				continue;
 			}
-
 			char current = content[index];
 			if (current is '"' or '\'' or '`') {
 				inString = true;
@@ -254,47 +272,13 @@ internal static class SchemaHandlerValidationService
 				index++;
 				continue;
 			}
-
-			switch (current) {
-				case '{':
-					braceDepth++;
-					index++;
-					continue;
-				case '}':
-					if (braceDepth == 0 && bracketDepth == 0 && parenDepth == 0) {
-						expression = content[startIndex..index].TrimEnd();
-						return !string.IsNullOrWhiteSpace(expression);
-					}
-					braceDepth--;
-					index++;
-					continue;
-				case '[':
-					bracketDepth++;
-					index++;
-					continue;
-				case ']':
-					bracketDepth--;
-					index++;
-					continue;
-				case '(':
-					parenDepth++;
-					index++;
-					continue;
-				case ')':
-					parenDepth--;
-					index++;
-					continue;
-				case ',':
-					if (braceDepth == 0 && bracketDepth == 0 && parenDepth == 0) {
-						expression = content[startIndex..index].TrimEnd();
-						return !string.IsNullOrWhiteSpace(expression);
-					}
-					index++;
-					continue;
-				default:
-					index++;
-					continue;
+			bool atTopLevel = braceDepth == 0 && bracketDepth == 0 && parenDepth == 0;
+			if ((current == '}' || current == ',') && atTopLevel) {
+				expression = content[startIndex..index].TrimEnd();
+				return !string.IsNullOrWhiteSpace(expression);
 			}
+			TrackDepth(current, ref braceDepth, ref bracketDepth, ref parenDepth);
+			index++;
 		}
 
 		expression = content[startIndex..].TrimEnd();
@@ -370,68 +354,24 @@ internal static class SchemaHandlerValidationService
 			if (JsParserHelper.TryConsumeStringLiteralCharacter(expression, ref index, ref inString, stringChar)) {
 				continue;
 			}
-
 			if (TrySkipTriviaAndComments(expression, ref index)) {
 				continue;
 			}
-
 			char current = expression[index];
 			if (TrySkipRegexLiteral(expression, ref index)) {
 				continue;
 			}
-
 			if (current is '"' or '\'' or '`') {
 				inString = true;
 				stringChar = current;
 				index++;
 				continue;
 			}
-
-			if (current == '{') {
-				braceDepth++;
-				index++;
-				continue;
-			}
-
-			if (current == '}') {
-				braceDepth--;
-				index++;
-				continue;
-			}
-
-			if (current == '[') {
-				bracketDepth++;
-				index++;
-				continue;
-			}
-
-			if (current == ']') {
-				bracketDepth--;
-				index++;
-				continue;
-			}
-
-			if (current == '(') {
-				parenDepth++;
-				index++;
-				continue;
-			}
-
-			if (current == ')') {
-				parenDepth--;
-				index++;
-				continue;
-			}
-
-			if (current == '=' &&
-			    index + 1 < expression.Length &&
-			    expression[index + 1] == '>' &&
-			    braceDepth == 0 &&
-			    bracketDepth == 0 &&
-			    parenDepth == 0) {
+			bool atTopLevel = braceDepth == 0 && bracketDepth == 0 && parenDepth == 0;
+			if (IsArrowAt(expression, index) && atTopLevel) {
 				return true;
 			}
-
+			TrackDepth(current, ref braceDepth, ref bracketDepth, ref parenDepth);
 			index++;
 		}
 
@@ -475,28 +415,18 @@ internal static class SchemaHandlerValidationService
 		bool inCharClass = false;
 
 		while (index < expression.Length) {
-			if (expression[index] == '\\') {
+			char c = expression[index];
+			if (c == '\\') {
 				index = index + 1 < expression.Length ? index + 2 : index + 1;
 				continue;
 			}
-
-			if (expression[index] == '[') {
-				inCharClass = true;
-				index++;
+			if (TryConsumeRegexCharClassBoundary(c, ref inCharClass, ref index)) {
 				continue;
 			}
-
-			if (expression[index] == ']' && inCharClass) {
-				inCharClass = false;
-				index++;
-				continue;
-			}
-
-			if (expression[index] == '/' && !inCharClass) {
+			if (c == '/' && !inCharClass) {
 				index++;
 				break;
 			}
-
 			index++;
 		}
 
@@ -650,7 +580,7 @@ internal static class SchemaHandlerValidationService
 		out int valueStartIndex) {
 		propertyName = string.Empty;
 		valueStartIndex = startIndex;
-		if (!TryReadMethodShorthandHeader(content, startIndex, current, out propertyName, out int nameEndIndex, out int methodValueStartIndex)) {
+		if (!TryReadMethodShorthandHeader(content, startIndex, current, out propertyName, out _, out int methodValueStartIndex)) {
 			return false;
 		}
 
@@ -741,11 +671,9 @@ internal static class SchemaHandlerValidationService
 			if (JsParserHelper.TryConsumeStringLiteralCharacter(content, ref index, ref inString, stringChar)) {
 				continue;
 			}
-
 			if (TrySkipTriviaAndComments(content, ref index) || TrySkipRegexLiteral(content, ref index)) {
 				continue;
 			}
-
 			char current = content[index];
 			if (current is '"' or '\'' or '`') {
 				inString = true;
@@ -753,39 +681,12 @@ internal static class SchemaHandlerValidationService
 				index++;
 				continue;
 			}
-
-			switch (current) {
-				case '(':
-					parenDepth++;
-					index++;
-					continue;
-				case ')':
-					parenDepth--;
-					index++;
-					if (parenDepth == 0 && braceDepth == 0 && bracketDepth == 0) {
-						nextIndex = index;
-						return true;
-					}
-					continue;
-				case '{':
-					braceDepth++;
-					index++;
-					continue;
-				case '}':
-					braceDepth--;
-					index++;
-					continue;
-				case '[':
-					bracketDepth++;
-					index++;
-					continue;
-				case ']':
-					bracketDepth--;
-					index++;
-					continue;
-				default:
-					index++;
-					continue;
+			bool isClose = current == ')';
+			TrackDepth(current, ref braceDepth, ref bracketDepth, ref parenDepth);
+			index++;
+			if (isClose && parenDepth == 0 && braceDepth == 0 && bracketDepth == 0) {
+				nextIndex = index;
+				return true;
 			}
 		}
 
