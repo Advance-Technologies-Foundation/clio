@@ -229,7 +229,8 @@ public sealed class ApplicationSectionCreateService(
 					client,
 					environmentSettings,
 					request.ApplicationId,
-					request.SectionCode);
+					request.SectionCode,
+					entitySchemaName: request.EntitySchemaName);
 				SetIconBackground(client, environmentSettings, createdSection, request.IconBackground);
 				string? entitySchemaName = string.IsNullOrWhiteSpace(createdSection.EntitySchemaName)
 					? request.EntitySchemaName
@@ -333,7 +334,8 @@ public sealed class ApplicationSectionCreateService(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		string applicationId,
-		string sectionCode) {
+		string sectionCode,
+		string? entitySchemaName = null) {
 		ApplicationSectionSelectQueryResponseDto response = SelectQueryHelper.ExecuteSelectQuery<ApplicationSectionSelectQueryResponseDto>(
 			client,
 			serviceUrlBuilderFactory.Create(environmentSettings),
@@ -358,10 +360,16 @@ public sealed class ApplicationSectionCreateService(
 						applicationId,
 						SelectQueryHelper.GuidDataValueType)
 				]));
+		string searchDescription = string.IsNullOrWhiteSpace(entitySchemaName)
+			? $"'{sectionCode}'"
+			: $"'{sectionCode}' or entity schema name '{entitySchemaName}'";
 		return response.Rows
-				.FirstOrDefault(row => string.Equals(row.Code, sectionCode, StringComparison.OrdinalIgnoreCase))
+				.FirstOrDefault(row =>
+					string.Equals(row.Code, sectionCode, StringComparison.OrdinalIgnoreCase)
+					|| (!string.IsNullOrWhiteSpace(entitySchemaName)
+						&& string.Equals(row.Code, entitySchemaName, StringComparison.OrdinalIgnoreCase)))
 			?? throw new InvalidOperationException(
-				$"Section '{sectionCode}' was not found in application '{applicationId}'.");
+				$"Section {searchDescription} was not found in application '{applicationId}'.");
 	}
 
 	private static ApplicationEntityInfoResult? ResolveEntity(
