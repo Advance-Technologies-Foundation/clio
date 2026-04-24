@@ -367,7 +367,7 @@ public sealed class ApplicationSectionCreateService(
 				.FirstOrDefault(row =>
 					string.Equals(row.Code, sectionCode, StringComparison.OrdinalIgnoreCase)
 					|| (!string.IsNullOrWhiteSpace(entitySchemaName)
-						&& string.Equals(row.Code, entitySchemaName, StringComparison.OrdinalIgnoreCase)))
+						&& string.Equals(row.EntitySchemaName, entitySchemaName, StringComparison.OrdinalIgnoreCase)))
 			?? throw new InvalidOperationException(
 				$"Section {searchDescription} was not found in application '{applicationId}'.");
 	}
