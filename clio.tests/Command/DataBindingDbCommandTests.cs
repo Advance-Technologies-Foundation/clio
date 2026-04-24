@@ -32,6 +32,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	private string _bindingLookupResponseJson = string.Empty;
 	private string _boundSchemaDataItemsJson = "[]";
 	private string _existingEntityNamesJson = """{"rows":[],"success":true}""";
+	private string _schemaResponseJson = string.Empty;
 
 	public override void Setup() {
 		base.Setup();
@@ -45,6 +46,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 				["Name"] = "Existing row"
 			}
 		});
+		_schemaResponseJson = SchemaResponseJson;
 	}
 
 	public override void TearDown() {
@@ -157,6 +159,89 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Projects SaveSchema metadata to the primary key plus referenced columns so unrelated unsupported runtime columns do not block DB-first create-data-binding-db.")]
+	public void CreateDataBindingDb_Should_Project_SaveSchema_To_Referenced_Columns_When_Runtime_Schema_Has_Unsupported_Columns() {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrUnsupportedBlob", 16));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
+			new Dictionary<string, object?> {
+				["Id"] = ExistingRowId,
+				["Name"] = "Existing account"
+			}
+		});
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "Account",
+			BindingName = "UsrAccountBinding",
+			RowsJson = """[{"values":{"Name":"Projected account row"}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "DB-first binding creation should ignore unrelated unsupported runtime columns that are not referenced by the rows");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Is<string>(body =>
+				body.Contains("\"name\":\"UsrAccountBinding\"") &&
+				body.Contains("\"entitySchemaName\":\"Account\"") &&
+				body.Contains("\"Name\"") &&
+				body.Contains("\"Id\"") &&
+				!body.Contains("UsrUnsupportedBlob")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Fails create-data-binding-db before remote writes when the requested row values explicitly reference a runtime column with an unsupported dataValueType.")]
+	public void CreateDataBindingDb_Should_Fail_When_Rows_Reference_Unsupported_Runtime_Column() {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrUnsupportedBlob", 16));
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "Account",
+			RowsJson = """[{"values":{"UsrUnsupportedBlob":"payload"}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "DB-first binding creation must fail fast when the requested row explicitly uses an unsupported runtime column");
+		_logger.Received(1).WriteError(
+			Arg.Is<string>(message =>
+				message.Contains("UsrUnsupportedBlob") &&
+				message.Contains("dataValueType '16'")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("Removes the last bound row through remove-data-binding-row-db, deletes the runtime row, and removes the package schema data record when no bound rows remain.")]
 	public void RemoveDataBindingRowDb_Should_Delete_Remote_Row_And_Package_Schema_Data_When_Last_Row_Is_Removed() {
 		// Arrange
@@ -250,6 +335,93 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Projects SaveSchema metadata to the columns actually present in the existing bound rows and upsert payload, so unsupported runtime columns outside that subset do not block upsert-data-binding-row-db.")]
+	public void UpsertDataBindingRowDb_Should_Project_SaveSchema_To_Bound_And_Requested_Columns() {
+		// Arrange
+		Guid rowId = Guid.Parse("bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrUnsupportedBlob", 16));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
+			new Dictionary<string, object?> {
+				["Id"] = rowId,
+				["Name"] = "Existing account"
+			}
+		});
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "UsrAccountBinding",
+			ValuesJson = $$"""{"Id":"{{rowId}}","Name":"Updated account"}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "upsert-data-binding-row-db should continue to work when unsupported runtime columns are not part of the bound/requested subset");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Is<string>(body =>
+				body.Contains("\"entitySchemaName\":\"Account\"") &&
+				body.Contains("\"Name\"") &&
+				body.Contains("\"Id\"") &&
+				!body.Contains("UsrUnsupportedBlob")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Projects SaveSchema metadata from the remaining bound rows after remove-data-binding-row-db so unrelated unsupported runtime columns do not block removal.")]
+	public void RemoveDataBindingRowDb_Should_Project_SaveSchema_From_Remaining_Bound_Rows() {
+		// Arrange
+		Guid remainingRowId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrUnsupportedBlob", 16));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
+			new Dictionary<string, object?> {
+				["Id"] = ExistingRowId,
+				["Name"] = "Row to remove"
+			},
+			new Dictionary<string, object?> {
+				["Id"] = remainingRowId,
+				["Name"] = "Remaining row"
+			}
+		});
+		RemoveDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "UsrAccountBinding",
+			KeyValue = ExistingRowId.ToString()
+		};
+
+		// Act
+		int result = _removeCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "remove-data-binding-row-db should rebuild SaveSchema from the remaining bound rows only");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Is<string>(body =>
+				body.Contains("\"entitySchemaName\":\"Account\"") &&
+				body.Contains($"\"{remainingRowId}\"") &&
+				!body.Contains("UsrUnsupportedBlob")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("Skips InsertQuery when a row with the same Name already exists, reuses the existing row Id in the binding, and does not report a created row for the duplicate.")]
 	public void CreateDataBindingDb_Should_Skip_Insert_And_Reuse_Existing_Id_When_Name_Already_Exists() {
 		// Arrange - "New" already in entity table with a known Id
@@ -286,7 +458,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 
 	private string BuildApplicationClientResponse(string url, string requestBody) {
 		if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
-			return SchemaResponseJson;
+			return _schemaResponseJson;
 		}
 
 		if (url.Contains("SelectQuery", StringComparison.Ordinal) &&
@@ -320,19 +492,45 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		return """{"success":true}""";
 	}
 
-	private static string BuildBindingLookupResponse(string schemaName) {
+	private static string BuildBindingLookupResponse(string schemaName, string? bindingName = null) {
 		return $$"""
 		{
 		  "rows": [
 		    {
 		      "Id": "{{ExistingBindingUId}}",
 		      "UId": "{{ExistingBindingUId}}",
-		      "Name": "SysSettings",
+		      "Name": "{{bindingName ?? schemaName}}",
 		      "EntitySchemaName": "{{schemaName}}"
 		    }
 		  ]
 		}
 		""";
+	}
+
+	private static string BuildSchemaResponseJson(
+		string schemaName,
+		params (Guid UId, string Name, int DataValueType)[] columns) {
+		(string UId, string Name, int DataValueType) primaryColumn = columns
+			.Select(column => (column.UId.ToString(), column.Name, column.DataValueType))
+			.First(column => string.Equals(column.Name, "Id", StringComparison.OrdinalIgnoreCase));
+		var payload = new {
+			schema = new {
+				columns = new {
+					Items = columns.ToDictionary(
+						column => column.UId.ToString(),
+						column => new {
+							uId = column.UId.ToString(),
+							name = column.Name,
+							dataValueType = column.DataValueType
+						})
+				},
+				primaryColumnUId = primaryColumn.UId,
+				uId = Guid.NewGuid().ToString(),
+				name = schemaName
+			},
+			success = true
+		};
+		return JsonSerializer.Serialize(payload);
 	}
 
 	private const string SchemaResponseJson = """

@@ -259,6 +259,37 @@ public sealed class DataBindingDbToolE2ETests {
 				because: "duplicate Name must not produce a second INSERT and must not appear in the 'Created row' output");
 	}
 
+	[Test]
+	[Description("Creates a DB-first binding for Account when the requested row references only supported columns, even if the runtime schema contains other unsupported columns.")]
+	[AllureTag(CreateDbToolName)]
+	[AllureName("Create DB-first Account binding succeeds when unsupported runtime columns are unused")]
+	[AllureDescription("Uses the real clio MCP server to invoke create-data-binding-db against Account on a reachable Creatio sandbox. Verifies the tool succeeds when only supported columns are referenced by the requested row payload.")]
+	public async Task CreateDataBindingDb_Should_Succeed_For_Account_When_Unused_Unsupported_Runtime_Columns_Exist() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		string bindingName = $"UsrAcctE2E{arrangeContext.PackageName}";
+		string rowName = $"E2E Account {arrangeContext.PackageName}";
+
+		// Act
+		CommandExecutionActResult result = await ActCommandAsync(
+			arrangeContext,
+			CreateDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = "Account",
+				["binding-name"] = bindingName,
+				["rows"] = $"[{{\"values\":{{\"Name\":\"{rowName}\"}}}}]"
+			});
+
+		// Assert
+		AssertToolCallSucceeded(result);
+		AssertCommandExitCode(result, 0,
+			"create-data-binding-db should succeed for Account when the requested row only references supported columns");
+		AssertIncludesInfoMessage(result,
+			"successful Account DB-first binding creation should emit a completion message");
+	}
+
 	private static async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();

@@ -16,12 +16,13 @@ public sealed class McpGuidanceResourceE2ETests {
 	private const string DocsScheme = "docs";
 	private const string GuidesPath = "mcp/guides";
 	private static readonly string AppModelingUri = BuildGuideUri("app-modeling");
+	private static readonly string DataBindingsUri = BuildGuideUri("data-bindings");
 	private static readonly string ExistingAppMaintenanceUri = BuildGuideUri("existing-app-maintenance");
 	private static readonly string PageSchemaValidatorsUri = BuildGuideUri("page-schema-validators");
 
 	[Test]
 	[AllureTag("mcp-guidance-resources")]
-	[AllureName("MCP server advertises modeling and existing-app guidance resources")]
+	[AllureName("MCP server advertises modeling, binding, existing-app, and validator guidance resources")]
 	public async Task McpServer_Should_Advertise_Guidance_Resources() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -34,10 +35,46 @@ public sealed class McpGuidanceResourceE2ETests {
 		// Assert
 		resources.Select(resource => resource.Uri).Should().Contain([
 				AppModelingUri,
+				DataBindingsUri,
 				ExistingAppMaintenanceUri,
 				PageSchemaValidatorsUri
 			],
-			because: "the MCP server should advertise creation existing-app and validator guidance resources");
+			because: "the MCP server should advertise creation, generic binding, existing-app, and validator guidance resources");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the data-bindings guidance article")]
+	public async Task McpServer_Should_Return_Data_Bindings_Guidance() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(DataBindingsUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the binding guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(DataBindingsUri,
+			because: "the returned article should preserve the stable binding guidance URI");
+		article.Text.Should().Contain("sync-schemas",
+			because: "the guide should advertise the canonical batched lookup-seeding path");
+		article.Text.Should().Contain("create-data-binding-db",
+			because: "the guide should advertise the DB-first binding path");
+		article.Text.Should().Contain("create-data-binding",
+			because: "the guide should advertise the local binding artifact path");
+		article.Text.Should().NotContain(".agents/skills/clio-data-bindings",
+			because: "the guide should stay valid after install-skills copies the bundle outside the source repo layout");
+		article.Text.Should().NotContain("assets/bindings-lookup.json",
+			because: "section-specific stable ID sourcing does not belong in the generic binding guide");
+		article.Text.Should().Contain("runtime-only columns are not blockers",
+			because: "the guide should explain the DB-first subset-column projection rule for Account-like schemas");
+		article.Text.Should().Contain("install logs or planned payloads",
+			because: "the guide should reject install-log-only verification for remote binding mutations");
+		article.Text.Should().Contain("Seed rows do not implement defaults",
+			because: "the guide should keep lookup seeding separate from default semantics");
 	}
 
 	[Test]

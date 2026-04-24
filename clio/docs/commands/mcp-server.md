@@ -29,11 +29,13 @@ Available MCP tool categories:
 
 Available MCP guidance resources:
 - docs://mcp/guides/app-modeling
+- docs://mcp/guides/data-bindings
 - docs://mcp/guides/existing-app-maintenance
 - docs://mcp/guides/page-schema-validators
 
 Preferred guidance access:
 - get-guidance {"name":"app-modeling"}
+- get-guidance {"name":"data-bindings"}
 - get-guidance {"name":"existing-app-maintenance"}
 - get-guidance {"name":"page-schema-validators"}
 
@@ -61,6 +63,9 @@ Bootstrap page inspection/editing and discover whether get-component-info is nee
 
 Use your MCP client to call get-guidance {"name":"page-schema-validators"}.
 Read the canonical validator authoring guide through a tool call instead of relying on docs:// URI routing in the client.
+
+Use your MCP client to call get-guidance {"name":"data-bindings"}.
+Read the canonical lookup seeding and binding verification guide before choosing between sync-schemas, DB-first bindings, and local binding artifacts.
 ```
 
 ## Prerequisites
@@ -76,6 +81,7 @@ Read the canonical validator authoring guide through a tool call instead of rely
 - "get-component-info" is local and read-only, so it does not require environment or connection args
 - Start each MCP workflow with "get-tool-contract" so the client reads the authoritative clio MCP contract before the first discovery, inspection, or mutation call
 - Preferred existing-app flow starts with get-tool-contract, then list-apps -> get-app-info, then page or schema inspection, then sync-pages / modify-entity-schema-column / sync-schemas as needed
+- For lookup seeding or binding artifact work, prefer get-guidance {"name":"data-bindings"} for workflow selection and keep get-tool-contract authoritative for exact field names
 - For Freedom UI page-body validator work, prefer get-guidance instead of relying on client-specific docs:// resource routing
 - This repository documents the MCP server surface; it does not ship a generic stdio helper client
 - If you use an external MCP client wrapper, follow that wrapper's own parsing and transport guarantees

@@ -26,8 +26,10 @@ public static class DataBindingPrompt {
 		$"""
 		 Use clio mcp server `{CreateDataBindingTool.CreateDataBindingToolName}` to create or regenerate a data binding
 		 for schema `{schemaName}` in package `{packageName}`.
+		 For canonical workflow selection, call `{GuidanceGetTool.ToolName}` with `name` set to `data-bindings`
+		 before choosing this local artifact path.
 		 Pass `workspace-path` `{workspacePath}` exactly as provided.
-		 If `{schemaName}` is covered by a built-in offline template such as `SysSettings` or `SysModule`, omit `environment-name`.
+		 If `{schemaName}` is covered by the built-in offline template `SysSettings`, omit `environment-name`.
 		 Otherwise pass `environment-name` `{environmentName ?? "<required for non-templated schema>"}` exactly as provided.
 		 Use `binding-name` `{bindingName ?? "<default>"}` and `install-type` `{installType}`.
 		 Use `values` `{values ?? "<not provided>"}` when an initial row should be created. If that payload omits the
@@ -35,7 +37,7 @@ public static class DataBindingPrompt {
 		 image-reference columns, `values` may use an object with `value` and `displayValue` properties.
 		 If `displayValue` is omitted and the tool is already using Creatio runtime data, clio resolves it automatically.
 		 For image-content columns, `values` may contain either an existing base64 string or a local file path inside the workspace that clio
-		 will encode. For `SysModule.IconBackground`, only the predefined 16-color palette is allowed. Use
+		 will encode. Use
 		 `localizations` `{localizations ?? "<not provided>"}` when localized row values must be written too.
 		 """;
 
@@ -52,13 +54,14 @@ public static class DataBindingPrompt {
 		$"""
 		 Use clio mcp server `{AddDataBindingRowTool.AddDataBindingRowToolName}` to add or replace a row in binding
 		 `{bindingName}` under package `{packageName}`.
+		 For canonical workflow selection and verification discipline, call `{GuidanceGetTool.ToolName}` with `name`
+		 set to `data-bindings` when the overall binding path is not already fixed.
 		 Pass `workspace-path` `{workspacePath}` exactly as provided and use `values` `{values}`.
 		 If that payload omits the GUID primary key column or sets it to null, the tool generates it automatically.
 		 For non-null lookup and image-reference columns, `values` should use an object like
 		 an object with `value` and `displayValue` properties so the binding row keeps both identifiers and display text.
 		 For image-content columns, `values` may contain either an existing base64 string or a local file path inside
-		 the workspace that clio will encode. For `SysModule.IconBackground`, only the predefined 16-color palette
-		 is allowed.
+		 the workspace that clio will encode.
 		 Use `localizations` `{localizations ?? "<not provided>"}` only when localized row values must also be updated.
 		 """;
 
@@ -74,6 +77,8 @@ public static class DataBindingPrompt {
 		$"""
 		 Use clio mcp server `{RemoveDataBindingRowTool.RemoveDataBindingRowToolName}` to remove the row with primary key
 		 `{keyValue}` from binding `{bindingName}` under package `{packageName}`.
+		 For canonical workflow selection and verification discipline, call `{GuidanceGetTool.ToolName}` with `name`
+		 set to `data-bindings` when the overall binding path is not already fixed.
 		 Pass `workspace-path` `{workspacePath}` exactly as provided.
 		 """;
 }

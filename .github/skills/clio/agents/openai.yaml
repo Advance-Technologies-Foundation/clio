@@ -1,4 +1,0 @@
-interface:
-  display_name: "Clio"
-  short_description: "CLI tool for Creatio platform development"
-  default_prompt: "Use $clio to manage Creatio environments, packages, workspaces, entity schemas, and deployments from the command line."

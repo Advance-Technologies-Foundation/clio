@@ -29,6 +29,27 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the canonical data-bindings guidance article when the caller requests data-bindings.")]
+	public void GuidanceGet_Should_Return_Data_Bindings_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("data-bindings")).Result;
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "data-bindings is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/data-bindings",
+			because: "the guidance tool should preserve the canonical binding resource URI in the response");
+		result.Article.Text.Should().Contain("clio MCP data-bindings guide",
+			because: "the guidance tool should return the canonical binding article text");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical validator guidance article when the caller requests page-schema-validators.")]
 	public void GuidanceGet_Should_Return_Page_Schema_Validators_Article() {
 		// Arrange
@@ -120,6 +141,7 @@ public sealed class GuidanceGetToolTests {
 			because: "the failure should name the rejected guide explicitly");
 		result.AvailableGuides.Should().Contain([
 				"app-modeling",
+				"data-bindings",
 				"existing-app-maintenance",
 				"page-schema-validators"
 			],

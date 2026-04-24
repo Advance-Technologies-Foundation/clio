@@ -86,6 +86,7 @@ public sealed class ToolContractGetToolTests {
 			because: "guidance lookup should require the stable guide name");
 		contract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "name" &&
+				field.Description.Contains("data-bindings", StringComparison.Ordinal) &&
 				field.Description.Contains("page-schema-validators", StringComparison.Ordinal),
 			because: "the contract should advertise the stable guidance-name selector");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "guidance",
@@ -399,6 +400,91 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the canonical local binding contract surface with workflow routing and workspace-path validation guidance.")]
+	public void ToolContractGet_Should_Return_Canonical_Local_Binding_Surface() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		string[] requestedTools = [
+			CreateDataBindingTool.CreateDataBindingToolName,
+			AddDataBindingRowTool.AddDataBindingRowToolName,
+			RemoveDataBindingRowTool.RemoveDataBindingRowToolName
+		];
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(requestedTools));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the authoritative local binding surface should be served by clio");
+		result.Tools.Should().NotBeNull(
+			because: "a successful lookup should return the requested local binding contracts");
+		result.Tools!.Select(contract => contract.Name).Should().Equal(requestedTools,
+			because: "the response should preserve the requested local binding tool order");
+
+		ToolContractDefinition createContract = result.Tools.Single(contract =>
+			contract.Name == CreateDataBindingTool.CreateDataBindingToolName);
+		createContract.Description.Should().Contain("data-bindings",
+			because: "create-data-binding should route callers to the canonical binding guide");
+		createContract.InputSchema.Required.Should().Contain(["package-name", "schema-name", "workspace-path"],
+			because: "create-data-binding should require package-name, schema-name, and workspace-path as the minimal local payload");
+		createContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "environment-name" &&
+				field.Description.Contains("Required when schema-name is not SysSettings", StringComparison.Ordinal),
+			because: "create-data-binding should advertise that runtime schemas require environment-name on the MCP surface");
+		createContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "workspace-path" &&
+				field.Description.Contains("Absolute local workspace path", StringComparison.Ordinal),
+			because: "create-data-binding should canonically describe the local workspace requirement");
+		createContract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "require-environment-name-for-runtime-schema"
+				&& validator.Code == "missing-required-parameter"
+				&& validator.Required == true
+				&& validator.Fields != null
+				&& validator.Fields.SequenceEqual(new[] { "schema-name", "environment-name" })
+				&& validator.Context != null
+				&& validator.Context.Contains("SysSettings", StringComparison.Ordinal)
+				&& !validator.Context.Contains("SysModule", StringComparison.Ordinal),
+			because: "create-data-binding should expose a machine-readable conditional requirement for runtime schemas");
+		createContract.Defaults.Should().Contain(defaultValue =>
+				defaultValue.Name == "install-type" &&
+				defaultValue.Value == "0",
+			because: "create-data-binding should advertise the default install-type");
+		createContract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					CreateDataBindingTool.CreateDataBindingToolName,
+					AddDataBindingRowTool.AddDataBindingRowToolName
+				},
+				because: "create-data-binding should advertise the local create-then-edit artifact flow");
+		createContract.FallbackFlow.Should().Contain(flow => flow.Tools.SequenceEqual(new[] {
+				SchemaSyncTool.ToolName
+			}),
+			because: "create-data-binding should point callers back to sync-schemas when lookup work can stay batched");
+
+		ToolContractDefinition addContract = result.Tools.Single(contract =>
+			contract.Name == AddDataBindingRowTool.AddDataBindingRowToolName);
+		addContract.Description.Should().Contain("data-bindings",
+			because: "add-data-binding-row should route callers to the canonical binding guide");
+		addContract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					CreateDataBindingTool.CreateDataBindingToolName,
+					AddDataBindingRowTool.AddDataBindingRowToolName
+				},
+				because: "add-data-binding-row should advertise the create-then-edit local artifact flow");
+
+		ToolContractDefinition removeContract = result.Tools.Single(contract =>
+			contract.Name == RemoveDataBindingRowTool.RemoveDataBindingRowToolName);
+		removeContract.Description.Should().Contain("data-bindings",
+			because: "remove-data-binding-row should route callers to the canonical binding guide");
+		removeContract.InputSchema.Properties.Should().Contain(field => field.Name == "key-value",
+			because: "remove-data-binding-row should continue advertising the canonical key-value parameter name");
+		removeContract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "workspace-path" &&
+				alias.Alias == "workspacePath",
+			because: "remove-data-binding-row should reject the camelCase workspace path alias explicitly");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical DB-first binding contract surface with explicit fallback, lifecycle, and failure guidance.")]
 	public void ToolContractGet_Should_Return_Canonical_DbFirst_Binding_Surface() {
 		// Arrange
@@ -422,6 +508,10 @@ public sealed class ToolContractGetToolTests {
 
 		ToolContractDefinition createContract = result.Tools.Single(contract =>
 			contract.Name == CreateDataBindingDbTool.CreateDataBindingDbToolName);
+		createContract.Description.Should().Contain("data-bindings",
+			because: "create-data-binding-db should route callers to the canonical binding guide");
+		createContract.Description.Should().Contain("primary key plus columns referenced",
+			because: "create-data-binding-db should explain the subset-column projection rule for DB-first binding metadata");
 		createContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					SchemaSyncTool.ToolName
@@ -435,9 +525,12 @@ public sealed class ToolContractGetToolTests {
 			because: "the deprecation guidance should point callers at inline seed-rows inside sync-schemas");
 		createContract.Deprecations[0].Message.Should().Contain("direct SQL",
 			because: "the deprecation guidance should keep standalone lookup seeding on the MCP surface");
+		createContract.Deprecations[0].Message.Should().Contain("get-guidance",
+			because: "the deprecation guidance should route callers to the canonical binding guide");
 		createContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "rows" &&
-				field.Description.Contains("values object"),
+				field.Description.Contains("values object") &&
+				field.Description.Contains("projected", StringComparison.Ordinal),
 			because: "create-data-binding-db should canonically describe the required rows[].values shape");
 		createContract.Examples.Should().Contain(example =>
 				example.Arguments["rows"] != null &&
@@ -446,6 +539,10 @@ public sealed class ToolContractGetToolTests {
 
 		ToolContractDefinition upsertContract = result.Tools.Single(contract =>
 			contract.Name == UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName);
+		upsertContract.Description.Should().Contain("data-bindings",
+			because: "upsert-data-binding-row-db should route callers to the canonical binding guide");
+		upsertContract.Description.Should().Contain("bound rows and the requested upsert payload",
+			because: "upsert-data-binding-row-db should explain how projected binding metadata is rebuilt");
 		upsertContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					CreateDataBindingDbTool.CreateDataBindingDbToolName,
@@ -457,6 +554,10 @@ public sealed class ToolContractGetToolTests {
 
 		ToolContractDefinition removeContract = result.Tools.Single(contract =>
 			contract.Name == RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName);
+		removeContract.Description.Should().Contain("data-bindings",
+			because: "remove-data-binding-row-db should route callers to the canonical binding guide");
+		removeContract.Description.Should().Contain("remaining bound rows",
+			because: "remove-data-binding-row-db should explain how projected binding metadata is rebuilt after deletion");
 		removeContract.Description.Should().Contain("package schema data record",
 			because: "remove-data-binding-row-db should document the last-row lifecycle cleanup");
 		removeContract.InputSchema.Properties.Should().Contain(field => field.Name == "key-value",
