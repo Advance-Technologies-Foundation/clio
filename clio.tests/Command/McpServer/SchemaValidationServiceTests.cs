@@ -443,6 +443,27 @@ public sealed class SchemaValidationServiceTests {
 	}
 
 	[Test]
+	[Description("Multiple handler entries where both lack a callable handler expression each produce their own error")]
+	public void ValidateHandlerStructure_MultipleInvalidHandlerEntries_ReturnsAllErrors() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[" +
+			"{ request: \"crt.HandleViewModelInitRequest\", handler: \"not-callable\" }, " +
+			"{ request: \"crt.HandleViewModelDestroyRequest\", handler: \"also-not-callable\" }" +
+			"]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "both handler entries have non-callable handler expressions");
+		result.Errors.Should().HaveCount(2,
+			because: "each invalid handler entry must produce its own error instead of stopping after the first one");
+	}
+
+	[Test]
 	[Description("Multiple valid handler entries in one array pass handler structure validation")]
 	public void ValidateHandlerStructure_MultipleValidHandlerEntries_ReturnsValid() {
 		// Arrange

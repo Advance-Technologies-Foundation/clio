@@ -165,7 +165,7 @@ public static class SchemaValidationService
 	/// </summary>
 	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema.</param>
 	/// <returns>
-	/// A <see cref="SchemaValidationResult"/> describing the first structural violation found,
+	/// A <see cref="SchemaValidationResult"/> accumulating all structural violations found,
 	/// or a passing result when no violations are detected.
 	/// </returns>
 	public static SchemaValidationResult ValidateHandlerStructure(string jsBody) {

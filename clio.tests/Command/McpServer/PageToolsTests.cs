@@ -1404,6 +1404,33 @@ public class PageToolsTests {
 	}
 
 	[Test]
+	[Description("PageUpdateTool.UpdatePage rejects a page body where a JSON marker section contains malformed JSON")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_Rejects_Body_With_Malformed_Json_Marker() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		PageUpdateTool tool = new(command, logger, commandResolver);
+		string bodyWithBadJson = CreatePageBody(viewConfigDiff: "[{ bad json }]");
+		PageUpdateArgs args = new("UsrTest_FormPage", bodyWithBadJson, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "update-page must reject page bodies where JSON marker sections contain malformed JSON");
+		response.Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
+			because: "the error message should identify which marker section is malformed");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "validation must fail before any remote call is made to Creatio");
+	}
+
+	[Test]
 	[Description("PageUpdateTool.UpdatePage rejects schemas where validator params use $Resources.Strings.X binding syntax before saving to Creatio.")]
 	public void PageUpdateTool_UpdatePage_Rejects_Schema_With_Resources_Strings_In_Validator_Params() {
 		// Arrange

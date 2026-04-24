@@ -72,10 +72,6 @@ internal static class SchemaHandlerValidationService
 			}
 
 			ValidateHandlerEntry(handlerBody, entryIndex, result);
-			if (!result.IsValid) {
-				return;
-			}
-
 			index = nextIndex;
 			entryIndex++;
 		}

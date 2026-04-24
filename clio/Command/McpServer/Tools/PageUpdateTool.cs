@@ -36,9 +36,9 @@ public sealed class PageUpdateTool(
 			Password = args.Password
 		};
 		var validationErrors = new List<string>();
-		SchemaValidationResult handlerResult = SchemaValidationService.ValidateHandlerStructure(args.Body);
-		if (!handlerResult.IsValid) {
-			validationErrors.AddRange(handlerResult.Errors);
+		SchemaValidationResult markerResult = SchemaValidationService.ValidateMarkerContent(args.Body);
+		if (!markerResult.IsValid) {
+			validationErrors.AddRange(markerResult.Errors);
 		}
 		SchemaValidationResult validatorParamResult = SchemaValidationService.ValidateValidatorParamResourceBindings(args.Body);
 		if (!validatorParamResult.IsValid) {
