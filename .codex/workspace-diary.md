@@ -3035,3 +3035,10 @@ Decision: Switched `GuidanceGetToolE2ETests` from `response.Guidance` to `respon
 Discovery: Production code was already merged correctly for these contracts; the remaining fallout was limited to E2E assertions and a renamed test fixture constant.
 Files: C:\Projects\clio\clio.mcp.e2e\GuidanceGetToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: `clio.mcp.e2e` now builds cleanly, and the targeted GuidanceGet/PageUpdate E2E selection runs without MCP contract mismatches.
+
+## 2026-04-24 17:32 – Reviewed local SchemaHandlerValidationService simplification
+Context: User asked whether the current uncommitted changes are correct.
+Decision: Reviewed the tracked diff in `SchemaHandlerValidationService`, compared it against the surrounding validator logic, and ran the focused handler/schema validation tests instead of broader suites.
+Discovery: The tracked change is a local simplification only: removing the redundant top-level property-name precheck keeps the same `request`/`handler` validation behavior because `TryGetTopLevelPropertyValueExpression(...)` already enforces top-level lookup, while the new `Contains(...)` gate before regex scanning is a safe fast-path for the same forbidden API rules. There is also an untracked `.codex/SchemaValidationService.merged.cs` snapshot in the workspace, but it is not part of the reviewed git diff.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future reviews can treat this edit as behavior-preserving unless new handler API patterns are added, in which case the focused schema validation tests are the fastest regression check.

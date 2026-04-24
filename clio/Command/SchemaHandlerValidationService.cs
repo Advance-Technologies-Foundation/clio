@@ -101,21 +101,6 @@ internal static class SchemaHandlerValidationService
 	}
 
 	private static void ValidateHandlerEntry(string handlerBody, int entryIndex, SchemaValidationResult result) {
-		HashSet<string> propertyNames = ExtractTopLevelObjectPropertyNames(handlerBody);
-		if (!propertyNames.Contains(RequestPropertyName)) {
-			result.IsValid = false;
-			result.Errors.Add(
-				$"Handler entry at index {entryIndex} in {SchemaValidationService.SchemaHandlersMarker} must declare a string '{RequestPropertyName}' property.");
-			return;
-		}
-
-		if (!propertyNames.Contains(HandlerPropertyName)) {
-			result.IsValid = false;
-			result.Errors.Add(
-				$"Handler entry at index {entryIndex} in {SchemaValidationService.SchemaHandlersMarker} must declare a '{HandlerPropertyName}' property.");
-			return;
-		}
-
 		if (!TryGetTopLevelPropertyValueExpression(handlerBody, RequestPropertyName, out string requestExpression) ||
 		    !IsStringLiteral(requestExpression) ||
 		    !TryUnquoteStringLiteral(requestExpression, out string requestType) ||
@@ -142,6 +127,14 @@ internal static class SchemaHandlerValidationService
 	}
 
 	private static bool TryGetForbiddenHandlerApiError(string expression, out string? error) {
+		if (!expression.Contains("viewModel", StringComparison.Ordinal) &&
+		    !expression.Contains("$context", StringComparison.Ordinal) &&
+		    !expression.Contains("sender", StringComparison.Ordinal) &&
+		    !expression.Contains("$get", StringComparison.Ordinal) &&
+		    !expression.Contains("$set", StringComparison.Ordinal)) {
+			error = null;
+			return false;
+		}
 		string sanitizedExpression = SanitizeForHandlerApiScan(expression);
 		ForbiddenHandlerApiRule? matchingRule = ForbiddenHandlerApiRules
 			.FirstOrDefault(rule => rule.Pattern.IsMatch(sanitizedExpression));
@@ -511,79 +504,6 @@ internal static class SchemaHandlerValidationService
 		return index;
 	}
 
-	private static HashSet<string> ExtractTopLevelObjectPropertyNames(string objectContent) {
-		var props = new HashSet<string>(StringComparer.Ordinal);
-		if (string.IsNullOrWhiteSpace(objectContent) || objectContent[0] != '{') {
-			return props;
-		}
-
-		int depth = 0;
-		bool inString = false;
-		char stringChar = '"';
-		int index = 0;
-		while (index < objectContent.Length) {
-			if (JsParserHelper.TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
-				continue;
-			}
-
-			char current = objectContent[index];
-			if (TryReadTopLevelPropertyName(objectContent, depth, current, ref index, props)) {
-				continue;
-			}
-
-			if (JsParserHelper.TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
-				continue;
-			}
-
-			index++;
-		}
-
-		return props;
-	}
-
-
-	private static bool TryReadTopLevelPropertyName(
-		string content,
-		int depth,
-		char current,
-		ref int index,
-		HashSet<string> props) {
-		if (current is '"' or '\'' or '`' &&
-		    depth == 1 &&
-		    TryReadQuotedMethodShorthandPropertyName(content, index, current, out string methodPropertyName, out int methodNextIndex)) {
-			props.Add(methodPropertyName);
-			index = methodNextIndex;
-			return true;
-		}
-
-		if (current is '"' or '\'' or '`' &&
-		    depth == 1 &&
-		    JsParserHelper.TryReadQuotedPropertyName(content, index, current, out string propertyName, out int nextIndex)) {
-			props.Add(propertyName);
-			index = nextIndex;
-			return true;
-		}
-
-		if (depth == 1 &&
-		    JsParserHelper.IsIdentifierStart(current) &&
-		    TryReadMethodShorthandPropertyName(content, index, current, out string methodIdentifierName, out int methodIdentifierNextIndex)) {
-			props.Add(methodIdentifierName);
-			index = methodIdentifierNextIndex;
-			return true;
-		}
-
-		if (depth == 1 &&
-		    JsParserHelper.IsIdentifierStart(current) &&
-		    TryReadIdentifierPropertyName(content, index, out string identifierName, out int identifierNextIndex)) {
-			props.Add(identifierName);
-			index = identifierNextIndex;
-			return true;
-		}
-
-		return false;
-	}
-
-
 	private static bool TryReadQuotedMethodShorthandProperty(
 		string content,
 		int startIndex,
@@ -602,27 +522,6 @@ internal static class SchemaHandlerValidationService
 		}
 
 		valueStartIndex = methodStartIndex;
-		return true;
-	}
-
-	private static bool TryReadQuotedMethodShorthandPropertyName(
-		string content,
-		int startIndex,
-		char quote,
-		out string propertyName,
-		out int nextIndex) {
-		propertyName = string.Empty;
-		nextIndex = startIndex;
-		if (!TryReadQuotedToken(content, startIndex, quote, out propertyName, out int nameEndIndex)) {
-			return false;
-		}
-
-		int methodStartIndex = JsParserHelper.SkipWhitespace(content, nameEndIndex);
-		if (!TryReadMethodShorthandContinuation(content, methodStartIndex)) {
-			return false;
-		}
-
-		nextIndex = nameEndIndex;
 		return true;
 	}
 
@@ -663,22 +562,6 @@ internal static class SchemaHandlerValidationService
 	}
 
 	private sealed record ForbiddenHandlerApiRule(Regex Pattern, string Error);
-
-	private static bool TryReadMethodShorthandPropertyName(
-		string content,
-		int startIndex,
-		char current,
-		out string propertyName,
-		out int nextIndex) {
-		propertyName = string.Empty;
-		nextIndex = startIndex;
-		if (!TryReadMethodShorthandHeader(content, startIndex, current, out propertyName, out int nameEndIndex, out _)) {
-			return false;
-		}
-
-		nextIndex = nameEndIndex;
-		return true;
-	}
 
 	private static bool TryReadMethodShorthandHeader(
 		string content,
