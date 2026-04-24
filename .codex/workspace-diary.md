@@ -2580,3 +2580,10 @@ Decision: Treat pathless diff operations as root-level merges and therefore elig
 Discovery: The stricter irst segment == attributes guard fixed nested false positives, but it also created a silent skip for existing pathless merge shapes until an explicit regression test covered them.
 Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Validator resource and contract validation now covers both supported diff shapes: root merges without path and explicit top-level ttributes merges, while still excluding unrelated nested paths.
+
+## 2026-04-23 17:02 – Normalize get-page proxy bindings
+Context: ENG-88801 still reproduced in the flow where an agent reads a manually created app page and then asks clio to add object columns onto that page.
+Decision: Normalize proxy field bindings in `get-page` at the command response level so both `raw.body` and generated `body.js` are safe to round-trip through `update-page` and higher-level page-editing tools.
+Discovery: The earlier guard only rejected `$UsrField -> PDS.UsrField` during page validation; without `get-page` normalization, downstream tools could fetch an existing page and immediately fail dry-run validation on unchanged content.
+Files: clio/Command/PageGetOptions.cs, clio/Command/PageBodyNormalizer.cs, clio/Command/SchemaValidationService.cs, clio.tests/Command/McpServer/PageBodyNormalizerTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.mcp.e2e/PageGetToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Existing pages that still carry proxy bindings can now be fetched and reused by editing flows without forcing agents to manually repair page bodies first.

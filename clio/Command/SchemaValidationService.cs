@@ -35,6 +35,7 @@ public static class SchemaValidationService
 	};
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
+	internal static TimeSpan MarkerRegexTimeout => RegexTimeout;
 	private static readonly Regex ResourceStringPattern = new(
 		@"^#ResourceString\(([^)]+)\)#$",
 		RegexOptions.Compiled,
@@ -302,7 +303,7 @@ public static class SchemaValidationService
 		}
 	}
 
-	private static Dictionary<string, string> CollectViewModelPaths(string jsBody) {
+	internal static Dictionary<string, string> CollectViewModelPaths(string jsBody) {
 		var modelPaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		CollectViewModelPathsFromMarker(jsBody, modelPaths, "SCHEMA_VIEW_MODEL_CONFIG_DIFF");
 		CollectViewModelPathsFromMarker(jsBody, modelPaths, "SCHEMA_VIEW_MODEL_CONFIG");

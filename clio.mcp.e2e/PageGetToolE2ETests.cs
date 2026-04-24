@@ -44,12 +44,52 @@ public sealed class PageGetToolE2ETests {
 	}
 
 	[Test]
-	[Description("Deferred positive coverage for get-page and update-page round-trip when the E2E environment has a known editable page.")]
+	[Description("Reads a discovered real page with get-page and reuses the written body.js in update-page dry-run without triggering proxy-binding validation errors.")]
 	[AllureTag(ToolName)]
-	[AllureName("get-page returns bundle and raw body for a sandbox form page")]
-	[AllureDescription("Placeholder for a future seeded-data E2E that reads a known editable page with get-page and reuses raw.body in update-page dry-run.")]
-	public void PageGetTool_Should_Return_Bundle_And_Support_DryRun_RoundTrip() {
-		Assert.Ignore("TODO: add predefined editable page data to the E2E environment, then restore this get-page to update-page dry-run round-trip scenario.");
+	[AllureName("get-page body.js supports update-page dry-run round-trip")]
+	[AllureDescription("Uses the real clio MCP server to discover a page, reads its generated body.js, and verifies that update-page dry-run accepts that body as-is.")]
+	public async Task PageGetTool_Should_Support_DryRun_RoundTrip_For_Discovered_Page() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		PageDiscoveryCandidate candidate = await ResolvePageCandidateOrIgnoreAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			arrangeContext.EnvironmentName);
+
+		CallToolResult getCallResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = candidate.Page.SchemaName,
+					["environment-name"] = arrangeContext.EnvironmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getCallResult);
+		string body = await File.ReadAllTextAsync(getResponse.Files.BodyFile, arrangeContext.CancellationTokenSource.Token);
+
+		CallToolResult updateCallResult = await arrangeContext.Session.CallToolAsync(
+			PageUpdateTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = candidate.Page.SchemaName,
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["body"] = body,
+					["dry-run"] = true
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse updateResponse = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(updateCallResult);
+
+		getResponse.Success.Should().BeTrue(
+			because: "get-page should succeed for the discovered real page before the dry-run round-trip");
+		updateCallResult.IsError.Should().NotBeTrue(
+			because: "validation outcomes should stay in the structured update-page response");
+		updateResponse.Success.Should().BeTrue(
+			because: "body.js returned by get-page should already be normalized for reuse in update-page dry-run");
+		updateResponse.Error.Should().BeNullOrWhiteSpace(
+			because: "the round-trip should not surface proxy-binding validation errors");
 	}
 
 	[Test]

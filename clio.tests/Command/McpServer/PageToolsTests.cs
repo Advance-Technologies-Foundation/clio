@@ -1453,6 +1453,32 @@ public class PageToolsTests {
 			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()));
 	}
 
+	private static (PageGetTool tool, MockFileSystem fileSystem) CreatePageGetToolWithBody(string body) {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
+			.Returns([new PageDesignerHierarchySchema {
+				UId = "uid-1",
+				Name = "UsrMcp_FormPage",
+				PackageUId = "pkg-1",
+				PackageName = "UsrMcp",
+				SchemaVersion = 1,
+				Body = body
+			}]);
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
+		MockFileSystem fileSystem = new();
+		return (new PageGetTool(command, logger, commandResolver, fileSystem), fileSystem);
+	}
+
 	private static JObject CreateMetadataResponse(
 		string schemaName,
 		string schemaUId,
@@ -1583,6 +1609,61 @@ public class PageToolsTests {
 			because: "files must be written under .clio-pages directory");
 		response.Files.BodyFile.Should().Contain("UsrMcp_FormPage",
 			because: "files must be grouped under the schema name subdirectory");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-page normalizes proxy bindings in raw.body before returning the response envelope.")]
+	public void TryGetPage_WhenBodyHasProxyBinding_NormalizesRawBody() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
+		string proxyBody = CreatePageBody(
+			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","control":"$UsrStatus"}}]""",
+			viewModelConfigDiff: """[{"operation":"merge","values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}}]""");
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
+			.Returns([new PageDesignerHierarchySchema {
+				UId = "uid-1",
+				Name = "UsrMcp_FormPage",
+				PackageUId = "pkg-1",
+				PackageName = "UsrMcp",
+				SchemaVersion = 1,
+				Body = proxyBody
+			}]);
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+
+		bool success = command.TryGetPage(new PageGetOptions { SchemaName = "UsrMcp_FormPage" }, out PageGetResponse response);
+
+		success.Should().BeTrue(because: "get-page should still succeed when the source schema uses a proxy binding");
+		response.Raw.Body.Should().Contain("$PDS_UsrStatus",
+			because: "raw.body should be normalized so downstream page mutations can reuse it safely");
+		response.Raw.Body.Should().NotContain("\"$UsrStatus\"",
+			because: "the rejected proxy binding must not survive in the returned raw body");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-page writes normalized body.js files so downstream tools can reuse them without manual repair.")]
+	public void PageGetTool_WhenBodyHasProxyBinding_WritesNormalizedBodyFile() {
+		string proxyBody = CreatePageBody(
+			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","control":"$UsrStatus"}}]""",
+			viewModelConfigDiff: """[{"operation":"merge","values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}}]""");
+		(PageGetTool tool, MockFileSystem fileSystem) = CreatePageGetToolWithBody(proxyBody);
+
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		string writtenBody = fileSystem.File.ReadAllText(response.Files.BodyFile);
+
+		response.Success.Should().BeTrue(because: "get-page should succeed for proxy-bound source pages");
+		writtenBody.Should().Contain("$PDS_UsrStatus",
+			because: "body.js should carry the canonical datasource binding for downstream edits");
+		writtenBody.Should().NotContain("\"$UsrStatus\"",
+			because: "the persisted body.js must not keep the rejected proxy binding");
 	}
 
 	[Test]

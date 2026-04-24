@@ -132,7 +132,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 				},
 				Bundle = bundle,
 				Raw = new PageRawInfo {
-					Body = currentSchema.Body
+					Body = PageBodyNormalizer.NormalizeProxyBindings(currentSchema.Body)
 				},
 				Error = null
 			};
