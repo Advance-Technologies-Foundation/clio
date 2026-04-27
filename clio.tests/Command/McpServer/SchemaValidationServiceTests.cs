@@ -1764,5 +1764,46 @@ public sealed class SchemaValidationServiceTests {
 		result.Errors.Should().BeEmpty(
 			because: "the validator is structurally valid with a declared message param");
 	}
+
+	[Test]
+	[Description("Non-PDS data source direct binding passes validation")]
+	public void ValidateStandardFieldBindings_NonPdsDirectBinding_ReturnsValid() {
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.DS1_UsrStatus\",\"control\":\"$DS1_UsrStatus\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"DS1_UsrStatus\":{\"modelConfig\":{\"path\":\"DS1.UsrStatus\"}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
+
+		result.IsValid.Should().BeTrue("because the field uses direct datasource binding for a non-PDS datasource");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Non-PDS data source Name field uses $Name binding")]
+	public void BuildExpectedBinding_NonPdsNameField_ReturnsNameBinding() {
+		string binding = SchemaValidationService.BuildExpectedBinding("DS1.Name");
+
+		binding.Should().Be("$Name", "because any datasource Name field maps to the $Name shorthand");
+	}
+
+	[Test]
+	[Description("Control bound to non-PDS datasource binding on attribute with validators is rejected")]
+	public void ValidateValidatorControlBindings_NonPdsBinding_AttributeHasValidators_ReturnsInvalid() {
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{" +
+		                        "\"type\":\"crt.ComboBox\",\"control\":\"$DS1_UsrStatus\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrStatus\":{" +
+		                         "\"modelConfig\":{\"path\":\"DS1.UsrStatus\"}," +
+		                         "\"validators\":{\"Required\":{\"type\":\"crt.Required\"}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorControlBindings(body);
+
+		result.IsValid.Should().BeFalse(
+			because: "a control bound to '$DS1_UsrStatus' will never trigger the validator on attribute 'UsrStatus'");
+		result.Errors.Should().ContainSingle(
+			error => error.Contains("UsrStatus") && error.Contains("$DS1_UsrStatus") && error.Contains("$UsrStatus"),
+			because: "the error should identify the wrong datasource binding and the correct view-model attribute binding");
+	}
 }
 
