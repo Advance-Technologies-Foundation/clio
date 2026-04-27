@@ -13,7 +13,7 @@ public class PackageHotFixCommandOptions : RemoteCommandOptions
 	public string PackageName { get; set; }
 	
 	[Value(1, MetaName = "HotFixState", Required = true, HelpText = "HotFix state")]
-	public bool Enable { get; internal set; }
+	public bool Enable { get; set; }
 
 	#endregion
 
