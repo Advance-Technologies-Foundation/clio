@@ -6,102 +6,120 @@ using System.Text.Json.Serialization;
 
 namespace Clio.Command.BusinessRules;
 
-/// <summary>
-/// Represents the MCP request payload for creating one entity-level business rule.
-/// </summary>
-/// <param name="Caption">Business-rule caption shown to authors.</param>
-/// <param name="Condition">Top-level condition group for the rule.</param>
-/// <param name="Actions">Actions to execute when the condition matches.</param>
-public sealed record BusinessRule(
-	[property: JsonPropertyName("caption")]
-	[property: Description("Business-rule caption shown to authors.")]
-	[property: Required]
-	string Caption,
+public sealed record BusinessRule {
+	public BusinessRule() {
+	}
 
-	[property: JsonPropertyName("condition")]
-	[property: Description("Top-level condition group. Supports one group with logicalOperation AND or OR.")]
-	[property: Required]
-	BusinessRuleConditionGroup Condition,
+	public BusinessRule(string caption, BusinessRuleConditionGroup condition, List<BusinessRuleAction> actions) {
+		Caption = caption;
+		Condition = condition;
+		Actions = actions;
+	}
 
-	[property: JsonPropertyName("actions")]
-	[property: Description("One or more actions to execute when the condition group matches.")]
-	[property: Required]
-	List<BusinessRuleAction> Actions
-);
+	[JsonPropertyName("caption")]
+	[Description("Business-rule caption shown to No-code developers.")]
+	[Required]
+	public string Caption { get; init; } = null!;
 
-/// <summary>
-/// Represents the top-level group of leaf business-rule conditions.
-/// </summary>
-/// <param name="LogicalOperation">Logical operator used to combine the leaf conditions.</param>
-/// <param name="Conditions">Leaf conditions evaluated by the group.</param>
-public sealed record BusinessRuleConditionGroup(
-	[property: JsonPropertyName("logicalOperation")]
-	[property: Description("Logical operator. Supported values: AND, OR.")]
-	[property: Required]
-	string LogicalOperation,
+	[JsonPropertyName("condition")]
+	[Description("Top-level condition group. Supports one group with logicalOperation AND or OR.")]
+	[Required]
+	public BusinessRuleConditionGroup Condition { get; init; } = null!;
 
-	[property: JsonPropertyName("conditions")]
-	[property: Description("Leaf conditions evaluated by the condition group.")]
-	[property: Required]
-	List<BusinessRuleCondition> Conditions
-);
+	[JsonPropertyName("actions")]
+	[Description("One or more actions to execute when the condition group matches.")]
+	[Required]
+	public List<BusinessRuleAction> Actions { get; init; } = null!;
+}
 
-/// <summary>
-/// Represents one leaf business-rule comparison.
-/// </summary>
-/// <param name="LeftExpression">Left expression. Must be an attribute reference.</param>
-/// <param name="ComparisonType">Wire comparison type accepted by clio MCP.</param>
-/// <param name="RightExpression">Right expression for binary comparisons. Omit or null for unary comparisons.</param>
-public sealed record BusinessRuleCondition(
-	[property: JsonPropertyName("leftExpression")]
-	[property: Description("Left expression. Must be an attribute reference with type AttributeValue.")]
-	[property: Required]
-	BusinessRuleExpression LeftExpression,
+public sealed record BusinessRuleConditionGroup {
+	public BusinessRuleConditionGroup() {
+	}
 
-	[property: JsonPropertyName("comparisonType")]
-	[property: Description("Condition comparison. Supported values: equal, not-equal, is-filled-in, is-not-filled-in, greater-than, greater-than-or-equal, less-than, less-than-or-equal.")]
-	[property: Required]
-	string ComparisonType,
+	public BusinessRuleConditionGroup(string logicalOperation, List<BusinessRuleCondition> conditions) {
+		LogicalOperation = logicalOperation;
+		Conditions = conditions;
+	}
 
-	[property: JsonPropertyName("rightExpression")]
-	[property: Description("Right expression. Supports AttributeValue or Const for equal, not-equal, and relational comparisons. Omit or null for is-filled-in and is-not-filled-in. For lookup constants pass only a GUID string. For DateTime and Time constants, include a timezone suffix ('Z' or '+/-HH:mm').")]
-	BusinessRuleExpression? RightExpression
-);
+	[JsonPropertyName("logicalOperation")]
+	[Description("Logical operator. Supported values: AND, OR.")]
+	[Required]
+	public string LogicalOperation { get; init; } = null!;
 
-/// <summary>
-/// Represents one business-rule expression operand.
-/// </summary>
-/// <param name="Type">Expression type.</param>
-/// <param name="Path">Attribute path when the expression is an attribute reference.</param>
-/// <param name="Value">Constant value when the expression is a constant.</param>
-public sealed record BusinessRuleExpression(
-	[property: JsonPropertyName("type")]
-	[property: Description("Expression type. Supported values: AttributeValue, Const.")]
-	[property: Required]
-	string Type,
+	[JsonPropertyName("conditions")]
+	[Description("Leaf conditions evaluated by the condition group.")]
+	[Required]
+	public List<BusinessRuleCondition> Conditions { get; init; } = null!;
+}
 
-	[property: JsonPropertyName("path")]
-	[property: Description("Attribute path when type is AttributeValue.")]
-	string? Path,
+public sealed record BusinessRuleCondition {
+	public BusinessRuleCondition() {
+	}
 
-	[property: JsonPropertyName("value")]
-	[property: Description("Constant value when type is Const. For lookup constants pass a GUID string. Date constants use yyyy-MM-dd. DateTime constants use ISO 8601 with a timezone suffix ('Z' or '+/-HH:mm'). Time constants use ISO 8601 time with a timezone suffix ('Z' or '+/-HH:mm').")]
-	JsonElement? Value
-);
+	public BusinessRuleCondition(
+		BusinessRuleExpression leftExpression,
+		string comparisonType,
+		BusinessRuleExpression? rightExpression = null) {
+		LeftExpression = leftExpression;
+		ComparisonType = comparisonType;
+		RightExpression = rightExpression;
+	}
 
-/// <summary>
-/// Represents one field-state action executed by the business rule.
-/// </summary>
-/// <param name="Type">Action type.</param>
-/// <param name="Items">Target attributes affected by the action.</param>
-public sealed record BusinessRuleAction(
-	[property: JsonPropertyName("type")]
-	[property: Description("Business-rule action. Supported values: make-editable, make-read-only, make-required, make-optional.")]
-	[property: Required]
-	string Type,
+	[JsonPropertyName("leftExpression")]
+	[Description("Left expression. Must be an attribute reference with type AttributeValue.")]
+	[Required]
+	public BusinessRuleExpression LeftExpression { get; init; } = null!;
 
-	[property: JsonPropertyName("items")]
-	[property: Description("One or more target attributes affected by the action.")]
-	[property: Required]
-	List<string> Items
-);
+	[JsonPropertyName("comparisonType")]
+	[Description("Condition comparison. Supported values: equal, not-equal, is-filled-in, is-not-filled-in, greater-than, greater-than-or-equal, less-than, less-than-or-equal.")]
+	[Required]
+	public string ComparisonType { get; init; } = null!;
+
+	[JsonPropertyName("rightExpression")]
+	[Description("Right expression. Supports AttributeValue or Const for equal, not-equal, and relational comparisons. Omit or null for is-filled-in and is-not-filled-in.")]
+	public BusinessRuleExpression? RightExpression { get; init; }
+}
+
+public sealed record BusinessRuleExpression {
+	public BusinessRuleExpression() {
+	}
+
+	public BusinessRuleExpression(string type, string? path = null, JsonElement? value = null) {
+		Type = type;
+		Path = path;
+		Value = value;
+	}
+
+	[JsonPropertyName("type")]
+	[Description("Expression type. Supported values: AttributeValue, Const.")]
+	[Required]
+	public string Type { get; init; } = null!;
+
+	[JsonPropertyName("path")]
+	[Description("Attribute path when type is AttributeValue.")]
+	public string? Path { get; init; }
+
+	[JsonPropertyName("value")]
+	[Description("Constant value when type is Const. Boolean constants must use JSON booleans true/false without quotes. Numeric constants must use JSON numbers like 123 or 12.5 without quotes. For lookup constants pass a GUID string. Date constants use yyyy-MM-dd. DateTime constants use ISO 8601 with a timezone suffix ('Z' or '+/-HH:mm'). Time constants use ISO 8601 time with a timezone suffix ('Z' or '+/-HH:mm').")]
+	public JsonElement? Value { get; init; }
+}
+
+public sealed record BusinessRuleAction {
+	public BusinessRuleAction() {
+	}
+
+	public BusinessRuleAction(string type, List<string> items) {
+		Type = type;
+		Items = items;
+	}
+
+	[JsonPropertyName("type")]
+	[Description("Business-rule action. Supported values: make-editable, make-read-only, make-required, make-optional.")]
+	[Required]
+	public string Type { get; init; } = null!;
+
+	[JsonPropertyName("items")]
+	[Description("One or more target attributes affected by the action.")]
+	[Required]
+	public List<string> Items { get; init; } = null!;
+}

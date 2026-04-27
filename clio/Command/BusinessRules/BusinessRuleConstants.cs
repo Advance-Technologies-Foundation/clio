@@ -64,6 +64,11 @@ internal static class BusinessRuleConstants {
 		[28] = "MediumText",
 		[29] = "MaxSizeText",
 		[30] = "LongText",
+		[31] = "Float1",
+		[32] = "Float2",
+		[33] = "Float3",
+		[34] = "Float4",
+		[40] = "Float8",
 		[42] = "PhoneText",
 		[43] = "RichText",
 		[44] = "WebText",
@@ -124,7 +129,12 @@ internal static class BusinessRuleConstants {
 			"Integer",
 			"Float",
 			"Money",
-			"Float0"
+			"Float0",
+			"Float1",
+			"Float2",
+			"Float3",
+			"Float4",
+			"Float8"
 		};
 
 	internal static readonly IReadOnlySet<string> SupportedTemporalDataValueTypeNames =

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Package;
@@ -53,14 +54,15 @@ internal sealed class BusinessRuleService(
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = BusinessRuleHelpers.BuildColumnMap(entitySchema);
 		BusinessRuleValidator.Validate(request.Rule, columnMap);
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(BuildAddonSchemaRequest(entitySchema, packageUId));
-		BusinessRulesAddonMetadata metadata = ParseMetadata(schema.MetaData);
+		JsonObject metadata = ParseMetadata(schema.MetaData);
+		JsonArray rules = GetOrCreateRules(metadata);
 		List<AddonResourceDto> resources = NormalizeResourceKeys(schema.Resources.ToList());
 
 		BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToMetadata(columnMap, request.Rule);
-		metadata.Rules.Add(createdRule);
+		rules.Add(SerializeCreatedRule(createdRule));
 		UpsertCaptionResource(resources, createdRule.UId, request.Rule.Caption.Trim());
 
-		schema.MetaData = JsonSerializer.Serialize(metadata, JsonOptions);
+		schema.MetaData = metadata.ToJsonString(JsonOptions);
 		schema.Resources = resources;
 
 		addonSchemaDesignerClient.SaveSchema(schema);
@@ -111,14 +113,39 @@ internal sealed class BusinessRuleService(
 		};
 	}
 
-	private static BusinessRulesAddonMetadata ParseMetadata(string? metaData) {
+	private static JsonObject ParseMetadata(string? metaData) {
 		if (string.IsNullOrWhiteSpace(metaData)) {
-			return new BusinessRulesAddonMetadata();
+			return CreateEmptyMetadata();
 		}
 
-		return JsonSerializer.Deserialize<BusinessRulesAddonMetadata>(metaData, JsonOptions)
-			?? new BusinessRulesAddonMetadata();
+		try {
+			return JsonNode.Parse(metaData) as JsonObject
+				?? throw new InvalidOperationException("Business-rule add-on metadata root must be a JSON object.");
+		} catch (JsonException exception) {
+			throw new InvalidOperationException("Business-rule add-on metadata is not valid JSON.", exception);
+		}
 	}
+
+	private static JsonObject CreateEmptyMetadata() =>
+		new() {
+			["typeName"] = BusinessRulesMetadataTypeName,
+			["rules"] = new JsonArray()
+		};
+
+	private static JsonArray GetOrCreateRules(JsonObject metadata) {
+		if (!metadata.TryGetPropertyValue("rules", out JsonNode? rulesNode) || rulesNode is null) {
+			JsonArray createdRules = [];
+			metadata["rules"] = createdRules;
+			return createdRules;
+		}
+
+		return rulesNode as JsonArray
+			?? throw new InvalidOperationException("Business-rule add-on metadata 'rules' property must be a JSON array.");
+	}
+
+	private static JsonNode SerializeCreatedRule(BusinessRuleMetadataDto createdRule) =>
+		JsonSerializer.SerializeToNode(createdRule, JsonOptions)
+		?? throw new InvalidOperationException("Generated business-rule metadata could not be serialized.");
 
 	/// <summary>
 	/// Normalizes resource keys received from GetSchema to the format expected by SaveSchema.

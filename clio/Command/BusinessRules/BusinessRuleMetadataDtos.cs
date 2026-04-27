@@ -4,14 +4,6 @@ using System.Text.Json.Serialization;
 
 namespace Clio.Command.BusinessRules;
 
-internal sealed class BusinessRulesAddonMetadata {
-	[JsonPropertyName("typeName")]
-	public string TypeName { get; set; } = BusinessRuleConstants.BusinessRulesMetadataTypeName;
-
-	[JsonPropertyName("rules")]
-	public List<BusinessRuleMetadataDto> Rules { get; set; } = [];
-}
-
 internal sealed class BusinessRuleMetadataDto {
 	[JsonPropertyName("typeName")]
 	public string TypeName { get; set; } = BusinessRuleConstants.BusinessRuleTypeName;

@@ -42,7 +42,7 @@ public sealed record EntitySchemaSearchResult(
 public class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 {
 	private const string EntitySchemaManagerName = "EntitySchemaManager";
-	private const int ContainsComparisonType = 10;
+	private const int ContainsComparisonType = 11;
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;

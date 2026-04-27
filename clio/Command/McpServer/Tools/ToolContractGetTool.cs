@@ -1197,7 +1197,7 @@ internal static class ToolContractCatalog {
 					Field("environmentName", StringType, RegisteredEnvironmentNameDescription),
 					Field("packageName", StringType, "Target package name."),
 					Field("entitySchemaName", StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and temporal left attributes (Date, DateTime, Time). DateTime and Time constants must include a timezone suffix ('Z' or '+/-HH:mm').")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and temporal left attributes (Date, DateTime, Time).")
 				],
 				Validators: [
 					new ToolContractValidator("enum", "unsupported-operator", "rule.condition.logicalOperation",
@@ -1224,14 +1224,6 @@ internal static class ToolContractCatalog {
 			),
 			CommonErrorContract,
 			[
-				Alias(ParameterScope, "environmentName", EnvironmentNameFieldName, RejectedStatus,
-					$"Use 'environmentName' instead of '{EnvironmentNameFieldName}'."),
-				Alias(ParameterScope, "packageName", PackageNameFieldName, RejectedStatus,
-					$"Use 'packageName' instead of '{PackageNameFieldName}'."),
-				Alias(ParameterScope, "entitySchemaName", "entity-schema-name", RejectedStatus,
-					"Use 'entitySchemaName' instead of 'entity-schema-name'."),
-				Alias(ParameterScope, RuleFieldName, "rule.name", RejectedStatus,
-					"Do not send 'rule.name'. clio generates the internal business-rule name automatically.")
 			],
 			[],
 			[
@@ -1287,6 +1279,66 @@ internal static class ToolContractCatalog {
 							new Dictionary<string, object?> {
 								["type"] = "make-read-only",
 								["items"] = new[] { "PlannedDate" }
+							}
+						}
+					}
+				}),
+				Example("Create a readonly rule when completed is true", new Dictionary<string, object?> {
+					["environmentName"] = ExampleEnvironmentName,
+					["packageName"] = ExamplePackageName,
+					["entitySchemaName"] = "UsrTask",
+					[RuleFieldName] = new Dictionary<string, object?> {
+						["caption"] = "Lock name and description when completed",
+						["condition"] = new Dictionary<string, object?> {
+							["logicalOperation"] = "AND",
+							["conditions"] = new[] {
+								new Dictionary<string, object?> {
+									["leftExpression"] = new Dictionary<string, object?> {
+										["type"] = "AttributeValue",
+										["path"] = "Completed"
+									},
+									["comparisonType"] = "equal",
+									["rightExpression"] = new Dictionary<string, object?> {
+										["type"] = "Const",
+										["value"] = true
+									}
+								}
+							}
+						},
+						["actions"] = new[] {
+							new Dictionary<string, object?> {
+								["type"] = "make-read-only",
+								["items"] = new[] { "Name", "Description" }
+							}
+						}
+					}
+				}),
+				Example("Create a required-field rule when annual revenue reaches a numeric threshold", new Dictionary<string, object?> {
+					["environmentName"] = ExampleEnvironmentName,
+					["packageName"] = ExamplePackageName,
+					["entitySchemaName"] = "Account",
+					[RuleFieldName] = new Dictionary<string, object?> {
+						["caption"] = "Require owner for high-revenue accounts",
+						["condition"] = new Dictionary<string, object?> {
+							["logicalOperation"] = "AND",
+							["conditions"] = new[] {
+								new Dictionary<string, object?> {
+									["leftExpression"] = new Dictionary<string, object?> {
+										["type"] = "AttributeValue",
+										["path"] = "AnnualRevenue"
+									},
+									["comparisonType"] = "greater-than-or-equal",
+									["rightExpression"] = new Dictionary<string, object?> {
+										["type"] = "Const",
+										["value"] = 1000000
+									}
+								}
+							}
+						},
+						["actions"] = new[] {
+							new Dictionary<string, object?> {
+								["type"] = "make-required",
+								["items"] = new[] { "Owner" }
 							}
 						}
 					}
@@ -1354,18 +1406,32 @@ internal static class ToolContractCatalog {
 			],
 			Flow(
 				[
-					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
 					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				],
-				"Use after inspecting the deployed entity schema so referenced attributes can be chosen from the current model."),
+				"When the application exists and the entity is a part of it. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
 			[
 				Flow(
 					[
 						ApplicationGetListTool.ApplicationGetListToolName,
 						ApplicationGetInfoTool.ApplicationGetInfoToolName,
-					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
+						FindEntitySchemaTool.FindEntitySchemaToolName,
+						DataForgeTool.DataForgeFindTablesToolName,
+						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+						CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 					],
-					"Fallback when the package or entity context must be discovered from an existing application first.")
+					"When the application exists but the entity is not a part of it. Find entity using find-entity or dataforge-find-tables tool and create business rule for this entity in the application."),
+				Flow(
+					[
+						ApplicationCreateTool.ApplicationCreateToolName,
+						FindEntitySchemaTool.FindEntitySchemaToolName,
+						DataForgeTool.DataForgeFindTablesToolName,
+						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+						CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
+					],
+					"When application does not exist yet. Suggest user to create new empty application and create business rule there."),
+
 			],
 			[]);
 	}

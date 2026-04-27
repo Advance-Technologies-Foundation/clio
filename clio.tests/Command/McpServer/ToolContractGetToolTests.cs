@@ -120,11 +120,8 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract should advertise the full supported comparison set");
 		contract.Defaults.Should().BeEmpty(
 			because: "the contract should not have defaults after enabled was removed");
-		contract.Aliases.Should().Contain(alias =>
-				alias.CanonicalName == "entitySchemaName" &&
-				alias.Alias == "entity-schema-name" &&
-				alias.Status == "rejected",
-			because: "the contract should reject stale kebab-case entity schema naming now that runtime binding is camelCase");
+		contract.Aliases.Should().BeEmpty(
+			because: "the contract should avoid duplicating rejected aliases already represented by the runtime tool schema");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "exit-code",
 			because: "the output contract should advertise the command exit code that the tool actually returns");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "execution-log-messages",
@@ -137,10 +134,30 @@ public sealed class ToolContractGetToolTests {
 			because: "tool-contract-get should not advertise entity identifiers that the create-entity-business-rule tool does not return");
 		contract.PreferredFlow.Tools.Should().Equal(
 				new[] {
-					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
 					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				},
-				because: "the contract should advertise schema inspection before destructive rule creation");
+				because: "the contract should advertise app discovery before business-rule creation when the entity belongs to an existing app");
+		contract.FallbackFlow.Should().Contain(flow =>
+				flow.Tools.SequenceEqual(new[] {
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					FindEntitySchemaTool.FindEntitySchemaToolName,
+					DataForgeTool.DataForgeFindTablesToolName,
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
+				}),
+			because: "the contract should advertise entity discovery through find-entity or Data Forge when the entity is not part of the app context");
+		contract.FallbackFlow.Should().Contain(flow =>
+				flow.Tools.SequenceEqual(new[] {
+					ApplicationCreateTool.ApplicationCreateToolName,
+					FindEntitySchemaTool.FindEntitySchemaToolName,
+					DataForgeTool.DataForgeFindTablesToolName,
+					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
+				}),
+			because: "the contract should advertise the non-existing-application guidance path before rule creation");
 		bool hasLookupExample = contract.Examples.Any(example =>
 			example.Arguments["rule"] is Dictionary<string, object?> rule
 			&& rule.TryGetValue("condition", out object? conditionValue)
@@ -178,6 +195,34 @@ public sealed class ToolContractGetToolTests {
 			&& comparisonTypeValue?.ToString() == "less-than-or-equal");
 		hasRelationalExample.Should().BeTrue(
 			because: "the contract should include a relational example for numeric or temporal comparisons");
+		bool hasBooleanExample = contract.Examples.Any(example =>
+			example.Arguments["rule"] is Dictionary<string, object?> rule
+			&& rule.TryGetValue("condition", out object? conditionValue)
+			&& conditionValue is Dictionary<string, object?> condition
+			&& condition.TryGetValue("conditions", out object? conditionsValue)
+			&& conditionsValue is object[] conditions
+			&& conditions.Single() is Dictionary<string, object?> predicate
+			&& predicate.TryGetValue("rightExpression", out object? rightExpressionValue)
+			&& rightExpressionValue is Dictionary<string, object?> rightExpression
+			&& rightExpression.TryGetValue("value", out object? constantValue)
+			&& constantValue is true);
+		hasBooleanExample.Should().BeTrue(
+			because: "the contract should include a boolean constant example using a JSON boolean literal");
+		bool hasNumericExample = contract.Examples.Any(example =>
+			example.Arguments["rule"] is Dictionary<string, object?> rule
+			&& rule.TryGetValue("condition", out object? conditionValue)
+			&& conditionValue is Dictionary<string, object?> condition
+			&& condition.TryGetValue("conditions", out object? conditionsValue)
+			&& conditionsValue is object[] conditions
+			&& conditions.Single() is Dictionary<string, object?> predicate
+			&& predicate.TryGetValue("comparisonType", out object? comparisonTypeValue)
+			&& comparisonTypeValue?.ToString() == "greater-than-or-equal"
+			&& predicate.TryGetValue("rightExpression", out object? rightExpressionValue)
+			&& rightExpressionValue is Dictionary<string, object?> rightExpression
+			&& rightExpression.TryGetValue("value", out object? constantValue)
+			&& constantValue is 1000000);
+		hasNumericExample.Should().BeTrue(
+			because: "the contract should include a numeric threshold example using a JSON numeric literal");
 		bool hasTimezoneAwareTimeExample = contract.Examples.Any(example =>
 			example.Arguments["rule"] is Dictionary<string, object?> rule
 			&& rule.TryGetValue("condition", out object? conditionValue)
