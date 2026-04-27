@@ -27,9 +27,12 @@ public sealed class PageSyncTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
-		"For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
-		"and verifies the update (optional). Continues processing remaining pages on failure. " +
-		"Before authoring SCHEMA_VALIDATORS, call get-guidance with name `page-schema-validators` first.")]
+	             "For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
+	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
+	             "Section authoring rules for the body payload: " +
+	             "if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
+	             "if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
+	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-sdk-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public async Task<PageSyncResponse> SyncPages(
 		[Description("Parameters: environment-name (required); pages array (required); validate, verify, skip-sampling (optional)")]
 		[Required] PageSyncArgs args,
@@ -181,8 +184,12 @@ public sealed class PageSyncTool(
 		Dictionary<string, string>? explicitResources = TryParseExplicitResources(resources, contentResult);
 		SchemaValidationResult fieldResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources));
+		SchemaValidationResult handlerResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateHandlerStructure(body));
 		SchemaValidationResult validatorBindingResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateValidatorControlBindings(body));
+		SchemaValidationResult validatorPlacementResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateValidatorBindingPlacement(body));
 		SchemaValidationResult validatorParamResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateValidatorParamResourceBindings(body));
 		SchemaValidationResult standardValidatorResult = RunContentValidation(
@@ -196,7 +203,9 @@ public sealed class PageSyncTool(
 			syntaxResult,
 			contentResult,
 			fieldResult,
+			handlerResult,
 			validatorBindingResult,
+			validatorPlacementResult,
 			validatorParamResult,
 			standardValidatorResult,
 			validatorParamCompletenessResult);
@@ -204,7 +213,9 @@ public sealed class PageSyncTool(
 		bool contentOk = IsContentValidationSuccessful(
 			contentResult,
 			fieldResult,
+			handlerResult,
 			validatorBindingResult,
+			validatorPlacementResult,
 			validatorParamResult,
 			standardValidatorResult,
 			validatorParamCompletenessResult);

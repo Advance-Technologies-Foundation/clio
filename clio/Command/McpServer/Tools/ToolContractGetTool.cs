@@ -486,7 +486,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				["name"],
 				[
-					Field("name", StringType, "Stable guidance name. Known values include app-modeling, existing-app-maintenance, dataforge-orchestration, and page-schema-validators.")
+					Field("name", StringType, "Stable guidance name. Known values include app-modeling, existing-app-maintenance, dataforge-orchestration, page-schema-handlers, page-schema-sdk-common, and page-schema-validators.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -501,8 +501,14 @@ internal static class ToolContractCatalog {
 			[],
 			[],
 			[
+				Example("Read handler authoring guidance", new Dictionary<string, object?> {
+					["name"] = "page-schema-handlers"
+				}),
 				Example("Read validator authoring guidance", new Dictionary<string, object?> {
 					["name"] = "page-schema-validators"
+				}),
+				Example("Read SDK common page-schema guidance", new Dictionary<string, object?> {
+					["name"] = "page-schema-sdk-common"
 				}),
 				Example("Read canonical existing-app maintenance guidance", new Dictionary<string, object?> {
 					["name"] = "existing-app-maintenance"

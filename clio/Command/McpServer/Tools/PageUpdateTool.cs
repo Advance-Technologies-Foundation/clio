@@ -24,7 +24,11 @@ public sealed class PageUpdateTool(
 	internal const string ToolName = "update-page";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Update Freedom UI page schema body. Before authoring SCHEMA_VALIDATORS, call get-guidance with name `page-schema-validators` first. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
+		"Section authoring rules for the body payload: " +
+		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
+		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
+		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-sdk-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("Parameters: schema-name, body (required); resources, dry-run, skip-sampling (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageUpdateArgs args,
@@ -40,7 +44,11 @@ public sealed class PageUpdateTool(
 		if (!options.DryRun && args.SkipSampling != true) {
 			samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(server, args.SchemaName, args.Body, cancellationToken);
 			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0)
-				return new PageUpdateResponse { Success = false, Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues), SamplingReview = samplingReview };
+				return new PageUpdateResponse {
+					Success = false,
+					Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues),
+					SamplingReview = samplingReview
+				};
 		}
 		PageUpdateResponse response;
 		lock (CommandExecutionSyncRoot) {
@@ -77,8 +85,10 @@ public sealed class PageUpdateTool(
 
 	private static string CollectValidatorErrors(string body) {
 		var errors = new List<string>();
+		Collect(SchemaValidationService.ValidateMarkerContent(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorParamResourceBindings(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorControlBindings(body), errors);
+		Collect(SchemaValidationService.ValidateValidatorBindingPlacement(body), errors);
 		Collect(SchemaValidationService.ValidateStandardValidatorUsage(body), errors);
 		Collect(SchemaValidationService.ValidateCustomValidatorParamCompleteness(body), errors);
 		return errors.Count > 0 ? "Validation failed: " + string.Join("; ", errors) : null;

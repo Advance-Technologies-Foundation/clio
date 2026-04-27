@@ -17,6 +17,14 @@ DESCRIPTION
     --resources when you need explicit captions, or let clio derive captions
     automatically for missing Usr* keys.
 
+    Keep each field control bound to the declared view-model attribute from
+    viewModelConfig / viewModelConfigDiff. If validator or handler logic
+    is moved to a different attribute for the same field, rebind the
+    control to that attribute too.
+    If the control is inherited from a parent schema and there is no local
+    entry for it in viewConfigDiff, add a local merge for that control
+    name instead of editing a non-existent local insert.
+
 SYNOPSIS
     clio update-page [options]
 

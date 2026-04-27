@@ -43,8 +43,8 @@ public class PageBodyNormalizerTests {
 	}
 
 	[Test]
-	[Description("Proxy binding on a standard field is rewritten to $PDS_* form.")]
-	public void NormalizeProxyBindings_ProxyField_RewritesToPdsBinding() {
+	[Description("Proxy binding (e.g. $UsrStatus) on a standard field is rewritten to its canonical $PDS_* form.")]
+	public void NormalizeProxyBindings_ProxyBinding_RewrittenToCanonicalPdsForm() {
 		// Arrange
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","label":"$Resources.Strings.PDS_UsrStatus","control":"$UsrStatus"}}]""",
@@ -54,15 +54,15 @@ public class PageBodyNormalizerTests {
 		string result = PageBodyNormalizer.NormalizeProxyBindings(body);
 
 		// Assert
-		result.Should().Contain("$PDS_UsrStatus",
-			because: "proxy binding $UsrStatus pointing to PDS.UsrStatus should be rewritten to $PDS_UsrStatus");
+		result.Should().Contain("\"$PDS_UsrStatus\"",
+			because: "proxy binding to a declared attribute with a PDS path should be rewritten to its canonical $PDS_* form");
 		result.Should().NotContain("\"$UsrStatus\"",
-			because: "the proxy binding must be replaced");
+			because: "the proxy binding must be replaced with the canonical form");
 	}
 
 	[Test]
-	[Description("Proxy binding for the primary Name field is rewritten to $Name (special case).")]
-	public void NormalizeProxyBindings_NameField_RewritesToDollarName() {
+	[Description("Proxy binding to a declared attribute with path PDS.Name is rewritten to the canonical $Name form.")]
+	public void NormalizeProxyBindings_ProxyBindingForNamePath_RewrittenToCanonicalNameForm() {
 		// Arrange
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","label":"$Resources.Strings.PDS_Name","control":"$UsrName"}}]""",
@@ -73,25 +73,41 @@ public class PageBodyNormalizerTests {
 
 		// Assert
 		result.Should().Contain("\"$Name\"",
-			because: "PDS.Name has the special-case expected binding $Name, not $PDS_Name");
+			because: "a proxy binding to an attribute with path PDS.Name should be rewritten to the canonical $Name form");
 		result.Should().NotContain("\"$UsrName\"",
-			because: "the proxy binding must be replaced");
+			because: "the proxy binding must be replaced with the canonical form");
 	}
 
 	[Test]
-	[Description("A binding already in canonical $PDS_* form is left unchanged.")]
-	public void NormalizeProxyBindings_CanonicalBinding_Unchanged() {
+	[Description("A canonical $PDS_* binding is left unchanged.")]
+	public void NormalizeProxyBindings_CanonicalPdsBinding_Unchanged() {
 		// Arrange
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","control":"$PDS_UsrStatus"}}]""",
-			viewModelConfigDiff: """[{"operation":"merge","values":{"PDS_UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}}]""");
+			viewModelConfigDiff: """[{"operation":"merge","values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}}]""");
 
 		// Act
 		string result = PageBodyNormalizer.NormalizeProxyBindings(body);
 
 		// Assert
 		result.Should().Contain("$PDS_UsrStatus",
-			because: "canonical binding should not be touched");
+			because: "canonical $PDS_* binding must not be touched");
+	}
+
+	[Test]
+	[Description("A canonical $Name binding is left unchanged.")]
+	public void NormalizeProxyBindings_CanonicalNameBinding_Unchanged() {
+		// Arrange
+		string body = CreatePageBody(
+			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","control":"$Name"}}]""",
+			viewModelConfigDiff: """[{"operation":"merge","values":{"UsrName":{"modelConfig":{"path":"PDS.Name"}}}}]""");
+
+		// Act
+		string result = PageBodyNormalizer.NormalizeProxyBindings(body);
+
+		// Assert
+		result.Should().Contain("\"$Name\"",
+			because: "canonical $Name binding must not be touched");
 	}
 
 	[Test]
@@ -154,8 +170,8 @@ public class PageBodyNormalizerTests {
 	}
 
 	[Test]
-	[Description("Multiple proxy fields in one body are all rewritten in a single call.")]
-	public void NormalizeProxyBindings_MultipleProxyFields_AllRewritten() {
+	[Description("Multiple proxy bindings in one body are all rewritten to canonical form in a single call.")]
+	public void NormalizeProxyBindings_MultipleProxyBindings_AllRewrittenToCanonicalForm() {
 		// Arrange
 		string body = CreatePageBody(
 			viewConfigDiff: """
@@ -178,17 +194,21 @@ public class PageBodyNormalizerTests {
 
 		// Assert
 		result.Should().Contain("$PDS_UsrStatus",
-			because: "UsrStatus proxy binding must be rewritten");
+			because: "UsrStatus proxy binding must be rewritten to its canonical $PDS_* form");
 		result.Should().Contain("$PDS_UsrDueDate",
-			because: "UsrDueDate proxy binding must be rewritten");
+			because: "UsrDueDate proxy binding must be rewritten to its canonical $PDS_* form");
 		result.Should().Contain("\"$Name\"",
-			because: "UsrName pointing to PDS.Name must use the special-case $Name binding");
-		result.Should().NotMatchRegex("\"\\$Usr[A-Za-z]",
-			because: "no proxy bindings should remain after normalization");
+			because: "UsrName proxy binding targeting PDS.Name must be rewritten to the canonical $Name form");
+		result.Should().NotContain("\"$UsrStatus\"",
+			because: "proxy bindings must be replaced with canonical forms");
+		result.Should().NotContain("\"$UsrDueDate\"",
+			because: "proxy bindings must be replaced with canonical forms");
+		result.Should().NotContain("\"$UsrName\"",
+			because: "proxy bindings must be replaced with canonical forms");
 	}
 
 	[Test]
-	[Description("A proxy binding expressed via 'value' property (not 'control') is also rewritten.")]
+	[Description("A proxy binding expressed via the 'value' property (not 'control') is also rewritten to canonical form.")]
 	public void NormalizeProxyBindings_ValueProperty_Rewritten() {
 		// Arrange
 		string body = CreatePageBody(
@@ -200,9 +220,9 @@ public class PageBodyNormalizerTests {
 
 		// Assert
 		result.Should().Contain("$PDS_UsrPhoto",
-			because: "'value' bindings are also checked for proxy patterns");
+			because: "'value' proxy bindings are also rewritten to canonical $PDS_* form");
 		result.Should().NotContain("\"$UsrPhoto\"",
-			because: "the proxy 'value' binding must be replaced");
+			because: "the proxy 'value' binding must be replaced with the canonical form");
 	}
 
 	[Test]
@@ -218,7 +238,7 @@ public class PageBodyNormalizerTests {
 
 		// Assert
 		result.Should().Contain("$PDS_UsrStatus",
-			because: "flat-shape components without a 'values' wrapper must also be normalized");
+			because: "flat-shape components without a 'values' wrapper must also have their proxy binding rewritten to canonical form");
 	}
 
 	[Test]
@@ -236,6 +256,6 @@ public class PageBodyNormalizerTests {
 		result.Should().Contain("$PDS_UsrStatus",
 			because: "SCHEMA_DIFF is a supported alias for SCHEMA_VIEW_CONFIG_DIFF and must trigger proxy binding rewrite");
 		result.Should().NotContain("\"$UsrStatus\"",
-			because: "the proxy binding must be replaced even when the body uses the SCHEMA_DIFF marker");
+			because: "the proxy binding must be replaced with canonical form even when the body uses the SCHEMA_DIFF marker");
 	}
 }

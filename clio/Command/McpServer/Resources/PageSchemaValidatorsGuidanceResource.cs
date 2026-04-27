@@ -22,6 +22,7 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 			       Scope
 			       - Use this guide when the task changes the `validators` section of a Freedom UI page body returned by `get-page`.
 			       - Resolve exact MCP tool contracts through `get-tool-contract` before any write workflow.
+			       - If the validator body adds or edits `@creatio-devkit/common`, also read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service calls.
 			       - Keep validator work inside clio-owned page-body guidance instead of depending on an external repository.
 
 			       Canonical runtime flow
@@ -32,7 +33,7 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 
 			       Decision tree
 			       - If the requirement is field-value validation, continue here.
-			       - If the requirement is dynamic `required`, `visible`, or `readonly` state, use business rules or `setAttributePropertyValue(...)`.
+			       - If the requirement is dynamic `required`, `visible`, or `readonly` state, stop validator authoring, read `page-schema-handlers`, and only then choose business rules or `setAttributePropertyValue(...)`.
 			       - First inspect the live page body: if it uses `viewModelConfig`, edit that object directly; if it uses `viewModelConfigDiff`, edit the merge on `path: ["attributes"]`.
 			       - If the validator body actually `await`s I/O, use `"async": true`; otherwise use `"async": false`.
 
@@ -70,24 +71,29 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 			       - Do NOT add a `validators` property inside the UI element in `viewConfigDiff`. Remove it if present.
 
 			       CRITICAL — UI control binding when validators are used
-			       - When a validator is registered on attribute `UsrName`, the `crt.Input` control MUST bind to `"$UsrName"`, NOT `"$PDS_UsrName"`.
-			       - `"$PDS_AttrName"` is a direct data-source binding — Creatio does NOT run attribute validators on it.
-			       - `"$AttrName"` is the view-model attribute binding — validators only fire on view-model attribute bindings, not on `$PDS_` data-source bindings.
-			       - Rule: `control` in `viewConfigDiff` MUST reference the same attribute name as the one holding the `validators` object.
-			       - Correct: `"control": "$UsrName"` (view-model attribute — validators fire)
-			       - Wrong: `"control": "$PDS_UsrName"` (raw data-source field — validators are ignored)
+			       - When a validator is registered on attribute `UsrName`, the `crt.Input` control MUST bind to `"$UsrName"`.
+			       - Rule: `control` in `viewConfigDiff` MUST reference the same declared attribute as the one holding the `validators` object.
+			       - Default page bodies already bind controls to attributes declared in `viewModelConfig` / `viewModelConfigDiff`. Keep that binding unless you intentionally create a different attribute for validator logic.
+			       - If you create a new attribute for validation on the same field, rebind the control to that new attribute. Do NOT leave the control on the old attribute while the validators live on the new one.
+			       - Correct: `"control": "$UsrName"` when validators are declared on `UsrName`
+			       - Wrong: validators are declared on `UsrNameForValidation`, but the control still uses `"control": "$UsrName"`
 
 			       CRITICAL — Fix control binding in the original operation, never add a patch merge
-			       - When `"control": "$PDS_AttrName"` is wrong, fix the EXISTING insert or merge operation directly.
-			       - NEVER add a second `merge` operation with the same `name` to override individual properties. This creates duplicate entries and is rejected by clio validation.
+			       - When the current schema already has a local `insert` or `merge` for that control, fix that EXISTING local operation directly.
+			       - When the control is inherited from a parent schema and is absent from the current schema's `viewConfigDiff`, add one local `merge` operation for that inherited control name.
+			       - NEVER add a second local `merge` operation with the same `name` when the current schema already has a local operation for that control. This creates duplicate entries and is rejected by clio validation.
 			       - Anti-pattern (REJECTED by clio):
 			         viewConfigDiff: [
-			           { "operation": "insert", "name": "UsrName", "values": { "control": "$PDS_UsrName" } },
-			           { "operation": "merge", "name": "UsrName", "values": { "control": "$UsrName" } }
+			           { "operation": "insert", "name": "UsrName", "values": { "control": "$UsrName" } },
+			           { "operation": "merge", "name": "UsrName", "values": { "control": "$UsrNameForValidation" } }
 			         ]
 			       - Correct — fix the original insert:
 			         viewConfigDiff: [
-			           { "operation": "insert", "name": "UsrName", "values": { "control": "$UsrName" } }
+			           { "operation": "insert", "name": "UsrName", "values": { "control": "$UsrNameForValidation" } }
+			         ]
+			       - Correct — inherited control from parent schema, so add the first local merge:
+			         viewConfigDiff: [
+			           { "operation": "merge", "name": "RoleDescription", "values": { "control": "$RoleDescription" } }
 			         ]
 
 			       CRITICAL — Resource string format in validator params
@@ -211,7 +217,7 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 
 			       Static `viewModelConfig` variant
 			       - If the live page body already uses `viewModelConfig`, add `validators` directly under `attributes.<AttrName>`.
-			       - The control MUST bind to that attribute, not to the PDS field directly — use the view-model attribute binding when validators are present.
+			       - The control MUST bind to that attribute — use the same declared attribute for both the control and the validators.
 			         viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{
 			           "attributes": {
 			             "UsrName": {
@@ -226,7 +232,7 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 			           }
 			         }/**SCHEMA_VIEW_MODEL_CONFIG*/
 			       - Correct: `"control": "$UsrName"`
-			       - Wrong: `"control": "$PDS_UsrName"`
+			       - Wrong: validators are on `UsrNameForValidation`, but the control still uses `"control": "$UsrName"`
 
 			       Regex/pattern validator example
 			       - Use `Minimal canonical template` for the binding structure, then change only the validator body for numeric or regex validation. Example:
@@ -246,8 +252,9 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 
 			       Async validator template (SysSettingsService example)
 			       - Use `Minimal canonical template` for the base binding structure, then apply this async variant only when the validator must call an external service or SDK method with `await`.
+			       - Before editing `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service usage here, read `page-schema-sdk-common`.
 			       - `devkit` MUST be declared as an AMD dependency: add `"@creatio-devkit/common"` to `SCHEMA_DEPS` and `devkit` to the function args.
-			       - The `viewConfigDiff` control binding still MUST be `"$UsrName"`, NOT `"$PDS_UsrName"`.
+			       - The `viewConfigDiff` control binding still MUST target the same declared attribute that owns the validators.
 			         SCHEMA_DEPS / function args:
 			           define("UsrPage", /**SCHEMA_DEPS*/["@creatio-devkit/common"]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/(devkit)/**SCHEMA_ARGS*/ {
 			         validators: /**SCHEMA_VALIDATORS*/{
@@ -258,7 +265,7 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 			                 if (!value) return null;
 			                 const sysSettingsService = new devkit.SysSettingsService();
 			                 const maxLength = await sysSettingsService.getByCode(config.settingCode);
-			                 if (maxLength && value.length > Number(maxLength)) {
+			                 if (maxLength?.value != null && value.length > Number(maxLength.value)) {
 			                   return { "usr.MaxLengthFromSysSettingValidator": { message: config.message } };
 			                 }
 			                 return null;
@@ -273,7 +280,7 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 			       - The live body format was detected first: `viewModelConfig` vs `viewModelConfigDiff`.
 			       - The validator lives under model attributes, not under a UI element in `viewConfigDiff`.
 			       - The attribute `validators` property is an object and `type` matches the `SCHEMA_VALIDATORS` key.
-			       - The control binds to the same attribute with `"$AttrName"`, not to `"$PDS_AttrName"`.
+			       - The control binds to the same declared attribute as the validators.
 			       - No duplicate patch `merge` was added to override an existing control binding.
 			       - `params.message` uses `#ResourceString(...)#`.
 			       - `"params"` contains `{ "name": "message" }` — NOT an empty array `[]`.
@@ -288,6 +295,7 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 
 			       Safe editing rules
 			       - Edit only the minimal coupled sections required for validator correctness: `SCHEMA_VALIDATORS`, the attribute binding section (`viewModelConfig` or `viewModelConfigDiff`), the matching `viewConfigDiff` control binding, and `SCHEMA_DEPS` / `SCHEMA_ARGS` only when imports are required.
+			       - When validator code needs `@creatio-devkit/common`, read `page-schema-sdk-common` first and then follow its AMD dependency and public-API rules.
 			       - For page-body work, reuse the live SDK alias already present in the schema body when imports are required.
 			       - Verify the edited body is syntactically valid JavaScript before calling `sync-pages`.
 			       - Keep validators free of navigation, data loading, save orchestration, or HTTP side effects.

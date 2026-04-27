@@ -24,6 +24,15 @@ automatically for missing Usr* keys.
 Use --optional-properties to merge custom key-value pairs into the schema's
 `optionalProperties` array (for example to set `entitySchemaName`).
 
+Keep each field control bound to the declared view-model attribute from
+`viewModelConfig` / `viewModelConfigDiff`. If you add validator or
+handler logic on a different attribute for the same field, rebind the
+control to that attribute as well so the control, validators, and
+handler writes all target the same declared attribute.
+If the control is inherited from a parent schema and there is no local
+entry for it in `viewConfigDiff`, add a local `merge` for that control
+name instead of trying to edit a non-existent local `insert`.
+
 ## Synopsis
 
 ```bash

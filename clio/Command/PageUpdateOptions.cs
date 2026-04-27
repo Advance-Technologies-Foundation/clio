@@ -114,8 +114,8 @@ namespace Clio.Command {
 				if (!TryLoadBodyFromFile(options, out response)) return false;
 				PageUpdateResponse validationError = ValidateInput(options, out Dictionary<string, string> explicitResources);
 				if (validationError != null) { response = validationError; return false; }
-				if (!TryResolveContext(options, out EditableSchemaContext context, out response)) return false;
 				if (options.DryRun) { response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null); return true; }
+				if (!TryResolveContext(options, out EditableSchemaContext context, out response)) return false;
 				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
 				JArray parsedOptionalProperties = string.IsNullOrWhiteSpace(options.OptionalProperties)
 					? null : JArray.Parse(options.OptionalProperties);
@@ -471,6 +471,13 @@ namespace Clio.Command {
 					Error = $"Body contains invalid JavaScript syntax: {string.Join("; ", syntaxResult.Errors)}"
 				};
 			}
+			var handlerResult = SchemaValidationService.ValidateHandlerStructure(options.Body);
+			if (!handlerResult.IsValid) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = $"Body contains invalid handlers: {string.Join("; ", handlerResult.Errors)}"
+				};
+			}
 			if (!SchemaValidationService.TryParseResources(options.Resources, out explicitResources, out _)) {
 				return new PageUpdateResponse {
 					Success = false,
@@ -492,6 +499,13 @@ namespace Clio.Command {
 				return new PageUpdateResponse {
 					Success = false,
 					Error = $"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}"
+				};
+			}
+			var validatorPlacementResult = SchemaValidationService.ValidateValidatorBindingPlacement(options.Body);
+			if (!validatorPlacementResult.IsValid) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = $"Body contains invalid validator bindings: {string.Join("; ", validatorPlacementResult.Errors)}"
 				};
 			}
 			return null;
