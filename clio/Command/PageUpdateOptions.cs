@@ -114,8 +114,8 @@ namespace Clio.Command {
 				if (!TryLoadBodyFromFile(options, out response)) return false;
 				PageUpdateResponse validationError = ValidateInput(options, out Dictionary<string, string> explicitResources);
 				if (validationError != null) { response = validationError; return false; }
-				if (!TryResolveContext(options, out EditableSchemaContext context, out response)) return false;
 				if (options.DryRun) { response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null); return true; }
+				if (!TryResolveContext(options, out EditableSchemaContext context, out response)) return false;
 				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
 				JArray parsedOptionalProperties = string.IsNullOrWhiteSpace(options.OptionalProperties)
 					? null : JArray.Parse(options.OptionalProperties);

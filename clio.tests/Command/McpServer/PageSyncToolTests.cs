@@ -268,11 +268,14 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Client-side validation rejects direct datasource field bindings (PDS_ prefix) and guides toward view-model attribute declaration")]
-	public async Task SyncPages_Should_Reject_Proxy_Field_Bindings_When_Validation_Is_Enabled() {
+	[Description("Client-side validation passes when field binds to an attribute not in current schema — it may be declared in a parent schema")]
+	public async Task SyncPages_Should_Allow_Field_Bindings_To_Parent_Schema_Attributes() {
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
 		PageSyncTool tool = new(commandResolver, new MockFileSystem());
-		string bodyWithDirectPdsBinding = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		string bodyWithParentAttributeBinding = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
@@ -282,23 +285,14 @@ public sealed class PageSyncToolTests {
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		PageSyncArgs args = new(
 			"dev",
-			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithDirectPdsBinding)],
+			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithParentAttributeBinding)],
 			Validate: true,
 			SkipSampling: true);
 
 		PageSyncResponse response = await tool.SyncPages(args, null);
 
-		response.Success.Should().BeFalse(
-			because: "sync-pages should block direct datasource bindings and require a view-model attribute declaration");
-		response.Pages[0].Success.Should().BeFalse(
-			because: "the page should fail semantic validation");
-		response.Pages[0].Validation.Should().NotBeNull(
-			because: "sync-pages should return validation details for blocked field bindings");
-		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
-			because: "semantic field validation contributes to the content-ok decision");
-		response.Pages[0].Error.Should().Contain("$PDS_UsrStatus")
-			.And.Contain("$UsrStatus",
-				because: "the failure should name the rejected direct binding and suggest the view-model attribute alternative");
+		response.Success.Should().BeTrue(
+			because: "sync-pages should allow bindings to attributes that may be declared in a parent schema");
 	}
 
 	[Test]

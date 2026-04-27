@@ -483,21 +483,11 @@ public static class SchemaValidationService
 		string componentType,
 		in FieldValidationContext ctx) {
 		string fieldDisplayName = !string.IsNullOrWhiteSpace(fieldName) ? fieldName : componentType;
-		if (!TryGetBindingAttribute(componentValues, out string bindingProperty, out string bindingExpression, out string bindingAttribute)) {
+		if (!TryGetBindingAttribute(componentValues, out _, out _, out string bindingAttribute)) {
 			return;
 		}
-		if (IsDirectPdsBinding(bindingAttribute)) {
-			string suggestedAttrName = bindingAttribute["PDS_".Length..];
-			string suggestedPath = "PDS." + suggestedAttrName;
-			ctx.Result.Errors.Add(
-				$"Standard field '{fieldDisplayName}' binds directly to datasource attribute '${bindingAttribute}'. " +
-				$"Declare a view-model attribute in viewModelConfig/viewModelConfigDiff (e.g. '{suggestedAttrName}' with modelConfig.path '{suggestedPath}') " +
-				$"and bind the control to '${suggestedAttrName}' instead.");
-		} else if (!ctx.DeclaredAttributes.Contains(bindingAttribute)) {
-			ctx.Result.Errors.Add(
-				$"Standard field '{fieldDisplayName}' binds to undeclared attribute '{bindingAttribute}' via '{bindingProperty}' ('{bindingExpression}'). " +
-				"Bind the control to an attribute declared in viewModelConfig/viewModelConfigDiff.");
-		} else if (TryFindAlternativeAttributesForSamePath(bindingAttribute, ctx.ModelPaths, ctx.AttributesWrittenByHandlers, out string handlerAttribute)) {
+		if (ctx.DeclaredAttributes.Contains(bindingAttribute) &&
+		    TryFindAlternativeAttributesForSamePath(bindingAttribute, ctx.ModelPaths, ctx.AttributesWrittenByHandlers, out string handlerAttribute)) {
 			ctx.Result.Errors.Add(
 				$"Control '{fieldDisplayName}' binds to '${bindingAttribute}' but handlers write attribute '{handlerAttribute}' through $context.set(...). " +
 				$"Bind the control to '${handlerAttribute}' or move the handler writes to '{bindingAttribute}' so the control and handler use the same declared view-model attribute.");
@@ -566,8 +556,17 @@ public static class SchemaValidationService
 		return true;
 	}
 
-	private static bool IsDirectPdsBinding(string bindingAttribute) =>
-		bindingAttribute.StartsWith("PDS_", StringComparison.OrdinalIgnoreCase);
+	internal static bool IsAllowedDirectFieldBinding(string bindingAttribute) {
+		return string.Equals(bindingAttribute, "Name", StringComparison.OrdinalIgnoreCase)
+			|| bindingAttribute.StartsWith("PDS_", StringComparison.OrdinalIgnoreCase);
+	}
+
+	internal static string BuildExpectedBinding(string modelPath) {
+		if (string.Equals(modelPath, "PDS.Name", StringComparison.OrdinalIgnoreCase)) {
+			return "$Name";
+		}
+		return "$" + modelPath.Replace(".", "_", StringComparison.Ordinal);
+	}
 
 	private static bool TryGetCaptionExpression(JsonElement componentValues, out string captionExpression) {
 		return TryGetStringProperty(componentValues, "label", out captionExpression)

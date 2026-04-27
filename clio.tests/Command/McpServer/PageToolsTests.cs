@@ -1358,8 +1358,8 @@ public class PageToolsTests {
 	}
 
 	[Test]
-	[Description("TryUpdatePage dry-run rejects field bindings to undeclared attributes before any remote calls are made.")]
-	public void TryUpdatePage_WhenFieldBindingTargetsUndeclaredAttribute_ReturnsValidationError() {
+	[Description("TryUpdatePage dry-run passes when field binding targets an attribute not declared in the current schema — it may be in a parent schema.")]
+	public void TryUpdatePage_WhenFieldBindingTargetsAttributeNotInCurrentSchema_Succeeds() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
@@ -1372,18 +1372,10 @@ public class PageToolsTests {
 
 		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
 
-		result.Should().BeFalse(
-			because: "update-page should fail fast on standard fields that point to undeclared view-model attributes");
-		response.Success.Should().BeFalse(
-			because: "the validation failure should be surfaced in the response envelope");
-		response.Error.Should().Contain("invalid form field bindings")
-			.And.Contain("UsrStatusField")
-			.And.Contain("undeclared attribute",
-				because: "the response should explain that the control binding is not declared in viewModelConfig");
-		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
-			because: "validation should fail before the command builds any service URLs");
-		applicationClient.ReceivedCalls().Should().BeEmpty(
-			because: "validation should fail before the command sends any remote requests");
+		result.Should().BeTrue(
+			because: "update-page should allow bindings to attributes not in the current schema, as they may be inherited from a parent schema");
+		response.Success.Should().BeTrue(
+			because: "binding to a parent-schema attribute is not a validation failure");
 	}
 
 	[Test]
@@ -2035,11 +2027,11 @@ public class PageToolsTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("get-page rewrites legacy direct datasource bindings before writing body.js so the file uses declared view-model attributes.")]
+	[Description("get-page rewrites proxy view-model attribute bindings to canonical $PDS_* form before writing body.js.")]
 	public void PageGetTool_WhenBodyHasDirectDatasourceBindings_WritesNormalizedBodyFile() {
 		// Arrange
 		string proxyBody = CreatePageBody(
-			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","label":"$Resources.Strings.PDS_UsrStatus","control":"$PDS_UsrStatus"}}]""",
+			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","label":"$Resources.Strings.PDS_UsrStatus","control":"$UsrStatus"}}]""",
 			viewModelConfigDiff: """[{"operation":"merge","values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}}]""");
 		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(proxyBody);
 
@@ -2047,12 +2039,12 @@ public class PageToolsTests {
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
 
 		// Assert
-		response.Success.Should().BeTrue(because: "get-page should succeed even when the source body has legacy direct datasource bindings");
+		response.Success.Should().BeTrue(because: "get-page should succeed even when the source body has proxy view-model attribute bindings");
 		string writtenBody = mockFs.File.ReadAllText(response.Files.BodyFile);
-		writtenBody.Should().Contain("$UsrStatus",
-			because: "get-page must normalize direct datasource binding $PDS_UsrStatus to the declared attribute before writing body.js");
-		writtenBody.Should().NotContain("\"$PDS_UsrStatus\"",
-			because: "the legacy direct datasource binding must not remain in the written body.js");
+		writtenBody.Should().Contain("$PDS_UsrStatus",
+			because: "get-page must normalize proxy binding $UsrStatus to canonical $PDS_UsrStatus form before writing body.js");
+		writtenBody.Should().NotContain("\"$UsrStatus\"",
+			because: "the proxy view-model binding must be rewritten to canonical form in the written body.js");
 	}
 
 	[Test]

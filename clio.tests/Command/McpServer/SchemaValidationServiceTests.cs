@@ -744,17 +744,16 @@ public sealed class SchemaValidationServiceTests {
 	}
 
 	[Test]
-	[Description("Standard field bindings to undeclared attributes are rejected")]
-	public void ValidateStandardFieldBindings_BindingToUndeclaredAttribute_ReturnsInvalid() {
+	[Description("Standard field binding to attribute not in current schema is valid — attribute may be declared in a parent schema")]
+	public void ValidateStandardFieldBindings_BindingToAttributeNotInCurrentSchema_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
 			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]",
 			"[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
 
-		result.IsValid.Should().BeFalse("because standard field controls must bind to declared view-model attributes");
-		result.Errors.Should().ContainSingle(error => error.Contains("UsrStatusField") && error.Contains("undeclared attribute"),
-			"because the validation should explain that the control points to an attribute not declared in viewModelConfig");
+		result.IsValid.Should().BeTrue("because the control may bind to an attribute declared in a parent schema");
+		result.Errors.Should().BeEmpty("because missing declaration in the current schema is not an error");
 	}
 
 	[Test]
@@ -883,9 +882,9 @@ public sealed class SchemaValidationServiceTests {
 	}
 
 	[Test]
-	[Description("Standard field without validators still requires a declared attribute binding")]
-	public void ValidateStandardFieldBindings_AttributeWithoutValidators_UndeclaredBindingIsRejected() {
-		// Arrange — UsrStatus has no validators; control points to an undeclared attribute.
+	[Description("Standard field binding to attribute not in current schema is valid even without validators — attribute may be declared in a parent schema")]
+	public void ValidateStandardFieldBindings_AttributeWithoutValidators_BindingToParentAttributeIsAllowed() {
+		// Arrange — UsrStatus declared in viewModelConfig; control binds to UsrStatusField which may be in parent schema.
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]";
 		string viewModelConfig = "{\"attributes\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
@@ -894,9 +893,8 @@ public sealed class SchemaValidationServiceTests {
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
 
 		// Assert
-		result.IsValid.Should().BeFalse("because standard fields still must bind to declared attributes even when no validators are present");
-		result.Errors.Should().ContainSingle(error => error.Contains("UsrStatusField") && error.Contains("undeclared attribute"),
-			"because the validation should reject a control binding that points outside viewModelConfig");
+		result.IsValid.Should().BeTrue("because the attribute UsrStatusField may be declared in a parent schema");
+		result.Errors.Should().BeEmpty("because binding to a parent-schema attribute is not an error");
 	}
 
 	[Test]
