@@ -34,7 +34,8 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_fileSystem = new Clio.Common.FileSystem(new System.IO.Abstractions.FileSystem());
 		_logger = Substitute.For<ILogger>();
-		_command = new SetFsmConfigCommand(_validator, _settingsRepository, _fileSystem, _logger);
+		_iisScanner = Substitute.For<IIisScanner>();
+		_command = new SetFsmConfigCommand(_validator, _settingsRepository, _fileSystem, _logger, _iisScanner);
 	}
 
 	#endregion
@@ -45,6 +46,7 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	private ISettingsRepository _settingsRepository;
 	private Clio.Common.IFileSystem _fileSystem;
 	private ILogger _logger;
+	private IIisScanner _iisScanner;
 	private SetFsmConfigCommand _command;
 
 	#endregion
@@ -161,10 +163,10 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(env);
 		_settingsRepository.GetEnvironment(options).Returns(env);
 
-		IISScannerHandler.SiteBinding siteBindingMock = new("test-env", string.Empty, "", expectedPath);
+		SiteBinding siteBindingMock = new("test-env", string.Empty, "", expectedPath);
 		List<Uri> urisMock = [new("https://test.com")];
-		IISScannerHandler.UnregisteredSite mockSite = new(siteBindingMock, urisMock, IISScannerHandler.SiteType.NetFramework);
-		IISScannerHandler.FindAllCreatioSites = () => new List<IISScannerHandler.UnregisteredSite> {mockSite};
+		UnregisteredSite mockSite = new(siteBindingMock, urisMock, SiteType.NetFramework);
+		_iisScanner.FindAllCreatioSites().Returns(new List<UnregisteredSite> {mockSite});
 		_validator.Validate(options).Returns(new ValidationResult());
 
 		// Act
@@ -389,7 +391,7 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		_settingsRepository.GetEnvironment(options).Returns(env);
 		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(env);
 
-		IISScannerHandler.FindAllCreatioSites = () => new List<IISScannerHandler.UnregisteredSite>();
+		_iisScanner.FindAllCreatioSites().Returns(new List<UnregisteredSite>());
 
 		// Act
 		Action act = () => _command.Execute(options);
@@ -420,9 +422,6 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		_settingsRepository.GetEnvironment(options.EnvironmentName).Returns(env);
 
 		// Act & Assert
-		// Note: This test will fail in the current implementation because it uses static methods
-		// The static method IISScannerHandler.FindAllCreatioSites() will be called and we cannot mock it
-		// In a real-world scenario, this would require dependency injection for the IIS scanner functionality
 		Action act = () => _command.Execute(options);
 		act.Should().Throw<Exception>()
 			.WithMessage("Could not find path to environment: 'test-env'");

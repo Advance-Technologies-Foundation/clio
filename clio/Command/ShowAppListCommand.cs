@@ -169,8 +169,10 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 			NullValueHandling = NullValueHandling.Ignore
 		};
 
+#pragma warning disable CLIO002
 		serializer.Serialize(Console.Out, BuildEnvironmentResult(environment, environmentName, maskSensitiveData: true));
-		logger.WriteLine(); // Add a newline after JSON
+#pragma warning restore CLIO002
+		logger.WriteLine();
 	}
 
 	/// <summary>
@@ -253,15 +255,17 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 
 	public override int Execute(AppListOptions options) {
 		try {
+#pragma warning disable CLIO002
 			Console.OutputEncoding = Encoding.UTF8;
+#pragma warning restore CLIO002
 
-			// Determine format (raw flag takes precedence)
 			string format = options.Raw ? "raw" : options.Format ?? "json";
 			string environmentName = string.IsNullOrEmpty(options.Name) ? options.Env : options.Name;
 
-			// Handle short format (backward compatibility with -s flag)
 			if (options.ShowShort) {
+#pragma warning disable CLIO002
 				settingsRepository.ShowSettingsTo(Console.Out, environmentName, true);
+#pragma warning restore CLIO002
 				return 0;
 			}
 
@@ -307,8 +311,9 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 
 				switch (format.ToLower()) {
 					case "json":
-						// Use default behavior for all environments
+#pragma warning disable CLIO002
 						settingsRepository.ShowSettingsTo(Console.Out, null);
+#pragma warning restore CLIO002
 						break;
 					case "table":
 						OutputAsTable(allEnvs);

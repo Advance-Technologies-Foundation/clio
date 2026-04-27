@@ -18,8 +18,8 @@ public sealed class PageGetTool(
 
 	internal const string ToolName = "get-page";
 
-	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Get a Freedom UI page. Writes body.js / bundle.json / meta.json to .clio-pages/{schema-name}/ in the working directory and returns file paths. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[Description("Get a Freedom UI page. Writes body.js / bundle.json / meta.json to .clio-pages/{schema-name}/ in the working directory and returns file paths. body.js contains the EDITABLE own-body of the replacing schema in the design package (empty template when no replacing schema exists yet) — this is what update-page should receive. bundle.json contains the full merged view of the entire hierarchy and is the correct source for reading what components are on the page. Before authoring SCHEMA_VALIDATORS, call get-guidance with name `page-schema-validators` first. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public PageGetResponse GetPage(
 		[Description("Parameters: schema-name (required); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageGetArgs args) {
@@ -46,28 +46,56 @@ public sealed class PageGetTool(
 	}
 
 	private PageGetResponse WriteFilesAndCompact(PageGetResponse response, string schemaName) {
-		string schemaDir = fileSystem.Path.Combine(
-			fileSystem.Directory.GetCurrentDirectory(), ".clio-pages", schemaName);
+		string rootDir = fileSystem.Path.Combine(
+			fileSystem.Directory.GetCurrentDirectory(), ".clio-pages");
+		string schemaDir = fileSystem.Path.Combine(rootDir, schemaName);
 		try {
+			if (fileSystem.Directory.Exists(schemaDir)) {
+				fileSystem.Directory.Delete(schemaDir, recursive: true);
+			}
 			fileSystem.Directory.CreateDirectory(schemaDir);
+			EnsureGitIgnoreEntry(rootDir);
 		} catch (Exception ex) {
-			return new PageGetResponse { Success = false, Error = $"Failed to create output directory '{schemaDir}': {ex.Message}" };
+			return new PageGetResponse { Success = false, Error = $"Failed to prepare output directory '{schemaDir}': {ex.Message}" };
 		}
 		string bodyFile   = fileSystem.Path.Combine(schemaDir, "body.js");
 		string bundleFile = fileSystem.Path.Combine(schemaDir, "bundle.json");
 		string metaFile   = fileSystem.Path.Combine(schemaDir, "meta.json");
+		string fetchedAt = DateTime.UtcNow.ToString("o");
 		try {
-			fileSystem.File.WriteAllText(bodyFile,   response.Raw.Body);
+			fileSystem.File.WriteAllText(bodyFile,   PageBodyNormalizer.NormalizeProxyBindings(response.Raw.Body));
 			fileSystem.File.WriteAllText(bundleFile, System.Text.Json.JsonSerializer.Serialize(response.Bundle));
-			fileSystem.File.WriteAllText(metaFile,   System.Text.Json.JsonSerializer.Serialize(response.Page));
+			fileSystem.File.WriteAllText(metaFile,   System.Text.Json.JsonSerializer.Serialize(new {
+				fetchedAt,
+				page = response.Page
+			}));
 		} catch (Exception ex) {
 			return new PageGetResponse { Success = false, Error = $"Failed to write page files: {ex.Message}" };
 		}
 		return new PageGetResponse {
 			Success = true,
 			Page = response.Page,
-			Files = new PageGetFilesInfo { BodyFile = bodyFile, BundleFile = bundleFile, MetaFile = metaFile }
+			Files = new PageGetFilesInfo {
+				BodyFile = bodyFile,
+				BundleFile = bundleFile,
+				MetaFile = metaFile,
+				FetchedAt = fetchedAt
+			}
 		};
+	}
+
+	private void EnsureGitIgnoreEntry(string rootDir) {
+		try {
+			if (!fileSystem.Directory.Exists(rootDir)) {
+				fileSystem.Directory.CreateDirectory(rootDir);
+			}
+			string gitignorePath = fileSystem.Path.Combine(rootDir, ".gitignore");
+			if (!fileSystem.File.Exists(gitignorePath)) {
+				fileSystem.File.WriteAllText(gitignorePath, "*\n!.gitignore\n");
+			}
+		} catch {
+			// ignore — gitignore is best-effort hygiene; never block a successful get-page.
+		}
 	}
 }
 

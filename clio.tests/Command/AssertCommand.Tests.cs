@@ -55,7 +55,7 @@ public class AssertCommandTests : BaseCommandTests<AssertOptions>
 			_databaseCapabilityChecker,
 			_kubernetesClient));
 		containerBuilder.AddTransient<IK8RedisAssertion>(_ => new K8RedisAssertion(_kubernetesClient, _k8ServiceResolver, _redisDatabaseSelector));
-		containerBuilder.AddTransient<IFsPathAssertion>(_ => new FsPathAssertion(_settingsRepository, _logger));
+		containerBuilder.AddTransient<IFsPathAssertion>(_ => new FsPathAssertion(_settingsRepository, _logger, new System.IO.Abstractions.FileSystem()));
 		containerBuilder.AddTransient<IFsPermissionAssertion>(_ => new FsPermissionAssertion(_settingsRepository, _logger));
 
 		_localDatabaseAssertion = Substitute.For<ILocalDatabaseAssertion>();

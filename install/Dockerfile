@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 # Set the working directory to /app
 WORKDIR /app
@@ -10,7 +10,7 @@ COPY README.md README.md
 # Change the working directory to /app/clio
 WORKDIR /app/clio
 
-RUN dotnet publish ./clio.csproj -c Release -o /app/published --framework net8.0 /p:AssemblyName=clio-app
+RUN dotnet publish ./clio.csproj -c Release -o /app/published --framework net10.0 /p:AssemblyName=clio-app
 # Final stage: Use the build stage as the base for the final image
 FROM build AS final
 

@@ -37,6 +37,51 @@ public class PageToolsTests {
 	}
 
 	[Test]
+	[Description("Verifies that PageCreateTool has the correct MCP tool name")]
+	public void PageCreateTool_HasCorrectName() {
+		PageCreateTool.ToolName.Should().Be("create-page", "because the MCP tool name must match the protocol contract");
+	}
+
+	[Test]
+	[Description("Verifies that PageTemplatesListTool has the correct MCP tool name")]
+	public void PageTemplatesListTool_HasCorrectName() {
+		PageTemplatesListTool.ToolName.Should().Be("list-page-templates", "because the MCP tool name must match the protocol contract");
+	}
+
+	[Test]
+	[Description("Serializes create-page MCP request arguments using kebab-case field names")]
+	public void PageCreateToolArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
+		PageCreateArgs args = new(
+			"UsrDemo_BlankPage", "BlankPageTemplate", "Custom",
+			"Demo page", "Demo description", "UsrDemoEntity",
+			"sandbox", null, null, null);
+
+		string json = System.Text.Json.JsonSerializer.Serialize(args);
+
+		json.Should().Contain("\"schema-name\":\"UsrDemo_BlankPage\"");
+		json.Should().Contain("\"template\":\"BlankPageTemplate\"");
+		json.Should().Contain("\"package-name\":\"Custom\"");
+		json.Should().Contain("\"entity-schema-name\":\"UsrDemoEntity\"");
+		json.Should().Contain("\"environment-name\":\"sandbox\"");
+		json.Should().NotContain("\"schemaName\"");
+		json.Should().NotContain("\"packageName\"");
+		json.Should().NotContain("\"dry-run\"");
+		json.Should().NotContain("\"dryRun\"");
+	}
+
+	[Test]
+	[Description("Serializes list-page-templates MCP request arguments using kebab-case field names")]
+	public void PageTemplatesListArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
+		PageTemplatesListArgs args = new("web", "sandbox", null, null, null);
+
+		string json = System.Text.Json.JsonSerializer.Serialize(args);
+
+		json.Should().Contain("\"schema-type\":\"web\"");
+		json.Should().Contain("\"environment-name\":\"sandbox\"");
+		json.Should().NotContain("\"schemaType\"");
+	}
+
+	[Test]
 	[Description("Serializes page MCP request arguments using kebab-case field names")]
 	public void PageToolArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
 		// Arrange
@@ -104,7 +149,7 @@ public class PageToolsTests {
 
 		response.Success.Should().BeFalse(
 			because: "legacy aliases should be rejected before list-pages runs an unscoped discovery query");
-		response.Error.Should().Be("Use 'code' instead of 'app-code'.",
+		response.Error.Should().Contain("'app-code' -> 'code'",
 			because: "the MCP tool should direct callers to the canonical selector field");
 	}
 
@@ -129,8 +174,18 @@ public class PageToolsTests {
 			because: "page guidance should keep direct connection args in a fallback-only role");
 		prompt.Should().Contain($"`{ComponentInfoTool.ToolName}`",
 			because: "get-page prompt guidance should direct callers to get-component-info for unfamiliar Freedom UI types");
-		prompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "get-page prompt guidance should point callers to the MCP-owned existing-app maintenance guide");
+		prompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "get-page prompt guidance should route guide lookups through the dedicated guidance tool");
+		prompt.Should().Contain("`existing-app-maintenance`",
+			because: "get-page prompt guidance should point callers to the MCP-owned existing-app maintenance guide name");
+		prompt.Should().Contain("`page-schema-validators`",
+			because: "get-page prompt guidance should point validator edits to the dedicated clio-owned validator guide name");
+		prompt.Should().Contain($"you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-validators` before proposing or applying changes",
+			because: "validator guidance should be mandatory before authorship so callers do not drift into handler syntax");
+		prompt.Should().Contain("must not author validator changes until that guidance has been read",
+			because: "validator guidance should be framed as a hard workflow prerequisite rather than an optional recommendation");
+		prompt.Should().Contain("never use handler signatures like `handler(request, next)`",
+			because: "validator guidance should explicitly block handler contract leakage into SCHEMA_VALIDATORS");
 		prompt.Should().Contain($"`{ToolContractGetTool.ToolName}`",
 			because: "get-page prompt guidance should bootstrap page workflows from the authoritative MCP contract before the first page tool call");
 		prompt.Should().Contain($"`{PageSyncTool.ToolName}`",
@@ -165,6 +220,110 @@ public class PageToolsTests {
 			because: "get-page prompt guidance should no longer advertise removed camelCase request fields");
 		prompt.Should().NotContain("`environmentName`",
 			because: "get-page prompt guidance should no longer advertise removed camelCase request fields");
+	}
+
+	[Test]
+	[Description("get-page tool description routes callers to the canonical validator guide so they read it before authoring validators.")]
+	public void PageGetTool_Description_Should_Contain_Validator_Binding_Location_Guidance() {
+		// Arrange
+		var method = typeof(PageGetTool).GetMethod(nameof(PageGetTool.GetPage))!;
+		var descAttr = method.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single();
+
+		// Act
+		string description = descAttr.Description;
+
+		// Assert
+		description.Should().Contain("SCHEMA_VALIDATORS",
+			because: "get-page description should surface the section name so callers know which guide to read before editing");
+		description.Should().Contain("call get-guidance with name `page-schema-validators`",
+			because: "get-page description should route callers to the dedicated validator guide through get-guidance");
+	}
+
+	[Test]
+	[Description("sync-pages tool description routes callers to the canonical validator guide so they read it before authoring validators.")]
+	public void PageSyncTool_Description_Should_Contain_Validator_Section_Authoring_Rules() {
+		// Arrange
+		var method = typeof(PageSyncTool).GetMethod(nameof(PageSyncTool.SyncPages))!;
+		var descAttr = method.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single();
+
+		// Act
+		string description = descAttr.Description;
+
+		// Assert
+		description.Should().Contain("SCHEMA_VALIDATORS",
+			because: "sync-pages description should surface the validator section name as part of body authoring rules");
+		description.Should().Contain("call get-guidance with name `page-schema-validators`",
+			because: "sync-pages description should route callers to the dedicated validator guide through get-guidance");
+	}
+
+	[Test]
+	[Description("update-page tool description routes validator authoring to the dedicated guidance resource instead of duplicating validator rules inline.")]
+	public void PageUpdateTool_Description_Should_Contain_Validator_Section_Authoring_Rules() {
+		// Arrange
+		var method = typeof(PageUpdateTool).GetMethod(nameof(PageUpdateTool.UpdatePage))!;
+		var descAttr = method.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single();
+
+		// Act
+		string description = descAttr.Description;
+
+		// Assert
+		description.Should().Contain("SCHEMA_VALIDATORS",
+			because: "update-page description should surface the validator section name as part of body authoring rules");
+		description.Should().Contain("call get-guidance with name `page-schema-validators` first",
+			because: "update-page description should make validator guidance a mandatory precondition before validator authoring");
+	}
+
+	[Test]
+	[Description("get-page, sync-pages, and update-page tool descriptions all link to the validator guide so validator-specific rules live in one canonical location.")]
+	public void PageTools_Descriptions_Should_Forbid_PDS_Control_Binding_For_Validators() {
+		// Arrange
+		var getDesc = typeof(PageGetTool).GetMethod(nameof(PageGetTool.GetPage))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+		var syncDesc = typeof(PageSyncTool).GetMethod(nameof(PageSyncTool.SyncPages))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+		var updateDesc = typeof(PageUpdateTool).GetMethod(nameof(PageUpdateTool.UpdatePage))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+
+		// Act & Assert
+		getDesc.Should().Contain("get-guidance",
+			because: "get-page description must route callers to the validator guide through get-guidance");
+		syncDesc.Should().Contain("get-guidance",
+			because: "sync-pages description must route callers to the validator guide through get-guidance");
+		updateDesc.Should().Contain("get-guidance",
+			because: "update-page description must route callers to the validator guide instead of duplicating PDS binding rules inline");
+	}
+
+	[Test]
+	[Description("get-page, sync-pages, and update-page tool descriptions enforce #ResourceString(KeyName)# for validator message params and forbid $Resources.Strings.KeyName.")]
+	public void PageTools_Descriptions_Should_Enforce_ResourceString_Format_For_Validator_Messages() {
+		// Arrange
+		var getDesc = typeof(PageGetTool).GetMethod(nameof(PageGetTool.GetPage))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+		var syncDesc = typeof(PageSyncTool).GetMethod(nameof(PageSyncTool.SyncPages))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+		var updateDesc = typeof(PageUpdateTool).GetMethod(nameof(PageUpdateTool.UpdatePage))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+
+		// Act & Assert
+		// all tools route callers to the guide which contains the ResourceString rules
+		getDesc.Should().Contain("get-guidance",
+			because: "get-page description must route callers to the validator guide which documents the #ResourceString(KeyName)# requirement");
+		syncDesc.Should().Contain("get-guidance",
+			because: "sync-pages description must route callers to the validator guide which documents the #ResourceString(KeyName)# requirement");
+		updateDesc.Should().Contain("get-guidance",
+			because: "update-page description must route callers to the validator guide which documents the #ResourceString(KeyName)# requirement");
 	}
 
 	[Test]
@@ -212,6 +371,7 @@ public class PageToolsTests {
 				"UsrMcp",
 				"BasePage").ToString());
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("tool-page-uid").Returns("tool-package-uid");
 		hierarchyClient.GetParentSchemas("tool-page-uid", "tool-package-uid")
 			.Returns([
 				new PageDesignerHierarchySchema {
@@ -863,6 +1023,7 @@ public class PageToolsTests {
 				Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("broken-page-uid").Returns("broken-package-uid");
 		hierarchyClient.GetParentSchemas("broken-page-uid", "broken-package-uid")
 			.Returns(_ => throw new System.InvalidOperationException("Failed to load page schema hierarchy"));
 		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
@@ -902,6 +1063,7 @@ public class PageToolsTests {
 				Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("malformed-page-uid").Returns("malformed-package-uid");
 		hierarchyClient.GetParentSchemas("malformed-page-uid", "malformed-package-uid")
 			.Returns([
 				new PageDesignerHierarchySchema {
@@ -984,7 +1146,7 @@ public class PageToolsTests {
 					}
 				}
 			}.ToString());
-		PageUpdateCommand updateCommand = new(updateApplicationClient, updateServiceUrlBuilder, updateLogger);
+		PageUpdateCommand updateCommand = new(updateApplicationClient, updateServiceUrlBuilder, updateLogger, CreateHierarchyClientFor("roundtrip-page-uid", "roundtrip-pkg-uid"));
 
 		// Act
 		bool getResult = getCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
@@ -1045,7 +1207,7 @@ public class PageToolsTests {
 				if (callIndex == 2) return getSchemaResponse.ToString();
 				return saveResponse.ToString();
 			});
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
 		var options = new PageUpdateOptions {
 			SchemaName = "Test_FormPage",
 			Body = validBody,
@@ -1077,7 +1239,7 @@ public class PageToolsTests {
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
 		string validBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
 		var options = new PageUpdateOptions {
 			SchemaName = "Test_FormPage",
 			Body = validBody,
@@ -1106,7 +1268,7 @@ public class PageToolsTests {
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
 		string validBody = "define(\"X\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
 		var options = new PageUpdateOptions {
 			SchemaName = "MissingPage",
 			Body = validBody,
@@ -1125,7 +1287,7 @@ public class PageToolsTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrEmptyBody_FormPage",
 			Body = string.Empty,
@@ -1152,7 +1314,7 @@ public class PageToolsTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrInvalidResources_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -1178,7 +1340,7 @@ public class PageToolsTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrProxyBinding_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -1201,6 +1363,130 @@ public class PageToolsTests {
 			because: "validation should fail before the command sends any remote requests");
 	}
 
+	[Test]
+	[Description("PageUpdateTool.UpdatePage rejects schemas where validator params use $Resources.Strings.X binding syntax before saving to Creatio.")]
+	public void PageUpdateTool_UpdatePage_Rejects_Schema_With_Resources_Strings_In_Validator_Params() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		PageUpdateTool tool = new(command, logger, commandResolver);
+		string body = CreatePageBody(
+			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"$Resources.Strings.UsrUpperCaseValidator_Message"}}}}}}""",
+			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
+		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "update-page must reject schemas where validator params use $Resources.Strings.X — this syntax is not evaluated in validator params");
+		response.Error.Should().Contain("Validation failed",
+			because: "the error message must clearly communicate that client-side validation blocked the save");
+		response.Error.Should().Contain("#ResourceString(",
+			because: "the error message must suggest the correct #ResourceString(KeyName)# format");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "validation must fail before any remote call is made to Creatio");
+	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage accepts a schema that correctly uses #ResourceString(KeyName)# in validator params.")]
+	public void PageUpdateTool_UpdatePage_Accepts_Schema_With_Correct_ResourceString_In_Validator_Params() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(System.Text.Json.JsonSerializer.Serialize(new { success = true }));
+		PageUpdateTool tool = new(command, logger, commandResolver);
+		string body = CreatePageBody(
+			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"#ResourceString(UsrUpperCaseValidator_Message)#"}}}}}}""",
+			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
+		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Error.Should().NotContain("Validation failed",
+			because: "#ResourceString(KeyName)# is the correct format and must not be rejected by the validator param check");
+	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage rejects crt.MaxLength bindings that use max instead of maxLength in params.")]
+	public void PageUpdateTool_UpdatePage_Rejects_BuiltIn_MaxLength_With_Wrong_Param_Name() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		PageUpdateTool tool = new(command, logger, commandResolver);
+		string body = CreatePageBody(
+			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","control":"$UsrName"}}]""",
+			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"NameMaxLength":{"type":"crt.MaxLength","params":{"max":4}}}}}}""");
+		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "crt.MaxLength expects maxLength in params, so max must be rejected before save");
+		response.Error.Should().Contain("crt.MaxLength")
+			.And.Contain("max")
+			.And.Contain("maxLength",
+				because: "the validation error should identify the wrong param and the required one");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "the validation failure must happen before any remote save call is made");
+	}
+
+	[Test]
+	[Description("PageUpdateTool description routes callers to the validator guide which covers both viewModelConfig and viewModelConfigDiff for validator bindings.")]
+	public void PageUpdateTool_Description_Supports_Static_And_Diff_ViewModel_Config() {
+		// Arrange
+		System.ComponentModel.DescriptionAttribute? attribute = typeof(PageUpdateTool)
+			.GetMethod(nameof(PageUpdateTool.UpdatePage))?
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.SingleOrDefault();
+
+		// Act
+		string? description = attribute?.Description;
+
+		// Assert
+		description.Should().Contain("get-guidance",
+			because: "the tool contract should delegate static-vs-diff binding details to the canonical validator guidance");
+	}
+
+	[Test]
+	[Description("PageSyncTool description routes callers to the validator guide which covers both viewModelConfig and viewModelConfigDiff binding variants.")]
+	public void PageSyncTool_Description_Supports_Static_And_Diff_ViewModel_Config() {
+		// Arrange
+		System.ComponentModel.DescriptionAttribute? attribute = typeof(PageSyncTool)
+			.GetMethod(nameof(PageSyncTool.SyncPages))?
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.SingleOrDefault();
+
+		// Act
+		string? description = attribute?.Description;
+
+		// Assert
+		description.Should().Contain("get-guidance",
+			because: "sync-pages description must route callers to the validator guide which covers both static and diff-based viewModelConfig binding");
+	}
+
+
 	private static PageGetCommand CreatePageGetCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
@@ -1213,6 +1499,30 @@ public class PageToolsTests {
 			hierarchyClient ?? new PageDesignerHierarchyClient(applicationClient, serviceUrlBuilder),
 			new PageSchemaBodyParser(),
 			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()));
+	}
+
+	private static (PageGetTool tool, MockFileSystem mockFs) CreatePageGetToolWithBody(string body) {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("pkg-1");
+		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
+			.Returns([new PageDesignerHierarchySchema {
+				UId = "uid-1", Name = "UsrMcp_FormPage",
+				PackageUId = "pkg-1", PackageName = "UsrMcp",
+				SchemaVersion = 1, Body = body
+			}]);
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
+		MockFileSystem mockFs = new();
+		return (new PageGetTool(command, logger, commandResolver, mockFs), mockFs);
 	}
 
 	private static JObject CreateMetadataResponse(
@@ -1282,6 +1592,7 @@ public class PageToolsTests {
 				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("pkg-1");
 		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
 			.Returns([new PageDesignerHierarchySchema {
 				UId = "uid-1", Name = "UsrMcp_FormPage",
@@ -1327,6 +1638,7 @@ public class PageToolsTests {
 				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("pkg-1");
 		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
 			.Returns([new PageDesignerHierarchySchema {
 				UId = "uid-1", Name = "UsrMcp_FormPage",
@@ -1349,6 +1661,88 @@ public class PageToolsTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("get-page normalizes proxy bindings before writing body.js so the file passes sync-pages validation.")]
+	public void PageGetTool_WhenBodyHasProxyBindings_WritesNormalizedBodyFile() {
+		// Arrange
+		string proxyBody = CreatePageBody(
+			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","label":"$Resources.Strings.PDS_UsrStatus","control":"$UsrStatus"}}]""",
+			viewModelConfigDiff: """[{"operation":"merge","values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}}]""");
+		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(proxyBody);
+
+		// Act
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "get-page should succeed even when the source body has proxy bindings");
+		string writtenBody = mockFs.File.ReadAllText(response.Files.BodyFile);
+		writtenBody.Should().Contain("$PDS_UsrStatus",
+			because: "get-page must normalize proxy binding $UsrStatus to $PDS_UsrStatus before writing body.js");
+		writtenBody.Should().NotContain("\"$UsrStatus\"",
+			because: "the proxy binding must not remain in the written body.js");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-page leaves body.js unchanged when it already uses canonical $PDS_* bindings.")]
+	public void PageGetTool_WhenBodyHasNoProxyBindings_WritesBodyUnchanged() {
+		// Arrange
+		string canonicalBody = CreatePageBody(
+			viewConfigDiff: """[{"operation":"insert","name":"PDS_UsrStatus","values":{"type":"crt.ComboBox","control":"$PDS_UsrStatus"}}]""",
+			viewModelConfigDiff: """[{"operation":"merge","values":{"PDS_UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}}]""");
+		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(canonicalBody);
+
+		// Act
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "get-page should succeed for a body with canonical bindings");
+		string writtenBody = mockFs.File.ReadAllText(response.Files.BodyFile);
+		writtenBody.Should().Contain("$PDS_UsrStatus",
+			because: "canonical binding must be preserved unchanged in body.js");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-page wipes the schema directory before writing so stale files from prior fetches or AI-authored drafts do not leak into the fresh response")]
+	public void PageGetTool_WhenSchemaDirHasStaleFiles_WipesBeforeWriting() {
+		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(CreatePageBody());
+		string schemaDir = System.IO.Path.Combine(mockFs.Directory.GetCurrentDirectory(), ".clio-pages", "UsrMcp_FormPage");
+		mockFs.Directory.CreateDirectory(schemaDir);
+		string stalePath = System.IO.Path.Combine(schemaDir, "body.new.js");
+		mockFs.File.WriteAllText(stalePath, "stale draft content");
+		string oldBodyPath = System.IO.Path.Combine(schemaDir, "body.js");
+		mockFs.File.WriteAllText(oldBodyPath, "previous session body");
+
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+
+		response.Success.Should().BeTrue();
+		mockFs.File.Exists(stalePath).Should().BeFalse(
+			because: "stale AI-authored files in the schema dir must not survive a fresh get-page call");
+		mockFs.File.ReadAllText(oldBodyPath).Should().NotBe("previous session body",
+			because: "body.js must be overwritten with the fresh fetched body");
+		response.Files.FetchedAt.Should().NotBeNullOrEmpty(
+			because: "get-page must report the ISO-8601 fetch timestamp so callers can detect cache staleness");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-page writes a .gitignore entry under .clio-pages so the working tree stays clean by default")]
+	public void PageGetTool_WhenWriting_AddsGitIgnoreEntry() {
+		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(CreatePageBody());
+
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+
+		response.Success.Should().BeTrue();
+		string gitignorePath = System.IO.Path.Combine(mockFs.Directory.GetCurrentDirectory(), ".clio-pages", ".gitignore");
+		mockFs.File.Exists(gitignorePath).Should().BeTrue(
+			because: "the .clio-pages directory is ephemeral MCP state and must be git-ignored by default");
+		string content = mockFs.File.ReadAllText(gitignorePath);
+		content.Should().Contain("*",
+			because: "the gitignore must exclude all cached page files");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("get-page returns error response when directory creation fails")]
 	public void PageGetTool_WhenDirectoryCreationFails_ReturnsError() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
@@ -1360,6 +1754,7 @@ public class PageToolsTests {
 				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("pkg-1");
 		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
 			.Returns([new PageDesignerHierarchySchema {
 				UId = "uid-1", Name = "UsrMcp_FormPage",
@@ -1382,7 +1777,7 @@ public class PageToolsTests {
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
 
 		response.Success.Should().BeFalse(because: "directory creation failure should produce a failed response");
-		response.Error.Should().Contain("Failed to create output directory",
+		response.Error.Should().Contain("Failed to prepare output directory",
 			because: "the error must explain what failed");
 		response.Files.Should().BeNull(because: "no files block should be returned on failure");
 	}
@@ -1412,5 +1807,448 @@ public class PageToolsTests {
 		json.Should().Contain("\"bodyFile\":\"/out/UsrFoo/body.js\"", because: "body file path must be serialized");
 		json.Should().Contain("\"bundleFile\":\"/out/UsrFoo/bundle.json\"", because: "bundle file path must be serialized");
 		json.Should().Contain("\"metaFile\":\"/out/UsrFoo/meta.json\"", because: "meta file path must be serialized");
+	}
+
+	[Test]
+	[Description("TryUpdatePage uses hierarchy[0] as editable schema when a replacing schema already lives in the design package")]
+	public void TryUpdatePage_WhenReplacingExistsInDesignPackage_UpdatesThatReplacing() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "f537fd79-9bdc-43ea-a9ce-b068c29d0b22";
+		const string replacingUId = "088384f8-5379-4f4c-b71a-3e86d5117909";
+		const string designPackageUId = "082ea278-3ea9-4cca-96da-d5bb999b141e";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPackageUId);
+		hierarchyClient.GetParentSchemas(originalUId, designPackageUId).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = replacingUId, Name = "Accounts_ListPage", PackageUId = designPackageUId, PackageName = "CrtCustomer360App_pcsejrm" },
+			new() { UId = originalUId, Name = "Accounts_ListPage", PackageUId = "2ecba2bd-b810-47a5-a1b1-08c888529d6c", PackageName = "CrtCustomer360App" }
+		});
+		string validBody = "define(\"Accounts_ListPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject {
+				["uId"] = replacingUId,
+				["name"] = "Accounts_ListPage",
+				["body"] = "old diff",
+				["package"] = new JObject { ["uId"] = designPackageUId },
+				["parent"] = new JObject { ["uId"] = originalUId }
+			}
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		string lastSavePayload = null;
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				if (callIndex == 1) return metadataResponse.ToString();
+				if (callIndex == 2) return getSchemaResponse.ToString();
+				if (callIndex == 3) { lastSavePayload = ci.ArgAt<string>(1); return saveResponse.ToString(); }
+				return new JObject { ["success"] = true }.ToString();
+			});
+
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Accounts_ListPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
+
+		ok.Should().BeTrue(because: "expected success; error: " + response.Error);
+		response.Success.Should().BeTrue();
+		hierarchyClient.Received(1).GetDesignPackageUId(originalUId);
+		hierarchyClient.Received(1).GetParentSchemas(originalUId, designPackageUId);
+		var savedDto = JObject.Parse(lastSavePayload);
+		savedDto["uId"].ToString().Should().Be(replacingUId,
+			because: "update path must target the existing replacing schema in design package");
+	}
+
+	[Test]
+	[Description("TryUpdatePage creates a new replacing schema in design package when hierarchy[0] is not in design package (virtual package materialization)")]
+	public void TryUpdatePage_WhenNoReplacingInDesignPackage_BuildsNewReplacingDto() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "f537fd79-9bdc-43ea-a9ce-b068c29d0b22";
+		const string originalPackageUId = "2ecba2bd-b810-47a5-a1b1-08c888529d6c";
+		const string virtualDesignPackageUId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(virtualDesignPackageUId);
+		hierarchyClient.GetParentSchemas(originalUId, virtualDesignPackageUId).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "Accounts_ListPage", PackageUId = originalPackageUId, PackageName = "CrtCustomer360App" }
+		});
+		string validBody = "define(\"Accounts_ListPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject {
+				["uId"] = originalUId,
+				["name"] = "Accounts_ListPage",
+				["schemaType"] = 9,
+				["schemaVersion"] = 1,
+				["body"] = "original body",
+				["package"] = new JObject { ["uId"] = originalPackageUId, ["name"] = "CrtCustomer360App" },
+				["parent"] = new JObject { ["uId"] = "b7b898d0-8c77-4953-c097-23fa6800da02", ["name"] = "ListPageV3Template" },
+				["isReadOnly"] = true,
+				["optionalProperties"] = new JArray()
+			}
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		var noRowsResponse = new JObject { ["success"] = true, ["rows"] = new JArray() };
+		string lastSavePayload = null;
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				if (callIndex == 1) return metadataResponse.ToString();
+				if (callIndex == 2) return noRowsResponse.ToString();
+				if (callIndex == 3) return getSchemaResponse.ToString();
+				if (callIndex == 4) { lastSavePayload = ci.ArgAt<string>(1); return saveResponse.ToString(); }
+				return new JObject { ["success"] = true }.ToString();
+			});
+
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Accounts_ListPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
+
+		ok.Should().BeTrue();
+		response.Success.Should().BeTrue();
+		var savedDto = JObject.Parse(lastSavePayload);
+		savedDto["uId"].ToString().Should().NotBe(originalUId,
+			because: "create path must issue a fresh uId so backend creates a new replacing schema");
+		System.Guid.TryParse(savedDto["uId"].ToString(), out _).Should().BeTrue(
+			because: "new uId must be a valid GUID generated by the client");
+		savedDto["name"].ToString().Should().Be("Accounts_ListPage",
+			because: "replacing schema keeps the original name so the hierarchy link matches");
+		savedDto["package"]["uId"].ToString().Should().Be(virtualDesignPackageUId,
+			because: "package must be the design package — backend materializes it if virtual");
+		savedDto["parent"]["uId"].ToString().Should().Be(originalUId,
+			because: "parent must reference the original schema so replacing inherits from it");
+		savedDto["extendParent"].Value<bool>().Should().BeTrue(
+			because: "replacing schemas must extend their parent for diff-based body merge");
+		savedDto["body"].ToString().Should().Be(validBody,
+			because: "the body passed to update-page must be written into the new replacing schema DTO");
+	}
+
+	[Test]
+	[Description("TryUpdatePage without hierarchy client falls back to legacy direct-update flow (backward compatibility)")]
+	public void TryUpdatePage_WhenHierarchyClientOmitted_FallsBackToLegacyFlow() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		const string uid = "aaaaaaaa-bbbb-cccc-dddd-111111111111";
+		string validBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var metadataResponse = new JObject { ["success"] = true, ["rows"] = new JArray { new JObject { ["UId"] = uid } } };
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = uid, ["name"] = "Test_FormPage", ["body"] = "old" }
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				return callIndex switch {
+					1 => metadataResponse.ToString(),
+					2 => getSchemaResponse.ToString(),
+					_ => saveResponse.ToString()
+				};
+			});
+
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger);
+		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Test_FormPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
+
+		ok.Should().BeTrue();
+		response.Success.Should().BeTrue();
+	}
+
+	[Test]
+	[Description("PageBundleBuilder.ExtractContainers flattens viewConfig into a list that AI callers can use as parentName source")]
+	public void PageBundleBuilder_Containers_Flattens_ViewConfig_Tree() {
+		var parser = Substitute.For<IPageSchemaBodyParser>();
+		parser.Parse(Arg.Any<string>()).Returns(new PageParsedSchemaBody {
+			ViewConfigDiff = new Newtonsoft.Json.Linq.JArray {
+				new Newtonsoft.Json.Linq.JObject {
+					["operation"] = "insert",
+					["name"] = "RootContainer",
+					["values"] = new Newtonsoft.Json.Linq.JObject {
+						["type"] = "crt.FlexContainer",
+						["items"] = new Newtonsoft.Json.Linq.JArray {
+							new Newtonsoft.Json.Linq.JObject {
+								["name"] = "NestedContainer",
+								["type"] = "crt.Grid",
+								["items"] = new Newtonsoft.Json.Linq.JArray {
+									new Newtonsoft.Json.Linq.JObject {
+										["name"] = "LeafButton",
+										["type"] = "crt.Button"
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		});
+		var jsonDiff = Substitute.For<IPageJsonDiffApplier>();
+		jsonDiff.ApplyDiff(Arg.Any<Newtonsoft.Json.Linq.JArray>(), Arg.Any<IReadOnlyList<Newtonsoft.Json.Linq.JArray>>(), Arg.Any<IReadOnlyList<PageJsonDiffApplyOptions>>())
+			.Returns(ci => {
+				var array = new Newtonsoft.Json.Linq.JArray {
+					new Newtonsoft.Json.Linq.JObject {
+						["name"] = "RootContainer",
+						["type"] = "crt.FlexContainer",
+						["items"] = new Newtonsoft.Json.Linq.JArray {
+							new Newtonsoft.Json.Linq.JObject {
+								["name"] = "NestedContainer",
+								["type"] = "crt.Grid",
+								["items"] = new Newtonsoft.Json.Linq.JArray {
+									new Newtonsoft.Json.Linq.JObject {
+										["name"] = "LeafButton",
+										["type"] = "crt.Button"
+									}
+								}
+							}
+						}
+					}
+				};
+				return array;
+			});
+		var pathDiff = Substitute.For<IPageJsonPathDiffApplier>();
+		pathDiff.Apply(Arg.Any<Newtonsoft.Json.Linq.JObject>(), Arg.Any<Newtonsoft.Json.Linq.JArray>())
+			.Returns(ci => new Newtonsoft.Json.Linq.JObject());
+		var builder = new PageBundleBuilder(jsonDiff, pathDiff);
+		var parts = new List<PageSchemaBundlePart> {
+			new(
+				new PageDesignerHierarchySchema { UId = "u", Name = "TestPage", PackageUId = "p", Body = "x" },
+				parser.Parse("x"))
+		};
+
+		PageBundleInfo bundle = builder.Build(parts);
+
+		bundle.Containers.Should().HaveCount(2,
+			because: "extractor must collect both the root container and the nested container (leaf button has no items array so is skipped)");
+		bundle.Containers[0].Name.Should().Be("RootContainer");
+		bundle.Containers[0].Type.Should().Be("crt.FlexContainer");
+		bundle.Containers[0].ChildCount.Should().Be(1,
+			because: "RootContainer holds one nested container");
+		bundle.Containers[0].Path.Should().Be("RootContainer");
+		bundle.Containers[1].Name.Should().Be("NestedContainer");
+		bundle.Containers[1].ChildCount.Should().Be(1,
+			because: "NestedContainer holds one leaf button (buttons are counted as children even though they don't appear as containers themselves)");
+		bundle.Containers[1].Path.Should().Be("RootContainer/NestedContainer",
+			because: "path must expose the ancestry chain so AI can disambiguate when same name appears in multiple branches");
+	}
+
+	[Test]
+	[Description("BuildSaveErrorMessage appends an actionable hint for the 'Object vs Array' server error that typically happens when resending the full raw.body")]
+	public void PageUpdateCommand_Should_Append_Hint_For_Object_Vs_Array_Error() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+		const string designPkg = "11111111-2222-3333-4444-555555555555";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
+		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "Test_FormPage", PackageUId = designPkg, PackageName = "DesignPkg" }
+		});
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = originalUId, ["name"] = "Test_FormPage", ["body"] = "x", ["package"] = new JObject { ["uId"] = designPkg } }
+		};
+		var saveError = new JObject {
+			["success"] = false,
+			["errorInfo"] = new JObject {
+				["message"] = "The requested operation requires an element of type 'Object', but the target element has type 'Array'."
+			}
+		};
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				return callIndex switch {
+					1 => metadataResponse.ToString(),
+					2 => getSchemaResponse.ToString(),
+					_ => saveError.ToString()
+				};
+			});
+		string validBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+
+		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Test_FormPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
+
+		ok.Should().BeFalse();
+		response.Error.Should().Contain("Object", "original server error must be preserved");
+		response.Error.Should().Contain("hint:", "hint annotation must be appended");
+		response.Error.Should().Contain("re-sending the full get-page raw.body",
+			"hint must explain the likely cause");
+		response.Error.Should().Contain("page-modification",
+			"hint must point back to the canonical guide resource");
+	}
+
+	[Test]
+	[Description("PageGetCommand.BuildOwnBodySummary exposes operation counts so AI can detect when raw.body is not safe to resend")]
+	public void PageGetCommand_Should_Populate_OwnBodySummary_On_Response() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		var bodyParser = Substitute.For<IPageSchemaBodyParser>();
+		var bundleBuilder = Substitute.For<IPageBundleBuilder>();
+		const string schemaUId = "c787571c-c8ca-4c9b-b05b-7ccbe0271a76";
+		const string packageUId = "51a0fc55-ce4f-a533-0340-b70a0c04b905";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(schemaUId).Returns(packageUId);
+		var hierarchySchema = new PageDesignerHierarchySchema {
+			UId = schemaUId,
+			Name = "Leads_ListPage",
+			PackageUId = packageUId,
+			PackageName = "CrtLead",
+			Body = new string('x', 14000)
+		};
+		hierarchyClient.GetParentSchemas(schemaUId, packageUId).Returns(new List<PageDesignerHierarchySchema> { hierarchySchema });
+		bodyParser.Parse(Arg.Any<string>()).Returns(new PageParsedSchemaBody {
+			ViewConfigDiff = new Newtonsoft.Json.Linq.JArray { new Newtonsoft.Json.Linq.JObject(), new Newtonsoft.Json.Linq.JObject(), new Newtonsoft.Json.Linq.JObject() },
+			ViewModelConfigDiff = new Newtonsoft.Json.Linq.JArray { new Newtonsoft.Json.Linq.JObject() },
+			ModelConfigDiff = new Newtonsoft.Json.Linq.JArray(),
+			Handlers = "[{request:'a',handler:()=>{}},{request:'b',handler:()=>{}}]"
+		});
+		bundleBuilder.Build(Arg.Any<IReadOnlyList<PageSchemaBundlePart>>()).Returns(new PageBundleInfo());
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = schemaUId, ["Name"] = "Leads_ListPage", ["PackageName"] = "CrtLead", ["PackageUId"] = packageUId, ["ParentSchemaName"] = "ListPageV3Template" } }
+		};
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(metadataResponse.ToString());
+		var command = new PageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient, bodyParser, bundleBuilder);
+
+		bool ok = command.TryGetPage(new PageGetOptions { SchemaName = "Leads_ListPage" }, out PageGetResponse response);
+
+		ok.Should().BeTrue();
+		response.Page.OwnBodySummary.Should().NotBeNull(
+			because: "every successful get-page response must include the own body summary so AI can decide whether raw.body is safe to resend");
+		response.Page.OwnBodySummary.BodyLength.Should().Be(14000);
+		response.Page.OwnBodySummary.ViewConfigDiffOperations.Should().Be(3,
+			because: "viewConfigDiff operation count must match the parsed JArray length");
+		response.Page.OwnBodySummary.ViewModelConfigDiffOperations.Should().Be(1);
+		response.Page.OwnBodySummary.ModelConfigDiffOperations.Should().Be(0);
+		response.Page.OwnBodySummary.HandlerEntries.Should().Be(2,
+			because: "handler entries are counted by top-level object literals in the handlers marker block");
+	}
+
+	[Test]
+	[Description("PageBodyMerger.Merge concatenates viewConfigDiff entries, dedupes by name (incoming wins), and preserves other sections")]
+	public void PageBodyMerger_Should_Merge_ViewConfigDiff_And_Handlers() {
+		string currentBody = "define(\"P\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"RefreshButton\",\"values\":{\"size\":\"large\"}},{\"operation\":\"insert\",\"name\":\"Existing\",\"values\":{\"type\":\"crt.Input\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[{request:\"crt.KeepMeRequest\",handler:()=>null}]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		string incomingBody = "define(\"P\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\",\"caption\":\"Test\"},\"parentName\":\"ActionButtonsContainer\"},{\"operation\":\"merge\",\"name\":\"RefreshButton\",\"values\":{\"size\":\"small\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[{request:\"usr.TestRequest\",handler:async(r)=>{alert(\"hi\");return r.next?.handle(r);}}]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("\"name\":\"Existing\"", because: "existing entries without collisions are preserved");
+		merged.Should().Contain("\"name\":\"TestButton\"", because: "new entries are appended");
+		merged.Should().Contain("\"size\":\"small\"", because: "incoming wins when names collide (RefreshButton gets size:small)");
+		merged.Should().NotContain("\"size\":\"large\"", because: "the colliding entry is superseded");
+		merged.Should().Contain("crt.KeepMeRequest", because: "existing handlers without request collision are preserved");
+		merged.Should().Contain("usr.TestRequest", because: "new handlers are appended");
+	}
+
+	[Test]
+	[Description("update-page append mode permits bodies that omit sections — missing markers are not treated as validation failures because the current schema body supplies those sections")]
+	public void TryUpdatePage_AppendMode_Should_Allow_Body_With_Missing_Markers() {
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
+		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
+		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "Opportunities_ListPage", PackageUId = designPkg, PackageName = "CrtWaterfallPipelineInLeadOppMgmt" }
+		});
+		string currentBody = "define(\"Opportunities_ListPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"Existing\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = originalUId, ["name"] = "Opportunities_ListPage", ["body"] = currentBody, ["package"] = new JObject { ["uId"] = designPkg } }
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				return callIndex switch {
+					1 => metadataResponse.ToString(),
+					2 => getSchemaResponse.ToString(),
+					_ => saveResponse.ToString()
+				};
+			});
+		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\",\"caption\":\"Test\"},\"parentName\":\"ActionButtonsContainer\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/ /**SCHEMA_HANDLERS*/[{request:\"usr.TestRequest\",handler:()=>alert(\"Test\")}]/**SCHEMA_HANDLERS*/";
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+
+		bool ok = command.TryUpdatePage(new PageUpdateOptions {
+			SchemaName = "Opportunities_ListPage",
+			Body = incomingFragment,
+			Mode = "append",
+			DryRun = false
+		}, out PageUpdateResponse response);
+
+		ok.Should().BeTrue(because: "append mode should accept bodies with only the sections that change");
+		response.Error.Should().BeNull();
+		response.Success.Should().BeTrue();
+	}
+
+	[Test]
+	[Description("PageBodyMerger handlers dedupe: when incoming declares the same request as current, incoming wins")]
+	public void PageBodyMerger_Should_Dedupe_Handlers_By_Request() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[{request:\"usr.X\",handler:()=>{return 'old';}}]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[{request:\"usr.X\",handler:()=>{return 'new';}}]/**SCHEMA_HANDLERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("'new'", because: "incoming handler wins when request string matches");
+		merged.Should().NotContain("'old'", because: "old handler with the same request is dropped");
+	}
+
+	private static IPageDesignerHierarchyClient CreateHierarchyClientFor(string schemaUId, string packageUId = "test-pkg-uid") {
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId(schemaUId).Returns(packageUId);
+		hierarchyClient.GetParentSchemas(schemaUId, packageUId).Returns([
+			new PageDesignerHierarchySchema { UId = schemaUId, PackageUId = packageUId }
+		]);
+		return hierarchyClient;
 	}
 }

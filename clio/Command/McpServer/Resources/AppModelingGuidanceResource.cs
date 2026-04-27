@@ -18,8 +18,9 @@ public sealed class AppModelingGuidanceResource {
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "app-modeling-guidance")]
 	[Description("Returns canonical MCP guidance for Creatio application modeling, schema design, and page-editing workflows.")]
-	public ResourceContents GetGuide() =>
-		new TextResourceContents {
+	public ResourceContents GetGuide() => Guide;
+
+	internal static readonly TextResourceContents Guide = new() {
 			Uri = ResourceUri,
 			MimeType = "text/plain",
 			Text = """
@@ -29,8 +30,8 @@ public sealed class AppModelingGuidanceResource {
 			       - clio MCP is a stdio MCP server, not an HTTP or browser API.
 			       - Use discovered tool names exactly as advertised.
 			       - Newer design tools use kebab-case JSON argument names such as `environment-name`, `package-name`, and `schema-name`.
-			       - For existing-app minimal edits, read `docs://mcp/guides/existing-app-maintenance`.
-			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), read `docs://mcp/guides/dataforge-orchestration`.
+			       - For existing-app minimal edits, call `get-guidance` with `name` set to `existing-app-maintenance`.
+			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
 
 			       Discovery before invocation
 			       - Always read the executable contract through `get-tool-contract` before the first invocation of any MCP tool in a workflow. The contract specifies exact parameter names, aliases, required fields, defaults, and response shapes.
@@ -93,3 +94,4 @@ public sealed class AppModelingGuidanceResource {
 			       """
 		};
 }
+

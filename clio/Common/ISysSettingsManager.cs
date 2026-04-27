@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -12,6 +11,7 @@ using DocumentFormat.OpenXml.Office2010.Excel;
 using Newtonsoft.Json.Linq;
 using Terrasoft.Core;
 using static CreatioModel.SysSettings;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Common;
 
@@ -69,6 +69,7 @@ public class SysSettingsManager : ISysSettingsManager
 	private readonly IDataProvider _dataProvider;
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 	private readonly IFileSystem _filesystem;
+	private readonly IAbstractionsFileSystem _abstractionsFileSystem;
 	private readonly ILogger _logger;
 
 	private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
@@ -87,12 +88,14 @@ public class SysSettingsManager : ISysSettingsManager
 
 	public SysSettingsManager(IApplicationClient creatioClient,
 		IServiceUrlBuilder serviceUrlBuilder, IDataProvider dataProvider,
-		IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem filesystem, ILogger logger){
+		IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem filesystem,
+		IAbstractionsFileSystem abstractionsFileSystem, ILogger logger){
 		_creatioClient = creatioClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_dataProvider = dataProvider;
 		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_filesystem = filesystem;
+		_abstractionsFileSystem = abstractionsFileSystem;
 		_logger = logger;
 	}
 
@@ -142,7 +145,7 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	private Guid GetEntityIdByDisplayValue(string entityName, string optsValue){
-		string jsonFilePath = Path.Join(
+		string jsonFilePath = _abstractionsFileSystem.Path.Join(
 			_workingDirectoriesProvider.TemplateDirectory, "dataservice-requests", "selectIdByDisplayValue.json");
 
 		string jsonContent = _filesystem.ReadAllText(jsonFilePath);
@@ -181,10 +184,7 @@ public class SysSettingsManager : ISysSettingsManager
 	#region Methods: Public
 
 	public string GetSysSettingValueByCode(string code){
-		string json = JsonSerializer.Serialize(new GetSettingRequestData(code), _jsonSerializerOptions);
-		string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetSysSettingValueByCode);
-		string result = _creatioClient.ExecutePostRequest(url, json);
-		return result;
+		return _dataProvider.GetSysSettingValue<string>(code) ?? string.Empty;
 	}
 
 	public T GetSysSettingValueByCode<T>(string code){

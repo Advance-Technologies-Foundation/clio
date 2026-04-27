@@ -1,8 +1,8 @@
 namespace Clio.Workspaces
 {
 	using System;
-	using System.IO;
 	using Clio.Common;
+	using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 	#region Class: OpenSolutionCreator
 
@@ -14,19 +14,22 @@ namespace Clio.Workspaces
 		private readonly ITemplateProvider _templateProvider;
 		private readonly IWorkspacePathBuilder _workspacePathBuilder;
 		private readonly IFileSystem _fileSystem;
+		private readonly IAbstractionsFileSystem _abstractionsFileSystem;
 
 		#endregion
 
 		#region Constructors: Public
 
 		public EnvironmentScriptCreator(ITemplateProvider templateProvider, IWorkspacePathBuilder workspacePathBuilder,
-				IFileSystem fileSystem) {
+				IFileSystem fileSystem, IAbstractionsFileSystem abstractionsFileSystem) {
 			templateProvider.CheckArgumentNull(nameof(templateProvider));
 			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
+			abstractionsFileSystem.CheckArgumentNull(nameof(abstractionsFileSystem));
 			_templateProvider = templateProvider;
 			_workspacePathBuilder = workspacePathBuilder;
 			_fileSystem = fileSystem;
+			_abstractionsFileSystem = abstractionsFileSystem;
 		}
 
 		#endregion
@@ -40,7 +43,7 @@ namespace Clio.Workspaces
 		private void CreateSetEnvironmentCmd(string setEnvironmentCmdFileName, string creatioSdkPath,
 				string coreTargetFramework) {
 			string solutionFolderPath = _workspacePathBuilder.SolutionFolderPath;
-			string setEnvironmentCmdPath = Path.Combine(solutionFolderPath, setEnvironmentCmdFileName);
+			string setEnvironmentCmdPath = _abstractionsFileSystem.Path.Combine(solutionFolderPath, setEnvironmentCmdFileName);
 			string template = _templateProvider.GetTemplate("set-environment.cmd");
 			string coreLibPath = _workspacePathBuilder.BuildRelativePathRegardingPackageProjectPath(creatioSdkPath);
 			string content = ReplaceMacro(template, coreLibPath, coreTargetFramework);

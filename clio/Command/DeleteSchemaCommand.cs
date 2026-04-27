@@ -7,10 +7,11 @@ using Clio.Common;
 using Clio.Common.Responses;
 using Clio.Workspaces;
 using CommandLine;
+using Newtonsoft.Json.Linq;
 
 namespace Clio.Command;
 
-[Verb("delete-schema", HelpText = "Delete a schema that belongs to a package in the current workspace")]
+[Verb("delete-schema", HelpText = "Delete a schema from a workspace package or from a remote Creatio environment")]
 public class DeleteSchemaOptions : RemoteCommandOptions {
 
 	[Value(0, MetaName = "SchemaName", Required = true, HelpText = "Schema name")]
@@ -19,9 +20,38 @@ public class DeleteSchemaOptions : RemoteCommandOptions {
 	[Option("workspace-path", Required = false, Hidden = true,
 		HelpText = "Workspace path override. Intended for MCP usage.")]
 	public string WorkspacePath { get; set; }
+
+	[Option("remote", Required = false,
+		HelpText = "Delete the schema directly from the remote Creatio environment (no workspace required)")]
+	public bool Remote { get; set; }
+}
+
+public sealed class DeleteSchemaRemoteResponse {
+
+	[System.Text.Json.Serialization.JsonPropertyName("success")]
+	public bool Success { get; set; }
+
+	[System.Text.Json.Serialization.JsonPropertyName("schemaName")]
+	public string SchemaName { get; set; }
+
+	[System.Text.Json.Serialization.JsonPropertyName("schemaUId")]
+	public string SchemaUId { get; set; }
+
+	[System.Text.Json.Serialization.JsonPropertyName("managerName")]
+	public string ManagerName { get; set; }
+
+	[System.Text.Json.Serialization.JsonPropertyName("packageName")]
+	public string PackageName { get; set; }
+
+	[System.Text.Json.Serialization.JsonPropertyName("error")]
+	public string Error { get; set; }
 }
 
 public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
+	private const string ExpressionKey = "expression";
+	private const string ExpressionTypeKey = "expressionType";
+	private const string ColumnPathKey = "columnPath";
+
 	private static readonly JsonSerializerOptions SerializerOptions = new() {
 		PropertyNameCaseInsensitive = true
 	};
@@ -42,12 +72,20 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 	}
 
 	protected override void ExecuteRemoteCommand(DeleteSchemaOptions options) {
-		ConfigureWorkspace(options);
-		EnsureWorkspace();
 		string schemaName = options.SchemaName?.Trim();
 		if (string.IsNullOrWhiteSpace(schemaName)) {
 			throw new InvalidOperationException("Schema name cannot be empty.");
 		}
+		if (options.Remote) {
+			if (!TryDeleteRemote(schemaName, out DeleteSchemaRemoteResponse remoteResponse)) {
+				throw new InvalidOperationException(remoteResponse.Error);
+			}
+			Logger.WriteInfo(
+				$"Deleted schema '{remoteResponse.SchemaName}' (uId={remoteResponse.SchemaUId}) from package '{remoteResponse.PackageName}'.");
+			return;
+		}
+		ConfigureWorkspace(options);
+		EnsureWorkspace();
 
 		HashSet<string> workspacePackages = GetWorkspacePackages();
 		WorkspaceExplorerItemDto schemaItem = FindWorkspaceSchemaItem(schemaName, workspacePackages);
@@ -62,6 +100,131 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 			Deserialize<DeleteWorkspaceItemsResponse>(deleteResponseJson, "Delete");
 		EnsureDeleteSucceeded(deleteResponse, schemaItem.Name, schemaItem.PackageName);
 		Logger.WriteInfo($"Deleted schema '{schemaItem.Name}' from package '{schemaItem.PackageName}'.");
+	}
+
+	internal bool TryDeleteRemote(string schemaName, out DeleteSchemaRemoteResponse response) {
+		try {
+			if (string.IsNullOrWhiteSpace(schemaName)) {
+				response = new DeleteSchemaRemoteResponse {
+					Success = false,
+					Error = "schema-name is required"
+				};
+				return false;
+			}
+			if (!TryResolveSysSchema(schemaName, out SysSchemaRemoteRecord record, out string resolveError)) {
+				response = new DeleteSchemaRemoteResponse { Success = false, Error = resolveError };
+				return false;
+			}
+			WorkspaceExplorerItemDto dto = new() {
+				Id = record.Id,
+				UId = record.UId,
+				Name = schemaName,
+				PackageUId = record.PackageUId,
+				PackageName = record.PackageName
+			};
+			string deleteUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeleteWorkspaceItem);
+			string requestBody = JsonSerializer.Serialize(new[] { dto });
+			string responseJson = ApplicationClient.ExecutePostRequest(
+				deleteUrl, requestBody, RequestTimeout, RetryCount, DelaySec);
+			DeleteWorkspaceItemsResponse deleteResponse =
+				Deserialize<DeleteWorkspaceItemsResponse>(responseJson, "Delete");
+			if (!deleteResponse.Success || deleteResponse.RowsAffected <= 0) {
+				string message = string.IsNullOrWhiteSpace(deleteResponse.ErrorInfo?.Message)
+					? $"Failed to delete schema '{schemaName}' from remote environment."
+					: deleteResponse.ErrorInfo.Message;
+				response = new DeleteSchemaRemoteResponse {
+					Success = false,
+					SchemaName = schemaName,
+					SchemaUId = record.UId.ToString(),
+					ManagerName = record.ManagerName,
+					PackageName = record.PackageName,
+					Error = message
+				};
+				return false;
+			}
+			response = new DeleteSchemaRemoteResponse {
+				Success = true,
+				SchemaName = schemaName,
+				SchemaUId = record.UId.ToString(),
+				ManagerName = record.ManagerName,
+				PackageName = record.PackageName
+			};
+			return true;
+		}
+		catch (Exception ex) {
+			response = new DeleteSchemaRemoteResponse { Success = false, Error = ex.Message };
+			return false;
+		}
+	}
+
+	private bool TryResolveSysSchema(string schemaName, out SysSchemaRemoteRecord record, out string error) {
+		record = null;
+		error = null;
+		var query = new JObject {
+			["rootSchemaName"] = "SysSchema",
+			["operationType"] = 0,
+			["columns"] = new JObject {
+				["items"] = new JObject {
+					["Id"] = new JObject {
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Id" }
+					},
+					["UId"] = new JObject {
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "UId" }
+					},
+					["ManagerName"] = new JObject {
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "ManagerName" }
+					},
+					["PackageUId"] = new JObject {
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "SysPackage.UId" }
+					},
+					["PackageName"] = new JObject {
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "SysPackage.Name" }
+					}
+				}
+			},
+			["filters"] = new JObject {
+				["filterType"] = 6,
+				["logicalOperation"] = 0,
+				["isEnabled"] = true,
+				["items"] = new JObject {
+					["byName"] = new JObject {
+						["filterType"] = 1,
+						["comparisonType"] = 3,
+						["isEnabled"] = true,
+						["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" },
+						["rightExpression"] = new JObject {
+							[ExpressionTypeKey] = 2,
+							["parameter"] = new JObject { ["dataValueType"] = 1, ["value"] = schemaName }
+						}
+					}
+				}
+			},
+			["rowCount"] = 1
+		};
+		string selectUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
+		string responseJson = ApplicationClient.ExecutePostRequest(
+			selectUrl, query.ToString(Newtonsoft.Json.Formatting.None), RequestTimeout, RetryCount, DelaySec);
+		JObject selectResponse = JObject.Parse(responseJson);
+		var rows = selectResponse["rows"] as JArray ?? [];
+		if (rows.Count == 0) {
+			error = $"Schema '{schemaName}' not found in the target environment.";
+			return false;
+		}
+		JToken row = rows[0];
+		if (!Guid.TryParse(row["UId"]?.ToString(), out Guid uId)) {
+			error = $"Schema '{schemaName}' metadata is missing UId.";
+			return false;
+		}
+		Guid.TryParse(row["Id"]?.ToString(), out Guid id);
+		Guid.TryParse(row["PackageUId"]?.ToString(), out Guid packageUId);
+		record = new SysSchemaRemoteRecord {
+			Id = id,
+			UId = uId,
+			ManagerName = row["ManagerName"]?.ToString(),
+			PackageUId = packageUId,
+			PackageName = row["PackageName"]?.ToString()
+		};
+		return true;
 	}
 
 	private void ConfigureWorkspace(DeleteSchemaOptions options) {
@@ -128,6 +291,14 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 			: response.ErrorInfo.Message;
 		throw new InvalidOperationException(message);
 	}
+}
+
+internal sealed class SysSchemaRemoteRecord {
+	public Guid Id { get; set; }
+	public Guid UId { get; set; }
+	public string ManagerName { get; set; }
+	public Guid PackageUId { get; set; }
+	public string PackageName { get; set; }
 }
 
 internal sealed class WorkspaceItemsResponse {

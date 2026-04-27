@@ -146,10 +146,14 @@ public sealed class ApplicationSectionUpdateServiceTests {
 			because: "the payload should update the description field");
 		updateBody.Should().NotContain("\"Caption\"",
 			because: "description-only updates should leave caption untouched");
-		updateBody.Should().NotContain("\"LogoId\"",
-			because: "description-only updates should leave icon id untouched");
-		updateBody.Should().NotContain("\"IconBackground\"",
-			because: "description-only updates should leave icon background untouched");
+		updateBody.Should().Contain("\"LogoId\"",
+			because: "ApplicationSection virtual object requires LogoId in columnValues for persistence; preserved value is sent when not updating");
+		updateBody.Should().Contain("\"value\":\"icon-old\"",
+			because: "LogoId preserved value should match the previous section icon id");
+		updateBody.Should().Contain("\"IconBackground\"",
+			because: "ApplicationSection virtual object requires IconBackground in columnValues for persistence; preserved value is sent when not updating");
+		updateBody.Should().Contain("\"value\":\"#111111\"",
+			because: "IconBackground preserved value should match the previous section color");
 	}
 
 	[Test]
@@ -173,7 +177,7 @@ public sealed class ApplicationSectionUpdateServiceTests {
 				body.Contains("\"Code\"", StringComparison.Ordinal)))
 			.Returns(
 				"""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrder","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-old","IconBackground":"#111111","ClientTypeId":null}]}""",
-				"""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrder","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"11111111-1111-1111-1111-111111111111","IconBackground":"#A1B2C3","ClientTypeId":null}]}""");
+				"""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrder","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"11111111-1111-1111-1111-111111111111","IconBackground":"#247EE5","ClientTypeId":null}]}""");
 		_applicationClient.ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
@@ -191,12 +195,12 @@ public sealed class ApplicationSectionUpdateServiceTests {
 				"UsrOrdersApp",
 				"UsrOrders",
 				IconId: "11111111-1111-1111-1111-111111111111",
-				IconBackground: "#A1B2C3"));
+				IconBackground: "#247EE5"));
 
 		// Assert
 		result.Section.IconId.Should().Be("11111111-1111-1111-1111-111111111111",
 			because: "the response should expose the updated icon id");
-		result.Section.IconBackground.Should().Be("#A1B2C3",
+		result.Section.IconBackground.Should().Be("#247EE5",
 			because: "the response should expose the updated icon background");
 		updateBody.Should().Contain("\"LogoId\"",
 			because: "icon updates should target the section icon id field");
@@ -223,6 +227,38 @@ public sealed class ApplicationSectionUpdateServiceTests {
 		action.Should().Throw<ArgumentException>()
 			.WithMessage("*At least one mutable field*",
 				because: "the update flow should fail fast when there is nothing to change");
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+	}
+
+	[Test]
+	[Description("Rejects icon-background values that are not Freedom UI palette colors.")]
+	public void UpdateSection_Should_Reject_Non_Palette_Icon_Background() {
+		ApplicationSectionUpdateRequest request = new(
+			"UsrOrdersApp",
+			"UsrOrders",
+			IconBackground: "#FF00FF");
+
+		Action action = () => _sut.UpdateSection("sandbox", request);
+
+		action.Should().Throw<ArgumentException>()
+			.WithMessage("*Freedom UI palette*",
+				because: "non-palette hex colors render as a white tile in the app manager UI");
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+	}
+
+	[Test]
+	[Description("Rejects icon-background values that are not #RRGGBB hex strings.")]
+	public void UpdateSection_Should_Reject_Invalid_Format_Icon_Background() {
+		ApplicationSectionUpdateRequest request = new(
+			"UsrOrdersApp",
+			"UsrOrders",
+			IconBackground: "red");
+
+		Action action = () => _sut.UpdateSection("sandbox", request);
+
+		action.Should().Throw<ArgumentException>()
+			.WithMessage("*#RRGGBB format*",
+				because: "non-hex strings are never valid palette values");
 		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
 	}
 }

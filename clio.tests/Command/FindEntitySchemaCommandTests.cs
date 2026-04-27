@@ -75,6 +75,45 @@ internal class FindEntitySchemaCommandTests : BaseCommandTests<FindEntitySchemaO
 	}
 
 	[Test]
+	[Description("FindSchemas uses the Creatio contains comparison type for search-pattern filters.")]
+	public void FindSchemas_UsesContainsComparisonType_WhenSearchPatternProvided() {
+		// Arrange
+		const int containsComparisonType = 11;
+		FindEntitySchemaOptions options = new() { SearchPattern = "Task" };
+		string json = BuildSuccessJson([]);
+		string? requestJson = null;
+		_applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(request => requestJson = request))
+			.Returns(json);
+
+		// Act
+		_command.FindSchemas(options);
+
+		// Assert
+		requestJson.Should().NotBeNullOrWhiteSpace(
+			"the command should send a SelectQuery request to DataService");
+		using JsonDocument document = JsonDocument.Parse(requestJson!);
+		JsonElement? searchPatternFilter = null;
+		foreach (JsonProperty item in document
+			.RootElement
+			.GetProperty("filters")
+			.GetProperty("items")
+			.EnumerateObject()) {
+			JsonElement filter = item.Value;
+			if (filter.GetProperty("leftExpression").GetProperty("columnPath").GetString() == "Name"
+				&& filter.GetProperty("rightExpression").GetProperty("parameter").GetProperty("value").GetString() == "Task") {
+				searchPatternFilter = filter;
+				break;
+			}
+		}
+		searchPatternFilter.Should().NotBeNull(
+			"the SelectQuery should include a filter for the requested search pattern");
+		searchPatternFilter.Value.GetProperty("comparisonType").GetInt32().Should().Be(
+			containsComparisonType,
+			"search-pattern must use Creatio's contains comparison type");
+	}
+
+	[Test]
 	[Description("FindSchemas sets ParentSchemaName to null when the DataService row has an empty parent.")]
 	public void FindSchemas_SetsParentSchemaNameToNull_WhenParentIsEmpty() {
 		// Arrange

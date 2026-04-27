@@ -22,7 +22,7 @@ public static class ApplicationPrompt {
 		$"""
 		 Use clio mcp server `{ApplicationGetListTool.ApplicationGetListToolName}` to return installed Creatio applications as structured JSON.
 		 Before the first application discovery or existing-app maintenance tool call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `list-apps`, `get-app-info`, and `create-app-section` so the client starts from the authoritative clio MCP contract.
-		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 For the canonical existing-app maintenance flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Prefer a registered clio environment for application work. If the target site is not registered yet, call `reg-web-app` first and then continue with `environment-name`.
 		 Use direct connection args only on tools that still expose them, and only when local bootstrap is broken or you are in an emergency recovery flow.
 		 Pass `environment-name` when you need to target a registered clio environment explicitly.
@@ -46,7 +46,7 @@ public static class ApplicationPrompt {
 		$"""
 		 Use clio mcp server `{ApplicationGetInfoTool.ApplicationGetInfoToolName}` to return installed application identity plus the primary package and runtime entity metadata for one installed Creatio application.
 		 If this is the first application-related MCP call in the workflow, call `{ToolContractGetTool.ToolName}` first with `tool-names` such as `list-apps`, `get-app-info`, and `create-app-section` so the client starts from the authoritative contract.
-		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 For the canonical discover -> inspect -> mutate flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Pass exactly one identifier: `id` when you already have the installed application GUID, or `code` when you have the installed application code.
 		 Do not include both identifiers in the same call.
@@ -85,7 +85,7 @@ public static class ApplicationPrompt {
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Provide `name`, `code`, `template-code`, and `icon-background`.
 		 Pass those fields at the top level of the MCP request; do not nest them under `args`.
-		 For end-to-end app modeling guardrails, read `docs://mcp/guides/app-modeling`.
+		 For end-to-end app modeling guardrails, call `{GuidanceGetTool.ToolName}` with `name` set to `app-modeling`.
 		 `create-app` already performs an internal Data Forge enrichment step and returns optional `dataforge` diagnostics with health, coverage, warnings, and a compact context summary.
 		 Do not add a separate mandatory Data Forge preflight outside the canonical `create-app` flow unless the workflow explicitly needs standalone Data Forge inspection or remediation.
 		 For a new app with one primary record type, treat the entity returned by `create-app` as the canonical main entity and extend it instead of creating a synonym entity for the same records.
@@ -122,7 +122,7 @@ public static class ApplicationPrompt {
 		$"""
 		 Use clio mcp server `{ApplicationSectionCreateTool.ApplicationSectionCreateToolName}` to create a section inside an existing installed Creatio application and return structured section, entity, and page readback data.
 		 Before the first existing-app mutation call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `list-apps`, `get-app-info`, and `create-app-section` so the client starts from the authoritative contract and preferred flow.
-		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 For the canonical existing-app maintenance flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Pass `application-code` `{applicationCode}` as the installed application selector.
 		 Provide `caption` as a plain scalar string.
@@ -156,7 +156,7 @@ public static class ApplicationPrompt {
 		$"""
 		 Use clio mcp server `{ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName}` to update metadata of an existing section inside an installed Creatio application and return structured section readback data before and after the update.
 		 Before the first existing-app mutation call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `list-apps`, `get-app-info`, and `update-app-section` so the client starts from the authoritative contract and preferred flow.
-		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 For the canonical existing-app maintenance flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Pass `application-code` `{applicationCode}` as the installed application selector.
 		 Pass `section-code` `{sectionCode}` as the existing section selector inside that application.
@@ -179,7 +179,7 @@ public static class ApplicationPrompt {
 		$"""
 		 Use clio mcp server `{ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName}` to delete an existing section from an installed Creatio application and return structured readback of the deleted section.
 		 Before the first destructive call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `list-apps`, `get-app-info`, and `delete-app-section` so the client starts from the authoritative contract and preferred flow.
-		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 For the canonical existing-app maintenance flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Warn the user before deleting — this operation is destructive and cannot be undone.
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Pass `application-code` `{applicationCode}` as the installed application selector.
@@ -198,7 +198,7 @@ public static class ApplicationPrompt {
 		$"""
 		 Use clio mcp server `{ApplicationSectionGetListTool.ApplicationSectionGetListToolName}` to list all sections of an installed Creatio application and return structured section list data.
 		 Before the first existing-app read call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `list-apps`, `get-app-info`, and `list-app-sections` so the client starts from the authoritative contract and preferred flow.
-		 For the canonical existing-app maintenance flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 For the canonical existing-app maintenance flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Pass `application-code` `{applicationCode}` as the installed application selector.
 		 Pass all tool arguments at the top level of the MCP request; do not wrap them inside `args`.

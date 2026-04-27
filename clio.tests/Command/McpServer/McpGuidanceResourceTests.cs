@@ -2,6 +2,7 @@ using Clio.Command.McpServer.Resources;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using NUnit.Framework;
+using System.Collections.Generic;
 
 namespace Clio.Tests.Command.McpServer;
 
@@ -45,8 +46,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should document the soft-fallback semantics when Data Forge is degraded or unavailable");
 		article.Text.Should().Contain("Canonical page flow after planning a page change",
 			because: "the guide should publish the preferred page inspection and write sequence as MCP-owned guidance");
-		article.Text.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "the creation-oriented guide should point callers to the dedicated existing-app maintenance guide for minimal edits");
+		article.Text.Should().Contain("get-guidance",
+			because: "the creation-oriented guide should point callers to the dedicated existing-app maintenance guide through the guidance tool");
 		article.Text.Should().Contain("scalar-only for app shell fields",
 			because: "the guide should state that create-app keeps shell fields as plain strings");
 		article.Text.Should().Contain("Do not send localization-map fields",
@@ -171,6 +172,132 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns validator guidance that keeps field validation separate from converters and handlers in clio MCP page editing.")]
+	public void PageSchemaValidatorsGuidanceResource_Should_Return_Canonical_Validator_Guide() {
+		// Arrange
+		PageSchemaValidatorsGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = (TextResourceContents)result;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/page-schema-validators",
+			because: "the validator guide should expose a stable MCP URI for validator authoring guidance");
+		article.Text.Should().Contain("SCHEMA_VALIDATORS",
+			because: "validator guidance should point callers to the marker-delimited validator section");
+		article.Text.Should().Contain("must contain an object section, not an array section",
+			because: "validator guidance should state the SCHEMA_VALIDATORS container shape directly instead of using ambiguous preserve wording");
+		article.Text.Should().Contain("field-value validation",
+			because: "validator guidance should define the intended responsibility of validators");
+		article.Text.Should().Contain("Implement field validation as a validator entry, not as logic inside a handler.",
+			because: "non-negotiables should frame validator responsibility in a direct AI-readable way");
+		article.Text.Should().Contain("Decision tree",
+			because: "validator guidance should front-load the main branching decisions for AI consumers");
+		article.Text.Should().Contain("Standard validator decision table",
+			because: "validator guidance should teach AI callers to select built-in validators from a compact decision table before creating custom ones");
+		article.Text.Should().Contain("Do NOT create a custom validator when a standard validator is sufficient",
+			because: "validator guidance should explicitly prevent unnecessary custom validator creation");
+		article.Text.Should().Contain("| Requirement pattern | Prefer | Parameters | Custom validator needed |",
+			because: "validator guidance should expose an AI-friendly decision table instead of only a narrative list");
+		article.Text.Should().Contain("| field must be filled | `crt.Required` | none | no |",
+			because: "validator guidance should map the required-field pattern directly to the built-in validator");
+		article.Text.Should().Contain("| field must not be whitespace-only | `crt.EmptyOrWhiteSpace` | none | no |",
+			because: "validator guidance should map whitespace-only rejection directly to the built-in validator");
+		article.Text.Should().Contain("| minimum string length | `crt.MinLength` | `minLength` | no |",
+			because: "validator guidance should map minimum string length directly to the built-in validator");
+		article.Text.Should().Contain("| maximum string length | `crt.MaxLength` | `maxLength` | no |",
+			because: "validator guidance should map maximum string length directly to the built-in validator");
+		article.Text.Should().Contain("| minimum numeric value | `crt.Min` | `min` | no |",
+			because: "validator guidance should map minimum numeric value directly to the built-in validator");
+		article.Text.Should().Contain("| maximum numeric value | `crt.Max` | `max` | no |",
+			because: "validator guidance should map maximum numeric value directly to the built-in validator");
+		article.Text.Should().Contain("| requirement is not covered by rows above | custom `usr.*Validator` | custom | yes |",
+			because: "validator guidance should explicitly tell AI callers when a custom validator is actually justified");
+		article.Text.Should().Contain("crt.Required",
+			because: "validator guidance should include the Academy base validator list");
+		article.Text.Should().Contain("crt.MinLength",
+			because: "validator guidance should include the Academy base validator list");
+		article.Text.Should().Contain("crt.MaxLength",
+			because: "validator guidance should include the Academy base validator list");
+		article.Text.Should().Contain("crt.Min",
+			because: "validator guidance should include the Academy base validator list");
+		article.Text.Should().Contain("crt.Max",
+			because: "validator guidance should include the Academy base validator list");
+		article.Text.Should().Contain("crt.EmptyOrWhiteSpace",
+			because: "validator guidance should include the Academy base validator list");
+		article.Text.Should().Contain("not covered by `crt.Required`, `crt.EmptyOrWhiteSpace`, `crt.MinLength`, `crt.MaxLength`, `crt.Min`, or `crt.Max`",
+			because: "validator guidance should define the exact fallback boundary for creating a custom validator");
+		article.Text.Should().Contain("NON-NEGOTIABLES",
+			because: "validator guidance should expose a compact high-priority rules block before long examples");
+		article.Text.Should().Contain("BEFORE SAVE CHECKLIST",
+			because: "validator guidance should give AI callers a compact verification gate before sync-pages");
+		article.Text.Should().Contain("Name mapping",
+			because: "validator guidance should explain alias, type, and error-key roles together");
+		article.Text.Should().Contain("Minimal canonical template",
+			because: "validator guidance should provide one compact reusable golden path before detailed variants");
+		article.Text.Should().Contain("viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[",
+			because: "the minimal validator template should include the control-binding section so AI callers do not omit the required UI binding");
+		article.Text.Should().Contain("\"control\": \"$<AttrName>\"",
+			because: "the minimal validator template should explicitly bind the control to the view-model attribute");
+		article.Text.Should().Contain("const isValid = <isValidCondition>;",
+			because: "the minimal validator template should show a decision point instead of an always-fail placeholder body");
+		article.Text.Should().Contain("usr.UpperCaseValidator",
+			because: "validator guidance should include a concrete page-body validator example");
+		article.Text.Should().Contain("\"validator\": function",
+			because: "validator guidance should show the runtime page-body validator function shape");
+		article.Text.Should().Contain("@CrtValidator",
+			because: "validator guidance should document the public frontend-source registration pattern");
+		article.Text.Should().Contain("BaseValidator",
+			because: "validator guidance should point to the main public validator base type in the devkit API");
+		article.Text.Should().Contain("setAttributePropertyValue(...)",
+			because: "validator guidance should redirect dynamic UI state rules to the supported handler-side API");
+		article.Text.Should().Contain("Static `viewModelConfig` variant",
+			because: "the guide should include a dedicated static viewModelConfig branch so AI callers detect format before editing");
+		article.Text.Should().Contain("Treat the binding-location, control-binding, resource-string, in-place-fix, and async CRITICAL sections below as hard requirements.",
+			because: "the compact non-negotiables block should now point AI callers to the full detailed critical rule set including async behavior");
+		article.Text.Should().Contain(@"Wrong: `""control"": ""$PDS_UsrName""`",
+			because: "the guide should call out the PDS proxy as the wrong control binding when a validator is present on the attribute");
+		article.Text.Should().Contain("The control MUST bind to that attribute, not to the PDS field directly",
+			because: "the guide should explain why $UsrName is required instead of $PDS_UsrName when the attribute carries validators");
+		article.Text.Should().Contain("Fix control binding in the original operation, never add a patch merge",
+			because: "the guide should explicitly forbid the anti-pattern of adding a second merge operation to patch a wrong control binding");
+		article.Text.Should().Contain("fix the EXISTING insert or merge operation directly",
+			because: "the guide should instruct the AI to correct the original viewConfigDiff entry rather than layering a second merge on top");
+		article.Text.Should().Contain("NEVER add a second `merge` operation with the same `name`",
+			because: "the guide should call out the duplicate-merge workaround as explicitly rejected by clio validation");
+		article.Text.Should().Contain("#ResourceString(UsrUpperCaseValidator_Message)#",
+			because: "validator params must use #ResourceString()# macro format, not $Resources.Strings reactive binding syntax");
+		article.Text.Should().Contain("NOT evaluated in validator params",
+			because: "the guide should explicitly warn that $Resources.Strings syntax does not work in validator params");
+		article.Text.Should().Contain(@"Set `""async"": true` ONLY when the inner function actually",
+			because: "the guide should clarify that async:true is only for validators that actually await something");
+		article.Text.Should().Contain("`async function` keyword alone does NOT require",
+			because: "the guide should explicitly warn that the async keyword alone does not mean async:true is required");
+		article.Text.Should().Contain("Async validator template",
+			because: "the async validator section should use a direct AI-readable title instead of an ambiguous delta label");
+		article.Text.Should().Contain("Use `Minimal canonical template` for the base binding structure",
+			because: "the async validator variant should tell AI callers to reuse the canonical binding template instead of treating the section as a standalone shape");
+		article.Text.Should().Contain("usr.MaxLengthFromSysSettingValidator",
+			because: "the guide should include a concrete async validator example using SysSettingsService");
+		article.Text.Should().Contain("new devkit.SysSettingsService()",
+			because: "the async validator example must show devkit.SysSettingsService usage");
+		article.Text.Should().Contain("@creatio-devkit/common",
+			because: "the async validator template must instruct adding devkit AMD dependency");
+		article.Text.Should().Contain("minimal coupled sections required for validator correctness",
+			because: "the safe editing rules should no longer tell AI callers to touch only SCHEMA_VALIDATORS when coupled binding edits are required");
+		article.Text.Should().Contain("Verify the edited body is syntactically valid JavaScript before calling `sync-pages`.",
+			because: "safe editing should describe an operational verification step rather than the vague instruction to re-parse");
+		article.Text.Should().Contain("Replace all placeholder identifiers consistently",
+			because: "the guide should reduce cargo-cult copying by clearly marking example identifiers as placeholders");
+		article.Text.Should().Contain("Regex/pattern validator example",
+			because: "the regex validator variant should use a direct AI-readable title instead of an ambiguous delta label");
+		article.Text.Should().Contain("Use `Minimal canonical template` for the binding structure",
+			because: "the regex validator variant should tell AI callers to reuse the canonical binding template instead of treating the section as standalone");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns DataForge orchestration guidance that keeps exact package-local reuse checks on runtime context before DataForge fallback.")]
 	public void DataForgeOrchestrationGuidanceResource_Should_Keep_Runtime_Context_As_Primary_Source_For_Existing_App_Reuse() {
 		// Arrange
@@ -191,5 +318,27 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guidance should point existing-app reuse checks to live page inspection");
 		article.Text.Should().Contain("get-entity-schema-properties",
 			because: "the guidance should point existing-app reuse checks to schema inspection before falling back to DataForge");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Standard validator contract extraction keeps all backtick-delimited param names from the decision table.")]
+	public void PageSchemaValidatorsGuidanceResource_Should_Parse_Standard_Validator_Param_Contracts() {
+		// Arrange / Act
+		IReadOnlyDictionary<string, string[]> contracts = StandardValidatorContractParser.GetContracts();
+
+		// Assert
+		contracts.Should().ContainKey("crt.Required",
+			because: "zero-param built-in validators should still be represented in the extracted contract map");
+		contracts["crt.Required"].Should().BeEmpty(
+			because: "the parser should convert 'none' table cells into empty parameter contracts");
+		contracts.Should().ContainKey("crt.MinLength",
+			because: "the extracted contract map should include built-in min-length validation");
+		contracts["crt.MinLength"].Should().Equal(new[] { "minLength" },
+			because: "the parser should preserve the canonical min-length param name from the decision table");
+		contracts.Should().ContainKey("crt.MaxLength",
+			because: "the extracted contract map should include built-in max-length validation");
+		contracts["crt.MaxLength"].Should().Equal(new[] { "maxLength" },
+			because: "the parser should preserve the canonical max-length param name from the decision table");
 	}
 }

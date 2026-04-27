@@ -13,8 +13,11 @@ namespace Clio.Mcp.E2E;
 [AllureFeature("mcp-guidance-resources")]
 [NonParallelizable]
 public sealed class McpGuidanceResourceE2ETests {
-	private const string AppModelingUri = "docs://mcp/guides/app-modeling";
-	private const string ExistingAppMaintenanceUri = "docs://mcp/guides/existing-app-maintenance";
+	private const string DocsScheme = "docs";
+	private const string GuidesPath = "mcp/guides";
+	private static readonly string AppModelingUri = BuildGuideUri("app-modeling");
+	private static readonly string ExistingAppMaintenanceUri = BuildGuideUri("existing-app-maintenance");
+	private static readonly string PageSchemaValidatorsUri = BuildGuideUri("page-schema-validators");
 
 	[Test]
 	[AllureTag("mcp-guidance-resources")]
@@ -31,9 +34,10 @@ public sealed class McpGuidanceResourceE2ETests {
 		// Assert
 		resources.Select(resource => resource.Uri).Should().Contain([
 				AppModelingUri,
-				ExistingAppMaintenanceUri
+				ExistingAppMaintenanceUri,
+				PageSchemaValidatorsUri
 			],
-			because: "the MCP server should advertise creation and maintenance guidance resources");
+			because: "the MCP server should advertise creation existing-app and validator guidance resources");
 	}
 
 	[Test]
@@ -73,11 +77,44 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the article should encode the canonical maintenance verification discipline");
 	}
 
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the page-schema validators guidance article")]
+	public async Task McpServer_Should_Return_Page_Schema_Validators_Guidance() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(PageSchemaValidatorsUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the validators guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(PageSchemaValidatorsUri,
+			because: "the returned article should preserve the stable validator guidance URI");
+		article.Text.Should().Contain("SCHEMA_VALIDATORS",
+			because: "the validator guide should anchor editing to the correct page-body marker section");
+		article.Text.Should().Contain("field-value validation",
+			because: "the validator guide should state the intended responsibility of validators");
+		article.Text.Should().Contain("@CrtValidator",
+			because: "the validator guide should mention the public frontend-source registration pattern");
+		article.Text.Should().Contain("crt.MaxLength",
+			because: "the validator guide should publish the built-in max-length validator in the standard decision table");
+		article.Text.Should().Contain("Do NOT create a custom validator when a standard validator is sufficient",
+			because: "the validator guide should explicitly prevent unnecessary custom validators for standard cases");
+		article.Text.Should().Contain("setAttributePropertyValue(...)",
+			because: "the validator guide should redirect dynamic UI-state logic away from validators without pointing to removed handler or converter guides");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new ArrangeContext(session, cancellationTokenSource);
 	}
+
+	private static string BuildGuideUri(string guideName) => $"{DocsScheme}://{GuidesPath}/{guideName}";
 
 	private sealed record ArrangeContext(
 		McpServerSession Session,

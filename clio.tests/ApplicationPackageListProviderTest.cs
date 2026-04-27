@@ -11,8 +11,7 @@ using NUnit.Framework;
 
 namespace Clio.Tests;
 
-[TestFixture(Category = "Unit")]
-[Property("Module", "Core")]
+[TestFixture(Category = "UnitTests")]
 internal class ApplicationPackageListProviderTest
 {
 	private IApplicationClient _applicationClient;
@@ -165,4 +164,3 @@ internal class ApplicationPackageListProviderTest
 		result.Should().BeEmpty("because null rows should be treated as empty collection");
 	}
 }
-

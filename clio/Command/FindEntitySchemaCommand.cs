@@ -18,8 +18,20 @@ public class FindEntitySchemaOptions : RemoteCommandOptions
 	[Option("schema-name", Required = false, HelpText = "Exact entity schema name to find")]
 	public string? SchemaName { get; set; }
 
+	[Option("name", Required = false, Hidden = true, HelpText = "Alias for --schema-name")]
+	public string? SchemaNameAlias {
+		get => SchemaName;
+		set { if (!string.IsNullOrEmpty(value)) SchemaName = value; }
+	}
+
 	[Option("search-pattern", Required = false, HelpText = "Case-insensitive substring to search in entity schema names")]
 	public string? SearchPattern { get; set; }
+
+	[Option("pattern", Required = false, Hidden = true, HelpText = "Alias for --search-pattern")]
+	public string? SearchPatternAlias {
+		get => SearchPattern;
+		set { if (!string.IsNullOrEmpty(value)) SearchPattern = value; }
+	}
 
 	[Option("uid", Required = false, HelpText = "Entity schema UId (Guid) to find")]
 	public string? Uid { get; set; }

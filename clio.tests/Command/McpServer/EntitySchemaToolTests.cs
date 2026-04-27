@@ -802,15 +802,17 @@ public sealed class EntitySchemaToolTests {
 			because: "lookup prompt guidance should direct callers to the canonical post-create verification path");
 		lookupPrompt.Should().Contain("`Name`",
 			because: "lookup prompt guidance should explain the inherited display-field contract for BaseLookup");
-		lookupPrompt.Should().Contain("docs://mcp/guides/app-modeling",
-			because: "lookup prompt guidance should point callers to the MCP-owned modeling guide");
+		lookupPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "lookup prompt guidance should point callers to the MCP-owned modeling guide through the guidance tool");
+		lookupPrompt.Should().Contain("app-modeling",
+			because: "lookup prompt guidance should identify the exact guidance name callers must pass to the guidance tool");
 		updatePrompt.Should().Contain(UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
 			because: "batch update prompt guidance should reference the exact production tool name");
 		updatePrompt.Should().Contain("title-localizations",
 			because: "batch update prompt guidance should instruct callers to use localization maps");
 		updatePrompt.Should().Contain("schema default",
 			because: "batch update prompt guidance should explain that seed rows do not define defaults");
-		updatePrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
+		updatePrompt.Should().Contain(GuidanceGetTool.ToolName,
 			because: "batch update prompt guidance should point callers to the dedicated maintenance guide for existing-app edits");
 		updatePrompt.Should().Contain("get-entity-schema-properties",
 			because: "batch update prompt guidance should tell callers to inspect the current schema before mutating it");
@@ -818,14 +820,14 @@ public sealed class EntitySchemaToolTests {
 			because: "batch update prompt guidance should distinguish single-column edits from batch schema updates");
 		schemaPrompt.Should().Contain(GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 			because: "schema-read prompt guidance should reference the exact production tool name");
-		schemaPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "schema-read prompt guidance should point callers to the existing-app maintenance guide");
+		schemaPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "schema-read prompt guidance should point callers to the existing-app maintenance guide through the guidance tool");
 		schemaPrompt.Should().Contain("read step before `modify-entity-schema-column` or `sync-schemas`",
 			because: "schema-read prompt guidance should describe the canonical inspect step before mutation");
 		columnPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 			because: "column-read prompt guidance should reference the exact production tool name");
-		columnPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "column-read prompt guidance should point callers to the existing-app maintenance guide");
+		columnPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "column-read prompt guidance should point callers to the existing-app maintenance guide through the guidance tool");
 		columnPrompt.Should().Contain("before and after `modify-entity-schema-column`",
 			because: "column-read prompt guidance should describe the canonical verification pattern for single-column edits");
 		modifyPrompt.Should().Contain(ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
@@ -834,8 +836,8 @@ public sealed class EntitySchemaToolTests {
 			because: "modify prompt guidance should instruct callers to use localization maps");
 		modifyPrompt.Should().Contain("type",
 			because: "mutation prompt guidance should remind callers about action-specific options");
-		modifyPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "modify prompt guidance should point callers to the existing-app maintenance guide");
+		modifyPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "modify prompt guidance should point callers to the existing-app maintenance guide through the guidance tool");
 		modifyPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 			because: "modify prompt guidance should tell callers to inspect current column metadata before mutating it");
 	}

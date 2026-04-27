@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<TargetFramework>net8.0</TargetFramework>
+		<TargetFrameworks>net10.0;net8.0</TargetFrameworks>
 		<PackAsTool>true</PackAsTool>
 		<PackageId>clio</PackageId>
 		<Company>creatio</Company>
@@ -9,7 +9,7 @@
 		<PackageTags>cli ATF clio creatio</PackageTags>
 		<NeutralLanguage>en</NeutralLanguage>
 		<!-- Fallback for environments without git tags; overridden by SetVersionFromGitTag target or CI /p:AssemblyVersion -->
-	<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.2.71</AssemblyVersion>
+		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.2.72</AssemblyVersion>
 		<FileVersion Condition="'$(FileVersion)' == ''">$(AssemblyVersion)</FileVersion>
 		<Version Condition="'$(Version)' == ''">$(AssemblyVersion)</Version>
 		<Description>CLI interface for Creatio</Description>
@@ -22,8 +22,7 @@
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
-		<LangVersion>latest</LangVersion>
-<!--		<UseAppHost>false</UseAppHost>-->
+		<LangVersion>12</LangVersion>
 		<NoWarn>NU5119;NU5118;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169</NoWarn>
 	</PropertyGroup>
 
@@ -37,6 +36,7 @@
 		<PlatformTarget>AnyCPU</PlatformTarget>
 		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
 	</PropertyGroup>
+	
 	<ItemGroup>
 		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
 			<_Parameter1>clio.tests</_Parameter1>
@@ -107,20 +107,7 @@
 			</ItemGroup>
 		</Otherwise>
 	</Choose>
-
-	<Choose>
-		<When Condition="Exists('..\..\commandline\src\CommandLine\CommandLine.csproj')">
-			<ItemGroup>
-				<ProjectReference Include="..\..\commandline\src\CommandLine\CommandLine.csproj"/>
-			</ItemGroup>
-		</When>
-		<Otherwise>
-			<ItemGroup>
-				<PackageReference Include="CommandLineSDK" />
-			</ItemGroup>
-		</Otherwise>
-	</Choose>
-
+	
 	<Choose>
 		<When Condition="Exists('..\..\repository\ATF.Repository\ATF.Repository.csproj')">
 			<ItemGroup>
@@ -134,20 +121,33 @@
 		</Otherwise>
 	</Choose>
 
+	<Choose>
+		<When Condition="'$(TargetFramework)' == 'net8.0'">
+			<ItemGroup>
+				<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/>
+			</ItemGroup>
+		</When>
+		<Otherwise>
+			<ItemGroup>
+				<PackageReference Include="Microsoft.PowerShell.SDK"/>
+			</ItemGroup>
+		</Otherwise>
+	</Choose>
+
 	<ItemGroup>
-		<ProjectReference Condition="'$(Configuration)|$(Platform)'!='Release|AnyCPU'" 
+		<ProjectReference Condition="'$(Configuration)|$(Platform)'!='Release|AnyCPU'"
 						  Include="..\Clio.Analyzers\Clio.Analyzers.csproj"
 		                  OutputItemType="Analyzer"
 		                  ReferenceOutputAssembly="false" />
-		
+
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" VersionOverride="2.0.0"/>
 		<PackageReference Include="MediatR" VersionOverride="[12.5.0]"/>
-		<PackageReference Include="Microsoft.Dism" VersionOverride="5.0.0" />
-		<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/> <!-- 7.4.13 Is the latest supported on .NET8-->
+		<PackageReference Include="Microsoft.Dism" VersionOverride="6.0.0" />
 		<PackageReference Include="Microsoft.Web.Administration" VersionOverride="11.1.0"/>
 	</ItemGroup>
 	
 	<ItemGroup Label="Centrally Managed Package Versions">
+		<PackageReference Include="CommandLineSDK" />
 		<PackageReference Include="KubernetesClient" />
 		<PackageReference Include="OneOf" />
 		<PackageReference Include="Ignore" />
@@ -172,6 +172,18 @@
 		<PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" />
 		<PackageReference Include="Microsoft.Data.SqlClient" />
+
+		<!-- 
+		 Warning NU1903 : Package 'System.Security.Cryptography.Xml' 
+		 10.0.5 has a known high severity vulnerability, 
+		 https://github.com/advisories/GHSA-37gx-xxp4-5rgx
+		 
+		 Temporary workaround: pin to 10.0.6 which contains the fix, 
+		 but doesn't have a CVE published yet.
+		 
+		 Offending package Powershell.SDK
+		-->
+		<PackageReference Include="System.Security.Cryptography.Xml" />
 	</ItemGroup>
 
 	<!-- Reads the latest X.Y.Z.W git tag for local builds. Skipped when CI provides /p:AssemblyVersion. -->

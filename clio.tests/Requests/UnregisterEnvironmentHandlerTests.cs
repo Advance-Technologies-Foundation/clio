@@ -17,7 +17,7 @@ public class UnregisterEnvironmentHandlerTests {
 	public async Task Handle_ShouldForwardEnvironmentNameToUnregAppCommand() {
 		// Arrange
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
-		UnregAppCommand unregCommand = new(settingsRepository);
+		UnregAppCommand unregCommand = new(settingsRepository, Substitute.For<Clio.Common.ILogger>());
 		UnregisterEnvironmentHandler sut = new(unregCommand);
 		UnregisterEnvironment request = new() {
 			Content = "clio://UnregisterEnvironment?name=studio-dev"

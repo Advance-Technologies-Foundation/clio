@@ -25,15 +25,15 @@ public class InstallTideCommandTests : BaseCommandTests<InstallTideCommandOption
 	public void Execute_GateInstallFails_ShouldNotInstallTide() {
 		// Arrange
 		IInstallNugetPackage installNugetPackage = Substitute.For<IInstallNugetPackage>();
+		ILogger logger = Substitute.For<ILogger>();
 		InstallNugetPackageCommand installNugetPackageCommand
-			= Substitute.For<InstallNugetPackageCommand>(installNugetPackage);
+			= Substitute.For<InstallNugetPackageCommand>(installNugetPackage, logger);
 
 		EnvironmentSettings environmentSettings = Substitute.For<EnvironmentSettings>();
 		IPackageInstaller packageInstaller = Substitute.For<IPackageInstaller>();
 		IMarketplace marketplace = Substitute.For<IMarketplace>();
 		ICompileConfigurationCommand compileConfigurationCommand = Substitute.For<ICompileConfigurationCommand>();
 		IApplication application = Substitute.For<IApplication>();
-		ILogger logger = Substitute.For<ILogger>();
 		InstallGatePkgCommand installGatePkgCommand = Substitute.For<InstallGatePkgCommand>(
 			environmentSettings, packageInstaller, marketplace, compileConfigurationCommand, application, logger);
 
@@ -72,15 +72,15 @@ public class InstallTideCommandTests : BaseCommandTests<InstallTideCommandOption
 	public void Execute_ServerNotReady_ShouldNotInstallTide() {
 		// Arrange
 		IInstallNugetPackage installNugetPackage = Substitute.For<IInstallNugetPackage>();
+		ILogger logger = Substitute.For<ILogger>();
 		InstallNugetPackageCommand installNugetPackageCommand
-			= Substitute.For<InstallNugetPackageCommand>(installNugetPackage);
+			= Substitute.For<InstallNugetPackageCommand>(installNugetPackage, logger);
 
 		EnvironmentSettings environmentSettings = Substitute.For<EnvironmentSettings>();
 		IPackageInstaller packageInstaller = Substitute.For<IPackageInstaller>();
 		IMarketplace marketplace = Substitute.For<IMarketplace>();
 		ICompileConfigurationCommand compileConfigurationCommand = Substitute.For<ICompileConfigurationCommand>();
 		IApplication application = Substitute.For<IApplication>();
-		ILogger logger = Substitute.For<ILogger>();
 		InstallGatePkgCommand installGatePkgCommand = Substitute.For<InstallGatePkgCommand>(
 			environmentSettings, packageInstaller, marketplace, compileConfigurationCommand, application, logger);
 
@@ -123,15 +123,15 @@ public class InstallTideCommandTests : BaseCommandTests<InstallTideCommandOption
 	public void Execute_WaitsForServerReady_ThenInstallsTide() {
 		// Arrange
 		IInstallNugetPackage installNugetPackage = Substitute.For<IInstallNugetPackage>();
+		ILogger logger = Substitute.For<ILogger>();
 		InstallNugetPackageCommand installNugetPackageCommand
-			= Substitute.For<InstallNugetPackageCommand>(installNugetPackage);
+			= Substitute.For<InstallNugetPackageCommand>(installNugetPackage, logger);
 
 		EnvironmentSettings environmentSettings = Substitute.For<EnvironmentSettings>();
 		IPackageInstaller packageInstaller = Substitute.For<IPackageInstaller>();
 		IMarketplace marketplace = Substitute.For<IMarketplace>();
 		ICompileConfigurationCommand compileConfigurationCommand = Substitute.For<ICompileConfigurationCommand>();
 		IApplication application = Substitute.For<IApplication>();
-		ILogger logger = Substitute.For<ILogger>();
 		InstallGatePkgCommand installGatePkgCommand = Substitute.For<InstallGatePkgCommand>(
 			environmentSettings, packageInstaller, marketplace, compileConfigurationCommand, application, logger);
 

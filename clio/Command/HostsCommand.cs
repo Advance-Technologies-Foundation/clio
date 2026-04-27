@@ -201,7 +201,7 @@ public class HostsCommand(
 			if (string.IsNullOrWhiteSpace(targetPath)) {
 				return null;
 			}
-
+#pragma warning disable CLIO004 // Process introspection (GetProcesses/Modules) cannot be abstracted via IProcessExecutor
 			Process[] processes = Process.GetProcesses();
 
 			foreach (Process process in processes) {
@@ -217,14 +217,16 @@ public class HostsCommand(
 						}
 					}
 				}
-				catch {
-					// Ignore access denied errors
+				catch (Exception ex) {
+					System.Diagnostics.Trace.TraceWarning(ex.Message);
 				}
 			}
+#pragma warning restore CLIO004
 
 			return null;
 		}
-		catch {
+		catch (Exception ex) {
+			System.Diagnostics.Trace.TraceWarning(ex.Message);
 			return null;
 		}
 	}

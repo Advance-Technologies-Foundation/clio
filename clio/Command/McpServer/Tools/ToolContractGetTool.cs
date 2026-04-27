@@ -20,7 +20,57 @@ public sealed class ToolContractGetTool {
 		[Description("Parameters: tool-names (optional array of tool names). Omit to return the canonical clio MCP contract set.")]
 		[Required]
 		ToolContractGetArgs args) {
-		return ToolContractCatalog.GetContracts(args.ToolNames);
+		try {
+			string? aliasError = CollectLegacyAliasError(args);
+			if (aliasError is not null) {
+				return new ToolContractGetResponse(
+					false,
+					Error: new ToolContractError("invalid-parameter-alias", aliasError));
+			}
+			return ToolContractCatalog.GetContracts(args.ToolNames);
+		} catch (Exception ex) {
+			return new ToolContractGetResponse(
+				false,
+				Error: new ToolContractError(
+					"internal-error",
+					$"get-tool-contract failed: {ex.Message}. Expected args shape: {{\"tool-names\": [\"list-pages\", ...] }} or omit tool-names to list all."));
+		}
+	}
+
+	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
+		["toolNames"] = ToolNamesParam,
+		["tool_names"] = ToolNamesParam,
+		["toolName"] = ToolNamesParam,
+		["tool-name"] = ToolNamesParam,
+		["tool_name"] = ToolNamesParam,
+		["name"] = ToolNamesParam,
+		["names"] = ToolNamesParam
+	};
+
+	private const string ToolNamesParam = "tool-names";
+
+	private static string? CollectLegacyAliasError(ToolContractGetArgs args) {
+		if (args.ExtensionData is null || args.ExtensionData.Count == 0) {
+			return null;
+		}
+		List<string> mapped = [];
+		List<string> unknown = [];
+		foreach (string key in args.ExtensionData.Keys) {
+			if (LegacyAliases.TryGetValue(key, out string? canonical)) {
+				mapped.Add($"'{key}' -> '{canonical}'");
+			} else {
+				unknown.Add($"'{key}'");
+			}
+		}
+		List<string> parts = [];
+		if (mapped.Count > 0) {
+			parts.Add("Rename: " + string.Join(", ", mapped) + ". tool-names must be an array of strings.");
+		}
+		if (unknown.Count > 0) {
+			parts.Add("Unknown args: " + string.Join(", ", unknown)
+				+ ". Valid: tool-names (array of strings). Omit args to list all tools.");
+		}
+		return parts.Count > 0 ? string.Join(" ", parts) : null;
 	}
 }
 
@@ -28,7 +78,10 @@ public sealed record ToolContractGetArgs(
 	[property: JsonPropertyName("tool-names")]
 	[property: Description("Optional array of tool names. Omit to return the canonical clio MCP contract set.")]
 	IReadOnlyList<string>? ToolNames = null
-);
+) {
+	[System.Text.Json.Serialization.JsonExtensionData]
+	public Dictionary<string, System.Text.Json.JsonElement>? ExtensionData { get; init; }
+}
 
 public sealed record ToolContractGetResponse(
 	[property: JsonPropertyName("success")] bool Success,
@@ -208,6 +261,7 @@ internal static class ToolContractCatalog {
 	private static readonly IReadOnlyDictionary<string, ToolContractDefinition> Contracts =
 		new Dictionary<string, ToolContractDefinition>(StringComparer.OrdinalIgnoreCase) {
 			[ToolContractGetTool.ToolName] = BuildToolContractGet(),
+			[GuidanceGetTool.ToolName] = BuildGuidanceGet(),
 			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
@@ -246,6 +300,7 @@ internal static class ToolContractCatalog {
 		};
 
 	private static readonly string[] CanonicalToolNames = [
+		GuidanceGetTool.ToolName,
 		SettingsHealthTool.ToolName,
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
@@ -425,6 +480,44 @@ internal static class ToolContractCatalog {
 					],
 					"Follow with get-tool-contract when the caller must choose a bootstrap-safe recovery or inspection tool.")
 			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildGuidanceGet() {
+		return new ToolContractDefinition(
+			GuidanceGetTool.ToolName,
+			"Returns canonical clio MCP guidance text by stable guide name so clients can consume workflows and page-authoring rules without fetching docs:// resources directly.",
+			new ToolInputSchemaContract(
+				["name"],
+				[
+					Field("name", StringType, "Stable guidance name. Known values include app-modeling, existing-app-maintenance, dataforge-orchestration, and page-schema-validators.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("guidance", ObjectType, "Resolved guidance article with name, uri, mime-type, description, and text."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("available-guides", ArrayType, "Known guidance names returned on lookup failure.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read validator authoring guidance", new Dictionary<string, object?> {
+					["name"] = "page-schema-validators"
+				}),
+				Example("Read canonical existing-app maintenance guidance", new Dictionary<string, object?> {
+					["name"] = "existing-app-maintenance"
+				})
+			],
+			new ToolFlowHint(
+				[
+					GuidanceGetTool.ToolName
+				],
+				"Call this tool before workflows that require canonical clio MCP guidance text, especially when page prompts or app prompts reference a named guide."),
+			[],
 			[]);
 	}
 

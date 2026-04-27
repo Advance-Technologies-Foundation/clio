@@ -1,6 +1,6 @@
 using System;
-using System.IO;
 using Clio.UserEnvironment;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Common.Assertions
 {
@@ -22,11 +22,14 @@ namespace Clio.Common.Assertions
 	{
 		private readonly ISettingsRepository _settingsRepository;
 		private readonly ILogger _logger;
+		private readonly IAbstractionsFileSystem _fileSystem;
 
-		public FsPathAssertion(ISettingsRepository settingsRepository, ILogger logger)
+		public FsPathAssertion(ISettingsRepository settingsRepository, ILogger logger,
+			IAbstractionsFileSystem fileSystem)
 		{
 			_settingsRepository = settingsRepository;
 			_logger = logger;
+			_fileSystem = fileSystem;
 		}
 
 		/// <summary>
@@ -52,7 +55,7 @@ namespace Clio.Common.Assertions
 			_logger.WriteInfo($"Validating path: {resolvedPath}");
 
 			// Validate path exists
-			if (!Directory.Exists(resolvedPath))
+			if (!_fileSystem.Directory.Exists(resolvedPath))
 			{
 				var result = AssertionResult.Failure(
 					AssertionScope.Fs,

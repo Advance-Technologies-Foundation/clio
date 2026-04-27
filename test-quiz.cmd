@@ -2,7 +2,7 @@
 REM Test script for Creatio Quiz Game
 REM This opens a new console window with the correct size
 
-cd /d "%~dp0clio\bin\Debug\net8.0"
+cd /d "%~dp0clio\bin\Debug\net10.0"
 
 REM Set console size: width=96, height=36
 mode con: cols=96 lines=36

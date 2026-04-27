@@ -26,6 +26,7 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 	private readonly IApplicationClient _applicationClient;
 	private readonly EnvironmentSettings _environmentSettings;
 	private readonly RestartCommand _restartCommand;
+	private readonly ILogger _logger;
 
 	#endregion
 
@@ -43,13 +44,14 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 	public TurnFsmCommand(SetFsmConfigCommand setFsmConfigCommand,
 		LoadPackagesToFileSystemCommand loadPackagesToFileSystemCommand,
 		LoadPackagesToDbCommand loadPackagesToDbCommand, IApplicationClient applicationClient,
-		EnvironmentSettings environmentSettings, RestartCommand restartCommand) {
+		EnvironmentSettings environmentSettings, RestartCommand restartCommand, ILogger logger) {
 		_setFsmConfigCommand = setFsmConfigCommand;
 		_loadPackagesToFileSystemCommand = loadPackagesToFileSystemCommand;
 		_loadPackagesToDbCommand = loadPackagesToDbCommand;
 		_applicationClient = applicationClient;
 		_environmentSettings = environmentSettings;
 		_restartCommand = restartCommand;
+		_logger = logger;
 	}
 
 	#endregion
@@ -66,7 +68,7 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 		bool isOn = string.Equals(fsmValue, "on", StringComparison.OrdinalIgnoreCase);
 		bool isOff = string.Equals(fsmValue, "off", StringComparison.OrdinalIgnoreCase);
 		if (!isOn && !isOff) {
-			Console.WriteLine("Invalid value for IsFsm. Expected: 'on' or 'off'.");
+			_logger.WriteError("Invalid value for IsFsm. Expected: 'on' or 'off'.");
 			return 1;
 		}
 
@@ -83,8 +85,8 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 					};
 					//RestartCommand restartCommand = new (_applicationClient, _environmentSettings);
 					_restartCommand.Execute(opt);
-					if (!TryLoginWithRetry(_applicationClient, timeout: TimeSpan.FromSeconds(90), delay: TimeSpan.FromSeconds(3))) {
-						Console.WriteLine("Application is not available after restart. Try again later or increase restart time.");
+					if (!TryLoginWithRetry(_applicationClient, _logger, timeout: TimeSpan.FromSeconds(90), delay: TimeSpan.FromSeconds(3))) {
+						_logger.WriteError("Application is not available after restart. Try again later or increase restart time.");
 						return 1;
 					}
 				}
@@ -99,7 +101,7 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 		return 1;
 	}
 
-	private static bool TryLoginWithRetry(IApplicationClient applicationClient, TimeSpan timeout, TimeSpan delay) {
+	private static bool TryLoginWithRetry(IApplicationClient applicationClient, ILogger logger, TimeSpan timeout, TimeSpan delay) {
 		DateTime start = DateTime.UtcNow;
 		Exception lastException = null;
 		bool printedWaitingMessage = false;
@@ -111,14 +113,14 @@ public class TurnFsmCommand : Command<TurnFsmCommandOptions>
 			catch (Exception ex) {
 				lastException = ex;
 				if (!printedWaitingMessage) {
-					Console.WriteLine("Waiting for application to start after restart...");
+					logger.WriteLine("Waiting for application to start after restart...");
 					printedWaitingMessage = true;
 				}
 				Thread.Sleep(delay);
 			}
 		}
 		if (lastException != null) {
-			Console.WriteLine(lastException.Message);
+			logger.WriteError(lastException.Message);
 		}
 		return false;
 	}

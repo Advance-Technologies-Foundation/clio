@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Clio.Common;
 using CommandLine;
 
@@ -15,7 +15,7 @@ namespace Clio.Command
 
 		[Value(2, MetaName = "Type", Required = false, HelpText = "Type", Default = "Text")]
 		public string Type { get; set; }
-		
+
 		[Option("GET", Required = false, HelpText = "Use GET to retrieve sys-setting", Default = false)]
 		public bool IsGet { get; set; }
 
@@ -24,28 +24,16 @@ namespace Clio.Command
 	public class SysSettingsCommand : Command<SysSettingsOptions> {
 		private readonly ISysSettingsManager _sysSettingsManager;
 		private readonly ILogger _logger;
-		private readonly IClioGateway _clioGateway;
 
-		public SysSettingsCommand(ISysSettingsManager sysSettingsManager, ILogger logger, IClioGateway clioGateway){
+		public SysSettingsCommand(ISysSettingsManager sysSettingsManager, ILogger logger){
 			_sysSettingsManager = sysSettingsManager;
 			_logger = logger;
-			_clioGateway = clioGateway;
 		}
-		
+
 		private void CreateSysSettingIfNotExists(SysSettingsOptions opts) {
-			
-			// SysSettingsManager.InsertSysSettingResponse result = 
-			// 	_sysSettingsManager.InsertSysSetting(opts.Code, opts.Code, opts.Type);
-			
 			_sysSettingsManager.CreateSysSettingIfNotExists(opts.Code, opts.Code, opts.Type);
-			
-			// string text = result switch {
-			// 	{ Success: true, Id: var id } when id != Guid.Empty => $"SysSettings with code: {opts.Code} created.",
-			// 	{ Success: false, Id: var id } when id == Guid.Empty => $"SysSettings with code: {opts.Code} already exists."
-			// };
-			//  _logger.WriteInfo(text);
 		}
-		
+
 		public void UpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
 			bool isUpdated = _sysSettingsManager.UpdateSysSetting(opts.Code, opts.Value);
 			if(isUpdated) {
@@ -54,7 +42,7 @@ namespace Clio.Command
 				_logger.WriteError($"SysSettings with code: {opts.Code} is not updated.");
 			}
 		}
-		
+
 		public void TryUpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
 			try {
 				UpdateSysSetting(opts, settings);
@@ -62,22 +50,14 @@ namespace Clio.Command
 				_logger.WriteError($"SysSettings with code: {opts.Code} is not updated.");
 			}
 		}
+
 		public override int Execute(SysSettingsOptions opts) {
-			
 			if(opts.IsGet) {
-				const string minClioGateVersion = "2.0.0.0";
-				if(!_clioGateway.IsCompatibleWith(minClioGateVersion)) {
-					_logger.WriteError($"To view SysSetting value by code requires cliogate package version {minClioGateVersion} or higher installed in Creatio.");
-					_logger.WriteInfo(string.IsNullOrWhiteSpace(opts.Environment)
-						?  "To install cliogate use the following command: clio install-gate"
-						: $"To install cliogate use the following command: clio install-gate -e {opts.Environment}");
-					return 0;
-				}
 				string value = _sysSettingsManager.GetSysSettingValueByCode(opts.Code);
 				_logger.WriteInfo($"SysSettings {opts.Code} : {value}");
 				return 0;
 			}
-			
+
 			try {
 				CreateSysSettingIfNotExists(opts);
 				UpdateSysSetting(opts);

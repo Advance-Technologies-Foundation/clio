@@ -24,7 +24,7 @@ namespace Clio.Tests.Common.Assertions
 		{
 			_settingsRepository = Substitute.For<ISettingsRepository>();
 			_logger = Substitute.For<ILogger>();
-			_sut = new FsPathAssertion(_settingsRepository, _logger);
+			_sut = new FsPathAssertion(_settingsRepository, _logger, new System.IO.Abstractions.FileSystem());
 		}
 
 		[Test]

@@ -52,15 +52,14 @@ public sealed record ApplicationCreateArgs(
 	[property: Required]
 	string Code,
 
-	[property: JsonPropertyName("template-code")]
-	[property: Description("Technical template name (NOT display name). Known values: AppFreedomUI, AppFreedomUIv2, AppWithHomePage, EmptyApp")]
-	[property: Required]
-	string TemplateCode,
-
 	[property: JsonPropertyName("icon-background")]
 	[property: Description("Application icon background color in #RRGGBB format, e.g. '#1F5F8B'")]
 	[property: Required]
 	string IconBackground,
+
+	[property: JsonPropertyName("template-code")]
+	[property: Description("Technical template name (NOT display name). Known values: AppFreedomUI, AppFreedomUIv2, AppWithHomePage, EmptyApp. Defaults to AppFreedomUI when omitted — use this default unless you have a specific reason to change it.")]
+	string? TemplateCode = "AppFreedomUI",
 
 	[property: JsonPropertyName("description")]
 	[property: Description("Application description")]
@@ -130,6 +129,10 @@ public sealed record ApplicationSectionCreateArgs(
 	[property: JsonPropertyName("entity-schema-name")]
 	[property: Description("Optional existing entity schema name. When provided, the section reuses that entity.")]
 	string? EntitySchemaName = null,
+
+	[property: JsonPropertyName("icon-background")]
+	[property: Description("Optional icon background color in #RRGGBB format. Must be one of the Freedom UI palette values that render as gradient tiles: #A6DE00, #20A959, #22AC14, #FFAC07, #FF8800, #F9307F, #FF602E, #FF4013, #B87CCF, #7848EE, #247EE5, #0058EF, #009DE3, #4F43C2, #08857E, #00BFA5. Defaults to a random palette color when omitted.")]
+	string? IconBackground = null,
 
 	[property: JsonPropertyName("with-mobile-pages")]
 	[property: Description("Create mobile pages in addition to web pages. Default: true.")]
@@ -223,7 +226,7 @@ public sealed record ApplicationSectionUpdateArgs(
 	string? IconId = null,
 
 	[property: JsonPropertyName("icon-background")]
-	[property: Description("Optional updated icon background color in #RRGGBB format.")]
+	[property: Description("Optional updated icon background color in #RRGGBB format. Must be one of the Freedom UI palette values that render as gradient tiles: #A6DE00, #20A959, #22AC14, #FFAC07, #FF8800, #F9307F, #FF602E, #FF4013, #B87CCF, #7848EE, #247EE5, #0058EF, #009DE3, #4F43C2, #08857E, #00BFA5.")]
 	string? IconBackground = null,
 
 	[property: JsonPropertyName("title-localizations")]

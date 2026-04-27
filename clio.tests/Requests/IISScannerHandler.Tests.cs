@@ -1,5 +1,9 @@
-﻿using Clio.Requests;
+﻿using Clio.Common;
+using Clio.Requests;
+using Clio.UserEnvironment;
+using Clio.Utilities;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
@@ -11,6 +15,14 @@ namespace Clio.Tests.Requests;
 [Description("Integration tests for IISScannerHandler to verify discovery of top-level sites and nested applications")]
 public class IISScannerHandlerTests
 {
+	private IIisScanner CreateScanner() =>
+		new IisScannerHandler(
+			Substitute.For<ISettingsRepository>(),
+			null,
+			new PowerShellFactory(),
+			Substitute.For<ILogger>(),
+			new ProcessExecutor(Substitute.For<ILogger>()));
+
 	[Test]
 	[Description("Verifies that FindAllCreatioSites discovers both top-level sites and nested applications")]
 	public void FindAllCreatioSites_Should_Discover_TopLevel_And_Nested_Sites()
@@ -21,16 +33,11 @@ public class IISScannerHandlerTests
 		}
 		
 		// Act
-		// Note: This is an integration test that will only work on Windows with IIS installed
-		// and will discover actual IIS sites on the system
-		List<IISScannerHandler.UnregisteredSite> sites = IISScannerHandler.FindAllCreatioSites().ToList();
+		List<UnregisteredSite> sites = CreateScanner().FindAllCreatioSites().ToList();
 
 		// Assert
-		// We can't assert specific counts as it depends on the test environment
-		// But we can verify that the method executes without errors
 		sites.Should().NotBeNull("because FindAllCreatioSites should always return a collection");
 
-		// Log discovered sites for debugging purposes
 		Console.WriteLine($"Discovered {sites.Count} Creatio sites:");
 		foreach (var site in sites)
 		{
@@ -50,10 +57,9 @@ public class IISScannerHandlerTests
 		}
 		
 		// Act
-		IEnumerable<IISScannerHandler.UnregisteredSite> sites = IISScannerHandler.FindAllCreatioSites();
+		IEnumerable<UnregisteredSite> sites = CreateScanner().FindAllCreatioSites();
 
 		// Assert
-		// Check if any nested applications were discovered (those with "/" in the name)
 		var nestedSites = sites.Where(s => s.siteBinding.name.Contains("/")).ToList();
 
 		if (nestedSites.Any())
@@ -63,11 +69,9 @@ public class IISScannerHandlerTests
 			{
 				Console.WriteLine($"  - {site.siteBinding.name}");
 				
-				// Verify the name format is correct (SiteName/AppPath)
 				site.siteBinding.name.Should().Contain("/", 
 					because: "nested applications should have site name and app path separated by /");
 				
-				// Verify physical path is populated
 				site.siteBinding.path.Should().NotBeNullOrEmpty(
 					because: "nested applications should have a valid physical path");
 			}
@@ -89,7 +93,7 @@ public class IISScannerHandlerTests
 		}
 		
 		// Act
-		IEnumerable<IISScannerHandler.UnregisteredSite> sites = IISScannerHandler.FindAllCreatioSites();
+		IEnumerable<UnregisteredSite> sites = CreateScanner().FindAllCreatioSites();
 
 		// Assert
 		foreach (var site in sites)
@@ -99,10 +103,6 @@ public class IISScannerHandlerTests
 				because: "every site should have a name");
 			site.siteBinding.path.Should().NotBeNullOrEmpty(
 				because: "every site should have a physical path");
-			
-			// Note: state and binding can be empty for nested apps that aren't directly managed by IIS
-			// but inherit from their parent site
 		}
 	}
 }
-

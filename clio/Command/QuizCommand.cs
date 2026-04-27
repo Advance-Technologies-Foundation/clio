@@ -1,4 +1,5 @@
 using CommandLine;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command;
 
@@ -17,6 +18,13 @@ public class QuizCommandOptions
 /// </summary>
 public class QuizCommand : Command<QuizCommandOptions>
 {
+	private readonly IAbstractionsFileSystem _fileSystem;
+
+	public QuizCommand(IAbstractionsFileSystem fileSystem)
+	{
+		_fileSystem = fileSystem;
+	}
+
 	/// <summary>
 	/// Executes the quiz game command.
 	/// </summary>
@@ -24,7 +32,7 @@ public class QuizCommand : Command<QuizCommandOptions>
 	/// <returns>Exit code (0 for success).</returns>
 	public override int Execute(QuizCommandOptions options)
 	{
-		Quiz.QuizGame.Run();
+		Quiz.QuizGame.Run(_fileSystem);
 		return 0;
 	}
 }

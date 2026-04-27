@@ -190,6 +190,66 @@ public sealed class PageSyncToolE2ETests {
 	}
 
 	[Test]
+	[Description("Keeps JavaScript converters and validators out of JSON content validation failures.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages ignores converter and validator JavaScript during content validation")]
+	[AllureDescription("Uses a reachable sandbox environment, sends a page body with function-based converters and validators plus a malformed JSON-backed marker, and verifies that validation reports the real JSON marker instead of SCHEMA_CONVERTERS or SCHEMA_VALIDATORS.")]
+	public async Task PageSyncTool_Should_Not_Report_Converter_Or_Validator_Markers_As_Invalid_Json() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages validation E2E.");
+		}
+		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
+			Assert.Ignore($"sync-pages validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		}
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithConverterValidatorAndBrokenJson = ValidPageBody
+			.Replace(
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"name\":\"DataTable\"},,]/**SCHEMA_VIEW_CONFIG_DIFF*/")
+			.Replace(
+				"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+				"/**SCHEMA_CONVERTERS*/{ \"usr.ToUpperCase\": function(value) { return value?.toUpperCase() ?? \"\"; } }/**SCHEMA_CONVERTERS*/")
+			.Replace(
+				"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+				"/**SCHEMA_VALIDATORS*/{ \"usr.ValidateFieldValue\": { \"validator\": function(config) { return function(control) { return control.value !== config.invalidName ? null : { \"usr.ValidateFieldValue\": { message: config.message } }; }; }, \"params\": [{ \"name\": \"invalidName\" }, { \"name\": \"message\" }], \"async\": false } }/**SCHEMA_VALIDATORS*/");
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrConverterValidatorValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithConverterValidatorAndBrokenJson
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "validation failures should stay in the structured response");
+		response.Success.Should().BeFalse(
+			because: "the malformed JSON-backed marker should still fail validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "sync-pages should return validation details for the rejected body");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "viewConfigDiff contains invalid JSON-like content");
+		response.Pages[0].Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
+			because: "the malformed JSON-backed marker should be identified in the validation error");
+		response.Pages[0].Error.Should().NotContain("SCHEMA_CONVERTERS",
+			because: "converter blocks may contain JavaScript functions and should not be parsed as JSON");
+		response.Pages[0].Error.Should().NotContain("SCHEMA_VALIDATORS",
+			because: "validator blocks may contain JavaScript functions and should not be parsed as JSON");
+	}
+
+	[Test]
 	[Description("Rejects proxy standard field bindings through the real MCP server before any remote save is attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages rejects proxy field bindings during semantic validation")]
@@ -266,6 +326,125 @@ public sealed class PageSyncToolE2ETests {
 		Assert.Ignore(
 			$"sync-pages MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
 		return string.Empty;
+	}
+
+	[Test]
+	[Description("Rejects obvious custom max-length validators through the real MCP server before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects obvious custom max-length validators during semantic validation")]
+	[AllureDescription("Uses a reachable sandbox environment, sends a page body with a custom usr.NameMaxLength validator, and verifies that semantic validation blocks the save and recommends crt.MaxLength.")]
+	public async Task PageSyncTool_Should_Reject_Obvious_Custom_MaxLength_Validators_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages semantic validation E2E.");
+		}
+		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
+			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		}
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithCustomMaxLengthValidator = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG*/{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"usr.NameMaxLength\",\"params\":{\"message\":\"#ResourceString(UsrNameMaxLength_Message)#\"}}}}}}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
+			"/**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/, " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.NameMaxLength\":{\"validator\":function(config){return function(control){if (control.value && control.value.length >= 5) { return {\"usr.NameMaxLength\": { message: config.message }}; } return null;};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/ }; });";
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrCustomMaxLengthValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithCustomMaxLengthValidator
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "semantic validation failures should stay in the structured tool response");
+		response.Success.Should().BeFalse(
+			because: "obvious custom max-length validators should be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail semantic validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "standard-validator enforcement contributes to the content-ok decision");
+		response.Pages[0].Error.Should().Contain("usr.NameMaxLength")
+			.And.Contain("crt.MaxLength",
+				because: "the failure should identify the rejected custom validator and the built-in replacement");
+	}
+
+	[Test]
+	[Description("Rejects built-in crt.MaxLength bindings that use max instead of maxLength before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects invalid built-in validator param names during semantic validation")]
+	[AllureDescription("Uses a reachable sandbox environment, sends a page body with crt.MaxLength configured through params.max, and verifies that semantic validation blocks the save and requires maxLength.")]
+	public async Task PageSyncTool_Should_Reject_BuiltIn_MaxLength_With_Wrong_Param_Name_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages semantic validation E2E.");
+		}
+		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
+			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		}
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithWrongBuiltInParam = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG*/{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"crt.MaxLength\",\"params\":{\"max\":4}}}}}}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
+			"/**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/, " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrBuiltInMaxLengthValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithWrongBuiltInParam
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "semantic validation failures should stay in the structured tool response");
+		response.Success.Should().BeFalse(
+			because: "crt.MaxLength with params.max should be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail semantic validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "validator-param contract enforcement contributes to the content-ok decision");
+		response.Pages[0].Error.Should().Contain("crt.MaxLength")
+			.And.Contain("max")
+			.And.Contain("maxLength",
+				because: "the failure should identify both the wrong param and the required param name");
 	}
 
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {

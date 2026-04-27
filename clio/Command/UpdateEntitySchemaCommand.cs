@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.EntitySchemaDesigner;
@@ -11,15 +12,25 @@ namespace Clio.Command;
 [Verb("update-entity-schema", HelpText = "Apply batch column operations to a remote Creatio entity schema")]
 public class UpdateEntitySchemaOptions : RemoteCommandOptions
 {
-	[Option("package", Required = true, HelpText = "Target package name")]
+	[Option("package", Required = false, HelpText = "Target package name")]
 	public string Package { get; set; }
 
-	[Option("schema-name", Required = true, HelpText = "Entity schema name")]
+	[Option("package-name", Required = false, Hidden = true, HelpText = "Alias for --package")]
+	public string? PackageNameAlias {
+		get => Package;
+		set { if (!string.IsNullOrEmpty(value)) Package = value; }
+	}
+
+	[Option("schema-name", Required = false, HelpText = "Entity schema name")]
 	public string SchemaName { get; set; }
 
-	[Option("operation", Required = true,
+	[Option("operation", Required = false,
 		HelpText = "Structured operation JSON. Repeat the option for multiple values.")]
 	public IEnumerable<string> Operations { get; set; }
+
+	[Option("operations", Required = false,
+		HelpText = "JSON array of operations, e.g. '[{\"action\":\"add\",...}]'. Alternative to repeating --operation.")]
+	public string? OperationsJson { get; set; }
 }
 
 internal sealed record UpdateEntitySchemaOperationDefinition
@@ -116,6 +127,7 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 
 	public override int Execute(UpdateEntitySchemaOptions options) {
 		try {
+			options.Operations = ResolveOperations(options);
 			Validate(options);
 			List<ModifyEntitySchemaColumnOptions> operations = [.. BuildColumnMutations(options)];
 			foreach (ModifyEntitySchemaColumnOptions operation in operations) {
@@ -128,6 +140,16 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 			_logger.WriteError(exception.Message);
 			return 1;
 		}
+	}
+
+	private static IEnumerable<string> ResolveOperations(UpdateEntitySchemaOptions options) {
+		List<string> ops = (options.Operations ?? []).ToList();
+		if (!string.IsNullOrWhiteSpace(options.OperationsJson)) {
+			List<JsonElement> fromJson = JsonSerializer.Deserialize<List<JsonElement>>(options.OperationsJson)
+				?? throw new InvalidOperationException("--operations value is not a valid JSON array.");
+			ops.AddRange(fromJson.Select(e => e.GetRawText()));
+		}
+		return ops;
 	}
 
 	private static IEnumerable<ModifyEntitySchemaColumnOptions> BuildColumnMutations(UpdateEntitySchemaOptions options) {
@@ -201,12 +223,12 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 			throw new InvalidOperationException("Schema name is required.");
 		}
 		if (options.Operations == null) {
-			throw new InvalidOperationException("At least one operation is required.");
+			throw new InvalidOperationException("At least one operation is required (use --operation or --operations).");
 		}
 
 		using IEnumerator<string> enumerator = options.Operations.GetEnumerator();
 		if (!enumerator.MoveNext()) {
-			throw new InvalidOperationException("At least one operation is required.");
+			throw new InvalidOperationException("At least one operation is required (use --operation or --operations).");
 		}
 	}
 }

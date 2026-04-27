@@ -20,6 +20,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 	private IApplicationInfoService _applicationInfoService = null!;
 	private EnvironmentSettings _environmentSettings = null!;
 	private ApplicationSectionCreateService _sut = null!;
+	private ILogger _logger = null!;
 
 	[SetUp]
 	public void SetUp() {
@@ -29,6 +30,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_applicationInfoService = Substitute.For<IApplicationInfoService>();
+		_logger = new NullLogger();
 		_environmentSettings = new EnvironmentSettings {
 			Uri = "https://example.invalid",
 			Login = "Supervisor",
@@ -39,11 +41,15 @@ public sealed class ApplicationSectionCreateServiceTests {
 		_applicationClientFactory.CreateEnvironmentClient(_environmentSettings).Returns(_applicationClient);
 		_serviceUrlBuilder.Build(Arg.Any<string>(), Arg.Any<EnvironmentSettings>())
 			.Returns(callInfo => $"https://example.invalid/{callInfo.ArgAt<string>(0)}");
+		IServiceUrlBuilderFactory serviceUrlBuilderFactory = Substitute.For<IServiceUrlBuilderFactory>();
+		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
 		_sut = new ApplicationSectionCreateService(
 			_settingsRepository,
 			_applicationClientFactory,
 			_serviceUrlBuilder,
-			_applicationInfoService);
+			serviceUrlBuilderFactory,
+			_applicationInfoService,
+			_logger);
 	}
 
 	[Test]
@@ -123,9 +129,9 @@ public sealed class ApplicationSectionCreateServiceTests {
 		_applicationClient.ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
 				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
-				!body.Contains("\"LogoId\"", StringComparison.Ordinal) &&
-				!body.Contains("\"operationType\"", StringComparison.Ordinal)))
+				body.Contains("\"filters\"", StringComparison.Ordinal)))
 			.Returns("""{"success":true}""");
 
 		// Act
@@ -219,9 +225,9 @@ public sealed class ApplicationSectionCreateServiceTests {
 		_applicationClient.ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
 				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
-				!body.Contains("\"LogoId\"", StringComparison.Ordinal) &&
-				!body.Contains("\"operationType\"", StringComparison.Ordinal)))
+				body.Contains("\"filters\"", StringComparison.Ordinal)))
 			.Returns("""{"success":true}""");
 
 		// Act
@@ -262,6 +268,38 @@ public sealed class ApplicationSectionCreateServiceTests {
 		action.Should().Throw<ArgumentException>()
 			.WithMessage("*application-code is required*",
 				because: "the section-create contract now requires the installed application code");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+	}
+
+	[Test]
+	[Description("Rejects icon-background values that are not Freedom UI palette colors.")]
+	public void CreateSection_Should_Reject_Non_Palette_Icon_Background() {
+		ApplicationSectionCreateRequest request = new(
+			"UsrOrdersApp",
+			"Orders",
+			IconBackground: "#FF00FF");
+
+		Action action = () => _sut.CreateSection("sandbox", request);
+
+		action.Should().Throw<ArgumentException>()
+			.WithMessage("*Freedom UI palette*",
+				because: "non-palette hex colors render as a white tile in the app manager UI");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+	}
+
+	[Test]
+	[Description("Rejects icon-background values that are not #RRGGBB hex strings.")]
+	public void CreateSection_Should_Reject_Invalid_Format_Icon_Background() {
+		ApplicationSectionCreateRequest request = new(
+			"UsrOrdersApp",
+			"Orders",
+			IconBackground: "red");
+
+		Action action = () => _sut.CreateSection("sandbox", request);
+
+		action.Should().Throw<ArgumentException>()
+			.WithMessage("*#RRGGBB format*",
+				because: "non-hex strings are never valid palette values");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 	}
 }

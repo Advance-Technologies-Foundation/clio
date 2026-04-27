@@ -12,7 +12,8 @@ public interface IEnvironmentRuntimeDetectionService {
 
 internal sealed class EnvironmentRuntimeDetectionService(
 	IApplicationClientFactory applicationClientFactory,
-	IHttpClientFactory httpClientFactory)
+	IHttpClientFactory httpClientFactory,
+	IServiceUrlBuilderFactory serviceUrlBuilderFactory)
 	: IEnvironmentRuntimeDetectionService {
 	private const int ProbeTimeoutMs = 10000;
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -84,7 +85,7 @@ internal sealed class EnvironmentRuntimeDetectionService(
 		EnvironmentSettings probeSettings = Clone(baseSettings, isNetCore);
 		string healthUrl = BuildHealthUrl(probeSettings.Uri!, isNetCore);
 		string uiMarkerUrl = BuildUiMarkerUrl(probeSettings.Uri!, isNetCore);
-		string serviceUrl = new ServiceUrlBuilder(probeSettings).Build(ServiceUrlBuilder.KnownRoute.Select);
+		string serviceUrl = serviceUrlBuilderFactory.Create(probeSettings).Build(ServiceUrlBuilder.KnownRoute.Select);
 		ProbeAttempt healthProbe = ExecuteHttpGetProbe(healthUrl);
 		ProbeAttempt serviceProbe = canAuthenticate
 			? ExecuteProbe(

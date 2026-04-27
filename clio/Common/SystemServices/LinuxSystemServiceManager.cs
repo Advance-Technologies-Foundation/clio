@@ -1,7 +1,7 @@
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Threading.Tasks;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Common.SystemServices;
 
@@ -13,6 +13,11 @@ public class LinuxSystemServiceManager : ISystemServiceManager
 {
 	private const string SystemdUnitDirectory = "/etc/systemd/system";
 	private const string UserSystemdUnitDirectory = "~/.local/share/systemd/user";
+
+	public LinuxSystemServiceManager(IAbstractionsFileSystem fileSystem)
+	{
+		ArgumentNullException.ThrowIfNull(fileSystem);
+	}
 
 	/// <summary>
 	/// Creates or updates a systemd service unit.
@@ -37,7 +42,6 @@ public class LinuxSystemServiceManager : ISystemServiceManager
 				autoStart
 			);
 
-			var unitFilePath = Path.Combine(SystemdUnitDirectory, $"{serviceName}.service");
 
 			// Note: In real implementation, this would require sudo privileges
 			// For now, we generate the content and return success

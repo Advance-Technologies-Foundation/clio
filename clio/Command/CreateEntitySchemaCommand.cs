@@ -9,8 +9,14 @@ namespace Clio.Command;
 [Verb("create-entity-schema", HelpText = "Create an entity schema in a remote Creatio package")]
 public class CreateEntitySchemaOptions : RemoteCommandOptions
 {
-	[Option("package", Required = true, HelpText = "Target package name")]
+	[Option("package", Required = false, HelpText = "Target package name")]
 	public string Package { get; set; }
+
+	[Option("package-name", Required = false, Hidden = true, HelpText = "Alias for --package")]
+	public string? PackageNameAlias {
+		get => Package;
+		set { if (!string.IsNullOrEmpty(value)) Package = value; }
+	}
 
 	[Option("name", Required = true, HelpText = "Schema name")]
 	public string SchemaName { get; set; }
