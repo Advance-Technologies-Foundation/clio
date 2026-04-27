@@ -389,6 +389,12 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			? ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "Terrasoft.WebHost.dll.config")
 			: ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "Terrasoft.WebApp.Loader.dll");
 
+		// For NetCore, set the root to the parent directory of WebHost.dll.config
+		if (options.Mode == CreatioMode.NetCore)
+		{
+			coreWebHostPath = Path.GetDirectoryName(coreWebHostPath);
+		}
+
 		(int code, string message) = _mediator.Send(new UpdateIISSitePhysicalPathRequest()
 			{
 				Arguments = new Dictionary<string, string>()
@@ -754,6 +760,12 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			string coreWebHostPath = options.Mode == CreatioMode.NetCore
 				? ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "Terrasoft.WebHost.dll.config")
 				: ResolveCoreDirectory(options.CorePath, targetFolder, options.Mode, "Terrasoft.WebApp.Loader.dll");
+
+			// For NetCore, set the root to the parent directory of WebHost.dll.config
+			if (options.Mode == CreatioMode.NetCore)
+			{
+				coreWebHostPath = Path.GetDirectoryName(coreWebHostPath);
+			}
 
 			// Update environment configuration with core path
 			env.EnvironmentPath = coreWebHostPath;
