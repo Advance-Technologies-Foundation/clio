@@ -344,6 +344,7 @@ Install application from file or marketplace. **Aliases:** `install-app`
 clio install-application ./MyApp.gz -e <ENV>
 clio install-application --id 12345 -e <ENV>
 ```
+Returns exit code `5` when Creatio reports `InvalidGZipArchiveException` for an invalid or corrupted GZip archive.
 
 ### publish-app
 Publish workspace to zip or app hub. **Aliases:** `publishw`, `publish-hub`, `ph`, `publish-workspace`

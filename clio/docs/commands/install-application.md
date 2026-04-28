@@ -44,6 +44,14 @@ Name (pos. 0)            Application package path or name
 --Maintainer             -m          Maintainer name
 ```
 
+## Exit Codes
+
+```bash
+0    Application installed successfully
+1    General installation failure
+5    Creatio reported InvalidGZipArchiveException for an invalid or corrupted GZip archive
+```
+
 ## Example
 
 ```bash

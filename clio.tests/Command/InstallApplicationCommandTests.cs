@@ -103,4 +103,23 @@ public sealed class InstallApplicationCommandTests : BaseCommandTests<InstallApp
 			value.Contains("Install failed.", StringComparison.Ordinal)));
 		_logger.DidNotReceive().WriteInfo(Arg.Any<string>());
 	}
+
+	[Test]
+	[Description("Returns five when Creatio reports that the application archive is an invalid GZip file.")]
+	public void Execute_Should_Return_Five_When_Invalid_GZip_Archive_Is_Reported() {
+		// Arrange
+		InstallApplicationOptions options = new() {
+			Name = @"C:\Packages\app.gz"
+		};
+		InvalidGZipArchiveInstallException exception = new("The file is invalid or corrupted.");
+		_applicationInstaller.Install(options.Name, Arg.Any<EnvironmentSettings>(), options.ReportPath, options.CheckCompilationErrors)
+			.Returns(_ => throw exception);
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(5,
+			because: "invalid GZip archive failures should have a dedicated exit code");
+	}
 }

@@ -32,6 +32,11 @@ OPTIONS
 
     --Maintainer             -m          Maintainer name
 
+EXIT CODES
+    0    Application installed successfully
+    1    General installation failure
+    5    Creatio reported InvalidGZipArchiveException for an invalid or corrupted GZip archive
+
 EXAMPLE
     clio install-application C:\Packages\application.gz -e dev
         install an application package into the registered dev environment

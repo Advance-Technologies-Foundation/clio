@@ -18,6 +18,7 @@
 		private const string InstallWithOptionsUrl = @"/rest/ClioPackageInstallerService/Install";
 		private const string UploadUrl = @"/ServiceModel/PackageInstallerService.svc/UploadPackage";
 		private const string DefLogFileName = "cliolog.txt";
+		private const string InvalidGZipArchiveExceptionTypeName = "InvalidGZipArchiveException";
 		private readonly IApplicationLogProvider _applicationLogProvider;
 
 		#endregion
@@ -75,6 +76,12 @@
 		protected abstract string InstallUrl { get; }
 
 		protected abstract string BackupUrl { get; }
+
+		/// <summary>
+		/// Gets whether invalid GZip archive failures should be surfaced as a dedicated exception.
+		/// </summary>
+		protected virtual bool ThrowInvalidGZipArchiveInstallException => false;
+
 		public bool CheckLogsOnSuccessMessage {
 			get {
 				return GlobalContext.FailOnError;
@@ -149,9 +156,9 @@
 				: ((completeLog.Length > currentLog.Length) ? completeLog.Substring(currentLog.Length) : String.Empty);
 		}
 
-		private string ListenForLogs(object cancellationTokenObject, EnvironmentSettings environmentSettings) {
-			var cancellationToken = (CancellationToken)cancellationTokenObject;
-			var currentLogContent = string.Empty;
+		private string ListenForLogs(CancellationToken cancellationToken, EnvironmentSettings environmentSettings,
+			string initialLogContent) {
+			var currentLogContent = initialLogContent ?? string.Empty;
 			while (!cancellationToken.IsCancellationRequested) {
 				try {
 					var completeLog = GetInstallLog(environmentSettings);
@@ -180,26 +187,63 @@
 				GetRequestData(fileName, packageInstallOptions), Timeout.Infinite);
 		}
 
+		private static bool ContainsInvalidGZipArchiveException(string value) =>
+			!string.IsNullOrWhiteSpace(value)
+			&& value.IndexOf(InvalidGZipArchiveExceptionTypeName, StringComparison.OrdinalIgnoreCase) >= 0;
+
+		private static bool IsInvalidGZipArchiveFailure(BaseResponse response, string installLog) =>
+			ContainsInvalidGZipArchiveException(response?.ErrorInfo?.ErrorCode)
+			|| ContainsInvalidGZipArchiveException(response?.ErrorInfo?.Message)
+			|| ContainsInvalidGZipArchiveException(response?.ErrorInfo?.StackTrace)
+			|| ContainsInvalidGZipArchiveException(installLog);
+
+		private static string GetInvalidGZipArchiveMessage(BaseResponse response, string installLog) =>
+			response?.ErrorInfo?.Message
+			?? GetInvalidGZipArchiveLogLine(installLog)
+			?? "The package archive is invalid or corrupted.";
+
+		private static string GetInvalidGZipArchiveLogLine(string installLog) {
+			if (string.IsNullOrWhiteSpace(installLog)) {
+				return null;
+			}
+			using var reader = new StringReader(installLog);
+			string line;
+			while ((line = reader.ReadLine()) != null) {
+				if (ContainsInvalidGZipArchiveException(line)) {
+					return line.Trim();
+				}
+			}
+			return null;
+		}
+
 		private (bool, string) InstallPackageOnServerWithLogListener(string fileName,
 			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions) {
 			_logger.WriteLine($"Install {fileName} ...");
 			_logger.WriteLine("Installation log:");
+			var initialInstallLog = GetInstallLog(environmentSettings);
 			var cancellationTokenSource = new CancellationTokenSource();
-			var log = string.Empty;
+			var log = initialInstallLog;
 			var task = Task.Factory.StartNew(
-				(cancellationToken) =>
-					log = ListenForLogs(cancellationToken, environmentSettings), cancellationTokenSource.Token);
+				() => log = ListenForLogs(cancellationTokenSource.Token, environmentSettings, initialInstallLog),
+				cancellationTokenSource.Token);
 			string result = InstallPackageOnServer(fileName, environmentSettings, packageInstallOptions);
 			BaseResponse response = JsonConvert.DeserializeObject<BaseResponse>(result);
 			cancellationTokenSource.Cancel();
 			task.Wait();
 			var completeInstallLog = GetInstallLog(environmentSettings);
+			var currentInstallLog = GetLogDiff(initialInstallLog, completeInstallLog);
 			bool successLog = true;
 			if (CheckLogsOnSuccessMessage) {
 				successLog = completeInstallLog.ToLower().Contains("application installed successfully");
 			}
 			_logger.Write(GetLogDiff(log, completeInstallLog));
 			var success = (response != null && response.Success || response == null) && successLog;
+			if (ThrowInvalidGZipArchiveInstallException && !success
+				&& IsInvalidGZipArchiveFailure(response, currentInstallLog)) {
+				SaveLogFile(completeInstallLog, _reportPath);
+				throw new InvalidGZipArchiveInstallException(
+					GetInvalidGZipArchiveMessage(response, currentInstallLog));
+			}
 			return (success, completeInstallLog);
 		}
 
