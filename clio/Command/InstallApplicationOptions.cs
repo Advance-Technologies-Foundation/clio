@@ -48,6 +48,12 @@ namespace Clio.Command {
 	/// Installs an application package into a Creatio environment.
 	/// </summary>
 	public class InstallApplicationCommand : Command<InstallApplicationOptions> {
+		#region Constants: Private
+
+		private const int InvalidGZipArchiveExitCode = 5;
+
+		#endregion
+
 		#region Fields: Private
 
 		private readonly EnvironmentSettings _environmentSettings;
@@ -96,6 +102,10 @@ namespace Clio.Command {
 
 				_logger.WriteError("Error");
 				return 1;
+			}
+			catch (InvalidGZipArchiveInstallException exception) {
+				_logger.WriteError(exception.Message);
+				return InvalidGZipArchiveExitCode;
 			}
 			catch (Exception exception) {
 				_logger.WriteError(exception.ToString());

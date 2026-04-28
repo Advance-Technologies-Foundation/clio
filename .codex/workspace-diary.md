@@ -3042,3 +3042,32 @@ Decision: Reviewed the tracked diff in `SchemaHandlerValidationService`, compare
 Discovery: The tracked change is a local simplification only: removing the redundant top-level property-name precheck keeps the same `request`/`handler` validation behavior because `TryGetTopLevelPropertyValueExpression(...)` already enforces top-level lookup, while the new `Contains(...)` gate before regex scanning is a safe fast-path for the same forbidden API rules. There is also an untracked `.codex/SchemaValidationService.merged.cs` snapshot in the workspace, but it is not part of the reviewed git diff.
 Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Future reviews can treat this edit as behavior-preserving unless new handler API patterns are added, in which case the focused schema validation tests are the fastest regression check.
+
+## 2026-04-27 14:45 - ENG-88603 Map invalid app archive to exit code 5
+Context: `install-app` returned exit code 1 when Creatio logged `Terrasoft.Common.InvalidGZipArchiveException` for a corrupted `.gz` application archive.
+Decision: Added a Clio-specific `InvalidGZipArchiveInstallException`, detect the server exception type in install responses/logs only after the install result is failed, and map it to exit code 5 in `InstallApplicationCommand`.
+Discovery: `install-app` is an alias of `install-application`; the MCP tool delegates to the command through `BaseTool`, so it preserves the command exit code without MCP contract changes.
+Files: clio/Package/BasePackageInstaller.cs, clio/Package/InvalidGZipArchiveInstallException.cs, clio/Command/InstallApplicationOptions.cs, clio.tests/Command/InstallApplicationCommandTests.cs, clio.tests/ApplicationInstallerTests.cs, clio/docs/commands/install-application.md, clio/help/en/install-application.txt, .github/skills/clio/references/commands-reference.md
+Impact: Future invalid archive installs from Creatio core can be recognized through the stable exception type and surfaced as the dedicated CLI exit code.
+
+## 2026-04-27 15:06 - Restrict invalid archive detection to current install log delta
+Context: Review found that a historical `InvalidGZipArchiveException` already present in the server install log could incorrectly map an unrelated failed install to exit code 5.
+Decision: Capture the install log baseline before posting the install request, start log streaming from that baseline, and search the invalid archive marker only in the current install log delta.
+Discovery: The structured `ErrorInfo` path still maps directly to the dedicated exception, while log-based detection now ignores stale entries that existed before the command started.
+Files: clio/Package/BasePackageInstaller.cs, clio.tests/ApplicationInstallerTests.cs
+Impact: Invalid archive exit-code mapping remains available for the screenshot scenario without being triggered by older accumulated install log entries.
+
+## 2026-04-27 21:54 - Scope invalid archive exception to application installs
+Context: Review found that invalid archive detection lived in `BasePackageInstaller`, which also serves package installs, while the requested exit-code mapping is for `install-app`.
+Decision: Added an opt-in protected flag in the base installer, enabled it only in `ApplicationInstaller`, and added a `PackageInstaller` regression test proving package installs keep the general failed-install behavior.
+Discovery: `BasePackageInstaller` can still share response/log detection helpers, but throwing `InvalidGZipArchiveInstallException` is now explicitly scoped to application installation.
+Files: clio/Package/BasePackageInstaller.cs, clio/Package/ApplicationInstaller.cs, clio.tests/PackageInstallerTests.cs
+Impact: `install-app` keeps exit code 5 for the new Creatio exception while `push-pkg` is not accidentally changed by the shared installer implementation.
+
+## 2026-04-28 09:30 - Cover structured invalid archive error info
+Context: Review requested explicit coverage for Creatio returning `InvalidGZipArchiveException` through structured response `ErrorInfo` instead of only the install log.
+Decision: Added an `ApplicationInstallerTests` regression that leaves the install log empty and verifies `errorInfo.errorCode` is enough to throw `InvalidGZipArchiveInstallException`.
+Discovery: The existing production detection already checks `ErrorInfo.ErrorCode`, `Message`, and `StackTrace`; no production change was needed for this path.
+Files: clio.tests/ApplicationInstallerTests.cs
+Impact: The exit-code mapping is now protected for both current-log and structured-response Creatio failure shapes.
+

@@ -37,6 +37,9 @@ namespace Clio.Package
 
 		protected string UnInstallUrl => @"/ServiceModel/AppInstallerService.svc/UninstallApp";
 
+		/// <inheritdoc />
+		protected override bool ThrowInvalidGZipArchiveInstallException => true;
+
 		#endregion
 
 		#region Methods: Private

@@ -315,4 +315,143 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		capturedRequestData.Should().NotContain("CheckCompilationErrors", because: "checkCompilationErrors parameter was not specified (null)");
 		result.Should().BeTrue();
 	}
+
+	[Test]
+	[Description("Install should throw a dedicated exception when Creatio returns invalid GZip archive failure in response error info.")]
+	public void Install_Should_Throw_InvalidGZipArchiveInstallException_When_Response_ErrorInfo_Contains_Invalid_GZip_Exception() {
+		// Arrange
+		string packagePath = "T:\\Partner.gz";
+		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
+		EnvironmentSettings environmentSettings = new EnvironmentSettings();
+		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		var applicationClient = Substitute.For<IApplicationClient>();
+		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(applicationClient);
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"errorCode\":\"Terrasoft.Common.InvalidGZipArchiveException\",\"message\":\"Unable to open \\\"Partner.gz\\\". The file is invalid or corrupted.\"}}");
+		var application = Substitute.For<IApplication>();
+		var packageArchiver = Substitute.For<IPackageArchiver>();
+		var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(Arg.Any<string>(), Arg.Any<EnvironmentSettings>())
+			.Returns(callInfo => callInfo.ArgAt<string>(0));
+		var logger = Substitute.For<ILogger>();
+		var packageLockManager = Substitute.For<IPackageLockManager>();
+		var clioFileSystem = new FileSystem(FileSystem);
+		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
+		applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>())
+			.Returns(string.Empty);
+		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
+			environmentSettings,
+			applicationClientFactory,
+			application,
+			packageArchiver,
+			scriptExecutor,
+			serviceUrlBuilder,
+			clioFileSystem,
+			logger,
+			packageLockManager
+		);
+
+		// Act
+		Action act = () => applicationInstaller.Install(packagePath, environmentSettings);
+
+		// Assert
+		act.Should().Throw<InvalidGZipArchiveInstallException>()
+			.WithMessage("*invalid or corrupted*",
+				because: "structured Creatio error info should be enough to map invalid archives");
+	}
+
+	[Test]
+	[Description("Install should throw a dedicated exception when Creatio logs an invalid GZip archive failure.")]
+	public void Install_Should_Throw_InvalidGZipArchiveInstallException_When_Log_Contains_Invalid_GZip_Exception() {
+		// Arrange
+		string packagePath = "T:\\Partner.gz";
+		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
+		EnvironmentSettings environmentSettings = new EnvironmentSettings();
+		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		var applicationClient = Substitute.For<IApplicationClient>();
+		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(applicationClient);
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns("{\"success\":false}");
+		var application = Substitute.For<IApplication>();
+		var packageArchiver = Substitute.For<IPackageArchiver>();
+		var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(Arg.Any<string>(), Arg.Any<EnvironmentSettings>())
+			.Returns(callInfo => callInfo.ArgAt<string>(0));
+		var logger = Substitute.For<ILogger>();
+		var packageLockManager = Substitute.For<IPackageLockManager>();
+		var clioFileSystem = new FileSystem(FileSystem);
+		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
+		applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>())
+			.Returns(string.Empty,
+				"Terrasoft.Common.InvalidGZipArchiveException: Unable to open \"Partner.gz\". The file is invalid or corrupted.");
+		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
+			environmentSettings,
+			applicationClientFactory,
+			application,
+			packageArchiver,
+			scriptExecutor,
+			serviceUrlBuilder,
+			clioFileSystem,
+			logger,
+			packageLockManager
+		);
+
+		// Act
+		Action act = () => applicationInstaller.Install(packagePath, environmentSettings);
+
+		// Assert
+		act.Should().Throw<InvalidGZipArchiveInstallException>()
+			.WithMessage("*InvalidGZipArchiveException*",
+				because: "Creatio invalid archive errors should be preserved for command exit-code mapping");
+	}
+
+	[Test]
+	[Description("Install should ignore invalid GZip archive errors that were already present before the current installation.")]
+	public void Install_Should_Not_Throw_InvalidGZipArchiveInstallException_When_Invalid_GZip_Exception_Is_Only_In_Baseline_Log() {
+		// Arrange
+		string packagePath = "T:\\Partner.gz";
+		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
+		EnvironmentSettings environmentSettings = new EnvironmentSettings();
+		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		var applicationClient = Substitute.For<IApplicationClient>();
+		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(applicationClient);
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns("{\"success\":false}");
+		var application = Substitute.For<IApplication>();
+		var packageArchiver = Substitute.For<IPackageArchiver>();
+		var scriptExecutor = Substitute.For<ISqlScriptExecutor>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(Arg.Any<string>(), Arg.Any<EnvironmentSettings>())
+			.Returns(callInfo => callInfo.ArgAt<string>(0));
+		var logger = Substitute.For<ILogger>();
+		var packageLockManager = Substitute.For<IPackageLockManager>();
+		var clioFileSystem = new FileSystem(FileSystem);
+		var staleLog = "Terrasoft.Common.InvalidGZipArchiveException: Unable to open \"OldPartner.gz\".";
+		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
+		applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>())
+			.Returns(staleLog);
+		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
+			environmentSettings,
+			applicationClientFactory,
+			application,
+			packageArchiver,
+			scriptExecutor,
+			serviceUrlBuilder,
+			clioFileSystem,
+			logger,
+			packageLockManager
+		);
+		bool result = true;
+
+		// Act
+		Action act = () => result = applicationInstaller.Install(packagePath, environmentSettings);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "only invalid archive errors written during the current install should affect exit-code mapping");
+		result.Should().BeFalse(
+			because: "the mocked install response still reports a general installation failure");
+	}
 }
