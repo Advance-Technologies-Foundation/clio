@@ -473,10 +473,10 @@ public sealed class ToolContractGetToolE2ETests {
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "comparison-family" &&
 				validator.Field == "rule.condition.conditions[*]" &&
-				validator.Context!.Contains("Date, DateTime, Time", StringComparison.Ordinal),
-			because: "the contract should advertise the numeric and temporal scope of relational comparisons");
+				validator.Context!.Contains("date/time left attributes", StringComparison.Ordinal),
+			because: "the contract should advertise the numeric and date/time scope of relational comparisons");
 		contract.InputSchema.Validators.Should().Contain(validator =>
-				validator.Name == "temporal-constant" &&
+				validator.Name == "date-time-constant" &&
 				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
 				validator.Context!.Contains("timezone suffix", StringComparison.Ordinal),
 			because: "the contract should require timezone-aware DateTime and Time constants");
@@ -499,6 +499,14 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "the contract should not advertise package identifiers that are absent from the real tool response");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "entity-schema-u-id",
 			because: "the contract should not advertise entity identifiers that are absent from the real tool response");
+		contract.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "create-entity-business-rule returns the standard command execution result payload");
+		contract.OutputContract.SuccessField.Should().BeNull(
+			because: "command execution result payloads do not include a success field");
+		contract.OutputContract.FailureSignals.Should().Contain("exit-code != 0",
+			because: "contract-driven clients should detect command failures from the exit code");
+		contract.OutputContract.FailureSignals.Should().NotContain("success == false",
+			because: "create-entity-business-rule does not emit a success field");
 		bool hasUnaryExample = contract.Examples.Any(example =>
 			string.Equals(example.Summary, "Create a readonly rule when a text field is filled in", StringComparison.Ordinal));
 		hasUnaryExample.Should().BeTrue(
@@ -506,7 +514,7 @@ public sealed class ToolContractGetToolE2ETests {
 		bool hasRelationalExample = contract.Examples.Any(example =>
 			string.Equals(example.Summary, "Create a required-field rule when created date is before a cutoff", StringComparison.Ordinal));
 		hasRelationalExample.Should().BeTrue(
-			because: "the contract should include a relational example for numeric or temporal comparisons");
+			because: "the contract should include a relational example for numeric or date/time comparisons");
 		bool hasTimezoneAwareTimeExample = contract.Examples.Any(example =>
 			string.Equals(example.Summary, "Create a readonly rule when reminder time is after a timezone-aware cutoff", StringComparison.Ordinal));
 		hasTimezoneAwareTimeExample.Should().BeTrue(

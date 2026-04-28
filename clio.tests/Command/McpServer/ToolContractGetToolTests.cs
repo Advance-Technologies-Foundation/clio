@@ -131,10 +131,10 @@ public sealed class ToolContractGetToolTests {
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "comparison-family" &&
 				validator.Field == "rule.condition.conditions[*]" &&
-				validator.Context!.Contains("Date, DateTime, Time", StringComparison.Ordinal),
-			because: "the contract should advertise the numeric and temporal scope of relational comparisons");
+				validator.Context!.Contains("date/time left attributes", StringComparison.Ordinal),
+			because: "the contract should advertise the numeric and date/time scope of relational comparisons");
 		contract.InputSchema.Validators.Should().Contain(validator =>
-				validator.Name == "temporal-constant" &&
+				validator.Name == "date-time-constant" &&
 				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
 				validator.Context!.Contains("timezone suffix", StringComparison.Ordinal),
 			because: "the contract should explicitly require timezone-aware DateTime and Time constants");
@@ -155,6 +155,14 @@ public sealed class ToolContractGetToolTests {
 			because: "the output contract should advertise the command exit code that the tool actually returns");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "execution-log-messages",
 			because: "the output contract should advertise the execution log messages");
+		contract.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "create-entity-business-rule returns the standard command execution result payload");
+		contract.OutputContract.SuccessField.Should().BeNull(
+			because: "command execution result payloads do not include a success field");
+		contract.OutputContract.FailureSignals.Should().Contain("exit-code != 0",
+			because: "contract-driven clients should detect command failures from the exit code");
+		contract.OutputContract.FailureSignals.Should().NotContain("success == false",
+			because: "create-entity-business-rule does not emit a success field");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "rule",
 			because: "tool-contract-get should not advertise a structured rule payload that create-entity-business-rule does not return");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "package-u-id",
@@ -223,7 +231,7 @@ public sealed class ToolContractGetToolTests {
 			&& predicate.TryGetValue("comparisonType", out object? comparisonTypeValue)
 			&& comparisonTypeValue?.ToString() == "less-than-or-equal");
 		hasRelationalExample.Should().BeTrue(
-			because: "the contract should include a relational example for numeric or temporal comparisons");
+			because: "the contract should include a relational example for numeric or date/time comparisons");
 		bool hasBooleanExample = contract.Examples.Any(example =>
 			example.Arguments["rule"] is Dictionary<string, object?> rule
 			&& rule.TryGetValue("condition", out object? conditionValue)

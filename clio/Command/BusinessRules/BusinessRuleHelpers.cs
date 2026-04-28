@@ -11,6 +11,7 @@ using static Clio.Command.BusinessRules.BusinessRuleConstants;
 namespace Clio.Command.BusinessRules;
 
 internal static class BusinessRuleHelpers {
+	// DateTimeOffset.TryParse accepts timezone-less values as local time, so require an explicit suffix.
 	private static readonly Regex ExplicitTimeZoneSuffixRegex = new(
 		@"(?:Z|[+-]\d{2}:\d{2})$",
 		RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
@@ -103,7 +104,7 @@ internal static class BusinessRuleHelpers {
 			"Date" => "rule.condition.conditions[*].rightExpression.value must be a JSON string in 'yyyy-MM-dd' format when the left attribute is Date.",
 			"DateTime" => "rule.condition.conditions[*].rightExpression.value must be a JSON string in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm') when the left attribute is DateTime.",
 			"Time" => "rule.condition.conditions[*].rightExpression.value must be a JSON string in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm') when the left attribute is Time.",
-			_ => "rule.condition.conditions[*].rightExpression.value must be a valid JSON string temporal constant."
+			_ => "rule.condition.conditions[*].rightExpression.value must be a valid JSON string date/time constant."
 		};
 
 	internal static bool TryConvertTemporalConstant(
@@ -166,8 +167,8 @@ internal static class BusinessRuleHelpers {
 	internal static object? ConvertJsonElement(JsonElement element, string? dataValueTypeName = null) {
 		if (!string.IsNullOrWhiteSpace(dataValueTypeName)
 			&& IsTemporalDataValueType(dataValueTypeName)
-			&& TryConvertTemporalConstant(element, dataValueTypeName, out DateTime temporalValue)) {
-			return temporalValue;
+			&& TryConvertTemporalConstant(element, dataValueTypeName, out DateTime dateTimeValue)) {
+			return dateTimeValue;
 		}
 
 		if (!string.IsNullOrWhiteSpace(dataValueTypeName)

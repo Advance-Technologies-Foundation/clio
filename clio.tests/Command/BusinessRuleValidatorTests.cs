@@ -460,8 +460,8 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].comparisonType 'greater-than' is only supported for numeric and temporal left attributes. Left attribute 'Status' has type Text.",
-				because: "relational operators should be limited to numeric and temporal columns");
+			.WithMessage("rule.condition.conditions[*].comparisonType 'greater-than' is only supported for numeric and date/time left attributes. Left attribute 'Status' has type Text.",
+				because: "relational operators should be limited to numeric and date/time columns");
 	}
 
 	[Test]

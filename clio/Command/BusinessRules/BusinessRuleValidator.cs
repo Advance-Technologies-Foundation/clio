@@ -132,7 +132,7 @@ internal static class BusinessRuleValidator {
 
 		if (IsRelationalComparisonType(comparisonType) && !IsRelationalDataValueType(leftDataValueTypeName)) {
 			throw new ArgumentException(
-				$"rule.condition.conditions[*].comparisonType '{comparisonType}' is only supported for numeric and temporal left attributes. Left attribute '{leftPath}' has type {leftDataValueTypeName}.");
+				$"rule.condition.conditions[*].comparisonType '{comparisonType}' is only supported for numeric and date/time left attributes. Left attribute '{leftPath}' has type {leftDataValueTypeName}.");
 		}
 
 		ValidateRightExpression(rightExpression, columnMap, leftPath, leftDataValueTypeName);

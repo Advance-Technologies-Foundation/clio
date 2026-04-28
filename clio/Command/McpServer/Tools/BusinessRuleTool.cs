@@ -28,7 +28,7 @@ public sealed class CreateEntityBusinessRuleTool(
 		[Description("Target entity schema name.")]
 		[Required]
 		string entitySchemaName,
-		[Description("Structured entity business-rule definition. DateTime and Time constants must include a timezone suffix ('Z' or '+/-HH:mm').")]
+		[Description("Structured entity business-rule definition.")]
 		[Required]
 		BusinessRule rule) {
 		CreateEntityBusinessRuleOptions options = new () {

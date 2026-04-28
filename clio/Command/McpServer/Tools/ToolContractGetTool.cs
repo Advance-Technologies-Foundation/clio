@@ -1283,14 +1283,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildEntityBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates an entity-level Freedom UI business rule with equality, filled-in, and numeric or temporal relational comparisons.",
+			"Creates an entity-level Freedom UI business rule with equality, filled-in, and numeric or date/time relational comparisons.",
 			new ToolInputSchemaContract(
 				["environmentName", "packageName", "entitySchemaName", RuleFieldName],
 				[
 					Field("environmentName", StringType, RegisteredEnvironmentNameDescription),
 					Field("packageName", StringType, "Target package name."),
 					Field("entitySchemaName", StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and temporal left attributes (Date, DateTime, Time).")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time).")
 				],
 				Validators: [
 					new ToolContractValidator("enum", "unsupported-operator", "rule.condition.logicalOperation",
@@ -1300,21 +1300,13 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("conditional-field", "invalid-right-expression-shape", "rule.condition.conditions[*].rightExpression",
 						Context: "Required for equal, not-equal, greater-than, greater-than-or-equal, less-than, and less-than-or-equal. Omit or null for is-filled-in and is-not-filled-in."),
 					new ToolContractValidator("comparison-family", "unsupported-relational-operands", "rule.condition.conditions[*]",
-						Context: "greater-than, greater-than-or-equal, less-than, and less-than-or-equal only support numeric and temporal left attributes (Date, DateTime, Time). Attribute-to-attribute relational comparisons must use matching data value types."),
-					new ToolContractValidator("temporal-constant", "invalid-temporal-constant", "rule.condition.conditions[*].rightExpression.value",
+						Context: "greater-than, greater-than-or-equal, less-than, and less-than-or-equal only support numeric and date/time left attributes (Date, DateTime, Time). Attribute-to-attribute relational comparisons must use matching data value types."),
+					new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
 						Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm')."),
 					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
 						Context: "Supported values: make-editable, make-read-only, make-required, make-optional.")
 				]),
-			EnvelopeOutput(
-				SuccessFieldName,
-				[
-					SuccessFalseSignal
-				],
-				Field("exit-code", NumberType, "Command exit code. 0 = success, non-zero = failure."),
-				Field("execution-log-messages", ArrayType, "Command output log messages."),
-				Field("log-file-path", StringType, "Optional path to the generated database operation log file.")
-			),
+			CommandExecutionOutput(),
 			CommonErrorContract,
 			[
 			],

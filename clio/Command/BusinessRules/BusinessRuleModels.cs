@@ -47,7 +47,7 @@ public sealed record BusinessRuleConditionGroup {
 	public string LogicalOperation { get; init; } = null!;
 
 	[JsonPropertyName("conditions")]
-	[Description("Leaf conditions evaluated by the condition group.")]
+	[Description("List of conditions evaluated by the condition group.")]
 	[Required]
 	public List<BusinessRuleCondition> Conditions { get; init; } = null!;
 }
