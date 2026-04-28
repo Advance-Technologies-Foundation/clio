@@ -158,6 +158,41 @@ public sealed class BusinessRuleServiceTests {
 			because: "the service should upsert the caption resource for the generated rule id");
 		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
 		_addonSchemaDesignerClient.Received(1).ResetClientScriptCache();
+		_addonSchemaDesignerClient.Received(1).BuildConfiguration();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Calls BuildConfiguration after a successful save so that the ConfigurationHash is updated and offline users get cache invalidation on their next startup.")]
+	public void Create_Should_Call_BuildConfiguration_After_Successful_Save() {
+		// Arrange
+		BusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			CreateRule());
+
+		// Act
+		_service.Create(request);
+
+		// Assert
+		_addonSchemaDesignerClient.Received(1).BuildConfiguration();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Calls ResetClientScriptCache after a successful save so the saved addon schema is visible to the current user immediately.")]
+	public void Create_Should_Call_ResetClientScriptCache_After_Successful_Save() {
+		// Arrange
+		BusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			CreateRule());
+
+		// Act
+		_service.Create(request);
+
+		// Assert
+		_addonSchemaDesignerClient.Received(1).ResetClientScriptCache();
 	}
 
 	[Test]
@@ -179,6 +214,7 @@ public sealed class BusinessRuleServiceTests {
 				because: "invalid rule references should fail validation before any add-on save happens");
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().ResetClientScriptCache();
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().BuildConfiguration();
 	}
 
 	private static EntityDesignSchemaDto BuildEntitySchema() {

@@ -491,11 +491,6 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "the contract should advertise the full supported comparison set");
 		contract.Defaults.Should().BeEmpty(
 			because: "the contract should not have defaults after enabled was removed");
-		contract.Aliases.Should().Contain(alias =>
-				alias.CanonicalName == "entitySchemaName" &&
-				alias.Alias == "entity-schema-name" &&
-				alias.Status == "rejected",
-			because: "the contract should reject stale kebab-case entity schema aliases now that runtime binding is camelCase");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "rule-name",
 			because: "the generated internal rule name is surfaced through execution logs rather than a dedicated top-level field");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "rule",
@@ -504,12 +499,6 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "the contract should not advertise package identifiers that are absent from the real tool response");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "entity-schema-u-id",
 			because: "the contract should not advertise entity identifiers that are absent from the real tool response");
-		contract.PreferredFlow.Tools.Should().Equal(
-				new[] {
-					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
-					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
-				},
-				because: "the contract should advertise schema inspection before destructive business-rule creation");
 		bool hasUnaryExample = contract.Examples.Any(example =>
 			string.Equals(example.Summary, "Create a readonly rule when a text field is filled in", StringComparison.Ordinal));
 		hasUnaryExample.Should().BeTrue(

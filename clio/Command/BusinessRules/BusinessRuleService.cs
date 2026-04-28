@@ -66,7 +66,15 @@ internal sealed class BusinessRuleService(
 		schema.Resources = resources;
 
 		addonSchemaDesignerClient.SaveSchema(schema);
+		// Clears the server-side RequireJS module cache so the saved addon schema
+		// is immediately visible to the current user without a full page reload.
 		addonSchemaDesignerClient.ResetClientScriptCache();
+		// Rebuilds static client content for changed schemas, broadcasts a
+		// ConfigurationStructureChanged event to online users so their
+		// crt-business-rules-cache is cleared immediately, and writes a new
+		// ConfigurationHash to disk so offline users get cache invalidation on
+		// their next startup via the /api/ClientCache/Hashes hash comparison.
+		addonSchemaDesignerClient.BuildConfiguration();
 
 		return new BusinessRuleCreateResult(createdRule.Name);
 	}

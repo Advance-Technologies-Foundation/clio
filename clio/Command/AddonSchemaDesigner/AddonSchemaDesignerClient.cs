@@ -9,6 +9,7 @@ internal interface IAddonSchemaDesignerClient {
 	AddonSchemaDto GetSchema(AddonGetRequestDto request);
 	void SaveSchema(AddonSchemaDto schema);
 	void ResetClientScriptCache();
+	void BuildConfiguration();
 }
 
 internal sealed class AddonSchemaDesignerClient(
@@ -55,9 +56,26 @@ internal sealed class AddonSchemaDesignerClient(
 		}
 	}
 
+	/// <summary>
+	/// Clears the server-side RequireJS module script cache for the current session,
+	/// making saved schema changes available immediately without a full reload.
+	/// </summary>
 	public void ResetClientScriptCache() {
 		applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build("/rest/WorkplaceService/ResetScriptCache"),
+			string.Empty);
+	}
+
+	/// <summary>
+	/// Triggers an incremental static content rebuild on the server (no C# compilation).
+	/// Regenerates client JS files for changed schemas, broadcasts a
+	/// <c>ConfigurationStructureChanged</c> event to online users, and writes a new
+	/// <c>ConfigurationHash</c> to disk so offline users get cache invalidation on
+	/// their next startup via <c>/api/ClientCache/Hashes</c>.
+	/// </summary>
+	public void BuildConfiguration() {
+		applicationClient.ExecutePostRequest(
+			serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration"),
 			string.Empty);
 	}
 
