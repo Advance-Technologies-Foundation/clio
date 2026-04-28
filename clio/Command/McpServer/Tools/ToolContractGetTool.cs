@@ -1304,6 +1304,8 @@ internal static class ToolContractCatalog {
 						Context: "Required for equal, not-equal, greater-than, greater-than-or-equal, less-than, and less-than-or-equal. Omit or null for is-filled-in and is-not-filled-in."),
 					new ToolContractValidator("comparison-family", "unsupported-relational-operands", "rule.condition.conditions[*]",
 						Context: "greater-than, greater-than-or-equal, less-than, and less-than-or-equal only support numeric and date/time left attributes (Date, DateTime, Time). Attribute-to-attribute relational comparisons must use matching data value types."),
+					new ToolContractValidator("comparison-family", "unsupported-equality-operands", "rule.condition.conditions[*]",
+						Context: "equal and not-equal are not supported when the left attribute data value type is RichText or Image. Use is-filled-in or is-not-filled-in for those attributes."),
 					new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
 						Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm')."),
 					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",

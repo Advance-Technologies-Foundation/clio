@@ -38,9 +38,15 @@ public sealed class BusinessRuleValidatorTests {
 		new object[] { 29, "MaxSizeText" },
 		new object[] { 30, "LongText" },
 		new object[] { 42, "PhoneText" },
-		new object[] { 43, "RichText" },
 		new object[] { 44, "WebText" },
 		new object[] { 45, "EmailText" }
+	];
+
+	private static readonly object[] EqualityUnsupportedTypeCases = [
+		new object[] { "equal", 43, "RichText" },
+		new object[] { "not-equal", 43, "RichText" },
+		new object[] { "equal", 14, "Image" },
+		new object[] { "not-equal", 14, "Image" }
 	];
 
 	private static readonly object[] NumberTypeCases = [
@@ -275,7 +281,7 @@ public sealed class BusinessRuleValidatorTests {
 			leftExpression: new BusinessRuleExpression("AttributeValue", "TextColumn", null),
 			rightExpression: new BusinessRuleExpression("Const", null, Json("\"Draft\"")));
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
-			CreateColumn("TextColumn", 43),
+			CreateColumn("TextColumn", 28),
 			CreateColumn("Owner", 10, "Contact"));
 
 		// Act
@@ -284,6 +290,32 @@ public sealed class BusinessRuleValidatorTests {
 		// Assert
 		act.Should().NotThrow(
 			because: "supported text attributes should accept JSON string constants");
+	}
+
+	[TestCaseSource(nameof(EqualityUnsupportedTypeCases))]
+	[Category("Unit")]
+	[Description("Rejects equal and not-equal comparisons for RichText and Image left attributes.")]
+	public void Validate_Should_Reject_Equality_Comparison_For_Large_Attribute_Types(
+		string comparisonType,
+		int dataValueType,
+		string expectedTypeName) {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: comparisonType,
+			leftExpression: new BusinessRuleExpression("AttributeValue", "UnsupportedCol", null),
+			rightExpression: new BusinessRuleExpression("AttributeValue", "OtherUnsupportedCol", null));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("UnsupportedCol", dataValueType),
+			CreateColumn("OtherUnsupportedCol", dataValueType),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage($"rule.condition.conditions[*].comparisonType '{comparisonType}' is not supported for left attribute 'UnsupportedCol' with type {expectedTypeName}. RichText and Image attributes do not support equal or not-equal business-rule conditions.",
+				because: "the Creatio business-rule designer blocks equality comparisons for large attribute value types");
 	}
 
 	[TestCaseSource(nameof(NumberTypeCases))]
@@ -864,10 +896,9 @@ public sealed class BusinessRuleValidatorTests {
 
 	[TestCase(11, "Enum")]
 	[TestCase(13, "Blob")]
-	[TestCase(14, "Image")]
 	[TestCase(25, "File")]
 	[Category("Unit")]
-	[Description("Rejects Const right expressions when the left attribute has a type that does not support constant comparison (Enum, Blob, Image, File).")]
+	[Description("Rejects Const right expressions when the left attribute has a type that does not support constant comparison (Enum, Blob, File).")]
 	public void Validate_Should_Reject_Const_For_Unsupported_Left_Type(int dataValueType, string expectedTypeName) {
 		// Arrange
 		BusinessRule rule = CreateRule(

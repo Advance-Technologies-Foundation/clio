@@ -64,8 +64,15 @@ internal static class BusinessRuleHelpers {
 		!string.IsNullOrWhiteSpace(comparisonType)
 		&& RelationalComparisonTypeNames.Contains(comparisonType);
 
+	internal static bool IsEqualityComparisonType(string comparisonType) =>
+		!string.IsNullOrWhiteSpace(comparisonType)
+		&& EqualityComparisonTypeNames.Contains(comparisonType);
+
 	internal static bool RequiresRightExpression(string comparisonType) =>
 		!IsUnaryComparisonType(comparisonType);
+
+	internal static bool IsUnsupportedEqualityDataValueType(string dataValueTypeName) =>
+		UnsupportedEqualityDataValueTypeNames.Contains(dataValueTypeName);
 
 	internal static bool IsTextDataValueType(string dataValueTypeName) =>
 		SupportedTextDataValueTypeNames.Contains(dataValueTypeName);

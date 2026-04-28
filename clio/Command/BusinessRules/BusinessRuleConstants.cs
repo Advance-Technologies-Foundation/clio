@@ -110,6 +110,18 @@ internal static class BusinessRuleConstants {
 			"less-than-or-equal"
 		};
 
+	internal static readonly IReadOnlySet<string> EqualityComparisonTypeNames =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"equal",
+			"not-equal"
+		};
+
+	internal static readonly IReadOnlySet<string> UnsupportedEqualityDataValueTypeNames =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"RichText",
+			"Image"
+		};
+
 	internal static readonly IReadOnlySet<string> SupportedTextDataValueTypeNames =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
 			"Text",

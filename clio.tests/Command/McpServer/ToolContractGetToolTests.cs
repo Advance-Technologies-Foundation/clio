@@ -134,6 +134,12 @@ public sealed class ToolContractGetToolTests {
 				validator.Context!.Contains("date/time left attributes", StringComparison.Ordinal),
 			because: "the contract should advertise the numeric and date/time scope of relational comparisons");
 		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "comparison-family" &&
+				validator.Code == "unsupported-equality-operands" &&
+				validator.Field == "rule.condition.conditions[*]" &&
+				validator.Context!.Contains("RichText or Image", StringComparison.Ordinal),
+			because: "the contract should advertise Creatio's equality limitation for rich text and image columns");
+		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "date-time-constant" &&
 				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
 				validator.Context!.Contains("timezone suffix", StringComparison.Ordinal),

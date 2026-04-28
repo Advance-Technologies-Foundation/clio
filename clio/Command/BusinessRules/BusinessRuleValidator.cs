@@ -135,6 +135,11 @@ internal static class BusinessRuleValidator {
 				$"rule.condition.conditions[*].comparisonType '{comparisonType}' is only supported for numeric and date/time left attributes. Left attribute '{leftPath}' has type {leftDataValueTypeName}.");
 		}
 
+		if (IsEqualityComparisonType(comparisonType) && IsUnsupportedEqualityDataValueType(leftDataValueTypeName)) {
+			throw new ArgumentException(
+				$"rule.condition.conditions[*].comparisonType '{comparisonType}' is not supported for left attribute '{leftPath}' with type {leftDataValueTypeName}. RichText and Image attributes do not support equal or not-equal business-rule conditions.");
+		}
+
 		ValidateRightExpression(rightExpression, columnMap, leftPath, leftDataValueTypeName);
 	}
 
