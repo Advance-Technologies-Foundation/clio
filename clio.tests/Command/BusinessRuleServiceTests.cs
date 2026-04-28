@@ -172,9 +172,11 @@ public sealed class BusinessRuleServiceTests {
 			CreateRule());
 
 		// Act
-		_service.Create(request);
+		BusinessRuleCreateResult result = _service.Create(request);
 
 		// Assert
+		result.RuleName.Should().StartWith("BusinessRule_",
+			because: "the service should return the generated rule name after a successful save");
 		_addonSchemaDesignerClient.Received(1).BuildConfiguration();
 	}
 
@@ -189,9 +191,11 @@ public sealed class BusinessRuleServiceTests {
 			CreateRule());
 
 		// Act
-		_service.Create(request);
+		BusinessRuleCreateResult result = _service.Create(request);
 
 		// Assert
+		result.RuleName.Should().StartWith("BusinessRule_",
+			because: "the service should return the generated rule name after a successful save");
 		_addonSchemaDesignerClient.Received(1).ResetClientScriptCache();
 	}
 

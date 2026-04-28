@@ -14,7 +14,8 @@ internal static class BusinessRuleHelpers {
 	// DateTimeOffset.TryParse accepts timezone-less values as local time, so require an explicit suffix.
 	private static readonly Regex ExplicitTimeZoneSuffixRegex = new(
 		@"(?:Z|[+-]\d{2}:\d{2})$",
-		RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+		RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
+		TimeSpan.FromMilliseconds(100));
 
 
 	internal static IReadOnlyDictionary<string, EntitySchemaColumnDto> BuildColumnMap(EntityDesignSchemaDto entitySchema) {
