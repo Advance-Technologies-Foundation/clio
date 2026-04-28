@@ -521,15 +521,19 @@ public static class SchemaValidationService
 		string bindingAttribute,
 		out string preferredCaptionBinding) {
 		preferredCaptionBinding = string.Empty;
-		if (!string.IsNullOrWhiteSpace(bindingAttribute) && bindingAttribute.StartsWith("PDS_", StringComparison.OrdinalIgnoreCase)) {
-			preferredCaptionBinding = $"$Resources.Strings.{bindingAttribute}";
-			return true;
-		}
 		if (!string.IsNullOrWhiteSpace(bindingAttribute) &&
 		    modelPaths.TryGetValue(bindingAttribute, out string modelPath) &&
-		    modelPath.StartsWith("PDS.", StringComparison.OrdinalIgnoreCase)) {
-			preferredCaptionBinding = $"$Resources.Strings.{modelPath.Replace(".", "_", StringComparison.Ordinal)}";
+		    modelPath.Contains('.')) {
+			string expectedBinding = BuildExpectedBinding(modelPath);
+			preferredCaptionBinding = $"$Resources.Strings.{expectedBinding[1..]}";
 			return true;
+		}
+		foreach (var (_, path) in modelPaths) {
+			string expected = BuildExpectedBinding(path);
+			if (string.Equals("$" + bindingAttribute, expected, StringComparison.OrdinalIgnoreCase)) {
+				preferredCaptionBinding = $"$Resources.Strings.{bindingAttribute}";
+				return true;
+			}
 		}
 		return false;
 	}
@@ -556,13 +560,9 @@ public static class SchemaValidationService
 		return true;
 	}
 
-	internal static bool IsAllowedDirectFieldBinding(string bindingAttribute) {
-		return string.Equals(bindingAttribute, "Name", StringComparison.OrdinalIgnoreCase)
-			|| bindingAttribute.StartsWith("PDS_", StringComparison.OrdinalIgnoreCase);
-	}
-
 	internal static string BuildExpectedBinding(string modelPath) {
-		if (string.Equals(modelPath, "PDS.Name", StringComparison.OrdinalIgnoreCase)) {
+		int dot = modelPath.IndexOf('.', StringComparison.Ordinal);
+		if (dot >= 0 && string.Equals(modelPath[(dot + 1)..], "Name", StringComparison.OrdinalIgnoreCase)) {
 			return "$Name";
 		}
 		return "$" + modelPath.Replace(".", "_", StringComparison.Ordinal);
@@ -1403,25 +1403,48 @@ public static class SchemaValidationService
 			$"Control '{fieldDisplayName}' declares 'validators' inside viewConfigDiff. Validators must be declared on the view-model attribute in viewModelConfig/viewModelConfigDiff, not on the UI element. {bindingHint}");
 	}
 
+	private static string? FindViewModelAttributeForDirectBinding(
+		string directBindingAttr,
+		IReadOnlyDictionary<string, string> modelPaths) {
+		foreach (var (attrName, path) in modelPaths) {
+			if (string.Equals("$" + directBindingAttr, BuildExpectedBinding(path), StringComparison.OrdinalIgnoreCase)) {
+				return attrName;
+			}
+		}
+		return null;
+	}
+
 	private static void AddValidatorControlBindingErrorIfNeeded(
 		JsonElement element,
 		JsonElement target,
 		HashSet<string> attributesWithValidators,
 		IReadOnlyDictionary<string, string> modelPaths,
 		SchemaValidationResult result) {
-		if (!TryGetBindingAttribute(target, out _, out _, out string bindingAttribute) ||
-		    !TryFindAlternativeAttributesForSamePath(bindingAttribute, modelPaths, attributesWithValidators, out string validatorAttribute)) {
+		if (!TryGetBindingAttribute(target, out _, out _, out string bindingAttribute)) {
 			return;
 		}
-
 		string fieldName = element.TryGetProperty("name", out JsonElement nameEl) &&
 		                   nameEl.ValueKind == JsonValueKind.String &&
 		                   !string.IsNullOrWhiteSpace(nameEl.GetString())
 			? nameEl.GetString() ?? bindingAttribute
 			: bindingAttribute;
+		if (modelPaths.ContainsKey(bindingAttribute)) {
+			if (!TryFindAlternativeAttributesForSamePath(bindingAttribute, modelPaths, attributesWithValidators, out string validatorAttribute)) {
+				return;
+			}
+			result.Errors.Add(
+				$"Control '{fieldName}' binds to '${bindingAttribute}' but validators are declared on attribute '{validatorAttribute}'. " +
+				$"Bind the control to '${validatorAttribute}' or move the validators to '{bindingAttribute}' so the control and validators use the same declared view-model attribute.");
+			return;
+		}
+		string? vmAttribute = FindViewModelAttributeForDirectBinding(bindingAttribute, modelPaths);
+		if (vmAttribute == null || !attributesWithValidators.Contains(vmAttribute)) {
+			return;
+		}
 		result.Errors.Add(
-			$"Control '{fieldName}' binds to '${bindingAttribute}' but validators are declared on attribute '{validatorAttribute}'. " +
-			$"Bind the control to '${validatorAttribute}' or move the validators to '{bindingAttribute}' so the control and validators use the same declared view-model attribute.");
+			$"Control '{fieldName}' binds to '${bindingAttribute}' but attribute " +
+			$"'{vmAttribute}' has validators. Validators only fire on view-model attribute " +
+			$"bindings — use '${vmAttribute}' instead of '${bindingAttribute}'.");
 	}
 
 	private static bool TryGetDataTableColumns(JsonElement item, out JsonElement columns) {
@@ -1447,7 +1470,7 @@ public static class SchemaValidationService
 			return false;
 		}
 		string? candidate = codeElement.GetString();
-		if (string.IsNullOrEmpty(candidate) || !candidate.StartsWith("PDS_", StringComparison.Ordinal)) {
+		if (string.IsNullOrEmpty(candidate) || !candidate.Contains('_')) {
 			return false;
 		}
 		code = candidate;
