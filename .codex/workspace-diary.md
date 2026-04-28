@@ -2587,6 +2587,419 @@ Decision: Treat pathless diff operations as root-level merges and therefore elig
 Discovery: The stricter irst segment == attributes guard fixed nested false positives, but it also created a silent skip for existing pathless merge shapes until an explicit regression test covered them.
 Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Validator resource and contract validation now covers both supported diff shapes: root merges without path and explicit top-level ttributes merges, while still excluding unrelated nested paths.
+## 2026-04-21 14:59 – Update local clio install to 8.0.2.72 from source package
+Context: Local machine still had global `clio` dotnet tool `8.0.2.66`, while the requested GitHub release was `8.0.2.72`.
+Decision: Verified the GitHub release tag, confirmed `8.0.2.72` was not yet available on `https://api.nuget.org/v3/index.json`, then built the tool package from the local `8.0.2.72` tag source and updated the global dotnet tool from that local package feed.
+Discovery: `clio\clio.csproj` already packs as a dotnet tool and embeds `8.0.2.72`; `dotnet build -c Release` produced `clio.8.0.2.72.nupkg`, which was sufficient for `dotnet tool update -g --add-source`.
+Files: C:\Projects\clio\clio\clio.csproj, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The workstation now runs `clio 8.0.2.72` even before the same version appears on the public NuGet feed.
+
+## 2026-04-21 16:17 – Add canonical MCP handler guidance for page-schema authoring
+Context: Needed to extend the existing validator-focused MCP page authoring guidance so AI instructions can handle Freedom UI `SCHEMA_HANDLERS` edits with the same first-class support.
+Decision: Added a new `page-schema-handlers` guidance resource and threaded it through guidance catalog lookup, page prompts/tool descriptions, handler-aware contract hints, MCP unit/E2E tests, and repository-local MCP/skill docs.
+Discovery: Handlers were already supported by page-body parsing and validation as a JavaScript section; the missing piece was canonical authoring guidance plus all discovery surfaces that currently advertise only `page-schema-validators`.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\GuidanceCatalog.cs, C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageGetTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\ToolContractGetTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\ToolContractGetToolTests.cs, C:\Projects\clio\clio.mcp.e2e\GuidanceGetToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\clio\docs\commands\mcp-server.md, C:\Projects\clio\clio\docs\commands\sync-pages.md, C:\Projects\clio\clio\help\en\mcp-server.txt, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.github\skills\clio\references\commands-reference.md
+Impact: Future MCP clients can now discover, request, and apply canonical handler guidance through the same `get-guidance` flow already used for validators, reducing incorrect handler/validator/converter crossovers in page-body edits.
+
+## 2026-04-21 17:02 – Add source-backed standard handler parameter contracts
+Context: The new handler guidance still listed standard Academy handler names without payload contracts, which left AI callers guessing request fields for built-in handlers.
+Decision: Cross-checked `creatio-ui` source request classes and enriched `page-schema-handlers` with a parameter catalog that separates authorable config fields from runtime payload fields, while documenting the `crt.ShowDialog` naming mismatch and the `crt.ModuleLoader` special case.
+Discovery: In source, `crt.ShowDialog` is exposed as request `crt.ShowDialogRequest` plus `crt.ShowDialogHandler`, and `crt.ModuleLoader` is a `@CrtViewElement` with `module`, `doNotRender`, and `instanceConfig` inputs rather than a normal handler `requestType`.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future handler-authoring sessions can choose the correct built-in request and payload shape without reopening `creatio-ui` source or misusing Academy-only labels as runtime request types.
+
+## 2026-04-21 17:13 – Reformat handler contracts into AI-first tables
+Context: The source-backed handler contract catalog was accurate but still prose-heavy, which made scanning harder for AI consumers inside a long MCP guidance article.
+Decision: Rewrote the standard handler parameter catalog into compact markdown tables grouped by core requests, lifecycle events, sidebar events, and Academy/source special cases, then aligned MCP unit and E2E assertions to the new tabular contract.
+Discovery: For this guide, table rows such as `request | kind | params | notes` are easier to assert and preserve than repeated prose bullets, while still carrying the same payload detail.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The handler guide now exposes a faster AI-readable contract surface that is less likely to be misparsed or partially skipped during long prompt consumption.
+
+## 2026-04-21 17:34 – Remove Academy framing from handler guidance
+Context: Handler guidance was still framed around `Academy` wording even though the published built-in handler names should be presented as user-visible supported contracts for AI consumers.
+Decision: Renamed the handler catalog and special-case tables to use neutral user-facing wording (`Standard built-in handler catalog`, `User-visible name`) and aligned MCP unit/E2E assertions to the same terminology without changing the actual handler contracts.
+Discovery: Residual `Academy` mentions now remain only in validator-test `because` strings and are unrelated to the handler guidance resource.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The handler guide now reads as an AI-ready catalog of supported user-visible built-in handlers instead of a secondary summary of external documentation.
+
+## 2026-04-21 17:53 – Align handler guide with actual Handler Chain semantics
+Context: Internal Confluence guidance for Handler Chain made it clear that `next?.handle(request)` placement is semantic (`before`, `after`, or omitted), while the MCP handler guide still encouraged a mostly next-first heuristic and lacked concrete read/guard patterns.
+Decision: Reworked the handler guidance into explicit chain-control rules, added `$context.get(...)` read examples, documented `preventAttributeChangeRequest` usage, showed multiple handler entries in one `SCHEMA_HANDLERS` array, added anti-patterns, and converted the save checklist into binary self-validation questions.
+Discovery: The most AI-relevant contract from the Confluence article is not the handler list itself but the rule that a handler may execute logic before next, after next, or intentionally stop the chain; `crt.HandleViewModelInitRequest` remains the clearest example where skipping `next` can break platform loading.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP consumers should generate handler code with fewer chain-ordering mistakes, better context access patterns, and fewer `ShowDialog`/request-shape regressions.
+
+## 2026-04-21 18:11 – Harden handler guide against AI copy mistakes
+Context: After the chain-semantics rewrite, the remaining AI risks were top-level copyable labels (`crt.ShowDialog`, `crt.ModuleLoader`), mixing declarative and imperative request shapes, and a remote-module example that still used a custom request under the `crt.` namespace.
+Decision: Added a request-shape quick reference, removed the under-specified delete row from the direct-request decision table instead of publishing a partial contract, marked `crt.ModuleLoader` as a view-element label in the top catalog, and changed the remote example to `usr.UpdateCurrentTimeRequest`.
+Discovery: For AI-facing guidance, incomplete but plausible contract hints are worse than omission; a short “do not mix shapes” table is more valuable than extra prose once the page-body examples already exist.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The handler guide now gives MCP consumers fewer copy-paste traps and a clearer separation between supported request names, special labels, and dispatch shapes.
+
+## 2026-04-21 18:24 – Add real handler-chain idioms from 8.x examples
+Context: Internal 8.x handler examples showed a few canonical idioms that were still missing from the MCP handler guide and therefore easy for AI to miss during code generation.
+Decision: Added three source-backed patterns to the guide: explicit pass-through `return next?.handle(request);`, a save-handler template that captures `const saveResult = await next?.handle(request);` and returns it after post-save orchestration, and property-style `$context` reads alongside `get(...)`.
+Discovery: The most reusable additions from the article were not new request types but concrete code idioms that reduce ambiguity: preserve downstream result explicitly, treat `next` as a value-producing call when needed, and recognize both `$context.get("Attr")` and `await request.$context.AttrName` as valid reads in page-body handlers.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP consumers should produce fewer handler-chain mistakes in non-matching branches, post-save flows, and attribute reads copied from real Creatio examples.
+
+## 2026-04-21 18:32 – Clarify request-dispatch API choice and restore delete contract
+Context: Review found three remaining AI traps in the handler guide: two dispatch APIs without a selection rule, a dropped `crt.DeleteRecordRequest` that looked accidental, and `dialogConfig` documented only by name.
+Decision: Added explicit API choice rules that prefer `$context.executeRequest(...)` inside deployed `SCHEMA_HANDLERS` and reserve `HandlerChainService.instance.process(...)` for frontend-source and SDK-oriented flows, restored `crt.DeleteRecordRequest` to the direct-request and parameter catalogs, and added a minimal `dialogConfig` shape example plus documented `message/actions/title`.
+Discovery: In the current `creatio-ui` checkout, `DeleteRecordRequest` is defined with `recordId` and `itemsAttributeName`, and its built-in handler converts it into `crt.DeleteRecordsRequest`; `BaseDialogConfig` in devkit base currently exposes `message`, `actions`, and optional `title`, which is enough for a minimal AI-safe dialog example.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP consumers should stop mixing page-body and SDK dispatch APIs, should no longer assume delete lacks a built-in request, and should generate dialog payloads with a concrete minimum shape instead of guessing.
+
+## 2026-04-21 18:36 – Align dialog example with scope-forwarding rule
+Context: Review noticed that the new `crt.ShowDialogRequest` example forwarded `$context` but omitted `scopes`, which contradicted the guide's own forwarding rule.
+Decision: Added `scopes: [...request.scopes]` to the minimal dialog example instead of carving out a dialog-specific exception.
+Discovery: For AI-facing guidance, a consistent forwarding rule is easier to follow than documenting one-off omissions in examples that otherwise look canonical.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The dialog example now matches the general request-forwarding guidance and should reduce copy-paste inconsistencies in generated handlers.
+
+## 2026-04-21 18:44 – Replace hard casts in guidance unit tests
+Context: Review pointed out that `McpGuidanceResourceTests` still used direct `(TextResourceContents)result` casts, while the matching E2E tests already used `Should().BeOfType<TextResourceContents>()`.
+Decision: Replaced all remaining guidance-resource hard casts with FluentAssertions type assertions so failures include the intended expectation instead of a bare `InvalidCastException`.
+Discovery: The same cast pattern was repeated across modeling, maintenance, handler, validator, and DataForge guidance tests, so fixing them together was lower-risk than patching only the newly discussed test.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Guidance unit tests now match the E2E assertion style and should produce clearer diagnostics if a resource ever stops returning `TextResourceContents`.
+
+## 2026-04-21 18:49 – Document valid property-style writes in handler guidance
+Context: Review flagged a seeming inconsistency where the guide taught writes through `$context.set(...)` but one example used direct property assignment on `$context`.
+Decision: Kept the example and documented the rule explicitly: property-style writes like `request.$context.SomeFlag = value` are valid when the attribute name is known at authoring time, while `$context.set(...)` remains the preferred explicit API for dynamic attribute names.
+Discovery: The problem was not the example itself but the missing rule that made AI consumers treat direct assignment as an undocumented exception.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP consumers should stop rewriting valid direct `$context` assignments into guesswork and should understand when to keep property-style writes versus when to use the explicit setter API.
+
+## 2026-04-21 19:13 – Remove remaining handler-guide self-contradictions
+Context: Code review found two AI-facing contradictions in the new handler guidance: `RunBusinessProcessRequest` forwarding examples omitted `scopes`, and the top-level `next exactly once` rule conflicted with the documented intentional chain-break flow.
+Decision: Added `scopes: [...request.scopes]` to both page-body process-dispatch examples, rewrote the non-negotiable `next` rule to require intentional placement instead of an exact-once heuristic, and strengthened unit/E2E assertions to catch both regressions.
+Discovery: For MCP guidance resources, consistency between examples and global rules matters as much as correctness of either piece in isolation because AI consumers copy the first plausible pattern they see.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future handler-authoring sessions should stop inheriting contradictory chain-control and scope-forwarding rules from the guide itself.
+
+## 2026-04-22 00:13 – Narrow handler guide to the supported page-body view-model API
+Context: A real MCP-driven page edit generated `request.sender.$get/$set` for a simple copy-on-change handler, which exposed that the guide still taught unsupported or overly broad read patterns such as `request.$context.get(...)`.
+Decision: Removed `request.$context.get(...)` and property-style read/write guidance, standardized reads on `await request.$context["AttrName"]`, kept writes on `await request.$context.set(...)`, added explicit anti-patterns for `request.sender/$get/$set`, and added a canonical mirror-text-field example.
+Discovery: For AI-facing handler guidance, supporting multiple plausible view-model access styles is worse than choosing one narrower contract when the deployed page-body runtime only supports part of that surface reliably.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future handler-generation prompts should stop producing `request.sender.$get/$set` or `request.$context.get(...)` for simple attribute-copy scenarios and should converge on the supported page-body access pattern.
+
+## 2026-04-22 00:41 – Add product-backed handler patterns without widening the canonical API
+Context: Real non-empty `SCHEMA_HANDLERS` arrays from `C:\Projects\PackageStore` showed recurring patterns that were still missing from the MCP handler guide, especially guarded field sync, lifecycle subscription cleanup, and the split between request dispatch and direct SDK service orchestration.
+Decision: Kept the narrow AI-first read/write contract, but added a guarded sync template, an init/resume/pause/destroy subscription template, explicit orchestration-pattern guidance, a stable ordering hint for multi-handler arrays, and a compatibility note that existing product code may still use `attributes[...]` or direct assignment.
+Discovery: Product code mixes several valid access styles, so the best AI guidance is to preserve one canonical authoring style while explicitly classifying the others as compatibility patterns rather than equal alternatives.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP consumers should generate handlers that better match real product scenarios such as subscription lifecycle management and guarded cross-field sync without regressing back to ambiguous view-model APIs.
+
+## 2026-04-22 10:22 – Add dedicated page-schema SDK common guidance
+Context: MCP page editing needed a separate AI-first guide for `@creatio-devkit/common`, based on the public API in `C:\Projects\creatio-ui\libs\devkit\common` and real schema usage in `C:\Projects\PackageStore`.
+Decision: Added a new `page-schema-sdk-common` guidance resource, wired it into guidance discovery, page prompts, page tools, handler guidance, and validator guidance, and updated MCP docs, skill docs, and unit/E2E coverage to advertise and validate the new guide.
+Discovery: Real page schemas consistently rely on a small public subset of `@creatio-devkit/common` in page-body code: dependency wiring through `SCHEMA_DEPS`/`SCHEMA_ARGS`, service instances like `SysSettingsService`, `MessageChannelService`, `ProcessEngineService`, `DialogService`, and lower-level orchestration through `HandlerChainService.instance.process(...)`.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\GuidanceCatalog.cs, C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaValidatorsGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Tools\GuidanceGetTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\ToolContractGetTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageGetTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\ToolContractGetToolTests.cs, C:\Projects\clio\clio.mcp.e2e\GuidanceGetToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\clio\help\en\mcp-server.txt, C:\Projects\clio\clio\docs\commands\mcp-server.md, C:\Projects\clio\clio\docs\commands\sync-pages.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.github\skills\clio\references\commands-reference.md
+Impact: Future page-editing prompts can point AI to one stable SDK-common contract instead of making it infer dependency wiring and public SDK usage from handler and validator examples alone.
+
+## 2026-04-22 12:02 – Add lightweight handler-shape validation for AI-authored page bodies
+Context: Page-body validation already enforced several validator contracts, but `SCHEMA_HANDLERS` still accepted structurally broken AI output as long as the body kept marker pairs and generic JavaScript syntax.
+Decision: Added `SchemaValidationService.ValidateHandlerStructure(...)` to enforce two low-risk rules only: `SCHEMA_HANDLERS` must remain an array literal, and each top-level handler entry must declare string `request` plus `handler` properties. Wired the check into CLI `update-page`, MCP `update-page`, and `sync-pages`, and added unit plus MCP E2E coverage.
+Discovery: Handler validation is safest when it stops at authoring-shape guarantees; deeper semantic checks like `next` placement or request payload contracts would be too fragile for arbitrary JavaScript handler bodies.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\PageUpdateOptions.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\PageSyncToolE2ETests.cs
+Impact: Future AI-generated handler code should now fail fast on the most common shape regressions before any remote save attempt, while still allowing legitimate arbitrary JavaScript inside valid handler entries.
+
+## 2026-04-22 12:36 – Narrow sdk-common guidance to deployed page schema code only
+Context: Review of the new `page-schema-sdk-common` guide found that it mixed page-schema authoring with remote-module/frontend-source concepts, which made the AI guidance broader than the actual target workflow.
+Decision: Rewrote `PageSchemaSdkCommonGuidanceResource` as a schema-only guide, removed frontend-source decorators/classes, added an execution-context decision block, kept `HandlerChainService` only as an advanced schema-body pattern, tightened dialog-selection rules, and aligned the `MessageChannelService` example with the canonical `request.$context.set(...)` write pattern.
+Discovery: For AI-facing SDK guidance, context separation matters more than breadth; schema-body examples become more reliable once remote-module APIs are removed instead of merely documented as optional.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future page-editing prompts should stop mixing schema-body AMD code with frontend-source decorators/imports and should choose built-in requests, SDK services, and advanced `HandlerChainService` usage more predictably.
+
+## 2026-04-22 13:02 – Tighten handler guidance around writeback style and request-catalog consistency
+Context: Review of `page-schema-handlers` found several AI-facing contradictions: direct assignment in subscription callbacks despite setter-only write guidance, mixed `!=`/`!==`, direct-trigger vs intercept confusion for `crt.SaveRecordRequest`, and request names present in hints/tables without any contract entry.
+Decision: Standardized templates on strict inequality and explicit `result = await next?.handle(request); return result;` for post-success side effects, rewrote subscription callbacks to use async setter-based writeback, clarified that the direct-request table covers triggers rather than interception, added source-backed rows for `crt.LoadDataRequest`, `crt.CreateEmailRequest`, `crt.CopyClipboardRequest`, `crt.CopyInputToClipboardRequest`, and moved `crt.ModuleLoader` fully into the special-cases table. Also added explicit marker-preservation and stricter checklist items.
+Discovery: The most useful AI correction was not more prose but tighter contract alignment: one canonical writeback style, one equality style, and no request names in decision tables unless the guide also tells the model how to author them.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP consumers should generate fewer inconsistent handlers for subscriptions, save interception, and clipboard/email/data-load scenarios, and should preserve `SCHEMA_HANDLERS` markers more reliably during edits.
+
+## 2026-04-22 13:34 – Remove ModuleLoader from handler guidance entirely
+Context: Follow-up review concluded that keeping `crt.ModuleLoader` even in the handler-guide special-cases table still gave AI a false cue to treat it like a request contract.
+Decision: Removed the `crt.ModuleLoader` row from `PageSchemaHandlersGuidanceResource` completely and deleted the matching unit/E2E assertions.
+Discovery: For AI-facing handler guidance, a misleading name in the document is worse than an incomplete special-case note when the concept does not belong to handler authoring at all.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future handler-generation prompts should no longer see `crt.ModuleLoader` anywhere in the handler guide, reducing the chance of emitting it inside `SCHEMA_HANDLERS`.
+
+## 2026-04-22 13:47 – Align multi-handler attribute-change example with canonical result preservation
+Context: Review found that the `Multiple handlers in one page-body array` example still used `await next?.handle(request);` without capturing or returning the downstream result, unlike the other post-next attribute-change templates.
+Decision: Updated the multi-handler attribute-change example to use `const result = await next?.handle(request); ... return result;` and rewrote the new unit/E2E assertions to use whitespace-tolerant regex instead of brittle exact multiline strings.
+Discovery: For AI-facing guidance, one inconsistent example is enough to reintroduce copy-paste regressions even after the general rule has been fixed everywhere else.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future handler-generation prompts should stop producing the old non-returning post-next pattern inside multi-handler arrays, while tests remain robust to harmless indentation changes.
+
+## 2026-04-22 14:08 – Remove absence-based remote-module assertions from handler-guide tests
+Context: The page-body handler guide had already been narrowed to deployed schema-body authoring, but its tests still asserted that removed remote-module/frontend-source strings were absent.
+Decision: Dropped the handler-guide `NotContain(...)` assertions for deleted remote-module/frontend-source snippets from both unit and MCP E2E tests, keeping the positive contract checks and the explicit unsupported-API guardrails that still describe live behavior.
+Discovery: For AI-facing text resources, positive assertions on the supported contract age better than brittle absence checks for content that no longer belongs to the guide at all.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future handler-guide refactors can delete or rewrite old remote-module wording without forcing tests to track the absence of dead text, while still protecting the active page-body authoring rules.
+
+## 2026-04-22 14:26 – Tighten handler guide around page-body-first authoring patterns
+Context: Follow-up review still found three AI-facing mixed signals in `page-schema-handlers`: a custom action example that did not return the downstream result, subscription state on `$context` without an explicit transient-state rule, and a `DialogService` compatibility note that competed with canonical `crt.ShowDialogRequest` authoring.
+Decision: Kept `executeRequest(...)` as the canonical imperative example, updated both custom-action templates to capture and return `next`, added an explicit rule that direct `$context` property assignment is only for transient runtime references such as subscriptions or service handles, and removed the `new sdk.DialogService().open(...)` note from the handler guide while keeping `crt.ShowDialogRequest` as the only dialog authoring rule there.
+Discovery: For AI-facing page-body guidance, the safest pattern is to keep exactly one preferred request-dispatch and dialog-authoring path in the handler guide and classify every other `$context` write style as either transient-runtime-only or out of scope.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future AI edits should stop mixing non-returning custom action handlers or `DialogService` into page-body authoring and should treat direct `$context` property writes as transient-state exceptions only.
+
+## 2026-04-22 18:40 – Handler guide AI-first tightening
+Context: Refined page-schema handler MCP guidance after reviewing AI-specific ambiguity and copy-paste risks in PageSchemaHandlersGuidanceResource.
+Decision: Kept the guide page-body-only, strengthened the default executeRequest path, moved compatibility wording out of the canonical contract, and made transient `$context` property writes explicit runtime-handle exceptions.
+Discovery: Guidance tests were still asserting the old compatibility-note wording; both unit and E2E expectations needed to match the new `Compatibility note: existing product code...` phrasing.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs
+Impact: Future handler-guide edits have a clearer AI-first contract and aligned guidance tests, reducing regressions around compatibility wording and page-body API recommendations.
+
+## 2026-04-22 19:10 – Tighten handler guide around dialog labels and SDK subscriptions
+Context: Reviewed the AI-only page-schema handler guidance for remaining copy-paste hazards after earlier page-body cleanup.
+Decision: Removed `crt.ShowDialog` from the generic built-in handler catalog, kept it only in the special-cases table, and replaced the abstract `<Service>.subscribe(...)` lifecycle template with a concrete `sdk.MessageChannelService` example plus an explicit anti-pattern against invented placeholder SDK services.
+Discovery: The handler guide was still safe semantically, but AI would likely over-copy the general built-in catalog and invent placeholder subscription services unless the text stayed concrete and schema-body-specific.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs
+Impact: Future AI edits should stop treating `crt.ShowDialog` as a normal handler requestType and should generate concrete SDK-backed subscription code instead of hallucinated `<Service>` APIs.
+
+## 2026-04-22 19:42 – Normalize sdk-common schema guidance and SysSettings return handling
+Context: Follow-up review of the AI-only `page-schema-sdk-common` guide found remaining contradictions around async schema-body SDK usage, especially fire-and-forget channel callbacks and inconsistent `SysSettingsService.getByCode(...)` handling across guides.
+Decision: Removed the duplicated execution-context section, kept the guide schema-body-only, replaced the `MessageChannelService` fragment with a full AMD-wrapped example that awaits both `request.$context.set(...)` and `sendMessage(...)`, documented the `getByCode(...)` return shape (`value` vs `displayValue`), and aligned the validator async example plus unit/E2E assertions to use `maxLength.value`.
+Discovery: For AI-facing guidance, one inconsistent syssettings example in a neighboring guide is enough to undo a clarified contract, so the sdk-common guide and validator guide have to converge on the same extraction pattern and tests need to assert it explicitly.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaValidatorsGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future AI callers should stop generating fire-and-forget SDK code in schema bodies and should consistently treat `SysSettingsService.getByCode(...)` as an object whose `.value` is used for numeric validation while `.displayValue` is reserved for user-facing text.
+
+## 2026-04-22 19:58 – Expose schema-safe model helpers from base through sdk-common guidance
+Context: Analysis of `creatio-ui` showed that `@creatio-devkit/common` depends on `@creatio/base` and reexports schema-relevant base primitives such as `MessageChannelType`, `FilterGroup`, `ComparisonType`, and `ModelParameterType`, but the MCP guide still described model work only indirectly through a process example.
+Decision: Added a base-derived helper lookup table to `page-schema-sdk-common` and introduced a dedicated `Model API in schema body` section that documents when to prefer built-in `crt.*` requests versus `sdk.Model.create(...)`, plus compact load/insert/update/delete/query snippets. Updated unit and MCP E2E assertions to lock in those model and enum/helper contracts.
+Discovery: In `PackageStore` runtime schemas, direct `@creatio/base` schema dependencies were not present; real schema code consumes the needed base primitives through `@creatio-devkit/common`, so the AI guide should document them only as `sdk.*` helpers rather than encouraging a direct base import.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future schema-generation prompts should understand model querying and the supporting enums/helpers as part of the `@creatio-devkit/common` contract, while still avoiding direct `@creatio/base` usage in `SCHEMA_DEPS`.
+
+## 2026-04-22 20:19 – Add collection guidance to schema-only sdk common guide
+Context: The schema-only `page-schema-sdk-common` guide still lacked explicit guidance for collection attributes even though `@creatio-devkit/common` exposes public collection APIs and PackageStore contains real schema-body usage.
+Decision: Added a quick-catalog row for collection work, exposed `sdk.ViewModelCollectionActionType` as a schema-safe helper, and introduced a compact `Collection API in schema body` section covering `await request.$context["Items"]`, `createItem(...)`, collection change callbacks, and unregistering with the same callback reference.
+Discovery: Public collection authoring lives in `common` on top of `base`; the clearest real schema-body example found in `PackageStore` is `await collection.createItem({ initialModelValues: ..., businessRulesActive: ... })` in `BusinessRulesTest/.../UsrTestAddCollectionRecord.js`.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\PackageStore\BusinessRulesTest\branches\7.8.0\Schemas\UsrTestAddCollectionRecord\UsrTestAddCollectionRecord.js, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future AI schema edits can treat collection APIs as part of the supported `@creatio-devkit/common` surface instead of inventing ad-hoc collection helpers or treating collection attributes as plain arrays.
+
+## 2026-04-22 20:33 – Tighten sdk-common guide for AI copy-paste safety
+Context: Follow-up review of the schema-only `page-schema-sdk-common` guide found remaining copy-paste risks: handler examples still mixed `next` styles, some SDK snippets looked like standalone modules even though they were only inner fragments, and collection callbacks lacked a full lifecycle example.
+Decision: Unified handler-shaped SDK templates on `const result = await next?.handle(request); ... return result;`, labeled process/dialog/handler-chain fragments as `Inner handler/body snippet only`, added a collection listener lifecycle example with registration/cleanup and transient callback references on `$context`, strengthened the dialog rule to `do NOT use DialogService` when a handler is already dispatching requests, and added checklist/anti-pattern guardrails for fragment snippets and invented collection helpers.
+Discovery: AI-facing snippet boundaries matter as much as API correctness; unlabeled inner fragments and mixed `next` styles create the same kind of generation drift as an incorrect method name.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future schema-generation prompts should copy fewer ambiguous SDK patterns and should treat the remaining advanced snippets as scoped inner fragments rather than standalone schema templates.
+
+## 2026-04-22 20:58 – Add collection item watcher handler example to sdk-common guide
+Context: After checking `pages-runtime-tests`, the collection guidance still lacked a concrete schema-body handler example for reacting to item attribute changes inside a `ViewModelCollection`.
+Decision: Added a dedicated `Collection item-attribute watcher in a handler` template that reads the collection from `request.$context`, stores the callback reference on `$context` as transient runtime state, registers `registerOnItemAttributesChangesCallback(...)` in init, and unregisters it in destroy.
+Discovery: `pages-runtime-tests` confirms `ViewModelCollection<ViewModelContext>` item reads like `await item["Name"]`, but not a live page-body watcher pattern, so the new guide example should stay aligned with the public `@creatio-devkit/common` contract and explicit cleanup discipline.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future AI-generated schema handlers can attach and clean up collection item-change listeners without inventing unsupported collection helpers or losing the callback reference needed for unregistering.
+
+## 2026-04-22 16:59 – Review found handler-validation bypass and docs drift
+Context: Code review of the current uncommitted MCP/page-tooling changes focused on the new `SCHEMA_HANDLERS` validation path and the related guidance/doc updates.
+Decision: Flagged the regex-based handler `request` validation as unsafe because it can match nested properties instead of the top-level handler contract, and noted that public `mcp-server` docs/help do not list the new `page-schema-sdk-common` guidance despite tool/prompt support.
+Discovery: `ValidateMarkerContent(...)` now already merges handler validation, while `sync-pages` runs `ValidateHandlerStructure(...)` again and appends both error sets, so invalid handler shapes can surface duplicate messages in validation output.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio\docs\commands\mcp-server.md, C:\Projects\clio\clio\help\en\mcp-server.txt, C:\Projects\clio\clio\docs\commands\sync-pages.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future follow-up can fix the top-level handler parsing without rediscovering the failure mode, avoid duplicated sync-pages validation errors, and keep public MCP guidance discovery aligned with the actual tool contract.
+
+## 2026-04-22 17:00 – Remove duplicate handler validation from sync-pages
+Context: Follow-up implementation addressed the review finding that `sync-pages` reported invalid `SCHEMA_HANDLERS` errors twice.
+Decision: Kept handler validation inside `ValidateMarkerContent(...)` as the single source for `sync-pages` content validation and removed the extra `ValidateHandlerStructure(...)` call from `PageSyncTool.ValidateBody(...)`. Added a unit test that asserts the handler-shape error appears only once.
+Discovery: The existing `Category=Unit&Module=McpServer` suite already covers this path well enough for a fast regression pass, and the new focused assertion closes the exact duplication gap without changing tool behavior.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Invalid handler sections in `sync-pages` now produce one deterministic validation message instead of duplicate noise, which makes MCP responses easier to parse and review.
+
+## 2026-04-22 17:06 – Expose sdk-common guide in public mcp-server docs
+Context: Follow-up review found that public `mcp-server` docs/help still omitted `page-schema-sdk-common` even though the MCP contract, prompts, and tests already advertised it.
+Decision: Added `page-schema-sdk-common` to the public guidance-resource lists, preferred `get-guidance` examples, and notes/examples describing when clients should read the SDK page-schema guide.
+Discovery: The implementation/docs drift was isolated to the public `mcp-server` command docs and help text; skill docs and command reference were already updated.
+Files: C:\Projects\clio\clio\docs\commands\mcp-server.md, C:\Projects\clio\clio\help\en\mcp-server.txt, C:\Projects\clio\.codex\workspace-diary.md
+Impact: MCP users can now discover the SDK page-schema guide from the same public docs/help surface that already lists the other canonical guidance articles.
+
+## 2026-04-22 17:13 – Make handler request validation depth-aware
+Context: Follow-up implementation closed the remaining review finding in `SchemaValidationService`: nested `request: "..."` literals inside a handler body could satisfy the top-level `SCHEMA_HANDLERS[].request` contract.
+Decision: Removed the regex-based top-level string lookup, added a depth-aware top-level property-value reader that extracts the actual initializer for `request`, and validated that initializer as a string literal only at object depth 1. Added a regression test where `request: someExpression` is paired with a nested `return { request: "crt.NestedRequest" }`.
+Discovery: The existing `McpServer` unit suite stayed green after replacing the regex path, so the new parser is compatible with the current marker-content and page-tool validation flow.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Handler validation now enforces the intended top-level request contract instead of accepting nested request literals from the handler body.
+
+## 2026-04-22 17:19 – Extract handler validation out of SchemaValidationService
+Context: `SchemaValidationService` had grown large enough that the new `SCHEMA_HANDLERS` parser/validator made the file materially harder to review and maintain.
+Decision: Moved the handler-section validation and its JavaScript-scanning helpers into a dedicated internal `SchemaHandlerValidationService` file and left `SchemaValidationService.ValidateHandlerStructure(...)` as the public facade entrypoint.
+Discovery: The extraction was behavior-preserving; the existing `Category=Unit&Module=McpServer` suite stayed green without requiring test changes beyond the earlier nested-request regression coverage.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future handler-shape and handler-contract changes can be reviewed and tested in isolation without further inflating the central schema validation file.
+
+## 2026-04-22 17:25 – Align handler property lookup with JS case-sensitivity
+Context: Follow-up review pointed out that top-level handler property presence used case-insensitive lookup while value extraction used case-sensitive lookup, which could yield a less accurate error for keys like `Request`.
+Decision: Switched top-level handler property-name collection to `StringComparer.Ordinal` to match JavaScript semantics and added a happy-path test proving that multiple valid handler entries in one array are accepted.
+Discovery: The existing `McpServer` unit suite remained green after the comparer change, so the stricter casing behavior does not conflict with current test coverage or supported handler authoring patterns.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Handler validation now applies one consistent case rule across presence and value lookup, and the multi-entry traversal path is explicitly covered by tests.
+
+## 2026-04-22 21:18 – Mirror validator binding rule for handler-driven field updates
+Context: AI-generated page schema code wrote `UsrName` from `SCHEMA_HANDLERS` through `$context.set("UsrName", ...)` while leaving the field control on `"$PDS_UsrName"`, so the UI did not follow the handler-driven view-model update.
+Decision: Extended `ValidateStandardFieldBindings(...)` to treat handler-written attributes as a first-class exception like validator-backed attributes: `"$Attr"` is allowed when handlers write that attribute, and `"$PDS_Attr"` is rejected with a targeted error when handlers populate the same field. Added matching guidance text, unit coverage, MCP E2E coverage, and short command/skill doc notes for `update-page`.
+Discovery: The existing validator solution already provided the right shape: keep ordinary standard fields on `"$PDS_*"` by default, then carve out a narrow explicit view-model-binding rule only for attributes that runtime logic owns. Local build/test verification needed an alternate output path because a running `clio` process locked the default `bin\Debug\net10.0` artifacts.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\clio\docs\commands\update-page.md, C:\Projects\clio\clio\help\en\update-page.txt, C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP/AI page edits should stop generating `"$PDS_*"` bindings for controls whose values are populated by page-body handlers, while ordinary data-bound fields still stay on the canonical direct datasource binding path.
+
+## 2026-04-23 00:25 – Reframe page field binding rules around declared view-model attributes
+Context: Follow-up clarification showed the previous `$PDS_*`-based rule was conceptually wrong for both validators and handlers because Freedom UI field controls are supposed to bind to the declared attribute in `viewModelConfig` / `viewModelConfigDiff`, regardless of naming.
+Decision: Reworked page validation and MCP guidance to validate declared attribute bindings instead of naming conventions. `ValidateStandardFieldBindings(...)` now rejects controls bound to undeclared attributes and checks handler drift by comparing declared attributes that share the same `modelConfig.path`. `ValidateValidatorControlBindings(...)` now rejects control/validator drift the same way. Updated the page prompt, existing-app maintenance guide, handler/validator guidance, docs/help, skill refs, unit tests, and E2E expectations to use the generalized “same declared attribute” rule.
+Discovery: The old unit/E2E expectations around `$PDS_*` existed not only in handler/validator guides but also in the general page maintenance prompt/resource. Focused unit fixtures for `SchemaValidationServiceTests`, `PageToolsTests`, and `McpGuidanceResourceTests` passed via an alternate `OutputPath`, while broader `Command` tests still fail for unrelated repo-path assumptions (`C:\clio\...`). MCP E2E guidance still resolves through a stale `clio` process path outside the alternate build output, so it continued to surface old article text.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio\Command\McpServer\Resources\ExistingAppMaintenanceGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaValidatorsGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\clio\docs\commands\update-page.md, C:\Projects\clio\clio\help\en\update-page.txt, C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future AI-generated page bodies should follow the actual Freedom UI contract: controls, validators, and handler writes stay aligned on the same declared view-model attribute, even when multiple attributes map to the same datasource path.
+
+## 2026-04-23 00:42 – Allow first local merge when control is inherited from parent schema
+Context: Follow-up review found that the updated guidance still told AI to fix the “original insert/merge” directly, which breaks when the control binding lives only in a parent schema and the current page body has no local `viewConfigDiff` item for that control.
+Decision: Narrowed the anti-pattern rule: duplicate local merges remain forbidden, but the first local `merge` is now explicitly allowed and recommended for inherited controls. Added a concrete `RoleDescription` merge example to handler/validator guidance and propagated the same inheritance note into `update-page` docs/help, skill notes, the page prompt, and existing-app maintenance guidance.
+Discovery: No validator/runtime code changes were required for this case because the need is authoring guidance, not validation semantics. Focused `PageToolsTests` and `McpGuidanceResourceTests` passed after the prompt/resource wording was aligned.
+Files: C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio\Command\McpServer\Resources\ExistingAppMaintenanceGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaValidatorsGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\clio\docs\commands\update-page.md, C:\Projects\clio\clio\help\en\update-page.txt, C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: MCP guidance now tells AI how to override inherited controls correctly: edit an existing local operation when present, otherwise add one local `merge` for the inherited control name instead of inventing duplicate patches or searching for a non-existent local insert.
+
+## 2026-04-23 10:50 – Rider resolves clio runnable output to net10
+Context: User asked why building the project from Rider appeared to produce `net8.0`, after an MCP session had been observed running from a `net8.0` path.
+Decision: Kept the investigation read-only and checked the project file, Rider workspace state, publish profile, repository helper scripts, and Rider backend logs instead of patching configuration immediately.
+Discovery: `clio/clio.csproj` multi-targets `net10.0;net8.0`, and Rider 2026.1 backend logs show `Execution parameters detected from MsBuild properties: C:\Projects\clio\clio\bin\Debug\net10.0\clio.exe` plus both output assemblies registered for the project. The `net8.0` paths come from stale or auxiliary surfaces: `clio/clio-dev8.cmd`, historical test harness assumptions, and older Rider log entries for `clio.mcp.e2e`. Separately, the selected Rider publish configuration points to an outdated `FolderProfile.pubxml` with `TargetFramework>net6.0</TargetFramework>`, which is incorrect but not the source of the observed `net8.0` MCP process.
+Files: C:\Projects\clio\clio\clio.csproj, C:\Projects\clio\clio\clio-dev8.cmd, C:\Projects\clio\clio\Properties\PublishProfiles\FolderProfile.pubxml, C:\Projects\clio\.idea\.idea.clio\.idea\workspace.xml, C:\Users\d.krestov\AppData\Local\JetBrains\Rider2026.1\log\backend.2026-04-21_0853.9712.1.log, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP/debug path cleanup should target the remaining hardcoded `net8.0` helpers and stale publish profile rather than blaming the current Rider build pipeline for choosing the wrong target framework.
+
+## 2026-04-23 11:20 – Reject dynamic handler request template literals
+Context: Follow-up on code review finding that `SCHEMA_HANDLERS[].request` accepted interpolated template literals like `` `crt.${suffix}` `` as if they were stable handler request names.
+Decision: Tightened `SchemaHandlerValidationService` so only plain single-quoted and double-quoted string literals satisfy the top-level handler `request` contract; template literals no longer count as valid request names. Added a focused regression test for the interpolated-template case.
+Discovery: Local `dotnet test` against the default build output still hits a locked `clio.exe`, but the affected `SchemaValidationServiceTests` suite passes when run with an alternate `OutputPath`.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: MCP page-body validation now rejects dynamic handler request names earlier, keeping the handler contract statically readable for tooling and avoiding review-noted false acceptance.
+
+## 2026-04-23 11:36 – Require callable SCHEMA_HANDLERS handler values
+Context: Follow-up code review still found that handler validation only checked for the presence of a `handler` property, allowing non-callable values like `handler: true`.
+Decision: Extended `SchemaHandlerValidationService` to require a callable handler expression by accepting function expressions and arrow functions only, and added a regression test rejecting scalar handler values.
+Discovery: A one-test targeted run hit an intermittent write lock in `clio\obj\Debug\net10.0\clio.dll`, but the broader `SchemaValidationServiceTests` suite passed through a separate alternate `OutputPath`, which also covers the new non-callable handler case.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: MCP validation now aligns better with the actual runtime contract for page handlers and blocks another class of malformed `SCHEMA_HANDLERS` entries before save.
+
+## 2026-04-23 11:49 – Reject quoted arrow-like handler strings
+Context: Follow-up review found that the new callable-handler check still accepted string literals containing `=>`, such as `handler: "not a function =>"`.
+Decision: Tightened `IsCallableHandlerExpression` to reject string literals before checking for `function` or arrow syntax, and added a regression test covering a quoted handler string with `=>`.
+Discovery: The targeted `SchemaValidationServiceTests` suite passes with the new regression through an alternate `OutputPath`, while unrelated repository-wide analyzer warnings remain pre-existing noise in the build output.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Handler validation now distinguishes actual executable expressions from quoted text that only resembles arrow syntax, closing another runtime-invalid false positive.
+
+## 2026-04-23 12:02 – Reject object-literal handlers with nested arrows
+Context: Another follow-up review found that `handler: { nested: () => {} }` still passed validation because the callable check accepted any expression containing `=>`, even when the top-level value was an object literal.
+Decision: Replaced the broad arrow check with a top-level `=>` scan that ignores nested objects, arrays, parentheses, comments, and strings, and added a regression test for an object-literal handler payload.
+Discovery: Existing `update-page` / `sync-pages` docs, MCP help text, and the clio skill mention handler/body validation only at the section-contract level, so this narrower runtime-alignment fix did not require documentation, MCP, or skill text updates.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `SCHEMA_HANDLERS[].handler` validation now distinguishes true top-level arrow/function expressions from nested arrow syntax inside non-callable values, removing another false positive before save.
+
+## 2026-04-23 12:16 – Skip regex literals in top-level arrow scan
+Context: Follow-up review found that `handler: /=>/` still passed validation because the top-level arrow scan treated `=>` inside a regex literal as callable arrow syntax.
+Decision: Added regex-literal skipping to `ContainsTopLevelArrowToken`, including escaped characters, character classes, and trailing flags, and covered the case with a focused regression test.
+Discovery: The targeted `SchemaValidationServiceTests` suite passes through the alternate `OutputPath` after the regex fix; docs, MCP surface, and the clio skill remain accurate because the change only tightens an internal handler-expression heuristic.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Handler validation no longer misclassifies top-level regex literals as callable expressions, closing another runtime-invalid false positive before page save.
+
+## 2026-04-23 12:31 – Accept method-shorthand handler properties
+Context: Follow-up review found that valid object-literal method shorthand like `handler(request, next) { ... }` was rejected because top-level property parsing only recognized `name: value` syntax.
+Decision: Extended property parsing to recognize method shorthand for both extraction and top-level property discovery, added callable recognition for method-shorthand expressions, and covered the valid handler form with a regression test.
+Discovery: The targeted `SchemaValidationServiceTests` suite passes through the alternate `OutputPath` after the parser update; docs, MCP surface, and clio skill text remain accurate because this change restores acceptance of an already valid JavaScript handler form without changing command contracts.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `SCHEMA_HANDLERS` validation now rejects malformed non-callable values without regressing valid method-shorthand handler syntax used in JavaScript object literals.
+
+## 2026-04-23 13:10 – Clarify trivia helper and fix quoted method offset
+Context: User asked to address follow-up review comments about parser clarity and the quoted method-shorthand helper contract in `SCHEMA_HANDLERS` validation.
+Decision: Renamed the trivia-skipping loop helper to `TryAdvanceToNextMeaningfulCharacter` to match its actual behavior, and corrected `TryReadQuotedMethodShorthandProperty` so successful matches return the method-parameter start as `valueStartIndex`.
+Discovery: The review note about removing `using System.ComponentModel` from the new guidance resources was stale for the current working tree because both files still use `[Description]`; removing the import broke compilation immediately.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The parser helper naming is less misleading for maintainers, quoted method-shorthand parsing now returns a correct downstream offset, and the guidance resources remain compiling with their real attribute dependency preserved.
+
+## 2026-04-23 13:28 – Align get-guidance argument hints with handler guidance
+Context: User noticed that the `get-guidance` argument description examples mentioned validator and SDK guides but omitted the newly added handler guide name.
+Decision: Updated `GuidanceGetTool` argument descriptions to include `page-schema-handlers` in both the method-parameter hint and the serialized `name` field description, then added a reflection-based unit test to keep those strings aligned with the guidance catalog.
+Discovery: `ToolContractGetTool` and prompt/resource guidance already mentioned `page-schema-handlers`; the drift was limited to the `GuidanceGetTool` human-readable description attributes.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\GuidanceGetTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: MCP clients now get a complete hint for the handler guidance name directly from the tool argument contract, reducing prompt/tool-description mismatch.
+
+## 2026-04-23 15:08 – Make page handler guidance require sdk-common routing for data and service work
+Context: Follow-up on a Copilot session showed that page handler guidance still allowed the agent to skip `page-schema-sdk-common` and fall back to raw `fetch(...)` for a standard platform scenario.
+Decision: Tightened `PageSchemaHandlersGuidanceResource` so handler tasks that touch data access, syssettings, processes, model queries, or backend services must read `page-schema-sdk-common` first. Extended `PageSchemaSdkCommonGuidanceResource` with an explicit selection order: `crt.*Request` first, then public SDK service or `sdk.Model`, then raw `fetch(...)` only as a justified fallback for custom/external or uncovered scenarios.
+Discovery: The MCP E2E harness resolves the executable from `clio\bin\Debug\net10.0\clio.exe`, so stale guidance text in E2E usually means the default debug output was not rebuilt yet. Focused guidance tests passed once the stale assertions were aligned to the new mandatory-routing wording and the default build output was refreshed.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future page-schema handler sessions should be routed through the existing sdk-common guide before choosing between requests, SDK services, model queries, and raw HTTP calls, reducing the chance of unjustified `fetch(...)` against platform endpoints.
+
+## 2026-04-23 15:42 – Schema validation follow-up
+Context: Follow-up fix for review findings in schema validation services around warning propagation, handler string literals, and same-path diagnostics.
+Decision: Preserve warnings from successful child validation, accept non-interpolated template literals as static request names, and report all same-path attribute candidates instead of picking one alphabetically.
+Discovery: Handler write detection intentionally remains heuristic; documenting its regex limits is enough for now because it only enriches diagnostics and should not pretend to be flow analysis.
+Files: clio/Command/SchemaValidationService.cs, clio/Command/SchemaHandlerValidationService.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs
+Impact: Future schema validation extensions can add warnings safely, handler request validation now matches valid JS literals, and same-path mismatch errors are less misleading after refactors.
+
+## 2026-04-23 17:37 – Guard validator workflows against handler drift and inline control bindings
+Context: User shared a Copilot session where a syssetting-backed max-length rule was first implemented as a handler, then rewritten as a validator but still bound incorrectly on the UI control in `viewConfigDiff`.
+Decision: Strengthened the page prompt and handler guidance to classify syssetting-backed max/min/length/range/regex checks as validator work, and added `SchemaValidationService.ValidateValidatorBindingPlacement(...)` to reject validators declared directly on `viewConfigDiff` controls. Wired the new rule into `update-page`, `sync-pages`, and direct `update-page` CLI validation.
+Discovery: Existing validator guidance already described attribute-level binding, but runtime validation only inspected validators declared on attributes, so validators placed directly on controls could slip through.
+Files: C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio\Command\PageUpdateOptions.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP/CLI page edits are steered toward validators for syssetting-backed value rules and invalid inline control validators now fail client-side before save.
+
+
+## 2026-04-23 19:03 - Extracted shared JS parser utilities to JsParserHelper
+Context: SonarQube reported 12.4% code duplication in SchemaHandlerValidationService.cs (TryExtractBalancedJavaScriptObject)
+Decision: Created JsParserHelper.cs with 10 shared methods; removed duplicates from both SchemaHandlerValidationService.cs and SchemaValidationService.cs
+Discovery: SchemaValidationService.SkipBlockComment has SchemaValidationResult parameter so stays in-file; ConsumeStringLiteralCharacter is called directly (not just via TryConsumeStringLiteralCharacter) in a validator-body-extraction loop
+Files: clio\Command\JsParserHelper.cs, clio\Command\SchemaHandlerValidationService.cs, clio\Command\SchemaValidationService.cs
+Impact: All 865 Module=Command + 97 SchemaValidation tests pass; duplication eliminated
+
+## 2026-07-14 10:00 - Inverted PDS binding validation direction
+Context: Initial implementation incorrectly rejected \ (correct viewModel binding) and accepted \* direct binding. User clarified the rule: \* is old/legacy and must be a hard error; \ with viewModelConfigDiff is the correct new pattern.
+Decision: Removed TryDetectProxyPdsBinding entirely. IsDirectPdsBinding now generates a hard error with suggestion to declare a viewModelConfig attribute. Tests updated across PageSyncToolTests, SchemaValidationServiceTests, PageToolsTests to reflect correct semantics.
+Discovery: The validator placement check (test 11) requires control: "\" (declared attribute) not \ — so the undeclared check passes and validator-on-viewConfigDiff check fires correctly.
+Files: clio/Command/SchemaValidationService.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs
+Impact: All 497 McpServer tests pass. AI-generated code must always use viewModelConfig/viewModelConfigDiff declarations; old \* bindings are rejected when validation is enabled.
+
+## 2026-04-24 11:15 – Copilot session drifted from validators into inferred handler API
+Context: User asked why a Copilot session generated a `crt.HandleViewModelAttributeChangeRequest` handler for `UsrParkingRequired` that used `request.viewModel.get(...)`, `request.viewModel.set(...)`, and `setAttributePropertyValue(...)` incorrectly.
+Decision: Confirmed from the exported session that the model mixed two separate patterns: validator guidance for conditional required state and an invented MVVM-style handler API. No code changes were needed; the key issue was diagnosis of the prompting and reasoning path.
+Discovery: The session loaded `page-schema-validators` but did not load `page-schema-handlers`; validator guidance told the model that dynamic `required`/`visible`/`readonly` state belongs to handler/business-rule style logic, then the model explicitly admitted it was unsure about the correct `HandleViewModelAttributeChangeRequest` API and still proceeded. Current handler guidance says to use `request.value` for the triggering attribute and `request.$context[...]` / `await request.$context.set(...)` for reads and writes, and the repository has no examples of `request.viewModel.get(...)`.
+Files: C:\Users\d.krestov\copilot-session-0df9b71f-f0a0-4c84-9e09-98cec6c74df8.md, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaValidatorsGuidanceResource.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future prompt hardening should ensure that once a task crosses from validator logic into handler logic, the agent must load handler guidance before emitting API-specific code; otherwise it may hallucinate generic `viewModel` accessors even when the business choice of a handler is reasonable.
+
+## 2026-04-24 11:30 – Handler API validation now includes a recovery hint back to clio guidance
+Context: User suggested that when AI generates the wrong handler-side attribute API, clio should not only reject the code but also tell the model to reread handler documentation and examples.
+Decision: Updated `SchemaHandlerValidationService` so forbidden handler APIs such as `request.viewModel.*` now return an explicit recovery hint that points callers to `get-guidance page-schema-handlers` and canonical clio handler examples. Added unit coverage for the new message and tool-level coverage through `PageSyncTool`; added a dry-run MCP E2E for `update-page`.
+Discovery: The new recovery hint fits naturally into the existing handler-shape validation path, so `update-page` and `sync-pages` inherit it automatically without extra command-flow branching.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: When AI drifts into invented handler APIs, clio now blocks the save and gives a direct recovery path back to the supported handler guidance and examples instead of forcing another guess.
+
+## 2026-04-24 11:44 – Completed forbidden handler API coverage and renamed misleading E2E fixture
+Context: Review noted that only one of five forbidden handler API rules had unit coverage, and `PageUpdateToolE2ETests` used a fixture name that implied semantic page validity even though it only guaranteed marker presence.
+Decision: Added one regression test each for `request.$context.get(...)`, `request.sender`, `.$get(...)`, and `.$set(...)`, all asserting the recovery hint back to `page-schema-handlers` and canonical clio examples. Renamed `ValidPageBody` to `MinimalMarkerPageBody` in the E2E fixture to match its real purpose.
+Discovery: The E2E fixture did not need semantic changes; only the name was misleading. The new handler API checks fit the existing test pattern exactly, so the coverage gap was straightforward to close without changing validator logic.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future regex regressions in forbidden handler API detection are now caught by focused unit tests, and the E2E fixture no longer suggests stronger validity guarantees than it actually provides.
+
+## 2026-04-24 12:22 – Updated stale handler guidance assertions after request.viewModel hardening
+Context: User asked to check `PageSchemaHandlersGuidanceResource_Should_Return_Canonical_Handler_Guide`; the test still expected the pre-hardening anti-pattern string and missed the new `request.viewModel` guidance.
+Decision: Updated both unit and E2E handler guidance assertions to expect the expanded anti-pattern line with `request.viewModel` plus the new canonical attribute-change rule that explicitly says to use `request.value` instead of `request.viewModel.get(...)`.
+Discovery: The guidance resource had already been updated correctly; the failure risk was only in stale test expectations.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Handler guidance tests now track the strengthened anti-pattern contract and will catch future drift between resource text and the intended canonical handler API.
+
+## 2026-04-24 13:14 – Added explicit timeout to forbidden handler API regex rules
+Context: Security hotspot review flagged the precompiled forbidden-handler API regexes because they were created without an explicit execution timeout.
+Decision: Introduced a shared one-second timeout constant and applied it to every `ForbiddenHandlerApiRule` regex in `SchemaHandlerValidationService` without changing the patterns or diagnostics.
+Discovery: This change is internal to the handler validation heuristic, so docs, MCP contracts, and the clio skill remain accurate with no updates required.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Handler API validation now satisfies regex timeout guidance and is less exposed to pathological regex execution while preserving existing behavior.
+
+## 2026-04-24 13:29 – Replaced forbidden handler API loop with first-match lookup
+Context: User asked to rewrite the `TryGetForbiddenHandlerApiError(...)` loop after a review comment suggested simplifying the iteration.
+Decision: Replaced the manual `foreach` with a `FirstOrDefault(...)` lookup over `ForbiddenHandlerApiRules`, preserving the same first-match behavior and returned error text.
+Discovery: The change is a local readability refactor only; no docs, MCP artifacts, or skill text required updates.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The forbidden-handler API lookup now uses a more declarative first-match form without changing validation semantics.
 
 ## 2025-07-10 – Wave 3: Eliminate CLIO004 warnings via IProcessExecutor
 
@@ -2608,3 +3021,31 @@ Discovery: Removing PackageUId from metadata query in PageUpdateOptions fixed "m
 Discovery: --no-incremental is mandatory; stale binaries caused 2 tests to appear failing after fixes were already in source.
 Files: clio/Command/PageUpdateOptions.cs, clio/Command/PageGetOptions.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs
 Impact: 412 McpServer unit tests pass. Docs updated for update-page (--optional-properties), get-page (hierarchy note), sync-pages (optional-properties in page input), get-guidance (new MCP tool).
+
+## 2026-04-24 16:25 – Reconciled page-schema merge fallout with new direct-binding rules
+Context: Build broke after a partial merge left `SchemaValidationService` on the new direct-PDS rejection model while `PageBodyNormalizer` and several MCP tests still expected the old `$PDS_*` normalization from master.
+Decision: Kept the new validation model where direct `$PDS_*` bindings are legacy and rewrote `PageBodyNormalizer` to normalize legacy direct datasource bindings back to declared view-model attributes by matching `modelConfig.path`. Updated MCP tests and `GuidanceGetTool` argument hints to match the merged async MCP contracts.
+Discovery: The compile error about missing `IsAllowedDirectFieldBinding`/`BuildExpectedBinding` was only the surface symptom; the deeper merge conflict was semantic, because restoring those helpers would have reintroduced the old `$UsrStatus -> $PDS_UsrStatus` normalization that now contradicts page validation.
+Files: C:\Projects\clio\clio\Command\PageBodyNormalizer.cs, C:\Projects\clio\clio\Command\McpServer\Tools\GuidanceGetTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageBodyNormalizerTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The merged workspace now builds, the Command/McpServer targeted test suite passes, and get-page/body normalization is aligned with the newer rule that declared view-model attributes are canonical while raw `$PDS_*` bindings are rejected.
+
+## 2026-04-24 17:05 – Fixed remaining GuidanceGet/PageUpdate E2E contract drift
+Context: `clio.mcp.e2e` still failed to compile after the earlier merge cleanup because two fixtures referenced pre-merge API shapes from before the async/article MCP changes landed in `master`.
+Decision: Switched `GuidanceGetToolE2ETests` from `response.Guidance` to `response.Article` and replaced stale `ValidPageBody` usages with `MinimalMarkerPageBody` in `PageUpdateToolE2ETests`.
+Discovery: Production code was already merged correctly for these contracts; the remaining fallout was limited to E2E assertions and a renamed test fixture constant.
+Files: C:\Projects\clio\clio.mcp.e2e\GuidanceGetToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `clio.mcp.e2e` now builds cleanly, and the targeted GuidanceGet/PageUpdate E2E selection runs without MCP contract mismatches.
+
+## 2026-04-24 17:32 – Reviewed local SchemaHandlerValidationService simplification
+Context: User asked whether the current uncommitted changes are correct.
+Decision: Reviewed the tracked diff in `SchemaHandlerValidationService`, compared it against the surrounding validator logic, and ran the focused handler/schema validation tests instead of broader suites.
+Discovery: The tracked change is a local simplification only: removing the redundant top-level property-name precheck keeps the same `request`/`handler` validation behavior because `TryGetTopLevelPropertyValueExpression(...)` already enforces top-level lookup, while the new `Contains(...)` gate before regex scanning is a safe fast-path for the same forbidden API rules. There is also an untracked `.codex/SchemaValidationService.merged.cs` snapshot in the workspace, but it is not part of the reviewed git diff.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future reviews can treat this edit as behavior-preserving unless new handler API patterns are added, in which case the focused schema validation tests are the fastest regression check.
+
+## 2026-04-24 16:56 – Remove page edit shortcut tools
+Context: ENG-88801 reproduced because `add-form-fields` consumed raw page bodies through an internal get-page path and bypassed the canonical editable `body.js` workflow.
+Decision: Removed `add-form-fields`, `add-list-columns`, their shared `PageBodyEditor`, and the silent `PageBodyNormalizer`; `get-page` now writes the fetched editable body unchanged.
+Discovery: The previous normalizer-based fix was unnecessary once shortcut tools are removed, and silent binding rewrites are risky for validator-backed attributes.
+Files: clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/PageModels.cs, clio.tests/Command/McpServer/PageToolsTests.cs, .codex/workspace-diary.md
+Impact: Page editing has one advertised path again: fetch `body.js`, edit it explicitly, validate, then sync or update.

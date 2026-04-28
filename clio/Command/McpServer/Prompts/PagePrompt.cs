@@ -19,7 +19,11 @@ public static class PagePrompt {
 		[Description("Optional Creatio environment name")] string? environmentName = null) =>
 		$"""
 		 For the canonical existing-app maintenance flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
+		 If the page-body task edits `handlers`, you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-handlers` before proposing or applying changes, and you must not author handler changes until that guidance has been read.
 		 If the page-body task edits `validators`, you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-validators` before proposing or applying changes, and you must not author validator changes until that guidance has been read; never use handler signatures like `handler(request, next)` inside SCHEMA_VALIDATORS — validators must return a function that accepts a control argument, not a request/next pair.
+		 If the requirement is field-value validation such as max/min/length/range/regex, including when the threshold comes from a system setting or other async SDK read, treat it as `validators` work and read `page-schema-validators`, not `page-schema-handlers`.
+		 If the requirement changes dynamic `required`, `visible`, or `readonly` state, or you are about to author `crt.HandleViewModelAttributeChangeRequest`, `request.value`, `request.$context`, or `setAttributePropertyValue(...)`, you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-handlers` first and you must not guess handler APIs from memory.
+		 If the page-body task adds or edits `@creatio-devkit/common` usage in handlers or validators, you must also call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-sdk-common` before authoring `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service calls.
 		 Before the first page inspection or mutation tool call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `list-pages`, `get-page`, `get-component-info`, `sync-pages`, and `update-page` so the client starts from the authoritative page contract.
 		 Use `list-pages` first when you need to discover candidate page schemas by `package-name`, `code`, or `search-pattern`. Skip `list-pages` entirely when the exact schema name is already known — call `get-page` directly with that schema name.
 		 Prefer a registered clio environment for page work. If the target site is not registered yet, call `reg-web-app` first and then continue with `environment-name`.
@@ -34,8 +38,8 @@ public static class PagePrompt {
 		 Keep `{PageSyncTool.ToolName}` `validate` at its default `true`, and enable `verify` only when the workflow needs explicit server read-back inside the same tool call.
 		 Pass `resources` as a valid JSON object string when the edited body contains `#ResourceString(key)#` macros that need child-schema localizable strings; do not send a nested object payload there.
 		 Use `{PageUpdateTool.ToolName}` only as a fallback for single-page dry-run or legacy save workflows.
-		 For standard data-bound form fields, bind `control` or `value` directly to `$Name` or `$PDS_*` attributes and prefer datasource captions like `$Resources.Strings.PDS_UsrStatus`.
-		 Do not use proxy bindings like `$UsrStatus -> PDS.UsrStatus` for standard fields, and do not rely on `#ResourceString(Usr*_label)#` shortcuts for data-bound field captions.
+		 For standard data-bound form fields, bind `control` or `value` to the declared view-model attribute from `viewModelConfig` / `viewModelConfigDiff` and prefer datasource captions like `$Resources.Strings.PDS_UsrStatus`.
+		 If validator or handler logic moves to a different declared attribute for the same field, rebind the control to that same attribute. If the control is inherited from a parent schema and there is no local `viewConfigDiff` item for it yet, add one local `merge` for that control name. Do not infer correctness from naming patterns such as `$PDS_*`, and do not rely on `#ResourceString(Usr*_label)#` shortcuts for data-bound field captions.
 		 Reserve `Usr*_label` and `Usr*_caption` resource keys for custom standalone UI that carries explicit `resources` entries.
 		 Prefer `list-pages -> get-page -> sync-pages -> get-page` for canonical page edits.
 		 """;
@@ -60,6 +64,6 @@ public static class PagePrompt {
 		 `{PageCreateTool.ToolName}` validates inputs (schema-name format, template existence, package existence, schema-name uniqueness, entity-schema existence) before calling the designer service; invalid inputs fail fast with a readable error.
 		 After a successful `{PageCreateTool.ToolName}`, read the page back with `{PageGetTool.ToolName}` with the same `schema-name` to confirm the created page loads and has the expected parent template.
 		 Known failure modes: duplicate schema-name, unknown template (call `{PageTemplatesListTool.ToolName}`), missing package. Each returns a readable `error` in the tool response.
-		 Keep created page bodies inherited from the template; add fields or columns with `add-form-fields` / `add-list-columns` or edit the body via `{PageSyncTool.ToolName}` only as a follow-up step.
+		 Keep created page bodies inherited from the template; add fields or columns by editing the `body.js` returned from `{PageGetTool.ToolName}`, validate with `validate-page`, and persist the body via `{PageSyncTool.ToolName}` only as a follow-up step.
 		 """;
 }

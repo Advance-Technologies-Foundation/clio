@@ -12,6 +12,9 @@ Use `sync-pages` instead of sequential calls to `update-page` when you need to s
 page schemas at once. A typical scenario is updating both a form page and a list page for
 a single application entity.
 
+Before editing handler or validator sections in raw page bodies, use `get-guidance` with
+`name` set to `page-schema-handlers` or `page-schema-validators`.
+
 ## Parameters
 
 | Parameter | Required | Default | Description |
@@ -101,8 +104,9 @@ being sent to Creatio:
   `SCHEMA_CONVERTERS`, `SCHEMA_VALIDATORS`, and model config markers)
 - **JS syntax** — checks bracket matching and string literal balance
 - **Marker content shape** — JSON-backed markers must still parse as structured data, while
-  `SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` must remain JavaScript object sections and may
-  contain function-based entries
+  `SCHEMA_HANDLERS` must remain a JavaScript array section and `SCHEMA_CONVERTERS` /
+  `SCHEMA_VALIDATORS` must remain JavaScript object sections, so function-based runtime
+  handler and validator entries stay valid
 
 Validation failures prevent the page from being saved and are reported in the response.
 This replaces the need for separate dry-run calls.

@@ -88,12 +88,17 @@ public sealed class ToolContractGetToolTests {
 			because: "guidance lookup should require the stable guide name");
 		contract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "name" &&
+				field.Description.Contains("page-schema-handlers", StringComparison.Ordinal) &&
 				field.Description.Contains("page-schema-validators", StringComparison.Ordinal),
 			because: "the contract should advertise the stable guidance-name selector");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "guidance",
 			because: "successful lookups should return the resolved article payload");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "available-guides",
 			because: "failed lookups should expose recovery names");
+		contract.Examples.Any(example =>
+			example.Arguments.TryGetValue("name", out object? value)
+			&& string.Equals(value?.ToString(), "page-schema-handlers", StringComparison.Ordinal)).Should().BeTrue(
+			because: "the contract should advertise the canonical handler guidance lookup example");
 	}
 
 	[Test]

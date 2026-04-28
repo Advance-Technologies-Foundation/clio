@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Clio.Command;
 using FluentAssertions;
 using NUnit.Framework;
@@ -8,7 +10,7 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "McpServer")]
-public class SchemaValidationServiceTests {
+public sealed class SchemaValidationServiceTests {
 
 	private const string ValidListPageBody =
 		"define(\"TestPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
@@ -226,6 +228,369 @@ public class SchemaValidationServiceTests {
 	}
 
 	[Test]
+	[Description("Handlers section must remain an array literal")]
+	public void ValidateHandlerStructure_NonArrayHandlersSection_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await next?.handle(request); } }/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "SCHEMA_HANDLERS must remain an array literal even when it contains only one handler");
+		result.Errors.Should().ContainSingle(error => error.Contains("array literal"),
+			because: "the validation error should explain that handlers must stay wrapped in an array");
+	}
+
+	[Test]
+	[Description("Each handler entry must declare a string request property")]
+	public void ValidateHandlerStructure_HandlerEntryWithoutRequest_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "each handler entry must declare which request type it handles");
+		result.Errors.Should().ContainSingle(error => error.Contains("'request'"),
+			because: "the validation error should identify the missing request property");
+	}
+
+	[Test]
+	[Description("Each handler entry must declare a handler property")]
+	public void ValidateHandlerStructure_HandlerEntryWithoutHandler_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\" }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "each handler entry must declare a handler property with the implementation");
+		result.Errors.Should().ContainSingle(error => error.Contains("'handler'"),
+			because: "the validation error should identify the missing handler property");
+	}
+
+	[Test]
+	[Description("Each handler entry must keep request as a string literal")]
+	public void ValidateHandlerStructure_HandlerEntryWithNonStringRequest_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: true, handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "handler request must stay a string literal so tooling can identify the handled request type");
+		result.Errors.Should().ContainSingle(error => error.Contains("'request'"),
+			because: "the validation error should explain that request must be a string property");
+	}
+
+	[Test]
+	[Description("Nested request string literals inside handler bodies must not satisfy the top-level request contract")]
+	public void ValidateHandlerStructure_NestedRequestStringLiteral_DoesNotSatisfyTopLevelRequestContract() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: someExpression, handler: async (request, next) => { return { request: \"crt.NestedRequest\" }; } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "only the top-level request property should satisfy the handler contract");
+		result.Errors.Should().ContainSingle(error => error.Contains("'request'"),
+			because: "a nested request string literal inside the handler body must not make the top-level request valid");
+	}
+
+	[Test]
+	[Description("Interpolated template literals are rejected for handler request names")]
+	public void ValidateHandlerStructure_HandlerEntryWithInterpolatedTemplateLiteralRequest_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: `crt.${suffix}`, handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "handler request names must stay statically readable and interpolated template literals are dynamic");
+		result.Errors.Should().ContainSingle(error => error.Contains("'request'"),
+			because: "the validation error should explain that request must remain a stable string property");
+	}
+
+	[Test]
+	[Description("Plain template literals without interpolation are accepted for handler request names")]
+	public void ValidateHandlerStructure_HandlerEntryWithPlainTemplateLiteralRequest_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: `crt.HandleViewModelInitRequest`, handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "plain template literals without interpolation are still static JavaScript string literals");
+		result.Errors.Should().BeEmpty(
+			because: "the request type stays statically readable even when backticks are used");
+	}
+
+	[Test]
+	[Description("Non-callable handler values are rejected")]
+	public void ValidateHandlerStructure_HandlerEntryWithNonCallableHandler_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: true }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "handler entries must expose executable handler code rather than plain scalar values");
+		result.Errors.Should().ContainSingle(error => error.Contains("'handler'"),
+			because: "the validation error should explain that handler must remain callable");
+	}
+
+	[Test]
+	[Description("Quoted strings containing arrow syntax are rejected as handler values")]
+	public void ValidateHandlerStructure_HandlerEntryWithQuotedArrowStringHandler_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: \"not a function =>\" }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "quoted text that merely contains arrow syntax is still not executable handler code");
+		result.Errors.Should().ContainSingle(error => error.Contains("'handler'"),
+			because: "the validation error should explain that string literals are not callable handlers");
+	}
+
+	[Test]
+	[Description("Object literals containing nested arrow functions are rejected as handler values")]
+	public void ValidateHandlerStructure_HandlerEntryWithObjectLiteralContainingNestedArrow_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: { nested: () => {} } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a handler object that merely contains a nested arrow function is still not itself callable");
+		result.Errors.Should().ContainSingle(error => error.Contains("'handler'"),
+			because: "the validation error should explain that the top-level handler value must remain callable");
+	}
+
+	[Test]
+	[Description("Regex literals containing arrow syntax are rejected as handler values")]
+	public void ValidateHandlerStructure_HandlerEntryWithRegexLiteralContainingArrow_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: /=>/ }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a regex literal that merely contains arrow syntax is still not callable handler code");
+		result.Errors.Should().ContainSingle(error => error.Contains("'handler'"),
+			because: "the validation error should explain that regex literals are not callable handlers");
+	}
+
+	[Test]
+	[Description("Object-literal method shorthand handlers are accepted as callable values")]
+	public void ValidateHandlerStructure_HandlerEntryWithMethodShorthandHandler_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler(request, next) { return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "object-literal method shorthand is still a callable handler form in JavaScript");
+		result.Errors.Should().BeEmpty(
+			because: "valid method shorthand handlers should not be rejected as missing or non-callable");
+	}
+
+	[Test]
+	[Description("Handler entries that use request.viewModel APIs are rejected with a recovery hint to read handler guidance")]
+	public void ValidateHandlerStructure_HandlerEntryWithRequestViewModelApi_ReturnsInvalid_WithRecoveryHint() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelAttributeChangeRequest\", handler: async (request, next) => { const current = await request.viewModel.get(\"UsrParkingRequired\"); await request.viewModel.set(\"UsrVehicleNumber\", current ? \"A-01\" : null); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "invented request.viewModel accessors are not part of the canonical page-body handler API");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("request.viewModel", StringComparison.Ordinal) &&
+				error.Contains("page-schema-handlers", StringComparison.Ordinal) &&
+				error.Contains("canonical clio handler examples", StringComparison.Ordinal),
+			because: "the validation error should both reject the API and tell the caller to reread the handler guidance and examples");
+	}
+
+	[Test]
+	[Description("Handler entries that use request.$context.get are rejected with a recovery hint to read handler guidance")]
+	public void ValidateHandlerStructure_HandlerEntryWithContextGetApi_ReturnsInvalid_WithRecoveryHint() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const current = await request.$context.get(\"UsrParkingRequired\"); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "request.$context.get is not part of the canonical page-body handler API");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("request.$context.get", StringComparison.Ordinal) &&
+				error.Contains("page-schema-handlers", StringComparison.Ordinal) &&
+				error.Contains("canonical clio handler examples", StringComparison.Ordinal),
+			because: "the validation error should reject the unsupported getter and point the caller back to handler guidance and examples");
+	}
+
+	[Test]
+	[Description("Handler entries that use request.sender are rejected with a recovery hint to read handler guidance")]
+	public void ValidateHandlerStructure_HandlerEntryWithSenderApi_ReturnsInvalid_WithRecoveryHint() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const sender = request.sender; return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "request.sender is not part of the supported deployed page-body handler contract");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("request.sender", StringComparison.Ordinal) &&
+				error.Contains("page-schema-handlers", StringComparison.Ordinal) &&
+				error.Contains("canonical clio handler examples", StringComparison.Ordinal),
+			because: "the validation error should reject request.sender and point the caller back to handler guidance and examples");
+	}
+
+	[Test]
+	[Description("Handler entries that use .$get are rejected with a recovery hint to read handler guidance")]
+	public void ValidateHandlerStructure_HandlerEntryWithDollarGetApi_ReturnsInvalid_WithRecoveryHint() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const current = await request.$context.$get(\"UsrParkingRequired\"); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: ".$get is not part of the canonical deployed page-body handler API");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains(".$get", StringComparison.Ordinal) &&
+				error.Contains("page-schema-handlers", StringComparison.Ordinal) &&
+				error.Contains("canonical clio handler examples", StringComparison.Ordinal),
+			because: "the validation error should reject .$get and point the caller back to handler guidance and examples");
+	}
+
+	[Test]
+	[Description("Handler entries that use .$set are rejected with a recovery hint to read handler guidance")]
+	public void ValidateHandlerStructure_HandlerEntryWithDollarSetApi_ReturnsInvalid_WithRecoveryHint() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await request.$context.$set(\"UsrParkingRequired\", true); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: ".$set is not part of the canonical deployed page-body handler API");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains(".$set", StringComparison.Ordinal) &&
+				error.Contains("page-schema-handlers", StringComparison.Ordinal) &&
+				error.Contains("canonical clio handler examples", StringComparison.Ordinal),
+			because: "the validation error should reject .$set and point the caller back to handler guidance and examples");
+	}
+
+	[Test]
+	[Description("Multiple handler entries where both lack a callable handler expression each produce their own error")]
+	public void ValidateHandlerStructure_MultipleInvalidHandlerEntries_ReturnsAllErrors() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[" +
+			"{ request: \"crt.HandleViewModelInitRequest\", handler: \"not-callable\" }, " +
+			"{ request: \"crt.HandleViewModelDestroyRequest\", handler: \"also-not-callable\" }" +
+			"]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "both handler entries have non-callable handler expressions");
+		result.Errors.Should().HaveCount(2,
+			because: "each invalid handler entry must produce its own error instead of stopping after the first one");
+	}
+
+	[Test]
+	[Description("Multiple valid handler entries in one array pass handler structure validation")]
+	public void ValidateHandlerStructure_MultipleValidHandlerEntries_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[" +
+			"{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { return next?.handle(request); } }, " +
+			"{ request: \"crt.HandleViewModelDestroyRequest\", handler: async (request, next) => { return next?.handle(request); } }" +
+			"]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the handler validator should accept more than one correctly formed handler entry in the same array");
+		result.Errors.Should().BeEmpty(
+			because: "comma-separated valid handler entries should pass the array traversal and entry parsing logic");
+	}
+
+	[Test]
 	[Description("Body with JavaScript converter functions passes content validation")]
 	public void ValidateMarkerContent_JavaScriptConverters_ReturnsValid() {
 		string body = ValidFormPageBody.Replace(
@@ -379,25 +744,24 @@ public class SchemaValidationServiceTests {
 	}
 
 	[Test]
-	[Description("Standard field proxy bindings to direct PDS paths are rejected")]
-	public void ValidateStandardFieldBindings_ProxyBindingToPdsPath_ReturnsInvalid() {
+	[Description("Standard field binding to attribute not in current schema is valid — attribute may be declared in a parent schema")]
+	public void ValidateStandardFieldBindings_BindingToAttributeNotInCurrentSchema_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]",
+			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]",
 			"[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
 
-		result.IsValid.Should().BeFalse("because data-bound fields must bind directly to datasource-backed attributes");
-		result.Errors.Should().ContainSingle(error => error.Contains("$UsrStatus") && error.Contains("$PDS_UsrStatus"),
-			"because the validation should explain the rejected proxy binding and the expected datasource binding");
+		result.IsValid.Should().BeTrue("because the control may bind to an attribute declared in a parent schema");
+		result.Errors.Should().BeEmpty("because missing declaration in the current schema is not an error");
 	}
 
 	[Test]
 	[Description("Standard field Usr label shortcuts without explicit resources are rejected")]
 	public void ValidateStandardFieldBindings_UsrLabelShortcutWithoutResources_ReturnsInvalid() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_label)#\",\"control\":\"$PDS_UsrStatus\"}}]",
-			"[]");
+			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_label)#\",\"control\":\"$UsrStatus\"}}]",
+			"[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
 
@@ -407,15 +771,15 @@ public class SchemaValidationServiceTests {
 	}
 
 	[Test]
-	[Description("Standard field direct PDS binding with datasource caption passes semantic validation")]
-	public void ValidateStandardFieldBindings_DirectPdsBindingWithDatasourceCaption_ReturnsValid() {
+	[Description("Standard field declared view-model binding with datasource caption passes semantic validation")]
+	public void ValidateStandardFieldBindings_DeclaredAttributeBindingWithDatasourceCaption_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$PDS_UsrStatus\"}}]",
-			"[]");
+			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]",
+			"[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
 
-		result.IsValid.Should().BeTrue("because the field uses direct datasource binding and datasource captioning");
+		result.IsValid.Should().BeTrue("because the field binds to a declared view-model attribute with a datasource caption");
 		result.Errors.Should().BeEmpty();
 		result.Warnings.Should().BeEmpty();
 	}
@@ -424,8 +788,8 @@ public class SchemaValidationServiceTests {
 	[Description("Explicit custom resources on standard field shortcuts surface warnings instead of hard failures")]
 	public void ValidateStandardFieldBindings_UsrLabelShortcutWithExplicitResources_ReturnsWarning() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_caption)#\",\"control\":\"$PDS_UsrStatus\"}}]",
-			"[]");
+			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_caption)#\",\"control\":\"$UsrStatus\"}}]",
+			"[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(
 			body,
@@ -457,8 +821,8 @@ public class SchemaValidationServiceTests {
 	[Description("Label referencing $Resources.Strings.KEY warns when KEY is absent from explicit resources")]
 	public void ValidateStandardFieldBindings_LabelResourceKeyMissingFromExplicitResources_ReturnsWarning() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"PDS_UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.PDS_UsrName\",\"control\":\"$PDS_UsrName\"}}]",
-			"[{\"operation\":\"merge\",\"values\":{\"PDS_UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
+			"[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.PDS_UsrName\",\"control\":\"$UsrName\"}}]",
+			"[{\"operation\":\"merge\",\"values\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(
 			body,
@@ -474,8 +838,8 @@ public class SchemaValidationServiceTests {
 	[Description("Label referencing $Resources.Strings.KEY passes when KEY is present in explicit resources")]
 	public void ValidateStandardFieldBindings_LabelResourceKeyPresentInExplicitResources_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"PDS_UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.PDS_UsrName\",\"control\":\"$PDS_UsrName\"}}]",
-			"[{\"operation\":\"merge\",\"values\":{\"PDS_UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
+			"[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.PDS_UsrName\",\"control\":\"$UsrName\"}}]",
+			"[{\"operation\":\"merge\",\"values\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(
 			body,
@@ -490,8 +854,8 @@ public class SchemaValidationServiceTests {
 	[Description("Label referencing $Resources.Strings.KEY is not warned when no explicit resources are provided")]
 	public void ValidateStandardFieldBindings_LabelResourceKeyWithoutExplicitResources_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"PDS_UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.PDS_UsrName\",\"control\":\"$PDS_UsrName\"}}]",
-			"[{\"operation\":\"merge\",\"values\":{\"PDS_UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
+			"[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.PDS_UsrName\",\"control\":\"$UsrName\"}}]",
+			"[{\"operation\":\"merge\",\"values\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
 
@@ -501,9 +865,9 @@ public class SchemaValidationServiceTests {
 	}
 
 	[Test]
-	[Description("Standard field with validators uses view-model attribute binding $AttrName — must NOT be flagged as proxy-binding error")]
+	[Description("Standard field binding to the declared validator attribute is accepted")]
 	public void ValidateStandardFieldBindings_AttributeWithValidators_ViewModelBindingIsAllowed() {
-		// Arrange — UsrName has a validator in viewModelConfig; control binds to $UsrName (view-model attribute)
+		// Arrange — UsrName has a validator in viewModelConfig; control binds to the same declared attribute.
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\",\"control\":\"$UsrName\"}}]";
 		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCase\",\"params\":{\"message\":\"$Resources.Strings.UsrUpperCaseValidator_Message\"}}}}}}";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
@@ -512,16 +876,16 @@ public class SchemaValidationServiceTests {
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
 
 		// Assert
-		result.IsValid.Should().BeTrue("because when an attribute carries validators the correct control binding is $AttrName, not $PDS_AttrName");
+		result.IsValid.Should().BeTrue("because the control uses the same declared attribute that carries the validators");
 		result.Errors.Should().NotContain(error => error.Contains("$UsrName"),
-			"because the view-model attribute binding is required for validators to fire and must not be rejected as a proxy error");
+			"because the declared validator attribute binding is the expected configuration");
 	}
 
 	[Test]
-	[Description("Standard field without validators still requires $PDS_AttrName proxy binding to the datasource")]
-	public void ValidateStandardFieldBindings_AttributeWithoutValidators_ViewModelBindingIsRejected() {
-		// Arrange — UsrStatus has no validators; control binds to $UsrStatus (should use $PDS_UsrStatus)
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]";
+	[Description("Standard field binding to attribute not in current schema is valid even without validators — attribute may be declared in a parent schema")]
+	public void ValidateStandardFieldBindings_AttributeWithoutValidators_BindingToParentAttributeIsAllowed() {
+		// Arrange — UsrStatus declared in viewModelConfig; control binds to UsrStatusField which may be in parent schema.
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]";
 		string viewModelConfig = "{\"attributes\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
@@ -529,9 +893,65 @@ public class SchemaValidationServiceTests {
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
 
 		// Assert
-		result.IsValid.Should().BeFalse("because attributes without validators must bind to the datasource proxy $PDS_UsrStatus");
-		result.Errors.Should().ContainSingle(error => error.Contains("$PDS_UsrStatus"),
-			"because the validation should reject the view-model binding and suggest the correct PDS proxy binding");
+		result.IsValid.Should().BeTrue("because the attribute UsrStatusField may be declared in a parent schema");
+		result.Errors.Should().BeEmpty("because binding to a parent-schema attribute is not an error");
+	}
+
+	[Test]
+	[Description("Standard field populated by handlers may use view-model attribute binding $AttrName")]
+	public void ValidateStandardFieldBindings_AttributeWrittenByHandlers_ViewModelBindingIsAllowed() {
+		// Arrange — UsrName is populated from an init handler through $context.set("UsrName", ...).
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}";
+		string handlers = "[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const result = await next?.handle(request); await request.$context.set(\"UsrName\", \"Primary currency\"); return result; } }]";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig, handlers);
+
+		// Act
+		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because handler-driven writes target the same declared attribute that the control uses");
+		result.Errors.Should().NotContain(error => error.Contains("$UsrName"),
+			"because the handler-aware rule should allow the matching declared attribute binding");
+	}
+
+	[Test]
+	[Description("Standard field populated by handlers must bind to the same declared attribute they update")]
+	public void ValidateStandardFieldBindings_AttributeWrittenByHandlers_DifferentDeclaredAttributeIsRejected() {
+		// Arrange — handlers update UsrName but the control stays on UsrNameField for the same model path.
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\",\"control\":\"$UsrNameField\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}},\"UsrNameField\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}";
+		string handlers = "[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const { $context } = request; const result = await next?.handle(request); await $context.set(\"UsrName\", \"Primary currency\"); return result; } }]";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig, handlers);
+
+		// Act
+		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because handler-driven writes should bind the UI control to the same declared attribute they update");
+		result.Errors.Should().ContainSingle(error => error.Contains("$UsrNameField") && error.Contains("$UsrName") && error.Contains("$context.set"),
+			"because the validation should explain that the control and the handler must use the same declared attribute");
+	}
+
+	[Test]
+	[Description("Standard field mismatch reports all handler-written candidates that share the same model path")]
+	public void ValidateStandardFieldBindings_AttributeWrittenByHandlers_MultipleDeclaredAlternatives_ReportsAllCandidates() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\",\"control\":\"$UsrNameField\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}},\"UsrNameField\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}},\"UsrNameSecondary\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}";
+		string handlers = "[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const result = await next?.handle(request); await request.$context.set(\"UsrName\", \"Primary currency\"); await request.$context.set(\"UsrNameSecondary\", \"Secondary currency\"); return result; } }]";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig, handlers);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateStandardFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the control still binds to a different declared attribute than the handler-updated attributes");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("one of: UsrName, UsrNameSecondary") &&
+				error.Contains("$UsrNameField"),
+			because: "the diagnostic should list every matching declared attribute instead of picking one alphabetically");
 	}
 
 	private static string BuildDiffBackedPageBody(string viewConfigDiff, string viewModelConfigDiff) {
@@ -546,26 +966,26 @@ public class SchemaValidationServiceTests {
 			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 	}
 
-	private static string BuildStaticViewModelConfigPageBody(string viewConfigDiff, string viewModelConfig) {
+	private static string BuildStaticViewModelConfigPageBody(string viewConfigDiff, string viewModelConfig, string? handlers = null) {
 		return
 			"define(\"TestPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
 			$"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/{viewConfigDiff}/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 			$"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{viewModelConfig}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
 			"modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/, " +
-			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			$"handlers: /**SCHEMA_HANDLERS*/{handlers ?? "[]"}/**SCHEMA_HANDLERS*/, " +
 			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 	}
 
 	[Test]
-	[Description("Static viewModelConfig with $PDS_AttrName control where attribute has validators is rejected")]
-	public void ValidateValidatorControlBindings_StaticViewModelConfig_PdsBinding_WithValidators_ReturnsInvalid() {
-		// Arrange — exact shape of the bug: validator on 'UsrName' but control = "$PDS_UsrName"
+	[Description("Static viewModelConfig with validators on a different declared attribute is rejected")]
+	public void ValidateValidatorControlBindings_StaticViewModelConfig_DifferentDeclaredAttribute_WithValidators_ReturnsInvalid() {
+		// Arrange — validators live on UsrNameForValidation but the control stays on UsrName for the same field path.
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
 		                        "\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\"," +
-		                        "\"control\":\"$PDS_UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{" +
+		                        "\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}},\"UsrNameForValidation\":{" +
 		                         "\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
 		                         "\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCaseValidator\"," +
 		                         "\"params\":{\"message\":\"Must be uppercase\"}}}}}}";
@@ -576,10 +996,53 @@ public class SchemaValidationServiceTests {
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "a control bound to '$PDS_UsrName' will never trigger the validator registered on attribute 'UsrName'");
+			because: "validators must live on the same declared attribute that the control uses");
 		result.Errors.Should().ContainSingle(
-			error => error.Contains("UsrName") && error.Contains("$PDS_UsrName") && error.Contains("$UsrName"),
-			because: "the error should identify the control, the wrong binding, and the correct alternative");
+			error => error.Contains("$UsrName") && error.Contains("$UsrNameForValidation"),
+			because: "the error should identify both the current control binding and the declared attribute that owns the validators");
+	}
+
+	[Test]
+	[Description("Validator binding mismatch reports all declared validator attributes on the same model path")]
+	public void ValidateValidatorControlBindings_StaticViewModelConfig_MultipleDeclaredAlternatives_ReportsAllCandidates() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}},\"UsrNameForValidation\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCaseValidator\"}}},\"UsrNameForValidationSecondary\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"MaxLength\":{\"type\":\"crt.MaxLength\",\"params\":{\"maxLength\":5}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.UpperCaseValidator\":{\"validator\":function(){return function(){return null;};},\"params\":[],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorControlBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "validators still live on different declared attributes for the same model path");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("one of: UsrNameForValidation, UsrNameForValidationSecondary") &&
+				error.Contains("$UsrName"),
+			because: "the diagnostic should list every declared validator attribute sharing the same path");
+	}
+
+	[Test]
+	[Description("MergeResult preserves warnings from successful child validation results")]
+	public void ValidateMarkerContent_MergeResult_PreservesWarningsFromSuccessfulChildResult() {
+		// Arrange
+		MethodInfo mergeResult = typeof(SchemaValidationService).GetMethod("MergeResult", BindingFlags.NonPublic | BindingFlags.Static)!;
+		var target = new SchemaValidationResult { IsValid = true };
+		var source = new SchemaValidationResult { IsValid = true };
+		source.Warnings.Add("warning from child");
+
+		// Act
+		mergeResult.Invoke(null, new object[] { target, source });
+
+		// Assert
+		target.IsValid.Should().BeTrue(
+			because: "successful child validation should not flip the aggregate result to invalid");
+		target.Errors.Should().BeEmpty(
+			because: "successful child validation contributes no errors");
+		target.Warnings.Should().ContainSingle(warning => warning == "warning from child",
+			because: "warnings from successful child validation must still propagate to the aggregate result");
 	}
 
 	[Test]
@@ -606,13 +1069,13 @@ public class SchemaValidationServiceTests {
 	}
 
 	[Test]
-	[Description("viewModelConfigDiff with $PDS_AttrName control where attribute has validators is rejected")]
-	public void ValidateValidatorControlBindings_DiffViewModelConfig_PdsBinding_WithValidators_ReturnsInvalid() {
+	[Description("viewModelConfigDiff with validators on a different declared attribute is rejected")]
+	public void ValidateValidatorControlBindings_DiffViewModelConfig_DifferentDeclaredAttribute_WithValidators_ReturnsInvalid() {
 		// Arrange
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrEmail\",\"values\":{" +
-		                        "\"type\":\"crt.EmailInput\",\"control\":\"$PDS_UsrEmail\"}}]";
+		                        "\"type\":\"crt.EmailInput\",\"control\":\"$UsrEmail\"}}]";
 		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"attributes\"]," +
-		                             "\"values\":{\"UsrEmail\":{\"modelConfig\":{\"path\":\"PDS.UsrEmail\"}," +
+		                             "\"values\":{\"UsrEmail\":{\"modelConfig\":{\"path\":\"PDS.UsrEmail\"}},\"UsrEmailForValidation\":{\"modelConfig\":{\"path\":\"PDS.UsrEmail\"}," +
 		                             "\"validators\":{\"EmailValidator\":{\"type\":\"usr.EmailValidator\"}}}}}]";
 		string body = BuildDiffBackedPageBody(viewConfigDiff, viewModelConfigDiff);
 
@@ -621,10 +1084,10 @@ public class SchemaValidationServiceTests {
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "a control bound to '$PDS_UsrEmail' will never trigger the validator on attribute 'UsrEmail' in viewModelConfigDiff");
+			because: "validators must live on the same declared attribute that the control uses in viewModelConfigDiff");
 		result.Errors.Should().ContainSingle(
-			error => error.Contains("UsrEmail") && error.Contains("$PDS_UsrEmail"),
-			because: "the error should identify the control with the wrong PDS binding");
+			error => error.Contains("$UsrEmail") && error.Contains("$UsrEmailForValidation"),
+			because: "the error should identify the control binding and the declared attribute that owns the validators");
 	}
 
 	[Test]
@@ -649,11 +1112,11 @@ public class SchemaValidationServiceTests {
 	}
 
 	[Test]
-	[Description("$PDS_AttrName binding on attribute without validators is allowed")]
-	public void ValidateValidatorControlBindings_PdsBinding_AttributeHasNoValidators_ReturnsValid() {
+	[Description("Declared attribute binding on attribute without validators is allowed")]
+	public void ValidateValidatorControlBindings_DeclaredBinding_AttributeHasNoValidators_ReturnsValid() {
 		// Arrange
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
-		                        "\"type\":\"crt.Input\",\"control\":\"$PDS_UsrName\"}}]";
+		                        "\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
 		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
@@ -662,17 +1125,17 @@ public class SchemaValidationServiceTests {
 
 		// Assert
 		result.IsValid.Should().BeTrue(
-			because: "'$PDS_UsrName' is acceptable when the attribute has no validators registered");
+			because: "no validator binding constraints apply when the control already uses its declared attribute and no validators are registered");
 		result.Errors.Should().BeEmpty(
 			because: "no validator binding constraints apply to attributes without validators");
 	}
 
 	[Test]
 	[Description("Attribute with empty validators object is not treated as having validators")]
-	public void ValidateValidatorControlBindings_PdsBinding_AttributeHasEmptyValidators_ReturnsValid() {
+	public void ValidateValidatorControlBindings_DeclaredBinding_AttributeHasEmptyValidators_ReturnsValid() {
 		// Arrange
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
-		                        "\"type\":\"crt.Input\",\"control\":\"$PDS_UsrName\"}}]";
+		                        "\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
 		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
 		                         "\"validators\":{}}}}";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
@@ -682,9 +1145,54 @@ public class SchemaValidationServiceTests {
 
 		// Assert
 		result.IsValid.Should().BeTrue(
-			because: "an empty validators object means no validators are registered, so the PDS binding is acceptable");
+			because: "an empty validators object means no validators are registered, so the declared attribute binding is acceptable");
 		result.Errors.Should().BeEmpty(
 			because: "empty validators do not impose control binding constraints");
+	}
+
+	[Test]
+	[Description("Validators declared directly on a viewConfigDiff control are rejected")]
+	public void ValidateValidatorBindingPlacement_ViewConfigDiffControlValidators_ReturnsInvalid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrCode\",\"values\":{" +
+		                        "\"type\":\"crt.Input\",\"control\":\"$UsrCode\"," +
+		                        "\"validators\":[{\"id\":\"usr.MaxLengthFromSysSettingValidator\",\"params\":{\"settingCode\":\"MaxProcessLoopCount\",\"message\":\"Too long\"}}]}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrCode\":{\"modelConfig\":{\"path\":\"PDS.UsrCode\"}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.MaxLengthFromSysSettingValidator\":{\"validator\":function(config){return async function(control){return null;};},\"params\":[{\"name\":\"settingCode\"},{\"name\":\"message\"}],\"async\":true}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorBindingPlacement(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "validators declared on the UI element are ignored by Creatio and must be moved to the bound view-model attribute");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("UsrCode") &&
+				error.Contains("viewConfigDiff") &&
+				error.Contains("viewModelConfig/viewModelConfigDiff"),
+			because: "the error should explain that validator bindings belong on the attribute, not on the control");
+	}
+
+	[Test]
+	[Description("Attribute-level validator bindings remain valid when viewConfigDiff does not declare validators")]
+	public void ValidateValidatorBindingPlacement_AttributeLevelValidatorsWithoutInlineControlValidators_ReturnsValid() {
+		// Arrange
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrCode\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrCode\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrCode\":{\"modelConfig\":{\"path\":\"PDS.UsrCode\"},\"validators\":{\"CodeLength\":{\"type\":\"usr.MaxLengthFromSysSettingValidator\",\"params\":{\"settingCode\":\"MaxProcessLoopCount\",\"message\":\"#ResourceString(UsrCodeLength_Message)#\"}}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.MaxLengthFromSysSettingValidator\":{\"validator\":function(config){return async function(control){return null;};},\"params\":[{\"name\":\"settingCode\"},{\"name\":\"message\"}],\"async\":true}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorBindingPlacement(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "validators bound through viewModelConfig are the supported runtime shape");
+		result.Errors.Should().BeEmpty(
+			because: "no inline control validators are present in viewConfigDiff");
 	}
 
 	[Test]
@@ -1255,6 +1763,47 @@ public class SchemaValidationServiceTests {
 			because: "brace-balanced extraction handles balanced braces inside regex character class literals without misreading depth");
 		result.Errors.Should().BeEmpty(
 			because: "the validator is structurally valid with a declared message param");
+	}
+
+	[Test]
+	[Description("Non-PDS data source direct binding passes validation")]
+	public void ValidateStandardFieldBindings_NonPdsDirectBinding_ReturnsValid() {
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.DS1_UsrStatus\",\"control\":\"$DS1_UsrStatus\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"DS1_UsrStatus\":{\"modelConfig\":{\"path\":\"DS1.UsrStatus\"}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
+
+		result.IsValid.Should().BeTrue("because the field uses direct datasource binding for a non-PDS datasource");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Non-PDS data source Name field uses $Name binding")]
+	public void BuildExpectedBinding_NonPdsNameField_ReturnsNameBinding() {
+		string binding = SchemaValidationService.BuildExpectedBinding("DS1.Name");
+
+		binding.Should().Be("$Name", "because any datasource Name field maps to the $Name shorthand");
+	}
+
+	[Test]
+	[Description("Control bound to non-PDS datasource binding on attribute with validators is rejected")]
+	public void ValidateValidatorControlBindings_NonPdsBinding_AttributeHasValidators_ReturnsInvalid() {
+		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{" +
+		                        "\"type\":\"crt.ComboBox\",\"control\":\"$DS1_UsrStatus\"}}]";
+		string viewModelConfig = "{\"attributes\":{\"UsrStatus\":{" +
+		                         "\"modelConfig\":{\"path\":\"DS1.UsrStatus\"}," +
+		                         "\"validators\":{\"Required\":{\"type\":\"crt.Required\"}}}}}";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorControlBindings(body);
+
+		result.IsValid.Should().BeFalse(
+			because: "a control bound to '$DS1_UsrStatus' will never trigger the validator on attribute 'UsrStatus'");
+		result.Errors.Should().ContainSingle(
+			error => error.Contains("UsrStatus") && error.Contains("$DS1_UsrStatus") && error.Contains("$UsrStatus"),
+			because: "the error should identify the wrong datasource binding and the correct view-model attribute binding");
 	}
 }
 

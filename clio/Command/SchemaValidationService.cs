@@ -14,6 +14,7 @@ public static class SchemaValidationService
 	private const string SchemaViewModelConfig = "SCHEMA_VIEW_MODEL_CONFIG";
 	private const string SchemaDiffMarker = "SCHEMA_DIFF";
 	private const string SchemaValidatorsMarker = "SCHEMA_VALIDATORS";
+	internal const string SchemaHandlersMarker = "SCHEMA_HANDLERS";
 	private const string ValuesPropertyName = "values";
 	private const string AttributesPropertyName = "attributes";
 	private const string ValidatorsPropertyName = "validators";
@@ -24,7 +25,7 @@ public static class SchemaValidationService
 		"SCHEMA_DEPS",
 		"SCHEMA_ARGS",
 		SchemaViewConfigDiff,
-		"SCHEMA_HANDLERS",
+		SchemaHandlersMarker,
 		"SCHEMA_CONVERTERS",
 		SchemaValidatorsMarker
 	};
@@ -155,7 +156,20 @@ public static class SchemaValidationService
 			return result;
 		}
 		ValidateJavaScriptObjectMarkers(jsBody, JavaScriptObjectMarkers, result);
+		MergeResult(result, ValidateHandlerStructure(jsBody));
 		return result;
+	}
+
+	/// <summary>
+	/// Validates the structure of the JavaScript handler array in <paramref name="jsBody"/>.
+	/// </summary>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> accumulating all structural violations found,
+	/// or a passing result when no violations are detected.
+	/// </returns>
+	public static SchemaValidationResult ValidateHandlerStructure(string jsBody) {
+		return SchemaHandlerValidationService.Validate(jsBody);
 	}
 
 	private static bool ValidateMarkers(
@@ -218,6 +232,16 @@ public static class SchemaValidationService
 		result.Errors.Add($"Invalid JavaScript object section in {marker}: {string.Join("; ", syntaxResult.Errors)}");
 	}
 
+	private static void MergeResult(SchemaValidationResult target, SchemaValidationResult source) {
+		target.Warnings.AddRange(source.Warnings);
+		if (source.IsValid) {
+			return;
+		}
+
+		target.IsValid = false;
+		target.Errors.AddRange(source.Errors);
+	}
+
 	public static SchemaValidationResult ValidateColumnBindings(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrEmpty(jsBody)) {
@@ -263,11 +287,16 @@ public static class SchemaValidationService
 			return result;
 		}
 		Dictionary<string, string> modelPaths = CollectViewModelPaths(jsBody);
-		var attributesWithValidators = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		CollectAttributesWithValidatorsFromMarker(jsBody, SchemaViewModelConfig, false, attributesWithValidators);
-		CollectAttributesWithValidatorsFromMarker(jsBody, SchemaViewModelConfigDiff, true, attributesWithValidators);
+		HashSet<string> declaredAttributes = CollectDeclaredViewModelAttributes(jsBody);
+		HashSet<string> attributesWrittenByHandlers = CollectAttributesWrittenByHandlers(jsBody);
+		var ctx = new FieldValidationContext(
+			declaredAttributes,
+			modelPaths,
+			explicitResources,
+			attributesWrittenByHandlers,
+			result);
 		using (viewConfigDocument) {
-			ValidateFieldComponents(viewConfigDocument.RootElement, modelPaths, explicitResources, attributesWithValidators, result);
+			ValidateFieldComponents(viewConfigDocument.RootElement, in ctx);
 		}
 		if (result.Errors.Count > 0) {
 			result.IsValid = false;
@@ -345,25 +374,49 @@ public static class SchemaValidationService
 		}
 	}
 
+	private static HashSet<string> CollectDeclaredViewModelAttributes(string jsBody) {
+		var attributeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		CollectDeclaredViewModelAttributesFromMarker(jsBody, SchemaViewModelConfig, false, attributeNames);
+		CollectDeclaredViewModelAttributesFromMarker(jsBody, SchemaViewModelConfigDiff, true, attributeNames);
+		return attributeNames;
+	}
+
+	private static void CollectDeclaredViewModelAttributesFromMarker(
+		string jsBody,
+		string markerName,
+		bool isArray,
+		HashSet<string> attributeNames) {
+		ForEachMarkerAttributesContainer(jsBody, markerName, isArray, attributes => {
+			foreach (JsonProperty attribute in attributes.EnumerateObject()) {
+				attributeNames.Add(attribute.Name);
+			}
+		});
+	}
+
+	/// <summary>Captures the shared validation context for field-component validation passes.</summary>
+	private readonly record struct FieldValidationContext(
+		IReadOnlySet<string> DeclaredAttributes,
+		IReadOnlyDictionary<string, string> ModelPaths,
+		IReadOnlyDictionary<string, string>? ExplicitResources,
+		IReadOnlySet<string> AttributesWrittenByHandlers,
+		SchemaValidationResult Result);
+
 	private static void ValidateFieldComponents(
 		JsonElement element,
-		IReadOnlyDictionary<string, string> modelPaths,
-		IReadOnlyDictionary<string, string>? explicitResources,
-		IReadOnlySet<string> attributesWithValidators,
-		SchemaValidationResult result,
+		in FieldValidationContext ctx,
 		bool checkSelf = true) {
 		if (element.ValueKind == JsonValueKind.Object) {
 			bool wrappedValues = false;
 			if (checkSelf && TryResolveFieldComponent(element, out JsonElement componentValues, out string fieldName, out string componentType, out wrappedValues)) {
-				ValidateFieldComponent(componentValues, fieldName, componentType, modelPaths, explicitResources, attributesWithValidators, result);
+				ValidateFieldComponent(componentValues, fieldName, componentType, in ctx);
 			}
 			foreach (JsonProperty property in element.EnumerateObject()) {
 				bool childCheckSelf = !(wrappedValues && property.NameEquals(ValuesPropertyName));
-				ValidateFieldComponents(property.Value, modelPaths, explicitResources, attributesWithValidators, result, childCheckSelf);
+				ValidateFieldComponents(property.Value, in ctx, childCheckSelf);
 			}
 		} else if (element.ValueKind == JsonValueKind.Array) {
 			foreach (JsonElement item in element.EnumerateArray()) {
-				ValidateFieldComponents(item, modelPaths, explicitResources, attributesWithValidators, result);
+				ValidateFieldComponents(item, in ctx);
 			}
 		}
 	}
@@ -428,24 +481,22 @@ public static class SchemaValidationService
 		JsonElement componentValues,
 		string fieldName,
 		string componentType,
-		IReadOnlyDictionary<string, string> modelPaths,
-		IReadOnlyDictionary<string, string>? explicitResources,
-		IReadOnlySet<string> attributesWithValidators,
-		SchemaValidationResult result) {
+		in FieldValidationContext ctx) {
 		string fieldDisplayName = !string.IsNullOrWhiteSpace(fieldName) ? fieldName : componentType;
-		if (TryGetBindingAttribute(componentValues, out string bindingProperty, out string bindingExpression, out string bindingAttribute) &&
-		    !IsAllowedDirectFieldBinding(bindingAttribute) &&
-		    !attributesWithValidators.Contains(bindingAttribute) &&
-		    modelPaths.TryGetValue(bindingAttribute, out string modelPath) &&
-		    modelPath.StartsWith("PDS.", StringComparison.OrdinalIgnoreCase)) {
-			result.Errors.Add(
-				$"Standard field '{fieldDisplayName}' uses proxy binding '{bindingExpression}' via '{bindingProperty}' for datasource path '{modelPath}'. Use '{BuildExpectedBinding(modelPath)}' instead.");
+		if (!TryGetBindingAttribute(componentValues, out _, out _, out string bindingAttribute)) {
+			return;
+		}
+		if (ctx.DeclaredAttributes.Contains(bindingAttribute) &&
+		    TryFindAlternativeAttributesForSamePath(bindingAttribute, ctx.ModelPaths, ctx.AttributesWrittenByHandlers, out string handlerAttribute)) {
+			ctx.Result.Errors.Add(
+				$"Control '{fieldDisplayName}' binds to '${bindingAttribute}' but handlers write attribute '{handlerAttribute}' through $context.set(...). " +
+				$"Bind the control to '${handlerAttribute}' or move the handler writes to '{bindingAttribute}' so the control and handler use the same declared view-model attribute.");
 		}
 		if (TryGetStringProperty(componentValues, "label", out string labelExpression) &&
 		    TryGetDatasourceCaptionKey(labelExpression, out string datasourceKey) &&
-		    explicitResources != null &&
-		    !explicitResources.ContainsKey(datasourceKey)) {
-			result.Warnings.Add(
+		    ctx.ExplicitResources != null &&
+		    !ctx.ExplicitResources.ContainsKey(datasourceKey)) {
+			ctx.Result.Warnings.Add(
 				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{datasourceKey}' is not in the provided resources — the label will render blank in the designer.");
 		}
 		if (!TryGetCaptionExpression(componentValues, out string captionExpression) ||
@@ -453,15 +504,15 @@ public static class SchemaValidationService
 		    !CustomFieldResourcePattern.IsMatch(resourceKey)) {
 			return;
 		}
-		string preferredCaption = TryResolvePreferredCaption(modelPaths, bindingAttribute, out string preferredCaptionBinding)
+		string preferredCaption = TryResolvePreferredCaption(ctx.ModelPaths, bindingAttribute, out string preferredCaptionBinding)
 			? preferredCaptionBinding
 			: "$Resources.Strings.<datasource-caption>";
-		if (explicitResources == null || !explicitResources.TryGetValue(resourceKey, out string explicitValue) || string.IsNullOrWhiteSpace(explicitValue)) {
-			result.Errors.Add(
+		if (ctx.ExplicitResources == null || !ctx.ExplicitResources.TryGetValue(resourceKey, out string explicitValue) || string.IsNullOrWhiteSpace(explicitValue)) {
+			ctx.Result.Errors.Add(
 				$"Standard field '{fieldDisplayName}' uses '{captionExpression}' without an explicit resources entry. Prefer datasource caption '{preferredCaption}' for data-bound fields.");
 			return;
 		}
-		result.Warnings.Add(
+		ctx.Result.Warnings.Add(
 			$"Standard field '{fieldDisplayName}' uses custom resource key '{resourceKey}'. Prefer datasource caption '{preferredCaption}' for data-bound fields.");
 	}
 
@@ -470,15 +521,19 @@ public static class SchemaValidationService
 		string bindingAttribute,
 		out string preferredCaptionBinding) {
 		preferredCaptionBinding = string.Empty;
-		if (!string.IsNullOrWhiteSpace(bindingAttribute) && bindingAttribute.StartsWith("PDS_", StringComparison.OrdinalIgnoreCase)) {
-			preferredCaptionBinding = $"$Resources.Strings.{bindingAttribute}";
-			return true;
-		}
 		if (!string.IsNullOrWhiteSpace(bindingAttribute) &&
 		    modelPaths.TryGetValue(bindingAttribute, out string modelPath) &&
-		    modelPath.StartsWith("PDS.", StringComparison.OrdinalIgnoreCase)) {
-			preferredCaptionBinding = $"$Resources.Strings.{modelPath.Replace(".", "_", StringComparison.Ordinal)}";
+		    modelPath.Contains('.')) {
+			string expectedBinding = BuildExpectedBinding(modelPath);
+			preferredCaptionBinding = $"$Resources.Strings.{expectedBinding[1..]}";
 			return true;
+		}
+		foreach (var (_, path) in modelPaths) {
+			string expected = BuildExpectedBinding(path);
+			if (string.Equals("$" + bindingAttribute, expected, StringComparison.OrdinalIgnoreCase)) {
+				preferredCaptionBinding = $"$Resources.Strings.{bindingAttribute}";
+				return true;
+			}
 		}
 		return false;
 	}
@@ -503,6 +558,14 @@ public static class SchemaValidationService
 		}
 		bindingAttribute = bindingExpression[1..];
 		return true;
+	}
+
+	internal static string BuildExpectedBinding(string modelPath) {
+		int dot = modelPath.IndexOf('.', StringComparison.Ordinal);
+		if (dot >= 0 && string.Equals(modelPath[(dot + 1)..], "Name", StringComparison.OrdinalIgnoreCase)) {
+			return "$Name";
+		}
+		return "$" + modelPath.Replace(".", "_", StringComparison.Ordinal);
 	}
 
 	private static bool TryGetCaptionExpression(JsonElement componentValues, out string captionExpression) {
@@ -544,22 +607,38 @@ public static class SchemaValidationService
 		return !string.IsNullOrWhiteSpace(resourceKey);
 	}
 
-	internal static bool IsAllowedDirectFieldBinding(string bindingAttribute) {
-		return string.Equals(bindingAttribute, "Name", StringComparison.OrdinalIgnoreCase)
-			|| bindingAttribute.StartsWith("PDS_", StringComparison.OrdinalIgnoreCase);
-	}
-
-	internal static string BuildExpectedBinding(string modelPath) {
-		if (string.Equals(modelPath, "PDS.Name", StringComparison.OrdinalIgnoreCase)) {
-			return "$Name";
+	private static bool TryFindAlternativeAttributesForSamePath(
+		string bindingAttribute,
+		IReadOnlyDictionary<string, string> modelPaths,
+		IReadOnlySet<string> candidateAttributes,
+		out string alternativeAttributeDisplay) {
+		alternativeAttributeDisplay = string.Empty;
+		if (string.IsNullOrWhiteSpace(bindingAttribute) ||
+		    !modelPaths.TryGetValue(bindingAttribute, out string bindingPath) ||
+		    string.IsNullOrWhiteSpace(bindingPath)) {
+			return false;
 		}
-		return "$" + modelPath.Replace(".", "_", StringComparison.Ordinal);
+
+		string[] matches = candidateAttributes
+			.Where(attribute => !string.Equals(attribute, bindingAttribute, StringComparison.OrdinalIgnoreCase))
+			.Where(attribute => modelPaths.TryGetValue(attribute, out string candidatePath) &&
+				string.Equals(candidatePath, bindingPath, StringComparison.OrdinalIgnoreCase))
+			.OrderBy(attribute => attribute, StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+		if (matches.Length == 0) {
+			return false;
+		}
+
+		alternativeAttributeDisplay = matches.Length == 1
+			? matches[0]
+			: $"one of: {string.Join(", ", matches)}";
+		return true;
 	}
 
 	/// <summary>
-	/// Validates that UI controls bound to <c>$PDS_AttrName</c> do not belong to view-model
-	/// attributes that carry <c>validators</c>. Validators only fire on view-model attribute
-	/// bindings (<c>$AttrName</c>), never on raw PDS data-source bindings (<c>$PDS_AttrName</c>).
+	/// Validates that field controls stay bound to the same declared view-model attribute
+	/// that carries the <c>validators</c> object. If validators are moved to a different
+	/// attribute for the same underlying model path, the control must be rebound as well.
 	/// </summary>
 	public static SchemaValidationResult ValidateValidatorControlBindings(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
@@ -572,6 +651,7 @@ public static class SchemaValidationService
 		if (attributesWithValidators.Count == 0) {
 			return result;
 		}
+		Dictionary<string, string> modelPaths = CollectViewModelPaths(jsBody);
 		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
 			return result;
 		}
@@ -579,7 +659,32 @@ public static class SchemaValidationService
 			return result;
 		}
 		using (viewConfigDocument) {
-			CheckValidatorControlBindings(viewConfigDocument.RootElement, attributesWithValidators, result);
+			CheckValidatorControlBindings(viewConfigDocument.RootElement, attributesWithValidators, modelPaths, result);
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Validates that validator bindings are not declared directly on UI elements inside
+	/// <c>viewConfigDiff</c>. Creatio evaluates validators from the view-model attribute
+	/// definition, so placing a <c>validators</c> property on the control is ignored at runtime.
+	/// </summary>
+	public static SchemaValidationResult ValidateValidatorBindingPlacement(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string viewConfigContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
+			return result;
+		}
+		if (!TryParseJsonDocument(viewConfigContent, out JsonDocument viewConfigDocument, out _)) {
+			return result;
+		}
+		using (viewConfigDocument) {
+			CheckInlineValidatorPlacement(viewConfigDocument.RootElement, result);
 		}
 		if (result.Errors.Count > 0) {
 			result.IsValid = false;
@@ -1009,7 +1114,7 @@ public static class SchemaValidationService
 		while (index < validatorsContent.Length) {
 			char current = validatorsContent[index];
 			if (inString) {
-				index = ConsumeStringLiteralCharacter(validatorsContent, index, ref inString, stringChar);
+				index = JsParserHelper.ConsumeStringLiteralCharacter(validatorsContent, index, ref inString, stringChar);
 				continue;
 			}
 
@@ -1065,39 +1170,7 @@ public static class SchemaValidationService
 		}
 
 		int braceStart = match.Index + match.Length - 1;
-		return TryExtractBalancedObject(content, braceStart, out objectContent);
-	}
-
-	private static bool TryExtractBalancedObject(string content, int braceStart, out string objectContent) {
-		int depth = 0;
-		bool inString = false;
-		char stringChar = '"';
-		int index = braceStart;
-		while (index < content.Length) {
-			char current = content[index];
-			if (inString) {
-				index = ConsumeStringLiteralCharacter(content, index, ref inString, stringChar);
-				continue;
-			}
-
-			if (current is '"' or '\'' or '`') {
-				inString = true;
-				stringChar = current;
-			} else if (current == '{') {
-				depth++;
-			} else if (current == '}') {
-				depth--;
-				if (depth == 0) {
-					objectContent = content.Substring(braceStart, index - braceStart + 1);
-					return true;
-				}
-			}
-
-			index++;
-		}
-
-		objectContent = string.Empty;
-		return false;
+		return JsParserHelper.TryExtractBalancedJavaScriptObject(content, braceStart, out objectContent, out _);
 	}
 
 	private static HashSet<string> ExtractTopLevelObjectPropertyNames(string objectContent) {
@@ -1111,7 +1184,7 @@ public static class SchemaValidationService
 		char stringChar = '"';
 		int index = 0;
 		while (index < objectContent.Length) {
-			if (TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
+			if (JsParserHelper.TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
 				continue;
 			}
 
@@ -1120,7 +1193,7 @@ public static class SchemaValidationService
 				continue;
 			}
 
-			if (TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
+			if (JsParserHelper.TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
 				continue;
 			}
 
@@ -1130,18 +1203,6 @@ public static class SchemaValidationService
 		return props;
 	}
 
-	private static bool TryConsumeStringLiteralCharacter(
-		string content,
-		ref int index,
-		ref bool inString,
-		char stringChar) {
-		if (!inString) {
-			return false;
-		}
-
-		index = ConsumeStringLiteralCharacter(content, index, ref inString, stringChar);
-		return true;
-	}
 
 	private static bool TryReadTopLevelPropertyName(
 		string content,
@@ -1151,14 +1212,14 @@ public static class SchemaValidationService
 		HashSet<string> props) {
 		if (current is '"' or '\'' or '`' &&
 		    depth == 1 &&
-		    TryReadQuotedPropertyName(content, index, current, out string propertyName, out int nextIndex)) {
+		    JsParserHelper.TryReadQuotedPropertyName(content, index, current, out string propertyName, out int nextIndex)) {
 			props.Add(propertyName);
 			index = nextIndex;
 			return true;
 		}
 
 		if (depth == 1 &&
-		    IsIdentifierStart(current) &&
+		    JsParserHelper.IsIdentifierStart(current) &&
 		    TryReadIdentifierPropertyName(content, index, out string identifierName, out int identifierNextIndex)) {
 			props.Add(identifierName);
 			index = identifierNextIndex;
@@ -1168,69 +1229,6 @@ public static class SchemaValidationService
 		return false;
 	}
 
-	private static bool TryHandleStructuralCharacter(
-		char current,
-		ref int index,
-		ref int depth,
-		ref bool inString,
-		ref char stringChar) {
-		if (current is '"' or '\'' or '`') {
-			inString = true;
-			stringChar = current;
-			index++;
-			return true;
-		}
-
-		if (current == '{') {
-			depth++;
-			index++;
-			return true;
-		}
-
-		if (current == '}') {
-			depth--;
-			index++;
-			return true;
-		}
-
-		return false;
-	}
-
-	private static bool TryReadQuotedPropertyName(
-		string content,
-		int startIndex,
-		char quote,
-		out string propertyName,
-		out int nextIndex) {
-		propertyName = string.Empty;
-		nextIndex = startIndex;
-		int endIndex = startIndex + 1;
-		while (endIndex < content.Length) {
-			if (content[endIndex] == '\\') {
-				endIndex += endIndex + 1 < content.Length ? 2 : 1;
-				continue;
-			}
-
-			if (content[endIndex] == quote) {
-				break;
-			}
-
-			endIndex++;
-		}
-
-		if (endIndex >= content.Length || content[endIndex] != quote) {
-			return false;
-		}
-
-		int colonIndex = SkipWhitespace(content, endIndex + 1);
-		if (colonIndex >= content.Length || content[colonIndex] != ':') {
-			return false;
-		}
-
-		propertyName = content.Substring(startIndex + 1, endIndex - startIndex - 1);
-		nextIndex = colonIndex + 1;
-		return !string.IsNullOrWhiteSpace(propertyName);
-	}
 
 	private static bool TryReadIdentifierPropertyName(
 		string content,
@@ -1240,11 +1238,11 @@ public static class SchemaValidationService
 		propertyName = string.Empty;
 		nextIndex = startIndex;
 		int index = startIndex + 1;
-		while (index < content.Length && IsIdentifierPart(content[index])) {
+		while (index < content.Length && JsParserHelper.IsIdentifierPart(content[index])) {
 			index++;
 		}
 
-		int colonIndex = SkipWhitespace(content, index);
+		int colonIndex = JsParserHelper.SkipWhitespace(content, index);
 		if (colonIndex >= content.Length || content[colonIndex] != ':') {
 			return false;
 		}
@@ -1254,35 +1252,6 @@ public static class SchemaValidationService
 		return true;
 	}
 
-	private static int SkipWhitespace(string content, int startIndex) {
-		int index = startIndex;
-		while (index < content.Length && char.IsWhiteSpace(content[index])) {
-			index++;
-		}
-		return index;
-	}
-
-	private static bool IsIdentifierStart(char c) =>
-		char.IsLetter(c) || c is '_' or '$';
-
-	private static bool IsIdentifierPart(char c) =>
-		char.IsLetterOrDigit(c) || c is '_' or '$';
-
-	private static int ConsumeStringLiteralCharacter(
-		string validatorsContent,
-		int index,
-		ref bool inString,
-		char stringChar) {
-		if (validatorsContent[index] == '\\') {
-			return index + 1 < validatorsContent.Length ? index + 2 : index + 1;
-		}
-
-		if (validatorsContent[index] == stringChar) {
-			inString = false;
-		}
-
-		return index + 1;
-	}
 
 	private static IEnumerable<(string ValidatorType, HashSet<string> ParamNames)> ExtractCustomValidatorContracts(
 		string validatorsContent) {
@@ -1331,6 +1300,36 @@ public static class SchemaValidationService
 		ForEachMarkerAttributesContainer(jsBody, markerName, isArray, attributes => ExtractAttributesWithValidators(attributes, attributeNames));
 	}
 
+	/// <summary>
+	/// Collects attribute names written through direct <c>$context.set(...)</c> calls inside handlers.
+	/// </summary>
+	/// <remarks>
+	/// This helper intentionally uses a narrow regex heuristic that only recognizes direct
+	/// <c>request.$context.set("Attr", ...)</c> and <c>$context.set("Attr", ...)</c> forms.
+	/// It does not resolve aliases, destructured variables, or chained expressions, so false
+	/// negatives are possible. The collected names are used only to enrich diagnostics when a
+	/// control and a handler appear to target different declared attributes for the same model path.
+	/// </remarks>
+	private static HashSet<string> CollectAttributesWrittenByHandlers(string jsBody) {
+		var attributeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string handlersContent, SchemaHandlersMarker)) {
+			return attributeNames;
+		}
+
+		foreach (Match match in Regex.Matches(
+			         handlersContent,
+			         @"(?:request\.\$context|\$context)\.set\s*\(\s*[""'](?<name>[A-Za-z_][A-Za-z0-9_]*)[""']",
+			         RegexOptions.Singleline,
+			         RegexTimeout)) {
+			string attributeName = match.Groups["name"].Value;
+			if (!string.IsNullOrWhiteSpace(attributeName)) {
+				attributeNames.Add(attributeName);
+			}
+		}
+
+		return attributeNames;
+	}
+
 	private static void ExtractAttributesWithValidators(JsonElement attributesObject, HashSet<string> names) {
 		foreach (JsonProperty attr in EnumerateAttributesWithValidatorObjects(attributesObject)
 			         .Where(attr => EnumerateValidatorObjects(attr).Any())) {
@@ -1341,10 +1340,11 @@ public static class SchemaValidationService
 	private static void CheckValidatorControlBindings(
 		JsonElement element,
 		HashSet<string> attributesWithValidators,
+		IReadOnlyDictionary<string, string> modelPaths,
 		SchemaValidationResult result) {
 		if (element.ValueKind == JsonValueKind.Array) {
 			foreach (JsonElement item in element.EnumerateArray()) {
-				CheckValidatorControlBindings(item, attributesWithValidators, result);
+				CheckValidatorControlBindings(item, attributesWithValidators, modelPaths, result);
 			}
 			return;
 		}
@@ -1355,37 +1355,96 @@ public static class SchemaValidationService
 		                     valuesElement.ValueKind == JsonValueKind.Object
 			? valuesElement
 			: element;
-		AddValidatorControlBindingErrorIfNeeded(element, target, attributesWithValidators, result);
+		AddValidatorControlBindingErrorIfNeeded(element, target, attributesWithValidators, modelPaths, result);
 		foreach (JsonProperty property in element.EnumerateObject()
 		             .Where(property => !property.NameEquals(ValuesPropertyName))) {
-			CheckValidatorControlBindings(property.Value, attributesWithValidators, result);
+			CheckValidatorControlBindings(property.Value, attributesWithValidators, modelPaths, result);
 		}
+	}
+
+	private static void CheckInlineValidatorPlacement(
+		JsonElement element,
+		SchemaValidationResult result,
+		bool checkSelf = true) {
+		if (element.ValueKind == JsonValueKind.Array) {
+			foreach (JsonElement item in element.EnumerateArray()) {
+				CheckInlineValidatorPlacement(item, result);
+			}
+			return;
+		}
+		if (element.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		bool wrappedValues = false;
+		if (checkSelf &&
+		    TryResolveFieldComponent(element, out JsonElement componentValues, out string fieldName, out string componentType, out wrappedValues)) {
+			AddInlineValidatorPlacementErrorIfNeeded(componentValues, fieldName, componentType, result);
+		}
+		foreach (JsonProperty property in element.EnumerateObject()) {
+			bool childCheckSelf = !(wrappedValues && property.NameEquals(ValuesPropertyName));
+			CheckInlineValidatorPlacement(property.Value, result, childCheckSelf);
+		}
+	}
+
+	private static void AddInlineValidatorPlacementErrorIfNeeded(
+		JsonElement target,
+		string fieldName,
+		string componentType,
+		SchemaValidationResult result) {
+		if (!target.TryGetProperty(ValidatorsPropertyName, out _)) {
+			return;
+		}
+
+		string fieldDisplayName = !string.IsNullOrWhiteSpace(fieldName) ? fieldName : componentType;
+		string bindingHint = TryGetBindingAttribute(target, out _, out _, out string bindingAttribute)
+			? $"Declare validators on attribute '{bindingAttribute}' in viewModelConfig/viewModelConfigDiff and keep the control bound to '${bindingAttribute}'."
+			: "Declare validators on the bound attribute in viewModelConfig/viewModelConfigDiff, not on the UI element.";
+		result.Errors.Add(
+			$"Control '{fieldDisplayName}' declares 'validators' inside viewConfigDiff. Validators must be declared on the view-model attribute in viewModelConfig/viewModelConfigDiff, not on the UI element. {bindingHint}");
+	}
+
+	private static string? FindViewModelAttributeForDirectBinding(
+		string directBindingAttr,
+		IReadOnlyDictionary<string, string> modelPaths) {
+		foreach (var (attrName, path) in modelPaths) {
+			if (string.Equals("$" + directBindingAttr, BuildExpectedBinding(path), StringComparison.OrdinalIgnoreCase)) {
+				return attrName;
+			}
+		}
+		return null;
 	}
 
 	private static void AddValidatorControlBindingErrorIfNeeded(
 		JsonElement element,
 		JsonElement target,
 		HashSet<string> attributesWithValidators,
+		IReadOnlyDictionary<string, string> modelPaths,
 		SchemaValidationResult result) {
-		if (!TryGetStringProperty(target, "control", out string controlBinding) ||
-		    !controlBinding.StartsWith("$PDS_", StringComparison.OrdinalIgnoreCase)) {
+		if (!TryGetBindingAttribute(target, out _, out _, out string bindingAttribute)) {
 			return;
 		}
-
-		string attributeName = controlBinding["$PDS_".Length..];
-		if (!attributesWithValidators.Contains(attributeName)) {
-			return;
-		}
-
 		string fieldName = element.TryGetProperty("name", out JsonElement nameEl) &&
-		                   nameEl.ValueKind == JsonValueKind.String
-			? nameEl.GetString() ?? attributeName
-			: attributeName;
+		                   nameEl.ValueKind == JsonValueKind.String &&
+		                   !string.IsNullOrWhiteSpace(nameEl.GetString())
+			? nameEl.GetString() ?? bindingAttribute
+			: bindingAttribute;
+		if (modelPaths.ContainsKey(bindingAttribute)) {
+			if (!TryFindAlternativeAttributesForSamePath(bindingAttribute, modelPaths, attributesWithValidators, out string validatorAttribute)) {
+				return;
+			}
+			result.Errors.Add(
+				$"Control '{fieldName}' binds to '${bindingAttribute}' but validators are declared on attribute '{validatorAttribute}'. " +
+				$"Bind the control to '${validatorAttribute}' or move the validators to '{bindingAttribute}' so the control and validators use the same declared view-model attribute.");
+			return;
+		}
+		string? vmAttribute = FindViewModelAttributeForDirectBinding(bindingAttribute, modelPaths);
+		if (vmAttribute == null || !attributesWithValidators.Contains(vmAttribute)) {
+			return;
+		}
 		result.Errors.Add(
-			$"Control '{fieldName}' binds to '$PDS_{attributeName}' but attribute " +
-			$"'{attributeName}' has validators. Validators only fire on view-model attribute " +
-			"bindings \u2014 use '$" + attributeName +
-			"' instead of '$PDS_" + attributeName + "'.");
+			$"Control '{fieldName}' binds to '${bindingAttribute}' but attribute " +
+			$"'{vmAttribute}' has validators. Validators only fire on view-model attribute " +
+			$"bindings — use '${vmAttribute}' instead of '${bindingAttribute}'.");
 	}
 
 	private static bool TryGetDataTableColumns(JsonElement item, out JsonElement columns) {
@@ -1411,7 +1470,7 @@ public static class SchemaValidationService
 			return false;
 		}
 		string? candidate = codeElement.GetString();
-		if (string.IsNullOrEmpty(candidate) || !candidate.StartsWith("PDS_", StringComparison.Ordinal)) {
+		if (string.IsNullOrEmpty(candidate) || !candidate.Contains('_')) {
 			return false;
 		}
 		code = candidate;
@@ -1485,7 +1544,7 @@ public static class SchemaValidationService
 		Stack<(char bracket, int position)> stack, SchemaValidationResult result) {
 		if (c == '/' && i + 1 < length) {
 			if (jsBody[i + 1] == '/') {
-				return SkipLineComment(jsBody, i, length);
+				return JsParserHelper.SkipLineComment(jsBody, i, length);
 			}
 			if (jsBody[i + 1] == '*') {
 				return SkipBlockComment(jsBody, i, length, result);
@@ -1507,13 +1566,6 @@ public static class SchemaValidationService
 		return i;
 	}
 
-	private static int SkipLineComment(string jsBody, int i, int length) {
-		i += 2;
-		while (i < length && jsBody[i] != '\n' && jsBody[i] != '\r') {
-			i++;
-		}
-		return i;
-	}
 
 	private static int SkipBlockComment(string jsBody, int i, int length, SchemaValidationResult result) {
 		int commentStart = i;

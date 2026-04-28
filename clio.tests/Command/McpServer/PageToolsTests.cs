@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
@@ -178,6 +179,12 @@ public class PageToolsTests {
 			because: "get-page prompt guidance should route guide lookups through the dedicated guidance tool");
 		prompt.Should().Contain("`existing-app-maintenance`",
 			because: "get-page prompt guidance should point callers to the MCP-owned existing-app maintenance guide name");
+		prompt.Should().Contain("`page-schema-handlers`",
+			because: "get-page prompt guidance should point handler edits to the dedicated clio-owned handler guide name");
+		prompt.Should().Contain($"you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-handlers` before proposing or applying changes",
+			because: "handler guidance should be mandatory before authorship so callers use the canonical handler contract");
+		prompt.Should().Contain("must not author handler changes until that guidance has been read",
+			because: "handler guidance should be framed as a hard workflow prerequisite rather than an optional recommendation");
 		prompt.Should().Contain("`page-schema-validators`",
 			because: "get-page prompt guidance should point validator edits to the dedicated clio-owned validator guide name");
 		prompt.Should().Contain($"you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-validators` before proposing or applying changes",
@@ -186,6 +193,8 @@ public class PageToolsTests {
 			because: "validator guidance should be framed as a hard workflow prerequisite rather than an optional recommendation");
 		prompt.Should().Contain("never use handler signatures like `handler(request, next)`",
 			because: "validator guidance should explicitly block handler contract leakage into SCHEMA_VALIDATORS");
+		prompt.Should().Contain("If the requirement is field-value validation such as max/min/length/range/regex, including when the threshold comes from a system setting or other async SDK read, treat it as `validators` work and read `page-schema-validators`, not `page-schema-handlers`.",
+			because: "page guidance should stop callers from choosing handlers for syssetting-backed length validation rules");
 		prompt.Should().Contain($"`{ToolContractGetTool.ToolName}`",
 			because: "get-page prompt guidance should bootstrap page workflows from the authoritative MCP contract before the first page tool call");
 		prompt.Should().Contain($"`{PageSyncTool.ToolName}`",
@@ -198,10 +207,12 @@ public class PageToolsTests {
 			because: "page guidance should tell callers how to preserve ResourceString macros during sync-pages");
 		prompt.Should().Contain("valid JSON object string",
 			because: "get-page prompt guidance should clarify that malformed resource payloads are rejected");
-		prompt.Should().Contain("$PDS_*",
-			because: "page guidance should steer standard fields toward direct datasource-backed bindings");
-		prompt.Should().Contain("$UsrStatus -> PDS.UsrStatus",
-			because: "page guidance should call out the proxy binding pattern that update-page now rejects");
+		prompt.Should().Contain("declared view-model attribute from `viewModelConfig` / `viewModelConfigDiff`",
+			because: "page guidance should steer standard fields toward declared view-model attributes instead of naming conventions");
+		prompt.Should().Contain("If validator or handler logic moves to a different declared attribute for the same field, rebind the control to that same attribute.",
+			because: "page guidance should call out the rebind rule that keeps control, validators, and handlers on the same attribute");
+		prompt.Should().Contain("If the control is inherited from a parent schema and there is no local",
+			because: "page guidance should explain that inherited controls need a local merge when rebinding is required");
 		prompt.Should().Contain("Usr*_label",
 			because: "page guidance should reserve custom Usr label resources for standalone UI only");
 		prompt.Should().Contain("`list-pages -> get-page -> sync-pages -> get-page`",
@@ -235,6 +246,10 @@ public class PageToolsTests {
 		string description = descAttr.Description;
 
 		// Assert
+		description.Should().Contain("SCHEMA_HANDLERS",
+			because: "get-page description should surface the handler section name so callers know which guide to read before editing");
+		description.Should().Contain("call get-guidance with name `page-schema-handlers`",
+			because: "get-page description should route callers to the dedicated handler guide through get-guidance");
 		description.Should().Contain("SCHEMA_VALIDATORS",
 			because: "get-page description should surface the section name so callers know which guide to read before editing");
 		description.Should().Contain("call get-guidance with name `page-schema-validators`",
@@ -254,6 +269,10 @@ public class PageToolsTests {
 		string description = descAttr.Description;
 
 		// Assert
+		description.Should().Contain("SCHEMA_HANDLERS",
+			because: "sync-pages description should surface the handler section name as part of body authoring rules");
+		description.Should().Contain("call get-guidance with name `page-schema-handlers`",
+			because: "sync-pages description should route callers to the dedicated handler guide through get-guidance");
 		description.Should().Contain("SCHEMA_VALIDATORS",
 			because: "sync-pages description should surface the validator section name as part of body authoring rules");
 		description.Should().Contain("call get-guidance with name `page-schema-validators`",
@@ -273,6 +292,10 @@ public class PageToolsTests {
 		string description = descAttr.Description;
 
 		// Assert
+		description.Should().Contain("SCHEMA_HANDLERS",
+			because: "update-page description should surface the handler section name as part of body authoring rules");
+		description.Should().Contain("call get-guidance with name `page-schema-handlers` first",
+			because: "update-page description should make handler guidance a mandatory precondition before handler authoring");
 		description.Should().Contain("SCHEMA_VALIDATORS",
 			because: "update-page description should surface the validator section name as part of body authoring rules");
 		description.Should().Contain("call get-guidance with name `page-schema-validators` first",
@@ -295,11 +318,11 @@ public class PageToolsTests {
 
 		// Act & Assert
 		getDesc.Should().Contain("get-guidance",
-			because: "get-page description must route callers to the validator guide through get-guidance");
+			because: "get-page description must route callers to the handler and validator guides through get-guidance");
 		syncDesc.Should().Contain("get-guidance",
-			because: "sync-pages description must route callers to the validator guide through get-guidance");
+			because: "sync-pages description must route callers to the handler and validator guides through get-guidance");
 		updateDesc.Should().Contain("get-guidance",
-			because: "update-page description must route callers to the validator guide instead of duplicating PDS binding rules inline");
+			because: "update-page description must route callers to the handler and validator guides instead of duplicating page-body rules inline");
 	}
 
 	[Test]
@@ -1335,32 +1358,116 @@ public class PageToolsTests {
 	}
 
 	[Test]
-	[Description("TryUpdatePage dry-run rejects proxy field bindings before any remote calls are made.")]
-	public void TryUpdatePage_WhenFieldBindingUsesRejectedProxy_ReturnsValidationError() {
+	[Description("TryUpdatePage dry-run passes when field binding targets an attribute not declared in the current schema — it may be in a parent schema.")]
+	public void TryUpdatePage_WhenFieldBindingTargetsAttributeNotInCurrentSchema_Succeeds() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrProxyBinding_FormPage",
-			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
+			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
+			DryRun = true
+		};
+
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		result.Should().BeTrue(
+			because: "update-page should allow bindings to attributes not in the current schema, as they may be inherited from a parent schema");
+		response.Success.Should().BeTrue(
+			because: "binding to a parent-schema attribute is not a validation failure");
+	}
+
+	[Test]
+	[Description("TryUpdatePage dry-run rejects controls bound to a handler-updated attribute at a different name than the declared binding.")]
+	public void TryUpdatePage_WhenHandlerDrivenFieldStaysOnDifferentDeclaredAttribute_ReturnsValidationError() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrHandlerDrivenBinding_FormPage",
+			Body = CreatePageBody(
+				viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","label":"$Resources.Strings.UsrName","control":"$UsrNameField"}}]""",
+				viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}},"UsrNameField":{"modelConfig":{"path":"PDS.UsrName"}}}}""",
+				handlers: """[{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { const result = await next?.handle(request); await request.$context.set("UsrName", "Primary currency"); return result; } }]"""),
 			DryRun = true
 		};
 
 		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
 
 		result.Should().BeFalse(
-			because: "update-page should fail fast on standard fields that proxy a direct PDS path through a custom attribute");
+			because: "update-page should fail fast when the control binds to a different declared attribute than the handler updates");
 		response.Success.Should().BeFalse(
 			because: "the validation failure should be surfaced in the response envelope");
 		response.Error.Should().Contain("invalid form field bindings")
-			.And.Contain("$UsrStatus")
-			.And.Contain("$PDS_UsrStatus",
-				because: "the response should explain both the rejected proxy binding and the expected datasource binding");
+			.And.Contain("$UsrNameField")
+			.And.Contain("$UsrName")
+			.And.Contain("$context.set",
+				because: "the response should guide toward the correct declared attribute written by the handler");
 		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
 			because: "validation should fail before the command builds any service URLs");
 		applicationClient.ReceivedCalls().Should().BeEmpty(
 			because: "validation should fail before the command sends any remote requests");
+	}
+
+	[Test]
+	[Description("TryUpdatePage dry-run rejects validators declared directly on a viewConfigDiff control.")]
+	public void TryUpdatePage_WhenValidatorsAreDeclaredOnViewConfigDiffControl_ReturnsValidationError() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrValidatorPlacement_FormPage",
+			Body = CreatePageBody(
+				viewConfigDiff: """[{"operation":"insert","name":"UsrCode","values":{"type":"crt.Input","control":"$UsrCode","validators":[{"id":"usr.MaxLengthFromSysSettingValidator","params":{"settingCode":"MaxProcessLoopCount","message":"Too long"}}]}}]""",
+				viewModelConfig: """{"attributes":{"UsrCode":{"modelConfig":{"path":"PDS.UsrCode"}}}}""",
+				validators: """{"usr.MaxLengthFromSysSettingValidator":{"validator":function(config){return async function(control){return null;};},"params":[{"name":"settingCode"},{"name":"message"}],"async":true}}"""),
+			DryRun = true
+		};
+
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		result.Should().BeFalse(
+			because: "update-page should fail fast when validators are declared on the UI element instead of the bound attribute");
+		response.Success.Should().BeFalse(
+			because: "the validation failure should be surfaced in the response envelope");
+		response.Error.Should().Contain("invalid validator bindings")
+			.And.Contain("viewConfigDiff")
+			.And.Contain("viewModelConfig/viewModelConfigDiff",
+				because: "the response should explain the correct validator binding location");
+		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
+			because: "validation should fail before the command builds any service URLs");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "validation should fail before the command sends any remote requests");
+	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage rejects a page body where a JSON marker section contains malformed JSON")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_Rejects_Body_With_Malformed_Json_Marker() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		PageUpdateTool tool = new(command, logger, commandResolver);
+		string bodyWithBadJson = CreatePageBody(viewConfigDiff: "[{ bad json }]");
+		PageUpdateArgs args = new("UsrTest_FormPage", bodyWithBadJson, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "update-page must reject page bodies where JSON marker sections contain malformed JSON");
+		response.Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
+			because: "the error message should identify which marker section is malformed");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "validation must fail before any remote call is made to Creatio");
 	}
 
 	[Test]
@@ -1421,6 +1528,63 @@ public class PageToolsTests {
 	}
 
 	[Test]
+	[Description("PageUpdateTool.UpdatePage rejects handlers when SCHEMA_HANDLERS stops being an array literal.")]
+	public void PageUpdateTool_UpdatePage_Rejects_NonArray_Handlers_Section() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		PageUpdateTool tool = new(command, logger, commandResolver);
+		string body = CreatePageBody(
+			handlers: """{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { await next?.handle(request); } }""");
+		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "update-page must reject schemas where SCHEMA_HANDLERS is no longer an array literal");
+		response.Error.Should().Contain("Validation failed")
+			.And.Contain("SCHEMA_HANDLERS")
+			.And.Contain("array literal",
+				because: "the error should explain that the handlers section must stay an array");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "handler-shape validation must fail before any remote call is made");
+	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage rejects handler entries that omit the request property.")]
+	public void PageUpdateTool_UpdatePage_Rejects_Handler_Entry_Without_Request() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		PageUpdateTool tool = new(command, logger, commandResolver);
+		string body = CreatePageBody(
+			handlers: """[{ handler: async (request, next) => { await next?.handle(request); } }]""");
+		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "update-page must reject handler entries that do not declare the handled request type");
+		response.Error.Should().Contain("Validation failed")
+			.And.Contain("'request'",
+				because: "the error should identify the missing request property");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "handler-shape validation must fail before any remote call is made");
+	}
+
+	[Test]
 	[Description("PageUpdateTool.UpdatePage rejects crt.MaxLength bindings that use max instead of maxLength in params.")]
 	public void PageUpdateTool_UpdatePage_Rejects_BuiltIn_MaxLength_With_Wrong_Param_Name() {
 		// Arrange
@@ -1446,6 +1610,37 @@ public class PageToolsTests {
 			.And.Contain("max")
 			.And.Contain("maxLength",
 				because: "the validation error should identify the wrong param and the required one");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "the validation failure must happen before any remote save call is made");
+	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage rejects validators declared directly on a viewConfigDiff control before saving.")]
+	public void PageUpdateTool_UpdatePage_Rejects_Validators_Declared_On_ViewConfigDiff_Control() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		PageUpdateTool tool = new(command, logger, commandResolver);
+		string body = CreatePageBody(
+			viewConfigDiff: """[{"operation":"insert","name":"UsrCode","values":{"type":"crt.Input","control":"$UsrCode","validators":[{"id":"usr.MaxLengthFromSysSettingValidator","params":{"settingCode":"MaxProcessLoopCount","message":"Too long"}}]}}]""",
+			viewModelConfig: """{"attributes":{"UsrCode":{"modelConfig":{"path":"PDS.UsrCode"}}}}""",
+			validators: """{"usr.MaxLengthFromSysSettingValidator":{"validator":function(config){return async function(control){return null;};},"params":[{"name":"settingCode"},{"name":"message"}],"async":true}}""");
+		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "validators in viewConfigDiff are ignored by runtime and must be rejected before save");
+		response.Error.Should().Contain("viewConfigDiff")
+			.And.Contain("viewModelConfig/viewModelConfigDiff")
+			.And.Contain("UsrCode",
+				because: "the validation error should explain where validator bindings belong");
 		applicationClient.ReceivedCalls().Should().BeEmpty(
 			because: "the validation failure must happen before any remote save call is made");
 	}
@@ -1484,6 +1679,177 @@ public class PageToolsTests {
 		// Assert
 		description.Should().Contain("get-guidance",
 			because: "sync-pages description must route callers to the validator guide which covers both static and diff-based viewModelConfig binding");
+	}
+
+	[Test]
+	[Description("sync-pages rejects handlers when SCHEMA_HANDLERS stops being an array literal before any save attempt.")]
+	public void PageSyncTool_SyncPages_Rejects_NonArray_Handlers_Section() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		MockFileSystem fileSystem = new();
+		PageSyncTool tool = new(commandResolver, fileSystem);
+		PageSyncArgs args = new(
+			"local",
+			[
+				new PageSyncPageInput(
+					"UsrHandlerShape_FormPage",
+					CreatePageBody(
+						handlers: """{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { await next?.handle(request); } }"""))
+			],
+			true,
+			false);
+
+		// Act
+		PageSyncResponse response = tool.SyncPages(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "sync-pages must reject schemas where SCHEMA_HANDLERS is no longer an array literal");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the invalid handlers section should fail client-side validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "sync-pages should include validation details for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "handler-shape validation contributes to content-ok for page bodies");
+		response.Pages[0].Error.Should().Contain("SCHEMA_HANDLERS")
+			.And.Contain("array literal",
+				because: "the error should explain that the handlers section must stay an array");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "client-side handler validation must fail before any remote save call is made");
+	}
+
+	[Test]
+	[Description("sync-pages rejects request.viewModel handler APIs and tells callers to read handler guidance before any save attempt.")]
+	public void PageSyncTool_SyncPages_Rejects_Request_ViewModel_Handler_Api_With_Recovery_Hint() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		MockFileSystem fileSystem = new();
+		PageSyncTool tool = new(commandResolver, fileSystem);
+		PageSyncArgs args = new(
+			"local",
+			[
+				new PageSyncPageInput(
+					"UsrInvalidHandlerApi_FormPage",
+					CreatePageBody(
+						handlers: """[{ request: "crt.HandleViewModelAttributeChangeRequest", handler: async (request, next) => { const current = await request.viewModel.get("UsrParkingRequired"); await request.viewModel.set("UsrVehicleNumber", current ? "A-01" : null); return next?.handle(request); } }]"""))
+			],
+			true,
+			false);
+
+		// Act
+		PageSyncResponse response = tool.SyncPages(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "sync-pages must reject invented request.viewModel handler APIs");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the invalid handler API should fail client-side validation");
+		response.Pages[0].Error.Should().Contain("request.viewModel")
+			.And.Contain("page-schema-handlers")
+			.And.Contain("canonical clio handler examples")
+			.And.Contain("request.value")
+			.And.Contain("request.$context",
+				because: "the error should reject the invented API and redirect the caller to the clio guidance and canonical handler patterns");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "client-side handler API validation must fail before any remote save call is made");
+	}
+
+	[Test]
+	[Description("sync-pages rejects validators declared directly on a viewConfigDiff control before any save attempt.")]
+	public void PageSyncTool_SyncPages_Rejects_Validators_Declared_On_ViewConfigDiff_Control() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		MockFileSystem fileSystem = new();
+		PageSyncTool tool = new(commandResolver, fileSystem);
+		PageSyncArgs args = new(
+			"local",
+			[
+				new PageSyncPageInput(
+					"UsrValidatorPlacement_FormPage",
+					CreatePageBody(
+						viewConfigDiff: """[{"operation":"insert","name":"UsrCode","values":{"type":"crt.Input","control":"$UsrCode","validators":[{"id":"usr.MaxLengthFromSysSettingValidator","params":{"settingCode":"MaxProcessLoopCount","message":"Too long"}}]}}]""",
+						viewModelConfig: """{"attributes":{"UsrCode":{"modelConfig":{"path":"PDS.UsrCode"}}}}""",
+						validators: """{"usr.MaxLengthFromSysSettingValidator":{"validator":function(config){return async function(control){return null;};},"params":[{"name":"settingCode"},{"name":"message"}],"async":true}}"""))
+			],
+			true,
+			false);
+
+		// Act
+		PageSyncResponse response = tool.SyncPages(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "sync-pages must reject validators declared on the UI element before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the invalid validator placement should fail client-side validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "sync-pages should include validation details for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "validator-placement validation contributes to content-ok for page bodies");
+		response.Pages[0].Error.Should().Contain("viewConfigDiff")
+			.And.Contain("viewModelConfig/viewModelConfigDiff")
+			.And.Contain("UsrCode",
+				because: "the error should explain that validators belong on the bound view-model attribute");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "client-side validator-placement validation must fail before any remote save call is made");
+	}
+
+	[Test]
+	[Description("sync-pages reports a handler-shape validation failure only once when SCHEMA_HANDLERS is invalid.")]
+	public void PageSyncTool_SyncPages_Does_Not_Duplicate_Handler_Validation_Error() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		MockFileSystem fileSystem = new();
+		PageSyncTool tool = new(commandResolver, fileSystem);
+		PageSyncArgs args = new(
+			"local",
+			[
+				new PageSyncPageInput(
+					"UsrHandlerShape_FormPage",
+					CreatePageBody(
+						handlers: """{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { await next?.handle(request); } }"""))
+			],
+			true,
+			false);
+
+		// Act
+		PageSyncResponse response = tool.SyncPages(args, null).Result;
+
+		// Assert
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "sync-pages should return validation details for the rejected page");
+		response.Pages[0].Validation!.Errors!.Count(error =>
+			error.Contains("SCHEMA_HANDLERS", StringComparison.Ordinal) &&
+			error.Contains("array literal", StringComparison.Ordinal)).Should().Be(1,
+			because: "the handler-shape error should be reported once even though marker-content validation already includes handler validation");
 	}
 
 
@@ -1661,8 +2027,8 @@ public class PageToolsTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("get-page normalizes proxy bindings before writing body.js so the file passes sync-pages validation.")]
-	public void PageGetTool_WhenBodyHasProxyBindings_WritesNormalizedBodyFile() {
+	[Description("get-page writes proxy bindings unchanged because body.js is the editable source body.")]
+	public void PageGetTool_WhenBodyHasProxyBindings_WritesBodyUnchanged() {
 		// Arrange
 		string proxyBody = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","label":"$Resources.Strings.PDS_UsrStatus","control":"$UsrStatus"}}]""",
@@ -1673,12 +2039,12 @@ public class PageToolsTests {
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
 
 		// Assert
-		response.Success.Should().BeTrue(because: "get-page should succeed even when the source body has proxy bindings");
+		response.Success.Should().BeTrue(because: "get-page should succeed even when the source body has proxy view-model attribute bindings");
 		string writtenBody = mockFs.File.ReadAllText(response.Files.BodyFile);
-		writtenBody.Should().Contain("$PDS_UsrStatus",
-			because: "get-page must normalize proxy binding $UsrStatus to $PDS_UsrStatus before writing body.js");
-		writtenBody.Should().NotContain("\"$UsrStatus\"",
-			because: "the proxy binding must not remain in the written body.js");
+		writtenBody.Should().Be(proxyBody,
+			because: "get-page should not silently rewrite editable body.js content");
+		writtenBody.Should().Contain("\"$UsrStatus\"",
+			because: "callers must make any binding repairs explicitly in the page body");
 	}
 
 	[Test]
