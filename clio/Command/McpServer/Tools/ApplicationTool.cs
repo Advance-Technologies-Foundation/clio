@@ -154,6 +154,10 @@ public sealed class ApplicationCreateTool(
 				$"Known templates: {available}. Omit template-code to use the default AppFreedomUI.");
 		}
 
+		if (!string.IsNullOrWhiteSpace(args.IconBackground)) {
+			ApplicationSectionColorPalette.ValidateOrThrow(args.IconBackground.Trim());
+		}
+
 		if (args.TitleLocalizations is not null ||
 			args.DescriptionLocalizations is not null ||
 			args.CaptionLocalizations is not null ||
