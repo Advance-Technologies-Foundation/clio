@@ -73,11 +73,11 @@ internal static class BusinessRuleHelpers {
 	internal static bool IsNumericDataValueType(string dataValueTypeName) =>
 		SupportedNumericDataValueTypeNames.Contains(dataValueTypeName);
 
-	internal static bool IsTemporalDataValueType(string dataValueTypeName) =>
-		SupportedTemporalDataValueTypeNames.Contains(dataValueTypeName);
+	internal static bool IsDateTimeDataValueType(string dataValueTypeName) =>
+		SupportedDateTimeDataValueTypeNames.Contains(dataValueTypeName);
 
 	internal static bool IsRelationalDataValueType(string dataValueTypeName) =>
-		IsNumericDataValueType(dataValueTypeName) || IsTemporalDataValueType(dataValueTypeName);
+		IsNumericDataValueType(dataValueTypeName) || IsDateTimeDataValueType(dataValueTypeName);
 
 	internal static bool TryConvertSupportedNumericConstant(
 		JsonElement element,
@@ -100,7 +100,7 @@ internal static class BusinessRuleHelpers {
 		return false;
 	}
 
-	internal static string GetTemporalConstantValidationMessage(string dataValueTypeName) =>
+	internal static string GetDateTimeConstantValidationMessage(string dataValueTypeName) =>
 		dataValueTypeName switch {
 			"Date" => "rule.condition.conditions[*].rightExpression.value must be a JSON string in 'yyyy-MM-dd' format when the left attribute is Date.",
 			"DateTime" => "rule.condition.conditions[*].rightExpression.value must be a JSON string in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm') when the left attribute is DateTime.",
@@ -108,7 +108,7 @@ internal static class BusinessRuleHelpers {
 			_ => "rule.condition.conditions[*].rightExpression.value must be a valid JSON string date/time constant."
 		};
 
-	internal static bool TryConvertTemporalConstant(
+	internal static bool TryConvertDateTimeConstant(
 		JsonElement element,
 		string dataValueTypeName,
 		out DateTime normalizedValue) {
@@ -167,8 +167,8 @@ internal static class BusinessRuleHelpers {
 
 	internal static object? ConvertJsonElement(JsonElement element, string? dataValueTypeName = null) {
 		if (!string.IsNullOrWhiteSpace(dataValueTypeName)
-			&& IsTemporalDataValueType(dataValueTypeName)
-			&& TryConvertTemporalConstant(element, dataValueTypeName, out DateTime dateTimeValue)) {
+			&& IsDateTimeDataValueType(dataValueTypeName)
+			&& TryConvertDateTimeConstant(element, dataValueTypeName, out DateTime dateTimeValue)) {
 			return dateTimeValue;
 		}
 

@@ -137,7 +137,7 @@ internal static class BusinessRuleConstants {
 			"Float8"
 		};
 
-	internal static readonly IReadOnlySet<string> SupportedTemporalDataValueTypeNames =
+	internal static readonly IReadOnlySet<string> SupportedDateTimeDataValueTypeNames =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
 			"Date",
 			"DateTime",

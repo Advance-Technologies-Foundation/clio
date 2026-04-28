@@ -14,7 +14,7 @@ public sealed class BusinessRuleHelpersTests {
 	[TestCase("Time", "\"13:45:30+02:00\"", 1, 1, 1, 11, 45, 30)]
 	[Category("Unit")]
 	[Description("Normalizes Date DateTime and Time constants into UTC DateTime values before metadata serialization.")]
-	public void TryConvertTemporalConstant_Should_Normalize_Supported_Temporal_Constants(
+	public void TryConvertDateTimeConstant_Should_Normalize_Supported_Date_Time_Constants(
 		string dataValueTypeName,
 		string json,
 		int year,
@@ -27,7 +27,7 @@ public sealed class BusinessRuleHelpersTests {
 		JsonElement element = JsonSerializer.Deserialize<JsonElement>(json);
 
 		// Act
-		bool converted = BusinessRuleHelpers.TryConvertTemporalConstant(element, dataValueTypeName, out DateTime normalizedValue);
+		bool converted = BusinessRuleHelpers.TryConvertDateTimeConstant(element, dataValueTypeName, out DateTime normalizedValue);
 
 		// Assert
 		converted.Should().BeTrue(
@@ -42,19 +42,19 @@ public sealed class BusinessRuleHelpersTests {
 	[TestCase("DateTime", "5")]
 	[TestCase("Time", "\"not-a-time\"")]
 	[Category("Unit")]
-	[Description("Rejects invalid temporal constants during normalization.")]
-	public void TryConvertTemporalConstant_Should_Reject_Invalid_Temporal_Constants(
+	[Description("Rejects invalid date/time constants during normalization.")]
+	public void TryConvertDateTimeConstant_Should_Reject_Invalid_Date_Time_Constants(
 		string dataValueTypeName,
 		string json) {
 		// Arrange
 		JsonElement element = JsonSerializer.Deserialize<JsonElement>(json);
 
 		// Act
-		bool converted = BusinessRuleHelpers.TryConvertTemporalConstant(element, dataValueTypeName, out DateTime normalizedValue);
+		bool converted = BusinessRuleHelpers.TryConvertDateTimeConstant(element, dataValueTypeName, out DateTime normalizedValue);
 
 		// Assert
 		converted.Should().BeFalse(
-			because: "invalid temporal constants should be rejected before add-on metadata is generated");
+			because: "invalid date/time constants should be rejected before add-on metadata is generated");
 		normalizedValue.Should().Be(default,
 			because: "failed normalization should not return a partially parsed value");
 	}

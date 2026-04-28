@@ -50,7 +50,7 @@ public sealed class BusinessRuleValidatorTests {
 		new object[] { 47, "Float0" }
 	];
 
-	private static readonly object[] TemporalTypeCases = [
+	private static readonly object[] DateTimeTypeCases = [
 		new object[] { 8, "StartDate", "2025-01-15" },
 		new object[] { 7, "CreatedOn", "2025-01-15T13:45:00+02:00" },
 		new object[] { 9, "ReminderTime", "13:45:00+02:00" }
@@ -118,7 +118,7 @@ public sealed class BusinessRuleValidatorTests {
 
 	[TestCaseSource(nameof(UnarySupportedTypeCases))]
 	[Category("Unit")]
-	[Description("Accepts unary filled-state comparisons for representative text lookup boolean numeric guid and temporal left attributes.")]
+	[Description("Accepts unary filled-state comparisons for representative text lookup boolean numeric guid and date/time left attributes.")]
 	public void Validate_Should_Accept_Unary_Comparison_For_Representative_Left_Types(
 		string comparisonType,
 		int dataValueType,
@@ -391,10 +391,10 @@ public sealed class BusinessRuleValidatorTests {
 			because: "relational attribute comparisons should be allowed when both numeric operands have the same type");
 	}
 
-	[TestCaseSource(nameof(TemporalTypeCases))]
+	[TestCaseSource(nameof(DateTimeTypeCases))]
 	[Category("Unit")]
-	[Description("Accepts relational comparisons with temporal constants for Date DateTime and Time attributes.")]
-	public void Validate_Should_Accept_Relational_Temporal_Constant(
+	[Description("Accepts relational comparisons with date/time constants for Date DateTime and Time attributes.")]
+	public void Validate_Should_Accept_Relational_Date_Time_Constant(
 		int dataValueType,
 		string leftPath,
 		string constantValue) {
@@ -412,15 +412,15 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().NotThrow(
-			because: "temporal relational comparisons should allow valid string constants for Date DateTime and Time");
+			because: "date/time relational comparisons should allow valid string constants for Date DateTime and Time");
 	}
 
 	[TestCase(8, "StartDate", "DueDate")]
 	[TestCase(7, "CreatedOn", "ModifiedOn")]
 	[TestCase(9, "ReminderTime", "EndTime")]
 	[Category("Unit")]
-	[Description("Accepts relational comparisons between temporal attributes when both operands use the same temporal data value type.")]
-	public void Validate_Should_Accept_Relational_Temporal_Attribute_Comparison(
+	[Description("Accepts relational comparisons between date/time attributes when both operands use the same date/time data value type.")]
+	public void Validate_Should_Accept_Relational_Date_Time_Attribute_Comparison(
 		int dataValueType,
 		string leftPath,
 		string rightPath) {
@@ -439,12 +439,12 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().NotThrow(
-			because: "temporal relational comparisons should allow matching Date DateTime and Time attribute pairs");
+			because: "date/time relational comparisons should allow matching Date DateTime and Time attribute pairs");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects relational comparisons when the left attribute is not numeric or temporal.")]
+	[Description("Rejects relational comparisons when the left attribute is not numeric or date/time.")]
 	public void Validate_Should_Reject_Relational_Comparison_For_Unsupported_Left_Type() {
 		// Arrange
 		BusinessRule rule = CreateRule(
@@ -466,8 +466,8 @@ public sealed class BusinessRuleValidatorTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects non-string temporal constants for DateTime attributes.")]
-	public void Validate_Should_Reject_Invalid_Temporal_Constant() {
+	[Description("Rejects non-string date/time constants for DateTime attributes.")]
+	public void Validate_Should_Reject_Invalid_Date_Time_Constant() {
 		// Arrange
 		BusinessRule rule = CreateRule(
 			comparisonType: "greater-than",
@@ -483,14 +483,14 @@ public sealed class BusinessRuleValidatorTests {
 		// Assert
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a JSON string in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm') when the left attribute is DateTime.",
-				because: "temporal comparisons should reject non-string constants before metadata conversion");
+				because: "date/time comparisons should reject non-string constants before metadata conversion");
 	}
 
 	[TestCase("CreatedOn", 7, "2025-01-15T13:45:00", "rule.condition.conditions[*].rightExpression.value must be a JSON string in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm') when the left attribute is DateTime.")]
 	[TestCase("ReminderTime", 9, "13:45:00", "rule.condition.conditions[*].rightExpression.value must be a JSON string in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm') when the left attribute is Time.")]
 	[Category("Unit")]
-	[Description("Rejects timezone-less temporal constants when DateTime or Time comparisons require explicit timezone semantics.")]
-	public void Validate_Should_Reject_Temporal_Constant_Without_Explicit_Timezone(
+	[Description("Rejects timezone-less date/time constants when DateTime or Time comparisons require explicit timezone semantics.")]
+	public void Validate_Should_Reject_Date_Time_Constant_Without_Explicit_Timezone(
 		string leftPath,
 		int dataValueType,
 		string constantValue,

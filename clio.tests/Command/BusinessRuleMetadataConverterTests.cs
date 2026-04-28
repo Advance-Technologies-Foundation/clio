@@ -260,8 +260,8 @@ public sealed class BusinessRuleMetadataConverterTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Normalizes temporal constants into typed metadata values before JSON serialization.")]
-	public void ToMetadata_Should_Normalize_Temporal_Constant_Metadata() {
+	[Description("Normalizes date/time constants into typed metadata values before JSON serialization.")]
+	public void ToMetadata_Should_Normalize_Date_Time_Constant_Metadata() {
 		// Arrange
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
 			CreateColumn("CreatedOn", 7),
@@ -287,7 +287,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 
 		// Assert
 		rightExpression.Value.Should().BeOfType<DateTime>(
-			because: "temporal constants should be normalized to typed DateTime values before metadata serialization");
+			because: "date/time constants should be normalized to typed DateTime values before metadata serialization");
 		((DateTime)rightExpression.Value!).Should().Be(new DateTime(2025, 1, 15, 11, 45, 30, DateTimeKind.Utc),
 			because: "date-time constants with offsets should be normalized to UTC");
 		using JsonDocument document = JsonDocument.Parse(json);
@@ -300,7 +300,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			.GetString()
 			.Should()
 			.Be("2025-01-15T11:45:30Z",
-				because: "typed temporal constants should serialize back to stable UTC JSON strings");
+				because: "typed date/time constants should serialize back to stable UTC JSON strings");
 	}
 
 	[Test]

@@ -217,14 +217,14 @@ internal static class BusinessRuleValidator {
 				"rule.condition.conditions[*].rightExpression.value must be a JSON number representable as Int64 or Decimal when the left attribute is a numeric type.");
 		}
 
-		if (IsTemporalDataValueType(leftDataValueTypeName)
-			&& !TryConvertTemporalConstant(rightValue, leftDataValueTypeName, out _)) {
-			throw new ArgumentException(GetTemporalConstantValidationMessage(leftDataValueTypeName));
+		if (IsDateTimeDataValueType(leftDataValueTypeName)
+			&& !TryConvertDateTimeConstant(rightValue, leftDataValueTypeName, out _)) {
+			throw new ArgumentException(GetDateTimeConstantValidationMessage(leftDataValueTypeName));
 		}
 
 		if (!IsTextDataValueType(leftDataValueTypeName)
 			&& !IsNumericDataValueType(leftDataValueTypeName)
-			&& !IsTemporalDataValueType(leftDataValueTypeName)) {
+			&& !IsDateTimeDataValueType(leftDataValueTypeName)) {
 			throw new ArgumentException(
 				$"Const rightExpression is not supported for left attribute type '{leftDataValueTypeName}'.");
 		}
