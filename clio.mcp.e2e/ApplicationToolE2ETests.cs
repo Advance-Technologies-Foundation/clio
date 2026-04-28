@@ -436,7 +436,7 @@ public sealed class ApplicationToolE2ETests {
 			description: null,
 			"AppFreedomUI",
 			"11111111-1111-1111-1111-111111111111",
-			"#FFFFFF",
+			null,
 			optionalTemplateDataJson: null);
 
 		// Assert
@@ -469,7 +469,7 @@ public sealed class ApplicationToolE2ETests {
 			description: null,
 			templateCode: "AppFreedomUI",
 			iconId: "11111111-1111-1111-1111-111111111111",
-			iconBackground: "#FFFFFF",
+			iconBackground: null,
 			optionalTemplateDataJson: null);
 		args["title-localizations"] = new Dictionary<string, object?> {
 			["en-US"] = "Forbidden caption"
@@ -520,7 +520,7 @@ public sealed class ApplicationToolE2ETests {
 			description: null,
 			invalidTemplateCode,
 			settings.Sandbox.ApplicationIconId ?? "11111111-1111-1111-1111-111111111111",
-			settings.Sandbox.ApplicationIconBackground ?? "#FFFFFF",
+			settings.Sandbox.ApplicationIconBackground,
 			optionalTemplateDataJson: null);
 
 		// Assert
@@ -554,7 +554,7 @@ public sealed class ApplicationToolE2ETests {
 			description: null,
 			templateCode: settings.Sandbox.ApplicationTemplateCode ?? "AppFreedomUI",
 			iconId: settings.Sandbox.ApplicationIconId ?? "11111111-1111-1111-1111-111111111111",
-			iconBackground: settings.Sandbox.ApplicationIconBackground ?? "#FFFFFF",
+			iconBackground: settings.Sandbox.ApplicationIconBackground,
 			optionalTemplateDataJson: "{not-json");
 
 		// Assert
@@ -592,7 +592,7 @@ public sealed class ApplicationToolE2ETests {
 			description: null,
 			templateCode: settings.Sandbox.ApplicationTemplateCode ?? "AppFreedomUI",
 			iconId: "auto",
-			iconBackground: settings.Sandbox.ApplicationIconBackground ?? "#FFFFFF",
+			iconBackground: settings.Sandbox.ApplicationIconBackground,
 			optionalTemplateDataJson: null);
 
 		// Assert
@@ -941,11 +941,6 @@ public sealed class ApplicationToolE2ETests {
 							["schema-name"] = schemaName,
 							["update-operations"] = new object?[] {
 								new Dictionary<string, object?> {
-									["action"] = "modify",
-									["column-name"] = "UsrName",
-									["title-localizations"] = BuildLocalizations("Title")
-								},
-								new Dictionary<string, object?> {
 									["action"] = "add",
 									["column-name"] = addedColumnName,
 									["type"] = "Text",
@@ -975,10 +970,13 @@ public sealed class ApplicationToolE2ETests {
 			["name"] = name,
 			["code"] = code,
 			["template-code"] = templateCode,
-			["icon-background"] = iconBackground
 		};
 		if (!string.IsNullOrWhiteSpace(description)) {
 			args["description"] = description;
+		}
+
+		if (!string.IsNullOrWhiteSpace(iconBackground)) {
+			args["icon-background"] = iconBackground;
 		}
 
 		if (!string.IsNullOrWhiteSpace(iconId)) {

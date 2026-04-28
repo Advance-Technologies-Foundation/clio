@@ -1,4 +1,3 @@
-using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
@@ -38,12 +37,7 @@ public sealed class InstallApplicationTool(
 			CheckCompilationErrors = args.CheckCompilationErrors,
 			Environment = args.EnvironmentName
 		};
-		try {
-			return InternalExecute<InstallApplicationCommand>(options);
-		}
-		catch (Exception exception) {
-			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)]);
-		}
+		return InternalExecute<InstallApplicationCommand>(options);
 	}
 }
 
