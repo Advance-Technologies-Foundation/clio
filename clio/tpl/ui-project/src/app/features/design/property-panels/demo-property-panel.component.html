@@ -1,0 +1,21 @@
+@if (isPanelReady()) {
+  <crt-interface-designer-properties-panel-wrapper
+    [showHeader]="true"
+    [headerTitle]="'Demo Component'"
+    [canShowTooltip]="true"
+  >
+    <div class="input-wrapper first-field">
+      <div class="input-field">
+        <label for="demo-label-input" class="input-label">Button label</label>
+        <input
+          id="demo-label-input"
+          type="text"
+          class="input-control"
+          [value]="label()"
+          (input)="handleLabelInput($event)"
+          placeholder="Enter a button label"
+        />
+      </div>
+    </div>
+  </crt-interface-designer-properties-panel-wrapper>
+}
