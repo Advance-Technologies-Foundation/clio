@@ -71,7 +71,7 @@ public sealed class PageGetTool(
 		string metaFile   = fileSystem.Path.Combine(schemaDir, "meta.json");
 		string fetchedAt = DateTime.UtcNow.ToString("o");
 		try {
-			fileSystem.File.WriteAllText(bodyFile,   PageBodyNormalizer.NormalizeProxyBindings(response.Raw.Body));
+			fileSystem.File.WriteAllText(bodyFile,   response.Raw.Body);
 			fileSystem.File.WriteAllText(bundleFile, System.Text.Json.JsonSerializer.Serialize(response.Bundle));
 			fileSystem.File.WriteAllText(metaFile,   System.Text.Json.JsonSerializer.Serialize(new {
 				fetchedAt,

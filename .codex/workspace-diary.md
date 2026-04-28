@@ -3042,3 +3042,10 @@ Decision: Reviewed the tracked diff in `SchemaHandlerValidationService`, compare
 Discovery: The tracked change is a local simplification only: removing the redundant top-level property-name precheck keeps the same `request`/`handler` validation behavior because `TryGetTopLevelPropertyValueExpression(...)` already enforces top-level lookup, while the new `Contains(...)` gate before regex scanning is a safe fast-path for the same forbidden API rules. There is also an untracked `.codex/SchemaValidationService.merged.cs` snapshot in the workspace, but it is not part of the reviewed git diff.
 Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Future reviews can treat this edit as behavior-preserving unless new handler API patterns are added, in which case the focused schema validation tests are the fastest regression check.
+
+## 2026-04-24 16:56 – Remove page edit shortcut tools
+Context: ENG-88801 reproduced because `add-form-fields` consumed raw page bodies through an internal get-page path and bypassed the canonical editable `body.js` workflow.
+Decision: Removed `add-form-fields`, `add-list-columns`, their shared `PageBodyEditor`, and the silent `PageBodyNormalizer`; `get-page` now writes the fetched editable body unchanged.
+Discovery: The previous normalizer-based fix was unnecessary once shortcut tools are removed, and silent binding rewrites are risky for validator-backed attributes.
+Files: clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/PageModels.cs, clio.tests/Command/McpServer/PageToolsTests.cs, .codex/workspace-diary.md
+Impact: Page editing has one advertised path again: fetch `body.js`, edit it explicitly, validate, then sync or update.

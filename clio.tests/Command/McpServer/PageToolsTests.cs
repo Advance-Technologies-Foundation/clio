@@ -2027,8 +2027,8 @@ public class PageToolsTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("get-page rewrites proxy view-model attribute bindings to canonical $PDS_* form before writing body.js.")]
-	public void PageGetTool_WhenBodyHasDirectDatasourceBindings_WritesNormalizedBodyFile() {
+	[Description("get-page writes proxy bindings unchanged because body.js is the editable source body.")]
+	public void PageGetTool_WhenBodyHasProxyBindings_WritesBodyUnchanged() {
 		// Arrange
 		string proxyBody = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrStatus","values":{"type":"crt.ComboBox","label":"$Resources.Strings.PDS_UsrStatus","control":"$UsrStatus"}}]""",
@@ -2041,10 +2041,10 @@ public class PageToolsTests {
 		// Assert
 		response.Success.Should().BeTrue(because: "get-page should succeed even when the source body has proxy view-model attribute bindings");
 		string writtenBody = mockFs.File.ReadAllText(response.Files.BodyFile);
-		writtenBody.Should().Contain("$PDS_UsrStatus",
-			because: "get-page must normalize proxy binding $UsrStatus to canonical $PDS_UsrStatus form before writing body.js");
-		writtenBody.Should().NotContain("\"$UsrStatus\"",
-			because: "the proxy view-model binding must be rewritten to canonical form in the written body.js");
+		writtenBody.Should().Be(proxyBody,
+			because: "get-page should not silently rewrite editable body.js content");
+		writtenBody.Should().Contain("\"$UsrStatus\"",
+			because: "callers must make any binding repairs explicitly in the page body");
 	}
 
 	[Test]

@@ -433,6 +433,102 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("tool-contract-get advertises create-entity-business-rule validation, actual response fields, and workflow guidance")]
+	public async Task ToolContractGet_Should_Advertise_Entity_Business_Rule_Create_Contract() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the new business-rule mutation tool should be discoverable through tool-contract-get");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.InputSchema.Required.Should().Contain(["environmentName", "packageName", "entitySchemaName", "rule"],
+			because: "entity-business-rule creation requires environment package entity and rule payload");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+
+				validator.Name == "enum" &&
+				validator.Field == "rule.condition.logicalOperation",
+			because: "the contract should advertise the target architecture logicalOperation field");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "enum" &&
+				validator.Field == "rule.condition.conditions[*].comparisonType",
+			because: "the contract should advertise the target architecture comparisonType field");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "conditional-field" &&
+				validator.Field == "rule.condition.conditions[*].rightExpression" &&
+				validator.Context!.Contains("Omit or null for is-filled-in and is-not-filled-in", StringComparison.Ordinal),
+			because: "the contract should advertise the unary-versus-binary rightExpression rule");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "comparison-family" &&
+				validator.Field == "rule.condition.conditions[*]" &&
+				validator.Context!.Contains("date/time left attributes", StringComparison.Ordinal),
+			because: "the contract should advertise the numeric and date/time scope of relational comparisons");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "comparison-family" &&
+				validator.Code == "unsupported-equality-operands" &&
+				validator.Field == "rule.condition.conditions[*]" &&
+				validator.Context!.Contains("RichText or Image", StringComparison.Ordinal),
+			because: "the contract should advertise Creatio's equality limitation for rich text and image columns");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "date-time-constant" &&
+				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Context!.Contains("timezone suffix", StringComparison.Ordinal),
+			because: "the contract should require timezone-aware DateTime and Time constants");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "enum" &&
+				validator.Field == "rule.actions[*].type",
+			because: "the contract should advertise the target architecture action field");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "enum" &&
+				validator.Field == "rule.condition.conditions[*].comparisonType" &&
+				validator.Context!.Contains("greater-than-or-equal", StringComparison.Ordinal),
+			because: "the contract should advertise the full supported comparison set");
+		contract.Defaults.Should().BeEmpty(
+			because: "the contract should not have defaults after enabled was removed");
+		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "rule-name",
+			because: "the generated internal rule name is surfaced through execution logs rather than a dedicated top-level field");
+		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "rule",
+			because: "the contract should not advertise a structured rule object that the tool does not return today");
+		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "package-u-id",
+			because: "the contract should not advertise package identifiers that are absent from the real tool response");
+		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "entity-schema-u-id",
+			because: "the contract should not advertise entity identifiers that are absent from the real tool response");
+		contract.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "create-entity-business-rule returns the standard command execution result payload");
+		contract.OutputContract.SuccessField.Should().BeNull(
+			because: "command execution result payloads do not include a success field");
+		contract.OutputContract.FailureSignals.Should().Contain("exit-code != 0",
+			because: "contract-driven clients should detect command failures from the exit code");
+		contract.OutputContract.FailureSignals.Should().NotContain("success == false",
+			because: "create-entity-business-rule does not emit a success field");
+		bool hasUnaryExample = contract.Examples.Any(example =>
+			string.Equals(example.Summary, "Create a readonly rule when a text field is filled in", StringComparison.Ordinal));
+		hasUnaryExample.Should().BeTrue(
+			because: "the contract should include a unary example without rightExpression");
+		bool hasRelationalExample = contract.Examples.Any(example =>
+			string.Equals(example.Summary, "Create a required-field rule when created date is before a cutoff", StringComparison.Ordinal));
+		hasRelationalExample.Should().BeTrue(
+			because: "the contract should include a relational example for numeric or date/time comparisons");
+		bool hasTimezoneAwareTimeExample = contract.Examples.Any(example =>
+			string.Equals(example.Summary, "Create a readonly rule when reminder time is after a timezone-aware cutoff", StringComparison.Ordinal));
+		hasTimezoneAwareTimeExample.Should().BeTrue(
+			because: "the contract should include a timezone-aware Time example for agent callers");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises page discovery selectors and raw body semantics")]
 	public async Task ToolContractGet_Should_Advertise_Page_List_And_Page_Get_Metadata() {
 		McpE2ESettings settings = TestConfiguration.Load();

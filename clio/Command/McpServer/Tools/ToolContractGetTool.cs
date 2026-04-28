@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json.Serialization;
+using Clio.Command.BusinessRules;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -243,9 +244,13 @@ internal static class ToolContractCatalog {
 	private const string PackageUIdFieldName = "package-u-id";
 	private const string PrimaryPackageIdentifierDescription = "Primary package identifier.";
 	private const string PrimaryPackageNameDescription = "Primary package name.";
+	private const string RuleFieldName = "rule";
 	private const string SectionCodeFieldName = "section-code";
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
+	private const string EnvironmentNameCamelFieldName = "environmentName";
+	private const string PackageNameCamelFieldName = "packageName";
+	private const string EntitySchemaNameCamelFieldName = "entitySchemaName";
 
 	private static readonly ToolErrorContract CommonErrorContract = new([
 		new ToolErrorCodeContract("tool-not-found", "Requested tool name is not registered by clio MCP."),
@@ -293,7 +298,8 @@ internal static class ToolContractCatalog {
 			[ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName] = BuildModifyEntitySchemaColumn(),
 			[ComponentInfoTool.ToolName] = BuildComponentInfo(),
 			[PageUpdateTool.ToolName] = BuildPageUpdate(),
-			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete()
+			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete(),
+			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
@@ -302,6 +308,7 @@ internal static class ToolContractCatalog {
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+		CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
 		ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
 		ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
 		ApplicationGetInfoTool.ApplicationGetInfoToolName,
@@ -1280,6 +1287,133 @@ internal static class ToolContractCatalog {
 					"Extend the existing-app discovery flow with section creation when the task is to add a section to an installed app.")
 			],
 			[]);
+	}
+
+	private static ToolContractDefinition BuildEntityBusinessRuleCreate() {
+		return new ToolContractDefinition(
+			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
+			"Creates an entity-level Freedom UI business rule with equality, filled-in, and numeric or date/time relational comparisons.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, EntitySchemaNameCamelFieldName, RuleFieldName],
+				[
+					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameCamelFieldName, StringType, "Target package name."),
+					Field(EntitySchemaNameCamelFieldName, StringType, "Target entity schema name."),
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time).")
+				],
+				Validators: [
+					new ToolContractValidator("enum", "unsupported-operator", "rule.condition.logicalOperation",
+						Context: "Supported values: AND, OR."),
+					new ToolContractValidator("enum", "unsupported-comparison", "rule.condition.conditions[*].comparisonType",
+						Context: $"Supported values: {BusinessRuleConstants.SupportedComparisonTypesDescription}."),
+					new ToolContractValidator("conditional-field", "invalid-right-expression-shape", "rule.condition.conditions[*].rightExpression",
+						Context: "Required for equal, not-equal, greater-than, greater-than-or-equal, less-than, and less-than-or-equal. Omit or null for is-filled-in and is-not-filled-in."),
+					new ToolContractValidator("comparison-family", "unsupported-relational-operands", "rule.condition.conditions[*]",
+						Context: "greater-than, greater-than-or-equal, less-than, and less-than-or-equal only support numeric and date/time left attributes (Date, DateTime, Time). Attribute-to-attribute relational comparisons must use matching data value types."),
+					new ToolContractValidator("comparison-family", "unsupported-equality-operands", "rule.condition.conditions[*]",
+						Context: "equal and not-equal are not supported when the left attribute data value type is RichText or Image. Use is-filled-in or is-not-filled-in for those attributes."),
+					new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
+						Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm')."),
+					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
+						Context: "Supported values: make-editable, make-read-only, make-required, make-optional.")
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[
+			],
+			[],
+			[
+				BusinessRuleExample("Create a required-field rule when owner equals a lookup constant",
+					"UsrTask", "Require status for a specific owner", "Owner", "equal",
+					"make-required", ["Status"], "00000000-0000-0000-0000-000000000001"),
+				BusinessRuleExample("Create a readonly rule when a text field is filled in",
+					"UsrTask", "Lock planned date when name is filled", "Name", "is-filled-in",
+					"make-read-only", ["PlannedDate"]),
+				BusinessRuleExample("Create a readonly rule when completed is true",
+					"UsrTask", "Lock name and description when completed", "Completed", "equal",
+					"make-read-only", ["Name", "Description"], true),
+				BusinessRuleExample("Create a required-field rule when annual revenue reaches a numeric threshold",
+					"Account", "Require owner for high-revenue accounts", "AnnualRevenue", "greater-than-or-equal",
+					"make-required", ["Owner"], 1000000),
+				BusinessRuleExample("Create a required-field rule when created date is before a cutoff",
+					"UsrTask", "Require owner before the 2025 cutoff", "CreatedOn", "less-than-or-equal",
+					"make-required", ["Owner"], "2025-01-01T00:00:00Z"),
+				BusinessRuleExample("Create a readonly rule when reminder time is after a timezone-aware cutoff",
+					"UsrTask", "Lock reminder note after local noon", "ReminderTime", "greater-than",
+					"make-read-only", ["ReminderNote"], "12:00:00+02:00")
+			],
+			Flow(
+				[
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
+				],
+				"When the application exists and the entity is a part of it. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
+			[
+				Flow(
+					[
+						ApplicationGetListTool.ApplicationGetListToolName,
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						FindEntitySchemaTool.FindEntitySchemaToolName,
+						DataForgeTool.DataForgeFindTablesToolName,
+						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+						CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
+					],
+					"When the application exists but the entity is not a part of it. Find entity using find-entity or dataforge-find-tables tool and create business rule for this entity in the application."),
+				Flow(
+					[
+						ApplicationCreateTool.ApplicationCreateToolName,
+						FindEntitySchemaTool.FindEntitySchemaToolName,
+						DataForgeTool.DataForgeFindTablesToolName,
+						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+						CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
+					],
+					"When application does not exist yet. Suggest user to create new empty application and create business rule there."),
+
+			],
+			[]);
+	}
+
+	private static ToolContractExample BusinessRuleExample(
+		string summary,
+		string entitySchemaName,
+		string caption,
+		string leftPath,
+		string comparisonType,
+		string actionType,
+		string[] actionItems,
+		object? constantValue = null) {
+		Dictionary<string, object?> condition = new() {
+			["leftExpression"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = leftPath
+			},
+			["comparisonType"] = comparisonType
+		};
+		if (constantValue is not null) {
+			condition["rightExpression"] = new Dictionary<string, object?> {
+				["type"] = "Const",
+				["value"] = constantValue
+			};
+		}
+		return Example(summary, new Dictionary<string, object?> {
+			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+			[PackageNameCamelFieldName] = ExamplePackageName,
+			[EntitySchemaNameCamelFieldName] = entitySchemaName,
+			[RuleFieldName] = new Dictionary<string, object?> {
+				["caption"] = caption,
+				["condition"] = new Dictionary<string, object?> {
+					["logicalOperation"] = "AND",
+					["conditions"] = new object[] { condition }
+				},
+				["actions"] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = actionType,
+						["items"] = actionItems
+					}
+				}
+			}
+		});
 	}
 
 	private static ToolContractDefinition BuildSchemaSync() {
