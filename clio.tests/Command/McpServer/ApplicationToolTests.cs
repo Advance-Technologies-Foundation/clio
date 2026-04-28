@@ -704,7 +704,7 @@ public sealed class ApplicationToolTests {
 			Description: null,
 			TemplateCode: "AppFreedomUI",
 			IconId: "auto",
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: "22222222-2222-2222-2222-222222222222",
 			OptionalTemplateDataJson: """
 				{"entitySchemaName":"UsrCodexEntity","useExistingEntitySchema":true,"useAIContentGeneration":false,"appSectionDescription":"Section description"}
@@ -719,7 +719,7 @@ public sealed class ApplicationToolTests {
 				request.Description == null &&
 				request.TemplateCode == "AppFreedomUI" &&
 				request.IconId == "auto" &&
-				request.IconBackground == "#112233" &&
+				request.IconBackground == "#0058EF" &&
 				request.ClientTypeId == "22222222-2222-2222-2222-222222222222" &&
 				request.OptionalTemplateData != null &&
 				request.OptionalTemplateData.EntitySchemaName == "UsrCodexEntity" &&
@@ -928,7 +928,7 @@ public sealed class ApplicationToolTests {
 			Description: null,
 			TemplateCode: "AppFreedomUI",
 			IconId: null,
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: null,
 			OptionalTemplateDataJson: "{not-json"));
 
@@ -958,7 +958,7 @@ public sealed class ApplicationToolTests {
 			Description: null,
 			TemplateCode: "AppFreedomUI",
 			IconId: null,
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: null,
 			OptionalTemplateDataJson: null,
 			TitleLocalizations: new Dictionary<string, string> {
@@ -991,7 +991,7 @@ public sealed class ApplicationToolTests {
 			Description: null,
 			TemplateCode: "AppFreedomUI",
 			IconId: null,
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: null,
 			OptionalTemplateDataJson: JsonSerializer.Serialize(new {
 				useAIContentGeneration = true
@@ -1033,7 +1033,7 @@ public sealed class ApplicationToolTests {
 			Description: null,
 			TemplateCode: "AppFreedomUI",
 			IconId: null,
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: null,
 			OptionalTemplateDataJson: null));
 
@@ -1386,7 +1386,7 @@ public sealed class ApplicationToolTests {
 			name: "Codex App",
 			code: "UsrCodexApp",
 			templateCode: "AppFreedomUI",
-			iconBackground: "#112233",
+			iconBackground: "#0058EF",
 			description: null,
 			iconId: "11111111-1111-1111-1111-111111111111",
 			clientTypeId: "22222222-2222-2222-2222-222222222222",
@@ -1537,7 +1537,7 @@ public sealed class ApplicationToolTests {
 			Description: null,
 			TemplateCode: string.Empty,
 			IconId: null,
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: null,
 			OptionalTemplateDataJson: null));
 
