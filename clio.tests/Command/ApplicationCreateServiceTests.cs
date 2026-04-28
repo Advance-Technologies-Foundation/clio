@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Clio.Command;
 using Clio.Common;
@@ -44,7 +45,7 @@ public sealed class ApplicationCreateServiceTests {
 			Description: "Created by tests",
 			TemplateCode: "AppFreedomUI",
 			IconId: "11111111-1111-1111-1111-111111111111",
-			IconBackground: "#FFFFFF",
+			IconBackground: "#0058EF",
 			ClientTypeId: "22222222-2222-2222-2222-222222222222",
 			OptionalTemplateData: new ApplicationOptionalTemplateData(
 				EntitySchemaName: "UsrCodexEntity",
@@ -89,7 +90,7 @@ public sealed class ApplicationCreateServiceTests {
 		ApplicationCreateRequest request = _fullRequest with {
 			Code = null,
 			IconId = "11111111-1111-1111-1111-111111111111",
-			IconBackground = "#FFFFFF"
+			IconBackground = "#0058EF"
 		};
 		ConfigureCreateSuccessForCode("UsrCodexApp");
 		_applicationInfoService.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp")
@@ -112,7 +113,7 @@ public sealed class ApplicationCreateServiceTests {
 			Name = null,
 			Code = "UsrCodexApplication",
 			IconId = "11111111-1111-1111-1111-111111111111",
-			IconBackground = "#FFFFFF"
+			IconBackground = "#0058EF"
 		};
 		ConfigureCreateSuccessForCode("UsrCodexApplication");
 		_applicationInfoService.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApplication")
@@ -173,7 +174,7 @@ public sealed class ApplicationCreateServiceTests {
 			Name = "Explicit App",
 			Code = "UsrExplicitApp",
 			IconId = "11111111-1111-1111-1111-111111111111",
-			IconBackground = "#123456"
+			IconBackground = "#0058EF"
 		};
 
 		// Act
@@ -188,8 +189,8 @@ public sealed class ApplicationCreateServiceTests {
 	}
 
 	[Test]
-	[Description("Generates an icon background color when the caller omits it.")]
-	public void CreateApplication_Should_Generate_Icon_Background_When_Omitted() {
+	[Description("Assigns a random Freedom UI palette color when the caller omits icon-background.")]
+	public void CreateApplication_Should_Assign_Palette_Color_When_IconBackground_Omitted() {
 		// Arrange
 		ApplicationCreateRequest request = _fullRequest with {
 			IconBackground = null,
@@ -205,7 +206,24 @@ public sealed class ApplicationCreateServiceTests {
 		// Assert
 		_applicationClient.Received(1).ExecutePostRequest(
 			Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),
-			Arg.Is<string>(body => Regex.IsMatch(body, "\"iconBackground\":\"#[0-9A-F]{6}\"")));
+			Arg.Is<string>(body => ApplicationSectionColorPalette.Colors.Any(c =>
+				body.Contains($"\"iconBackground\":\"{c}\"", StringComparison.Ordinal))));
+	}
+
+	[Test]
+	[Description("Rejects icon-background values that are not in the Freedom UI palette.")]
+	public void CreateApplication_Should_Reject_IconBackground_Outside_Palette() {
+		// Arrange
+		ApplicationCreateRequest request = _fullRequest with { IconBackground = "#1F5F8B" };
+
+		// Act
+		Action action = () => _sut.CreateApplication("sandbox", request);
+
+		// Assert
+		action.Should().Throw<ArgumentException>()
+			.WithMessage("*not a Freedom UI palette color*",
+				because: "only the 16 Freedom UI palette swatches are accepted as icon background colors");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 	}
 
 	[Test]
@@ -222,7 +240,7 @@ public sealed class ApplicationCreateServiceTests {
 		// Assert
 		_applicationClient.Received(1).ExecutePostRequest(
 			Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),
-			Arg.Is<string>(body => body.Contains("\"iconBackground\":\"#FFFFFF\"", StringComparison.Ordinal)));
+			Arg.Is<string>(body => body.Contains("\"iconBackground\":\"#0058EF\"", StringComparison.Ordinal)));
 	}
 
 	[Test]
@@ -231,7 +249,7 @@ public sealed class ApplicationCreateServiceTests {
 		// Arrange
 		ApplicationCreateRequest request = _fullRequest with {
 			IconId = null,
-			IconBackground = "#FFFFFF"
+			IconBackground = "#0058EF"
 		};
 		ConfigureIconQuery("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 		ConfigureCreateSuccessForCode("UsrCodexApp");
@@ -256,7 +274,7 @@ public sealed class ApplicationCreateServiceTests {
 		// Arrange
 		ApplicationCreateRequest request = _fullRequest with {
 			IconId = "auto",
-			IconBackground = "#FFFFFF"
+			IconBackground = "#0058EF"
 		};
 		ConfigureIconQuery("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 		ConfigureCreateSuccessForCode("UsrCodexApp");
@@ -298,7 +316,7 @@ public sealed class ApplicationCreateServiceTests {
 		// Arrange
 		ApplicationCreateRequest request = _fullRequest with {
 			IconId = null,
-			IconBackground = "#FFFFFF"
+			IconBackground = "#0058EF"
 		};
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),

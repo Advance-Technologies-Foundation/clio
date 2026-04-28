@@ -171,8 +171,11 @@ public sealed class ApplicationCreateService(
 			: request.Name.Trim();
 
 		resolvedCode ??= GenerateCodeFromName(resolvedName);
+		if (!string.IsNullOrWhiteSpace(request.IconBackground)) {
+			ApplicationSectionColorPalette.ValidateOrThrow(request.IconBackground.Trim());
+		}
 		string resolvedIconBackground = string.IsNullOrWhiteSpace(request.IconBackground)
-			? GenerateRandomHexColor()
+			? ApplicationSectionColorPalette.PickRandom()
 			: request.IconBackground.Trim();
 		bool needsIconResolution = string.IsNullOrWhiteSpace(request.IconId) ||
 			string.Equals(request.IconId, "auto", StringComparison.OrdinalIgnoreCase);
@@ -343,19 +346,6 @@ public sealed class ApplicationCreateService(
 		return char.ToUpperInvariant(sanitizedWord[0]) + sanitizedWord[1..];
 	}
 
-	private static string GenerateRandomHexColor()
-	{
-		int red = Random.Shared.Next(50, 200);
-		int green = Random.Shared.Next(50, 200);
-		int blue = Random.Shared.Next(50, 200);
-		return string.Create(7, (red, green, blue), static (span, value) =>
-		{
-			span[0] = '#';
-			value.red.TryFormat(span.Slice(1, 2), out _, "X2");
-			value.green.TryFormat(span.Slice(3, 2), out _, "X2");
-			value.blue.TryFormat(span.Slice(5, 2), out _, "X2");
-		});
-	}
 
 	private static string ResolveRandomIconId(
 		IApplicationClient client,

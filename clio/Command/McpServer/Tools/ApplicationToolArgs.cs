@@ -52,11 +52,6 @@ public sealed record ApplicationCreateArgs(
 	[property: Required]
 	string Code,
 
-	[property: JsonPropertyName("icon-background")]
-	[property: Description("Application icon background color in #RRGGBB format, e.g. '#1F5F8B'")]
-	[property: Required]
-	string IconBackground,
-
 	[property: JsonPropertyName("template-code")]
 	[property: Description("Technical template name (NOT display name). Known values: AppFreedomUI, AppFreedomUIv2, AppWithHomePage, EmptyApp. Defaults to AppFreedomUI when omitted — use this default unless you have a specific reason to change it.")]
 	string? TemplateCode = "AppFreedomUI",
@@ -64,6 +59,10 @@ public sealed record ApplicationCreateArgs(
 	[property: JsonPropertyName("description")]
 	[property: Description("Application description")]
 	string? Description = null,
+
+	[property: JsonPropertyName("icon-background")]
+	[property: Description("Optional Freedom UI palette color in #RRGGBB format. Must be one of: #A6DE00, #20A959, #22AC14, #FFAC07, #FF8800, #F9307F, #FF602E, #FF4013, #B87CCF, #7848EE, #247EE5, #0058EF, #009DE3, #4F43C2, #08857E, #00BFA5. Omit unless the user explicitly requested a specific color — a random palette color is assigned automatically when absent.")]
+	string? IconBackground = null,
 
 	[property: JsonPropertyName("icon-id")]
 	[property: Description("Optional application icon GUID (e.g. '00000000-0000-0000-0000-000000000000'), or 'auto' to resolve a random icon.")]

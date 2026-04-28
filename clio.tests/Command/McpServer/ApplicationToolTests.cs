@@ -881,11 +881,11 @@ public sealed class ApplicationToolTests {
 		string[] requiredProperties = [
 			nameof(ApplicationCreateArgs.EnvironmentName),
 			nameof(ApplicationCreateArgs.Name),
-			nameof(ApplicationCreateArgs.Code),
-			nameof(ApplicationCreateArgs.IconBackground)
+			nameof(ApplicationCreateArgs.Code)
 		];
 		string[] optionalProperties = [
 			nameof(ApplicationCreateArgs.TemplateCode),
+			nameof(ApplicationCreateArgs.IconBackground),
 			nameof(ApplicationCreateArgs.IconId),
 			nameof(ApplicationCreateArgs.ClientTypeId),
 			nameof(ApplicationCreateArgs.Description),
@@ -1446,8 +1446,8 @@ public sealed class ApplicationToolTests {
 			because: "the create prompt should reference the exact production tool name");
 		createPrompt.Should().Contain(ToolContractGetTool.ToolName,
 			because: "the create prompt should bootstrap app-modeling workflows from the authoritative MCP contract");
-		createPrompt.Should().Contain("Provide `name`, `code`, `template-code`, and `icon-background`",
-			because: "the create prompt should explain the new required input contract");
+		createPrompt.Should().Contain("Provide `name`, `code`, and `template-code`",
+			because: "the create prompt should explain the required input contract");
 		createPrompt.Should().Contain("do not nest them under `args`",
 			because: "the create prompt should explicitly reject the wrapper shape that caused the analyzed session failure");
 		createPrompt.Should().Contain("`optional-template-data-json`",
@@ -1551,11 +1551,16 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a structured error envelope when icon-background is missing from the minimal create-app shell.")]
-	public async Task ApplicationCreate_Should_Return_Error_When_IconBackground_Is_Missing() {
+	[Description("Accepts a missing icon-background and forwards the request to the service, which assigns a random palette color.")]
+	public async Task ApplicationCreate_Should_Accept_Missing_IconBackground_And_Forward_To_Service() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		applicationCreateService.CreateApplication(Arg.Any<string>(), Arg.Any<ApplicationCreateRequest>())
+			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
+		enrichmentService.EnrichAsync(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
+			.Returns(new ApplicationDataForgeResult(Used: false, Health: null, Status: null, Coverage: null,
+				Warnings: Array.Empty<string>(), ContextSummary: null));
 		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
@@ -1563,22 +1568,12 @@ public sealed class ApplicationToolTests {
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
-			Description: null,
-			TemplateCode: "AppFreedomUI",
-			IconId: null,
-			IconBackground: string.Empty,
-			ClientTypeId: null,
-			OptionalTemplateDataJson: null));
+			IconBackground: null));
 
 		// Assert
-		result.Success.Should().BeFalse(
-			because: "missing required shell fields should fail before the backend create flow starts");
-		result.Error.Should().Contain("icon-background is required",
-			because: "the validation message should identify the missing contract field");
-		result.Error.Should().Contain("#1F5F8B",
-			because: "the validation message should point callers to a valid color example");
-		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
-		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
+		result.Success.Should().BeTrue(
+			because: "omitting icon-background is valid — the service assigns a random Freedom UI palette color");
+		applicationCreateService.ReceivedWithAnyArgs().CreateApplication(default!, default!);
 	}
 
 	[Test]

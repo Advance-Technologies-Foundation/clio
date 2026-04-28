@@ -83,8 +83,9 @@ public static class ApplicationPrompt {
 		 Use clio mcp server `{ApplicationCreateTool.ApplicationCreateToolName}` to create a Creatio application and return its primary package and entity metadata.
 		 Before the first app-modeling tool call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `create-app`, `sync-schemas`, and `sync-pages` so the client starts from the authoritative contract and follow-up flow.
 		 Pass `environment-name` `{environmentName}` exactly as provided.
-		 Provide `name`, `code`, `template-code`, and `icon-background`.
+		 Provide `name`, `code`, and `template-code`.
 		 Pass those fields at the top level of the MCP request; do not nest them under `args`.
+		 Pass `icon-background` only when the user explicitly specified a color; omit it otherwise — a random Freedom UI palette color is assigned automatically.
 		 For end-to-end app modeling guardrails, call `{GuidanceGetTool.ToolName}` with `name` set to `app-modeling`.
 		 `create-app` already performs an internal Data Forge enrichment step and returns optional `dataforge` diagnostics with health, coverage, warnings, and a compact context summary.
 		 Do not add a separate mandatory Data Forge preflight outside the canonical `create-app` flow unless the workflow explicitly needs standalone Data Forge inspection or remediation.
