@@ -54,7 +54,7 @@ public sealed class PageSchemaConvertersGuidanceResource {
 			       - Binding format: `"$AttributeName | converterName"`.
 			       - Example (OOTB, no params): `"caption": "$UsrName | crt.ToBoolean"`.
 			       - Example (custom, no params): `"caption": "$UsrName | usr.ToUpperCase"`.
-			       - Example (OOTB with params): `"caption": "$UsrObject | crt.ToObjectProp:propName"` — params are passed as colon-separated values after the converter name.
+			       - Example (OOTB with params): `"caption": "$UsrObject | crt.ToObjectProp:'propName'"` — params are passed as colon-separated quoted values after the converter name.
 			       - A binding expression may chain multiple converters: `"caption": "$UsrValue | usr.ToUpperCase | crt.ToBoolean"`.
 			       - Only bind converters to read-only display properties (caption, label, icon, visible). Do NOT bind a converter to `control` or `value` on an editable input field — the user cannot type into a converter-transformed value.
 
@@ -75,7 +75,7 @@ public sealed class PageSchemaConvertersGuidanceResource {
 			       - Converters MAY be async. The runtime detects a returned Promise via `instanceof Promise` and awaits it automatically.
 			       - Use `async` arrow function or `async function` syntax — both are valid.
 			       - SDK services from `@creatio-devkit/common` are accessible inside a converter via the SCHEMA_ARGS closure (the same `sdk` argument injected by SCHEMA_DEPS).
-			       - `SysSettingsService` is safe to call in a converter: settings are pre-loaded into a two-layer cache (in-memory Map + IndexedDB) at application startup. Repeated `getByCode` calls return from the cache with no HTTP request.
+			       - `SysSettingsService` is safe to call in a converter: OOTB Creatio settings are pre-loaded at startup into a two-layer cache (in-memory Map + IndexedDB). Custom `usr.*` settings are NOT pre-loaded — the first `getByCode` call makes one HTTP request; subsequent calls are served from the in-memory cache with no further requests.
 			       - Do NOT call non-cached HTTP endpoints inside a converter — those fire on every render.
 			       - When to use async converter vs handler: prefer async converter when the async call is cheap/cached and the result directly determines how a single attribute is displayed. Use a handler when the async call is expensive, uncached, or drives multiple attributes.
 			       - Async converter template with SysSettings:
@@ -110,10 +110,10 @@ public sealed class PageSchemaConvertersGuidanceResource {
 			       - `SCHEMA_CONVERTERS` is an OBJECT, not an array.
 			       - Converters affect DISPLAY only. They do not write back to the model. Never put side effects inside a converter function.
 			       - Only declare custom (`usr.*`) converters in `SCHEMA_CONVERTERS`. OOTB (`crt.*`) converters are built-in and need no declaration.
-			       - Custom converter names must use `usr.` prefix and PascalCase body.
+			       - Custom converter names must use the `usr.` prefix. PascalCase body is a team convention (e.g. `usr.FormatCurrency`) — the runtime does not enforce it, but follow it for consistency.
 			       - Bindings live in `viewConfigDiff`, NOT in `viewModelConfigDiff`.
 			       - The converter binding syntax uses a pipe: `"$Attr | converterName"`.
-			       - Async converters are allowed. SDK services from SCHEMA_DEPS closure are allowed. Do NOT call non-cached HTTP endpoints — they fire on every render. `SysSettingsService` is safe (cached at app startup).
+			       - Async converters are allowed. SDK services from SCHEMA_DEPS closure are allowed. Do NOT call non-cached HTTP endpoints — they fire on every render. `SysSettingsService` is safe: OOTB settings are cached at startup; custom `usr.*` settings are cached after the first call.
 
 			       Minimal canonical template (custom converter)
 			       - Replace `<AttrName>` and `<ConverterName>` with live schema names.
@@ -174,7 +174,7 @@ public sealed class PageSchemaConvertersGuidanceResource {
 			       - Phone as clickable link (bind href to tel):
 			           "href": "$UsrPhone | crt.ToPhoneLink"
 			       - Read a property from an object attribute:
-			           "caption": "$UsrContact | crt.ToObjectProp:displayValue"
+			           "caption": "$UsrContact | crt.ToObjectProp:'displayValue'"
 
 			       Common custom converter patterns
 			       - Add currency symbol prefix:

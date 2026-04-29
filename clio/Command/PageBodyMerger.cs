@@ -108,7 +108,33 @@ internal static class PageBodyMerger {
 		while (i < inner.Length) {
 			i = SkipSeparators(inner, i);
 			if (i >= inner.Length) break;
-			if (inner[i] != '"' && inner[i] != '\'') { i++; continue; }
+			if (inner[i] != '"' && inner[i] != '\'') {
+				// Unquoted identifier (e.g. ES6 method shorthand). Skip the entire entry
+				// — key + colon + value — using the proper value scanner so that any string
+				// literals inside the function body do not get mistaken for the next key.
+				// Unquoted entries are not recorded; use quoted keys per the converter guidance.
+				if (char.IsLetterOrDigit(inner[i]) || inner[i] == '_' || inner[i] == '$') {
+					// Scan past the unquoted key name with bracket tracking so that a ':'
+					// inside a complex default argument (e.g. (v = {key: val})) is not
+					// mistaken for the key–value separator.
+					int keyDepth = 0;
+					while (i < inner.Length) {
+						char kc = inner[i];
+						if (IsOpenBracket(kc)) { keyDepth++; i++; continue; }
+						if (IsCloseBracket(kc)) { if (keyDepth <= 0) break; keyDepth--; i++; continue; }
+						if (keyDepth == 0 && (kc == ':' || kc == ',')) break;
+						i++;
+					}
+					if (i < inner.Length && inner[i] == ':') {
+						i = SkipColonAndWhitespace(inner, i);
+						i = ScanValueEnd(inner, i);
+					}
+					if (i < inner.Length && inner[i] == ',') i++;
+					continue;
+				}
+				i++;
+				continue;
+			}
 			int entryStart = i;
 			i = ReadKey(inner, i, out string key);
 			i = SkipColonAndWhitespace(inner, i);
@@ -150,6 +176,20 @@ internal static class PageBodyMerger {
 	/// Advances <paramref name="i"/> past the current converter value, stopping at a top-level
 	/// comma or end-of-string. Tracks string literals and bracket depth to avoid false splits.
 	/// </summary>
+	/// <remarks>
+	/// Known limitations:
+	/// <list type="bullet">
+	/// <item>JavaScript regex literals (<c>/pattern/flags</c>) are not tracked as string delimiters.
+	/// A regex body containing an unbalanced bracket or a bare comma at depth 0 could cause a
+	/// premature entry split. Converter functions in practice do not use unbalanced regex literals.</item>
+	/// <item>Template literal interpolations (<c>`outer ${inner}`</c>) are not depth-tracked.
+	/// <see cref="AdvanceInString"/> uses a single <c>strChar</c> so a <c>}</c> that closes a
+	/// <c>${…}</c> interpolation is treated as the end of the template string, potentially causing
+	/// false depth changes for any brackets that follow. Async converters that return a template
+	/// literal (e.g. <c>`+${digits}`</c>) are not affected as long as the interpolation does not
+	/// contain an unmatched bracket.</item>
+	/// </list>
+	/// </remarks>
 	private static int ScanValueEnd(string s, int i) {
 		int depth = 0;
 		bool inStr = false;
@@ -159,7 +199,7 @@ internal static class PageBodyMerger {
 			if (inStr) { i = AdvanceInString(i, ch, strChar, ref inStr); continue; }
 			if (IsStringDelimiter(ch)) { inStr = true; strChar = ch; i++; continue; }
 			if (IsOpenBracket(ch)) { depth++; i++; continue; }
-			if (IsCloseBracket(ch)) { depth--; i++; continue; }
+			if (IsCloseBracket(ch)) { if (depth <= 0) break; depth--; i++; continue; }
 			if (depth == 0 && ch == ',') break;
 			i++;
 		}

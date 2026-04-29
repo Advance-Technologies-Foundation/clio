@@ -2895,6 +2895,67 @@ public class PageToolsTests {
 	}
 
 	[Test]
+	[Description("PageBodyMerger converters: second entry is not absorbed when first entry value contains nested brackets")]
+	public void PageBodyMerger_Should_Not_Absorb_Next_Entry_After_Nested_Brackets() {
+		// Regression guard: balanced nested brackets in a value must not prevent the
+		// top-level comma from splitting the next entry.
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{" +
+			"\"usr.A\": function(v){return {x: v};}," +
+			"\"usr.B\": function(v){return v;}" +
+			"}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.C\": function(v){return v;}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("usr.A",
+			because: "first entry with a nested-object value must be preserved");
+		merged.Should().Contain("usr.B",
+			because: "second entry must not be absorbed into the first entry's value when the preceding value contains nested brackets");
+		merged.Should().Contain("usr.C",
+			because: "incoming entry must be appended");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: quoted entry following an unquoted ES6 method-shorthand entry is not corrupted")]
+	public void PageBodyMerger_Should_Not_Corrupt_Quoted_Entry_After_Unquoted_Key() {
+		// Regression guard: an unquoted key whose value contains a string literal (e.g. return "x")
+		// must not cause the parser to misidentify that string as the next key. Without the fix,
+		// ParseConverterEntries would treat "fallback" as a key and corrupt the subsequent "usr.A" entry.
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{" +
+			"toDisplayValue(v) { return \"fallback\"; }," +
+			"\"usr.A\": function(v){return v;}" +
+			"}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.B\": function(v){return v;}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("usr.A",
+			because: "the quoted entry after the unquoted key must survive merge without corruption");
+		merged.Should().Contain("usr.B",
+			because: "the incoming quoted entry must be appended");
+	}
+
+	[Test]
 	[Description("PageBodyMerger converters: when both current and incoming converter sections are empty the result is also empty")]
 	public void PageBodyMerger_Should_Return_Empty_Converters_When_Both_Are_Empty() {
 		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +

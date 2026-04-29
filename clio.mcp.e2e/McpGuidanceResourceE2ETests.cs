@@ -18,6 +18,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	private static readonly string AppModelingUri = BuildGuideUri("app-modeling");
 	private static readonly string DataBindingsUri = BuildGuideUri("data-bindings");
 	private static readonly string ExistingAppMaintenanceUri = BuildGuideUri("existing-app-maintenance");
+	private static readonly string PageSchemaConvertersUri = BuildGuideUri("page-schema-converters");
 	private static readonly string PageSchemaHandlersUri = BuildGuideUri("page-schema-handlers");
 	private static readonly string PageSchemaCreatioDevkitCommonUri = BuildGuideUri("page-schema-creatio-devkit-common");
 	private static readonly string PageSchemaValidatorsUri = BuildGuideUri("page-schema-validators");
@@ -39,11 +40,12 @@ public sealed class McpGuidanceResourceE2ETests {
 				AppModelingUri,
 				DataBindingsUri,
 				ExistingAppMaintenanceUri,
+				PageSchemaConvertersUri,
 				PageSchemaHandlersUri,
 				PageSchemaCreatioDevkitCommonUri,
 				PageSchemaValidatorsUri
 			],
-			because: "the MCP server should advertise creation existing-app handler validator and sdk-common guidance resources");
+			because: "the MCP server should advertise creation existing-app converter handler validator and sdk-common guidance resources");
 	}
 
 	[Test]
@@ -116,6 +118,33 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the article should describe the minimal single-column schema mutation path");
 		article.Text.Should().Contain("Read before write",
 			because: "the article should encode the canonical maintenance verification discipline");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the page-schema converters guidance article")]
+	public async Task McpServer_Should_Return_Page_Schema_Converters_Guidance() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(PageSchemaConvertersUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		result.Contents.Should().ContainSingle(
+			because: "the guidance resource should resolve to a single plain-text article");
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the converters guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(PageSchemaConvertersUri,
+			because: "the returned article should preserve the stable converter guidance URI");
+		article.Text.Should().Contain("SCHEMA_CONVERTERS",
+			because: "the converter guide should anchor editing to the correct page-body marker section");
+		article.Text.Should().Contain("NON-NEGOTIABLES",
+			because: "the converter guide must include the mandatory constraint section");
+		article.Text.Should().Contain("Only declare custom (`usr.*`) converters in `SCHEMA_CONVERTERS`",
+			because: "the converter guide should document that only usr.* keys are custom-declared here");
 	}
 
 	[Test]

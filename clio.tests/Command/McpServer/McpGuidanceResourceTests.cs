@@ -973,8 +973,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the async section should explain the runtime's Promise detection mechanism");
 		article.Text.Should().Contain("SysSettingsService",
 			because: "the async section must name SysSettingsService as a safe example of a cached service");
-		article.Text.Should().Contain("pre-loaded into a two-layer cache",
-			because: "the guide should explain why SysSettingsService is safe to call from a converter");
+		article.Text.Should().Contain("pre-loaded at startup into a two-layer cache",
+			because: "the guide should explain that OOTB settings are cached at startup");
+		article.Text.Should().Contain("Custom `usr.*` settings are NOT pre-loaded",
+			because: "the guide must clarify that custom settings are not in the startup preload set");
 		article.Text.Should().Contain("usr.FormatPhoneNumber",
 			because: "the async section should include a complete named example");
 		article.Text.Should().Contain("async (value) =>",
@@ -1001,8 +1003,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "guidance should include an OOTB email link binding example");
 		article.Text.Should().Contain("crt.ToPhoneLink",
 			because: "guidance should include an OOTB phone link binding example");
-		article.Text.Should().Contain("crt.ToObjectProp:displayValue",
-			because: "guidance should show how to pass params to the ToObjectProp converter");
+		article.Text.Should().Contain("crt.ToObjectProp:'displayValue'",
+			because: "guidance should show that ToObjectProp params must be quoted strings, not bare identifiers");
 
 		// Assert — BEFORE SAVE CHECKLIST
 		article.Text.Should().Contain("BEFORE SAVE CHECKLIST",
