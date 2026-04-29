@@ -22,7 +22,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       Scope
 		       - Use this guide when the task changes the `handlers` section of a Freedom UI page body returned by `get-page`.
 		       - Resolve exact MCP tool contracts through `get-tool-contract` before any write workflow.
-		       - If the handler body adds or edits `@creatio-devkit/common`, or if the handler reads data, system settings, model rows, processes, or backend services, you MUST read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls.
+		       - If the handler body adds or edits `@creatio-devkit/common`, or if the handler reads data, system settings, model rows, processes, or backend services, you MUST read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls.
 		       - Keep runtime page-body handler work inside clio-owned guidance instead of depending on repository-local notes from another workspace.
 
 		       Canonical runtime flow
@@ -30,14 +30,14 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Use the `raw.body` field from the `get-page` response as the editable source of truth and preserve the outer AMD module structure.
 		       - `SCHEMA_HANDLERS` must remain a JavaScript array section, not a JSON-only payload.
 		       - Handler entries may contain async functions, closures, `await next?.handle(request)`, and request-specific branching.
-		       - Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call, stop and read `page-schema-sdk-common` before choosing between `request.$context.executeRequest(...)`, SDK services, `sdk.Model`, or `fetch`.
+		       - Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call, stop and read `page-schema-creatio-devkit-common` before choosing between `request.$context.executeRequest(...)`, SDK services, `sdk.Model`, or `fetch`.
 
 		       Decision tree
 		       - If the requirement is field-value validation, stop and read `page-schema-validators`.
 		       - If the requirement is max/min/length/range/regex validation whose threshold comes from a system setting, SDK lookup, or other async read, it is still validator work. Do NOT default to an init handler that only sets `maxLength` or another UI-only property.
 		       - Else if the requirement is a pure value transform for bound data, use `SCHEMA_CONVERTERS`, not `SCHEMA_HANDLERS`.
 		       - Else if the requirement is a one-step built-in page action, prefer direct request wiring from the page config instead of a custom handler.
-		       - Else if the handler must read or write data, syssettings, processes, or backend services, stop and read `page-schema-sdk-common` before authoring the handler body.
+		       - Else if the handler must read or write data, syssettings, processes, or backend services, stop and read `page-schema-creatio-devkit-common` before authoring the handler body.
 		       - Else use `SCHEMA_HANDLERS` for lifecycle events, attribute changes, cross-field orchestration, editor events, request guards, or domain-specific workflows.
 
 		       Direct request decision table
@@ -66,7 +66,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | Context | Prefer | Why |
 		         | --- | --- | --- |
 		         | deployed page-body handler in `SCHEMA_HANDLERS` | `await request.$context.executeRequest(...)` | page-body handlers already work through the live view-model context and this is the default authoring API for page edits |
-		       - Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-sdk-common`.
+		       - Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-creatio-devkit-common`.
 
 		       NON-NEGOTIABLES
 		       - Use handler signatures like `async (request, next) => { ... }` only inside `SCHEMA_HANDLERS`.
@@ -436,7 +436,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       Safe editing rules
 		       - This guide is only for deployed page-body handlers inside the schema body returned by `get-page`.
 		       - Prefer direct request wiring for simple open/create/save/delete/process/output actions.
-		       - When the handler body needs `@creatio-devkit/common`, or when the task touches data access, system settings, process execution, or backend service calls, read `page-schema-sdk-common` first and then follow its AMD dependency, public-API, and fallback rules.
+		       - When the handler body needs `@creatio-devkit/common`, or when the task touches data access, system settings, process execution, or backend service calls, read `page-schema-creatio-devkit-common` first and then follow its AMD dependency, public-API, and fallback rules.
 		       - Add `@creatio-devkit/common` to `SCHEMA_DEPS` and the matching alias to `SCHEMA_ARGS` only when the handler body actually needs SDK services or request execution helpers.
 		       - Preserve the exact `/**SCHEMA_HANDLERS*/` comment markers around the handlers array; clio uses them to locate and validate the editable section.
 		       - For page-body work, reuse the live SDK alias already present in the schema body when imports are required.
@@ -446,7 +446,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       Anti-patterns
 		       - Do NOT write `handlers: { ... }`; `handlers` must remain an array.
 		       - Do NOT invent `usr.*Request` when an existing `crt.*Request` already matches the workflow.
-		       - Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-sdk-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.
+		       - Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-creatio-devkit-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.
 		       - Do NOT invent placeholder SDK services such as `<Service>.subscribe(...)`; when SDK-based subscriptions are required, use a concrete service such as `sdk.MessageChannelService` and keep `SCHEMA_DEPS` / `SCHEMA_ARGS` aligned.
 		       - Do NOT write `type: "crt.ShowDialog"` in imperative request code; use `type: "crt.ShowDialogRequest"`.
 		       - Do NOT use `request.viewModel`, `request.sender`, `.$get(...)`, `.$set(...)`, or `request.$context.get(...)` in deployed page-body handlers.
@@ -456,7 +456,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 
 		       BEFORE SAVE CHECKLIST
 		       - Does the requirement truly need a handler instead of a direct built-in request, validator, or converter?
-		       - If this handler touches data access, syssettings, processes, or backend services, did you read `page-schema-sdk-common` before choosing the implementation pattern?
+		       - If this handler touches data access, syssettings, processes, or backend services, did you read `page-schema-creatio-devkit-common` before choosing the implementation pattern?
 		       - Are the exact `/**SCHEMA_HANDLERS*/` markers still present around the handlers array?
 		       - Is `SCHEMA_HANDLERS` still a JavaScript array section?
 		       - Is every handler entry still an object with string `request` and `handler` fields?
@@ -464,7 +464,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Is the `next` placement intentional (`before`, `after`, or omitted) for this exact workflow?
 		       - Were built-in request names preferred before introducing any custom `usr.*Request`?
 		       - Are `$context` and `scopes` forwarded in every imperative follow-up request that stays on the live page scope?
-		       - If `fetch(...)` is still used, is there an explicit reason why no canonical `crt.*Request`, SDK service, or `sdk.Model` pattern from `page-schema-sdk-common` covers the scenario?
+		       - If `fetch(...)` is still used, is there an explicit reason why no canonical `crt.*Request`, SDK service, or `sdk.Model` pattern from `page-schema-creatio-devkit-common` covers the scenario?
 		       - Does page-state writeback use `await request.$context.set(...)` unless the task explicitly matches a compatibility pattern already present in the schema?
 		       - Is this edit still using the canonical page-body API (`request.value`, `await request.$context["Attr"]`, `await request.$context.set(...)`) rather than a compatibility form?
 		       - Was any new SDK import added through `SCHEMA_DEPS` / `SCHEMA_ARGS` using the existing page aliasing style?

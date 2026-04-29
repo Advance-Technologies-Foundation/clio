@@ -23,6 +23,14 @@ internal static class PageBodyMerger {
 	/// body. Throws <see cref="InvalidOperationException"/> if either body is missing required
 	/// markers that the merger needs.
 	/// </summary>
+	/// <remarks>
+	/// Each section is merged only when its marker pair already exists in <paramref name="currentBody"/>.
+	/// If <paramref name="currentBody"/> pre-dates a section (e.g. an older page schema without a
+	/// <c>SCHEMA_CONVERTERS</c> or <c>SCHEMA_VALIDATORS</c> block), the computed merge result for that
+	/// section is silently discarded and the body is returned unchanged for that section. To add a new
+	/// section to an older page, first manually insert the empty marker pair into the body, then call
+	/// <c>Merge</c> with the desired content.
+	/// </remarks>
 	public static string Merge(string currentBody, string incomingBody) {
 		if (string.IsNullOrWhiteSpace(currentBody)) {
 			throw new InvalidOperationException("Current body is empty — cannot perform append merge.");
@@ -43,13 +51,140 @@ internal static class PageBodyMerger {
 		string mergedHandlers = MergeHandlersRaw(
 			ReadRawSection(currentBody, "SCHEMA_HANDLERS") ?? "[]",
 			ReadRawSection(incomingBody, "SCHEMA_HANDLERS") ?? "[]");
+		string mergedConverters = MergeConvertersRaw(
+			ReadRawSection(currentBody, "SCHEMA_CONVERTERS") ?? "{}",
+			ReadRawSection(incomingBody, "SCHEMA_CONVERTERS") ?? "{}");
 
 		string result = currentBody;
 		result = ReplaceSection(result, "SCHEMA_VIEW_CONFIG_DIFF", mergedViewConfigDiff.ToString(Newtonsoft.Json.Formatting.None));
 		result = ReplaceSection(result, "SCHEMA_VIEW_MODEL_CONFIG_DIFF", mergedViewModelConfigDiff.ToString(Newtonsoft.Json.Formatting.None));
 		result = ReplaceSection(result, "SCHEMA_MODEL_CONFIG_DIFF", mergedModelConfigDiff.ToString(Newtonsoft.Json.Formatting.None));
 		result = ReplaceSection(result, "SCHEMA_HANDLERS", mergedHandlers);
+		result = ReplaceSection(result, "SCHEMA_CONVERTERS", mergedConverters);
 		return result;
+	}
+
+	/// <summary>
+	/// Merges two JavaScript converter object strings by key — incoming keys win over current keys
+	/// with the same name. Preserves non-JSON function bodies by using raw text extraction rather
+	/// than JSON parsing.
+	/// </summary>
+	private static string MergeConvertersRaw(string current, string incoming) {
+		string currentTrim = current.Trim();
+		string incomingTrim = incoming.Trim();
+		if (currentTrim == "{}" || string.IsNullOrEmpty(currentTrim)) {
+			return incomingTrim;
+		}
+		if (incomingTrim == "{}" || string.IsNullOrEmpty(incomingTrim)) {
+			return currentTrim;
+		}
+		string currentInner = StripObjectBraces(currentTrim);
+		string incomingInner = StripObjectBraces(incomingTrim);
+		List<(string Key, string Entry)> currentEntries = ParseConverterEntries(currentInner);
+		List<(string Key, string Entry)> incomingEntries = ParseConverterEntries(incomingInner);
+		var incomingKeys = new HashSet<string>(incomingEntries.Select(e => e.Key), StringComparer.Ordinal);
+		var kept = currentEntries
+			.Where(e => !incomingKeys.Contains(e.Key))
+			.Select(e => e.Entry)
+			.Concat(incomingEntries.Select(e => e.Entry))
+			.ToList();
+		return kept.Count == 0 ? "{}" : "{" + string.Join(",", kept) + "}";
+	}
+
+	/// <summary>
+	/// Parses a JavaScript object body (without outer braces) into a list of top-level key–value
+	/// entry pairs. Each entry preserves the raw text of "key": value so the function body is
+	/// never mangled. Stops at top-level commas — depth tracking covers nested {}, [], and ().
+	/// </summary>
+	/// <remarks>
+	/// Limitation: JavaScript regex literals (<c>/pattern/flags</c>) are not tracked as string
+	/// delimiters. A regex body containing an unbalanced <c>{</c>, <c>[</c>, or a bare <c>,</c>
+	/// at depth 0 could cause a premature entry split. In practice, converter functions are simple
+	/// formatters that do not use regex literals, so this edge case is not expected to occur.
+	/// </remarks>
+	private static List<(string Key, string Entry)> ParseConverterEntries(string inner) {
+		var entries = new List<(string Key, string Entry)>();
+		int i = 0;
+		while (i < inner.Length) {
+			// Skip inter-entry whitespace and commas.
+			while (i < inner.Length && (char.IsWhiteSpace(inner[i]) || inner[i] == ',')) {
+				i++;
+			}
+			if (i >= inner.Length) {
+				break;
+			}
+			// Every entry must start with a quoted key.
+			if (inner[i] != '"') {
+				i++;
+				continue;
+			}
+			int entryStart = i;
+			// Read the key (between the two surrounding quotes).
+			i++; // opening quote
+			int keyStart = i;
+			while (i < inner.Length && inner[i] != '"') {
+				if (inner[i] == '\\') {
+					i++;
+				}
+				i++;
+			}
+			string key = inner.Substring(keyStart, i - keyStart);
+			if (i < inner.Length) {
+				i++; // closing quote
+			}
+			// Skip the colon (and any surrounding whitespace).
+			while (i < inner.Length && (char.IsWhiteSpace(inner[i]) || inner[i] == ':')) {
+				i++;
+			}
+			// Read the value by tracking bracket depth.
+			// The value ends at a top-level comma (depth == 0) or end of string.
+			int depth = 0;
+			bool inStr = false;
+			char strChar = '"';
+			while (i < inner.Length) {
+				char ch = inner[i];
+				if (inStr) {
+					if (ch == '\\') {
+						i += 2;
+						continue;
+					}
+					if (ch == strChar) {
+						inStr = false;
+					}
+					i++;
+					continue;
+				}
+				if (ch is '"' or '\'' or '`') {
+					inStr = true;
+					strChar = ch;
+					i++;
+					continue;
+				}
+				if (ch is '(' or '{' or '[') {
+					depth++;
+					i++;
+					continue;
+				}
+				if (ch is ')' or '}' or ']') {
+					depth--;
+					i++;
+					continue;
+				}
+				if (depth == 0 && ch == ',') {
+					break; // top-level comma ends this entry
+				}
+				i++;
+			}
+			string entry = inner.Substring(entryStart, i - entryStart).Trim();
+			if (!string.IsNullOrWhiteSpace(entry)) {
+				entries.Add((key, entry));
+			}
+			// Skip the trailing comma so the outer loop advances past it.
+			if (i < inner.Length && inner[i] == ',') {
+				i++;
+			}
+		}
+		return entries;
 	}
 
 	private static JArray MergeArrayByName(JArray current, JArray incoming) {
@@ -116,6 +251,13 @@ internal static class PageBodyMerger {
 		string trimmed = value.Trim();
 		if (trimmed.StartsWith('[')) trimmed = trimmed.Substring(1);
 		if (trimmed.EndsWith(']')) trimmed = trimmed.Substring(0, trimmed.Length - 1);
+		return trimmed.Trim();
+	}
+
+	private static string StripObjectBraces(string value) {
+		string trimmed = value.Trim();
+		if (trimmed.StartsWith('{')) trimmed = trimmed.Substring(1);
+		if (trimmed.EndsWith('}')) trimmed = trimmed.Substring(0, trimmed.Length - 1);
 		return trimmed.Trim();
 	}
 

@@ -603,6 +603,47 @@ public sealed class SchemaValidationServiceTests {
 	}
 
 	[Test]
+	[Description("Body with async arrow function converter passes content validation — runtime supports Promise-returning converters")]
+	public void ValidateMarkerContent_AsyncArrowFunctionConverter_ReturnsValid() {
+		string body = ValidFormPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.FormatPhoneNumber\": async (value) => {" +
+			"  if (!value) return \"\";" +
+			"  const svc = new sdk.SysSettingsService();" +
+			"  const setting = await svc.getByCode(\"UsrEnablePhoneFormatting\");" +
+			"  if (!Boolean(setting?.value)) return value;" +
+			"  const digits = String(value).replace(/\\D/g, \"\");" +
+			"  if (digits.length !== 11) return value;" +
+			"  return `+${digits.slice(0, 1)} (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9, 11)}`;" +
+			"} }/**SCHEMA_CONVERTERS*/");
+		var result = SchemaValidationService.ValidateMarkerContent(body);
+
+		result.IsValid.Should().BeTrue(
+			because: "async arrow function converters with await, template literals, and regex are valid per the guidance resource");
+		result.Errors.Should().BeEmpty(
+			because: "no syntax error should be reported for a well-formed async converter body");
+	}
+
+	[Test]
+	[Description("Body with converter containing multiple nested brace pairs passes content validation")]
+	public void ValidateMarkerContent_ConverterWithNestedBraces_ReturnsValid() {
+		string body = ValidFormPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.FormatScore\": function(value) {" +
+			"  if (!value) { return \"\"; }" +
+			"  if (value >= 90) { return \"Excellent\"; }" +
+			"  if (value >= 70) { return \"Good\"; }" +
+			"  return \"Poor\";" +
+			"} }/**SCHEMA_CONVERTERS*/");
+		var result = SchemaValidationService.ValidateMarkerContent(body);
+
+		result.IsValid.Should().BeTrue(
+			because: "converter function bodies with multiple nested brace pairs must be accepted");
+		result.Errors.Should().BeEmpty(
+			because: "bracket-depth tracking should correctly handle peer-level if-blocks inside a converter");
+	}
+
+	[Test]
 	[Description("Body with JavaScript validator functions passes content validation")]
 	public void ValidateMarkerContent_JavaScriptValidators_ReturnsValid() {
 		string body = ValidFormPageBody.Replace(

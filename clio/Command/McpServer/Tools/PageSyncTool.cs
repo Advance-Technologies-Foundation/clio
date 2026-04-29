@@ -32,7 +32,7 @@ public sealed class PageSyncTool(
 	             "Section authoring rules for the body payload: " +
 	             "if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 	             "if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
-	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-sdk-common` before editing SCHEMA_DEPS or SDK calls.")]
+	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public async Task<PageSyncResponse> SyncPages(
 		[Description("Parameters: environment-name (required); pages array (required); validate, verify, skip-sampling (optional)")]
 		[Required] PageSyncArgs args,

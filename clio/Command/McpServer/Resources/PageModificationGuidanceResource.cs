@@ -22,6 +22,18 @@ public sealed class PageModificationGuidanceResource {
 		Text = """
 		       clio MCP page modification guide
 
+		       PRE-EDIT GUIDANCE CHECKLIST — read before writing any body
+		       Before touching raw.body, determine which section you are modifying and call the corresponding guidance first:
+
+		       | Requirement pattern | Call get-guidance with name | Why |
+		       | --- | --- | --- |
+		       | email as mailto link, phone as tel link, text uppercase/lowercase, boolean inversion, number/currency formatting, any display-only transformation | `page-schema-converters` | Determines whether a converter is the right tool BEFORE you choose a component type. Skipping this causes AI to use crt.EmailInput instead of crt.ToEmailLink, or crt.Label instead of a converter binding. |
+		       | business logic, cross-field orchestration, async data loading, side effects | `page-schema-handlers` | Handlers are NOT the same as converters. |
+		       | required field, max length, format enforcement with error message | `page-schema-validators` | Validators write to viewModelConfigDiff, not viewConfigDiff. |
+		       | SDK service calls (SysSettingsService, HttpClientService, etc.) | `page-schema-creatio-devkit-common` | Correct import syntax and async patterns. |
+
+		       STOP. Do NOT call get-component-info and pick a component type to solve a display transformation requirement until you have read `page-schema-converters` and confirmed the OOTB decision table does not cover your case. The most common mistake is treating a display transformation as a component selection problem.
+
 		       Replacing-schema concept
 		       - When a Freedom UI designer saves changes to a page, Creatio creates a replacing schema in a "design package".
 		       - The replacing schema inherits from the original and contains only the diff applied by the designer.
@@ -56,6 +68,7 @@ public sealed class PageModificationGuidanceResource {
 		       - Merge rules (append mode):
 		         * `viewConfigDiff` — concat + dedupe by `name` (incoming wins)
 		         * `handlers` — concat + dedupe by `request` string (incoming wins)
+		         * `converters` — merge object by key (incoming wins)
 		         * `viewModelConfigDiff` / `modelConfigDiff` — plain concat (no dedupe)
 		       - Append mode is permissive about the incoming body: pass only the sections you want to merge (for example, just `SCHEMA_VIEW_CONFIG_DIFF` + `SCHEMA_HANDLERS`). Missing sections are skipped; the current body's values stay intact for those sections. No need to pad with empty `[]` / `{}` markers.
 		       - Never invent custom markers (for example `SCHEMA_WRAPPERS` is not a valid marker). Stick to: `SCHEMA_DEPS`, `SCHEMA_ARGS`, `SCHEMA_VIEW_CONFIG_DIFF`, `SCHEMA_VIEW_MODEL_CONFIG_DIFF`, `SCHEMA_MODEL_CONFIG_DIFF`, `SCHEMA_HANDLERS`, `SCHEMA_CONVERTERS`, `SCHEMA_VALIDATORS`.

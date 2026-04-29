@@ -105,15 +105,15 @@ public sealed class GuidanceGetToolE2ETests {
 			context.Session,
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
-				["name"] = "page-schema-sdk-common"
+				["name"] = "page-schema-creatio-devkit-common"
 			});
 
 		// Assert
 		response.Success.Should().BeTrue(
-			because: "page-schema-sdk-common is a registered guidance name");
+			because: "page-schema-creatio-devkit-common is a registered guidance name");
 		response.Article.Should().NotBeNull(
 			because: "successful guidance lookups should return the resolved article payload");
-		response.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-sdk-common",
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-creatio-devkit-common",
 			because: "the canonical resource URI should still be visible in the tool response");
 		response.Article.Text.Should().Contain("clio MCP page-schema sdk common guide",
 			because: "the guidance tool should return the canonical sdk common guide text");

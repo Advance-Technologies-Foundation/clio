@@ -229,9 +229,9 @@ public sealed class McpGuidanceResourceTests {
 			because: "the handler guide should expose a stable MCP URI for handler authoring guidance");
 		article.Text.Should().Contain("SCHEMA_HANDLERS",
 			because: "handler guidance should point callers to the marker-delimited handler section");
-		article.Text.Should().Contain("you MUST read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
+		article.Text.Should().Contain("you MUST read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
 			because: "handler guidance should route sdk-backed and service-backed handler edits to the dedicated sdk common guide");
-		article.Text.Should().Contain("you MUST read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
+		article.Text.Should().Contain("you MUST read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
 			because: "handler guidance should make sdk and service routing to the sdk common guide mandatory");
 		article.Text.Should().Contain("Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call",
 			because: "handler guidance should force ai callers through the sdk common guide before choosing a data or service implementation pattern");
@@ -253,9 +253,9 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should explain the page-body request-dispatch choice explicitly");
 		article.Text.Should().Contain("| deployed page-body handler in `SCHEMA_HANDLERS` | `await request.$context.executeRequest(...)` |",
 			because: "handler guidance should prefer executeRequest for deployed page-body handlers");
-		article.Text.Should().Contain("Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-sdk-common`.",
+		article.Text.Should().Contain("Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-creatio-devkit-common`.",
 			because: "handler guidance should keep HandlerChainService out of the default page-body authoring path");
-		article.Text.Should().Contain("Else if the handler must read or write data, syssettings, processes, or backend services, stop and read `page-schema-sdk-common` before authoring the handler body.",
+		article.Text.Should().Contain("Else if the handler must read or write data, syssettings, processes, or backend services, stop and read `page-schema-creatio-devkit-common` before authoring the handler body.",
 			because: "the handler decision tree should have an explicit sdk common branch for data and service work");
 		article.Text.Should().Contain("| open a related page or mini page | `crt.OpenPageRequest` | button/menu `clicked.request` | no |",
 			because: "handler guidance should keep simple navigation on direct request wiring instead of custom handlers");
@@ -305,7 +305,7 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should explicitly reject invented and legacy sender/get/set access patterns");
 		article.Text.Should().Contain("Canonical rule for `crt.HandleViewModelAttributeChangeRequest`: use `request.value` for the triggering attribute, not `request.viewModel.get(...)`.",
 			because: "handler guidance should spell out the exact attribute-change API that prevents invented request.viewModel reads");
-		article.Text.Should().Contain("Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-sdk-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.",
+		article.Text.Should().Contain("Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-creatio-devkit-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.",
 			because: "the handler anti-pattern list should stop callers from defaulting to raw platform fetches");
 		article.Text.Should().Contain("A field control MUST bind to the same declared view-model attribute that handlers read or write through `$context.set(\"<AttributeName>\", ...)`.",
 			because: "the handler guide should make handler-driven control binding explicit without relying on datasource naming conventions");
@@ -494,9 +494,9 @@ public sealed class McpGuidanceResourceTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns sdk common guidance that teaches AI callers how to use @creatio-devkit/common in page schemas.")]
-	public void PageSchemaSdkCommonGuidanceResource_Should_Return_Canonical_Sdk_Common_Guide() {
+	public void PageSchemaCreatioDevkitCommonGuidanceResource_Should_Return_Canonical_Sdk_Common_Guide() {
 		// Arrange
-		PageSchemaSdkCommonGuidanceResource resource = new();
+		PageSchemaCreatioDevkitCommonGuidanceResource resource = new();
 
 		// Act
 		ResourceContents result = resource.GetGuide();
@@ -504,7 +504,7 @@ public sealed class McpGuidanceResourceTests {
 			because: "the sdk common guide should be returned as a plain-text MCP resource").Subject;
 
 		// Assert
-		article.Uri.Should().Be("docs://mcp/guides/page-schema-sdk-common",
+		article.Uri.Should().Be("docs://mcp/guides/page-schema-creatio-devkit-common",
 			because: "the sdk common guide should expose a stable MCP URI for page-schema SDK guidance");
 		article.Text.Should().Contain("clio MCP page-schema sdk common guide",
 			because: "the resource should identify itself as the dedicated sdk common guide");
@@ -721,7 +721,7 @@ public sealed class McpGuidanceResourceTests {
 			because: "the validator guide should expose a stable MCP URI for validator authoring guidance");
 		article.Text.Should().Contain("SCHEMA_VALIDATORS",
 			because: "validator guidance should point callers to the marker-delimited validator section");
-		article.Text.Should().Contain("also read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service calls",
+		article.Text.Should().Contain("also read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service calls",
 			because: "validator guidance should route SDK-backed validator edits to the dedicated sdk common guide");
 		article.Text.Should().Contain("must contain an object section, not an array section",
 			because: "validator guidance should state the SCHEMA_VALIDATORS container shape directly instead of using ambiguous preserve wording");
@@ -815,7 +815,7 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should explicitly warn that the async keyword alone does not mean async:true is required");
 		article.Text.Should().Contain("Async validator template",
 			because: "the async validator section should use a direct AI-readable title instead of an ambiguous delta label");
-		article.Text.Should().Contain("Before editing `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service usage here, read `page-schema-sdk-common`.",
+		article.Text.Should().Contain("Before editing `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service usage here, read `page-schema-creatio-devkit-common`.",
 			because: "the async validator section should route SDK-backed validator work through the dedicated sdk common guide");
 		article.Text.Should().Contain("Use `Minimal canonical template` for the base binding structure",
 			because: "the async validator variant should tell AI callers to reuse the canonical binding template instead of treating the section as a standalone shape");
@@ -831,7 +831,7 @@ public sealed class McpGuidanceResourceTests {
 			because: "the async validator template must instruct adding devkit AMD dependency");
 		article.Text.Should().Contain("minimal coupled sections required for validator correctness",
 			because: "the safe editing rules should no longer tell AI callers to touch only SCHEMA_VALIDATORS when coupled binding edits are required");
-		article.Text.Should().Contain("When validator code needs `@creatio-devkit/common`, read `page-schema-sdk-common` first and then follow its AMD dependency and public-API rules.",
+		article.Text.Should().Contain("When validator code needs `@creatio-devkit/common`, read `page-schema-creatio-devkit-common` first and then follow its AMD dependency and public-API rules.",
 			because: "safe editing rules should route SDK-backed validator edits through the dedicated sdk common guide");
 		article.Text.Should().Contain("Verify the edited body is syntactically valid JavaScript before calling `sync-pages`.",
 			because: "safe editing should describe an operational verification step rather than the vague instruction to re-parse");
@@ -888,5 +888,148 @@ public sealed class McpGuidanceResourceTests {
 			because: "the extracted contract map should include built-in max-length validation");
 		contracts["crt.MaxLength"].Should().Equal(new[] { "maxLength" },
 			because: "the parser should preserve the canonical max-length param name from the decision table");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns converter guidance that covers OOTB converters, custom usr.* converters, and pipe-binding syntax for Freedom UI pages.")]
+	public void PageSchemaConvertersGuidanceResource_Should_Return_Canonical_Converter_Guide() {
+		// Arrange
+		PageSchemaConvertersGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the converter guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert — URI
+		article.Uri.Should().Be("docs://mcp/guides/page-schema-converters",
+			because: "the converter guide should expose a stable MCP URI for converter authoring guidance");
+
+		// Assert — scope and marker name
+		article.Text.Should().Contain("SCHEMA_CONVERTERS",
+			because: "converter guidance should point callers to the marker-delimited converter section");
+		article.Text.Should().Contain("must contain an object section, not an array section",
+			because: "converter guidance should state the SCHEMA_CONVERTERS container shape directly");
+
+		// Assert — decision tree
+		article.Text.Should().Contain("Decision tree",
+			because: "converter guidance should front-load the main branching decisions for AI consumers");
+		article.Text.Should().Contain("DISPLAY-ONLY value transformation",
+			because: "the decision tree should distinguish display transformation from validation and business logic");
+		article.Text.Should().Contain("stop and read `page-schema-validators`",
+			because: "the decision tree should route validation requirements to the validators guide");
+		article.Text.Should().Contain("stop and read `page-schema-handlers`",
+			because: "the decision tree should route business logic requirements to the handlers guide");
+
+		// Assert — OOTB converter decision table
+		article.Text.Should().Contain("OOTB converter decision table",
+			because: "converter guidance should provide a decision table of built-in converters before allowing custom ones");
+		article.Text.Should().Contain("| Requirement pattern | Use | Parameters | Custom converter needed |",
+			because: "the OOTB table should be structured for direct AI consumption");
+		article.Text.Should().Contain("crt.ToBoolean",
+			because: "guidance should document the built-in boolean converter");
+		article.Text.Should().Contain("crt.InvertBooleanValue",
+			because: "guidance should document the built-in boolean inversion converter");
+		article.Text.Should().Contain("crt.ToEmailLink",
+			because: "guidance should document the built-in email-to-link converter");
+		article.Text.Should().Contain("crt.ToPhoneLink",
+			because: "guidance should document the built-in phone-to-link converter");
+		article.Text.Should().Contain("crt.ToObjectProp",
+			because: "guidance should document the built-in object-property extractor converter");
+		article.Text.Should().Contain("| requirement is not covered by rows above | custom `usr.*` converter | custom | yes |",
+			because: "the table should tell AI when a custom converter is justified");
+
+		// Assert — binding syntax
+		article.Text.Should().Contain("Converter binding syntax",
+			because: "guidance should explain where and how converters are bound");
+		article.Text.Should().Contain("\"$AttributeName | converterName\"",
+			because: "guidance should show the canonical pipe-binding syntax");
+		article.Text.Should().Contain("NOT in `viewModelConfigDiff`",
+			because: "guidance should prevent the common mistake of binding converters in the view-model section");
+
+		// Assert — custom converter naming
+		article.Text.Should().Contain("usr.` prefix",
+			because: "custom converters must use the usr. namespace prefix");
+		article.Text.Should().Contain("do NOT declare them in `SCHEMA_CONVERTERS`",
+			because: "guidance should prevent declaring built-in crt.* converters in the schema section");
+
+		// Assert — NON-NEGOTIABLES
+		article.Text.Should().Contain("NON-NEGOTIABLES",
+			because: "converter guidance should expose a compact high-priority rules block");
+		article.Text.Should().Contain("Converters affect DISPLAY only",
+			because: "the non-negotiables should enforce that converters do not write back to the model");
+		article.Text.Should().Contain("Never put side effects inside a converter function",
+			because: "the non-negotiables should prohibit side effects (but not async) inside converters");
+		article.Text.Should().Contain("Async converters are allowed",
+			because: "the non-negotiables must explicitly permit async converters after the async section was introduced");
+		article.Text.Should().Contain("Do NOT call non-cached HTTP endpoints",
+			because: "the non-negotiables should restrict uncached HTTP inside converters");
+
+		// Assert — async converters section
+		article.Text.Should().Contain("Async converters",
+			because: "the guide must include a dedicated section on async converter authoring");
+		article.Text.Should().Contain("instanceof Promise",
+			because: "the async section should explain the runtime's Promise detection mechanism");
+		article.Text.Should().Contain("SysSettingsService",
+			because: "the async section must name SysSettingsService as a safe example of a cached service");
+		article.Text.Should().Contain("pre-loaded into a two-layer cache",
+			because: "the guide should explain why SysSettingsService is safe to call from a converter");
+		article.Text.Should().Contain("usr.FormatPhoneNumber",
+			because: "the async section should include a complete named example");
+		article.Text.Should().Contain("async (value) =>",
+			because: "the guide should show the async arrow function syntax that AI will copy");
+		article.Text.Should().Contain("prefer async converter when the async call is cheap/cached",
+			because: "the guide should give an explicit decision rule for choosing async converter vs handler");
+		article.Text.Should().Contain("If the converter is async, ensure the SDK service used is cached",
+			because: "the before-save checklist should require verifying caching for async converters");
+
+		// Assert — templates and examples
+		article.Text.Should().Contain("Minimal canonical template",
+			because: "converter guidance should provide a reusable template before detailed variants");
+		article.Text.Should().Contain("usr.ToUpperCase",
+			because: "guidance should include a concrete custom converter example");
+		article.Text.Should().Contain("value?.toUpperCase() ?? ''",
+			because: "the example converter body should show a realistic implementation");
+		article.Text.Should().Contain("\"caption\": \"$UsrName | usr.ToUpperCase\"",
+			because: "the example should show the converter wired to a real viewConfigDiff property");
+
+		// Assert — OOTB binding examples
+		article.Text.Should().Contain("crt.InvertBooleanValue",
+			because: "guidance should include an OOTB boolean inversion binding example");
+		article.Text.Should().Contain("crt.ToEmailLink",
+			because: "guidance should include an OOTB email link binding example");
+		article.Text.Should().Contain("crt.ToPhoneLink",
+			because: "guidance should include an OOTB phone link binding example");
+		article.Text.Should().Contain("crt.ToObjectProp:displayValue",
+			because: "guidance should show how to pass params to the ToObjectProp converter");
+
+		// Assert — BEFORE SAVE CHECKLIST
+		article.Text.Should().Contain("BEFORE SAVE CHECKLIST",
+			because: "converter guidance should give AI callers a compact verification gate before sync-pages");
+		article.Text.Should().Contain("$Attr | converterName` format, not `$Attr.converterName`",
+			because: "the checklist should guard against using dot notation instead of pipe syntax");
+		article.Text.Should().Contain("`SCHEMA_CONVERTERS` is an object literal, not an array",
+			because: "the checklist should reinforce the object-not-array shape constraint");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes page-schema-converters so AI callers can retrieve converter authoring guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Page_Schema_Converters_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("page-schema-converters", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose page-schema-converters so get-guidance can return it by name");
+		entry.Name.Should().Be("page-schema-converters",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("converters",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/page-schema-converters",
+			because: "the article URI in the catalog must match the resource URI");
 	}
 }
