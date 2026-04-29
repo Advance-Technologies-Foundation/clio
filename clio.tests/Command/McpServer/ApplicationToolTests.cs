@@ -1008,6 +1008,70 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns a structured error envelope when entitySchemaName is supplied without useExistingEntitySchema=true, which would cause a server-side NPE.")]
+	public async Task ApplicationCreate_Should_Return_Error_When_EntitySchemaName_Provided_Without_UseExistingEntitySchema() {
+		// Arrange
+		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+
+		// Act
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+			EnvironmentName: "sandbox",
+			Name: "Customer Base",
+			Code: "UsrCustomerBase",
+			Description: null,
+			TemplateCode: "AppFreedomUI",
+			IconId: null,
+			IconBackground: "#0058EF",
+			ClientTypeId: null,
+			OptionalTemplateDataJson: JsonSerializer.Serialize(new {
+				entitySchemaName = "UsrCustomerProfile"
+			})));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "passing entitySchemaName without useExistingEntitySchema=true triggers a server-side NullReferenceException and must be blocked in clio");
+		result.Error.Should().Match("*useExistingEntitySchema=true*",
+			because: "the error message must tell the caller that entitySchemaName is only valid together with useExistingEntitySchema=true");
+		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when useExistingEntitySchema=true is supplied without entitySchemaName.")]
+	public async Task ApplicationCreate_Should_Return_Error_When_UseExistingEntitySchema_True_But_EntitySchemaName_Is_Empty() {
+		// Arrange
+		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+
+		// Act
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+			EnvironmentName: "sandbox",
+			Name: "Customer Base",
+			Code: "UsrCustomerBase",
+			Description: null,
+			TemplateCode: "AppFreedomUI",
+			IconId: null,
+			IconBackground: "#0058EF",
+			ClientTypeId: null,
+			OptionalTemplateDataJson: JsonSerializer.Serialize(new {
+				useExistingEntitySchema = true
+			})));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "useExistingEntitySchema=true without entitySchemaName is an incomplete and unusable combination");
+		result.Error.Should().Match("*entitySchemaName*required*",
+			because: "the error message must tell the caller that entitySchemaName is required when useExistingEntitySchema=true");
+		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns a structured error envelope when the backend create flow fails.")]
 	public async Task ApplicationCreate_Should_Return_Error_When_Backend_Fails() {
 		// Arrange
