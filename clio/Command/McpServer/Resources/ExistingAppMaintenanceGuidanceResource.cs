@@ -39,6 +39,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - If `create-app` fails because the app or configuration already exists, switch to the existing-app discovery flow: call `list-apps` to find the existing app, then `get-app-info` with the matched identifier, and continue with the inspect → mutate → verify flow.
 			       - `create-app-section` accepts `application-code` as the target-app selector.
 			       - `create-app-section` is scalar-only. Pass `caption`, `description`, and `entity-schema-name` as top-level strings, and pass `with-mobile-pages` as a top-level boolean.
+			       - When entity-schema-name is omitted, Creatio derives both the section code and the new entity code from the caption (e.g. caption "Customer Profile" → section code and entity code "UsrCustomerProfile"). Choose the caption that produces the desired Usr<PascalCase> entity name.
 			       - Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `create-app-section`.
 			       - When reusing an existing entity schema, provide `entity-schema-name`. Otherwise omit that field and let Creatio create a new object for the section.
 			       - `update-app-section` accepts `application-code` and `section-code` as the existing-section selector pair.
