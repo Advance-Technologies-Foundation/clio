@@ -164,8 +164,8 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the article should explain how to discover the target installed application");
 		article.Text.Should().Contain("update-page",
 			because: "the article should describe the minimal page mutation path");
-		article.Text.Should().Contain("do not wrap MCP arguments inside `args`",
-			because: "the article should explicitly reject the request wrapper that caused the analyzed session failure");
+		article.Text.Should().Contain("Wrap MCP tool arguments under the top-level `args` JSON object",
+			because: "the article should explicitly publish the wrapped request shape required by the clio MCP tool schema");
 		article.Text.Should().Contain("do not send `bundle` or `bundle.viewConfig` as the body payload",
 			because: "the article should explain the concrete writable page payload shape");
 		article.Text.Should().Contain("JSON object string",

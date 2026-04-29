@@ -32,7 +32,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 
 			       Discover the target app
 			       - Use `list-apps` when you do not yet know the installed application code or need to confirm candidates.
-			       - Pass MCP tool arguments at the top level; do not wrap MCP arguments inside `args`.
+			       - Wrap MCP tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema (for example `{"args": {"environment-name": "...", "code": "..."}}`); do not flatten or rename canonical fields.
 			       - Use `get-app-info` after `list-apps` to confirm the primary package and entity context for the target app.
 			       - Use `create-app-section` when the requested mutation is "add a new section to this existing app".
 			       - Use `update-app-section` when the requested mutation is "change metadata of this existing section", including fixing a broken JSON-style heading by supplying a new plain-text caption.

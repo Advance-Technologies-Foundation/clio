@@ -150,8 +150,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should spell out the canonical existing-section selector for updates");
 		article.Text.Should().Contain("with-mobile-pages",
 			because: "the guide should explain the explicit top-level mobile-page toggle for section creation");
-		article.Text.Should().Contain("do not wrap MCP arguments inside `args`",
-			because: "the guide should explicitly reject the synthetic args wrapper that caused real session failures");
+		article.Text.Should().Contain("Wrap MCP tool arguments under the top-level `args` JSON object",
+			because: "the guide should explicitly publish the wrapped request shape required by the clio MCP tool schema");
 		article.Text.Should().Contain("do not send `bundle` or `bundle.viewConfig` as the body payload",
 			because: "the guide should explain the concrete page payload shape expected by the page tools");
 		article.Text.Should().Contain("JSON object string",

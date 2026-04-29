@@ -35,7 +35,7 @@ public sealed class AgentExecutionGuidanceResource {
 			       MCP transport rules
 			       - clio MCP is a stdio MCP server. Use the consumer-repo MCP client wrapper (such as `scripts/mcp_client.py`) instead of raw curl for stdio transport.
 			       - Respect the `CLIO_CMD` environment variable when a custom clio binary is configured for the run.
-			       - Send tool arguments at the top level of the MCP request. Do not wrap canonical fields inside a synthetic `args` object.
+			       - Wrap tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema (for example `{"args": {"environment-name": "...", "package-name": "..."}}`). Do not flatten, rename, or hoist canonical fields.
 			       - Pass boolean MCP parameters as booleans, not strings.
 			       - Use kebab-case JSON argument names exactly as advertised by the discovered tool contract (for example `environment-name`, `package-name`, `schema-name`).
 			       - Always read the executable contract through `get-tool-contract` before the first invocation of any MCP tool in a workflow. The contract specifies exact parameter names, aliases, required fields, defaults, and response shapes.

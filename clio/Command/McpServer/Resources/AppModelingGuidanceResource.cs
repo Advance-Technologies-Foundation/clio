@@ -36,7 +36,7 @@ public sealed class AppModelingGuidanceResource {
 
 			       Discovery before invocation
 			       - Always read the executable contract through `get-tool-contract` before the first invocation of any MCP tool in a workflow. The contract specifies exact parameter names, aliases, required fields, defaults, and response shapes.
-			       - Send tool arguments at the top level of the MCP request. Do not wrap canonical fields inside a synthetic `args` object.
+			       - Wrap tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema (for example `{"args": {"code": "..."}}`). Do not flatten or rename canonical fields.
 			       - Tool-specific identifiers follow their own naming conventions and must not be guessed. For example, `get-app-info` and `list-pages` use `code`, `get-app-info` uses `id`, `create-app` accepts `icon-background`, `create-app-section` accepts `application-code`, and `update-app-section` accepts `application-code` plus `section-code`.
 
 			       Preferred workflow
