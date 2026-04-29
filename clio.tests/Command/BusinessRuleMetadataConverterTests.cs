@@ -43,7 +43,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 							: null)
 				]),
 			[
-				new BusinessRuleAction("make-read-only", ["Status"])
+				new MakeReadOnlyBusinessRuleAction(["Status"])
 			]);
 
 		// Act
@@ -87,8 +87,8 @@ public sealed class BusinessRuleMetadataConverterTests {
 						new BusinessRuleExpression("Const", null, Json(5)))
 				]),
 			[
-				new BusinessRuleAction("make-required", [" Owner ", "Amount", "Owner"]),
-				new BusinessRuleAction("make-read-only", ["Status"])
+				new MakeRequiredBusinessRuleAction([" Owner ", "Amount", "Owner"]),
+				new MakeReadOnlyBusinessRuleAction(["Status"])
 			]);
 
 		// Act
@@ -174,7 +174,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 						new BusinessRuleExpression("Const", null, Json(ownerId)))
 				]),
 			[
-				new BusinessRuleAction("make-required", ["Status"])
+				new MakeRequiredBusinessRuleAction(["Status"])
 			]);
 
 		// Act
@@ -196,6 +196,100 @@ public sealed class BusinessRuleMetadataConverterTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps set-values constant assignments into BusinessRuleActionSetValues metadata with typed item expressions.")]
+	public void ToMetadata_Should_Map_SetValues_Constant_Action_Metadata() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("TextResult", 1),
+			CreateColumn("Score", 4),
+			CreateColumn("Completed", 12),
+			CreateColumn("StartDate", 8),
+			CreateColumn("ReminderTime", 9),
+			CreateColumn("PlannedOn", 7));
+		BusinessRule rule = new(
+			"Populate defaults",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Draft")))
+				]),
+			[
+				new SetValuesBusinessRuleAction(
+					new List<BusinessRuleSetValueItem> {
+						new(
+							new BusinessRuleExpression("AttributeValue", "TextResult", null),
+							new BusinessRuleExpression("Const", null, Json("Ready"))),
+						new(
+							new BusinessRuleExpression("AttributeValue", "Score", null),
+							new BusinessRuleExpression("Const", null, JsonRaw("42"))),
+						new(
+							new BusinessRuleExpression("AttributeValue", "Completed", null),
+							new BusinessRuleExpression("Const", null, JsonRaw("true"))),
+						new(
+							new BusinessRuleExpression("AttributeValue", "StartDate", null),
+							new BusinessRuleExpression("Const", null, Json("2025-01-15"))),
+						new(
+							new BusinessRuleExpression("AttributeValue", "ReminderTime", null),
+							new BusinessRuleExpression("Const", null, Json("13:45:00+02:00"))),
+						new(
+							new BusinessRuleExpression("AttributeValue", "PlannedOn", null),
+							new BusinessRuleExpression("Const", null, Json("2025-01-15T13:45:00+02:00")))
+					})
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule);
+
+		// Assert
+		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single();
+		action.TypeName.Should().Be(BusinessRuleConstants.BusinessRuleSetValuesElementTypeName,
+			because: "set-values actions should persist as the core BusinessRuleActionSetValues type");
+		action.Items.Should().BeOfType<List<BusinessRuleSetValueItemMetadataDto>>(
+			because: "set-values actions should persist assignment items instead of a comma-separated target list");
+		List<BusinessRuleSetValueItemMetadataDto> items = (List<BusinessRuleSetValueItemMetadataDto>)action.Items!;
+		JsonElement serializedItems = JsonSerializer.SerializeToElement(items, BusinessRuleConstants.JsonOptions);
+		items.Should().HaveCount(6,
+			because: "every set-values assignment should become a separate persisted item");
+		items[0].TypeName.Should().Be(BusinessRuleConstants.BusinessRuleSetValueItemTypeName,
+			because: "each item should use the core BusinessRuleSetValueItem metadata type");
+		items[0].Expression.Path.Should().Be("TextResult",
+			because: "the target expression should preserve the assigned column path");
+		items[0].Expression.ScopeId.Should().Be(string.Empty,
+			because: "object-level set-values actions should not bind to a page data source scope");
+		items[0].Value.Type.Should().Be("Const",
+			because: "this delivery supports constant set-values sources only");
+		items[0].Value.DataValueTypeName.Should().Be("Text",
+			because: "constant values should inherit the target column type");
+		serializedItems[0].GetProperty("value").GetProperty("value").GetString().Should().Be("Ready",
+			because: "text constants should persist their string value");
+		items[1].Value.DataValueTypeName.Should().Be("Integer",
+			because: "numeric constants should inherit the numeric target column type");
+		serializedItems[1].GetProperty("value").GetProperty("value").GetInt64().Should().Be(42L,
+			because: "integer constants should persist as JSON numbers");
+		items[2].Value.DataValueTypeName.Should().Be("Boolean",
+			because: "boolean constants should inherit the Boolean target column type");
+		serializedItems[2].GetProperty("value").GetProperty("value").GetBoolean().Should().BeTrue(
+			because: "boolean constants should persist as JSON booleans");
+		items[3].Value.DataValueTypeName.Should().Be("Date",
+			because: "Date constants should inherit the Date target column type");
+		serializedItems[3].GetProperty("value").GetProperty("value").GetString().Should().Be("2025-01-15T00:00:00Z",
+			because: "Date constants should persist as midnight UTC date values");
+		items[4].Value.DataValueTypeName.Should().Be("Time",
+			because: "Time constants should inherit the Time target column type");
+		serializedItems[4].GetProperty("value").GetProperty("value").GetString().Should().Be("0001-01-01T11:45:00Z",
+			because: "Time constants should be normalized to UTC on the metadata time anchor date");
+		items[5].Value.DataValueTypeName.Should().Be("DateTime",
+			because: "DateTime constants should inherit the DateTime target column type");
+		serializedItems[5].GetProperty("value").GetProperty("value").GetString().Should().Be("2025-01-15T11:45:00Z",
+			because: "DateTime constants should be normalized to UTC before serialization");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Serializes constant expressions with dataValueTypeName before value so sequential metadata readers interpret numeric constants correctly.")]
 	public void ToMetadata_Should_Serialize_DataValueTypeName_Before_Value_For_And_Equal_Conditions() {
 		// Arrange
@@ -212,7 +306,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 						new BusinessRuleExpression("Const", null, Json(5)))
 				]),
 			[
-				new BusinessRuleAction("make-read-only", ["Amount"])
+				new MakeReadOnlyBusinessRuleAction(["Amount"])
 			]);
 
 		// Act
@@ -277,7 +371,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 						new BusinessRuleExpression("Const", null, Json("2025-01-15T13:45:30+02:00")))
 				]),
 			[
-				new BusinessRuleAction("make-read-only", ["Status"])
+				new MakeReadOnlyBusinessRuleAction(["Status"])
 			]);
 
 		// Act
@@ -322,7 +416,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 						new BusinessRuleExpression("Const", null, Json("12:00:00+02:00")))
 				]),
 			[
-				new BusinessRuleAction("make-read-only", ["Status"])
+				new MakeReadOnlyBusinessRuleAction(["Status"])
 			]);
 
 		// Act
@@ -374,4 +468,8 @@ public sealed class BusinessRuleMetadataConverterTests {
 
 	private static JsonElement Json(int value) =>
 		JsonSerializer.Deserialize<JsonElement>(value.ToString());
+
+	private static JsonElement JsonRaw(string value) =>
+		JsonSerializer.Deserialize<JsonElement>(value);
 }
+

@@ -61,8 +61,8 @@ public sealed class BusinessRuleToolTests {
 							JsonSerializer.Deserialize<JsonElement>("\"Draft\"")))
 				]),
 			[
-				new BusinessRuleAction("make-required", [" Owner ", "Amount", "Owner"]),
-				new BusinessRuleAction("make-read-only", ["Status"])
+				new MakeRequiredBusinessRuleAction([" Owner ", "Amount", "Owner"]),
+				new MakeReadOnlyBusinessRuleAction(["Status"])
 			]);
 
 		// Act
@@ -82,13 +82,13 @@ public sealed class BusinessRuleToolTests {
 				&& request.Rule.Caption == "Require owner for drafts"
 				&& request.Rule.Condition.LogicalOperation == "AND"
 				&& request.Rule.Actions.Count == 2
-				&& request.Rule.Actions[0].Type == "make-required"
-				&& request.Rule.Actions[0].Items.Count == 3
-				&& request.Rule.Actions[0].Items[0] == " Owner "
-				&& request.Rule.Actions[0].Items[1] == "Amount"
-				&& request.Rule.Actions[0].Items[2] == "Owner"
-				&& request.Rule.Actions[1].Items.Count == 1
-				&& request.Rule.Actions[1].Items[0] == "Status"));
+				&& request.Rule.Actions[0].ActionType == "make-required"
+				&& request.Rule.Actions[0].FieldSelectionItems.Count == 3
+				&& request.Rule.Actions[0].FieldSelectionItems[0] == " Owner "
+				&& request.Rule.Actions[0].FieldSelectionItems[1] == "Amount"
+				&& request.Rule.Actions[0].FieldSelectionItems[2] == "Owner"
+				&& request.Rule.Actions[1].FieldSelectionItems.Count == 1
+				&& request.Rule.Actions[1].FieldSelectionItems[0] == "Status"));
 	}
 
 	[Test]
@@ -115,7 +115,7 @@ public sealed class BusinessRuleToolTests {
 							JsonSerializer.Deserialize<JsonElement>("\"Draft\"")))
 				]),
 			[
-				new BusinessRuleAction("make-required", ["Owner"])
+				new MakeRequiredBusinessRuleAction(["Owner"])
 			]);
 
 		// Act
@@ -208,6 +208,106 @@ public sealed class BusinessRuleToolTests {
 			because: "lookup constant payloads should preserve the GUID string value for downstream validation");
 		payloadArgs.Rule.Condition.Conditions[0].RightExpression.Value!.Value.ValueKind.Should().Be(JsonValueKind.String,
 			because: "lookup constants are only supported as string GUIDs on the MCP surface");
+		payloadArgs.Rule.Actions.Single().FieldSelectionItems.Should().Equal(["Status"],
+			because: "field-state action items should deserialize as the string-array branch of the action items union");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Deserializes set-values actions with constant text number boolean and DateTime payloads.")]
+	public void BusinessRuleCreate_Should_Deserialize_SetValues_Action_With_Constant_Items() {
+		// Arrange
+		string payload = """
+		{
+		  "environment-name": "dev",
+		  "package-name": "UsrPkg",
+		  "entity-schema-name": "UsrOrder",
+		  "rule": {
+		    "caption": "Populate defaults",
+		    "condition": {
+		      "logicalOperation": "AND",
+		      "conditions": [
+		        {
+		          "leftExpression": {
+		            "type": "AttributeValue",
+		            "path": "Name"
+		          },
+		          "comparisonType": "is-filled-in"
+		        }
+		      ]
+		    },
+		    "actions": [
+		      {
+		        "type": "set-values",
+		        "items": [
+		          {
+		            "expression": {
+		              "type": "AttributeValue",
+		              "path": "UsrTextResult"
+		            },
+		            "value": {
+		              "type": "Const",
+		              "value": "Ready"
+		            }
+		          },
+		          {
+		            "expression": {
+		              "type": "AttributeValue",
+		              "path": "UsrScore"
+		            },
+		            "value": {
+		              "type": "Const",
+		              "value": 42
+		            }
+		          },
+		          {
+		            "expression": {
+		              "type": "AttributeValue",
+		              "path": "UsrCompleted"
+		            },
+		            "value": {
+		              "type": "Const",
+		              "value": true
+		            }
+		          },
+		          {
+		            "expression": {
+		              "type": "AttributeValue",
+		              "path": "UsrPlannedOn"
+		            },
+		            "value": {
+		              "type": "Const",
+		              "value": "2025-01-01T00:00:00Z"
+		            }
+		          }
+		        ]
+		      }
+		    ]
+		  }
+		}
+		""";
+
+		// Act
+		BusinessRuleToolPayload? payloadArgs = JsonSerializer.Deserialize<BusinessRuleToolPayload>(payload);
+
+		// Assert
+		payloadArgs.Should().NotBeNull(
+			because: "set-values business-rule payloads should deserialize from the MCP JSON shape");
+		BusinessRuleAction action = payloadArgs!.Rule.Actions.Single();
+		action.ActionType.Should().Be("set-values",
+			because: "the action discriminator should be preserved");
+		action.SetValueItems.Should().HaveCount(4,
+			because: "each set-values assignment item should be bound separately");
+		action.SetValueItems[0].Expression.Path.Should().Be("UsrTextResult",
+			because: "the target expression path should be preserved");
+		action.SetValueItems[0].Value.Value!.Value.ValueKind.Should().Be(JsonValueKind.String,
+			because: "text constants should stay JSON strings");
+		action.SetValueItems[1].Value.Value!.Value.ValueKind.Should().Be(JsonValueKind.Number,
+			because: "number constants should stay JSON numbers");
+		action.SetValueItems[2].Value.Value!.Value.ValueKind.Should().Be(JsonValueKind.True,
+			because: "boolean constants should stay JSON booleans");
+		action.SetValueItems[3].Value.Value!.Value.GetString().Should().Be("2025-01-01T00:00:00Z",
+			because: "DateTime constants should preserve their raw timezone-aware string for validation");
 	}
 
 	[Test]
@@ -262,3 +362,4 @@ public sealed class BusinessRuleToolTests {
 		[property: System.Text.Json.Serialization.JsonPropertyName("entity-schema-name")] string EntitySchemaName,
 		[property: System.Text.Json.Serialization.JsonPropertyName("rule")] BusinessRule Rule);
 }
+

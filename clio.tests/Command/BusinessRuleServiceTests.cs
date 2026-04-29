@@ -106,8 +106,8 @@ public sealed class BusinessRuleServiceTests {
 			"UsrPkg",
 			"UsrOrder",
 			CreateRule(actions: [
-				new BusinessRuleAction("make-required", ["Owner", "Amount"]),
-				new BusinessRuleAction("make-read-only", ["Status"])
+				new MakeRequiredBusinessRuleAction(["Owner", "Amount"]),
+				new MakeReadOnlyBusinessRuleAction(["Status"])
 			]));
 
 		// Act
@@ -291,7 +291,8 @@ public sealed class BusinessRuleServiceTests {
 						new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"Draft\"")))
 				]),
 			actions ?? [
-				new BusinessRuleAction("make-required", ["Owner"])
+				new MakeRequiredBusinessRuleAction(["Owner"])
 			]);
 	}
 }
+

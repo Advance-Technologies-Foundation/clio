@@ -155,6 +155,21 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract should validate target-architecture action type fields");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
+				validator.Field == "rule.actions[*].type" &&
+				validator.Context!.Contains("set-values", StringComparison.Ordinal),
+			because: "the contract should advertise the Set values action type");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "set-values-shape" &&
+				validator.Field == "rule.actions[*].items[*]" &&
+				validator.Context!.Contains("Attribute value sources are not supported", StringComparison.Ordinal),
+			because: "the contract should keep attribute-source assignments out of the current set-values scope");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "set-values-constant" &&
+				validator.Field == "rule.actions[*].items[*].value.value" &&
+				validator.Context!.Contains("JSON number", StringComparison.Ordinal),
+			because: "the contract should document typed constant payloads for set-values");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "enum" &&
 				validator.Field == "rule.condition.conditions[*].comparisonType" &&
 				validator.Context!.Contains("greater-than-or-equal", StringComparison.Ordinal),
 			because: "the contract should advertise the full supported comparison set");
@@ -284,6 +299,34 @@ public sealed class ToolContractGetToolTests {
 			&& string.Equals(constantValue?.ToString(), "12:00:00+02:00", StringComparison.Ordinal));
 		hasTimezoneAwareTimeExample.Should().BeTrue(
 			because: "the contract should show a timezone-aware Time constant example for coding agents");
+		bool hasSetValuesExample = contract.Examples.Any(HasSetValuesConstantExample);
+		hasSetValuesExample.Should().BeTrue(
+			because: "the contract should include a set-values example with text number boolean Date DateTime and Time constants");
+	}
+
+	private static bool HasSetValuesConstantExample(ToolContractExample example) {
+		if (example.Arguments["rule"] is not Dictionary<string, object?> rule
+			|| !rule.TryGetValue("actions", out object? actionsValue)
+			|| actionsValue is not object[] actions
+			|| actions.SingleOrDefault() is not Dictionary<string, object?> action
+			|| !string.Equals(action["type"]?.ToString(), "set-values", StringComparison.Ordinal)
+			|| !action.TryGetValue("items", out object? itemsValue)
+			|| itemsValue is not object[] items) {
+			return false;
+		}
+
+		object?[] values = items
+			.OfType<Dictionary<string, object?>>()
+			.Select(item => item["value"])
+			.OfType<Dictionary<string, object?>>()
+			.Select(valueExpression => valueExpression["value"])
+			.ToArray();
+		return values.Contains("Ready")
+			&& values.Contains(42)
+			&& values.Contains(true)
+			&& values.Contains("2025-01-01")
+			&& values.Contains("12:00:00+02:00")
+			&& values.Contains("2025-01-01T00:00:00Z");
 	}
 
 	[Test]

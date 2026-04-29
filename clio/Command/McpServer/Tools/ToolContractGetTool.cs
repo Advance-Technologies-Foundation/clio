@@ -1302,14 +1302,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildEntityBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates an entity-level Freedom UI business rule with equality, filled-in, and numeric or date/time relational comparisons.",
+			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, and Set values actions from constants.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, EntitySchemaNameCamelFieldName, RuleFieldName],
 				[
 					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameCamelFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameCamelFieldName, StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time).")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets.")
 				],
 				Validators: [
 					new ToolContractValidator("enum", "unsupported-operator", "rule.condition.logicalOperation",
@@ -1325,7 +1325,11 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
 						Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm')."),
 					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
-						Context: "Supported values: make-editable, make-read-only, make-required, make-optional.")
+						Context: "Supported values: make-editable, make-read-only, make-required, make-optional, set-values."),
+					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rule.actions[*].items[*]",
+						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }. Attribute value sources are not supported in this scope."),
+					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rule.actions[*].items[*].value.value",
+						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, and ISO 8601 time strings with timezone suffix for Time targets.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -1350,7 +1354,8 @@ internal static class ToolContractCatalog {
 					"make-required", ["Owner"], "2025-01-01T00:00:00Z"),
 				BusinessRuleExample("Create a readonly rule when reminder time is after a timezone-aware cutoff",
 					"UsrTask", "Lock reminder note after local noon", "ReminderTime", "greater-than",
-					"make-read-only", ["ReminderNote"], "12:00:00+02:00")
+					"make-read-only", ["ReminderNote"], "12:00:00+02:00"),
+				BusinessRuleSetValuesExample()
 			],
 			Flow(
 				[
@@ -1420,6 +1425,96 @@ internal static class ToolContractCatalog {
 					new Dictionary<string, object?> {
 						["type"] = actionType,
 						["items"] = actionItems
+					}
+				}
+			}
+		});
+	}
+
+	private static ToolContractExample BusinessRuleSetValuesExample() {
+		return Example("Create a Set values rule with text number boolean Date DateTime and Time constants", new Dictionary<string, object?> {
+			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+			[PackageNameCamelFieldName] = ExamplePackageName,
+			[EntitySchemaNameCamelFieldName] = "UsrTask",
+			[RuleFieldName] = new Dictionary<string, object?> {
+				["caption"] = "Populate defaults when name is filled",
+				["condition"] = new Dictionary<string, object?> {
+					["logicalOperation"] = "AND",
+					["conditions"] = new object[] {
+						new Dictionary<string, object?> {
+							["leftExpression"] = new Dictionary<string, object?> {
+								["type"] = "AttributeValue",
+								["path"] = "Name"
+							},
+							["comparisonType"] = "is-filled-in"
+						}
+					}
+				},
+				["actions"] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = "set-values",
+						["items"] = new object[] {
+							new Dictionary<string, object?> {
+								["expression"] = new Dictionary<string, object?> {
+									["type"] = "AttributeValue",
+									["path"] = "UsrTextResult"
+								},
+								["value"] = new Dictionary<string, object?> {
+									["type"] = "Const",
+									["value"] = "Ready"
+								}
+							},
+							new Dictionary<string, object?> {
+								["expression"] = new Dictionary<string, object?> {
+									["type"] = "AttributeValue",
+									["path"] = "UsrScore"
+								},
+								["value"] = new Dictionary<string, object?> {
+									["type"] = "Const",
+									["value"] = 42
+								}
+							},
+							new Dictionary<string, object?> {
+								["expression"] = new Dictionary<string, object?> {
+									["type"] = "AttributeValue",
+									["path"] = "UsrCompleted"
+								},
+								["value"] = new Dictionary<string, object?> {
+									["type"] = "Const",
+									["value"] = true
+								}
+							},
+							new Dictionary<string, object?> {
+								["expression"] = new Dictionary<string, object?> {
+									["type"] = "AttributeValue",
+									["path"] = "UsrStartDate"
+								},
+								["value"] = new Dictionary<string, object?> {
+									["type"] = "Const",
+									["value"] = "2025-01-01"
+								}
+							},
+							new Dictionary<string, object?> {
+								["expression"] = new Dictionary<string, object?> {
+									["type"] = "AttributeValue",
+									["path"] = "UsrPlannedOn"
+								},
+								["value"] = new Dictionary<string, object?> {
+									["type"] = "Const",
+									["value"] = "2025-01-01T00:00:00Z"
+								}
+							},
+							new Dictionary<string, object?> {
+								["expression"] = new Dictionary<string, object?> {
+									["type"] = "AttributeValue",
+									["path"] = "UsrReminderTime"
+								},
+								["value"] = new Dictionary<string, object?> {
+									["type"] = "Const",
+									["value"] = "12:00:00+02:00"
+								}
+							}
+						}
 					}
 				}
 			}

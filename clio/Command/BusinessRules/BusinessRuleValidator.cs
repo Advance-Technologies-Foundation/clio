@@ -79,25 +79,149 @@ internal static class BusinessRuleValidator {
 	private static void ValidateAction(
 		BusinessRuleAction action,
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
-		if (string.IsNullOrEmpty(action.Type)) {
+		if (string.IsNullOrEmpty(action.ActionType)) {
 			throw new ArgumentException("rule.actions[*].type is required.");
 		}
 
-		if (!SupportedActionTypeNames.ContainsKey(action.Type)) {
-			throw new ArgumentException(
-				$"Unsupported rule.actions[*].type '{action.Type}'. Supported values: {SupportedActionTypesDescription}.");
+		if (string.Equals(action.ActionType, SetValuesActionTypeName, StringComparison.OrdinalIgnoreCase)) {
+			ValidateSetValuesAction(action, columnMap);
+			return;
 		}
 
-		if (action.Items is null || action.Items.Count == 0) {
+		if (!SupportedActionTypeNames.ContainsKey(action.ActionType)) {
+			throw new ArgumentException(
+				$"Unsupported rule.actions[*].type '{action.ActionType}'. Supported values: {SupportedActionTypesDescription}.");
+		}
+
+		List<string> fieldSelectionItems = action.FieldSelectionItems;
+		if (fieldSelectionItems.Count == 0) {
 			throw new ArgumentException("rule.actions[*].items must contain at least one attribute.");
 		}
 
-		foreach (string target in action.Items) {
+		foreach (string target in fieldSelectionItems) {
 			if (string.IsNullOrWhiteSpace(target)) {
 				throw new ArgumentException("rule.actions[*].items cannot contain empty attribute names.");
 			}
 
 			ResolveColumn(columnMap, target, "rule.actions[*].items");
+		}
+	}
+
+	private static void ValidateSetValuesAction(
+		BusinessRuleAction action,
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
+		List<BusinessRuleSetValueItem> setValueItems = action.SetValueItems;
+		if (setValueItems.Count == 0) {
+			throw new ArgumentException("rule.actions[*].items must contain at least one set-values item.");
+		}
+
+		foreach (BusinessRuleSetValueItem item in setValueItems) {
+			ValidateSetValueItem(item, columnMap);
+		}
+	}
+
+	private static void ValidateSetValueItem(
+		BusinessRuleSetValueItem item,
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
+		if (item.Expression is null
+			|| !string.Equals(item.Expression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
+			throw new ArgumentException("rule.actions[*].items[*].expression.type must be 'AttributeValue'.");
+		}
+
+		if (string.IsNullOrWhiteSpace(item.Expression.Path)) {
+			throw new ArgumentException("rule.actions[*].items[*].expression.path is required.");
+		}
+
+		EntitySchemaColumnDto targetDescriptor = ResolveColumn(
+			columnMap,
+			item.Expression.Path,
+			"rule.actions[*].items[*].expression.path");
+		string targetDataValueTypeName = MapDataValueTypeName(targetDescriptor.DataValueType);
+
+		if (item.Value is null) {
+			throw new ArgumentException("rule.actions[*].items[*].value is required.");
+		}
+
+		if (!string.Equals(item.Value.Type, "Const", StringComparison.OrdinalIgnoreCase)) {
+			throw new ArgumentException("rule.actions[*].items[*].value.type must be 'Const'.");
+		}
+
+		if (item.Value.Value is null) {
+			throw new ArgumentException("rule.actions[*].items[*].value.value is required when value.type is 'Const'.");
+		}
+
+		ValidateSetValueConstant(item.Value.Value.Value, targetDataValueTypeName);
+	}
+
+	private static void ValidateSetValueConstant(JsonElement value, string targetDataValueTypeName) {
+		Action<JsonElement> validator = ResolveSetValueConstantValidator(targetDataValueTypeName);
+		validator(value);
+	}
+
+	private static Action<JsonElement> ResolveSetValueConstantValidator(string targetDataValueTypeName) {
+		if (string.Equals(targetDataValueTypeName, "Boolean", StringComparison.Ordinal)) {
+			return ValidateBooleanSetValueConstant;
+		}
+
+		if (IsDateTimeDataValueType(targetDataValueTypeName)) {
+			return value => ValidateTemporalSetValueConstant(value, targetDataValueTypeName);
+		}
+
+		if (IsTextDataValueType(targetDataValueTypeName)) {
+			return ValidateTextSetValueConstant;
+		}
+
+		if (IsNumericDataValueType(targetDataValueTypeName)) {
+			return ValidateNumericSetValueConstant;
+		}
+
+		return _ => throw new ArgumentException(
+			$"Const set-values is not supported for target attribute type '{targetDataValueTypeName}'.");
+	}
+
+	private static void ValidateBooleanSetValueConstant(JsonElement value) {
+		if (value.ValueKind != JsonValueKind.True && value.ValueKind != JsonValueKind.False) {
+			throw new ArgumentException(
+				"rule.actions[*].items[*].value.value must be a JSON boolean when the target attribute is Boolean.");
+		}
+	}
+
+	private static void ValidateTemporalSetValueConstant(JsonElement value, string targetDataValueTypeName) {
+		if (TryConvertDateTimeConstant(value, targetDataValueTypeName, out _)) {
+			return;
+		}
+
+		throw new ArgumentException(GetSetValueTemporalValidationMessage(targetDataValueTypeName));
+	}
+
+	private static string GetSetValueTemporalValidationMessage(string targetDataValueTypeName) =>
+		targetDataValueTypeName switch {
+			"DateTime" =>
+				"rule.actions[*].items[*].value.value must be a JSON string in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm') when the target attribute is DateTime.",
+			"Date" =>
+				"rule.actions[*].items[*].value.value must be a JSON string in 'yyyy-MM-dd' format when the target attribute is Date.",
+			"Time" =>
+				"rule.actions[*].items[*].value.value must be a JSON string in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm') when the target attribute is Time.",
+			_ => throw new ArgumentException(
+				$"Const set-values is not supported for target attribute type '{targetDataValueTypeName}'.")
+		};
+
+	private static void ValidateTextSetValueConstant(JsonElement value) {
+		if (value.ValueKind != JsonValueKind.String) {
+			throw new ArgumentException(
+				"rule.actions[*].items[*].value.value must be a JSON string when the target attribute is a text type.");
+		}
+	}
+
+	private static void ValidateNumericSetValueConstant(JsonElement value) {
+		if (value.ValueKind != JsonValueKind.Number) {
+			throw new ArgumentException(
+				"rule.actions[*].items[*].value.value must be a JSON number when the target attribute is a numeric type.");
+		}
+
+		if (!TryConvertSupportedNumericConstant(value, out _)) {
+			throw new ArgumentException(
+				"rule.actions[*].items[*].value.value must be a JSON number representable as Int64 or Decimal when the target attribute is a numeric type.");
 		}
 	}
 

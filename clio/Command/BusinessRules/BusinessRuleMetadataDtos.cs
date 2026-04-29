@@ -81,7 +81,18 @@ internal abstract class BaseBusinessRuleActionMetadataDto {
 
 internal sealed class FieldSelectionBusinessRuleActionMetadataDto : BaseBusinessRuleActionMetadataDto {
 	[JsonPropertyName("items")]
-	public string Items { get; set; } = string.Empty;
+	public object? Items { get; set; }
+}
+
+internal sealed class BusinessRuleSetValueItemMetadataDto : BaseBusinessRuleActionMetadataDto {
+	[JsonPropertyName("scopeId")]
+	public string ScopeId { get; set; } = string.Empty;
+
+	[JsonPropertyName("expression")]
+	public BusinessRuleExpressionMetadataDto Expression { get; set; } = default!;
+
+	[JsonPropertyName("value")]
+	public BusinessRuleExpressionMetadataDto Value { get; set; } = default!;
 }
 
 internal sealed class BusinessRuleTriggerMetadataDto {
@@ -126,7 +137,11 @@ internal sealed class BusinessRuleExpressionMetadataDto {
 	[JsonPropertyName("path")]
 	public string? Path { get; set; }
 
-	[JsonPropertyOrder(5)]
+	[JsonPropertyOrder(6)]
+	[JsonPropertyName("scopeId")]
+	public string? ScopeId { get; set; }
+
+	[JsonPropertyOrder(7)]
 	[JsonPropertyName("value")]
 	public object? Value { get; set; }
 }
