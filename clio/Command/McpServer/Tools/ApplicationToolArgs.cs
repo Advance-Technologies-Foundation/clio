@@ -48,7 +48,7 @@ public sealed record ApplicationCreateArgs(
 	string Name,
 
 	[property: JsonPropertyName("code")]
-	[property: Description("Application code starting with 'Usr' prefix, e.g. 'UsrMyApp'")]
+	[property: Description("Application code starting with 'Usr' prefix, e.g. 'UsrMyApp'. Creatio derives the initial main entity schema name directly from this code.")]
 	[property: Required]
 	string Code,
 
@@ -76,8 +76,9 @@ public sealed record ApplicationCreateArgs(
 	[property: Description(
 		"Optional JSON object: {useExistingEntitySchema, entitySchemaName, appSectionDescription, useAIContentGeneration}. " +
 		"IMPORTANT: entitySchemaName is only valid together with useExistingEntitySchema=true, and the entity MUST already exist in Creatio " +
-		"before create-app is called. Passing entitySchemaName without useExistingEntitySchema=true, or for an entity that does not yet exist, " +
-		"will cause a server-side error. useAIContentGeneration is not supported and will be rejected.")]
+		"before create-app is called. Providing both fields wires the app to that existing entity and suppresses auto-creation of a new one. " +
+		"Passing entitySchemaName without useExistingEntitySchema=true, or for an entity that does not yet exist, " +
+		"is unsupported and may fail server-side. useAIContentGeneration is not supported and will be rejected.")]
 	string? OptionalTemplateDataJson = null,
 
 	[property: JsonPropertyName("title-localizations")]
