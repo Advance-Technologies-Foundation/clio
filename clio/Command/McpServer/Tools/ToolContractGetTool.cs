@@ -101,7 +101,8 @@ public sealed record ToolContractDefinition(
 	[property: JsonPropertyName("examples")] IReadOnlyList<ToolContractExample> Examples,
 	[property: JsonPropertyName("preferred-flow")] ToolFlowHint PreferredFlow,
 	[property: JsonPropertyName("fallback-flow")] IReadOnlyList<ToolFlowHint> FallbackFlow,
-	[property: JsonPropertyName("deprecations")] IReadOnlyList<ToolDeprecation> Deprecations
+	[property: JsonPropertyName("deprecations")] IReadOnlyList<ToolDeprecation> Deprecations,
+	[property: JsonPropertyName("anti-patterns")] IReadOnlyList<ToolAntiPattern>? AntiPatterns = null
 );
 
 public sealed record ToolInputSchemaContract(
@@ -160,6 +161,11 @@ public sealed record ToolFlowHint(
 public sealed record ToolDeprecation(
 	[property: JsonPropertyName("message")] string Message,
 	[property: JsonPropertyName("replacement-tools")] IReadOnlyList<string> ReplacementTools
+);
+
+public sealed record ToolAntiPattern(
+	[property: JsonPropertyName("pattern")] string Pattern,
+	[property: JsonPropertyName("why")] string Why
 );
 
 public sealed record ToolContractValidator(
@@ -581,7 +587,7 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field(PackageUIdFieldName, StringType, PrimaryPackageIdentifierDescription),
 				Field(PackageNameFieldName, StringType, PrimaryPackageNameDescription),
-				Field("canonical-main-entity-name", StringType, "Canonical main entity name."),
+				Field("canonical-main-entity-name", StringType, "Canonical main entity name created by the app template. Pass directly to sync-schemas as the mutation target. Do not create a new entity via create-app-section unless a second independent section is required."),
 				Field(ApplicationIdFieldName, StringType, InstalledApplicationIdentifierDescription),
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
@@ -616,7 +622,7 @@ internal static class ToolContractCatalog {
 					SchemaSyncTool.ToolName,
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				],
-				"Use this direct create flow for simple greenfield app shells. create-app performs built-in Data Forge enrichment, then sync-schemas handles entity mutations, and get-app-info refreshes the resulting app context."),
+				"Use this direct create flow for simple greenfield app shells. create-app performs built-in Data Forge enrichment, then sync-schemas handles entity mutations, and get-app-info refreshes the resulting app context. Do NOT call create-app-section directly after create-app for a single-section app — use canonical-main-entity-name from the response as the sync-schemas target instead."),
 			[
 				Flow(
 					[
@@ -625,7 +631,12 @@ internal static class ToolContractCatalog {
 					],
 					"Fallback when the app already exists and the flow must switch to existing-app discovery.")
 			],
-			[]);
+			[],
+			[
+				new ToolAntiPattern(
+					"create-app → create-app-section → delete-app-section",
+					"create-app always creates a starter section with canonical-main-entity-name. Calling create-app-section immediately after wastes two round-trips and requires a cleanup delete. Use sync-schemas on canonical-main-entity-name instead.")
+			]);
 	}
 
 	private static ToolContractDefinition BuildApplicationSectionCreate() {
@@ -707,7 +718,7 @@ internal static class ToolContractCatalog {
 					ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				],
-				"Use application discovery and inspection first, then create the section, then refresh app context once for verification."),
+				"Use application discovery and inspection first, then create the section, then refresh app context once for verification. Do NOT use immediately after create-app for the primary section — that entity already exists under canonical-main-entity-name. Use only when adding a second or subsequent section to an existing app."),
 			[
 				Flow(
 					[
