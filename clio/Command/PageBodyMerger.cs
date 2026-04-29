@@ -108,44 +108,71 @@ internal static class PageBodyMerger {
 		while (i < inner.Length) {
 			i = SkipSeparators(inner, i);
 			if (i >= inner.Length) break;
-			if (inner[i] != '"' && inner[i] != '\'') {
-				// Unquoted identifier (e.g. ES6 method shorthand). Skip the entire entry
-				// — key + colon + value — using the proper value scanner so that any string
-				// literals inside the function body do not get mistaken for the next key.
-				// Unquoted entries are not recorded; use quoted keys per the converter guidance.
-				if (char.IsLetterOrDigit(inner[i]) || inner[i] == '_' || inner[i] == '$') {
-					// Scan past the unquoted key name with bracket tracking so that a ':'
-					// inside a complex default argument (e.g. (v = {key: val})) is not
-					// mistaken for the key–value separator.
-					int keyDepth = 0;
-					while (i < inner.Length) {
-						char kc = inner[i];
-						if (IsOpenBracket(kc)) { keyDepth++; i++; continue; }
-						if (IsCloseBracket(kc)) { if (keyDepth <= 0) break; keyDepth--; i++; continue; }
-						if (keyDepth == 0 && (kc == ':' || kc == ',')) break;
-						i++;
-					}
-					if (i < inner.Length && inner[i] == ':') {
-						i = SkipColonAndWhitespace(inner, i);
-						i = ScanValueEnd(inner, i);
-					}
-					if (i < inner.Length && inner[i] == ',') i++;
-					continue;
-				}
+			if (IsKeyQuote(inner[i])) {
+				i = ReadQuotedEntry(inner, i, entries);
+			} else if (IsIdentifierStart(inner[i])) {
+				i = SkipUnquotedEntry(inner, i);
+			} else {
 				i++;
-				continue;
 			}
-			int entryStart = i;
-			i = ReadKey(inner, i, out string key);
-			i = SkipColonAndWhitespace(inner, i);
-			i = ScanValueEnd(inner, i);
-			string entry = inner.Substring(entryStart, i - entryStart).Trim();
-			if (!string.IsNullOrWhiteSpace(entry))
-				entries.Add((key, entry));
-			if (i < inner.Length && inner[i] == ',') i++;
 		}
 		return entries;
 	}
+
+	/// <summary>
+	/// Reads one quoted key–value entry, appends it to <paramref name="entries"/>, and returns
+	/// the position after the trailing comma (if present).
+	/// </summary>
+	private static int ReadQuotedEntry(string inner, int i, List<(string Key, string Entry)> entries) {
+		int entryStart = i;
+		i = ReadKey(inner, i, out string key);
+		i = SkipColonAndWhitespace(inner, i);
+		i = ScanValueEnd(inner, i);
+		string entry = inner.Substring(entryStart, i - entryStart).Trim();
+		if (!string.IsNullOrWhiteSpace(entry))
+			entries.Add((key, entry));
+		if (i < inner.Length && inner[i] == ',') i++;
+		return i;
+	}
+
+	/// <summary>
+	/// Skips an unquoted entry (e.g. ES6 method shorthand) without recording it. Consumes the
+	/// entire entry — key + colon + value — so that string literals inside the function body are
+	/// never mistaken for the next key. Use quoted keys per the converter guidance.
+	/// </summary>
+	private static int SkipUnquotedEntry(string inner, int i) {
+		i = SkipUnquotedKey(inner, i);
+		if (i < inner.Length && inner[i] == ':') {
+			i = SkipColonAndWhitespace(inner, i);
+			i = ScanValueEnd(inner, i);
+		}
+		if (i < inner.Length && inner[i] == ',') i++;
+		return i;
+	}
+
+	/// <summary>
+	/// Advances past an unquoted key name using bracket-depth tracking so that a <c>:</c> inside a
+	/// complex default argument (e.g. <c>(v = {key: val})</c>) is not treated as the key separator.
+	/// </summary>
+	private static int SkipUnquotedKey(string inner, int i) {
+		int keyDepth = 0;
+		while (i < inner.Length) {
+			char kc = inner[i];
+			if (IsOpenBracket(kc)) { keyDepth++; i++; continue; }
+			if (IsCloseBracket(kc)) {
+				if (keyDepth <= 0) break;
+				keyDepth--;
+				i++;
+				continue;
+			}
+			if (keyDepth == 0 && (kc == ':' || kc == ',')) break;
+			i++;
+		}
+		return i;
+	}
+
+	private static bool IsKeyQuote(char ch) => ch is '"' or '\'';
+	private static bool IsIdentifierStart(char ch) => char.IsLetterOrDigit(ch) || ch == '_' || ch == '$';
 
 	private static int SkipSeparators(string s, int i) {
 		while (i < s.Length && (char.IsWhiteSpace(s[i]) || s[i] == ','))
@@ -199,7 +226,12 @@ internal static class PageBodyMerger {
 			if (inStr) { i = AdvanceInString(i, ch, strChar, ref inStr); continue; }
 			if (IsStringDelimiter(ch)) { inStr = true; strChar = ch; i++; continue; }
 			if (IsOpenBracket(ch)) { depth++; i++; continue; }
-			if (IsCloseBracket(ch)) { if (depth <= 0) break; depth--; i++; continue; }
+			if (IsCloseBracket(ch)) {
+				if (depth <= 0) break;
+				depth--;
+				i++;
+				continue;
+			}
 			if (depth == 0 && ch == ',') break;
 			i++;
 		}
