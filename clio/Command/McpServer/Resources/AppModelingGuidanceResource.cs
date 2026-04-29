@@ -68,6 +68,7 @@ public sealed class AppModelingGuidanceResource {
 			       - `useAIContentGeneration` inside `optional-template-data-json` is not supported and will be rejected by clio.
 			       - `create-app-section` is scalar-only for section shell fields. Keep `caption`, `description`, and `entity-schema-name` as plain strings and pass `with-mobile-pages` as a top-level boolean.
 			       - `create-app-section` requires `application-code` as the target-app selector.
+			       - `create-app` automatically creates the main entity with a schema name derived directly from `code` (e.g. code `UsrMyApp` → entity `UsrMyApp`). When you need an additional section backed by a separately named entity — not a synonym for the canonical main entity — call `create-app-section` after `create-app` with the desired `caption`; Creatio derives the new entity code from that caption (e.g. caption `Customer Profile` → entity `UsrCustomerProfile`). Do not use this pattern to work around the canonical main entity: extend the entity returned by `create-app` for the primary record type.
 			       - Do not send localization-map fields such as `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `create-app-section`.
 			       - When `create-app-section` receives `entity-schema-name`, it reuses that existing entity. Otherwise omit that field and let Creatio create a new object for the section.
 			       - `update-app-section` is scalar-only for section metadata fields. Keep `caption`, `description`, `icon-id`, and `icon-background` as plain top-level scalar values and omit any field that should remain unchanged.
@@ -83,6 +84,7 @@ public sealed class AppModelingGuidanceResource {
 			       - Entity-schema MCP write tools use explicit localization maps. Send schema and column captions through `title-localizations`, and column descriptions through `description-localizations`. Every provided localization map must include `en-US`.
 			       - Do not send legacy scalar `title`, `caption`, or `description` fields to entity-schema MCP write tools.
 			       - Seed rows create data only. A requirement like "defaults to New" still needs an explicit `schema default` or `ui default`.
+			       - To set a lookup column default to a seeded value, the workflow requires two separate calls because the row GUID is only known after creation: (1) create and seed the lookup via sync-schemas; (2) resolve the seeded row GUID via dataforge-find-lookups with schema-name set to the lookup entity and a descriptive query term; (3) apply the default via modify-entity-schema-column or a follow-up sync-schemas update-entity operation with default-value-config source=Const and the resolved GUID as value. Do not skip the GUID resolution step — the default value for a Lookup column must be the row's GUID, not its display name.
 			       - Preserve semantic text field types: use `Email`, `PhoneNumber`, and `WebLink` for email, phone, and URL fields instead of collapsing them to generic `ShortText`. These types affect both data validation and Freedom UI component selection.
 
 			       Page editing guardrails
