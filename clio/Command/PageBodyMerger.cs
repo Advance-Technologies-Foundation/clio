@@ -106,86 +106,75 @@ internal static class PageBodyMerger {
 		var entries = new List<(string Key, string Entry)>();
 		int i = 0;
 		while (i < inner.Length) {
-			// Skip inter-entry whitespace and commas.
-			while (i < inner.Length && (char.IsWhiteSpace(inner[i]) || inner[i] == ',')) {
-				i++;
-			}
-			if (i >= inner.Length) {
-				break;
-			}
-			// Every entry must start with a quoted key.
-			if (inner[i] != '"') {
-				i++;
-				continue;
-			}
+			i = SkipSeparators(inner, i);
+			if (i >= inner.Length) break;
+			if (inner[i] != '"' && inner[i] != '\'') { i++; continue; }
 			int entryStart = i;
-			// Read the key (between the two surrounding quotes).
-			i++; // opening quote
-			int keyStart = i;
-			while (i < inner.Length && inner[i] != '"') {
-				if (inner[i] == '\\') {
-					i++;
-				}
-				i++;
-			}
-			string key = inner.Substring(keyStart, i - keyStart);
-			if (i < inner.Length) {
-				i++; // closing quote
-			}
-			// Skip the colon (and any surrounding whitespace).
-			while (i < inner.Length && (char.IsWhiteSpace(inner[i]) || inner[i] == ':')) {
-				i++;
-			}
-			// Read the value by tracking bracket depth.
-			// The value ends at a top-level comma (depth == 0) or end of string.
-			int depth = 0;
-			bool inStr = false;
-			char strChar = '"';
-			while (i < inner.Length) {
-				char ch = inner[i];
-				if (inStr) {
-					if (ch == '\\') {
-						i += 2;
-						continue;
-					}
-					if (ch == strChar) {
-						inStr = false;
-					}
-					i++;
-					continue;
-				}
-				if (ch is '"' or '\'' or '`') {
-					inStr = true;
-					strChar = ch;
-					i++;
-					continue;
-				}
-				if (ch is '(' or '{' or '[') {
-					depth++;
-					i++;
-					continue;
-				}
-				if (ch is ')' or '}' or ']') {
-					depth--;
-					i++;
-					continue;
-				}
-				if (depth == 0 && ch == ',') {
-					break; // top-level comma ends this entry
-				}
-				i++;
-			}
+			i = ReadKey(inner, i, out string key);
+			i = SkipColonAndWhitespace(inner, i);
+			i = ScanValueEnd(inner, i);
 			string entry = inner.Substring(entryStart, i - entryStart).Trim();
-			if (!string.IsNullOrWhiteSpace(entry)) {
+			if (!string.IsNullOrWhiteSpace(entry))
 				entries.Add((key, entry));
-			}
-			// Skip the trailing comma so the outer loop advances past it.
-			if (i < inner.Length && inner[i] == ',') {
-				i++;
-			}
+			if (i < inner.Length && inner[i] == ',') i++;
 		}
 		return entries;
 	}
+
+	private static int SkipSeparators(string s, int i) {
+		while (i < s.Length && (char.IsWhiteSpace(s[i]) || s[i] == ','))
+			i++;
+		return i;
+	}
+
+	private static int ReadKey(string s, int i, out string key) {
+		char openQuote = s[i];
+		i++; // skip opening quote
+		int start = i;
+		while (i < s.Length && s[i] != openQuote) {
+			if (s[i] == '\\') i++;
+			i++;
+		}
+		key = s.Substring(start, i - start);
+		if (i < s.Length) i++; // skip closing quote
+		return i;
+	}
+
+	private static int SkipColonAndWhitespace(string s, int i) {
+		while (i < s.Length && (char.IsWhiteSpace(s[i]) || s[i] == ':'))
+			i++;
+		return i;
+	}
+
+	/// <summary>
+	/// Advances <paramref name="i"/> past the current converter value, stopping at a top-level
+	/// comma or end-of-string. Tracks string literals and bracket depth to avoid false splits.
+	/// </summary>
+	private static int ScanValueEnd(string s, int i) {
+		int depth = 0;
+		bool inStr = false;
+		char strChar = '"';
+		while (i < s.Length) {
+			char ch = s[i];
+			if (inStr) { i = AdvanceInString(i, ch, strChar, ref inStr); continue; }
+			if (IsStringDelimiter(ch)) { inStr = true; strChar = ch; i++; continue; }
+			if (IsOpenBracket(ch)) { depth++; i++; continue; }
+			if (IsCloseBracket(ch)) { depth--; i++; continue; }
+			if (depth == 0 && ch == ',') break;
+			i++;
+		}
+		return i;
+	}
+
+	private static int AdvanceInString(int i, char ch, char strChar, ref bool inStr) {
+		if (ch == '\\') return i + 2;
+		if (ch == strChar) inStr = false;
+		return i + 1;
+	}
+
+	private static bool IsStringDelimiter(char ch) => ch is '"' or '\'' or '`';
+	private static bool IsOpenBracket(char ch) => ch is '(' or '{' or '[';
+	private static bool IsCloseBracket(char ch) => ch is ')' or '}' or ']';
 
 	private static JArray MergeArrayByName(JArray current, JArray incoming) {
 		var byName = new Dictionary<string, JToken>(StringComparer.Ordinal);

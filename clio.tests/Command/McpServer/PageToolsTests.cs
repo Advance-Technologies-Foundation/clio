@@ -2823,6 +2823,78 @@ public class PageToolsTests {
 	}
 
 	[Test]
+	[Description("PageBodyMerger converters: single-quoted converter keys are parsed and merged correctly")]
+	public void PageBodyMerger_Should_Handle_Single_Quoted_Converter_Keys() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{'usr.OldConverter': function(v){return v;}}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{'usr.NewConverter': function(v){return v + '!';}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("usr.OldConverter",
+			because: "existing single-quoted key converter must survive merge");
+		merged.Should().Contain("usr.NewConverter",
+			because: "incoming single-quoted key converter must be added");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: single-quoted key incoming overwrites same-named single-quoted key in current")]
+	public void PageBodyMerger_Should_Overwrite_Single_Quoted_Key_On_Name_Clash() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{'usr.Format': function(v){return 'old';}}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{'usr.Format': function(v){return 'new';}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("'usr.Format': function(v){return 'new';}",
+			because: "incoming converter entry must replace the current one with the same key");
+		merged.Should().NotContain("return 'old'",
+			because: "overwritten converter body must not appear in the merged result");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: double-quoted current key and single-quoted incoming key with the same name deduplicate correctly")]
+	public void PageBodyMerger_Should_Deduplicate_Cross_Quote_Key_Clash() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.Format\": function(v){return 'old';}}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{'usr.Format': function(v){return 'new';}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("'usr.Format': function(v){return 'new';}",
+			because: "incoming single-quoted entry must win over the existing double-quoted entry with the same key");
+		merged.Should().NotContain("return 'old'",
+			because: "the double-quoted current entry must be removed — it refers to the same logical key");
+	}
+
+	[Test]
 	[Description("PageBodyMerger converters: when both current and incoming converter sections are empty the result is also empty")]
 	public void PageBodyMerger_Should_Return_Empty_Converters_When_Both_Are_Empty() {
 		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
