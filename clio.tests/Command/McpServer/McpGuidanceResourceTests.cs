@@ -81,6 +81,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should explicitly document the canonical sync-schemas request field");
 		article.Text.Should().Contain("do not invent or send `operations[*].operation`",
 			because: "the guide should explicitly reject the legacy request field name");
+		article.Text.Should().Contain("no separate `create-app-section` call is needed or correct for this section",
+			because: "the guide should front-load the section-creation prohibition at the point where the section artifact is listed");
+		article.Text.Should().Contain("`create-app` already creates the default section for the canonical main entity",
+			because: "the guide should state the positive fact before explaining when create-app-section is appropriate");
 	}
 
 	[Test]
