@@ -280,7 +280,7 @@ public class BindingsModule {
 		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
 		services.AddTransient<OpenCfgCommand>();
-		services.AddTransient<InstallGatePkgCommand>();
+		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<PingAppCommand>();
 		services.AddTransient<SqlScriptCommand>();
 		services.AddTransient<CompressPackageCommand>();
@@ -438,7 +438,6 @@ public class BindingsModule {
 		services.AddTransient<PullPkgCommand>();
 		services.AddTransient<AssemblyCommand>();
 		services.AddTransient<UninstallCreatioCommand>();
-		services.AddTransient<InstallTideCommand>();
 		services.AddTransient<AddSchemaCommand>();
 		services.AddTransient<CreateEntitySchemaCommand>();
 		services.AddTransient<UpdateEntitySchemaCommand>();

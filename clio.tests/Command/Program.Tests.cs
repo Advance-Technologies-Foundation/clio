@@ -148,30 +148,7 @@ public class ProgramTestCase : BaseClioModuleTests
 		act.Should().NotThrow(
 			because: "CreatioClient must be registered lazily so OAuth token fetch happens only when the client is first used, not at container build time");
 	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("install-gate package option creation must register the target environment instead of leaving the bootstrap placeholder in the global container.")]
-	public void CreateClioGatePkgOptions_Should_Register_Target_Environment_In_Global_Container() {
-		// Arrange
-		Program.Container = null;
-		AddNetCoreActiveEnvironmentFixture();
-		InstallGateOptions options = new() {
-			Environment = "framework-env"
-		};
-
-		// Act
-		PushPkgOptions pushPackageOptions = Program.CreateClioGatePkgOptions(options);
-		EnvironmentSettings resolvedSettings = Program.Container.GetRequiredService<EnvironmentSettings>();
-
-		// Assert
-		resolvedSettings.Uri.Should().Be("http://remote-host:88/site",
-			because: "install-gate must resolve commands against the requested environment, not the bootstrap placeholder");
-		pushPackageOptions.Name.Should().EndWith(Path.Combine("cliogate", "cliogate.gz"),
-			because: "framework environments should install the bundled .NET Framework cliogate package");
-		pushPackageOptions.Environment.Should().Be("framework-env",
-			because: "the generated push-package options should preserve the requested environment name");
-	}
+	
 
 	[Test]
 	[Category("Unit")]

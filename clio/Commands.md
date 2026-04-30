@@ -513,10 +513,6 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`install-gate`](docs/commands/install-gate.md) - Install or update cliogate in Creatio, `gate`, `installgate`, `update-gate`
 <a id="install-skills"></a>
 - [`install-skills`](docs/commands/install-skills.md) - Install managed skills from a repository
-<a id="install-tide"></a>
-<a id="itide"></a>
-<a id="tide"></a>
-- [`install-tide`](docs/commands/install-tide.md) - Install T.I.D.E. for the current environment, `itide`, `tide`
 <a id="link-package-store"></a>
 <a id="lps"></a>
 - [`link-package-store`](docs/commands/link-package-store.md) - Link PackageStore packages into an environment, `lps`
