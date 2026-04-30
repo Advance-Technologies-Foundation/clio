@@ -15,7 +15,6 @@ EXAMPLES
         Display canonical options and usage examples
 
 SEE ALSO
-    install-tide - Install T.I.D.E. into the environment
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

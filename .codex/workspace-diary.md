@@ -3049,3 +3049,31 @@ Decision: Removed `add-form-fields`, `add-list-columns`, their shared `PageBodyE
 Discovery: The previous normalizer-based fix was unnecessary once shortcut tools are removed, and silent binding rewrites are risky for validator-backed attributes.
 Files: clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/PageModels.cs, clio.tests/Command/McpServer/PageToolsTests.cs, .codex/workspace-diary.md
 Impact: Page editing has one advertised path again: fetch `body.js`, edit it explicitly, validate, then sync or update.
+
+## 2026-04-30 20:09 – Refactored install-gate command resolution
+Context: User asked to move `install-gate` into its own file and stop resolving it through converted `PushPkgOptions`.
+Decision: Added `InstallGateCommand : Command<InstallGateOptions>` in `clio/Command/InstallGateCommand.cs`, resolved it directly from `Program`, and updated `install-tide` to delegate to the same command.
+Discovery: The old `Program.CreateClioGatePkgOptions` path resolved services before command resolution and kept `InstallGatePkgCommand` nested in `PushPackageCommand`; the new command preserves package selection, forced developer-mode-off install settings, success/error logging, and post-install restart without that pre-resolution path.
+Files: clio/Command/InstallGateCommand.cs, clio/Program.cs, clio/BindingsModule.cs, clio/Command/InstallTideCommand.cs, clio/Command/PushPackageCommand.cs, clio.tests/Command/InstallGateCommandTests.cs, clio.tests/Command/InstallTideCommand.Tests.cs, clio/docs/commands/install-gate.md
+Impact: Future `install-gate` changes now have a dedicated command file and can follow normal DI resolution and targeted command tests.
+
+## 2026-04-30 20:13 – Removed unsupported install-tide command
+Context: User clarified that `install-tide` is no longer supported and should be deleted.
+Decision: Removed the `InstallTideCommand` implementation, option registration, DI registration, command tests, command docs/help files, root help/index entries, and stale references from related docs.
+Discovery: No MCP tool existed for `install-tide`; remaining TIDE references belong to the hidden `link-workspace-with-tide-repository` command and process-model namespace defaults.
+Files: clio/Command/InstallTideCommand.cs, clio.tests/Command/InstallTideCommand.Tests.cs, clio/Program.cs, clio/BindingsModule.cs, clio/Commands.md, clio/HelpSystem/CommandHelpCatalog.cs, clio/docs/commands/install-tide.md, clio/help/en/install-tide.txt
+Impact: The unsupported installer command is no longer parseable, listed in help, documented, or tested as an available CLI command.
+
+## 2026-04-30 18:20 - Diagnosed install-gate bootstrap DI regression
+Context: After updating global clio to 8.1.0.4, `clio install-gate -e dev` failed during `CreatioClient.Login()` inside package upload even though `dev` pinged successfully.
+Decision: Treat this as an `install-gate` command regression, not an environment credential issue. The failing path creates a bootstrap DI container while building cliogate package options, then reuses that container for the environment-scoped `InstallGatePkgCommand`.
+Discovery: Manual `CreatioClient` login with `dev` settings succeeds, while the same client with bootstrap placeholder settings (`http://localhost`, empty credentials) reproduces the same stack. The regression came from the 8.1.0.2 DI cleanup changing `CreatePushPkgOptions` to resolve `ISettingsRepository`, which initializes `Program.Container` too early.
+Files: C:\Projects\clio\clio\Program.cs, C:\Projects\clio\clio\BindingsModule.cs, C:\Projects\clio\clio\Command\PushPackageCommand.cs
+Impact: Future fix should keep `CreateClioGatePkgOptions` from initializing the global bootstrap container before resolving `InstallGatePkgCommand`, or make `Resolve<T>` rebuild/scope the container when environment settings are later supplied.
+
+## 2026-04-30 18:35 - Fixed install-gate target environment resolution
+Context: Follow-up implementation for the `install-gate` failure introduced after the 8.1.0.2 DI cleanup.
+Decision: Restored `CreatePushPkgOptions` to read `SettingsRepository` directly instead of resolving it through `Program.Resolve`, so the first DI resolution in the flow is environment-scoped through `IWorkingDirectoriesProvider`.
+Discovery: The breaking change came from `cd5ca8ec` / PR #549 (`feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration`); `7baebf2e` made bootstrap intentionally use a placeholder, and #549 accidentally made `install-gate` reuse that placeholder.
+Files: C:\Projects\clio\clio\Program.cs, C:\Projects\clio\clio.tests\Command\Program.Tests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The new regression test asserts that `CreateClioGatePkgOptions` leaves `Program.Container` scoped to the requested environment. Local patched `install-gate -e dev` installed cliogate successfully and `get-info -e dev` returned system info.

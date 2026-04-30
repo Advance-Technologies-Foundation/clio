@@ -73,7 +73,6 @@ install-gate:install-gate,gate,installgate,update-gate
 install-nuget-pkg:install-nuget-pkg,installng
 install-skills:install-skills
 install-sql-schema:install-sql-schema,sql-schema-install,execute-sql-schema
-install-tide:install-tide,itide,tide
 last-compilation-log:last-compilation-log,lcl
 link-core-src:link-core-src,lcs
 link-from-repository:link-from-repository,l4r,link4repo

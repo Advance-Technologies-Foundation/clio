@@ -8,9 +8,9 @@ install-gate - Install clio API gateway package to Creatio environment
 
 ```bash
 clio install-gate [OPTIONS]
-clio install-gate [OPTIONS]
-clio install-gate [OPTIONS]
-clio install-gate [OPTIONS]
+clio update-gate [OPTIONS]
+clio gate [OPTIONS]
+clio installgate [OPTIONS]
 ```
 
 ## Description
@@ -21,7 +21,6 @@ and operations on the Creatio instance.
 
 The cliogate package is required for:
 - Workspace operations (push-workspace, restore-workspace)
-- T.I.D.E. (Terribly Isolated Development Environment) functionality
 - Advanced remote operations and extended API access
 - Database and configuration management commands
 
@@ -58,7 +57,7 @@ Update existing cliogate installation:
 clio install-gate -e production
 
 Using shortest alias:
-clio install-gate -e demo
+clio gate -e demo
 ```
 
 ## Notes
@@ -72,7 +71,6 @@ clio installation
 
 ## See Also
 
-install-tide - Install T.I.D.E. extension
 push-workspace - Push workspace to environment
 get-info - Get information about a Creatio instance
 info - Display clio version information

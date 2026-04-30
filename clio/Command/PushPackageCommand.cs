@@ -6,7 +6,6 @@
 	using System.Threading.Tasks;
 	using Clio.Common;
 	using Clio.Package;
-	using Clio.WebApplication;
 	using CommandLine;
 
 	#region Class: PushPkgOptions
@@ -170,39 +169,6 @@
 				Uri = options.Uri,
 				All = true,
 			};
-		}
-
-		#endregion
-	}
-
-	#endregion
-
-	#region Class: InstallGatePkgCommand
-
-	public class InstallGatePkgCommand : PushPackageCommand
-	{
-		private IApplication _application;
-		private ILogger _logger;
-
-		#region Constructors: Public
-		public InstallGatePkgCommand(EnvironmentSettings environmentSettings, IPackageInstaller packageInstaller,
-				IMarketplace marketplace, ICompileConfigurationCommand compileConfigurationCommand, IApplication applicatom,
-				ILogger logger)
-			: base(environmentSettings, packageInstaller, marketplace, compileConfigurationCommand, logger) {
-			_application = applicatom;
-			_logger = logger;
-		}
-		
-		#endregion
-
-		#region Methods: Public
-
-		public override int Execute(PushPkgOptions options) {
-			int result = base.Execute(options);
-			if (result == 0) {
-				_application.Restart();
-			}
-			return result;
 		}
 
 		#endregion

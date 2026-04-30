@@ -98,7 +98,6 @@ internal sealed class CommandHelpCatalog {
 			["get-build-info"] = "Resolve the build artifact path for a Creatio distribution",
 			["extract-pkg-zip"] = "Extract a packaged application or package archive",
 			["healthcheck"] = "Run Creatio health checks",
-			["install-tide"] = "Install T.I.D.E. for the current environment",
 			["show-package-file-content"] = "Show files that belong to a package",
 			["download-application"] = "Download an application package from Creatio",
 			["install-application"] = "Install an application package into Creatio",
@@ -219,7 +218,6 @@ internal sealed class CommandHelpCatalog {
 			"env-ui",
 			"install-gate",
 			"install-skills",
-			"install-tide",
 			"link-package-store",
 			"mcp-server",
 			"update-skill"
