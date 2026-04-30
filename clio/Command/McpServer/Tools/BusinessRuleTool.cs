@@ -17,7 +17,7 @@ public sealed class CreateEntityBusinessRuleTool(
 	
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Creates an entity-level Freedom UI business rule, including Set values actions from constants.")]
+	[Description("Creates an entity-level Freedom UI business rule.")]
 	public CommandExecutionResult BusinessRuleCreate(
 		[Description("Creatio environment name.")]
 		[Required]
@@ -28,7 +28,7 @@ public sealed class CreateEntityBusinessRuleTool(
 		[Description("Target entity schema name.")]
 		[Required]
 		string entitySchemaName,
-		[Description("Structured entity business-rule definition. Set values supports Const values for text, number, boolean, Date, DateTime, and Time targets.")]
+		[Description("Structured entity business-rule definition.")]
 		[Required]
 		BusinessRule rule) {
 		CreateEntityBusinessRuleOptions options = new () {

@@ -1355,7 +1355,16 @@ internal static class ToolContractCatalog {
 				BusinessRuleExample("Create a readonly rule when reminder time is after a timezone-aware cutoff",
 					"UsrTask", "Lock reminder note after local noon", "ReminderTime", "greater-than",
 					"make-read-only", ["ReminderNote"], "12:00:00+02:00"),
-				BusinessRuleSetValuesExample()
+				BusinessRuleExample("Create a Set values rule with text number boolean Date DateTime and Time constants",
+					"UsrTask", "Populate defaults when name is filled", "Name", "is-filled-in",
+					"set-values", [
+						BusinessRuleSetValueItem("UsrTextResult", "Ready"),
+						BusinessRuleSetValueItem("UsrScore", 42),
+						BusinessRuleSetValueItem("UsrCompleted", true),
+						BusinessRuleSetValueItem("UsrStartDate", "2025-01-01"),
+						BusinessRuleSetValueItem("UsrPlannedOn", "2025-01-01T00:00:00Z"),
+						BusinessRuleSetValueItem("UsrReminderTime", "12:00:00+02:00")
+					])
 			],
 			Flow(
 				[
@@ -1396,7 +1405,7 @@ internal static class ToolContractCatalog {
 		string leftPath,
 		string comparisonType,
 		string actionType,
-		string[] actionItems,
+		object[] actionItems,
 		object? constantValue = null) {
 		Dictionary<string, object?> condition = new() {
 			["leftExpression"] = new Dictionary<string, object?> {
@@ -1431,94 +1440,17 @@ internal static class ToolContractCatalog {
 		});
 	}
 
-	private static ToolContractExample BusinessRuleSetValuesExample() {
-		return Example("Create a Set values rule with text number boolean Date DateTime and Time constants", new Dictionary<string, object?> {
-			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
-			[PackageNameCamelFieldName] = ExamplePackageName,
-			[EntitySchemaNameCamelFieldName] = "UsrTask",
-			[RuleFieldName] = new Dictionary<string, object?> {
-				["caption"] = "Populate defaults when name is filled",
-				["condition"] = new Dictionary<string, object?> {
-					["logicalOperation"] = "AND",
-					["conditions"] = new object[] {
-						new Dictionary<string, object?> {
-							["leftExpression"] = new Dictionary<string, object?> {
-								["type"] = "AttributeValue",
-								["path"] = "Name"
-							},
-							["comparisonType"] = "is-filled-in"
-						}
-					}
-				},
-				["actions"] = new object[] {
-					new Dictionary<string, object?> {
-						["type"] = "set-values",
-						["items"] = new object[] {
-							new Dictionary<string, object?> {
-								["expression"] = new Dictionary<string, object?> {
-									["type"] = "AttributeValue",
-									["path"] = "UsrTextResult"
-								},
-								["value"] = new Dictionary<string, object?> {
-									["type"] = "Const",
-									["value"] = "Ready"
-								}
-							},
-							new Dictionary<string, object?> {
-								["expression"] = new Dictionary<string, object?> {
-									["type"] = "AttributeValue",
-									["path"] = "UsrScore"
-								},
-								["value"] = new Dictionary<string, object?> {
-									["type"] = "Const",
-									["value"] = 42
-								}
-							},
-							new Dictionary<string, object?> {
-								["expression"] = new Dictionary<string, object?> {
-									["type"] = "AttributeValue",
-									["path"] = "UsrCompleted"
-								},
-								["value"] = new Dictionary<string, object?> {
-									["type"] = "Const",
-									["value"] = true
-								}
-							},
-							new Dictionary<string, object?> {
-								["expression"] = new Dictionary<string, object?> {
-									["type"] = "AttributeValue",
-									["path"] = "UsrStartDate"
-								},
-								["value"] = new Dictionary<string, object?> {
-									["type"] = "Const",
-									["value"] = "2025-01-01"
-								}
-							},
-							new Dictionary<string, object?> {
-								["expression"] = new Dictionary<string, object?> {
-									["type"] = "AttributeValue",
-									["path"] = "UsrPlannedOn"
-								},
-								["value"] = new Dictionary<string, object?> {
-									["type"] = "Const",
-									["value"] = "2025-01-01T00:00:00Z"
-								}
-							},
-							new Dictionary<string, object?> {
-								["expression"] = new Dictionary<string, object?> {
-									["type"] = "AttributeValue",
-									["path"] = "UsrReminderTime"
-								},
-								["value"] = new Dictionary<string, object?> {
-									["type"] = "Const",
-									["value"] = "12:00:00+02:00"
-								}
-							}
-						}
-					}
-				}
+	private static Dictionary<string, object?> BusinessRuleSetValueItem(string path, object value) {
+		return new Dictionary<string, object?> {
+			["expression"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = path
+			},
+			["value"] = new Dictionary<string, object?> {
+				["type"] = "Const",
+				["value"] = value
 			}
-		});
+		};
 	}
 
 	private static ToolContractDefinition BuildSchemaSync() {
