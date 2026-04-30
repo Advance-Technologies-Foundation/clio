@@ -85,9 +85,6 @@ internal sealed class FieldSelectionBusinessRuleActionMetadataDto : BaseBusiness
 }
 
 internal sealed class BusinessRuleSetValueItemMetadataDto : BaseBusinessRuleActionMetadataDto {
-	[JsonPropertyName("scopeId")]
-	public string ScopeId { get; set; } = string.Empty;
-
 	[JsonPropertyName("expression")]
 	public BusinessRuleExpressionMetadataDto Expression { get; set; } = default!;
 
@@ -138,10 +135,6 @@ internal sealed class BusinessRuleExpressionMetadataDto {
 	public string? Path { get; set; }
 
 	[JsonPropertyOrder(6)]
-	[JsonPropertyName("scopeId")]
-	public string? ScopeId { get; set; }
-
-	[JsonPropertyOrder(7)]
 	[JsonPropertyName("value")]
 	public object? Value { get; set; }
 }

@@ -256,10 +256,14 @@ public sealed class BusinessRuleMetadataConverterTests {
 			because: "every set-values assignment should become a separate persisted item");
 		items[0].TypeName.Should().Be(BusinessRuleConstants.BusinessRuleSetValueItemTypeName,
 			because: "each item should use the core BusinessRuleSetValueItem metadata type");
+		serializedItems[0].EnumerateObject().Select(property => property.Name).Should()
+			.BeEquivalentTo(["typeName", "uId", "enabled", "expression", "value"],
+				because: "object-level set-values item metadata should only include the fields consumed by core");
 		items[0].Expression.Path.Should().Be("TextResult",
 			because: "the target expression should preserve the assigned column path");
-		items[0].Expression.ScopeId.Should().Be(string.Empty,
-			because: "object-level set-values actions should not bind to a page data source scope");
+		serializedItems[0].GetProperty("expression").EnumerateObject().Select(property => property.Name).Should()
+			.BeEquivalentTo(["typeName", "uId", "type", "dataValueTypeName", "path"],
+				because: "object-level set-values expressions should rely on the core default root scope");
 		items[0].Value.Type.Should().Be("Const",
 			because: "this delivery supports constant set-values sources only");
 		items[0].Value.DataValueTypeName.Should().Be("Text",

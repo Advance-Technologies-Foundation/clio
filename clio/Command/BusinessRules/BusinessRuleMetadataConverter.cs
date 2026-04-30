@@ -94,8 +94,7 @@ internal static class BusinessRuleMetadataConverter {
 	private static BusinessRuleExpressionMetadataDto BuildAttributeExpression(
 		EntitySchemaColumnDto descriptor,
 		string path,
-		string? dataValueTypeName = null,
-		string? scopeId = null) {
+		string? dataValueTypeName = null) {
 		return new BusinessRuleExpressionMetadataDto {
 			TypeName = BusinessRuleAttributeExpressionTypeName,
 			UId = Guid.NewGuid().ToString(),
@@ -103,7 +102,6 @@ internal static class BusinessRuleMetadataConverter {
 			DataValueTypeName = dataValueTypeName ?? MapDataValueTypeName(descriptor.DataValueType),
 			ReferenceSchemaName = descriptor.ReferenceSchema?.Name,
 			Path = path,
-			ScopeId = scopeId,
 		};
 	}
 
@@ -144,8 +142,7 @@ internal static class BusinessRuleMetadataConverter {
 			TypeName = BusinessRuleSetValueItemTypeName,
 			UId = Guid.NewGuid().ToString(),
 			Enabled = true,
-			ScopeId = string.Empty,
-			Expression = BuildAttributeExpression(targetDescriptor, targetPath, dataValueTypeName, string.Empty),
+			Expression = BuildAttributeExpression(targetDescriptor, targetPath, dataValueTypeName),
 			Value = new BusinessRuleExpressionMetadataDto {
 				TypeName = BusinessRuleValueExpressionTypeName,
 				UId = Guid.NewGuid().ToString(),
