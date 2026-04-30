@@ -1482,8 +1482,10 @@ public sealed class ApplicationToolTests {
 			because: "the list prompt should guide callers toward registering an environment before normal MCP work");
 		listPrompt.Should().Contain("emergency recovery flow",
 			because: "the list prompt should keep direct connection args in an emergency-only role");
-		listPrompt.Should().Contain("do not wrap `environment-name` inside an `args` object",
-			because: "the list prompt should explicitly reject the request shape that caused the analyzed session failure");
+		listPrompt.Should().Contain("Wrap tool arguments under the top-level `args` JSON object",
+			because: "the list prompt should explicitly publish the wrapped request shape required by the clio MCP tool schema");
+		listPrompt.Should().Contain("places `environment-name` inside the required `args` object",
+			because: "the list prompt should call out that environment-name must live inside the wrapped args object");
 		listPrompt.Should().NotContain("`app-id`",
 			because: "the list prompt should no longer advertise application filters");
 		listPrompt.Should().NotContain("`app-code`",
@@ -1512,8 +1514,8 @@ public sealed class ApplicationToolTests {
 			because: "the create prompt should bootstrap app-modeling workflows from the authoritative MCP contract");
 		createPrompt.Should().Contain("Provide `name`, `code`, and `template-code`",
 			because: "the create prompt should explain the required input contract");
-		createPrompt.Should().Contain("do not nest them under `args`",
-			because: "the create prompt should explicitly reject the wrapper shape that caused the analyzed session failure");
+		createPrompt.Should().Contain("Wrap those fields inside the top-level `args` JSON object",
+			because: "the create prompt should explicitly publish the wrapped request shape required by the clio MCP tool schema");
 		createPrompt.Should().Contain("`optional-template-data-json`",
 			because: "the create prompt should mention the JSON string template-data field");
 		createPrompt.Should().Contain(GuidanceGetTool.ToolName,

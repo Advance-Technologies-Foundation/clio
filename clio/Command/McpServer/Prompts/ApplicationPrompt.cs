@@ -26,7 +26,7 @@ public static class ApplicationPrompt {
 		 Prefer a registered clio environment for application work. If the target site is not registered yet, call `reg-web-app` first and then continue with `environment-name`.
 		 Use direct connection args only on tools that still expose them, and only when local bootstrap is broken or you are in an emergency recovery flow.
 		 Pass `environment-name` when you need to target a registered clio environment explicitly.
-		 Pass tool arguments at the top level of the MCP request; do not wrap `environment-name` inside an `args` object.
+		 Wrap tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema (the wire shape places `environment-name` inside the required `args` object).
 		 Do not pass application filters; this tool always returns the full installed application list for the selected environment.
 		 Use this discovery step before `{ApplicationGetInfoTool.ApplicationGetInfoToolName}` when the target app is not fully known.
 		 """;
@@ -84,7 +84,7 @@ public static class ApplicationPrompt {
 		 Before the first app-modeling tool call in a workflow, call `{ToolContractGetTool.ToolName}` with `tool-names` such as `create-app`, `sync-schemas`, and `sync-pages` so the client starts from the authoritative contract and follow-up flow.
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Provide `name`, `code`, and `template-code`.
-		 Pass those fields at the top level of the MCP request; do not nest them under `args`.
+		 Wrap those fields inside the top-level `args` JSON object as advertised by the tool schema (the wire shape places `name`, `code`, and `template-code` inside the required `args` object).
 		 Pass `icon-background` only when the user explicitly specified a color; omit it otherwise — a random Freedom UI palette color is assigned automatically.
 		 For end-to-end app modeling guardrails, call `{GuidanceGetTool.ToolName}` with `name` set to `app-modeling`.
 		 `create-app` already performs an internal Data Forge enrichment step and returns optional `dataforge` diagnostics with health, coverage, warnings, and a compact context summary.
@@ -127,7 +127,7 @@ public static class ApplicationPrompt {
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Pass `application-code` `{applicationCode}` as the installed application selector.
 		 Provide `caption` as a plain scalar string.
-		 Pass all tool arguments at the top level of the MCP request; do not wrap them inside `args`.
+		 Wrap all tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema; do not flatten or rename canonical fields.
 		 When `entity-schema-name` is provided, the section reuses that existing entity. When it is omitted, Creatio creates a new object for the section.
 		 Keep `with-mobile-pages` as a top-level boolean. When omitted it defaults to `true`.
 		 Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or other localization-map fields to `create-app-section`.
@@ -163,7 +163,7 @@ public static class ApplicationPrompt {
 		 Pass `section-code` `{sectionCode}` as the existing section selector inside that application.
 		 Use `caption`, `description`, `icon-id`, and `icon-background` as optional top-level partial update fields. Omit any field that should remain unchanged.
 		 When updating a broken JSON-style section heading, provide a new plain-text `caption`.
-		 Pass all tool arguments at the top level of the MCP request; do not wrap them inside `args`.
+		 Wrap all tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema; do not flatten or rename canonical fields.
 		 Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or other localization-map fields to `update-app-section`.
 		 If the target app is not fully known, use `{ApplicationGetListTool.ApplicationGetListToolName}` first, then `{ApplicationGetInfoTool.ApplicationGetInfoToolName}`, then `{ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName}`.
 		 """;
@@ -185,7 +185,7 @@ public static class ApplicationPrompt {
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Pass `application-code` `{applicationCode}` as the installed application selector.
 		 Pass `section-code` `{sectionCode}` as the existing section code to delete inside that application.
-		 Pass all tool arguments at the top level of the MCP request; do not wrap them inside `args`.
+		 Wrap all tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema; do not flatten or rename canonical fields.
 		 If the target app is not fully known, use `{ApplicationGetListTool.ApplicationGetListToolName}` first, then `{ApplicationGetInfoTool.ApplicationGetInfoToolName}`, then `{ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName}`.
 		 """;
 
@@ -202,7 +202,7 @@ public static class ApplicationPrompt {
 		 For the canonical existing-app maintenance flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Pass `application-code` `{applicationCode}` as the installed application selector.
-		 Pass all tool arguments at the top level of the MCP request; do not wrap them inside `args`.
+		 Wrap all tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema; do not flatten or rename canonical fields.
 		 If the target app is not fully known, use `{ApplicationGetListTool.ApplicationGetListToolName}` first, then `{ApplicationGetInfoTool.ApplicationGetInfoToolName}`, then `{ApplicationSectionGetListTool.ApplicationSectionGetListToolName}`.
 		 """;
 }

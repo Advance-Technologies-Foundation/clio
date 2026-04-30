@@ -38,7 +38,15 @@ internal static class GuidanceCatalog {
 			["page-schema-validators"] = Create(
 				"page-schema-validators",
 				"Canonical MCP guidance for creating and editing Freedom UI page validators inside raw page schema bodies.",
-				PageSchemaValidatorsGuidanceResource.Guide)
+				PageSchemaValidatorsGuidanceResource.Guide),
+			["agent-execution"] = Create(
+				"agent-execution",
+				"Canonical MCP guidance for executing approved plans through clio MCP: transport, execution order, branching, and recovery patterns.",
+				AgentExecutionGuidanceResource.Guide),
+			["support-mode"] = Create(
+				"support-mode",
+				"Canonical MCP guidance for diagnostic-first execution under support mode: severity routing, confirmation probes, fail-fast evidence, and reporting.",
+				SupportModeGuidanceResource.Guide)
 		};
 
 	/// <summary>
