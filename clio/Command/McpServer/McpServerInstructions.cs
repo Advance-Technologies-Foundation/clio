@@ -33,7 +33,7 @@ internal static class McpServerInstructions
 
 		### Build & deploy
 		1. `push-workspace` → push local workspace packages to the environment
-		2. `compile-creatio` → only if the push contains C# source-code or SqlScript changes (entity-schema and Freedom UI page changes do not require it)
+		2. `compile-creatio` → only if the push contains changes that require compilation (see "When `compile-creatio` IS required" below)
 		3. `restart-by-environment-name` → restart only when server-side assemblies were rebuilt or `clear-redis-db-by-environment` was called
 
 		## When `compile-creatio` IS required
