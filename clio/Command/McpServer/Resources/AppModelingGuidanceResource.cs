@@ -36,7 +36,7 @@ public sealed class AppModelingGuidanceResource {
 
 			       Discovery before invocation
 			       - Always read the executable contract through `get-tool-contract` before the first invocation of any MCP tool in a workflow. The contract specifies exact parameter names, aliases, required fields, defaults, and response shapes.
-			       - Send tool arguments at the top level of the MCP request. Do not wrap canonical fields inside a synthetic `args` object.
+			       - Wrap tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema (for example `{"args": {"code": "..."}}`). Do not flatten or rename canonical fields.
 			       - Tool-specific identifiers follow their own naming conventions and must not be guessed. For example, `get-app-info` and `list-pages` use `code`, `get-app-info` uses `id`, `create-app` accepts `icon-background`, `create-app-section` accepts `application-code`, and `update-app-section` accepts `application-code` plus `section-code`.
 
 			       Preferred workflow
@@ -64,8 +64,11 @@ public sealed class AppModelingGuidanceResource {
 			       - `create-app` is scalar-only for app shell fields. Keep `name`, `description`, and `optional-template-data-json.appSectionDescription` as plain strings.
 			       - The minimal `create-app` shell still requires `template-code` and `icon-background`. `template-code` must be the technical template name such as `AppFreedomUI`, not a display label.
 			       - Do not send localization-map fields such as `title-localizations`, `description-localizations`, or `name-localizations` to `create-app`.
+			       - `optional-template-data-json.entitySchemaName` is only valid together with `useExistingEntitySchema=true`, and the entity MUST already exist in Creatio before `create-app` is called. Passing `entitySchemaName` for a non-existent entity, or without `useExistingEntitySchema=true`, will cause a server-side error. When you need the app to use an existing entity, first verify the entity exists (e.g. via `dataforge-find-tables`), then call `create-app` with both `entitySchemaName` and `useExistingEntitySchema=true`. To create a new app with a freshly generated entity, omit `optional-template-data-json` entirely and let Creatio generate the entity automatically.
+			       - `useAIContentGeneration` inside `optional-template-data-json` is not supported and will be rejected by clio.
 			       - `create-app-section` is scalar-only for section shell fields. Keep `caption`, `description`, and `entity-schema-name` as plain strings and pass `with-mobile-pages` as a top-level boolean.
 			       - `create-app-section` requires `application-code` as the target-app selector.
+			       - `create-app` automatically creates the main entity with a schema name derived directly from `code` (e.g. code `UsrMyApp` → entity `UsrMyApp`). When you need an additional section backed by a separately named entity — not a synonym for the canonical main entity — call `create-app-section` after `create-app` with the desired `caption`; Creatio derives the new entity code from that caption (e.g. caption `Customer Profile` → entity `UsrCustomerProfile`). Do not use this pattern to work around the canonical main entity: extend the entity returned by `create-app` for the primary record type.
 			       - Do not send localization-map fields such as `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `create-app-section`.
 			       - When `create-app-section` receives `entity-schema-name`, it reuses that existing entity. Otherwise omit that field and let Creatio create a new object for the section.
 			       - `update-app-section` is scalar-only for section metadata fields. Keep `caption`, `description`, `icon-id`, and `icon-background` as plain top-level scalar values and omit any field that should remain unchanged.
@@ -81,6 +84,7 @@ public sealed class AppModelingGuidanceResource {
 			       - Entity-schema MCP write tools use explicit localization maps. Send schema and column captions through `title-localizations`, and column descriptions through `description-localizations`. Every provided localization map must include `en-US`.
 			       - Do not send legacy scalar `title`, `caption`, or `description` fields to entity-schema MCP write tools.
 			       - Seed rows create data only. A requirement like "defaults to New" still needs an explicit `schema default` or `ui default`.
+			       - To set a lookup column default to a seeded value, the workflow requires two separate calls because the row GUID is only known after creation: (1) create and seed the lookup via sync-schemas; (2) resolve the seeded row GUID via dataforge-find-lookups with schema-name set to the lookup entity and a descriptive query term; (3) apply the default via modify-entity-schema-column or a follow-up sync-schemas update-entity operation with default-value-config source=Const and the resolved GUID as value. Do not skip the GUID resolution step — the default value for a Lookup column must be the row's GUID, not its display name.
 			       - Preserve semantic text field types: use `Email`, `PhoneNumber`, and `WebLink` for email, phone, and URL fields instead of collapsing them to generic `ShortText`. These types affect both data validation and Freedom UI component selection.
 
 			       Page editing guardrails

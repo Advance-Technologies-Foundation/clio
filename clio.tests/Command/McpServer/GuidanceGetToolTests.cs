@@ -193,13 +193,15 @@ public sealed class GuidanceGetToolTests {
 		result.Error.Should().Contain("Unknown guidance 'not-a-guide'",
 			because: "the failure should name the rejected guide explicitly");
 		result.AvailableGuides.Should().Contain([
+				"agent-execution",
 				"app-modeling",
 				"data-bindings",
 				"existing-app-maintenance",
 				"page-schema-converters",
 				"page-schema-handlers",
 				"page-schema-creatio-devkit-common",
-				"page-schema-validators"
+				"page-schema-validators",
+				"support-mode"
 			],
 			because: "the failure response should help the caller recover with one of the registered guidance names");
 	}
@@ -223,5 +225,47 @@ public sealed class GuidanceGetToolTests {
 			because: "the guidance tool should preserve the canonical converter guide URI in the response");
 		result.Article.Text.Should().Contain("clio MCP page-schema converters guide",
 			because: "the guidance tool should return the canonical converter article text");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical agent-execution guidance article when the caller requests agent-execution.")]
+	public async Task GuidanceGet_Should_Return_Agent_Execution_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("agent-execution"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "agent-execution is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/agent-execution",
+			because: "the guidance tool should preserve the canonical agent-execution guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP agent execution guide",
+			because: "the guidance tool should return the canonical agent-execution article text");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical support-mode guidance article when the caller requests support-mode.")]
+	public async Task GuidanceGet_Should_Return_Support_Mode_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("support-mode"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "support-mode is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/support-mode",
+			because: "the guidance tool should preserve the canonical support-mode guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP support-mode guide",
+			because: "the guidance tool should return the canonical support-mode article text");
 	}
 }

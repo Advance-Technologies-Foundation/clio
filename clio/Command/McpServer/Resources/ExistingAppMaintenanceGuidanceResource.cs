@@ -32,13 +32,14 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 
 			       Discover the target app
 			       - Use `list-apps` when you do not yet know the installed application code or need to confirm candidates.
-			       - Pass MCP tool arguments at the top level; do not wrap MCP arguments inside `args`.
+			       - Wrap MCP tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema (for example `{"args": {"environment-name": "...", "code": "..."}}`); do not flatten or rename canonical fields.
 			       - Use `get-app-info` after `list-apps` to confirm the primary package and entity context for the target app.
 			       - Use `create-app-section` when the requested mutation is "add a new section to this existing app".
 			       - Use `update-app-section` when the requested mutation is "change metadata of this existing section", including fixing a broken JSON-style heading by supplying a new plain-text caption.
 			       - If `create-app` fails because the app or configuration already exists, switch to the existing-app discovery flow: call `list-apps` to find the existing app, then `get-app-info` with the matched identifier, and continue with the inspect → mutate → verify flow.
 			       - `create-app-section` accepts `application-code` as the target-app selector.
 			       - `create-app-section` is scalar-only. Pass `caption`, `description`, and `entity-schema-name` as top-level strings, and pass `with-mobile-pages` as a top-level boolean.
+			       - When entity-schema-name is omitted, Creatio derives both the section code and the new entity code from the caption (e.g. caption "Customer Profile" → section code and entity code "UsrCustomerProfile"). Choose the caption that produces the desired Usr<PascalCase> entity name.
 			       - Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `create-app-section`.
 			       - When reusing an existing entity schema, provide `entity-schema-name`. Otherwise omit that field and let Creatio create a new object for the section.
 			       - `update-app-section` accepts `application-code` and `section-code` as the existing-section selector pair.

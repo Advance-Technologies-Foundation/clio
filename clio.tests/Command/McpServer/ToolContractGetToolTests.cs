@@ -833,6 +833,41 @@ public sealed class ToolContractGetToolTests {
 		contract.Examples.Should().ContainSingle(example =>
 				example.Summary.Contains("top-level payload", StringComparison.Ordinal),
 			because: "create-app should advertise the minimal top-level request shape explicitly");
+		contract.AntiPatterns.Should().NotBeNullOrEmpty(
+			because: "create-app should advertise known anti-patterns so agents avoid wasted round-trips");
+		contract.AntiPatterns.Should().Contain(ap =>
+				ap.Pattern.Contains("create-app-section", StringComparison.Ordinal) &&
+				ap.Why.Contains("canonical-main-entity-name", StringComparison.Ordinal),
+			because: "create-app should explicitly warn against the create-app → create-app-section → delete-app-section waste pattern");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "canonical-main-entity-name" &&
+				field.Description.Contains("sync-schemas", StringComparison.Ordinal) &&
+				field.Description.Contains("create-app-section", StringComparison.Ordinal),
+			because: "canonical-main-entity-name description should guide the agent to use sync-schemas and warn against create-app-section");
+		contract.PreferredFlow.Notes.Should().Contain("create-app-section",
+			because: "the preferred-flow notes should explicitly warn against calling create-app-section for a single-section app");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that create-app-section preferred-flow notes contain the guard against calling it directly after create-app.")]
+	public void ToolContractGet_Should_Advertise_ApplicationSectionCreate_PostCreateApp_Guard() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ApplicationSectionCreateTool.ApplicationSectionCreateToolName
+		]));
+
+		// Assert
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.PreferredFlow.Notes.Should().Contain("create-app",
+			because: "create-app-section preferred-flow should warn that it must not be called directly after create-app for the primary section");
+		contract.PreferredFlow.Notes.Should().Contain("canonical-main-entity-name",
+			because: "the guard should redirect the agent to canonical-main-entity-name as the correct alternative");
+		contract.PreferredFlow.Notes.Should().Contain("second or subsequent",
+			because: "the notes should make clear that create-app-section is only for adding additional sections");
 	}
 
 	[Test]

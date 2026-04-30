@@ -150,8 +150,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should spell out the canonical existing-section selector for updates");
 		article.Text.Should().Contain("with-mobile-pages",
 			because: "the guide should explain the explicit top-level mobile-page toggle for section creation");
-		article.Text.Should().Contain("do not wrap MCP arguments inside `args`",
-			because: "the guide should explicitly reject the synthetic args wrapper that caused real session failures");
+		article.Text.Should().Contain("Wrap MCP tool arguments under the top-level `args` JSON object",
+			because: "the guide should explicitly publish the wrapped request shape required by the clio MCP tool schema");
 		article.Text.Should().Contain("do not send `bundle` or `bundle.viewConfig` as the body payload",
 			because: "the guide should explain the concrete page payload shape expected by the page tools");
 		article.Text.Should().Contain("JSON object string",
@@ -1017,6 +1017,49 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for executing approved plans through clio MCP transport, ordering, branching, and recovery rules.")]
+	public void AgentExecutionGuidanceResource_Should_Return_Canonical_Execution_Guide() {
+		// Arrange
+		AgentExecutionGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the agent execution guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/agent-execution",
+			because: "the resource should expose a stable MCP URI for agent execution guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the agent execution guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP agent execution guide",
+			because: "the article should open with the canonical title for downstream contains-checks");
+		article.Text.Should().Contain("get-tool-contract",
+			because: "the guide should require contract discovery before invocation");
+		article.Text.Should().Contain("Pass boolean MCP parameters as booleans",
+			because: "the guide should publish the canonical boolean transport rule");
+		article.Text.Should().Contain("Execution order",
+			because: "the guide should publish a numbered execution order section");
+		article.Text.Should().Contain("Branching rules",
+			because: "the guide should publish branching rules between new-app and existing-app flows");
+		article.Text.Should().Contain("Schema sync recovery patterns",
+			because: "the guide should cover schema-sync recovery patterns owned by clio");
+		article.Text.Should().Contain("InsertQuery failed",
+			because: "the guide should describe the wiring-failure recovery rule for reuse decisions");
+		article.Text.Should().Contain("metadata readback timeout",
+			because: "the guide should describe the section readback timeout recovery path");
+		article.Text.Should().Contain("delete the orphaned entity using `delete-schema`",
+			because: "the guide should encode the orphan-cleanup step for the section recovery path");
+		article.Text.Should().Contain("Database update required",
+			because: "the guide should require materialized metadata before treating schema work as successful");
+		article.Text.Should().Contain("validate-page",
+			because: "the guide should require client-side validation before persisting page bodies");
+		article.Text.Should().Contain("docs://mcp/guides/support-mode",
+			because: "the guide should redirect support-run readers to the dedicated support-mode guide");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GuidanceCatalog exposes page-schema-converters so AI callers can retrieve converter authoring guidance by name.")]
 	public void GuidanceCatalog_Should_Include_Page_Schema_Converters_Entry() {
 		// Act
@@ -1033,5 +1076,52 @@ public sealed class McpGuidanceResourceTests {
 			because: "the catalog entry must carry the guidance text article");
 		entry.Article.Uri.Should().Be("docs://mcp/guides/page-schema-converters",
 			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for diagnostic-first behavior under support mode.")]
+	public void SupportModeGuidanceResource_Should_Return_Canonical_Support_Mode_Guide() {
+		// Arrange
+		SupportModeGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the support-mode guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/support-mode",
+			because: "the resource should expose a stable MCP URI for support-mode guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the support-mode guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP support-mode guide",
+			because: "the article should open with the canonical title for downstream contains-checks");
+		article.Text.Should().Contain("Diagnostic-first execution",
+			because: "the guide should publish the diagnostic-first execution policy");
+		article.Text.Should().Contain("clio_mcp_issue",
+			because: "the guide should declare the primary critical defect category");
+		article.Text.Should().Contain("instruction_issue",
+			because: "the guide should classify guidance and pattern defects");
+		article.Text.Should().Contain("environment_issue",
+			because: "the guide should classify auth/network/runtime defects");
+		article.Text.Should().Contain("orchestration_tool_failure",
+			because: "the guide should classify caller/wrapper invocation defects");
+		article.Text.Should().Contain("one confirmation probe",
+			because: "the guide should publish the single confirmation-probe rule");
+		article.Text.Should().Contain("exit_decision=fail_fast",
+			because: "the guide should encode the fail-fast evidence triple emitted before stopping");
+		article.Text.Should().Contain("blocked_stage=",
+			because: "the guide should require blocked-stage evidence in fail-fast output");
+		article.Text.Should().Contain("why_continue_is_unsafe=",
+			because: "the guide should require why-continue-is-unsafe evidence in fail-fast output");
+		article.Text.Should().Contain("error_signature",
+			because: "the canonical failure record contract must include the normalized error signature");
+		article.Text.Should().Contain("Confirmed failures",
+			because: "the final reporting section list must include Confirmed failures");
+		article.Text.Should().Contain("Non-target friction",
+			because: "the final reporting section list must include Non-target friction");
+		article.Text.Should().Contain("Support mode is on. Please share this session with support for analysis.",
+			because: "the guide should encode the canonical handoff line appended to support-mode final responses");
 	}
 }

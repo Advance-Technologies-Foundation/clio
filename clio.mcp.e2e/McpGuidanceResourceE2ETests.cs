@@ -22,10 +22,12 @@ public sealed class McpGuidanceResourceE2ETests {
 	private static readonly string PageSchemaHandlersUri = BuildGuideUri("page-schema-handlers");
 	private static readonly string PageSchemaCreatioDevkitCommonUri = BuildGuideUri("page-schema-creatio-devkit-common");
 	private static readonly string PageSchemaValidatorsUri = BuildGuideUri("page-schema-validators");
+	private static readonly string AgentExecutionUri = BuildGuideUri("agent-execution");
+	private static readonly string SupportModeUri = BuildGuideUri("support-mode");
 
 	[Test]
 	[AllureTag("mcp-guidance-resources")]
-	[AllureName("MCP server advertises modeling, binding, existing-app, and validator guidance resources")]
+	[AllureName("MCP server advertises modeling, binding, existing-app, validator, agent-execution, and support-mode guidance resources")]
 	public async Task McpServer_Should_Advertise_Guidance_Resources() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -43,9 +45,65 @@ public sealed class McpGuidanceResourceE2ETests {
 				PageSchemaConvertersUri,
 				PageSchemaHandlersUri,
 				PageSchemaCreatioDevkitCommonUri,
-				PageSchemaValidatorsUri
+				PageSchemaValidatorsUri,
+				AgentExecutionUri,
+				SupportModeUri
 			],
-			because: "the MCP server should advertise creation existing-app converter handler validator and sdk-common guidance resources");
+			because: "the MCP server should advertise creation existing-app converter handler validator sdk-common agent-execution and support-mode guidance resources");
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the agent-execution guidance article")]
+	public async Task McpServer_Should_Return_Agent_Execution_Guidance() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(AgentExecutionUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the agent-execution guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(AgentExecutionUri,
+			because: "the returned article should preserve the stable agent-execution guidance URI");
+		article.Text.Should().Contain("clio MCP agent execution guide",
+			because: "the article should identify itself as the dedicated agent-execution guide");
+		article.Text.Should().Contain("Execution order",
+			because: "the guide should publish a numbered execution order section");
+		article.Text.Should().Contain("Schema sync recovery patterns",
+			because: "the guide should cover schema-sync recovery patterns owned by clio");
+		article.Text.Should().Contain("delete the orphaned entity using `delete-schema`",
+			because: "the guide should encode the orphan-cleanup step for the section recovery path");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the support-mode guidance article")]
+	public async Task McpServer_Should_Return_Support_Mode_Guidance() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(SupportModeUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the support-mode guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(SupportModeUri,
+			because: "the returned article should preserve the stable support-mode guidance URI");
+		article.Text.Should().Contain("clio MCP support-mode guide",
+			because: "the article should identify itself as the dedicated support-mode guide");
+		article.Text.Should().Contain("Diagnostic-first execution",
+			because: "the guide should publish the diagnostic-first execution policy");
+		article.Text.Should().Contain("clio_mcp_issue",
+			because: "the guide should declare the primary critical defect category");
+		article.Text.Should().Contain("exit_decision=fail_fast",
+			because: "the guide should encode the fail-fast evidence triple emitted before stopping");
+		article.Text.Should().Contain("Support mode is on. Please share this session with support for analysis.",
+			because: "the guide should encode the canonical handoff line appended to support-mode final responses");
 	}
 
 	[Test]
@@ -106,8 +164,8 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the article should explain how to discover the target installed application");
 		article.Text.Should().Contain("update-page",
 			because: "the article should describe the minimal page mutation path");
-		article.Text.Should().Contain("do not wrap MCP arguments inside `args`",
-			because: "the article should explicitly reject the request wrapper that caused the analyzed session failure");
+		article.Text.Should().Contain("Wrap MCP tool arguments under the top-level `args` JSON object",
+			because: "the article should explicitly publish the wrapped request shape required by the clio MCP tool schema");
 		article.Text.Should().Contain("do not send `bundle` or `bundle.viewConfig` as the body payload",
 			because: "the article should explain the concrete writable page payload shape");
 		article.Text.Should().Contain("JSON object string",
