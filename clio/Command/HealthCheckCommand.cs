@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Net;
+using System.Net.Http;
 using Clio.Common;
 using CommandLine;
 
@@ -43,12 +44,44 @@ namespace Clio.Command
 				Logger.WriteError($"\tError: {ex.Message}");
 				return 1;
 			}
+			catch (InvalidCastException)
+			{
+				// creatio.client <= 1.0.33 casts WebRequest.Create() to HttpWebRequest, which fails
+				// on macOS/Linux when the runtime returns FileWebRequest for some localhost URLs.
+				return ProbeWithHttpClient(checkName, requestUri);
+			}
 			catch(Exception ex)
 			{
 				Logger.WriteError($"\tUnknown Error: {ex.Message}");
 				return 1;
 			}
 			return 0;
+		}
+
+		private int ProbeWithHttpClient(string checkName, string requestUri) {
+			Logger.WriteWarning(
+				$"\t{checkName} - creatio.client returned a non-HTTP request type; retrying via HttpClient.");
+			try {
+				using HttpClientHandler handler = new() {
+					ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+				};
+				using HttpClient client = new(handler) {
+					Timeout = RequestTimeout > 0
+						? TimeSpan.FromMilliseconds(RequestTimeout)
+						: TimeSpan.FromSeconds(100)
+				};
+				using HttpResponseMessage response = client.GetAsync(requestUri).GetAwaiter().GetResult();
+				if (!response.IsSuccessStatusCode) {
+					Logger.WriteError($"\tError: {(int)response.StatusCode} {response.ReasonPhrase}");
+					return 1;
+				}
+				Logger.WriteInfo($"\t{checkName} - OK");
+				return 0;
+			}
+			catch (Exception ex) {
+				Logger.WriteError($"\tError: {ex.Message}");
+				return 1;
+			}
 		}
 
 		public override int Execute(HealthCheckOptions options) {
