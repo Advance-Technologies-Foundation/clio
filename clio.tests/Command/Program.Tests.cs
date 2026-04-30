@@ -151,6 +151,30 @@ public class ProgramTestCase : BaseClioModuleTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("install-gate package option creation must register the target environment instead of leaving the bootstrap placeholder in the global container.")]
+	public void CreateClioGatePkgOptions_Should_Register_Target_Environment_In_Global_Container() {
+		// Arrange
+		Program.Container = null;
+		AddNetCoreActiveEnvironmentFixture();
+		InstallGateOptions options = new() {
+			Environment = "framework-env"
+		};
+
+		// Act
+		PushPkgOptions pushPackageOptions = Program.CreateClioGatePkgOptions(options);
+		EnvironmentSettings resolvedSettings = Program.Container.GetRequiredService<EnvironmentSettings>();
+
+		// Assert
+		resolvedSettings.Uri.Should().Be("http://remote-host:88/site",
+			because: "install-gate must resolve commands against the requested environment, not the bootstrap placeholder");
+		pushPackageOptions.Name.Should().EndWith(Path.Combine("cliogate", "cliogate.gz"),
+			because: "framework environments should install the bundled .NET Framework cliogate package");
+		pushPackageOptions.Environment.Should().Be("framework-env",
+			because: "the generated push-package options should preserve the requested environment name");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("dconf --build uses a local zip and must not connect to env even when default env has OAuth credentials.")]
 	public void Resolve_Should_Not_Throw_For_DownloadConfigurationCommand_When_Default_Env_Has_OAuth() {
 		// Arrange — appsettings with a valid default env that has OAuth credentials
@@ -192,6 +216,13 @@ public class ProgramTestCase : BaseClioModuleTests
 		string filePath = Path.Combine(Environment.CurrentDirectory, SettingsRepository.AppSettingsFile);
 		FileSystem.AddFile(filePath, new MockFileData(File
 			.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"))));
+		SettingsRepository.FileSystem = FileSystem;
+	}
+
+	private void AddNetCoreActiveEnvironmentFixture() {
+		string filePath = Path.Combine(Environment.CurrentDirectory, SettingsRepository.AppSettingsFile);
+		FileSystem.AddFile(filePath, new MockFileData(File
+			.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-netcore-active-env.json"))));
 		SettingsRepository.FileSystem = FileSystem;
 	}
 

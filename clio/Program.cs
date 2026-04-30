@@ -556,7 +556,7 @@ internal class Program {
 	/// <param name="options">Gate installation options</param>
 	/// <returns>Configured package options</returns>
 	private static PushPkgOptions CreatePushPkgOptions(InstallGateOptions options){
-	ISettingsRepository settingsRepository = Resolve<ISettingsRepository>();
+	SettingsRepository settingsRepository = new();
 	EnvironmentSettings settings = settingsRepository.GetEnvironment(options);
 	IWorkingDirectoriesProvider workingDirectoriesProvider = Resolve<IWorkingDirectoriesProvider>(options);
 	string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";

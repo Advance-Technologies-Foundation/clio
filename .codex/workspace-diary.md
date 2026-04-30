@@ -3049,3 +3049,17 @@ Decision: Removed `add-form-fields`, `add-list-columns`, their shared `PageBodyE
 Discovery: The previous normalizer-based fix was unnecessary once shortcut tools are removed, and silent binding rewrites are risky for validator-backed attributes.
 Files: clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/PageModels.cs, clio.tests/Command/McpServer/PageToolsTests.cs, .codex/workspace-diary.md
 Impact: Page editing has one advertised path again: fetch `body.js`, edit it explicitly, validate, then sync or update.
+
+## 2026-04-30 18:20 - Diagnosed install-gate bootstrap DI regression
+Context: After updating global clio to 8.1.0.4, `clio install-gate -e dev` failed during `CreatioClient.Login()` inside package upload even though `dev` pinged successfully.
+Decision: Treat this as an `install-gate` command regression, not an environment credential issue. The failing path creates a bootstrap DI container while building cliogate package options, then reuses that container for the environment-scoped `InstallGatePkgCommand`.
+Discovery: Manual `CreatioClient` login with `dev` settings succeeds, while the same client with bootstrap placeholder settings (`http://localhost`, empty credentials) reproduces the same stack. The regression came from the 8.1.0.2 DI cleanup changing `CreatePushPkgOptions` to resolve `ISettingsRepository`, which initializes `Program.Container` too early.
+Files: C:\Projects\clio\clio\Program.cs, C:\Projects\clio\clio\BindingsModule.cs, C:\Projects\clio\clio\Command\PushPackageCommand.cs
+Impact: Future fix should keep `CreateClioGatePkgOptions` from initializing the global bootstrap container before resolving `InstallGatePkgCommand`, or make `Resolve<T>` rebuild/scope the container when environment settings are later supplied.
+
+## 2026-04-30 18:35 - Fixed install-gate target environment resolution
+Context: Follow-up implementation for the `install-gate` failure introduced after the 8.1.0.2 DI cleanup.
+Decision: Restored `CreatePushPkgOptions` to read `SettingsRepository` directly instead of resolving it through `Program.Resolve`, so the first DI resolution in the flow is environment-scoped through `IWorkingDirectoriesProvider`.
+Discovery: The breaking change came from `cd5ca8ec` / PR #549 (`feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration`); `7baebf2e` made bootstrap intentionally use a placeholder, and #549 accidentally made `install-gate` reuse that placeholder.
+Files: C:\Projects\clio\clio\Program.cs, C:\Projects\clio\clio.tests\Command\Program.Tests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The new regression test asserts that `CreateClioGatePkgOptions` leaves `Program.Container` scoped to the requested environment. Local patched `install-gate -e dev` installed cliogate successfully and `get-info -e dev` returned system info.
