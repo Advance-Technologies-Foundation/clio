@@ -116,6 +116,7 @@ namespace Clio.Common.ScenarioHandlers {
             if(isNetFramework) {
                 sb.Append(CreateWebApplication(siteName, Path.Combine(destinationFolder, "Terrasoft.WebApp")));
             }
+            sb.Append("EnableWindowsAuthentication: ").AppendLine(EnableWindowsAuthentication(siteName));
 
             return new CreateIISSiteResponse {
                 Status = BaseHandlerResponse.CompletionStatus.Success,
@@ -165,6 +166,29 @@ namespace Clio.Common.ScenarioHandlers {
 
             // Return both outputs so caller can see the unlock and enable results
             return "UnlockResult: " + unlockResult + Environment.NewLine + "EnableResult: " + basicResult;
+        }
+
+        private string EnableWindowsAuthentication(string siteName) {
+            // Best-effort: a failure here (missing appcmd, permission denied) must not fail
+            // deploy-creatio. Required IIS modules are ensured upfront by IISDeploymentStrategy.
+            try {
+                string appcmdPath = Path.Combine("C:", "Windows", "System32", "inetsrv", "appcmd.exe");
+                string section = "system.webServer/security/authentication/windowsAuthentication";
+
+                string unlockCmd = $"unlock config -section:{section}";
+                var unlockResult = _processExecutor.Execute(appcmdPath, unlockCmd, true);
+
+                string enableCmd = $"set config \"{siteName}\" -section:{section} /enabled:true /commit:apphost";
+                var enableResult = _processExecutor.Execute(appcmdPath, enableCmd, true);
+
+                return "UnlockResult: " + unlockResult + Environment.NewLine + "EnableResult: " + enableResult;
+            }
+            catch (Exception ex) {
+                _logger.WriteWarning(
+                    $"Could not enable Windows Authentication for site '{siteName}': {ex.Message}. "
+                    + "Deployment will continue; enable it manually if required.");
+                return "Skipped: Windows Authentication step failed (" + ex.Message + "). Deployment continues.";
+            }
         }
 
         private string CreateWebApplication(string siteName, string physicalPath) {
