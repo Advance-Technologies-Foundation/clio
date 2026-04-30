@@ -80,20 +80,20 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the canonical SDK common guidance article when the caller requests page-schema-sdk-common.")]
+	[Description("Returns the canonical SDK common guidance article when the caller requests page-schema-creatio-devkit-common.")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Sdk_Common_Article() {
 		// Arrange
 		GuidanceGetTool tool = new();
 
 		// Act
-		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-schema-sdk-common"));
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-schema-creatio-devkit-common"));
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "page-schema-sdk-common is a registered guidance name");
+			because: "page-schema-creatio-devkit-common is a registered guidance name");
 		result.Article.Should().NotBeNull(
 			because: "successful guidance lookups should return the resolved article");
-		result.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-sdk-common",
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-creatio-devkit-common",
 			because: "the guidance tool should preserve the canonical SDK common guide URI in the response");
 		result.Article.Text.Should().Contain("clio MCP page-schema sdk common guide",
 			because: "the guidance tool should return the canonical SDK common article text");
@@ -197,12 +197,34 @@ public sealed class GuidanceGetToolTests {
 				"app-modeling",
 				"data-bindings",
 				"existing-app-maintenance",
+				"page-schema-converters",
 				"page-schema-handlers",
-				"page-schema-sdk-common",
+				"page-schema-creatio-devkit-common",
 				"page-schema-validators",
 				"support-mode"
 			],
 			because: "the failure response should help the caller recover with one of the registered guidance names");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical converter guidance article when the caller requests page-schema-converters.")]
+	public async Task GuidanceGet_Should_Return_Page_Schema_Converters_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-schema-converters"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-schema-converters is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-converters",
+			because: "the guidance tool should preserve the canonical converter guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP page-schema converters guide",
+			because: "the guidance tool should return the canonical converter article text");
 	}
 
 	[Test]

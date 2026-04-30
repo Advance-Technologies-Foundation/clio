@@ -8,9 +8,9 @@ namespace Clio.Command.McpServer.Resources;
 /// Provides canonical AI-facing guidance for using <c>@creatio-devkit/common</c> in Freedom UI page schemas.
 /// </summary>
 [McpServerResourceType]
-public sealed class PageSchemaSdkCommonGuidanceResource {
+public sealed class PageSchemaCreatioDevkitCommonGuidanceResource {
 	private const string DocsScheme = "docs";
-	private const string ResourcePath = "mcp/guides/page-schema-sdk-common";
+	private const string ResourcePath = "mcp/guides/page-schema-creatio-devkit-common";
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	internal static readonly TextResourceContents Guide = new() {
@@ -316,7 +316,7 @@ public sealed class PageSchemaSdkCommonGuidanceResource {
 	/// <summary>
 	/// Returns the canonical guidance article for using <c>@creatio-devkit/common</c> in Freedom UI page work.
 	/// </summary>
-	[McpServerResource(UriTemplate = ResourceUri, Name = "page-schema-sdk-common-guidance")]
+	[McpServerResource(UriTemplate = ResourceUri, Name = "page-schema-creatio-devkit-common-guidance")]
 	[Description("Returns canonical MCP guidance for using @creatio-devkit/common in deployed Freedom UI page schema handlers, validators, and related schema-body SDK patterns.")]
 	public ResourceContents GetGuide() => Guide;
 }

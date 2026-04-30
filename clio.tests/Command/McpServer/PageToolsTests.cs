@@ -2609,6 +2609,374 @@ public class PageToolsTests {
 		merged.Should().NotContain("'old'", because: "old handler with the same request is dropped");
 	}
 
+	[Test]
+	[Description("PageBodyMerger converters merge: new converter keys from incoming are appended to existing converters")]
+	public void PageBodyMerger_Should_Merge_Converters_By_Key() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.ToUpperCase\":function(value){return value.toUpperCase();}}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.ToCurrency\":function(value){return '$'+value;}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("usr.ToUpperCase", because: "existing converter without key collision must be preserved");
+		merged.Should().Contain("usr.ToCurrency", because: "new converter from incoming must be added");
+		merged.Should().Contain("value.toUpperCase()", because: "existing converter body must remain intact");
+		merged.Should().Contain("'$'+value", because: "incoming converter body must be present in the result");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters dedupe: when incoming declares the same key as current, incoming wins")]
+	public void PageBodyMerger_Should_Dedupe_Converters_By_Key() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.ToUpperCase\":function(value){return value.toUpperCase();},\"usr.Keep\":function(v){return v;}}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.ToUpperCase\":function(value){return value.toUpperCase().trim();}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("value.toUpperCase().trim()", because: "incoming converter wins when key collides");
+		merged.Should().NotContain("value.toUpperCase();}", because: "old converter with the same key must be dropped");
+		merged.Should().Contain("usr.Keep", because: "non-colliding existing converter must be preserved");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: empty current converters are replaced entirely by incoming")]
+	public void PageBodyMerger_Should_Replace_Empty_Converters_With_Incoming() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.ToUpperCase\":function(value){return value?.toUpperCase()??'';}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("usr.ToUpperCase", because: "incoming converter should appear when current is empty");
+		merged.Should().Contain("value?.toUpperCase()??''", because: "incoming converter body should be preserved verbatim");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: incoming body with no SCHEMA_CONVERTERS marker leaves existing converters intact")]
+	public void PageBodyMerger_Should_Preserve_Converters_When_Incoming_Has_No_Converters_Section() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.ToUpperCase\":function(value){return value.toUpperCase();}}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		// Incoming body intentionally omits the SCHEMA_CONVERTERS marker entirely.
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("usr.ToUpperCase", because: "existing converter must survive when incoming body has no SCHEMA_CONVERTERS section");
+		merged.Should().Contain("value.toUpperCase()", because: "existing converter body must remain verbatim when incoming omits the section");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: incoming empty {} leaves existing converters intact")]
+	public void PageBodyMerger_Should_Preserve_Converters_When_Incoming_Converters_Are_Empty() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.FormatDate\":function(value){return new Date(value).toLocaleDateString();}}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("usr.FormatDate", because: "existing converter must survive when incoming carries an empty converter section");
+		merged.Should().Contain("toLocaleDateString()", because: "existing converter body must remain verbatim when incoming is empty");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: async arrow function with await, template literal, and regex survives the merge unchanged")]
+	public void PageBodyMerger_Should_Preserve_Async_Arrow_Converter_Body() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.FormatPhoneNumber\": async (value) => {" +
+			"  if (!value) return \"\";" +
+			"  const svc = new sdk.SysSettingsService();" +
+			"  const setting = await svc.getByCode(\"UsrEnablePhoneFormatting\");" +
+			"  if (!Boolean(setting?.value)) return value;" +
+			"  const digits = String(value).replace(/\\D/g, \"\");" +
+			"  if (digits.length !== 11) return value;" +
+			"  return `+${digits.slice(0, 1)} (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9, 11)}`;" +
+			"}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("usr.FormatPhoneNumber",
+			because: "async converter key must survive the merge");
+		merged.Should().Contain("await svc.getByCode",
+			because: "await expression inside the converter value must be preserved verbatim");
+		merged.Should().Contain("digits.slice(1, 4)",
+			because: "template literal interpolation content must not be truncated by the depth-tracking parser");
+		merged.Should().Contain("replace(/\\D/g",
+			because: "regex literal inside the converter body must be preserved verbatim");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: converter value with multiple nested brace pairs is kept intact after merge")]
+	public void PageBodyMerger_Should_Preserve_Converter_With_Nested_Braces() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{" +
+			"\"usr.FormatScore\": function(value) {" +
+			"  if (!value) { return \"\"; }" +
+			"  if (value >= 90) { return \"Excellent\"; }" +
+			"  return \"Poor\";" +
+			"}}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.NewConv\": function(v){return v;}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("usr.FormatScore",
+			because: "existing converter with nested braces must survive the merge");
+		merged.Should().Contain("return \"Excellent\"",
+			because: "inner brace content must not be truncated by the depth-tracking entry parser");
+		merged.Should().Contain("usr.NewConv",
+			because: "new incoming converter must be appended");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: curly braces and commas inside string literals do not confuse the entry splitter")]
+	public void PageBodyMerger_Should_Not_Split_On_Structural_Chars_Inside_Strings() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{" +
+			"\"usr.A\": function(v){ return v + \" {hello, world}\"; }," +
+			"\"usr.B\": function(v){ return \"{x,y}\"; }" +
+			"}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.C\": function(v){return v;}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("usr.A",
+			because: "converter whose value contains string literals with braces and commas must survive as a complete entry");
+		merged.Should().Contain("{hello, world}",
+			because: "string content with structural characters must be preserved verbatim");
+		merged.Should().Contain("usr.B",
+			because: "second existing converter following a string-containing entry must also be preserved");
+		merged.Should().Contain("{x,y}",
+			because: "string content of second converter must be preserved verbatim");
+		merged.Should().Contain("usr.C",
+			because: "new incoming converter must be appended");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: single-quoted converter keys are parsed and merged correctly")]
+	public void PageBodyMerger_Should_Handle_Single_Quoted_Converter_Keys() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{'usr.OldConverter': function(v){return v;}}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{'usr.NewConverter': function(v){return v + '!';}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("usr.OldConverter",
+			because: "existing single-quoted key converter must survive merge");
+		merged.Should().Contain("usr.NewConverter",
+			because: "incoming single-quoted key converter must be added");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: single-quoted key incoming overwrites same-named single-quoted key in current")]
+	public void PageBodyMerger_Should_Overwrite_Single_Quoted_Key_On_Name_Clash() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{'usr.Format': function(v){return 'old';}}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{'usr.Format': function(v){return 'new';}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("'usr.Format': function(v){return 'new';}",
+			because: "incoming converter entry must replace the current one with the same key");
+		merged.Should().NotContain("return 'old'",
+			because: "overwritten converter body must not appear in the merged result");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: double-quoted current key and single-quoted incoming key with the same name deduplicate correctly")]
+	public void PageBodyMerger_Should_Deduplicate_Cross_Quote_Key_Clash() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.Format\": function(v){return 'old';}}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{'usr.Format': function(v){return 'new';}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("'usr.Format': function(v){return 'new';}",
+			because: "incoming single-quoted entry must win over the existing double-quoted entry with the same key");
+		merged.Should().NotContain("return 'old'",
+			because: "the double-quoted current entry must be removed — it refers to the same logical key");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: second entry is not absorbed when first entry value contains nested brackets")]
+	public void PageBodyMerger_Should_Not_Absorb_Next_Entry_After_Nested_Brackets() {
+		// Regression guard: balanced nested brackets in a value must not prevent the
+		// top-level comma from splitting the next entry.
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{" +
+			"\"usr.A\": function(v){return {x: v};}," +
+			"\"usr.B\": function(v){return v;}" +
+			"}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.C\": function(v){return v;}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("usr.A",
+			because: "first entry with a nested-object value must be preserved");
+		merged.Should().Contain("usr.B",
+			because: "second entry must not be absorbed into the first entry's value when the preceding value contains nested brackets");
+		merged.Should().Contain("usr.C",
+			because: "incoming entry must be appended");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: quoted entry following an unquoted ES6 method-shorthand entry is not corrupted")]
+	public void PageBodyMerger_Should_Not_Corrupt_Quoted_Entry_After_Unquoted_Key() {
+		// Regression guard: an unquoted key whose value contains a string literal (e.g. return "x")
+		// must not cause the parser to misidentify that string as the next key. Without the fix,
+		// ParseConverterEntries would treat "fallback" as a key and corrupt the subsequent "usr.A" entry.
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{" +
+			"toDisplayValue(v) { return \"fallback\"; }," +
+			"\"usr.A\": function(v){return v;}" +
+			"}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{\"usr.B\": function(v){return v;}}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("usr.A",
+			because: "the quoted entry after the unquoted key must survive merge without corruption");
+		merged.Should().Contain("usr.B",
+			because: "the incoming quoted entry must be appended");
+	}
+
+	[Test]
+	[Description("PageBodyMerger converters: when both current and incoming converter sections are empty the result is also empty")]
+	public void PageBodyMerger_Should_Return_Empty_Converters_When_Both_Are_Empty() {
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			because: "merging two empty converter sections must produce an empty converter section");
+	}
+
 	private static IPageDesignerHierarchyClient CreateHierarchyClientFor(string schemaUId, string packageUId = "test-pkg-uid") {
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
 		hierarchyClient.GetDesignPackageUId(schemaUId).Returns(packageUId);

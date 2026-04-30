@@ -23,6 +23,14 @@ internal static class PageBodyMerger {
 	/// body. Throws <see cref="InvalidOperationException"/> if either body is missing required
 	/// markers that the merger needs.
 	/// </summary>
+	/// <remarks>
+	/// Each section is merged only when its marker pair already exists in <paramref name="currentBody"/>.
+	/// If <paramref name="currentBody"/> pre-dates a section (e.g. an older page schema without a
+	/// <c>SCHEMA_CONVERTERS</c> or <c>SCHEMA_VALIDATORS</c> block), the computed merge result for that
+	/// section is silently discarded and the body is returned unchanged for that section. To add a new
+	/// section to an older page, first manually insert the empty marker pair into the body, then call
+	/// <c>Merge</c> with the desired content.
+	/// </remarks>
 	public static string Merge(string currentBody, string incomingBody) {
 		if (string.IsNullOrWhiteSpace(currentBody)) {
 			throw new InvalidOperationException("Current body is empty — cannot perform append merge.");
@@ -43,14 +51,202 @@ internal static class PageBodyMerger {
 		string mergedHandlers = MergeHandlersRaw(
 			ReadRawSection(currentBody, "SCHEMA_HANDLERS") ?? "[]",
 			ReadRawSection(incomingBody, "SCHEMA_HANDLERS") ?? "[]");
+		string mergedConverters = MergeConvertersRaw(
+			ReadRawSection(currentBody, "SCHEMA_CONVERTERS") ?? "{}",
+			ReadRawSection(incomingBody, "SCHEMA_CONVERTERS") ?? "{}");
 
 		string result = currentBody;
 		result = ReplaceSection(result, "SCHEMA_VIEW_CONFIG_DIFF", mergedViewConfigDiff.ToString(Newtonsoft.Json.Formatting.None));
 		result = ReplaceSection(result, "SCHEMA_VIEW_MODEL_CONFIG_DIFF", mergedViewModelConfigDiff.ToString(Newtonsoft.Json.Formatting.None));
 		result = ReplaceSection(result, "SCHEMA_MODEL_CONFIG_DIFF", mergedModelConfigDiff.ToString(Newtonsoft.Json.Formatting.None));
 		result = ReplaceSection(result, "SCHEMA_HANDLERS", mergedHandlers);
+		result = ReplaceSection(result, "SCHEMA_CONVERTERS", mergedConverters);
 		return result;
 	}
+
+	/// <summary>
+	/// Merges two JavaScript converter object strings by key — incoming keys win over current keys
+	/// with the same name. Preserves non-JSON function bodies by using raw text extraction rather
+	/// than JSON parsing.
+	/// </summary>
+	private static string MergeConvertersRaw(string current, string incoming) {
+		string currentTrim = current.Trim();
+		string incomingTrim = incoming.Trim();
+		if (currentTrim == "{}" || string.IsNullOrEmpty(currentTrim)) {
+			return incomingTrim;
+		}
+		if (incomingTrim == "{}" || string.IsNullOrEmpty(incomingTrim)) {
+			return currentTrim;
+		}
+		string currentInner = StripObjectBraces(currentTrim);
+		string incomingInner = StripObjectBraces(incomingTrim);
+		List<(string Key, string Entry)> currentEntries = ParseConverterEntries(currentInner);
+		List<(string Key, string Entry)> incomingEntries = ParseConverterEntries(incomingInner);
+		var incomingKeys = new HashSet<string>(incomingEntries.Select(e => e.Key), StringComparer.Ordinal);
+		var kept = currentEntries
+			.Where(e => !incomingKeys.Contains(e.Key))
+			.Select(e => e.Entry)
+			.Concat(incomingEntries.Select(e => e.Entry))
+			.ToList();
+		return kept.Count == 0 ? "{}" : "{" + string.Join(",", kept) + "}";
+	}
+
+	/// <summary>
+	/// Parses a JavaScript object body (without outer braces) into a list of top-level key–value
+	/// entry pairs. Each entry preserves the raw text of "key": value so the function body is
+	/// never mangled. Stops at top-level commas — depth tracking covers nested {}, [], and ().
+	/// </summary>
+	/// <remarks>
+	/// Limitation: JavaScript regex literals (<c>/pattern/flags</c>) are not tracked as string
+	/// delimiters. A regex body containing an unbalanced <c>{</c>, <c>[</c>, or a bare <c>,</c>
+	/// at depth 0 could cause a premature entry split. In practice, converter functions are simple
+	/// formatters that do not use regex literals, so this edge case is not expected to occur.
+	/// </remarks>
+	private static List<(string Key, string Entry)> ParseConverterEntries(string inner) {
+		var entries = new List<(string Key, string Entry)>();
+		int i = 0;
+		while (i < inner.Length) {
+			i = SkipSeparators(inner, i);
+			if (i >= inner.Length) break;
+			if (IsKeyQuote(inner[i])) {
+				i = ReadQuotedEntry(inner, i, entries);
+			} else if (IsIdentifierStart(inner[i])) {
+				i = SkipUnquotedEntry(inner, i);
+			} else {
+				i++;
+			}
+		}
+		return entries;
+	}
+
+	/// <summary>
+	/// Reads one quoted key–value entry, appends it to <paramref name="entries"/>, and returns
+	/// the position after the trailing comma (if present).
+	/// </summary>
+	private static int ReadQuotedEntry(string inner, int i, List<(string Key, string Entry)> entries) {
+		int entryStart = i;
+		i = ReadKey(inner, i, out string key);
+		i = SkipColonAndWhitespace(inner, i);
+		i = ScanValueEnd(inner, i);
+		string entry = inner.Substring(entryStart, i - entryStart).Trim();
+		if (!string.IsNullOrWhiteSpace(entry))
+			entries.Add((key, entry));
+		if (i < inner.Length && inner[i] == ',') i++;
+		return i;
+	}
+
+	/// <summary>
+	/// Skips an unquoted entry (e.g. ES6 method shorthand) without recording it. Consumes the
+	/// entire entry — key + colon + value — so that string literals inside the function body are
+	/// never mistaken for the next key. Use quoted keys per the converter guidance.
+	/// </summary>
+	private static int SkipUnquotedEntry(string inner, int i) {
+		i = SkipUnquotedKey(inner, i);
+		if (i < inner.Length && inner[i] == ':') {
+			i = SkipColonAndWhitespace(inner, i);
+			i = ScanValueEnd(inner, i);
+		}
+		if (i < inner.Length && inner[i] == ',') i++;
+		return i;
+	}
+
+	/// <summary>
+	/// Advances past an unquoted key name using bracket-depth tracking so that a <c>:</c> inside a
+	/// complex default argument (e.g. <c>(v = {key: val})</c>) is not treated as the key separator.
+	/// </summary>
+	private static int SkipUnquotedKey(string inner, int i) {
+		int keyDepth = 0;
+		while (i < inner.Length) {
+			char kc = inner[i];
+			if (IsOpenBracket(kc)) { keyDepth++; i++; continue; }
+			if (IsCloseBracket(kc)) {
+				if (keyDepth <= 0) break;
+				keyDepth--;
+				i++;
+				continue;
+			}
+			if (keyDepth == 0 && (kc == ':' || kc == ',')) break;
+			i++;
+		}
+		return i;
+	}
+
+	private static bool IsKeyQuote(char ch) => ch is '"' or '\'';
+	private static bool IsIdentifierStart(char ch) => char.IsLetterOrDigit(ch) || ch == '_' || ch == '$';
+
+	private static int SkipSeparators(string s, int i) {
+		while (i < s.Length && (char.IsWhiteSpace(s[i]) || s[i] == ','))
+			i++;
+		return i;
+	}
+
+	private static int ReadKey(string s, int i, out string key) {
+		char openQuote = s[i];
+		i++; // skip opening quote
+		int start = i;
+		while (i < s.Length && s[i] != openQuote) {
+			if (s[i] == '\\') i++;
+			i++;
+		}
+		key = s.Substring(start, i - start);
+		if (i < s.Length) i++; // skip closing quote
+		return i;
+	}
+
+	private static int SkipColonAndWhitespace(string s, int i) {
+		while (i < s.Length && (char.IsWhiteSpace(s[i]) || s[i] == ':'))
+			i++;
+		return i;
+	}
+
+	/// <summary>
+	/// Advances <paramref name="i"/> past the current converter value, stopping at a top-level
+	/// comma or end-of-string. Tracks string literals and bracket depth to avoid false splits.
+	/// </summary>
+	/// <remarks>
+	/// Known limitations:
+	/// <list type="bullet">
+	/// <item>JavaScript regex literals (<c>/pattern/flags</c>) are not tracked as string delimiters.
+	/// A regex body containing an unbalanced bracket or a bare comma at depth 0 could cause a
+	/// premature entry split. Converter functions in practice do not use unbalanced regex literals.</item>
+	/// <item>Template literal interpolations (<c>`outer ${inner}`</c>) are not depth-tracked.
+	/// <see cref="AdvanceInString"/> uses a single <c>strChar</c> so a <c>}</c> that closes a
+	/// <c>${…}</c> interpolation is treated as the end of the template string, potentially causing
+	/// false depth changes for any brackets that follow. Async converters that return a template
+	/// literal (e.g. <c>`+${digits}`</c>) are not affected as long as the interpolation does not
+	/// contain an unmatched bracket.</item>
+	/// </list>
+	/// </remarks>
+	private static int ScanValueEnd(string s, int i) {
+		int depth = 0;
+		bool inStr = false;
+		char strChar = '"';
+		while (i < s.Length) {
+			char ch = s[i];
+			if (inStr) { i = AdvanceInString(i, ch, strChar, ref inStr); continue; }
+			if (IsStringDelimiter(ch)) { inStr = true; strChar = ch; i++; continue; }
+			if (IsOpenBracket(ch)) { depth++; i++; continue; }
+			if (IsCloseBracket(ch)) {
+				if (depth <= 0) break;
+				depth--;
+				i++;
+				continue;
+			}
+			if (depth == 0 && ch == ',') break;
+			i++;
+		}
+		return i;
+	}
+
+	private static int AdvanceInString(int i, char ch, char strChar, ref bool inStr) {
+		if (ch == '\\') return i + 2;
+		if (ch == strChar) inStr = false;
+		return i + 1;
+	}
+
+	private static bool IsStringDelimiter(char ch) => ch is '"' or '\'' or '`';
+	private static bool IsOpenBracket(char ch) => ch is '(' or '{' or '[';
+	private static bool IsCloseBracket(char ch) => ch is ')' or '}' or ']';
 
 	private static JArray MergeArrayByName(JArray current, JArray incoming) {
 		var byName = new Dictionary<string, JToken>(StringComparer.Ordinal);
@@ -116,6 +312,13 @@ internal static class PageBodyMerger {
 		string trimmed = value.Trim();
 		if (trimmed.StartsWith('[')) trimmed = trimmed.Substring(1);
 		if (trimmed.EndsWith(']')) trimmed = trimmed.Substring(0, trimmed.Length - 1);
+		return trimmed.Trim();
+	}
+
+	private static string StripObjectBraces(string value) {
+		string trimmed = value.Trim();
+		if (trimmed.StartsWith('{')) trimmed = trimmed.Substring(1);
+		if (trimmed.EndsWith('}')) trimmed = trimmed.Substring(0, trimmed.Length - 1);
 		return trimmed.Trim();
 	}
 

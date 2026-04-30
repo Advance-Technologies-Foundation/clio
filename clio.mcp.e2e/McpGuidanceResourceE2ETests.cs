@@ -18,8 +18,9 @@ public sealed class McpGuidanceResourceE2ETests {
 	private static readonly string AppModelingUri = BuildGuideUri("app-modeling");
 	private static readonly string DataBindingsUri = BuildGuideUri("data-bindings");
 	private static readonly string ExistingAppMaintenanceUri = BuildGuideUri("existing-app-maintenance");
+	private static readonly string PageSchemaConvertersUri = BuildGuideUri("page-schema-converters");
 	private static readonly string PageSchemaHandlersUri = BuildGuideUri("page-schema-handlers");
-	private static readonly string PageSchemaSdkCommonUri = BuildGuideUri("page-schema-sdk-common");
+	private static readonly string PageSchemaCreatioDevkitCommonUri = BuildGuideUri("page-schema-creatio-devkit-common");
 	private static readonly string PageSchemaValidatorsUri = BuildGuideUri("page-schema-validators");
 	private static readonly string AgentExecutionUri = BuildGuideUri("agent-execution");
 	private static readonly string SupportModeUri = BuildGuideUri("support-mode");
@@ -41,13 +42,14 @@ public sealed class McpGuidanceResourceE2ETests {
 				AppModelingUri,
 				DataBindingsUri,
 				ExistingAppMaintenanceUri,
+				PageSchemaConvertersUri,
 				PageSchemaHandlersUri,
-				PageSchemaSdkCommonUri,
+				PageSchemaCreatioDevkitCommonUri,
 				PageSchemaValidatorsUri,
 				AgentExecutionUri,
 				SupportModeUri
 			],
-			because: "the MCP server should advertise creation existing-app handler validator sdk-common agent-execution and support-mode guidance resources");
+			because: "the MCP server should advertise creation existing-app converter handler validator sdk-common agent-execution and support-mode guidance resources");
 	}
 
 	[Test]
@@ -180,6 +182,33 @@ public sealed class McpGuidanceResourceE2ETests {
 
 	[Test]
 	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the page-schema converters guidance article")]
+	public async Task McpServer_Should_Return_Page_Schema_Converters_Guidance() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(PageSchemaConvertersUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		result.Contents.Should().ContainSingle(
+			because: "the guidance resource should resolve to a single plain-text article");
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the converters guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(PageSchemaConvertersUri,
+			because: "the returned article should preserve the stable converter guidance URI");
+		article.Text.Should().Contain("SCHEMA_CONVERTERS",
+			because: "the converter guide should anchor editing to the correct page-body marker section");
+		article.Text.Should().Contain("NON-NEGOTIABLES",
+			because: "the converter guide must include the mandatory constraint section");
+		article.Text.Should().Contain("Only declare custom (`usr.*`) converters in `SCHEMA_CONVERTERS`",
+			because: "the converter guide should document that only usr.* keys are custom-declared here");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
 	[AllureName("MCP server returns the page-schema handlers guidance article")]
 	public async Task McpServer_Should_Return_Page_Schema_Handlers_Guidance() {
 		// Arrange
@@ -197,9 +226,9 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the returned article should preserve the stable handler guidance URI");
 		article.Text.Should().Contain("SCHEMA_HANDLERS",
 			because: "the handler guide should anchor editing to the correct page-body marker section");
-		article.Text.Should().Contain("you MUST read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
+		article.Text.Should().Contain("you MUST read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
 			because: "the handler guide should point sdk-backed and service-backed handler edits to the dedicated sdk common guide");
-		article.Text.Should().Contain("you MUST read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
+		article.Text.Should().Contain("you MUST read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
 			because: "the handler guide should make sdk and service routing to the sdk-common guide mandatory");
 		article.Text.Should().Contain("Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call",
 			because: "the handler guide should force ai callers through the sdk-common guide before they choose a data or service implementation pattern");
@@ -215,7 +244,7 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the handler guide should explain the page-body request-dispatch choice explicitly");
 		article.Text.Should().Contain("| deployed page-body handler in `SCHEMA_HANDLERS` | `await request.$context.executeRequest(...)` |",
 			because: "the handler guide should prefer executeRequest for deployed page-body handlers");
-		article.Text.Should().Contain("Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-sdk-common`.",
+		article.Text.Should().Contain("Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-creatio-devkit-common`.",
 			because: "the handler guide should keep HandlerChainService out of the default page-body authoring path");
 		article.Text.Should().Contain("Chain-control rules",
 			because: "the handler guide should explain next-placement semantics from the handler chain contract");
@@ -231,7 +260,7 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the handler guide should explicitly reject invented and legacy sender/get/set access patterns");
 		article.Text.Should().Contain("Canonical rule for `crt.HandleViewModelAttributeChangeRequest`: use `request.value` for the triggering attribute, not `request.viewModel.get(...)`.",
 			because: "the handler guide should spell out the exact attribute-change API that prevents invented request.viewModel reads");
-		article.Text.Should().Contain("Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-sdk-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.",
+		article.Text.Should().Contain("Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-creatio-devkit-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.",
 			because: "the handler guide should stop callers from defaulting to raw platform fetches");
 		article.Text.Should().Contain("same declared view-model attribute that handlers read or write through `$context.set(\"<AttributeName>\", ...)`",
 			because: "the handler guide should make handler-driven control binding explicit without relying on datasource naming conventions");
@@ -387,12 +416,12 @@ public sealed class McpGuidanceResourceE2ETests {
 		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
 
 		// Act
-		ReadResourceResult result = await context.Session.ReadResourceAsync(PageSchemaSdkCommonUri, context.CancellationTokenSource.Token);
+		ReadResourceResult result = await context.Session.ReadResourceAsync(PageSchemaCreatioDevkitCommonUri, context.CancellationTokenSource.Token);
 
 		// Assert
 		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the sdk common guide should resolve to a single plain-text article").Subject;
-		article.Uri.Should().Be(PageSchemaSdkCommonUri,
+		article.Uri.Should().Be(PageSchemaCreatioDevkitCommonUri,
 			because: "the returned article should preserve the stable sdk common guidance URI");
 		article.Text.Should().Contain("clio MCP page-schema sdk common guide",
 			because: "the guide should identify itself as the dedicated sdk common article");
@@ -583,7 +612,7 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the returned article should preserve the stable validator guidance URI");
 		article.Text.Should().Contain("SCHEMA_VALIDATORS",
 			because: "the validator guide should anchor editing to the correct page-body marker section");
-		article.Text.Should().Contain("also read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service calls",
+		article.Text.Should().Contain("also read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service calls",
 			because: "the validator guide should point SDK-backed validator edits to the dedicated sdk common guide");
 		article.Text.Should().Contain("field-value validation",
 			because: "the validator guide should state the intended responsibility of validators");

@@ -25,9 +25,10 @@ public sealed class PageGetTool(
 		"bundle.json contains the full merged view of the entire hierarchy and is the correct source for reading what components are on the page. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
 		"Before editing the returned raw.body: " +
+		"if the task involves display-only value transformation (email as mailto link, phone as tel link, text to uppercase, boolean inversion, number formatting, any value that should look different on screen without changing the underlying model) call get-guidance with name `page-schema-converters` first — this determines whether a converter is the right tool before touching any component type; " +
 		"if the task targets SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 		"if the task targets SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
-		"if the task adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-sdk-common` before editing SCHEMA_DEPS or SDK calls.")]
+		"if the task adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public PageGetResponse GetPage(
 		[Description("Parameters: schema-name (required); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageGetArgs args) {
