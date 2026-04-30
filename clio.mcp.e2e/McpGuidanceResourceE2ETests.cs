@@ -50,6 +50,8 @@ public sealed class McpGuidanceResourceE2ETests {
 				SupportModeUri
 			],
 			because: "the MCP server should advertise creation existing-app converter handler validator sdk-common agent-execution and support-mode guidance resources");
+	}
+
 	[Test]
 	[AllureTag("mcp-guidance-resources")]
 	[AllureName("MCP server returns the agent-execution guidance article")]
