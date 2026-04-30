@@ -384,7 +384,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		var clioFileSystem = new FileSystem(FileSystem);
 		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
 		applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>())
-			.Returns(string.Empty,
+			.Returns((string)null,
 				"Terrasoft.Common.InvalidGZipArchiveException: Unable to open \"Partner.gz\". The file is invalid or corrupted.");
 		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
 			environmentSettings,

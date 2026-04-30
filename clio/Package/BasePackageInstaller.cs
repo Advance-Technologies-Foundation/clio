@@ -151,6 +151,7 @@
 		}
 
 		private string GetLogDiff(string currentLog, string completeLog) {
+			currentLog ??= string.Empty;
 			return string.IsNullOrWhiteSpace(completeLog)
 				? string.Empty
 				: ((completeLog.Length > currentLog.Length) ? completeLog.Substring(currentLog.Length) : String.Empty);
@@ -220,7 +221,7 @@
 			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions) {
 			_logger.WriteLine($"Install {fileName} ...");
 			_logger.WriteLine("Installation log:");
-			var initialInstallLog = GetInstallLog(environmentSettings);
+			var initialInstallLog = GetInstallLog(environmentSettings) ?? string.Empty;
 			var cancellationTokenSource = new CancellationTokenSource();
 			var log = initialInstallLog;
 			var task = Task.Factory.StartNew(
@@ -230,7 +231,7 @@
 			BaseResponse response = JsonConvert.DeserializeObject<BaseResponse>(result);
 			cancellationTokenSource.Cancel();
 			task.Wait();
-			var completeInstallLog = GetInstallLog(environmentSettings);
+			var completeInstallLog = GetInstallLog(environmentSettings) ?? string.Empty;
 			var currentInstallLog = GetLogDiff(initialInstallLog, completeInstallLog);
 			bool successLog = true;
 			if (CheckLogsOnSuccessMessage) {

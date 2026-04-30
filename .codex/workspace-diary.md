@@ -3071,3 +3071,10 @@ Discovery: The existing production detection already checks `ErrorInfo.ErrorCode
 Files: clio.tests/ApplicationInstallerTests.cs
 Impact: The exit-code mapping is now protected for both current-log and structured-response Creatio failure shapes.
 
+## 2026-04-30 09:05 - Guard null install log baseline
+Context: PR review noted that `GetInstallLog(...)` can return null and `GetLogDiff(initialInstallLog, completeInstallLog)` would dereference the null baseline.
+Decision: Coalesced install-log baselines and final reads to `string.Empty`, added a null guard inside `GetLogDiff`, and changed the log-based invalid archive test to start from a null baseline.
+Discovery: The existing response/log mapping remains unchanged, but the diffing path now handles successful-but-null log provider responses without falling into a generic `NullReferenceException`.
+Files: clio/Package/BasePackageInstaller.cs, clio.tests/ApplicationInstallerTests.cs
+Impact: The PR review concern is covered by code and regression test while preserving exit-code mapping behavior.
+
