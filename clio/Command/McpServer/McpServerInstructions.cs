@@ -12,35 +12,46 @@ internal static class McpServerInstructions
 
 		## Core concepts
 		- **Environment**: a registered Creatio instance identified by name (e.g. "dev", "production").
-		  Most tools require an environment name. Use `show-web-app-list` to list registered environments.
+		  Most tools require an environment name. Use `list-environments` to list registered environments.
 		  Use `reg-web-app` to register a new one.
 		- **Package**: a unit of configuration in Creatio (schemas, data bindings, resources).
-		  Use `get-pkg-list` to see installed packages.
+		  Use `list-packages` to see installed packages.
 		- **Schema**: an entity model, page, process, or code unit inside a package.
 		  Use `get-schema` to inspect, `create-entity-schema` / `create-lookup` to create.
 
 		## Typical workflows
 
 		### Inspect an environment
-		1. `show-web-app-list` → pick an environment name
-		2. `get-pkg-list` with that environment → see installed packages
+		1. `list-environments` → pick an environment name
+		2. `list-packages` with that environment → see installed packages
 		3. `get-schema` → inspect a specific schema
 
 		### Create a new entity
 		1. `create-entity-schema` → define the table
-		2. `update-entity-schema` → add columns
-		3. `compile-configuration` → apply changes to DB
-		4. `create-data-binding` + `add-data-binding-row` → seed lookup data
+		2. `update-entity-schema` → add columns (already applies DDL to the database and refreshes the runtime schema; no separate compile needed)
+		3. `create-data-binding` + `add-data-binding-row` → seed lookup data
 
 		### Build & deploy
-		1. `compile-configuration` → compile the environment
-		2. `push-workspace` → push local workspace packages to the environment
-		3. `restart-by-environment-name` → restart after deployment
+		1. `push-workspace` → push local workspace packages to the environment
+		2. `compile-creatio` → only if the push contains changes that require compilation (see "When `compile-creatio` IS required" below)
+		3. `restart-by-environment-name` → restart only when server-side assemblies were rebuilt or `clear-redis-db-by-environment` was called
+
+		## When `compile-creatio` IS required
+		- Adding or modifying C# schemas (Source code, SqlScript, business processes with executable code).
+		- After `push-workspace` if the pushed packages contain any of the above.
+		- Recovering from a "schema is missing in runtime" error reported by the platform.
+
+		## When `compile-creatio` is NOT required
+		- After `create-app`, `create-app-section`, `create-page`, `update-page` — Freedom UI bodies are AMD modules served at runtime.
+		- After `create-entity-schema` / `update-entity-schema` / `modify-entity-schema-column` — these tools already apply DDL and refresh the runtime schema themselves.
+		- After `create-data-binding` / `add-data-binding-row` / `upsert-data-binding-row-db` — data seeding does not change compiled artifacts.
+		Calling `compile-creatio` in these cases only wastes time and may trigger an unnecessary restart.
 
 		## Safety rules
 		- Tools marked **Destructive** modify or delete data; double-check the target environment.
-		- `uninstall-creatio`, `clear-redis`, `stop-creatio` are high-impact; confirm with the user first.
-		- When in doubt, prefer read-only tools (`get-pkg-list`, `get-schema`, `show-web-app-list`).
+		- `uninstall-creatio`, `clear-redis-db-by-environment`, `stop-creatio` are high-impact; confirm with the user first.
+		- Do not call `compile-creatio` or `restart-by-environment-name` "just in case" — see the rules above.
+		- When in doubt, prefer read-only tools (`list-packages`, `get-schema`, `list-environments`).
 
 		## Tool naming conventions
 		- Many tools have two variants: `*-by-environment-name` (uses a registered alias)
