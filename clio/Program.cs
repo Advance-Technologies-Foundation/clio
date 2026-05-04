@@ -72,6 +72,7 @@ internal class Program {
 		typeof(GetPackageVersionOptions),
 		typeof(CheckNugetUpdateOptions),
 		typeof(UpdateCliOptions),
+		typeof(SetAutoupdateOptions),
 		typeof(CreateWorkspaceCommandOptions),
 		typeof(RestoreWorkspaceOptions),
 		typeof(PushWorkspaceCommandOptions),
@@ -280,6 +281,7 @@ internal class Program {
 			GetPackageVersionOptions opts => Resolve<GetPackageVersionCommand>().Execute(opts),
 			CheckNugetUpdateOptions opts => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
 			UpdateCliOptions opts => Resolve<UpdateCliCommand>(opts).Execute(opts),
+			SetAutoupdateOptions opts => Resolve<SetAutoupdateCommand>().Execute(opts),
 			RestoreWorkspaceOptions opts => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
 			CreateWorkspaceCommandOptions opts => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
 			PushWorkspaceCommandOptions opts => Resolve<PushWorkspaceCommand>(opts).Execute(opts),
@@ -1069,12 +1071,56 @@ internal class Program {
 			Parser.Default.Settings.CustomHelpViewer = bm.GetRequiredService<LocalHelpViewer>();
 		}
 		
+		RunStartupUpdateCheck(args);
 		string[] normalizedArgs = NormalizeCommandLineArgs(args);
 		ParserResult<object> parserResult = Parser.Default.ParseArguments(normalizedArgs, CommandOption);
 		if (parserResult is Parsed<object> parsed) {
 			return ExecuteCommandWithOption(parsed.Value);
 		}
 		return HandleParseError(((NotParsed<object>)parserResult).Errors);
+	}
+
+	private static bool ShouldSkipUpdateCheck(string[] args) {
+		if (IsMcpServerMode) return true;
+		if (args == null || args.Length == 0) return true;
+		string first = args[0];
+		if (string.Equals(first, "update-cli", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "update", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)) {
+			return true;
+		}
+		foreach (string arg in args) {
+			if (string.Equals(arg, "--help", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(arg, "-h", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(arg, "--version", StringComparison.OrdinalIgnoreCase)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static void RunStartupUpdateCheck(string[] args) {
+		if (ShouldSkipUpdateCheck(args)) return;
+		try {
+			string cacheFolder = SettingsRepository.AppSettingsFolderPath;
+			(bool available, string latestVersion) = AppUpdater
+				.CheckForUpdateWithCacheAsync(cacheFolder)
+				.GetAwaiter().GetResult();
+
+			if (!available || string.IsNullOrEmpty(latestVersion)) return;
+
+			string currentVersion = AppUpdater.GetCurrentVersion();
+			if (AutoUpdate) {
+				ConsoleLogger.Instance.WriteInfo(
+					$"Updating clio {currentVersion} -> {latestVersion} in background...");
+				AppUpdater.UpdateInBackgroundAsync().GetAwaiter().GetResult();
+			} else {
+				ConsoleLogger.Instance.WriteWarning(
+					$"clio {latestVersion} is available. Run 'clio update' to update.");
+			}
+		} catch {
+			// startup update check must never crash the tool
+		}
 	}
 
 	private static bool TryHandleBuiltInHelp(string[] args, IServiceProvider serviceProvider, out int exitCode) {

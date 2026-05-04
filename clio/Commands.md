@@ -186,6 +186,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="unlock-package"></a>
 <a id="up"></a>
 - [`unlock-package`](docs/commands/unlock-package.md) - Unlock a package in Creatio, `up`
+<a id="autoupdate"></a>
+- [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic updates on startup
+
 <a id="update-cli"></a>
 <a id="update"></a>
 - [`update-cli`](docs/commands/update-cli.md) - Update clio, `update`
