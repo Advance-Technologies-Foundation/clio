@@ -272,7 +272,8 @@ public sealed class ApplicationToolTests {
 				ApplicationId: "app-id",
 				ApplicationName: "Vehicle App",
 				ApplicationCode: "UsrVehicleApp",
-				ApplicationVersion: "8.3.0"));
+				ApplicationVersion: "8.3.0",
+				SchemaNamePrefix: "Usr"));
 		ApplicationGetInfoTool tool = new(applicationInfoService);
 
 		// Act
@@ -309,6 +310,8 @@ public sealed class ApplicationToolTests {
 			because: "get-app-info should now return the primary-package page summaries");
 		result.Pages![0].SchemaName.Should().Be("UsrVehicle_FormPage",
 			because: "get-app-info should expose page identities through schema-name");
+		result.SchemaNamePrefix.Should().Be("Usr",
+			because: "get-app-info should surface the active SchemaNamePrefix so the agent knows the correct prefix for subsequent schema names");
 	}
 
 	[Test]
@@ -797,6 +800,7 @@ public sealed class ApplicationToolTests {
 					ParentSchemaName = "BasePage"
 				}
 			],
+			SchemaNamePrefix: "Usr",
 			DataForge: new ApplicationDataForgeResult(
 				Used: true,
 				Health: new DataForgeHealthResult(true, true, true, true, "corr-id"),
@@ -829,6 +833,8 @@ public sealed class ApplicationToolTests {
 			because: "application context responses should preserve the installed application version");
 		json.Should().Contain("\"pages\"",
 			because: "application context responses should now surface primary-package page summaries");
+		json.Should().Contain("\"schema-name-prefix\":\"Usr\"",
+			because: "application context responses should surface the active SchemaNamePrefix using the standard kebab-case field name");
 		json.Should().Contain("\"schema-name\":\"UsrEntity_FormPage\"",
 			because: "application page payloads should use schema-name instead of name");
 		json.Should().Contain("\"u-id\":\"entity-uid\"",

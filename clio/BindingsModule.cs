@@ -503,6 +503,16 @@ public class BindingsModule {
 				.WithToolsFromAssembly(Assembly.GetExecutingAssembly())
 				.WithPromptsFromAssembly(Assembly.GetExecutingAssembly());
 		
+		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
+			envSettings => {
+				IDataProvider dataProvider = string.IsNullOrEmpty(envSettings.ClientId)
+					? new RemoteDataProvider(envSettings.Uri, envSettings.Login, envSettings.Password,
+						envSettings.IsNetCore)
+					: new RemoteDataProvider(envSettings.Uri, envSettings.AuthAppUri, envSettings.ClientId,
+						envSettings.ClientSecret, envSettings.IsNetCore);
+				return new SysSettingsManager(dataProvider);
+			});
+
 		RegisterFluentValidators(services);
 		additionalRegistrations?.Invoke(services);
 		return services.BuildServiceProvider(new ServiceProviderOptions {

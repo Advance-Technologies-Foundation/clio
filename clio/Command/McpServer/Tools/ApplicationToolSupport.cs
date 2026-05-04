@@ -41,7 +41,8 @@ internal static class ApplicationToolResultMapper {
 					PackageName = page.PackageName,
 					ParentSchemaName = page.ParentSchemaName
 				})
-				.ToList());
+				.ToList(),
+			result.SchemaNamePrefix);
 	}
 
 	public static ApplicationSectionContextResponse Map(ApplicationSectionCreateResult result) {

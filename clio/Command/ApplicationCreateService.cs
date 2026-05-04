@@ -34,10 +34,13 @@ public sealed class ApplicationCreateService(
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
 	IApplicationInfoService applicationInfoService,
+	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory,
 	ILogger logger)
 	: IApplicationCreateService
 {
 	private const string CreateApplicationRoute = "ServiceModel/AppInstallerService.svc/CreateApp";
+	private const string SchemaNamePrefixSettingCode = "SchemaNamePrefix";
+	private const string DefaultSchemaNamePrefix = "Usr";
 	private const string SelectQueryRoute = "DataService/json/SyncReply/SelectQuery";
 	private const int PollAttempts = 15;
 	private static readonly TimeSpan PollDelay = TimeSpan.FromSeconds(2);
@@ -74,7 +77,9 @@ public sealed class ApplicationCreateService(
 		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
-		ResolvedApplicationCreateRequest resolvedRequest = ResolveRequest(request, client, environmentSettings, serviceUrlBuilder, logger);
+		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
+		string schemaNamePrefix = ReadSchemaNamePrefix(sysSettingsManager, logger);
+		ResolvedApplicationCreateRequest resolvedRequest = ResolveRequest(request, client, environmentSettings, serviceUrlBuilder, logger, schemaNamePrefix);
 		string requestUrl = serviceUrlBuilder.Build(CreateApplicationRoute, environmentSettings);
 		string requestBody = JsonSerializer.Serialize(CreateRequestDto.From(resolvedRequest), JsonOptions);
 
@@ -88,7 +93,7 @@ public sealed class ApplicationCreateService(
 		{
 			logger.EndSpinner(false);
 			logger.WriteInfo($"Request timed out, polling for application '{resolvedRequest.Code}'...");
-			return PollApplicationInfo(environmentName, resolvedRequest.Code, exception);
+			return PollApplicationInfo(environmentName, resolvedRequest.Code, exception, schemaNamePrefix);
 		}
 		catch
 		{
@@ -110,7 +115,7 @@ public sealed class ApplicationCreateService(
 		}
 
 		logger.EndSpinner(true);
-		return LoadCreatedApplication(environmentName, resolvedRequest.Code, response.Value);
+		return LoadCreatedApplication(environmentName, resolvedRequest.Code, response.Value, schemaNamePrefix);
 	}
 
 	private static void ValidateRequest(ApplicationCreateRequest request)
@@ -161,16 +166,17 @@ public sealed class ApplicationCreateService(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		IServiceUrlBuilder serviceUrlBuilder,
-		ILogger logger)
+		ILogger logger,
+		string schemaNamePrefix)
 	{
 		string? resolvedCode = string.IsNullOrWhiteSpace(request.Code)
 			? null
-			: SanitizeCode(request.Code);
+			: SanitizeCode(request.Code, schemaNamePrefix);
 		string resolvedName = string.IsNullOrWhiteSpace(request.Name)
-			? DeriveNameFromCode(resolvedCode!)
+			? DeriveNameFromCode(resolvedCode!, schemaNamePrefix)
 			: request.Name.Trim();
 
-		resolvedCode ??= GenerateCodeFromName(resolvedName);
+		resolvedCode ??= GenerateCodeFromName(resolvedName, schemaNamePrefix);
 		if (!string.IsNullOrWhiteSpace(request.IconBackground)) {
 			ApplicationSectionColorPalette.ValidateOrThrow(request.IconBackground.Trim());
 		}
@@ -202,12 +208,12 @@ public sealed class ApplicationCreateService(
 			request.OptionalTemplateData);
 	}
 
-	private static string GenerateCodeFromName(string name)
+	private static string GenerateCodeFromName(string name, string schemaPrefix)
 	{
 		string[] segments = Regex.Split(name.Trim(), @"[^\p{L}\p{Nd}]+", RegexOptions.None, TimeSpan.FromSeconds(5))
 			.Where(segment => !string.IsNullOrWhiteSpace(segment))
 			.ToArray();
-		StringBuilder builder = new("Usr");
+		StringBuilder builder = new(schemaPrefix);
 		foreach (string rawSegment in segments)
 		{
 			string segment = new(rawSegment.Where(char.IsLetterOrDigit).ToArray());
@@ -224,27 +230,39 @@ public sealed class ApplicationCreateService(
 		}
 
 		string generatedCode = builder.ToString();
-		if (generatedCode.Length == 3)
+		int prefixLen = schemaPrefix.Length;
+		if (generatedCode.Length <= prefixLen)
 		{
 			throw new ArgumentException(
 				$"Application name '{name}' contains no valid characters for code generation.",
 				nameof(name));
 		}
 
-		if (generatedCode.Length > 3 && char.IsDigit(generatedCode[3]))
+		if (char.IsDigit(generatedCode[prefixLen]))
 		{
-			generatedCode = generatedCode.Insert(3, "_");
+			if (prefixLen > 0)
+			{
+				generatedCode = generatedCode.Insert(prefixLen, "_");
+			}
+			else
+			{
+				throw new ArgumentException(
+					$"Application name '{name}' produces a code that starts with a digit. " +
+					"Prefix the name with a letter or configure SchemaNamePrefix in the environment.",
+					nameof(name));
+			}
 		}
 
 		return generatedCode;
 	}
 
-	private static string DeriveNameFromCode(string code)
+	private static string DeriveNameFromCode(string code, string schemaPrefix)
 	{
 		string trimmedCode = code.Trim();
-		if (trimmedCode.StartsWith("Usr", StringComparison.OrdinalIgnoreCase))
+		if (!string.IsNullOrEmpty(schemaPrefix)
+			&& trimmedCode.StartsWith(schemaPrefix, StringComparison.OrdinalIgnoreCase))
 		{
-			trimmedCode = trimmedCode[3..];
+			trimmedCode = trimmedCode[schemaPrefix.Length..];
 		}
 
 		if (trimmedCode.StartsWith("_", StringComparison.Ordinal))
@@ -266,7 +284,7 @@ public sealed class ApplicationCreateService(
 		return string.Join(" ", words);
 	}
 
-	private static string SanitizeCode(string code)
+	private static string SanitizeCode(string code, string schemaPrefix)
 	{
 		string trimmedCode = code.Trim();
 		if (string.IsNullOrWhiteSpace(trimmedCode))
@@ -293,16 +311,24 @@ public sealed class ApplicationCreateService(
 		}
 
 		StringBuilder builder = new();
-		bool hasUsrPrefix = firstWord.StartsWith("Usr", StringComparison.OrdinalIgnoreCase);
-		if (hasUsrPrefix)
+		if (string.IsNullOrEmpty(schemaPrefix))
 		{
-			builder.Append("Usr");
-			builder.Append(firstWord.Length > 3 ? NormalizeWord(firstWord[3..]) : string.Empty);
+			builder.Append(firstWord);
 		}
 		else
 		{
-			builder.Append("Usr");
-			builder.Append(firstWord);
+			bool hasPrefix = firstWord.StartsWith(schemaPrefix, StringComparison.OrdinalIgnoreCase);
+			if (hasPrefix)
+			{
+				builder.Append(schemaPrefix);
+				string rest = firstWord[schemaPrefix.Length..];
+				builder.Append(rest.Length > 0 ? NormalizeWord(rest) : string.Empty);
+			}
+			else
+			{
+				builder.Append(schemaPrefix);
+				builder.Append(firstWord);
+			}
 		}
 
 		foreach (string word in words.Skip(1))
@@ -315,16 +341,27 @@ public sealed class ApplicationCreateService(
 		}
 
 		string sanitizedCode = builder.ToString();
-		if (sanitizedCode.Length == 3)
+		int prefixLen = schemaPrefix.Length;
+		if (sanitizedCode.Length <= prefixLen)
 		{
 			throw new ArgumentException(
 				$"Application code '{code}' contains no valid characters.",
 				nameof(code));
 		}
 
-		if (char.IsDigit(sanitizedCode[3]))
+		if (char.IsDigit(sanitizedCode[prefixLen]))
 		{
-			sanitizedCode = sanitizedCode.Insert(3, "_");
+			if (prefixLen > 0)
+			{
+				sanitizedCode = sanitizedCode.Insert(prefixLen, "_");
+			}
+			else
+			{
+				throw new ArgumentException(
+					$"Application code '{code}' starts with a digit. " +
+					"Prefix the code with a letter or configure SchemaNamePrefix in the environment.",
+					nameof(code));
+			}
 		}
 
 		return sanitizedCode;
@@ -371,26 +408,46 @@ public sealed class ApplicationCreateService(
 		return response.Rows[index].Id;
 	}
 
-	private ApplicationInfoResult LoadCreatedApplication(string environmentName, string appCode, string appId)
+	private static string ReadSchemaNamePrefix(ISysSettingsManager sysSettingsManager, ILogger logger)
 	{
-		return LoadApplicationInfoWithRetry(
+		try
+		{
+			string value = sysSettingsManager.GetSysSettingValueByCode(SchemaNamePrefixSettingCode);
+			return value?.Trim().Trim('"') ?? string.Empty;
+		}
+		catch (Exception ex)
+		{
+			logger.WriteWarning(
+				$"Could not read SchemaNamePrefix from the environment: {ex.Message}. " +
+				$"Falling back to '{DefaultSchemaNamePrefix}'.");
+			return DefaultSchemaNamePrefix;
+		}
+	}
+
+	private ApplicationInfoResult LoadCreatedApplication(string environmentName, string appCode, string appId,
+		string schemaNamePrefix)
+	{
+		ApplicationInfoResult result = LoadApplicationInfoWithRetry(
 			environmentName,
 			appId,
 			appCode,
 			$"Application '{appCode}' was created but its metadata could not be loaded");
+		return result with { SchemaNamePrefix = schemaNamePrefix };
 	}
 
 	private ApplicationInfoResult PollApplicationInfo(
 		string environmentName,
 		string appCode,
-		Exception timeoutException)
+		Exception timeoutException,
+		string schemaNamePrefix)
 	{
-		return LoadApplicationInfoWithRetry(
+		ApplicationInfoResult result = LoadApplicationInfoWithRetry(
 			environmentName,
 			null,
 			appCode,
 			$"CreateApp request timed out and application '{appCode}' could not be loaded",
 			timeoutException);
+		return result with { SchemaNamePrefix = schemaNamePrefix };
 	}
 
 	private ApplicationInfoResult LoadApplicationInfoWithRetry(

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
@@ -48,7 +48,13 @@ public sealed record ApplicationCreateArgs(
 	string Name,
 
 	[property: JsonPropertyName("code")]
-	[property: Description("Application code starting with 'Usr' prefix, e.g. 'UsrMyApp'. Creatio derives the package name, main entity schema name, and page schema names ({code}_FormPage, {code}_ListPage, {code}_Detail, {code}_MobileFormPage, {code}_MobileListPage) directly from this code.")]
+	[property: Description(
+		"Application code. Pass the business-meaningful part only (e.g. 'TodoList'). " +
+		"clio reads SchemaNamePrefix from the environment and applies it automatically. " +
+		"If you pass an already-prefixed code (e.g. 'UsrTodoList'), the prefix is not duplicated. " +
+		"The effective prefix and the resulting application code are returned in the response as 'schema-name-prefix' and 'application-code'. " +
+		"Use 'schema-name-prefix' from the response as the prefix for ALL subsequent schema names (lookups, entity columns, supporting entities). " +
+		"Creatio derives the package name, main entity schema name, and page schema names ({prefix}{code}_FormPage, {prefix}{code}_ListPage, etc.) directly from this code.")]
 	[property: Required]
 	string Code,
 

@@ -876,7 +876,8 @@ public sealed record ApplicationInfoResult(
 	string? ApplicationId = null,
 	string? ApplicationName = null,
 	string? ApplicationCode = null,
-	string? ApplicationVersion = null);
+	string? ApplicationVersion = null,
+	string? SchemaNamePrefix = null);
 
 /// <summary>
 /// Structured entity information returned as part of application info results.

@@ -14,8 +14,12 @@ The create-app command creates a new Creatio application using the specified
 template and returns the identity of the created application and its primary
 package.
 
-Provide the display name with --name and a unique application code starting
-with the Usr prefix with --code.
+Provide the display name with --name and a unique application code with
+--code. The code should be the business-meaningful part without the prefix
+(e.g. "OrdersApp"). clio reads the `SchemaNamePrefix` system setting from the
+target environment and prepends it automatically; the default prefix is "Usr".
+Passing the full prefixed code (e.g. "UsrOrdersApp") also works — the prefix
+is not duplicated.
 
 Choose the application template with --template-code. Known values are:
 AppFreedomUIv2, AppFreedomUI, AppWithHomePage, EmptyApp.
@@ -36,8 +40,10 @@ clio create-app [options]
 ```bash
 --name                           Application display name. Required.
 
---code                           Application code starting with Usr prefix.
-                                 Required.
+--code                           Application code. clio reads SchemaNamePrefix
+                                 from the environment and applies it
+                                 automatically; pass the business-meaningful
+                                 part only (e.g. "OrdersApp"). Required.
 
 --template-code                  Technical template name. Required.
                                  Known values: AppFreedomUIv2, AppFreedomUI,
@@ -63,17 +69,17 @@ of the primary package that was created together with the application.
 ## Example
 
 ```bash
-clio create-app --name "My Orders App" --code UsrOrdersApp --template-code AppFreedomUIv2 -e dev
-# create a Freedom UI v2 application in the dev environment
+clio create-app --name "My Orders App" --code OrdersApp --template-code AppFreedomUIv2 -e dev
+# create a Freedom UI v2 application; clio prepends the active SchemaNamePrefix automatically
 
-clio create-app --name "Sales" --code UsrSalesApp --template-code EmptyApp --icon-background "#0058EF" -e dev
+clio create-app --name "Sales" --code SalesApp --template-code EmptyApp --icon-background "#0058EF" -e dev
 # create an empty application with a specific Freedom UI palette color
 ```
 
 ## Notes
 
 - --name, --code, and --template-code are required.
-- The application code must start with the Usr prefix.
+- The active `SchemaNamePrefix` system setting is read from the target environment and prepended to the code automatically. The default prefix is `Usr`. Passing the full prefixed code (e.g. `UsrOrdersApp`) also works — the prefix is not duplicated.
 - --icon-background must be one of the Freedom UI palette colors when provided; a random palette color is assigned when omitted.
 - When --icon-id is omitted the command does not assign an icon automatically.
 

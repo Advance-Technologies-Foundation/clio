@@ -489,6 +489,8 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "the contract should advertise the installed application version");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "pages",
 			because: "the contract should advertise the shared primary-package page summaries");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "schema-name-prefix",
+			because: "the contract should advertise the active SchemaNamePrefix so agents know the correct prefix for subsequent schema names");
 	}
 
 	[Test]

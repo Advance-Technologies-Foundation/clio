@@ -779,6 +779,8 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract should advertise the installed application code");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "application-version",
 			because: "the contract should advertise the installed application version");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "schema-name-prefix",
+			because: "the contract should advertise the active SchemaNamePrefix so agents know the correct prefix for subsequent schema names");
 	}
 
 	[Test]
@@ -799,6 +801,8 @@ public sealed class ToolContractGetToolTests {
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "canonical-main-entity-name",
 			because: "create-app should advertise the canonical main entity field in its response shape");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "schema-name-prefix",
+			because: "create-app should advertise the active SchemaNamePrefix so agents know the correct prefix for all subsequent schema codes");
 		contract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "dataforge" &&
 				field.Description.Contains("context-summary", StringComparison.Ordinal),
