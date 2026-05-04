@@ -222,7 +222,7 @@ namespace Clio.Command {
 					["uId"] = template.UId,
 					["name"] = template.Name
 				},
-				["extendParent"] = false,
+				["extendParent"] = true,
 				["body"] = string.Empty,
 				["localizableStrings"] = new JArray(),
 				["parameters"] = new JArray(),
