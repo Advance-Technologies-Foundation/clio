@@ -1,9 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Threading;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
@@ -27,31 +26,32 @@ internal class ConsoleLoggerTests
 		// Arrange
 		Program.AddTimeStampToOutput = true;
 		StringBuilder stringBuilder = new StringBuilder();
-		StringWriter textWriter = new System.IO.StringWriter(stringBuilder);
+		StringWriter textWriter = new StringWriter(stringBuilder);
+		TextWriter originalOut = Console.Out;
+		TextWriter originalError = Console.Error;
 		Console.SetOut(textWriter);
 		Console.SetError(textWriter);
-
-		ILogger logger = ConsoleLogger.Instance;
-
-		// Act
-		var timeStamp = DateTime.Now;
+		ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
 		logger.Start();
-		switch (type) {
-			case "inf":
-				logger.WriteInfo("Test info");
-				break;
-			case "warn":
-				logger.WriteWarning("Test warning");
-				break;
-			case "error":
-				logger.WriteError("Test error");
-				break;
-		}
-		Thread.Sleep(300);
 
-		// Assert
-		string consoleText = stringBuilder.ToString();
-		AssertTimeStamp(timeStamp, consoleText);
+		try {
+			// Act
+			var timeStamp = DateTime.Now;
+			switch (type) {
+				case "inf":   logger.WriteInfo("Test info");       break;
+				case "warn":  logger.WriteWarning("Test warning"); break;
+				case "error": logger.WriteError("Test error");     break;
+			}
+			logger.FlushAndSnapshotMessages();
+
+			// Assert
+			string consoleText = stringBuilder.ToString();
+			AssertTimeStamp(timeStamp, consoleText);
+		}
+		finally {
+			Console.SetOut(originalOut);
+			Console.SetError(originalError);
+		}
 	}
 
 	public void AssertTimeStamp(DateTime timeStamp, string consoleText) {
@@ -67,30 +67,31 @@ internal class ConsoleLoggerTests
 		// Arrange
 		Program.AddTimeStampToOutput = false;
 		var stringBuilder = new StringBuilder();
-		var textWriter = new System.IO.StringWriter(stringBuilder);
+		var textWriter = new StringWriter(stringBuilder);
+		TextWriter originalOut = Console.Out;
+		TextWriter originalError = Console.Error;
 		Console.SetOut(textWriter);
 		Console.SetError(textWriter);
-
-		var logger = ConsoleLogger.Instance;
-
-		// Act
+		ConsoleLogger logger = (ConsoleLogger)ConsoleLogger.Instance;
 		logger.Start();
-		switch (type) {
-			case "inf":
-				logger.WriteInfo("Test info");
-				break;
-			case "warn":
-				logger.WriteWarning("Test warning");
-				break;
-			case "error":
-				logger.WriteError("Test error");
-				break;
-		}
-		Thread.Sleep(300);
 
-		// Assert
-		var consoleText = stringBuilder.ToString();
-		consoleText.Should().StartWith("[");
+		try {
+			// Act
+			switch (type) {
+				case "inf":   logger.WriteInfo("Test info");       break;
+				case "warn":  logger.WriteWarning("Test warning"); break;
+				case "error": logger.WriteError("Test error");     break;
+			}
+			logger.FlushAndSnapshotMessages();
+
+			// Assert
+			var consoleText = stringBuilder.ToString();
+			consoleText.Should().StartWith("[");
+		}
+		finally {
+			Console.SetOut(originalOut);
+			Console.SetError(originalError);
+		}
 	}
 
 	[Test]

@@ -1,6 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Text;
+using System.Linq;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -15,34 +16,11 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 	#region Fields: Private
 
 	private IApplicationClient _applicationClientMock;
-	private StringWriter _textWriter;
-	private StringBuilder _sb;
-	private TextWriter _originalTextWriter;
-	private TextWriter _originalErrorWriter;
-
-	#endregion
-
-	#region Methods: Private
-
-	private static void FlushLogger() =>
-		((ConsoleLogger)ConsoleLogger.Instance).FlushAndSnapshotMessages();
+	private static ConsoleLogger Logger => (ConsoleLogger)ConsoleLogger.Instance;
 
 	#endregion
 
 	#region Methods: Protected
-
-	[OneTimeSetUp]
-	public void OneTimeSetUp(){
-		ConsoleLogger.Instance.Start();
-		_applicationClientMock = Substitute.For<IApplicationClient>();
-		_sb = new();
-		_textWriter = new StringWriter(_sb);
-		_originalTextWriter = Console.Out;
-		_originalErrorWriter = Console.Error;
-		Console.SetOut(_textWriter);
-		Console.SetError(_textWriter);
-	}
-
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
 		base.AdditionalRegistrations(containerBuilder);
@@ -50,21 +28,15 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 	}
 
 	[OneTimeTearDown]
-	public void OneTearDown(){
-		// Drain queue before restoring Console.Out to prevent ObjectDisposedException in the background logger thread
-		FlushLogger();
-		Console.SetOut(_originalTextWriter);
-		Console.SetError(_originalErrorWriter);
-		_sb.Clear();
-		_textWriter.Close();
-		_textWriter.Dispose();
+	public void OneTimeTearDown(){
+		Logger.ClearMessages();
+		Logger.PreserveMessages = false;
 	}
 
 	public override void Setup(){
 		_applicationClientMock = Substitute.For<IApplicationClient>();
-		// Drain pending background-thread output before clearing to avoid a race with StringBuilder.Clear()
-		FlushLogger();
-		_sb.Clear();
+		Logger.PreserveMessages = true;
+		Logger.ClearMessages();
 		base.Setup();
 	}
 
@@ -83,30 +55,30 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 
 		//Assert
 		result.Should().Be(1);
-		FlushLogger();
-		_textWriter.ToString().Should().Contain($"[ERR] - {expectedErrorMessage}{Environment.NewLine}");
+		IReadOnlyList<LogMessage> messages = Logger.FlushAndSnapshotMessages(clearMessages: true);
+		messages.OfType<ErrorMessage>().Should()
+			.ContainSingle(m => m.Value.ToString() == expectedErrorMessage);
 	}
 
 	[TestCase("Examples/CompilationLog/Pair1/pair1-creatio-compilation-log.json","Examples/CompilationLog/Pair1/pair1-desired-output.txt")]
 	[TestCase("Examples/CompilationLog/Pair2/pair2-creatio-compilation-log.json","Examples/CompilationLog/Pair2/pair2-desired-output.txt")]
 	public void Execute_ShouldReturnZero_WhenServiceReturnsResult(string input, string expectedOutput){
 		//Arrange
-		string desiredOutputContent = System.IO.File.ReadAllText(expectedOutput);
-		string inputContent = System.IO.File.ReadAllText(input);
+		string desiredOutputContent = File.ReadAllText(expectedOutput);
+		string inputContent = File.ReadAllText(input);
 		_applicationClientMock.ExecuteGetRequest(Arg.Any<string>())
 			.Returns(inputContent);
-
 		LastCompilationLogCommand command = Container.GetRequiredService<LastCompilationLogCommand>();
 
 		//Act
 		int result = command.Execute(new LastCompilationLogOptions());
 
-		string NormalizeLineEndings(string text) =>
-		    text.Replace("\r\n", "\n").Replace("\r", "\n");
 		//Assert
 		result.Should().Be(0);
-		FlushLogger();
-		NormalizeLineEndings(_textWriter.ToString()).TrimEnd().Should().Contain(NormalizeLineEndings(desiredOutputContent));
+		string NormalizeLineEndings(string text) => text.Replace("\r\n", "\n").Replace("\r", "\n");
+		IReadOnlyList<LogMessage> messages = Logger.FlushAndSnapshotMessages(clearMessages: true);
+		string messageText = NormalizeLineEndings(messages.Single().Value?.ToString() ?? string.Empty).TrimEnd();
+		messageText.Should().Contain(NormalizeLineEndings(desiredOutputContent));
 	}
 
 	[TestCase("Examples/CompilationLog/Pair1/pair1-creatio-compilation-log.json","Examples/CompilationLog/Pair1/pair1-desired-output.txt")]
@@ -116,7 +88,6 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 		string inputContent = File.ReadAllText(input);
 		_applicationClientMock.ExecuteGetRequest(Arg.Any<string>())
 			.Returns(inputContent);
-
 		LastCompilationLogCommand command = Container.GetRequiredService<LastCompilationLogCommand>();
 
 		//Act
@@ -124,8 +95,8 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 
 		//Assert
 		result.Should().Be(0);
-		FlushLogger();
-		_textWriter.ToString().TrimEnd().Should().Be(inputContent);
+		IReadOnlyList<LogMessage> messages = Logger.FlushAndSnapshotMessages(clearMessages: true);
+		messages.Should().ContainSingle(m => m.Value.ToString() == inputContent);
 	}
 
 }
