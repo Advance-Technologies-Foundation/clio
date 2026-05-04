@@ -7,6 +7,7 @@ add-user-task:add-user-task
 alm-deploy:alm-deploy,deploy
 apply-manifest:apply-manifest,apply-environment-manifest,applym
 assert:assert
+autoupdate:autoupdate
 build-docker-image:build-docker-image
 build-workspace:build-workspace,build,compile,compile-all,rebuild
 call-service:call-service,cs,callservice

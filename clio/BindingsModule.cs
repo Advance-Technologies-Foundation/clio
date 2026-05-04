@@ -293,6 +293,7 @@ public class BindingsModule {
 		services.AddTransient<CheckNugetUpdateCommand>();
 		services.AddHttpClient<INugetPackagesProvider, NugetPackagesProvider>();
 		services.AddTransient<UpdateCliCommand>();
+		services.AddTransient<SetAutoupdateCommand>();
 		services.AddTransient<RegisterCommand>();
 		services.AddTransient<UnregisterCommand>();
 		
