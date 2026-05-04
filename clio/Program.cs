@@ -1089,14 +1089,10 @@ internal class Program {
 			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)) {
 			return true;
 		}
-		foreach (string arg in args) {
-			if (string.Equals(arg, "--help", StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(arg, "-h", StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(arg, "--version", StringComparison.OrdinalIgnoreCase)) {
-				return true;
-			}
-		}
-		return false;
+		return args.Any(arg =>
+			string.Equals(arg, "--help", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(arg, "-h", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(arg, "--version", StringComparison.OrdinalIgnoreCase));
 	}
 
 	private static void RunStartupUpdateCheck(string[] args) {
