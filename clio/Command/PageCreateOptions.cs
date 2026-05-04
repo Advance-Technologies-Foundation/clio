@@ -135,6 +135,7 @@ namespace Clio.Command {
 					PackageUId = packageUId,
 					TemplateName = template.Name,
 					TemplateUId = template.UId,
+					SchemaType = template.SchemaType,
 					Caption = caption,
 					EntitySchemaName = options.EntitySchemaName,
 					EntitySchemaUId = entitySchemaUId
@@ -207,26 +208,34 @@ namespace Clio.Command {
 			var schema = new JObject {
 				["uId"] = newSchemaUId,
 				["name"] = schemaName,
+				["isReadOnly"] = false,
+				["useFullHierarchy"] = false,
+				["userLevelSchema"] = false,
+				["addonTypes"] = new JArray("AppearanceSettings", "Sidebar", "BusinessRule"),
+				["package"] = new JObject {
+					["uId"] = packageUId,
+					["name"] = packageName
+				},
+				["body"] = string.Empty,
+				["extendParent"] = false,
 				["caption"] = new JArray { localizableCaption },
 				["description"] = string.IsNullOrWhiteSpace(description) ? new JArray() : new JArray(new JObject {
 					["cultureName"] = "en-US",
 					["value"] = description
 				}),
-				["package"] = new JObject {
-					["uId"] = packageUId,
-					["name"] = packageName
-				},
-				["managerName"] = ClientUnitManagerName,
+				["localizableStrings"] = new JArray(),
+				["parameters"] = new JArray(),
+				["messages"] = new JArray(),
+				["images"] = new JArray(),
+				["optionalProperties"] = new JArray(),
+				["group"] = template.GroupName,
+				["schemaType"] = template.SchemaType,
+				["schemaVersion"] = 1,
 				["parent"] = new JObject {
 					["uId"] = template.UId,
 					["name"] = template.Name
 				},
-				["extendParent"] = false,
-				["body"] = string.Empty,
-				["localizableStrings"] = new JArray(),
-				["parameters"] = new JArray(),
-				["messages"] = new JArray(),
-				["images"] = new JArray()
+				["less"] = string.Empty
 			};
 			if (!string.IsNullOrWhiteSpace(entitySchemaUId)) {
 				schema["dependsOn"] = new JArray(new JObject {
