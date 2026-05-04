@@ -66,10 +66,21 @@ public sealed class PageCreationGuidanceResource {
 			       - Missing entity: if `entity-schema-name` is supplied but the entity schema does not exist, the call is rejected before the page is created.
 			       - Post-create verification: `create-page` does not run AI sampling. Use `get-page` after success to confirm the schema loads.
 
+			       create-page response fields
+			       - `schemaType` — integer schema type from the template used: 9 = Freedom UI web page, 10 = mobile page.
+			       - `templateName` — name of the template (e.g. `BlankPageTemplate`, `BaseHomePage`).
+
+			       Designer type mapping
+			       - `BaseHomePage` (schemaType=9): opens in the **Homepage designer**. Do NOT use the standard Freedom UI page designer URL for this template.
+			       - All other schemaType=9 templates (BlankPageTemplate, PageWithTabsFreedomTemplate, BaseMiniPageTemplate, ListPageV3Template, etc.): open in the **Freedom UI page designer**.
+			       - schemaType=10 mobile templates: open in the **Mobile page designer**.
+			       - IMPORTANT: Do NOT guess or construct a browser designer URL based only on `schemaUId`. Use `templateName` and `schemaType` from the response to determine the correct designer. If unsure, call `get-page` to verify the created page loaded correctly — that is sufficient; the user can open the designer themselves from Workspace Explorer.
+
 			       Do NOT
 			       - Do not create `__FormPage`-style clone names when a matching page already exists. Prefer editing the existing page via `sync-pages`.
 			       - Do not bypass `list-page-templates`; the catalog reflects the active environment feature flags and may change.
 			       - Do not assume `create-page` creates an app section. Use `create-app-section` when the requested outcome is "add a new section" rather than "add a standalone Freedom UI page".
+			       - Do not construct a browser designer URL after `create-page` without checking `templateName` in the response. Using the Homepage designer URL for non-homepage pages (or vice versa) opens the wrong designer.
 			       """
 		};
 }

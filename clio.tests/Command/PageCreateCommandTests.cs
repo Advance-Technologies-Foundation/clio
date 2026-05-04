@@ -159,6 +159,7 @@ public sealed class PageCreateCommandTests {
 		response.TemplateName.Should().Be(TemplateName);
 		response.PackageUId.Should().Be(PackageUId);
 		response.Caption.Should().Be("Demo page");
+		response.SchemaType.Should().Be(9);
 		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl, Arg.Is<string>(s => s.Contains(TemplateUId)));
 	}
 

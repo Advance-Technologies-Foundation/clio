@@ -135,6 +135,7 @@ namespace Clio.Command {
 					PackageUId = packageUId,
 					TemplateName = template.Name,
 					TemplateUId = template.UId,
+					SchemaType = template.SchemaType,
 					Caption = caption,
 					EntitySchemaName = options.EntitySchemaName,
 					EntitySchemaUId = entitySchemaUId

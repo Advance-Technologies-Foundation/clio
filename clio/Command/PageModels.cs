@@ -789,6 +789,17 @@ public sealed class PageCreateResponse {
 	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string EntitySchemaUId { get; set; }
 
+	/// <summary>
+	/// Schema type of the template used to create this page.
+	/// 9 = Freedom UI web page (use the Freedom UI page designer).
+	/// 10 = mobile page (use the mobile page designer).
+	/// Note: <c>BaseHomePage</c>-based pages have schemaType=9 but require the Homepage designer, not the standard page designer.
+	/// </summary>
+	[DataMember(Name = "schemaType")]
+	[JsonProperty("schemaType")]
+	[JsonPropertyName("schemaType")]
+	public int SchemaType { get; set; }
+
 	[DataMember(Name = "error")]
 	[JsonProperty("error")]
 	[JsonPropertyName("error")]
