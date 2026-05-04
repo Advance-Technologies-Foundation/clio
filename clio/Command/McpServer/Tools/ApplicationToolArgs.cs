@@ -48,7 +48,7 @@ public sealed record ApplicationCreateArgs(
 	string Name,
 
 	[property: JsonPropertyName("code")]
-	[property: Description("Application code starting with 'Usr' prefix, e.g. 'UsrMyApp'. Creatio derives the initial main entity schema name directly from this code.")]
+	[property: Description("Application code starting with 'Usr' prefix, e.g. 'UsrMyApp'. Creatio derives the package name, main entity schema name, and page schema names ({code}_FormPage, {code}_ListPage, {code}_Detail, {code}_MobileFormPage, {code}_MobileListPage) directly from this code.")]
 	[property: Required]
 	string Code,
 
