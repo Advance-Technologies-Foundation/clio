@@ -1071,7 +1071,7 @@ internal class Program {
 			Parser.Default.Settings.CustomHelpViewer = bm.GetRequiredService<LocalHelpViewer>();
 		}
 		
-		RunStartupUpdateCheck(args);
+		RunStartupUpdateCheck(args, bm);
 		string[] normalizedArgs = NormalizeCommandLineArgs(args);
 		ParserResult<object> parserResult = Parser.Default.ParseArguments(normalizedArgs, CommandOption);
 		if (parserResult is Parsed<object> parsed) {
@@ -1095,21 +1095,23 @@ internal class Program {
 			|| string.Equals(arg, "--version", StringComparison.OrdinalIgnoreCase));
 	}
 
-	private static void RunStartupUpdateCheck(string[] args) {
+	private static void RunStartupUpdateCheck(string[] args, IServiceProvider serviceProvider) {
 		if (ShouldSkipUpdateCheck(args)) return;
 		try {
+			IAppUpdater appUpdater = serviceProvider.GetRequiredService<IAppUpdater>();
+			ISettingsRepository settingsRepository = serviceProvider.GetRequiredService<ISettingsRepository>();
 			string cacheFolder = SettingsRepository.AppSettingsFolderPath;
-			(bool available, string latestVersion) = AppUpdater
+			(bool available, string latestVersion) = appUpdater
 				.CheckForUpdateWithCacheAsync(cacheFolder)
 				.GetAwaiter().GetResult();
 
 			if (!available || string.IsNullOrEmpty(latestVersion)) return;
 
-			string currentVersion = AppUpdater.GetCurrentVersion();
-			if (AutoUpdate) {
+			string currentVersion = appUpdater.GetCurrentVersion();
+			if (settingsRepository.GetAutoupdate()) {
 				ConsoleLogger.Instance.WriteInfo(
 					$"Updating clio {currentVersion} -> {latestVersion} in background...");
-				AppUpdater.UpdateInBackgroundAsync().GetAwaiter().GetResult();
+				appUpdater.UpdateInBackgroundAsync().GetAwaiter().GetResult();
 			} else {
 				ConsoleLogger.Instance.WriteWarning(
 					$"clio {latestVersion} is available. Run 'clio update' to update.");

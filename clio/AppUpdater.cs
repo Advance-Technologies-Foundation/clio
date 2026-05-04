@@ -34,15 +34,16 @@ public class AppUpdater(ILogger logger, IProcessExecutor processExecutor) : IApp
 
 	#region Methods: Private
 
-	private async Task<string> GetLatestPackageVersionAsync(string packageName){
+	private async Task<string> GetLatestPackageVersionAsync(string packageName,
+		CancellationToken cancellationToken = default){
 		string searchUrl = $"https://api.nuget.org/v3-flatcontainer/{packageName.ToLower()}/index.json";
 
 		try {
 			using HttpClient client = new();
-			HttpResponseMessage response = await client.GetAsync(searchUrl);
+			HttpResponseMessage response = await client.GetAsync(searchUrl, cancellationToken);
 			response.EnsureSuccessStatusCode();
 
-			string responseBody = await response.Content.ReadAsStringAsync();
+			string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 			JObject data = JObject.Parse(responseBody);
 
 			string latestVersion = data["versions"].Last.ToString();
@@ -226,8 +227,7 @@ public class AppUpdater(ILogger logger, IProcessExecutor processExecutor) : IApp
 			}
 
 			using CancellationTokenSource cts = new(TimeSpan.FromSeconds(3));
-			string latestVersion = await Task
-				.Run(() => GetLatestVersionFromNuget(), cts.Token)
+			string latestVersion = await GetLatestPackageVersionAsync("clio", cts.Token)
 				.ConfigureAwait(false);
 
 			if (string.IsNullOrEmpty(latestVersion)) {
