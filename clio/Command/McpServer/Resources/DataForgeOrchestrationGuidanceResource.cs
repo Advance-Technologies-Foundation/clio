@@ -36,7 +36,8 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 			       When: once per planning phase, before calling any write tool, when the task involves creating new schemas or entities.
 			       Not required for: existing-app maintenance without new schema creation; single-column modifications with an already-known schema name.
 			       - DataForge is not the primary mechanism for exact package-local reuse checks in existing-app page/detail workflows. First inspect `get-app-info`, `get-page`, and `get-entity-schema-properties`; use DataForge only when runtime context still cannot identify the relevant schema or relation.
-			       Call: `dataforge-context` with `requirement-summary`, `candidate-terms`, `lookup-hints`, and optional `relation-pairs`.
+			       Call: `dataforge-context` with `environment-name` (required), `requirement-summary`, `candidate-terms`, `lookup-hints`, and optional `relation-pairs`.
+			       Response fields: `similar-tables[].name` / `.caption` / `.description`; `similar-lookups[].schema-name` (not `"name"`) / `.value` (not `"caption"`) / `.score`.
 			       What to inspect:
 			       - multiple close entries in `similar-tables` with matching names/captions/descriptions → treat as a strong duplicate candidate; surface to user before proceeding.
 			       - `similar-lookups[].score >= 0.85` → existing lookup schema may already cover the concept; prefer reusing it.
@@ -65,6 +66,7 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 			       - Writing rows with lookup columns via `create-data-binding-db` / `upsert-data-binding-row-db` with unknown GUID: call `dataforge-find-lookups(schema-name: <refSchema>, query: <value>)`; use top-scored `lookup-id` if score >= 0.70; ask user if no match with score >= 0.70.
 			       - Cross-entity FK design before a multi-entity `sync-schemas`: call `dataforge-get-relations(source-table, target-table)`; model FK along the Cypher path if one exists; if call fails or returns empty, design FK independently (no user prompt needed).
 			       - Inspecting runtime columns outside a local package: call `dataforge-get-table-columns(table-name)`; if call fails, fall back to `get-entity-schema-properties`.
+			       - `dataforge-find-lookups` searches lookup display values across the catalog — it is not a "list rows of a known lookup" tool. Passing `{schema-name: "UsrSomeLookup", query: "a"}` returns catalog matches against values containing "a", not the full row set. To enumerate rows of a known lookup, include it in `lookup-hints` of `dataforge-context` or call `dataforge-get-table-columns`.
 
 			       Layer 4 — Index maintenance and stale index recovery
 			       Normal maintenance: after a bulk schema creation batch (5+ new entities), call `dataforge-update` to trigger an incremental index refresh.

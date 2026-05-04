@@ -153,10 +153,11 @@ public sealed class PageModificationGuidanceResource {
 
 		       Rules for viewConfigDiff
 		       - `operation` must be one of: `insert`, `remove`, `merge`, `move`.
-		       - `name` is the unique component id inside the hierarchy. Prefix custom components with `Usr` or project-specific prefix to avoid collisions.
+		       - `name` is the unique component id inside the hierarchy. Prefix custom components with `Usr` or project-specific prefix to avoid collisions. For entity-bound FormPage fields, the `control` binding uses the `$PDS_<ColumnName>` attribute key — use `get-component-info` for ready-to-use examples.
 		       - `parentName` must match an existing container name from `bundle.viewConfig`.
 		       - `propertyName` is usually `items` for containers.
 		       - `index` is the insertion position within `parentName.items[]`.
+		       - For entity-bound FormPage data-entry fields, match the column DataValueType to the control: `ShortText`/`MediumText`/`LongText` → `crt.Input`; `Lookup` → `crt.ComboBox`; `Boolean` → `crt.Checkbox`; `DateTime`/`Date`/`Time` → `crt.DateTimePicker`; `Integer`/`Float`/`Money` → `crt.NumberInput`; `Email` → `crt.EmailInput`; `PhoneNumber` → `crt.PhoneInput`; `WebLink` → `crt.WebInput`. Use `get-component-info` for full insert examples. For display-only transformations (email as mailto link, phone as tel link) read `page-schema-converters` first — do not select a component type for display tasks.
 
 		       Canonical flow to add a Test button to Accounts_ListPage
 		       1. `list-pages filter=Accounts_List` → resolve schema name.
@@ -172,6 +173,7 @@ public sealed class PageModificationGuidanceResource {
 		       - Replacing schemas outside the design package (for example, manually created overrides in other packages) are not visible through `GetDesignPackageUId`. Use `list-pages` to find the correct schema name.
 		       - `update-page` does NOT support handler JSON — handlers must be written as raw JavaScript inside `SCHEMA_HANDLERS` markers.
 		       - The handler block is not JS-syntax-validated beyond Acorn parsing; semantic errors (wrong argument names, missing `await`) surface only when the page is loaded in the browser.
+		       - ListPage DataGrid sorting: use `viewModelConfigDiff` via `Items.modelConfig.sortingConfig.attributeName` pointing to a sibling attribute (e.g. `ItemsSorting`) with sort options that use entity column names and `direction: asc/desc/none`. Do not insert `viewConfig.sorting` or `viewConfig.sortingChange` manually — the frontend preprocessor auto-injects them from `sortingConfig`.
 		       """
 	};
 
