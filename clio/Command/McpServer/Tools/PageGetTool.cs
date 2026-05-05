@@ -23,6 +23,7 @@ public sealed class PageGetTool(
 		"Get a Freedom UI page. Writes body.js / bundle.json / meta.json to .clio-pages/{schema-name}/ in the working directory and returns file paths. " +
 		"body.js contains the EDITABLE own-body of the replacing schema in the design package (empty template when no replacing schema exists yet) — this is what update-page should receive. " +
 		"bundle.json contains the full merged view of the entire hierarchy and is the correct source for reading what components are on the page. " +
+		"IMPORTANT: bundle.json is a JSON document. Use a JSON parsing tool (jq, PowerShell ConvertFrom-Json, Python json.load) to navigate it; do NOT rely on grep or line-oriented text search — it is typically minified to a single line. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
 		"Before editing the returned raw.body: " +
 		"if the task involves display-only value transformation (email as mailto link, phone as tel link, text to uppercase, boolean inversion, number formatting, any value that should look different on screen without changing the underlying model) call get-guidance with name `page-schema-converters` first — this determines whether a converter is the right tool before touching any component type; " +
