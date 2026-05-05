@@ -3077,3 +3077,9 @@ Decision: Restored `CreatePushPkgOptions` to read `SettingsRepository` directly 
 Discovery: The breaking change came from `cd5ca8ec` / PR #549 (`feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration`); `7baebf2e` made bootstrap intentionally use a placeholder, and #549 accidentally made `install-gate` reuse that placeholder.
 Files: C:\Projects\clio\clio\Program.cs, C:\Projects\clio\clio.tests\Command\Program.Tests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: The new regression test asserts that `CreateClioGatePkgOptions` leaves `Program.Container` scoped to the requested environment. Local patched `install-gate -e dev` installed cliogate successfully and `get-info -e dev` returned system info.
+## 2026-05-05 00:00 - Release 8.1.0.10 preflight
+Context: User requested following `.github/prompts/release.prompt.md` to prepare a new clio release.
+Decision: Per release prompt, performed read-only preflight and stopped before mutating version files, tags, or GitHub releases because explicit confirmation is required.
+Discovery: Latest local and remote version tag is `8.1.0.9`; next version is `8.1.0.10`; `gh` is installed and authenticated; targeted MCP unit tests passed with 541/541 on net10.0.
+Files: .github/prompts/release.prompt.md, RELEASE.md, clio/clio.csproj, .codex/workspace-diary.md
+Impact: Future release continuation can reuse the preflight results and exact validation command.
