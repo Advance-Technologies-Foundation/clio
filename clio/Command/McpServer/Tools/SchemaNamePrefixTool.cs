@@ -14,7 +14,6 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
 
 	internal const string GetSchemaNamePrefixToolName = "get-schema-name-prefix";
-	private const string SchemaNamePrefixSettingCode = "SchemaNamePrefix";
 
 	/// <summary>
 	/// Returns the active SchemaNamePrefix system setting for the environment.
@@ -31,13 +30,16 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
 		[Required]
 		GetSchemaNamePrefixArgs args) {
 		try {
-			ISysSettingsManager sysSettings = commandResolver.Resolve<ISysSettingsManager>(
+			SysSettingsManager sysSettings = commandResolver.Resolve<SysSettingsManager>(
 				new EnvironmentOptions { Environment = args.EnvironmentName });
-			string rawValue = sysSettings.GetSysSettingValueByCode(SchemaNamePrefixSettingCode);
-			string prefix = rawValue?.Trim().Trim('"') ?? string.Empty;
+			string prefix = SysSettingCodes.ReadSchemaNamePrefix(sysSettings);
 			return new SchemaNamePrefixResult(true, prefix);
-		} catch (Exception ex) {
-			return new SchemaNamePrefixResult(false, string.Empty, ex.Message);
+		} catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or System.Net.WebException or System.Net.Sockets.SocketException) {
+			return new SchemaNamePrefixResult(false, string.Empty, "Network error reading SchemaNamePrefix.");
+		} catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.Authentication.AuthenticationException) {
+			return new SchemaNamePrefixResult(false, string.Empty, "Authentication error reading SchemaNamePrefix.");
+		} catch (Exception) {
+			return new SchemaNamePrefixResult(false, string.Empty, "Failed to read SchemaNamePrefix.");
 		}
 	}
 }

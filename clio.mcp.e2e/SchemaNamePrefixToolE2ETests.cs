@@ -45,8 +45,8 @@ public sealed class SchemaNamePrefixToolE2ETests {
 			because: "get-schema-name-prefix should return a structured success payload for a reachable configured environment");
 		response.Success.Should().BeTrue(
 			because: "reading SchemaNamePrefix should succeed when the environment is reachable and the system setting is accessible");
-		response.SchemaNamePrefix.Should().NotBeNull(
-			because: "the tool should always return a non-null prefix string (empty string is valid for environments with no prefix configured)");
+		response.SchemaNamePrefix.Should().NotBeNullOrWhiteSpace(
+			because: "the sandbox environment should have SchemaNamePrefix configured to a non-empty value");
 		response.Error.Should().BeNull(
 			because: "no error message should be present when the tool call succeeds");
 	}

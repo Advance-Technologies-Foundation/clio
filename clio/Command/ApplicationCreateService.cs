@@ -39,7 +39,7 @@ public sealed class ApplicationCreateService(
 	: IApplicationCreateService
 {
 	private const string CreateApplicationRoute = "ServiceModel/AppInstallerService.svc/CreateApp";
-	private const string SchemaNamePrefixSettingCode = "SchemaNamePrefix";
+
 	private const string SelectQueryRoute = "DataService/json/SyncReply/SelectQuery";
 	private const int PollAttempts = 15;
 	private static readonly TimeSpan PollDelay = TimeSpan.FromSeconds(2);
@@ -285,7 +285,6 @@ public sealed class ApplicationCreateService(
 
 	private static string SanitizeCode(string code, string schemaPrefix)
 	{
-		schemaPrefix ??= string.Empty;
 		string trimmedCode = code.Trim();
 		if (string.IsNullOrWhiteSpace(trimmedCode))
 		{
@@ -363,7 +362,7 @@ public sealed class ApplicationCreateService(
 			string rest = firstWord[schemaPrefix.Length..];
 			if (rest.Length > 0)
 			{
-				builder.Append(rest);
+				builder.Append(NormalizeWord(rest));
 			}
 		}
 		else
@@ -414,11 +413,8 @@ public sealed class ApplicationCreateService(
 		return response.Rows[index].Id;
 	}
 
-	private static string ReadSchemaNamePrefix(ISysSettingsManager sysSettingsManager)
-	{
-		string value = sysSettingsManager.GetSysSettingValueByCode(SchemaNamePrefixSettingCode);
-		return value?.Trim().Trim('"') ?? string.Empty;
-	}
+	private static string ReadSchemaNamePrefix(ISysSettingsManager sysSettingsManager) =>
+		SysSettingCodes.ReadSchemaNamePrefix(sysSettingsManager);
 
 	private ApplicationInfoResult LoadCreatedApplication(string environmentName, string appCode, string appId,
 		string schemaNamePrefix)

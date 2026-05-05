@@ -44,7 +44,7 @@ public sealed class ApplicationInfoService(
 	: IApplicationInfoService
 {
 	private const string BaseObjectCaption = "Base object";
-	private const string SchemaNamePrefixSettingCode = "SchemaNamePrefix";
+
 	private static readonly JsonSerializerOptions JsonOptions = new()
 	{
 		PropertyNameCaseInsensitive = true
@@ -165,11 +165,8 @@ public sealed class ApplicationInfoService(
 			schemaNamePrefix);
 	}
 
-	private static string ReadSchemaNamePrefix(ISysSettingsManager sysSettingsManager)
-	{
-		string value = sysSettingsManager.GetSysSettingValueByCode(SchemaNamePrefixSettingCode);
-		return value?.Trim().Trim('"') ?? string.Empty;
-	}
+	private static string ReadSchemaNamePrefix(ISysSettingsManager sysSettingsManager) =>
+		SysSettingCodes.ReadSchemaNamePrefix(sysSettingsManager);
 
 	/// <inheritdoc />
 	public InstalledAppSummary FindApplicationId(string environmentName, string code)
