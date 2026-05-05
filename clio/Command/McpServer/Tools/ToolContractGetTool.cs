@@ -315,7 +315,8 @@ internal static class ToolContractCatalog {
 			[ComponentInfoTool.ToolName] = BuildComponentInfo(),
 			[PageUpdateTool.ToolName] = BuildPageUpdate(),
 			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete(),
-			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate()
+			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate(),
+			[SchemaNamePrefixTool.GetSchemaNamePrefixToolName] = BuildGetSchemaNamePrefix()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
@@ -352,7 +353,8 @@ internal static class ToolContractCatalog {
 		ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
 		ComponentInfoTool.ToolName,
 		PageUpdateTool.ToolName,
-		ApplicationDeleteTool.ToolName
+		ApplicationDeleteTool.ToolName,
+		SchemaNamePrefixTool.GetSchemaNamePrefixToolName
 	];
 
 	internal static ToolContractGetResponse GetContracts(IReadOnlyList<string>? toolNames) {
@@ -2656,6 +2658,46 @@ internal static class ToolContractCatalog {
 					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName
 				],
 				"Use to discover the package that owns a schema before calling get-entity-schema-properties or modify-entity-schema-column."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildGetSchemaNamePrefix() {
+		return new ToolContractDefinition(
+			SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+			"Returns the active SchemaNamePrefix system setting for the environment. " +
+			"Returns empty string when no prefix is configured (use no prefix in that case). " +
+			"Default Creatio environments return 'Usr'. " +
+			"Note: create-app and get-app-info both read this setting automatically and return schema-name-prefix " +
+			"in their responses — you only need this tool when you require the prefix before calling either of those.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix system setting. Empty string means no prefix is configured."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read the active schema name prefix for the configured environment", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				})
+			],
+			Flow(
+				[
+					SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+					CreateEntitySchemaTool.CreateEntitySchemaToolName
+				],
+				"Use before create-entity-schema, create-lookup, create-page, or sync-schemas when neither create-app nor get-app-info has been called yet in the session."),
 			[],
 			[]);
 	}
