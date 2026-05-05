@@ -1997,6 +1997,53 @@ public sealed class SchemaValidationServiceTests {
 			because: "the rename suggestion should not hardcode 'usr.' for vendors that ship a different prefix");
 	}
 
+	[Test]
+	[Description("Unquoted identifier-key converter without a dot fails validation")]
+	public void ValidateConverterDeclarations_IdentifierKeyMissingDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ BadConverter: value => value }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse(
+			"because identifier-key syntax cannot contain a dot, so 'BadConverter' violates the VendorPrefix.Name rule");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("BadConverter") && e.Contains("VendorPrefix"),
+			because: "the validator must recognize unquoted identifier keys, not only quoted strings");
+	}
+
+	[Test]
+	[Description("Unquoted ES6 method-shorthand converter without a dot fails validation")]
+	public void ValidateConverterDeclarations_IdentifierMethodShorthandMissingDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ BadShorthand(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'BadShorthand' has no dot");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("BadShorthand") && e.Contains("VendorPrefix"),
+			because: "method-shorthand with an unquoted identifier key must be checked too");
+	}
+
+	[Test]
+	[Description("Mixed quoted and identifier keys — both bad keys are reported")]
+	public void ValidateConverterDeclarations_MixedQuotedAndIdentifierBadKeys_ReportsBoth() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ " +
+			"\"usr.Good\": function(value) { return value; }, " +
+			"BadIdent: value => value, " +
+			"\"BadQuoted\": function(value) { return value; } " +
+			"}/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse("because two keys violate the dot-format rule");
+		result.Errors.Should().HaveCount(2,
+			because: "both the unquoted identifier and the quoted dot-less key must be reported");
+		result.Errors.Should().Contain(e => e.Contains("BadIdent"));
+		result.Errors.Should().Contain(e => e.Contains("BadQuoted"));
+		result.Errors.Should().NotContain(e => e.Contains("usr.Good"),
+			because: "the prefixed key is well-formed");
+	}
+
 	#endregion
 
 }

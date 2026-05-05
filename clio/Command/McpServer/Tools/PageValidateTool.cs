@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -38,15 +39,12 @@ public sealed class PageValidateTool {
 			contentResult.IsValid = false;
 			contentResult.Errors.Add("resources must be a valid JSON object string");
 		}
-		SchemaValidationResult fieldResult = contentResult.IsValid
-			? SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources)
-			: new SchemaValidationResult { IsValid = true };
-		SchemaValidationResult bindingResult = contentResult.IsValid
-			? SchemaValidationService.ValidateColumnBindings(body)
-			: new SchemaValidationResult { IsValid = true };
-		SchemaValidationResult converterDeclResult = contentResult.IsValid
-			? SchemaValidationService.ValidateConverterDeclarations(body)
-			: new SchemaValidationResult { IsValid = true };
+		SchemaValidationResult fieldResult = RunContentValidation(contentResult,
+			() => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources));
+		SchemaValidationResult bindingResult = RunContentValidation(contentResult,
+			() => SchemaValidationService.ValidateColumnBindings(body));
+		SchemaValidationResult converterDeclResult = RunContentValidation(contentResult,
+			() => SchemaValidationService.ValidateConverterDeclarations(body));
 		var errors = new List<string>();
 		var warnings = new List<string>();
 		if (!markerResult.IsValid) errors.AddRange(markerResult.Errors);
@@ -64,6 +62,11 @@ public sealed class PageValidateTool {
 			Warnings = warnings.Count > 0 ? warnings : null
 		};
 	}
+
+	private static SchemaValidationResult RunContentValidation(
+		SchemaValidationResult contentResult,
+		Func<SchemaValidationResult> validation) =>
+		contentResult.IsValid ? validation() : new SchemaValidationResult { IsValid = true };
 }
 
 public sealed record PageValidateArgs(

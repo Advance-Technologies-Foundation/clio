@@ -291,6 +291,45 @@ public sealed class PageUpdateToolE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects a SCHEMA_CONVERTERS entry whose key is missing the required dot separator through update-page dry-run before any remote calls are attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects converter key without dot in dry-run mode")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with a SCHEMA_CONVERTERS entry whose key has no dot separator, and verifies that the tool returns a structured validation error naming the key and the VendorPrefix requirement.")]
+	public async Task PageUpdateTool_Should_Reject_Converter_Key_Without_Dot_In_DryRun_Mode() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string bodyWithBadConverter = MinimalMarkerPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"UsrBadConverter\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrBadConverter_FormPage",
+					["body"] = bodyWithBadConverter,
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "converter key validation failures should be surfaced as structured update-page responses");
+		response.Success.Should().BeFalse(
+			because: "a converter key without a dot causes a Creatio runtime error and must be rejected before save");
+		response.Error.Should().Contain("UsrBadConverter")
+			.And.Contain("VendorPrefix",
+				because: "the failure should name the offending key and reference the VendorPrefix.Name format requirement");
+	}
+
+	[Test]
 	[Description("Accepts optional-properties JSON array and verify flag through update-page dry-run without rejecting them as invalid parameters.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page accepts optional-properties and verify in dry-run")]

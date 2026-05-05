@@ -1558,7 +1558,7 @@ public static class SchemaValidationService
 				continue;
 			}
 			char current = objectContent[index];
-			if (depth == 1 && (current == '"' || current == '\'') &&
+			if (depth == 1 &&
 			    TryReadConverterEntry(objectContent, index, current, out string key, out int afterEntryIndex)) {
 				keys.Add(key);
 				index = afterEntryIndex;
@@ -1573,10 +1573,43 @@ public static class SchemaValidationService
 	}
 
 	private static bool TryReadConverterEntry(
-		string content, int startIndex, char quote,
+		string content, int startIndex, char current,
 		out string keyName, out int afterEntryIndex) {
 		keyName = string.Empty;
 		afterEntryIndex = startIndex;
+		int afterName;
+		string name;
+		if (current == '"' || current == '\'') {
+			if (!TryReadQuotedConverterKey(content, startIndex, current, out name, out afterName)) {
+				return false;
+			}
+		} else if (JsParserHelper.IsIdentifierStart(current)) {
+			ReadIdentifierConverterKey(content, startIndex, out name, out afterName);
+		} else {
+			return false;
+		}
+		int afterWhitespace = JsParserHelper.SkipWhitespace(content, afterName);
+		if (afterWhitespace >= content.Length) {
+			return false;
+		}
+		char delimiter = content[afterWhitespace];
+		if (delimiter != ':' && delimiter != '(') {
+			return false;
+		}
+		int valueStart = delimiter == ':'
+			? JsParserHelper.SkipWhitespace(content, afterWhitespace + 1)
+			: afterWhitespace;
+		SkipBalancedConverterValue(content, valueStart, out int afterValue);
+		keyName = name;
+		afterEntryIndex = afterValue;
+		return true;
+	}
+
+	private static bool TryReadQuotedConverterKey(
+		string content, int startIndex, char quote,
+		out string keyName, out int afterNameIndex) {
+		keyName = string.Empty;
+		afterNameIndex = startIndex;
 		int endQuoteIndex = startIndex + 1;
 		while (endQuoteIndex < content.Length) {
 			if (content[endQuoteIndex] == '\\') {
@@ -1591,22 +1624,20 @@ public static class SchemaValidationService
 		if (endQuoteIndex >= content.Length || content[endQuoteIndex] != quote) {
 			return false;
 		}
-		string name = content.Substring(startIndex + 1, endQuoteIndex - startIndex - 1);
-		int afterName = JsParserHelper.SkipWhitespace(content, endQuoteIndex + 1);
-		if (afterName >= content.Length) {
-			return false;
-		}
-		char delimiter = content[afterName];
-		if (delimiter != ':' && delimiter != '(') {
-			return false;
-		}
-		int valueStart = delimiter == ':'
-			? JsParserHelper.SkipWhitespace(content, afterName + 1)
-			: afterName;
-		SkipBalancedConverterValue(content, valueStart, out int afterValue);
-		keyName = name;
-		afterEntryIndex = afterValue;
+		keyName = content.Substring(startIndex + 1, endQuoteIndex - startIndex - 1);
+		afterNameIndex = endQuoteIndex + 1;
 		return true;
+	}
+
+	private static void ReadIdentifierConverterKey(
+		string content, int startIndex,
+		out string keyName, out int afterNameIndex) {
+		int index = startIndex + 1;
+		while (index < content.Length && JsParserHelper.IsIdentifierPart(content[index])) {
+			index++;
+		}
+		keyName = content.Substring(startIndex, index - startIndex);
+		afterNameIndex = index;
 	}
 
 	private static void SkipBalancedConverterValue(string content, int valueStart, out int afterValueIndex) {
