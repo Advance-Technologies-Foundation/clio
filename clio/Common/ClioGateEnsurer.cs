@@ -118,7 +118,11 @@ public sealed class ClioGateEnsurer : IClioGateEnsurer {
 				return ClioGateEnsureResult.Failed(uri, "package installer returned failure");
 			}
 
-			_application.Restart();
+			// NetCore: PackageInstaller already restarts during install (BasePackageInstaller.InstallPackedPackage).
+			// .NET Framework: installer does not restart, so an explicit restart is required.
+			if (!(_environmentSettings?.IsNetCore ?? false)) {
+				_application.Restart();
+			}
 			ConfirmedEnvironments.TryAdd(cacheKey, true);
 			return ClioGateEnsureResult.Installed(uri);
 		} catch (Exception ex) {
