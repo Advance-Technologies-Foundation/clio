@@ -53,6 +53,7 @@ public sealed class PageListTool(
 			AppCode = args.Code,
 			SearchPattern = args.SearchPattern,
 			Limit = args.Limit ?? 50,
+			UId = args.UId,
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
@@ -127,7 +128,11 @@ public sealed record PageListArgs(
 	string? Login,
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password
+	string? Password,
+
+	[property: JsonPropertyName("uid")]
+	[property: Description("Filter by schema UId (exact match). Use to locate a specific page directly from its UId in a Creatio designer URL (#/PageDesigner/<pageUId>).")]
+	string? UId = null
 ) {
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement>? ExtensionData { get; init; }

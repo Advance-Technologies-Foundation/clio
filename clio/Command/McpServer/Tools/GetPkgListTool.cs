@@ -54,7 +54,8 @@ public sealed class GetPkgListTool(
 			.Select(package => new PackageListItemResult(
 				package.Descriptor.Name,
 				package.Descriptor.PackageVersion,
-				package.Descriptor.Maintainer))
+				package.Descriptor.Maintainer,
+				package.Descriptor.UId.ToString()))
 			.ToList();
 	}
 }
@@ -79,4 +80,5 @@ public sealed record GetPkgListArgs(
 public sealed record PackageListItemResult(
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("version")] string Version,
-	[property: JsonPropertyName("maintainer")] string Maintainer);
+	[property: JsonPropertyName("maintainer")] string Maintainer,
+	[property: JsonPropertyName("uId")] string UId);
