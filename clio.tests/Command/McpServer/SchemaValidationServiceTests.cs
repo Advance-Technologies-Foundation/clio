@@ -2046,5 +2046,131 @@ public sealed class SchemaValidationServiceTests {
 
 	#endregion
 
+	#region ValidateHandlerDeclarations
+
+	[Test]
+	[Description("Null body returns valid without throwing")]
+	public void ValidateHandlerDeclarations_NullBody_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerDeclarations(null);
+		result.IsValid.Should().BeTrue("because a null body is handled by the early-return guard");
+		result.Errors.Should().BeEmpty("because a null body produces no validation errors");
+	}
+
+	[Test]
+	[Description("Empty string body returns valid without throwing")]
+	public void ValidateHandlerDeclarations_EmptyBody_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerDeclarations(string.Empty);
+		result.IsValid.Should().BeTrue("because an empty body is handled by the early-return guard");
+		result.Errors.Should().BeEmpty("because an empty body produces no validation errors");
+	}
+
+	[Test]
+	[Description("Empty handlers object passes validation")]
+	public void ValidateHandlerDeclarations_EmptyHandlers_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerDeclarations(ValidListPageBody);
+		result.IsValid.Should().BeTrue("because an empty SCHEMA_HANDLERS object has no keys to validate");
+		result.Errors.Should().BeEmpty("because no keys means no format errors");
+	}
+
+	[Test]
+	[Description("Handler with correct usr. prefix passes validation")]
+	public void ValidateHandlerDeclarations_CorrectPrefixedKey_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/{}/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/{ \"usr.SaveHandler\": (request) => { return request; } }/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerDeclarations(body);
+		result.IsValid.Should().BeTrue("because 'usr.SaveHandler' has the required VendorPrefix.Name dot-format");
+		result.Errors.Should().BeEmpty("because a correctly prefixed key produces no errors");
+	}
+
+	[Test]
+	[Description("Handler key without a dot fails validation with a descriptive runtime-error message")]
+	public void ValidateHandlerDeclarations_KeyWithoutDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/{}/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/{ \"SaveHandler\": (request) => { return request; } }/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'SaveHandler' lacks a dot and violates the VendorPrefix.HandlerName format");
+		result.Errors.Should().Contain(error => error.Contains("SaveHandler") && error.Contains("VendorPrefix.HandlerName"),
+			"because the error message should mention both the key name and the required format");
+	}
+
+	[Test]
+	[Description("Mixed handlers with good and bad keys reports only the bad one")]
+	public void ValidateHandlerDeclarations_MixedKeys_ReportsOnlyBadOne() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/{}/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/{ \"usr.GoodHandler\": () => {}, \"BadHandler\": () => {} }/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'BadHandler' lacks a dot");
+		result.Errors.Should().HaveCount(1, "because only 'BadHandler' fails the validation");
+		result.Errors[0].Should().Contain("BadHandler", "because the error should mention the bad key");
+	}
+
+	#endregion
+
+	#region ValidateValidatorDeclarations
+
+	[Test]
+	[Description("Null body returns valid without throwing")]
+	public void ValidateValidatorDeclarations_NullBody_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(null);
+		result.IsValid.Should().BeTrue("because a null body is handled by the early-return guard");
+		result.Errors.Should().BeEmpty("because a null body produces no validation errors");
+	}
+
+	[Test]
+	[Description("Empty string body returns valid without throwing")]
+	public void ValidateValidatorDeclarations_EmptyBody_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(string.Empty);
+		result.IsValid.Should().BeTrue("because an empty body is handled by the early-return guard");
+		result.Errors.Should().BeEmpty("because an empty body produces no validation errors");
+	}
+
+	[Test]
+	[Description("Empty validators object passes validation")]
+	public void ValidateValidatorDeclarations_EmptyValidators_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(ValidListPageBody);
+		result.IsValid.Should().BeTrue("because an empty SCHEMA_VALIDATORS object has no keys to validate");
+		result.Errors.Should().BeEmpty("because no keys means no format errors");
+	}
+
+	[Test]
+	[Description("Validator with correct usr. prefix passes validation")]
+	public void ValidateValidatorDeclarations_CorrectPrefixedKey_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"usr.RequiredValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(body);
+		result.IsValid.Should().BeTrue("because 'usr.RequiredValidator' has the required VendorPrefix.Name dot-format");
+		result.Errors.Should().BeEmpty("because a correctly prefixed key produces no errors");
+	}
+
+	[Test]
+	[Description("Validator key without a dot fails validation with a descriptive runtime-error message")]
+	public void ValidateValidatorDeclarations_KeyWithoutDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"RequiredValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'RequiredValidator' lacks a dot and violates the VendorPrefix.ValidatorName format");
+		result.Errors.Should().Contain(error => error.Contains("RequiredValidator") && error.Contains("VendorPrefix.ValidatorName"),
+			"because the error message should mention both the key name and the required format");
+	}
+
+	[Test]
+	[Description("Mixed validators with good and bad keys reports only the bad one")]
+	public void ValidateValidatorDeclarations_MixedKeys_ReportsOnlyBadOne() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"usr.GoodValidator\": { params: [] }, \"BadValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'BadValidator' lacks a dot");
+		result.Errors.Should().HaveCount(1, "because only 'BadValidator' fails the validation");
+		result.Errors[0].Should().Contain("BadValidator", "because the error should mention the bad key");
+	}
+
+	#endregion
+
 }
 

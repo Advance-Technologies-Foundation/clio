@@ -16,7 +16,8 @@ public sealed class PageValidateTool {
 		Idempotent = true, OpenWorld = false)]
 	[Description("Validates a Freedom UI page body client-side without saving to Creatio. " +
 		"Checks marker integrity, JS syntax, JSON content, field bindings, column bindings, " +
-		"and converter key format (SCHEMA_CONVERTERS keys must follow VendorPrefix.Name — read get-guidance `page-schema-converters` before adding converters).")]
+		"and type key format (SCHEMA_CONVERTERS, SCHEMA_HANDLERS, SCHEMA_VALIDATORS keys must follow VendorPrefix.Name — " +
+		"read get-guidance `page-schema-converters`, `page-schema-handlers`, or `page-schema-validators` before adding them).")]
 	public PageValidateResponse ValidatePage(
 		[Description("Parameters: body (required); resources (optional)")]
 		[Required] PageValidateArgs args) {
@@ -45,6 +46,10 @@ public sealed class PageValidateTool {
 			() => SchemaValidationService.ValidateColumnBindings(body));
 		SchemaValidationResult converterDeclResult = RunContentValidation(contentResult,
 			() => SchemaValidationService.ValidateConverterDeclarations(body));
+		SchemaValidationResult handlerDeclResult = RunContentValidation(contentResult,
+			() => SchemaValidationService.ValidateHandlerDeclarations(body));
+		SchemaValidationResult validatorDeclResult = RunContentValidation(contentResult,
+			() => SchemaValidationService.ValidateValidatorDeclarations(body));
 		var errors = new List<string>();
 		var warnings = new List<string>();
 		if (!markerResult.IsValid) errors.AddRange(markerResult.Errors);
@@ -54,10 +59,13 @@ public sealed class PageValidateTool {
 		if (fieldResult.Warnings.Count > 0) warnings.AddRange(fieldResult.Warnings);
 		if (!bindingResult.IsValid) warnings.AddRange(bindingResult.Errors);
 		if (!converterDeclResult.IsValid) errors.AddRange(converterDeclResult.Errors);
+		if (!handlerDeclResult.IsValid) errors.AddRange(handlerDeclResult.Errors);
+		if (!validatorDeclResult.IsValid) errors.AddRange(validatorDeclResult.Errors);
 		return new PageSyncValidationResult {
 			MarkersOk = markerResult.IsValid,
 			JsSyntaxOk = syntaxResult.IsValid,
-			ContentOk = contentResult.IsValid && fieldResult.IsValid && converterDeclResult.IsValid,
+			ContentOk = contentResult.IsValid && fieldResult.IsValid && converterDeclResult.IsValid && 
+				handlerDeclResult.IsValid && validatorDeclResult.IsValid,
 			Errors = errors.Count > 0 ? errors : null,
 			Warnings = warnings.Count > 0 ? warnings : null
 		};

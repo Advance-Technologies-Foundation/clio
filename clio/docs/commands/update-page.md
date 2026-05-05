@@ -33,6 +33,20 @@ If the control is inherited from a parent schema and there is no local
 entry for it in `viewConfigDiff`, add a local `merge` for that control
 name instead of trying to edit a non-existent local `insert`.
 
+## Validation Rules
+
+**Before editing the body**, understand the validation rules:
+
+- **SCHEMA_CONVERTERS keys** must follow `VendorPrefix.ConverterName` format (e.g., `usr.MyConverter`). 
+  Call `clio get-guidance --name page-schema-converters` for details.
+- **SCHEMA_HANDLERS keys** must follow `VendorPrefix.HandlerName` format (e.g., `usr.SaveHandler`).
+  Call `clio get-guidance --name page-schema-handlers` for details.
+- **SCHEMA_VALIDATORS keys** must follow `VendorPrefix.ValidatorName` format (e.g., `usr.RequiredValidator`).
+  Call `clio get-guidance --name page-schema-validators` for details.
+
+A missing dot in any key causes a Creatio runtime error: 
+`"Error when register X. Type property should have format VendorPrefix.TypeName"`.
+
 ## Synopsis
 
 ```bash

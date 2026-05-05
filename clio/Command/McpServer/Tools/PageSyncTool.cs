@@ -201,6 +201,10 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateCustomValidatorParamCompleteness(body));
 		SchemaValidationResult converterDeclResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateConverterDeclarations(body));
+		SchemaValidationResult handlerDeclResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateHandlerDeclarations(body));
+		SchemaValidationResult validatorDeclResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateValidatorDeclarations(body));
 		SchemaValidationResult bindingResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateColumnBindings(body));
 		List<string> errors = CollectErrors(
@@ -214,7 +218,9 @@ public sealed class PageSyncTool(
 			validatorParamResult,
 			standardValidatorResult,
 			validatorParamCompletenessResult,
-			converterDeclResult);
+			converterDeclResult,
+			handlerDeclResult,
+			validatorDeclResult);
 		List<string> warnings = CollectWarnings(fieldResult, bindingResult);
 		bool contentOk = IsContentValidationSuccessful(
 			contentResult,
@@ -225,7 +231,9 @@ public sealed class PageSyncTool(
 			validatorParamResult,
 			standardValidatorResult,
 			validatorParamCompletenessResult,
-			converterDeclResult);
+			converterDeclResult,
+			handlerDeclResult,
+			validatorDeclResult);
 		return BuildValidationResult(markerResult, syntaxResult, contentOk, errors, warnings);
 	}
 

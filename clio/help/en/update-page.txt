@@ -25,6 +25,15 @@ DESCRIPTION
     entry for it in viewConfigDiff, add a local merge for that control
     name instead of editing a non-existent local insert.
 
+    VALIDATION RULES:
+    - SCHEMA_CONVERTERS, SCHEMA_HANDLERS, and SCHEMA_VALIDATORS keys must
+      follow VendorPrefix.Name format (e.g., usr.MyConverter, usr.SaveHandler,
+      usr.RequiredValidator). A missing dot causes a Creatio runtime error:
+      "Error when register X. Type property should have format VendorPrefix.TypeName"
+    - Call `clio get-guidance --name page-schema-converters` for converter details
+    - Call `clio get-guidance --name page-schema-handlers` for handler details
+    - Call `clio get-guidance --name page-schema-validators` for validator details
+
 SYNOPSIS
     clio update-page [options]
 
