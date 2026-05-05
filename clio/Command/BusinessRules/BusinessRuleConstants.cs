@@ -21,6 +21,9 @@ internal static class BusinessRuleConstants {
 	internal const string BusinessRuleReadonlyElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionReadonlyElement";
 	internal const string BusinessRuleRequiredElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionRequiredElement";
 	internal const string BusinessRuleOptionalElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionOptionalElement";
+	internal const string BusinessRuleSetValuesElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionSetValues";
+	internal const string BusinessRuleSetValueItemTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleSetValueItem";
+	internal const string SetValuesActionTypeName = "set-values";
 	internal const int ChangeAttributeValueTriggerType = 0;
 	internal const int DataLoadedTriggerType = 2;
 	internal const int LogicalAnd = 1;
@@ -36,7 +39,7 @@ internal static class BusinessRuleConstants {
 	internal const string SupportedComparisonTypesDescription =
 		"equal, not-equal, is-filled-in, is-not-filled-in, greater-than, greater-than-or-equal, less-than, less-than-or-equal";
 	internal const string SupportedActionTypesDescription =
-		"make-editable, make-read-only, make-required, make-optional";
+		"make-editable, make-read-only, make-required, make-optional, set-values";
 
 	internal static readonly JsonSerializerOptions JsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

@@ -551,6 +551,16 @@ public sealed class ToolContractGetToolE2ETests {
 				validator.Field == "rule.actions[*].type",
 			because: "the contract should advertise the target architecture action field");
 		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "set-values-shape" &&
+				validator.Field == "rule.actions[*].items[*]" &&
+				validator.Context!.Contains("Attribute value sources are not supported", StringComparison.Ordinal),
+			because: "the contract should advertise the current constant-only Set values scope");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "set-values-constant" &&
+				validator.Field == "rule.actions[*].items[*].value.value" &&
+				validator.Context!.Contains("JSON number", StringComparison.Ordinal),
+			because: "the contract should document typed constant payloads for Set values");
+		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rule.condition.conditions[*].comparisonType" &&
 				validator.Context!.Contains("greater-than-or-equal", StringComparison.Ordinal),
@@ -585,6 +595,11 @@ public sealed class ToolContractGetToolE2ETests {
 			string.Equals(example.Summary, "Create a readonly rule when reminder time is after a timezone-aware cutoff", StringComparison.Ordinal));
 		hasTimezoneAwareTimeExample.Should().BeTrue(
 			because: "the contract should include a timezone-aware Time example for agent callers");
+		bool hasSetValuesExample = contract.Examples.Any(example =>
+			string.Equals(example.Summary, "Create a Set values rule with text number boolean Date DateTime and Time constants",
+				StringComparison.Ordinal));
+		hasSetValuesExample.Should().BeTrue(
+			because: "the contract should include a Set values example for constant assignments across supported target families");
 	}
 
 	[Test]

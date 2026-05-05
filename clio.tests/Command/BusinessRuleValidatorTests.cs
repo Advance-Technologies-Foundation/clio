@@ -62,6 +62,15 @@ public sealed class BusinessRuleValidatorTests {
 		new object[] { 9, "ReminderTime", "13:45:00+02:00" }
 	];
 
+	private static readonly object[] SetValuesConstantCases = [
+		new object[] { 1, "TextResult", "\"Ready\"" },
+		new object[] { 4, "Score", "42" },
+		new object[] { 12, "Completed", "true" },
+		new object[] { 8, "StartDate", "\"2025-01-15\"" },
+		new object[] { 7, "PlannedOn", "\"2025-01-15T13:45:00+02:00\"" },
+		new object[] { 9, "ReminderTime", "\"13:45:00+02:00\"" }
+	];
+
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects unsupported logical operations in the top-level business-rule condition group.")]
@@ -687,7 +696,7 @@ public sealed class BusinessRuleValidatorTests {
 					new BusinessRuleExpression("Const", null, Json("\"Draft\"")))
 			]),
 			[
-				new BusinessRuleAction("make-required", ["Owner"])
+				new MakeRequiredBusinessRuleAction(["Owner"])
 			]);
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
 			CreateColumn("Status", 1),
@@ -711,7 +720,7 @@ public sealed class BusinessRuleValidatorTests {
 			"Rule caption",
 			null!,
 			[
-				new BusinessRuleAction("make-required", ["Owner"])
+				new MakeRequiredBusinessRuleAction(["Owner"])
 			]);
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
 			CreateColumn("Status", 1),
@@ -762,7 +771,7 @@ public sealed class BusinessRuleValidatorTests {
 			"Rule caption",
 			new BusinessRuleConditionGroup("AND", []),
 			[
-				new BusinessRuleAction("make-required", ["Owner"])
+				new MakeRequiredBusinessRuleAction(["Owner"])
 			]);
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
 			CreateColumn("Status", 1),
@@ -793,7 +802,7 @@ public sealed class BusinessRuleValidatorTests {
 						null!)
 				]),
 			[
-				new BusinessRuleAction("make-required", ["Owner"])
+				new MakeRequiredBusinessRuleAction(["Owner"])
 			]);
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
 			CreateColumn("Status", 1),
@@ -815,7 +824,7 @@ public sealed class BusinessRuleValidatorTests {
 		// Arrange
 		BusinessRule rule = CreateRule(
 			actions: [
-				new BusinessRuleAction("set-visible", ["Owner"])
+				new CustomBusinessRuleAction("set-visible", ["Owner"])
 			]);
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
 			CreateColumn("Status", 1),
@@ -826,8 +835,8 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("Unsupported rule.actions[*].type 'set-visible'. Supported values: make-editable, make-read-only, make-required, make-optional.",
-				because: "the current business-rule action subset is intentionally limited to field state changes");
+			.WithMessage("Unsupported rule.actions[*].type 'set-visible'. Supported values: make-editable, make-read-only, make-required, make-optional, set-values.",
+				because: "the current business-rule action subset is intentionally limited to field state changes and constant Set values");
 	}
 
 	[Test]
@@ -837,7 +846,7 @@ public sealed class BusinessRuleValidatorTests {
 		// Arrange
 		BusinessRule rule = CreateRule(
 			actions: [
-				new BusinessRuleAction("make-required", [])
+				new MakeRequiredBusinessRuleAction( new List<string>())
 			]);
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
 			CreateColumn("Status", 1),
@@ -859,7 +868,7 @@ public sealed class BusinessRuleValidatorTests {
 		// Arrange
 		BusinessRule rule = CreateRule(
 			actions: [
-				new BusinessRuleAction("make-required", ["MissingOwner"])
+				new MakeRequiredBusinessRuleAction(["MissingOwner"])
 			]);
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
 			CreateColumn("Status", 1),
@@ -872,6 +881,162 @@ public sealed class BusinessRuleValidatorTests {
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("Unknown attribute 'MissingOwner' in rule.actions[*].items.",
 				because: "action targets should resolve to real entity schema columns");
+	}
+
+	[TestCaseSource(nameof(SetValuesConstantCases))]
+	[Category("Unit")]
+	[Description("Accepts set-values actions with constant values for text number boolean and date/time targets.")]
+	public void Validate_Should_Accept_SetValues_Action_With_Supported_Constant(
+		int targetDataValueType,
+		string targetPath,
+		string constantJson) {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction(targetPath, new BusinessRuleExpression("Const", null, Json(constantJson)))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn(targetPath, targetDataValueType));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "set-values constants should support text number boolean Date DateTime and Time columns");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects set-values actions that try to assign from another attribute.")]
+	public void Validate_Should_Reject_SetValues_Action_With_Attribute_Value_Source() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("TextResult", new BusinessRuleExpression("AttributeValue", "Status", null))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("TextResult", 1));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.actions[*].items[*].value.type must be 'Const'.",
+				because: "attribute-source assignments are outside the current set-values support scope");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects set-values constants that are incompatible with the target column data value type.")]
+	public void Validate_Should_Reject_SetValues_Action_With_Incompatible_Constant() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("Score", new BusinessRuleExpression("Const", null, Json("\"42\"")))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Score", 4));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.actions[*].items[*].value.value must be a JSON number when the target attribute is a numeric type.",
+				because: "numeric set-values targets should receive JSON numbers, not numeric-looking strings");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects set-values DateTime constants without an explicit timezone suffix.")]
+	public void Validate_Should_Reject_SetValues_DateTime_Constant_Without_Timezone() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("PlannedOn", new BusinessRuleExpression("Const", null, Json("\"2025-01-15T13:45:00\"")))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("PlannedOn", 7));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.actions[*].items[*].value.value must be a JSON string in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm') when the target attribute is DateTime.",
+				because: "DateTime set-values constants should have deterministic timezone semantics");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects set-values Date constants that do not use yyyy-MM-dd format.")]
+	public void Validate_Should_Reject_SetValues_Date_Constant_With_Invalid_Format() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("StartDate", new BusinessRuleExpression("Const", null, Json("\"2025-01-15T00:00:00Z\"")))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("StartDate", 8));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.actions[*].items[*].value.value must be a JSON string in 'yyyy-MM-dd' format when the target attribute is Date.",
+				because: "Date set-values constants should use the same date-only format as condition constants");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects set-values Time constants without an explicit timezone suffix.")]
+	public void Validate_Should_Reject_SetValues_Time_Constant_Without_Timezone() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("ReminderTime", new BusinessRuleExpression("Const", null, Json("\"13:45:00\"")))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("ReminderTime", 9));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.actions[*].items[*].value.value must be a JSON string in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm') when the target attribute is Time.",
+				because: "Time set-values constants should have deterministic timezone semantics");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects set-values target attributes outside the supported constant data types.")]
+	public void Validate_Should_Reject_SetValues_Action_For_Unsupported_Target_Type() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("Owner", new BusinessRuleExpression("Const", null, Json("\"11111111-1111-1111-1111-111111111111\"")))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Const set-values is not supported for target attribute type 'Lookup'.",
+				because: "lookup set-values constants are outside the current support scope");
 	}
 
 	[Test]
@@ -958,7 +1123,7 @@ public sealed class BusinessRuleValidatorTests {
 							: rightExpression ?? new BusinessRuleExpression("Const", null, Json("\"Draft\"")))
 				]),
 			actions ?? [
-				new BusinessRuleAction("make-required", ["Owner"])
+				new MakeRequiredBusinessRuleAction(["Owner"])
 			]);
 
 	private static IReadOnlyDictionary<string, EntitySchemaColumnDto> CreateColumnMap(params EntitySchemaColumnDto[] columns) {
@@ -981,6 +1146,15 @@ public sealed class BusinessRuleValidatorTests {
 				}
 		};
 
+	private static BusinessRuleAction CreateSetValuesAction(string targetPath, BusinessRuleExpression value) =>
+		new SetValuesBusinessRuleAction(
+			new List<BusinessRuleSetValueItem> {
+				new(
+					new BusinessRuleExpression("AttributeValue", targetPath, null),
+					value)
+			});
+
 	private static JsonElement Json(string json) =>
 		JsonSerializer.Deserialize<JsonElement>(json);
 }
+
