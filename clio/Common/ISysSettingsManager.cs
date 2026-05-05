@@ -31,13 +31,6 @@ public interface ISysSettingsManager
 	string GetSysSettingValueByCode(string code);
 
 	/// <summary>
-	///     Retrieves the value of a system setting by its code via the ClioGate HTTP endpoint,
-	///     which correctly decrypts SecureText settings on the server side.
-	///     Falls back to ATF.Repository OData when ClioGate is unavailable.
-	/// </summary>
-	string GetSecureSysSettingValueByCode(string code);
-
-	/// <summary>
 	///     Retrieves the value of a system setting by its code and converts it to the specified type.
 	/// </summary>
 	/// <typeparam name="T">The type to which the system setting value should be converted.</typeparam>
@@ -52,6 +45,13 @@ public interface ISysSettingsManager
 	///     If the value cannot be converted to the specified type, an InvalidCastException will be thrown.
 	/// </remarks>
 	T GetSysSettingValueByCode<T>(string code);
+
+	/// <summary>
+	///     Retrieves the value of a system setting by its code via the ClioGate HTTP endpoint,
+	///     which correctly decrypts SecureText settings on the server side.
+	///     Falls back to ATF.Repository OData when ClioGate is unavailable.
+	/// </summary>
+	string GetSecureSysSettingValueByCode(string code);
 
 	SysSettingsManager.InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
 		bool cached = true, string description = "", bool valueForCurrentUser = false);
@@ -194,6 +194,19 @@ public class SysSettingsManager : ISysSettingsManager
 		return _dataProvider.GetSysSettingValue<string>(code) ?? string.Empty;
 	}
 
+	public T GetSysSettingValueByCode<T>(string code){
+		string val = GetSysSettingValueByCode(code);
+		return typeof(T) switch {
+			_ when typeof(T) == typeof(string) => (T)(object)val,
+			_ when typeof(T) == typeof(int) => (T)ConvertToInt(val),
+			_ when typeof(T) == typeof(decimal) => (T)ConvertToDecimal(val),
+			_ when typeof(T) == typeof(bool) => (T)ConvertToBool(val),
+			_ when typeof(T) == typeof(DateTime) => (T)ConvertToDateTime(val),
+			_ when typeof(T) == typeof(Guid) => (T)ConvertToGuid(val),
+			_ => throw new ArgumentOutOfRangeException()
+		};
+	}
+
 	public string GetSecureSysSettingValueByCode(string code){
 		// Uses ClioGate HTTP endpoint which decrypts SecureText on the server side.
 		// Falls back to ATF.Repository OData when ClioGate is unavailable (returns
@@ -213,19 +226,6 @@ public class SysSettingsManager : ISysSettingsManager
 			// ClioGate not installed or unavailable — fall through to ATF.Repository.
 		}
 		return _dataProvider.GetSysSettingValue<string>(code) ?? string.Empty;
-	}
-
-	public T GetSysSettingValueByCode<T>(string code){
-		string val = GetSysSettingValueByCode(code);
-		return typeof(T) switch {
-			_ when typeof(T) == typeof(string) => (T)(object)val,
-			_ when typeof(T) == typeof(int) => (T)ConvertToInt(val),
-			_ when typeof(T) == typeof(decimal) => (T)ConvertToDecimal(val),
-			_ when typeof(T) == typeof(bool) => (T)ConvertToBool(val),
-			_ when typeof(T) == typeof(DateTime) => (T)ConvertToDateTime(val),
-			_ when typeof(T) == typeof(Guid) => (T)ConvertToGuid(val),
-			_ => throw new ArgumentOutOfRangeException()
-		};
 	}
 
 	public InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,

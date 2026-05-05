@@ -57,7 +57,7 @@ public sealed class DataForgeSysSettingDirectReader(IDataProvider dataProvider) 
 			string? normalizedValue = context
 				.Models<SysSettingsValue>()
 				.Where(v => v.SysSettingsId == sysSetting.Id)
-				.ToList()
+				.AsEnumerable()
 				.OrderByDescending(v => v.SysAdminUnitId == AllUsersId)
 				.Select(v => MapValue(sysSetting.ValueTypeName, v))
 				.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
@@ -92,7 +92,7 @@ public sealed class DataForgeSysSettingDirectReader(IDataProvider dataProvider) 
 			SysSettingsValue? sysSettingValue = context
 				.Models<SysSettingsValue>()
 				.Where(v => v.SysSettingsId == sysSetting.Id)
-				.ToList()
+				.AsEnumerable()
 				.OrderByDescending(v => v.SysAdminUnitId == AllUsersId)
 				.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v.TextValue));
 
