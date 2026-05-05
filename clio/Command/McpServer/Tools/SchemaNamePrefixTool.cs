@@ -22,12 +22,10 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver) {
 	[McpServerTool(Name = GetSchemaNamePrefixToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[Description("Returns the active SchemaNamePrefix system setting for the environment. " +
-	             "Call this before naming any custom schemas, entities, or columns when you need " +
-	             "the prefix before calling create-app. " +
 	             "Returns empty string when no prefix is configured (use no prefix in that case). " +
 	             "Default Creatio environments return 'Usr'. " +
-	             "Note: create-app also reads this setting automatically and returns schema-name-prefix " +
-	             "in its response — you only need this tool when you require the prefix before create-app.")]
+	             "Note: create-app and get-app-info both read this setting automatically and return schema-name-prefix " +
+	             "in their responses — you only need this tool when you require the prefix before calling either of those.")]
 	public SchemaNamePrefixResult GetSchemaNamePrefix(
 		[Description("Parameters: environment-name (required)")]
 		[Required]

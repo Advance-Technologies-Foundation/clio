@@ -17,6 +17,7 @@ public sealed class ApplicationInfoServiceTests {
 	private IApplicationClientFactory _applicationClientFactory = null!;
 	private IApplicationClient _applicationClient = null!;
 	private IServiceUrlBuilderFactory _serviceUrlBuilderFactory = null!;
+	private ISysSettingsManager _sysSettingsManager = null!;
 	private ApplicationInfoService _sut = null!;
 	private EnvironmentSettings _environment = null!;
 
@@ -26,6 +27,7 @@ public sealed class ApplicationInfoServiceTests {
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilderFactory = new ServiceUrlBuilderFactory();
+		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		_environment = new EnvironmentSettings {
 			Uri = "https://example.invalid",
 			Login = "Supervisor",
@@ -34,7 +36,12 @@ public sealed class ApplicationInfoServiceTests {
 		};
 		_settingsRepository.FindEnvironment("sandbox").Returns(_environment);
 		_applicationClientFactory.CreateEnvironmentClient(_environment).Returns(_applicationClient);
-		_sut = new ApplicationInfoService(_settingsRepository, _applicationClientFactory, _serviceUrlBuilderFactory);
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns("Usr");
+		_sut = new ApplicationInfoService(
+			_settingsRepository,
+			_applicationClientFactory,
+			_serviceUrlBuilderFactory,
+			_ => _sysSettingsManager);
 	}
 
 	[Test]
@@ -324,6 +331,53 @@ public sealed class ApplicationInfoServiceTests {
 			"environment-sensitive reads should fail clearly when the environment key is unknown");
 		exception.Message.Should().Match("*not found*",
 			"environment-sensitive reads should fail clearly when the environment key is unknown");
+	}
+
+	[Test]
+	[Description("Reads SchemaNamePrefix system setting and surfaces it in the result so agents working with an existing app always have the active prefix.")]
+	public void GetApplicationInfo_Should_Return_SchemaNamePrefix_From_System_Settings() {
+		// Arrange
+		ConfigureHappyPathResponses();
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns("Test");
+
+		// Act
+		ApplicationInfoResult result = _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		result.SchemaNamePrefix.Should().Be("Test",
+			because: "the active SchemaNamePrefix must be surfaced in the response so agents use the correct prefix for all new schema codes in the session");
+	}
+
+	[Test]
+	[Description("Returns empty string when SchemaNamePrefix is configured as empty, meaning no prefix is active for the environment.")]
+	public void GetApplicationInfo_Should_Return_Empty_SchemaNamePrefix_When_Setting_Is_Empty() {
+		// Arrange
+		ConfigureHappyPathResponses();
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns(string.Empty);
+
+		// Act
+		ApplicationInfoResult result = _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		result.SchemaNamePrefix.Should().BeEmpty(
+			because: "an empty SchemaNamePrefix setting means the environment uses no prefix — agents must not add one");
+	}
+
+	[Test]
+	[Description("Propagates the exception when the SchemaNamePrefix system setting cannot be read, so the caller gets an explicit failure instead of silently incorrect schema names.")]
+	public void GetApplicationInfo_Should_Throw_When_SchemaNamePrefix_Read_Fails() {
+		// Arrange
+		ConfigureHappyPathResponses();
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix")
+			.Returns(_ => throw new InvalidOperationException("connection refused"));
+
+		// Act
+		Action action = () => _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>()
+			.WithMessage("*connection refused*",
+				because: "a read failure must propagate so the caller knows the prefix could not be determined rather than receiving silently wrong schema names");
 	}
 
 	private void ConfigureHappyPathResponses() {

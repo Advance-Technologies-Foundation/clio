@@ -39,10 +39,12 @@ public interface IApplicationInfoService
 public sealed class ApplicationInfoService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
-	IServiceUrlBuilderFactory serviceUrlBuilderFactory)
+	IServiceUrlBuilderFactory serviceUrlBuilderFactory,
+	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory)
 	: IApplicationInfoService
 {
 	private const string BaseObjectCaption = "Base object";
+	private const string SchemaNamePrefixSettingCode = "SchemaNamePrefix";
 	private static readonly JsonSerializerOptions JsonOptions = new()
 	{
 		PropertyNameCaseInsensitive = true
@@ -148,6 +150,8 @@ public sealed class ApplicationInfoService(
 			.ThenBy(entity => entity.Name, StringComparer.OrdinalIgnoreCase)
 			.ToList();
 		IReadOnlyList<PageListItem> pages = GetApplicationPages(client, serviceUrlBuilder, primaryPackage.Name);
+		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
+		string schemaNamePrefix = ReadSchemaNamePrefix(sysSettingsManager);
 
 		return new ApplicationInfoResult(
 			primaryPackage.UId,
@@ -157,7 +161,14 @@ public sealed class ApplicationInfoService(
 			application.Id,
 			application.Name,
 			application.Code,
-			application.Version);
+			application.Version,
+			schemaNamePrefix);
+	}
+
+	private static string ReadSchemaNamePrefix(ISysSettingsManager sysSettingsManager)
+	{
+		string value = sysSettingsManager.GetSysSettingValueByCode(SchemaNamePrefixSettingCode);
+		return value?.Trim().Trim('"') ?? string.Empty;
 	}
 
 	/// <inheritdoc />

@@ -727,8 +727,8 @@ public sealed class ApplicationCreateServiceTests {
 	}
 
 	[Test]
-	[Description("Falls back to the Usr prefix and logs a warning when the SchemaNamePrefix setting cannot be read.")]
-	public void CreateApplication_Should_Fall_Back_To_Usr_Prefix_When_SysSettings_Throws() {
+	[Description("Propagates the exception when the SchemaNamePrefix setting cannot be read, so the caller receives an explicit failure instead of silently creating schemas with the wrong prefix.")]
+	public void CreateApplication_Should_Throw_When_SysSettings_Throws() {
 		// Arrange
 		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix")
 			.Returns(_ => throw new InvalidOperationException("SysSettings unavailable."));
@@ -738,17 +738,15 @@ public sealed class ApplicationCreateServiceTests {
 			IconId = "11111111-1111-1111-1111-111111111111",
 			IconBackground = "#0058EF"
 		};
-		ConfigureCreateSuccessForCode("UsrTodoList");
-		_applicationInfoService.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrTodoList")
-			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", [], SchemaNamePrefix: "Usr"));
 
 		// Act
-		_sut.CreateApplication("sandbox", request);
+		Action action = () => _sut.CreateApplication("sandbox", request);
 
 		// Assert
-		_applicationClient.Received(1).ExecutePostRequest(
-			Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),
-			Arg.Is<string>(body => body.Contains("\"code\":\"UsrTodoList\"", StringComparison.Ordinal)));
+		action.Should().Throw<InvalidOperationException>()
+			.WithMessage("*SysSettings unavailable*",
+				because: "a read failure must propagate so the caller knows the prefix could not be determined rather than receiving silently wrong schema names");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 	}
 
 	private void ConfigureCreateSuccessForCode(string appCode = "UsrCodexApp")

@@ -40,7 +40,6 @@ public sealed class ApplicationCreateService(
 {
 	private const string CreateApplicationRoute = "ServiceModel/AppInstallerService.svc/CreateApp";
 	private const string SchemaNamePrefixSettingCode = "SchemaNamePrefix";
-	private const string DefaultSchemaNamePrefix = "Usr";
 	private const string SelectQueryRoute = "DataService/json/SyncReply/SelectQuery";
 	private const int PollAttempts = 15;
 	private static readonly TimeSpan PollDelay = TimeSpan.FromSeconds(2);
@@ -78,7 +77,7 @@ public sealed class ApplicationCreateService(
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
-		string schemaNamePrefix = ReadSchemaNamePrefix(sysSettingsManager, logger);
+		string schemaNamePrefix = ReadSchemaNamePrefix(sysSettingsManager);
 		ResolvedApplicationCreateRequest resolvedRequest = ResolveRequest(request, client, environmentSettings, serviceUrlBuilder, logger, schemaNamePrefix);
 		string requestUrl = serviceUrlBuilder.Build(CreateApplicationRoute, environmentSettings);
 		string requestBody = JsonSerializer.Serialize(CreateRequestDto.From(resolvedRequest), JsonOptions);
@@ -415,20 +414,10 @@ public sealed class ApplicationCreateService(
 		return response.Rows[index].Id;
 	}
 
-	private static string ReadSchemaNamePrefix(ISysSettingsManager sysSettingsManager, ILogger logger)
+	private static string ReadSchemaNamePrefix(ISysSettingsManager sysSettingsManager)
 	{
-		try
-		{
-			string value = sysSettingsManager.GetSysSettingValueByCode(SchemaNamePrefixSettingCode);
-			return value?.Trim().Trim('"') ?? string.Empty;
-		}
-		catch (Exception ex)
-		{
-			logger.WriteWarning(
-				$"Could not read SchemaNamePrefix from the environment: {ex.Message}. " +
-				$"Falling back to '{DefaultSchemaNamePrefix}'.");
-			return DefaultSchemaNamePrefix;
-		}
+		string value = sysSettingsManager.GetSysSettingValueByCode(SchemaNamePrefixSettingCode);
+		return value?.Trim().Trim('"') ?? string.Empty;
 	}
 
 	private ApplicationInfoResult LoadCreatedApplication(string environmentName, string appCode, string appId,
