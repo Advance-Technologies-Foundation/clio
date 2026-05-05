@@ -29,6 +29,7 @@ public sealed class PageUpdateTool(
 		"if the requirement involves display-only value transformation (email as mailto link, phone as tel link, text to uppercase, boolean inversion, number formatting, any value that should look different on screen without changing the underlying model) call get-guidance with name `page-schema-converters` first — this determines whether a converter is the right tool before choosing a component type; " +
 		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
+		"if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
 		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("Parameters: schema-name, body (required); resources, dry-run, skip-sampling (optional); environment-name preferred; uri/login/password emergency fallback only.")]
@@ -92,6 +93,9 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateValidatorBindingPlacement(body), errors);
 		Collect(SchemaValidationService.ValidateStandardValidatorUsage(body), errors);
 		Collect(SchemaValidationService.ValidateCustomValidatorParamCompleteness(body), errors);
+		Collect(SchemaValidationService.ValidateConverterDeclarations(body), errors);
+		Collect(SchemaValidationService.ValidateHandlerStructure(body), errors);
+		Collect(SchemaValidationService.ValidateValidatorDeclarations(body), errors);
 		return errors.Count > 0 ? "Validation failed: " + string.Join("; ", errors) : null;
 	}
 

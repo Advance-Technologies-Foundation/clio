@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -14,7 +15,10 @@ public sealed class PageValidateTool {
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
 	[Description("Validates a Freedom UI page body client-side without saving to Creatio. " +
-		"Checks marker integrity, JS syntax, JSON content, field bindings, and column bindings.")]
+		"Checks marker integrity, JS syntax, JSON content, field bindings, column bindings, " +
+		"handler structure (SCHEMA_HANDLERS must be an array of {request, handler} entries), " +
+		"and VendorPrefix.Name format for SCHEMA_CONVERTERS / SCHEMA_VALIDATORS keys and SCHEMA_HANDLERS entry `request` values — " +
+		"read get-guidance `page-schema-converters`, `page-schema-handlers`, or `page-schema-validators` before adding them.")]
 	public PageValidateResponse ValidatePage(
 		[Description("Parameters: body (required); resources (optional)")]
 		[Required] PageValidateArgs args) {
@@ -37,12 +41,16 @@ public sealed class PageValidateTool {
 			contentResult.IsValid = false;
 			contentResult.Errors.Add("resources must be a valid JSON object string");
 		}
-		SchemaValidationResult fieldResult = contentResult.IsValid
-			? SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources)
-			: new SchemaValidationResult { IsValid = true };
-		SchemaValidationResult bindingResult = contentResult.IsValid
-			? SchemaValidationService.ValidateColumnBindings(body)
-			: new SchemaValidationResult { IsValid = true };
+		SchemaValidationResult fieldResult = RunContentValidation(contentResult,
+			() => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources));
+		SchemaValidationResult bindingResult = RunContentValidation(contentResult,
+			() => SchemaValidationService.ValidateColumnBindings(body));
+		SchemaValidationResult converterDeclResult = RunContentValidation(contentResult,
+			() => SchemaValidationService.ValidateConverterDeclarations(body));
+		SchemaValidationResult handlerStructureResult = RunContentValidation(contentResult,
+			() => SchemaValidationService.ValidateHandlerStructure(body));
+		SchemaValidationResult validatorDeclResult = RunContentValidation(contentResult,
+			() => SchemaValidationService.ValidateValidatorDeclarations(body));
 		var errors = new List<string>();
 		var warnings = new List<string>();
 		if (!markerResult.IsValid) errors.AddRange(markerResult.Errors);
@@ -51,14 +59,23 @@ public sealed class PageValidateTool {
 		if (!fieldResult.IsValid) errors.AddRange(fieldResult.Errors);
 		if (fieldResult.Warnings.Count > 0) warnings.AddRange(fieldResult.Warnings);
 		if (!bindingResult.IsValid) warnings.AddRange(bindingResult.Errors);
+		if (!converterDeclResult.IsValid) errors.AddRange(converterDeclResult.Errors);
+		if (!handlerStructureResult.IsValid) errors.AddRange(handlerStructureResult.Errors);
+		if (!validatorDeclResult.IsValid) errors.AddRange(validatorDeclResult.Errors);
 		return new PageSyncValidationResult {
 			MarkersOk = markerResult.IsValid,
 			JsSyntaxOk = syntaxResult.IsValid,
-			ContentOk = contentResult.IsValid && fieldResult.IsValid,
+			ContentOk = contentResult.IsValid && fieldResult.IsValid && converterDeclResult.IsValid && 
+				handlerStructureResult.IsValid && validatorDeclResult.IsValid,
 			Errors = errors.Count > 0 ? errors : null,
 			Warnings = warnings.Count > 0 ? warnings : null
 		};
 	}
+
+	private static SchemaValidationResult RunContentValidation(
+		SchemaValidationResult contentResult,
+		Func<SchemaValidationResult> validation) =>
+		contentResult.IsValid ? validation() : new SchemaValidationResult { IsValid = true };
 }
 
 public sealed record PageValidateArgs(

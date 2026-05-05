@@ -15,6 +15,21 @@ a single application entity.
 Before editing handler or validator sections in raw page bodies, use `get-guidance` with
 `name` set to `page-schema-handlers` or `page-schema-validators`.
 
+## Validation Rules
+
+When `validate` is `true` (the default), the body is checked client-side before save:
+
+- **SCHEMA_CONVERTERS keys** (object form) must follow `VendorPrefix.ConverterName` format
+  (e.g., `usr.MyConverter`). Call `clio get-guidance --name page-schema-converters` for details.
+- **SCHEMA_HANDLERS** must be an array of `{ request, handler }` entries. Each `request` value
+  must follow `VendorPrefix.HandlerName` format (e.g., `crt.HandleViewModelInitRequest`,
+  `usr.HandleSomeRequest`). Call `clio get-guidance --name page-schema-handlers` for details.
+- **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
+  (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
+
+A malformed `VendorPrefix.Name` in any of these sections causes a Creatio runtime error:
+`"Error when register X. Type property should have format VendorPrefix.TypeName"`.
+
 ## Parameters
 
 | Parameter | Required | Default | Description |
