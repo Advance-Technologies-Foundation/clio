@@ -382,6 +382,54 @@ public sealed class PageSyncToolE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects a SCHEMA_CONVERTERS entry whose key is missing the required dot separator before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects converter key without dot during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body with a converter key that has no dot, and verifies that client-side validation blocks the save with a structured response naming the key and the VendorPrefix requirement.")]
+	public async Task PageSyncTool_Should_Reject_Converter_Key_Without_Dot_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithBadConverter = ValidPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"UsrBadConverter\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrConverterKeyValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithBadConverter
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "converter key validation failures should be reported as structured tool results, not protocol errors");
+		response.Success.Should().BeFalse(
+			because: "a converter key without a dot causes a Creatio runtime error and must be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail client-side converter key validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "converter key format failure is a content-level error");
+		response.Pages[0].Error.Should().Contain("UsrBadConverter")
+			.And.Contain("VendorPrefix",
+				because: "the error must name the offending key and reference the VendorPrefix.Name format requirement");
+	}
+
+	[Test]
 	[Description("Rejects obvious custom max-length validators through the real MCP server before any remote save is attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages rejects obvious custom max-length validators during semantic validation")]

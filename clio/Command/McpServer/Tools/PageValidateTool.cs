@@ -14,7 +14,8 @@ public sealed class PageValidateTool {
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
 	[Description("Validates a Freedom UI page body client-side without saving to Creatio. " +
-		"Checks marker integrity, JS syntax, JSON content, field bindings, and column bindings.")]
+		"Checks marker integrity, JS syntax, JSON content, field bindings, column bindings, " +
+		"and converter key format (SCHEMA_CONVERTERS keys must follow VendorPrefix.Name — read get-guidance `page-schema-converters` before adding converters).")]
 	public PageValidateResponse ValidatePage(
 		[Description("Parameters: body (required); resources (optional)")]
 		[Required] PageValidateArgs args) {
@@ -43,6 +44,9 @@ public sealed class PageValidateTool {
 		SchemaValidationResult bindingResult = contentResult.IsValid
 			? SchemaValidationService.ValidateColumnBindings(body)
 			: new SchemaValidationResult { IsValid = true };
+		SchemaValidationResult converterDeclResult = contentResult.IsValid
+			? SchemaValidationService.ValidateConverterDeclarations(body)
+			: new SchemaValidationResult { IsValid = true };
 		var errors = new List<string>();
 		var warnings = new List<string>();
 		if (!markerResult.IsValid) errors.AddRange(markerResult.Errors);
@@ -51,10 +55,11 @@ public sealed class PageValidateTool {
 		if (!fieldResult.IsValid) errors.AddRange(fieldResult.Errors);
 		if (fieldResult.Warnings.Count > 0) warnings.AddRange(fieldResult.Warnings);
 		if (!bindingResult.IsValid) warnings.AddRange(bindingResult.Errors);
+		if (!converterDeclResult.IsValid) errors.AddRange(converterDeclResult.Errors);
 		return new PageSyncValidationResult {
 			MarkersOk = markerResult.IsValid,
 			JsSyntaxOk = syntaxResult.IsValid,
-			ContentOk = contentResult.IsValid && fieldResult.IsValid,
+			ContentOk = contentResult.IsValid && fieldResult.IsValid && converterDeclResult.IsValid,
 			Errors = errors.Count > 0 ? errors : null,
 			Warnings = warnings.Count > 0 ? warnings : null
 		};

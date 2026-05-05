@@ -1846,5 +1846,158 @@ public sealed class SchemaValidationServiceTests {
 			error => error.Contains("UsrStatus") && error.Contains("$DS1_UsrStatus") && error.Contains("$UsrStatus"),
 			because: "the error should identify the wrong datasource binding and the correct view-model attribute binding");
 	}
+
+	#region ValidateConverterDeclarations
+
+	[Test]
+	[Description("Null body returns valid without throwing")]
+	public void ValidateConverterDeclarations_NullBody_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(null);
+		result.IsValid.Should().BeTrue("because a null body is handled by the early-return guard");
+		result.Errors.Should().BeEmpty("because a null body produces no validation errors");
+	}
+
+	[Test]
+	[Description("Empty string body returns valid without throwing")]
+	public void ValidateConverterDeclarations_EmptyBody_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(string.Empty);
+		result.IsValid.Should().BeTrue("because an empty body is handled by the early-return guard");
+		result.Errors.Should().BeEmpty("because an empty body produces no validation errors");
+	}
+
+	[Test]
+	[Description("Empty converters object passes validation")]
+	public void ValidateConverterDeclarations_EmptyConverters_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(ValidListPageBody);
+		result.IsValid.Should().BeTrue("because an empty SCHEMA_CONVERTERS object has no keys to validate");
+		result.Errors.Should().BeEmpty("because no keys means no format errors");
+	}
+
+	[Test]
+	[Description("Converter with correct usr. prefix passes validation")]
+	public void ValidateConverterDeclarations_CorrectPrefixedKey_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.ToUpperCase\": function(value) { return value?.toUpperCase() ?? ''; } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeTrue("because 'usr.ToUpperCase' has the required VendorPrefix.Name dot-format");
+		result.Errors.Should().BeEmpty("because a correctly prefixed key produces no errors");
+	}
+
+	[Test]
+	[Description("Async arrow converter with correct prefix passes validation")]
+	public void ValidateConverterDeclarations_AsyncArrowConverterCorrectKey_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.FormatPhone\": async (value) => { return value; } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeTrue("because 'usr.FormatPhone' has the required dot-format");
+		result.Errors.Should().BeEmpty("because async arrow shape with a correct key produces no errors");
+	}
+
+	[Test]
+	[Description("Converter key without a dot fails validation with a descriptive runtime-error message")]
+	public void ValidateConverterDeclarations_KeyWithoutDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"UsrPhoneCallConverter\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'UsrPhoneCallConverter' is missing the required dot separator");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("UsrPhoneCallConverter") && e.Contains("usr.UsrPhoneCallConverter") && e.Contains("VendorPrefix"),
+			because: "the error should name the offending key, suggest the fix, and explain the runtime consequence");
+	}
+
+	[Test]
+	[Description("Multiple converters — one valid, one missing dot — reports exactly one error for the bad key")]
+	public void ValidateConverterDeclarations_MixedKeys_ReportsOnlyBadOne() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ " +
+			"\"usr.ToUpperCase\": function(value) { return value?.toUpperCase() ?? ''; }, " +
+			"\"BadConverter\": function(value) { return value; } " +
+			"}/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'BadConverter' is missing the dot");
+		result.Errors.Should().ContainSingle(e => e.Contains("BadConverter"),
+			because: "only the key without a dot should generate an error");
+		result.Errors.Should().NotContain(e => e.Contains("usr.ToUpperCase"),
+			because: "the valid key should not generate an error");
+	}
+
+	[Test]
+	[Description("crt.* converter declared in SCHEMA_CONVERTERS passes format validation (wrong practice, but not a dot-format error)")]
+	public void ValidateConverterDeclarations_CrtPrefixedKey_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"crt.SomeConverter\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeTrue(
+			"because the dot-format check passes for 'crt.SomeConverter' — declaring crt.* is unnecessary but not a format error");
+	}
+
+	[Test]
+	[Description("No-paren single-arg arrow converter without a dot fails validation")]
+	public void ValidateConverterDeclarations_NoParenArrowMissingDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"BadArrow\": value => value }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'BadArrow' is missing the required dot separator");
+		result.Errors.Should().ContainSingle(e => e.Contains("BadArrow") && e.Contains("VendorPrefix"),
+			because: "no-paren single-arg arrow converters must be checked by the same dot-format rule");
+	}
+
+	[Test]
+	[Description("No-paren single-arg arrow converter with correct prefix passes validation")]
+	public void ValidateConverterDeclarations_NoParenArrowCorrectKey_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.Trim\": value => value.trim() }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeTrue("because 'usr.Trim' has the required dot-format");
+		result.Errors.Should().BeEmpty("because no-paren arrow shape with a correct key produces no errors");
+	}
+
+	[Test]
+	[Description("ES6 method-shorthand converter without a dot fails validation")]
+	public void ValidateConverterDeclarations_MethodShorthandMissingDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"BadShorthand\"(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'BadShorthand' is missing the required dot separator");
+		result.Errors.Should().ContainSingle(e => e.Contains("BadShorthand") && e.Contains("VendorPrefix"),
+			because: "ES6 method-shorthand converters must be checked by the same dot-format rule");
+	}
+
+	[Test]
+	[Description("Quoted property name inside a converter body is not flagged as a top-level key")]
+	public void ValidateConverterDeclarations_NestedStringKey_DoesNotFalsePositive() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.Outer\": function(value) { " +
+			"return JSON.stringify({ \"nested_no_dot\": value }); } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeTrue(
+			"because 'nested_no_dot' lives inside the converter's body, not at the SCHEMA_CONVERTERS top level");
+		result.Errors.Should().BeEmpty("because nested-string keys must not be flagged as top-level converter keys");
+	}
+
+	[Test]
+	[Description("Error message mentions a placeholder vendor prefix and 'usr.' as an example, not as a hardcoded rename")]
+	public void ValidateConverterDeclarations_ErrorMessage_MentionsVendorPrefixPlaceholder() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"PhoneCall\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'PhoneCall' is missing the required dot separator");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("<vendor>.PhoneCall") && e.Contains("for example 'usr.PhoneCall'"),
+			because: "the rename suggestion should not hardcode 'usr.' for vendors that ship a different prefix");
+	}
+
+	#endregion
+
 }
 

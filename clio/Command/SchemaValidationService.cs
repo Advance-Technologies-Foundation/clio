@@ -14,6 +14,7 @@ public static class SchemaValidationService
 	private const string SchemaViewModelConfig = "SCHEMA_VIEW_MODEL_CONFIG";
 	private const string SchemaDiffMarker = "SCHEMA_DIFF";
 	private const string SchemaValidatorsMarker = "SCHEMA_VALIDATORS";
+	private const string SchemaConvertersMarker = "SCHEMA_CONVERTERS";
 	internal const string SchemaHandlersMarker = "SCHEMA_HANDLERS";
 	private const string ValuesPropertyName = "values";
 	private const string AttributesPropertyName = "attributes";
@@ -26,7 +27,7 @@ public static class SchemaValidationService
 		"SCHEMA_ARGS",
 		SchemaViewConfigDiff,
 		SchemaHandlersMarker,
-		"SCHEMA_CONVERTERS",
+		SchemaConvertersMarker,
 		SchemaValidatorsMarker
 	};
 
@@ -36,6 +37,7 @@ public static class SchemaValidationService
 	};
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
+
 	private static readonly Regex ResourceStringPattern = new(
 		@"^#ResourceString\(([^)]+)\)#$",
 		RegexOptions.Compiled,
@@ -1508,6 +1510,143 @@ public static class SchemaValidationService
 				CollectPathsFromElement(item, paths);
 			}
 		}
+	}
+
+	/// <summary>
+	/// Validates that all keys in <c>SCHEMA_CONVERTERS</c> follow the required
+	/// <c>VendorPrefix.ConverterName</c> format. A missing dot causes a Creatio runtime error:
+	/// "Error when register X. Type property should have format VendorPrefix.ConverterTypeName".
+	/// </summary>
+	public static SchemaValidationResult ValidateConverterDeclarations(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string convertersContent, SchemaConvertersMarker)) {
+			return result;
+		}
+		string trimmed = convertersContent.Trim();
+		if (string.IsNullOrWhiteSpace(trimmed) || trimmed == "{}" || !trimmed.StartsWith("{", StringComparison.Ordinal)) {
+			return result;
+		}
+		foreach (string key in EnumerateTopLevelConverterKeys(trimmed)) {
+			if (key.Contains('.')) {
+				continue;
+			}
+			result.IsValid = false;
+			result.Errors.Add(
+				$"Converter '{key}' in SCHEMA_CONVERTERS does not follow the required 'VendorPrefix.ConverterName' format (missing dot). " +
+				$"Rename it to '<vendor>.{key}' (for example 'usr.{key}') — a missing dot causes a Creatio runtime error: " +
+				$"\"Error when register {key}. Type property should have format \\\"VendorPrefix.ConverterTypeName\\\"\". " +
+				"Call get-guidance with name 'page-schema-converters' for the correct converter format.");
+		}
+		return result;
+	}
+
+	private static List<string> EnumerateTopLevelConverterKeys(string objectContent) {
+		var keys = new List<string>();
+		int depth = 0;
+		bool inString = false;
+		char stringChar = '"';
+		int index = 0;
+		while (index < objectContent.Length) {
+			if (JsParserHelper.TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
+				continue;
+			}
+			if (JsParserHelper.TrySkipComment(objectContent, index, out int afterComment)) {
+				index = afterComment;
+				continue;
+			}
+			char current = objectContent[index];
+			if (depth == 1 && (current == '"' || current == '\'') &&
+			    TryReadConverterEntry(objectContent, index, current, out string key, out int afterEntryIndex)) {
+				keys.Add(key);
+				index = afterEntryIndex;
+				continue;
+			}
+			if (JsParserHelper.TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
+				continue;
+			}
+			index++;
+		}
+		return keys;
+	}
+
+	private static bool TryReadConverterEntry(
+		string content, int startIndex, char quote,
+		out string keyName, out int afterEntryIndex) {
+		keyName = string.Empty;
+		afterEntryIndex = startIndex;
+		int endQuoteIndex = startIndex + 1;
+		while (endQuoteIndex < content.Length) {
+			if (content[endQuoteIndex] == '\\') {
+				endQuoteIndex += endQuoteIndex + 1 < content.Length ? 2 : 1;
+				continue;
+			}
+			if (content[endQuoteIndex] == quote) {
+				break;
+			}
+			endQuoteIndex++;
+		}
+		if (endQuoteIndex >= content.Length || content[endQuoteIndex] != quote) {
+			return false;
+		}
+		string name = content.Substring(startIndex + 1, endQuoteIndex - startIndex - 1);
+		int afterName = JsParserHelper.SkipWhitespace(content, endQuoteIndex + 1);
+		if (afterName >= content.Length) {
+			return false;
+		}
+		char delimiter = content[afterName];
+		if (delimiter != ':' && delimiter != '(') {
+			return false;
+		}
+		int valueStart = delimiter == ':'
+			? JsParserHelper.SkipWhitespace(content, afterName + 1)
+			: afterName;
+		SkipBalancedConverterValue(content, valueStart, out int afterValue);
+		keyName = name;
+		afterEntryIndex = afterValue;
+		return true;
+	}
+
+	private static void SkipBalancedConverterValue(string content, int valueStart, out int afterValueIndex) {
+		int braceDepth = 0;
+		int bracketDepth = 0;
+		int parenDepth = 0;
+		bool inString = false;
+		char stringChar = '"';
+		int index = valueStart;
+		while (index < content.Length) {
+			if (JsParserHelper.TryConsumeStringLiteralCharacter(content, ref index, ref inString, stringChar)) {
+				continue;
+			}
+			if (JsParserHelper.TrySkipComment(content, index, out int afterComment)) {
+				index = afterComment;
+				continue;
+			}
+			char current = content[index];
+			bool atTopLevel = braceDepth == 0 && bracketDepth == 0 && parenDepth == 0;
+			if (atTopLevel && (current == ',' || current == '}')) {
+				afterValueIndex = index;
+				return;
+			}
+			if (current is '"' or '\'' or '`') {
+				inString = true;
+				stringChar = current;
+				index++;
+				continue;
+			}
+			switch (current) {
+				case '{': braceDepth++; break;
+				case '}': braceDepth--; break;
+				case '[': bracketDepth++; break;
+				case ']': bracketDepth--; break;
+				case '(': parenDepth++; break;
+				case ')': parenDepth--; break;
+			}
+			index++;
+		}
+		afterValueIndex = index;
 	}
 
 	public static SchemaValidationResult ValidateJsSyntax(string jsBody) {
