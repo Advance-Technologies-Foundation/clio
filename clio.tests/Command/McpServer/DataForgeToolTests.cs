@@ -339,6 +339,7 @@ public sealed class DataForgeToolTests {
 		IToolCommandResolver commandResolver) {
 		var clioGateEnsurer = Substitute.For<IClioGateEnsurer>();
 		clioGateEnsurer.EnsureInstalled().Returns(ClioGateEnsureResult.Present());
+		commandResolver.Resolve<IClioGateEnsurer>(Arg.Any<EnvironmentOptions>()).Returns(clioGateEnsurer);
 		return new(
 			dataForgeClient,
 			maintenanceClient,
