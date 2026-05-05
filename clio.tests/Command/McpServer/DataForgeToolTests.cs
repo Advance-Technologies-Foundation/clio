@@ -188,17 +188,15 @@ public sealed class DataForgeToolTests {
 		Environment.SetEnvironmentVariable("HTTPS_PROXY", "http://127.0.0.1:9");
 		Environment.SetEnvironmentVariable("ALL_PROXY", "http://127.0.0.1:9");
 
-		ISysSettingsManager sysSettingsManager = Substitute.For<ISysSettingsManager>();
-		sysSettingsManager.GetSysSettingValueByCode("DataForgeServiceUrl")
-			.Returns(_ => throw new InvalidOperationException("cliogate endpoint is unavailable"));
-		ConfigureDefaultNumericSysSettings(sysSettingsManager);
 		IDataForgeSysSettingDirectReader directReader = Substitute.For<IDataForgeSysSettingDirectReader>();
-		directReader.ReadTextValue("DataForgeServiceUrl")
+		directReader.ReadValue(Arg.Any<string>())
+			.Returns(new DataForgeSysSettingReadResult(false, null, null));
+		directReader.ReadValue("DataForgeServiceUrl")
 			.Returns(new DataForgeSysSettingReadResult(true, "https://data-forge-stage.bpmonline.com/", null));
 		ObservingHttpMessageHandler handler = new();
 		IDataForgeClient resolvedClient = new DataForgeClient(
 			new HttpClient(handler),
-			new DataForgeConfigResolver(new EnvironmentSettings(), sysSettingsManager, directReader),
+			new DataForgeConfigResolver(directReader, Substitute.For<ISysSettingsManager>()),
 			Substitute.For<ILogger>());
 		IDataForgeClient fallbackClient = Substitute.For<IDataForgeClient>();
 		IDataForgeMaintenanceClient maintenanceClient = Substitute.For<IDataForgeMaintenanceClient>();
@@ -223,7 +221,7 @@ public sealed class DataForgeToolTests {
 			because: "poisoned proxy env vars should be cleared for the whole Data Forge call scope");
 		handler.RequestUris.Should().Contain(uri => uri.ToString() == "https://data-forge-stage.bpmonline.com/liveness",
 			because: "the resolved service URL should come from the direct SysSettings fallback");
-		directReader.Received(1).ReadTextValue("DataForgeServiceUrl");
+		directReader.Received(1).ReadValue("DataForgeServiceUrl");
 		Environment.GetEnvironmentVariable("HTTP_PROXY").Should().Be("http://127.0.0.1:9",
 			because: "proxy env vars should be restored after the Data Forge call finishes");
 	}
@@ -233,15 +231,12 @@ public sealed class DataForgeToolTests {
 	[Description("Health tool should return a meaningful config-resolution error instead of masking the real failure as a generic DataForgeServiceUrl is required message.")]
 	public async Task DataForgeHealth_Should_Return_Meaningful_Error_On_Config_Failure() {
 		// Arrange
-		ISysSettingsManager sysSettingsManager = Substitute.For<ISysSettingsManager>();
-		sysSettingsManager.GetSysSettingValueByCode("DataForgeServiceUrl").Returns("<html>cliogate outdated</html>");
-		ConfigureDefaultNumericSysSettings(sysSettingsManager);
 		IDataForgeSysSettingDirectReader directReader = Substitute.For<IDataForgeSysSettingDirectReader>();
-		directReader.ReadTextValue("DataForgeServiceUrl")
+		directReader.ReadValue("DataForgeServiceUrl")
 			.Returns(new DataForgeSysSettingReadResult(false, null, "direct SysSettings OData read failed with 401 Unauthorized"));
 		IDataForgeClient resolvedClient = new DataForgeClient(
 			new HttpClient(new ObservingHttpMessageHandler()),
-			new DataForgeConfigResolver(new EnvironmentSettings(), sysSettingsManager, directReader),
+			new DataForgeConfigResolver(directReader, Substitute.For<ISysSettingsManager>()),
 			Substitute.For<ILogger>());
 		IDataForgeClient fallbackClient = Substitute.For<IDataForgeClient>();
 		IDataForgeMaintenanceClient maintenanceClient = Substitute.For<IDataForgeMaintenanceClient>();
@@ -342,20 +337,16 @@ public sealed class DataForgeToolTests {
 		IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
 		IDataForgeContextService contextService,
 		IToolCommandResolver commandResolver) {
+		var clioGateEnsurer = Substitute.For<IClioGateEnsurer>();
+		clioGateEnsurer.EnsureInstalled().Returns(ClioGateEnsureResult.Present());
 		return new(
 			dataForgeClient,
 			maintenanceClient,
 			runtimeEntitySchemaReader,
 			contextService,
 			commandResolver,
-			new DataForgeProxySafeExecutor());
-	}
-
-	private static void ConfigureDefaultNumericSysSettings(ISysSettingsManager sysSettingsManager) {
-		sysSettingsManager.GetSysSettingValueByCode<int>("DataForgeServiceQueryTimeout").Returns(30_000);
-		sysSettingsManager.GetSysSettingValueByCode<int>("DataForgeSimilarTablesResultLimit").Returns(50);
-		sysSettingsManager.GetSysSettingValueByCode<int>("DataForgeLookupResultLimit").Returns(5);
-		sysSettingsManager.GetSysSettingValueByCode<int>("DataForgeTableRelationshipsCountLimit").Returns(5);
+			new DataForgeProxySafeExecutor(),
+			clioGateEnsurer);
 	}
 
 	private sealed class ObservingHttpMessageHandler : HttpMessageHandler {

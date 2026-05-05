@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using Clio.Common;
 using Clio.Common.DataForge;
 using Clio.Common.EntitySchema;
 using ModelContextProtocol.Server;
@@ -18,7 +19,8 @@ public sealed class DataForgeTool(
 	IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
 	IDataForgeContextService contextService,
 	IToolCommandResolver commandResolver,
-	IDataForgeProxySafeExecutor proxySafeExecutor) {
+	IDataForgeProxySafeExecutor proxySafeExecutor,
+	IClioGateEnsurer clioGateEnsurer) {
 	internal const string DataForgeHealthToolName = "dataforge-health";
 	internal const string DataForgeStatusToolName = "dataforge-status";
 	internal const string DataForgeFindTablesToolName = "dataforge-find-tables";
@@ -40,11 +42,13 @@ public sealed class DataForgeTool(
 		[Required]
 		DataForgeHealthArgs args) {
 		try {
-			DataForgeHealthResult health = await ExecuteAsync(args, async options => {
-				IDataForgeClient client = ResolveService(options, dataForgeClient);
-				return await client.CheckHealthAsync(BuildConfigRequest(options));
+			DataForgeTargetOptions options = CreateTargetOptions(args);
+			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
+			DataForgeHealthResult health = await ExecuteWithOptions(options, async o => {
+				IDataForgeClient client = ResolveService(o, dataForgeClient);
+				return await client.CheckHealthAsync(BuildConfigRequest(o));
 			});
-			return new DataForgeHealthResponse(true, SourceName, health.CorrelationId, [], null, health);
+			return new DataForgeHealthResponse(true, SourceName, health.CorrelationId, warnings, null, health);
 		} catch (Exception ex) {
 			return new DataForgeHealthResponse(
 				false,
@@ -64,14 +68,16 @@ public sealed class DataForgeTool(
 		[Required]
 		DataForgeStatusArgs args) {
 		try {
-			(DataForgeHealthResult health, DataForgeMaintenanceStatusResult status) = await ExecuteAsync(args, async options => {
-				IDataForgeClient client = ResolveService(options, dataForgeClient);
-				IDataForgeMaintenanceClient maintenance = ResolveService(options, maintenanceClient);
-				DataForgeHealthResult resolvedHealth = await client.CheckHealthAsync(BuildConfigRequest(options));
+			DataForgeTargetOptions options = CreateTargetOptions(args);
+			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
+			(DataForgeHealthResult health, DataForgeMaintenanceStatusResult status) = await ExecuteWithOptions(options, async o => {
+				IDataForgeClient client = ResolveService(o, dataForgeClient);
+				IDataForgeMaintenanceClient maintenance = ResolveService(o, maintenanceClient);
+				DataForgeHealthResult resolvedHealth = await client.CheckHealthAsync(BuildConfigRequest(o));
 				DataForgeMaintenanceStatusResult resolvedStatus = maintenance.GetStatus();
 				return (resolvedHealth, resolvedStatus);
 			});
-			return new DataForgeStatusResponse(true, SourceName, health.CorrelationId, [], null, health, status);
+			return new DataForgeStatusResponse(true, SourceName, health.CorrelationId, warnings, null, health, status);
 		} catch (Exception ex) {
 			return new DataForgeStatusResponse(
 				false,
@@ -93,14 +99,13 @@ public sealed class DataForgeTool(
 		DataForgeFindTablesArgs args) {
 		try {
 			EnsureRequired(args.Query, "query");
-			IReadOnlyList<SimilarTableResult> results = await ExecuteAsync(args, async options => {
-				IDataForgeClient client = ResolveService(options, dataForgeClient);
-				return await client.FindSimilarTablesAsync(
-					args.Query!,
-					args.Limit,
-					BuildConfigRequest(options));
+			DataForgeTargetOptions options = CreateTargetOptions(args);
+			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
+			IReadOnlyList<SimilarTableResult> results = await ExecuteWithOptions(options, async o => {
+				IDataForgeClient client = ResolveService(o, dataForgeClient);
+				return await client.FindSimilarTablesAsync(args.Query!, args.Limit, BuildConfigRequest(o));
 			});
-			return new DataForgeFindTablesResponse(true, SourceName, string.Empty, [], null, results);
+			return new DataForgeFindTablesResponse(true, SourceName, string.Empty, warnings, null, results);
 		} catch (Exception ex) {
 			return new DataForgeFindTablesResponse(
 				false,
@@ -121,15 +126,13 @@ public sealed class DataForgeTool(
 		DataForgeFindLookupsArgs args) {
 		try {
 			EnsureRequired(args.Query, "query");
-			IReadOnlyList<SimilarLookupResult> results = await ExecuteAsync(args, async options => {
-				IDataForgeClient client = ResolveService(options, dataForgeClient);
-				return await client.FindSimilarLookupsAsync(
-					args.Query!,
-					args.SchemaName,
-					args.Limit,
-					BuildConfigRequest(options));
+			DataForgeTargetOptions options = CreateTargetOptions(args);
+			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
+			IReadOnlyList<SimilarLookupResult> results = await ExecuteWithOptions(options, async o => {
+				IDataForgeClient client = ResolveService(o, dataForgeClient);
+				return await client.FindSimilarLookupsAsync(args.Query!, args.SchemaName, args.Limit, BuildConfigRequest(o));
 			});
-			return new DataForgeFindLookupsResponse(true, SourceName, string.Empty, [], null, results);
+			return new DataForgeFindLookupsResponse(true, SourceName, string.Empty, warnings, null, results);
 		} catch (Exception ex) {
 			return new DataForgeFindLookupsResponse(
 				false,
@@ -151,15 +154,13 @@ public sealed class DataForgeTool(
 		try {
 			EnsureRequired(args.SourceTable, "source-table");
 			EnsureRequired(args.TargetTable, "target-table");
-			IReadOnlyList<string> results = await ExecuteAsync(args, async options => {
-				IDataForgeClient client = ResolveService(options, dataForgeClient);
-				return await client.GetTableRelationshipsAsync(
-					args.SourceTable!,
-					args.TargetTable!,
-					args.Limit,
-					BuildConfigRequest(options));
+			DataForgeTargetOptions options = CreateTargetOptions(args);
+			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
+			IReadOnlyList<string> results = await ExecuteWithOptions(options, async o => {
+				IDataForgeClient client = ResolveService(o, dataForgeClient);
+				return await client.GetTableRelationshipsAsync(args.SourceTable!, args.TargetTable!, args.Limit, BuildConfigRequest(o));
 			});
-			return new DataForgeRelationsResponse(true, SourceName, string.Empty, [], null, results);
+			return new DataForgeRelationsResponse(true, SourceName, string.Empty, warnings, null, results);
 		} catch (Exception ex) {
 			return new DataForgeRelationsResponse(
 				false,
@@ -180,12 +181,14 @@ public sealed class DataForgeTool(
 		DataForgeGetTableColumnsArgs args) {
 		try {
 			EnsureRequired(args.TableName, "table-name");
-			RuntimeEntitySchemaResult runtimeSchema = Execute(args, options => {
-				IRuntimeEntitySchemaReader reader = ResolveService(options, runtimeEntitySchemaReader);
+			DataForgeTargetOptions options = CreateTargetOptions(args);
+			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
+			RuntimeEntitySchemaResult runtimeSchema = ExecuteWithOptions(options, o => {
+				IRuntimeEntitySchemaReader reader = ResolveService(o, runtimeEntitySchemaReader);
 				return reader.GetByName(args.TableName!);
 			});
 			IReadOnlyList<DataForgeColumnResult> results = DataForgeRuntimeSchemaMapper.MapColumns(runtimeSchema);
-			return new DataForgeColumnsResponse(true, SourceName, string.Empty, [], null, results);
+			return new DataForgeColumnsResponse(true, SourceName, string.Empty, warnings, null, results);
 		} catch (Exception ex) {
 			return new DataForgeColumnsResponse(
 				false,
@@ -205,21 +208,24 @@ public sealed class DataForgeTool(
 		[Required]
 		DataForgeContextArgs args) {
 		try {
-			DataForgeContextAggregationResult contextResult = await ExecuteAsync(args, async options => {
-				IDataForgeContextService resolvedContextService = ResolveService(options, contextService);
+			DataForgeTargetOptions options = CreateTargetOptions(args);
+			IReadOnlyList<string> gateWarnings = EnsureGateAndCollectWarnings(options);
+			DataForgeContextAggregationResult contextResult = await ExecuteWithOptions(options, async o => {
+				IDataForgeContextService resolvedContextService = ResolveService(o, contextService);
 				return await resolvedContextService.GetContextAsync(
 					new DataForgeContextRequest(
 						args.RequirementSummary,
 						args.CandidateTerms,
 						args.LookupHints,
 						args.RelationPairs?.Select(pair => new DataForgeRelationPair(pair.SourceTable, pair.TargetTable)).ToList()),
-					BuildConfigRequest(options));
+					BuildConfigRequest(o));
 			});
+			IReadOnlyList<string> allWarnings = [..gateWarnings, ..contextResult.Warnings];
 			return new DataForgeContextResponse(
 				true,
 				SourceName,
 				contextResult.CorrelationId,
-				contextResult.Warnings,
+				allWarnings,
 				null,
 				contextResult.Health,
 				contextResult.Status,
@@ -253,11 +259,13 @@ public sealed class DataForgeTool(
 		[Required]
 		DataForgeMaintenanceArgs args) {
 		try {
-			DataForgeMaintenanceStatusResult result = Execute(args, options => {
-				IDataForgeMaintenanceClient maintenance = ResolveService(options, maintenanceClient);
+			DataForgeTargetOptions options = CreateTargetOptions(args);
+			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
+			DataForgeMaintenanceStatusResult result = ExecuteWithOptions(options, o => {
+				IDataForgeMaintenanceClient maintenance = ResolveService(o, maintenanceClient);
 				return maintenance.Initialize();
 			});
-			return new DataForgeMaintenanceResponse(true, SourceName, string.Empty, [], null, result);
+			return new DataForgeMaintenanceResponse(true, SourceName, string.Empty, warnings, null, result);
 		} catch (Exception ex) {
 			return new DataForgeMaintenanceResponse(
 				false,
@@ -277,11 +285,13 @@ public sealed class DataForgeTool(
 		[Required]
 		DataForgeMaintenanceArgs args) {
 		try {
-			DataForgeMaintenanceStatusResult result = Execute(args, options => {
-				IDataForgeMaintenanceClient maintenance = ResolveService(options, maintenanceClient);
+			DataForgeTargetOptions options = CreateTargetOptions(args);
+			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
+			DataForgeMaintenanceStatusResult result = ExecuteWithOptions(options, o => {
+				IDataForgeMaintenanceClient maintenance = ResolveService(o, maintenanceClient);
 				return maintenance.Update();
 			});
-			return new DataForgeMaintenanceResponse(true, SourceName, string.Empty, [], null, result);
+			return new DataForgeMaintenanceResponse(true, SourceName, string.Empty, warnings, null, result);
 		} catch (Exception ex) {
 			return new DataForgeMaintenanceResponse(
 				false,
@@ -293,16 +303,19 @@ public sealed class DataForgeTool(
 		}
 	}
 
-	private T Execute<T>(DataForgeConnectionArgsBase args, Func<DataForgeTargetOptions, T> action) {
-		DataForgeTargetOptions options = CreateTargetOptions(args);
+	private T ExecuteWithOptions<T>(DataForgeTargetOptions options, Func<DataForgeTargetOptions, T> action) {
 		string? targetHost = GetTargetHost(options);
 		return proxySafeExecutor.Execute(() => action(options), targetHost);
 	}
 
-	private Task<T> ExecuteAsync<T>(DataForgeConnectionArgsBase args, Func<DataForgeTargetOptions, Task<T>> action) {
-		DataForgeTargetOptions options = CreateTargetOptions(args);
+	private Task<T> ExecuteWithOptions<T>(DataForgeTargetOptions options, Func<DataForgeTargetOptions, Task<T>> action) {
 		string? targetHost = GetTargetHost(options);
 		return proxySafeExecutor.ExecuteAsync(() => action(options), targetHost);
+	}
+
+	private IReadOnlyList<string> EnsureGateAndCollectWarnings(DataForgeTargetOptions options) {
+		ClioGateEnsureResult gateResult = ResolveService(options, clioGateEnsurer).EnsureInstalled();
+		return gateResult.Warning is not null ? [gateResult.Warning] : [];
 	}
 
 	private static void EnsureRequired(string? value, string parameterName) {

@@ -482,6 +482,8 @@ public class BindingsModule {
 				? new Common.IIS.WindowsIISAppPoolManager(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISAppPoolManager());
 		services.AddTransient<ClioGateway>();
+		services.AddTransient<IClioGateway, ClioGateway>();
+		services.AddTransient<IClioGateEnsurer, ClioGateEnsurer>();
 		services.AddTransient<CompileConfigurationCommand>();
 		services.AddTransient<CompileWorkspaceCommand>();
 		services.AddTransient<IMssql, Mssql>();

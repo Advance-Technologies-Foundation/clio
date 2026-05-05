@@ -1,6 +1,8 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using Clio.Common;
 
 namespace Clio.Common.DataForge;
 
@@ -9,10 +11,8 @@ public interface IDataForgeConfigResolver {
 }
 
 public sealed class DataForgeConfigResolver(
-	EnvironmentSettings environmentSettings,
-	ISysSettingsManager sysSettingsManager,
-	IDataForgeSysSettingDirectReader directReader)
-	: IDataForgeConfigResolver {
+	IDataForgeSysSettingDirectReader directReader,
+	ISysSettingsManager sysSettingsManager) : IDataForgeConfigResolver {
 	private const string DataForgeServiceUrlCode = "DataForgeServiceUrl";
 	private const string DefaultOAuthScope = "use_enrichment";
 	private const int DefaultTimeoutMs = 30_000;
@@ -34,9 +34,15 @@ public sealed class DataForgeConfigResolver(
 			GetIntSysSetting("DataForgeTableRelationshipsCountLimit", DefaultRelationshipsLimit);
 		string scope = string.IsNullOrWhiteSpace(request.Scope) ? DefaultOAuthScope : request.Scope.Trim();
 
-		string? tokenUrl = NormalizeTokenUrl(FirstNonEmpty(request.AuthAppUri, environmentSettings.AuthAppUri));
-		string? clientId = FirstNonEmpty(request.ClientId, environmentSettings.ClientId);
-		string? clientSecret = FirstNonEmpty(request.ClientSecret, environmentSettings.ClientSecret);
+		string? tokenUrl = NormalizeTokenUrl(request.AuthAppUri);
+		string? clientId = FirstNonEmpty(request.ClientId);
+		string? clientSecret = FirstNonEmpty(request.ClientSecret);
+
+		if (!HasOAuthSettings(tokenUrl, clientId, clientSecret)) {
+			tokenUrl = NormalizeTokenUrl(GetStringSysSetting("IdentityServerUrl"));
+			clientId = GetStringSysSetting("IdentityServerClientId");
+			clientSecret = GetStringSysSetting("IdentityServerClientSecret");
+		}
 
 		if (HasOAuthSettings(tokenUrl, clientId, clientSecret)) {
 			return new DataForgeResolvedConfig(
@@ -50,25 +56,6 @@ public sealed class DataForgeConfigResolver(
 				clientId,
 				clientSecret,
 				scope);
-		}
-
-		if (request.AllowSysSettingsAuthFallback) {
-			tokenUrl = NormalizeTokenUrl(GetStringSysSetting("IdentityServerUrl"));
-			clientId = GetStringSysSetting("IdentityServerClientId");
-			clientSecret = GetStringSysSetting("IdentityServerClientSecret");
-			if (HasOAuthSettings(tokenUrl, clientId, clientSecret)) {
-				return new DataForgeResolvedConfig(
-					serviceUrl,
-					timeoutMs,
-					similarTablesLimit,
-					lookupLimit,
-					relationshipsLimit,
-					DataForgeAuthMode.OAuthClientCredentials,
-					tokenUrl,
-					clientId,
-					clientSecret,
-					scope);
-			}
 		}
 
 		return new DataForgeResolvedConfig(
@@ -97,41 +84,27 @@ public sealed class DataForgeConfigResolver(
 			throw new InvalidOperationException(explicitCandidate.ErrorMessage);
 		}
 
-		ServiceUrlCandidate gatewayCandidate = GetGatewayServiceUrlCandidate();
-		if (gatewayCandidate.IsSuccess) {
-			return gatewayCandidate.Value!;
-		}
-
 		ServiceUrlCandidate directCandidate = GetDirectServiceUrlCandidate();
 		if (directCandidate.IsSuccess) {
 			return directCandidate.Value!;
 		}
 
-		throw new InvalidOperationException(BuildMissingServiceUrlError(gatewayCandidate, directCandidate));
+		throw new InvalidOperationException(BuildMissingServiceUrlError(directCandidate));
 	}
 
 	private int GetIntSysSetting(string code, int defaultValue) {
-		try {
-			return sysSettingsManager.GetSysSettingValueByCode<int>(code);
-		} catch {
+		DataForgeSysSettingReadResult readResult = directReader.ReadValue(code);
+		if (!readResult.Found || !string.IsNullOrWhiteSpace(readResult.FailureReason)) {
 			return defaultValue;
 		}
-	}
 
-	private ServiceUrlCandidate GetGatewayServiceUrlCandidate() {
-		try {
-			return ValidateServiceUrlCandidate(
-				sysSettingsManager.GetSysSettingValueByCode(DataForgeServiceUrlCode),
-				"cliogate GetSysSettingValueByCode(DataForgeServiceUrl)",
-				treatInvalidAsUnavailable: true);
-		} catch (Exception ex) {
-			return ServiceUrlCandidate.Unavailable(
-				$"cliogate GetSysSettingValueByCode(DataForgeServiceUrl) failed: {ex.Message}");
-		}
+		return int.TryParse(readResult.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)
+			? value
+			: defaultValue;
 	}
 
 	private ServiceUrlCandidate GetDirectServiceUrlCandidate() {
-		DataForgeSysSettingReadResult readResult = directReader.ReadTextValue(DataForgeServiceUrlCode);
+		DataForgeSysSettingReadResult readResult = directReader.ReadValue(DataForgeServiceUrlCode);
 		if (!string.IsNullOrWhiteSpace(readResult.FailureReason)) {
 			return ServiceUrlCandidate.Unavailable(
 				$"direct SysSettings read failed: {readResult.FailureReason}");
@@ -146,21 +119,30 @@ public sealed class DataForgeConfigResolver(
 	}
 
 	private string? GetStringSysSetting(string code) {
+		// Use GetSecureSysSettingValueByCode — calls ClioGate HTTP which decrypts SecureText.
+		// Falls back to ATF.Repository OData when ClioGate is unavailable.
 		try {
-			return NormalizeRawStringValue(sysSettingsManager.GetSysSettingValueByCode(code));
+			string clioGateValue = sysSettingsManager.GetSecureSysSettingValueByCode(code);
+			if (!string.IsNullOrWhiteSpace(clioGateValue)) {
+				return NormalizeRawStringValue(clioGateValue);
+			}
 		} catch {
-			return null;
+			// ClioGate unavailable or failed — fall through to direct OData reader.
 		}
+
+		// Fallback: direct OData reader (works for non-SecureText types).
+		DataForgeSysSettingReadResult readResult = directReader.ReadValue(code);
+		return readResult.Found && string.IsNullOrWhiteSpace(readResult.FailureReason)
+			? NormalizeRawStringValue(readResult.Value)
+			: null;
 	}
 
-	private static string BuildMissingServiceUrlError(
-		ServiceUrlCandidate gatewayCandidate,
-		ServiceUrlCandidate directCandidate) {
-		if (gatewayCandidate.IsMissing && directCandidate.IsMissing) {
+	private static string BuildMissingServiceUrlError(ServiceUrlCandidate directCandidate) {
+		if (directCandidate.IsMissing) {
 			return "DataForgeServiceUrl is not configured in Creatio SysSettings.";
 		}
 
-		return $"Failed to resolve DataForgeServiceUrl. Gateway path: {gatewayCandidate.ErrorMessage} Direct read: {directCandidate.ErrorMessage}";
+		return $"Failed to resolve DataForgeServiceUrl from Creatio SysSettings. {directCandidate.ErrorMessage}";
 	}
 
 	private static bool HasOAuthSettings(string? tokenUrl, string? clientId, string? clientSecret) {

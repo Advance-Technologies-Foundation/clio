@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using ATF.Repository;
 using ATF.Repository.Providers;
@@ -11,6 +12,13 @@ namespace Clio.Common.DataForge;
 /// Used as a fallback when <see cref="ISysSettingsManager.GetSysSettingValueByCode"/> fails.
 /// </summary>
 public interface IDataForgeSysSettingDirectReader {
+	/// <summary>
+	/// Attempts to read the value of a system setting by its code using direct OData access.
+	/// </summary>
+	/// <param name="code">The SysSetting code (e.g. "DataForgeServiceUrl").</param>
+	/// <returns>The direct-read result describing whether a value was found and whether the lookup failed.</returns>
+	DataForgeSysSettingReadResult ReadValue(string code);
+
 	/// <summary>
 	/// Attempts to read the text value of a system setting by its code using direct OData access.
 	/// </summary>
@@ -34,6 +42,34 @@ public sealed record DataForgeSysSettingReadResult(
 public sealed class DataForgeSysSettingDirectReader(IDataProvider dataProvider) : IDataForgeSysSettingDirectReader {
 	private static readonly Guid AllUsersId = new("a29a3ba5-4b0d-de11-9a51-005056c00008");
 
+	public DataForgeSysSettingReadResult ReadValue(string code) {
+		try {
+			var context = AppDataContextFactory.GetAppDataContext(dataProvider);
+			SysSettings? sysSetting = context
+				.Models<SysSettings>()
+				.Where(s => s.Code == code)
+				.FirstOrDefault();
+
+			if (sysSetting is null) {
+				return new DataForgeSysSettingReadResult(false, null, null);
+			}
+
+			string? normalizedValue = context
+				.Models<SysSettingsValue>()
+				.Where(v => v.SysSettingsId == sysSetting.Id)
+				.ToList()
+				.OrderByDescending(v => v.SysAdminUnitId == AllUsersId)
+				.Select(v => MapValue(sysSetting.ValueTypeName, v))
+				.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+			return string.IsNullOrWhiteSpace(normalizedValue)
+				? new DataForgeSysSettingReadResult(false, null, null)
+				: new DataForgeSysSettingReadResult(true, normalizedValue.Trim(), null);
+		} catch (Exception ex) {
+			return new DataForgeSysSettingReadResult(false, null, ex.Message);
+		}
+	}
+
 	public DataForgeSysSettingReadResult ReadTextValue(string code) {
 		try {
 			var context = AppDataContextFactory.GetAppDataContext(dataProvider);
@@ -56,6 +92,7 @@ public sealed class DataForgeSysSettingDirectReader(IDataProvider dataProvider) 
 			SysSettingsValue? sysSettingValue = context
 				.Models<SysSettingsValue>()
 				.Where(v => v.SysSettingsId == sysSetting.Id)
+				.ToList()
 				.OrderByDescending(v => v.SysAdminUnitId == AllUsersId)
 				.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v.TextValue));
 
@@ -69,7 +106,24 @@ public sealed class DataForgeSysSettingDirectReader(IDataProvider dataProvider) 
 		}
 	}
 
+	private static string? MapValue(string? valueTypeName, SysSettingsValue sysSettingValue) {
+		return valueTypeName switch {
+			"Boolean" => sysSettingValue.BooleanValue.ToString().ToLowerInvariant(),
+			// SecureText is intentionally excluded: the raw TextValue is an encrypted blob and
+			// must not be treated as plain text. Return null so callers see it as "not found".
+			"MediumText" or "ShortText" or "LongText" or "Text" or "MaxSizeText" => sysSettingValue.TextValue,
+			"Integer" => sysSettingValue.IntegerValue.ToString(CultureInfo.InvariantCulture),
+			"Date" => sysSettingValue.DateTimeValue.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+			"Time" => sysSettingValue.DateTimeValue.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
+			"DateTime" => sysSettingValue.DateTimeValue.ToString("o", CultureInfo.InvariantCulture),
+			"Float" or "Decimal" or "Currency" => sysSettingValue.FloatValue.ToString(CultureInfo.InvariantCulture),
+			"Lookup" => sysSettingValue.GuidValue.ToString(),
+			_ => null
+		};
+	}
+
 	private static bool IsTextValueType(string? valueTypeName) {
-		return valueTypeName is "Text" or "ShortText" or "MediumText" or "LongText" or "MaxSizeText" or "SecureText";
+		return valueTypeName is "Text" or "ShortText" or "MediumText" or "LongText" or "MaxSizeText";
 	}
 }
+

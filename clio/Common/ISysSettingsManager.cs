@@ -31,6 +31,13 @@ public interface ISysSettingsManager
 	string GetSysSettingValueByCode(string code);
 
 	/// <summary>
+	///     Retrieves the value of a system setting by its code via the ClioGate HTTP endpoint,
+	///     which correctly decrypts SecureText settings on the server side.
+	///     Falls back to ATF.Repository OData when ClioGate is unavailable.
+	/// </summary>
+	string GetSecureSysSettingValueByCode(string code);
+
+	/// <summary>
 	///     Retrieves the value of a system setting by its code and converts it to the specified type.
 	/// </summary>
 	/// <typeparam name="T">The type to which the system setting value should be converted.</typeparam>
@@ -184,6 +191,27 @@ public class SysSettingsManager : ISysSettingsManager
 	#region Methods: Public
 
 	public string GetSysSettingValueByCode(string code){
+		return _dataProvider.GetSysSettingValue<string>(code) ?? string.Empty;
+	}
+
+	public string GetSecureSysSettingValueByCode(string code){
+		// Uses ClioGate HTTP endpoint which decrypts SecureText on the server side.
+		// Falls back to ATF.Repository OData when ClioGate is unavailable (returns
+		// an encrypted blob for SecureText in that case — callers must be aware).
+		try {
+			string json = JsonSerializer.Serialize(new GetSettingRequestData(code), _jsonSerializerOptions);
+			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetSysSettingValueByCode);
+			string result = _creatioClient.ExecutePostRequest(url, json);
+			if (!string.IsNullOrWhiteSpace(result)) {
+				try {
+					return JsonSerializer.Deserialize<string>(result, _jsonSerializerOptions) ?? string.Empty;
+				} catch {
+					return result.Trim('"');
+				}
+			}
+		} catch {
+			// ClioGate not installed or unavailable — fall through to ATF.Repository.
+		}
 		return _dataProvider.GetSysSettingValue<string>(code) ?? string.Empty;
 	}
 

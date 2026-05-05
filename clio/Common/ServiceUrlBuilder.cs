@@ -91,7 +91,12 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Retrieves bound schema data rows from the remote DB.
 		/// </summary>
-		GetBoundSchemaData = 35
+		GetBoundSchemaData = 35,
+
+		/// <summary>
+		///     Retrieves the value of a system setting by its code via ClioGate.
+		/// </summary>
+		GetSysSettingValueByCode = 36
 
 	}
 
@@ -140,6 +145,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.SaveSchemaData, "ServiceModel/SchemaDataDesignerService.svc/SaveSchema"},
 		{KnownRoute.DeletePackageSchemaData, "DataService/json/SyncReply/DeletePackageSchemaDataRequest"},
 		{KnownRoute.GetBoundSchemaData, "ServiceModel/SchemaDataDesignerService.svc/GetBoundSchemaData"},
+		{KnownRoute.GetSysSettingValueByCode, "/rest/CreatioApiGateway/GetSysSettingValueByCode"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

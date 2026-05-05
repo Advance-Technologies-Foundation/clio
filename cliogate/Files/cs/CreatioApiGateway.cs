@@ -180,7 +180,7 @@ namespace cliogate.Files.cs
 		public string GetSysSettingValueByCode(string code){
 			CheckCanManageSysSettings();
 			bool isValue = SysSettings.TryGetValue(_userConnection, code, out object value);
-			
+
 			if(value == null || !isValue) {
 				var v  = SysSettings.GetDefValue(_userConnection, code);
 				if(v != null) {
@@ -188,16 +188,15 @@ namespace cliogate.Files.cs
 					isValue = true;
 				}
 			}
-			
+
 			if(value == null || !isValue) {
 				return string.Empty;
 			}
-			
-			
+
 			const string schemaName = "SysSettings";
 			Entity sysSettingsEntity = _userConnection.EntitySchemaManager
 				.FindInstanceByName(schemaName).CreateEntity(_userConnection);
-			
+
 			bool isFetched = sysSettingsEntity.FetchFromDB("Code", code, false);
 			string valueTypeName = sysSettingsEntity.GetTypedColumnValue<string>("ValueTypeName");
 
@@ -214,6 +213,11 @@ namespace cliogate.Files.cs
 				case "Time":
 					DateTime dt3 = DateTime.Parse(value.ToString());
 					returnValue = dt3.ToString(@"HH:mm:ss");
+					break;
+				case "SecureText":
+					// TryGetValue returns ProtectedString for SecureText; .ToString() returns empty
+					// by design (to prevent accidental leaks). Use GetValue<string> to decrypt.
+					returnValue = SysSettings.GetValue<string>(_userConnection, code, string.Empty);
 					break;
 				default:
 					returnValue = value.ToString();
