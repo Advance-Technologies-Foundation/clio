@@ -286,6 +286,7 @@ public sealed class ApplicationCreateService(
 
 	private static string SanitizeCode(string code, string schemaPrefix)
 	{
+		schemaPrefix ??= string.Empty;
 		string trimmedCode = code.Trim();
 		if (string.IsNullOrWhiteSpace(trimmedCode))
 		{
@@ -311,25 +312,7 @@ public sealed class ApplicationCreateService(
 		}
 
 		StringBuilder builder = new();
-		if (string.IsNullOrEmpty(schemaPrefix))
-		{
-			builder.Append(firstWord);
-		}
-		else
-		{
-			bool hasPrefix = firstWord.StartsWith(schemaPrefix, StringComparison.OrdinalIgnoreCase);
-			if (hasPrefix)
-			{
-				builder.Append(schemaPrefix);
-				string rest = firstWord[schemaPrefix.Length..];
-				builder.Append(rest.Length > 0 ? NormalizeWord(rest) : string.Empty);
-			}
-			else
-			{
-				builder.Append(schemaPrefix);
-				builder.Append(firstWord);
-			}
-		}
+		AppendFirstWordWithPrefix(builder, firstWord, schemaPrefix);
 
 		foreach (string word in words.Skip(1))
 		{
@@ -365,6 +348,30 @@ public sealed class ApplicationCreateService(
 		}
 
 		return sanitizedCode;
+	}
+
+	private static void AppendFirstWordWithPrefix(StringBuilder builder, string firstWord, string schemaPrefix)
+	{
+		if (string.IsNullOrEmpty(schemaPrefix))
+		{
+			builder.Append(firstWord);
+			return;
+		}
+
+		if (firstWord.StartsWith(schemaPrefix, StringComparison.OrdinalIgnoreCase))
+		{
+			builder.Append(schemaPrefix);
+			string rest = firstWord[schemaPrefix.Length..];
+			if (rest.Length > 0)
+			{
+				builder.Append(rest);
+			}
+		}
+		else
+		{
+			builder.Append(schemaPrefix);
+			builder.Append(firstWord);
+		}
 	}
 
 	private static string NormalizeWord(string word)
