@@ -37,14 +37,15 @@ name instead of trying to edit a non-existent local `insert`.
 
 **Before editing the body**, understand the validation rules:
 
-- **SCHEMA_CONVERTERS keys** must follow `VendorPrefix.ConverterName` format (e.g., `usr.MyConverter`). 
-  Call `clio get-guidance --name page-schema-converters` for details.
-- **SCHEMA_HANDLERS keys** must follow `VendorPrefix.HandlerName` format (e.g., `usr.SaveHandler`).
-  Call `clio get-guidance --name page-schema-handlers` for details.
-- **SCHEMA_VALIDATORS keys** must follow `VendorPrefix.ValidatorName` format (e.g., `usr.RequiredValidator`).
-  Call `clio get-guidance --name page-schema-validators` for details.
+- **SCHEMA_CONVERTERS keys** (object form) must follow `VendorPrefix.ConverterName` format
+  (e.g., `usr.MyConverter`). Call `clio get-guidance --name page-schema-converters` for details.
+- **SCHEMA_HANDLERS** must be an array of `{ request, handler }` entries. Each `request` value
+  must follow `VendorPrefix.HandlerName` format (e.g., `crt.HandleViewModelInitRequest`,
+  `usr.HandleSomeRequest`). Call `clio get-guidance --name page-schema-handlers` for details.
+- **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
+  (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
 
-A missing dot in any key causes a Creatio runtime error: 
+A malformed `VendorPrefix.Name` causes a Creatio runtime error:
 `"Error when register X. Type property should have format VendorPrefix.TypeName"`.
 
 ## Synopsis

@@ -114,6 +114,71 @@ public sealed class PageValidateToolE2ETests {
 			because: "the error must name the offending key and reference the VendorPrefix.Name format requirement");
 	}
 
+	[Test]
+	[Description("Returns valid: false with a VendorPrefix error when a SCHEMA_HANDLERS entry's request value is missing the required dot.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects handler request value without dot")]
+	[AllureDescription("Sends a page body with a SCHEMA_HANDLERS array entry whose request value has no dot separator through the real MCP server and verifies that validation fails with an actionable error.")]
+	public async Task PageValidateTool_Should_Reject_Handler_Request_Without_Dot() {
+		// Arrange
+		string bodyWithBadHandler = ValidPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"BadHandlerRequest\", " +
+			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithBadHandler);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "a handler request value without a dot causes a Creatio runtime error and must be rejected");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeFalse(
+			because: "handler request format failure is a content-level error");
+		response.Validation.Errors.Should().NotBeNullOrEmpty(
+			because: "the validation result must list the specific error to give the agent actionable feedback");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("BadHandlerRequest") && e.Contains("VendorPrefix") && e.Contains("page-schema-handlers"),
+			because: "the error must name the offending request value and direct the agent at the handler guidance");
+	}
+
+	[Test]
+	[Description("Returns valid: false with a VendorPrefix error when a validator key in SCHEMA_VALIDATORS is missing the required dot.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects validator key without dot")]
+	[AllureDescription("Sends a page body with a SCHEMA_VALIDATORS entry whose key has no dot separator through the real MCP server and verifies that validation fails with an actionable error.")]
+	public async Task PageValidateTool_Should_Reject_Validator_Key_Without_Dot() {
+		// Arrange
+		string bodyWithBadValidator = ValidPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"BadValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithBadValidator);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "a validator key without a dot causes a Creatio runtime error and must be rejected");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeFalse(
+			because: "validator key format failure is a content-level error");
+		response.Validation.Errors.Should().NotBeNullOrEmpty(
+			because: "the validation result must list the specific error to give the agent actionable feedback");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("BadValidator") && e.Contains("VendorPrefix") && e.Contains("page-schema-validators"),
+			because: "the error must name the offending key and direct the agent at the validator guidance");
+	}
+
 	private static async Task<PageValidateResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,

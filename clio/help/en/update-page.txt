@@ -26,9 +26,14 @@ DESCRIPTION
     name instead of editing a non-existent local insert.
 
     VALIDATION RULES:
-    - SCHEMA_CONVERTERS, SCHEMA_HANDLERS, and SCHEMA_VALIDATORS keys must
-      follow VendorPrefix.Name format (e.g., usr.MyConverter, usr.SaveHandler,
-      usr.RequiredValidator). A missing dot causes a Creatio runtime error:
+    - SCHEMA_CONVERTERS keys (object form) must follow VendorPrefix.Name
+      format (e.g., usr.MyConverter).
+    - SCHEMA_HANDLERS must be an array of {request, handler} entries; each
+      request value must follow VendorPrefix.Name format (e.g.,
+      crt.HandleViewModelInitRequest, usr.HandleSomeRequest).
+    - SCHEMA_VALIDATORS keys (object form) must follow VendorPrefix.Name
+      format (e.g., usr.RequiredValidator).
+    A malformed VendorPrefix.Name causes a Creatio runtime error:
       "Error when register X. Type property should have format VendorPrefix.TypeName"
     - Call `clio get-guidance --name page-schema-converters` for converter details
     - Call `clio get-guidance --name page-schema-handlers` for handler details

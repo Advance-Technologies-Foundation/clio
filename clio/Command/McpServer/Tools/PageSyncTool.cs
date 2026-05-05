@@ -29,8 +29,8 @@ public sealed class PageSyncTool(
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
 	             "For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
-	             "Client-side validation, when enabled, also enforces converter key format " +
-	             "(SCHEMA_CONVERTERS keys must follow VendorPrefix.Name). " +
+	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
+	             "(SCHEMA_CONVERTERS and SCHEMA_VALIDATORS keys; SCHEMA_HANDLERS entry `request` values). " +
 	             "Section authoring rules for the body payload: " +
 	             "if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 	             "if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
@@ -201,8 +201,6 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateCustomValidatorParamCompleteness(body));
 		SchemaValidationResult converterDeclResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateConverterDeclarations(body));
-		SchemaValidationResult handlerDeclResult = RunContentValidation(
-			contentResult, () => SchemaValidationService.ValidateHandlerDeclarations(body));
 		SchemaValidationResult validatorDeclResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateValidatorDeclarations(body));
 		SchemaValidationResult bindingResult = RunContentValidation(
@@ -219,7 +217,6 @@ public sealed class PageSyncTool(
 			standardValidatorResult,
 			validatorParamCompletenessResult,
 			converterDeclResult,
-			handlerDeclResult,
 			validatorDeclResult);
 		List<string> warnings = CollectWarnings(fieldResult, bindingResult);
 		bool contentOk = IsContentValidationSuccessful(
@@ -232,7 +229,6 @@ public sealed class PageSyncTool(
 			standardValidatorResult,
 			validatorParamCompletenessResult,
 			converterDeclResult,
-			handlerDeclResult,
 			validatorDeclResult);
 		return BuildValidationResult(markerResult, syntaxResult, contentOk, errors, warnings);
 	}

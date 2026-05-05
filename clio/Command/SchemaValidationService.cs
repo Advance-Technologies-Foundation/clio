@@ -1512,193 +1512,29 @@ public static class SchemaValidationService
 		}
 	}
 
+	internal static readonly Regex VendorPrefixedNamePattern = new(
+		@"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$",
+		RegexOptions.Compiled,
+		RegexTimeout);
+
 	/// <summary>
 	/// Validates that all keys in <c>SCHEMA_CONVERTERS</c> follow the required
-	/// <c>VendorPrefix.ConverterName</c> format. A missing dot causes a Creatio runtime error:
+	/// <c>VendorPrefix.ConverterName</c> format. A malformed key causes a Creatio runtime error:
 	/// "Error when register X. Type property should have format VendorPrefix.ConverterTypeName".
 	/// </summary>
-	public static SchemaValidationResult ValidateConverterDeclarations(string jsBody) {
-		var result = new SchemaValidationResult { IsValid = true };
-		if (string.IsNullOrEmpty(jsBody)) {
-			return result;
-		}
-		if (!PageSchemaSectionReader.TryRead(jsBody, out string convertersContent, SchemaConvertersMarker)) {
-			return result;
-		}
-		string trimmed = convertersContent.Trim();
-		if (string.IsNullOrWhiteSpace(trimmed) || trimmed == "{}" || !trimmed.StartsWith("{", StringComparison.Ordinal)) {
-			return result;
-		}
-		foreach (string key in EnumerateTopLevelConverterKeys(trimmed)) {
-			if (key.Contains('.')) {
-				continue;
-			}
-			result.IsValid = false;
-			result.Errors.Add(
-				$"Converter '{key}' in SCHEMA_CONVERTERS does not follow the required 'VendorPrefix.ConverterName' format (missing dot). " +
-				$"Rename it to '<vendor>.{key}' (for example 'usr.{key}') — a missing dot causes a Creatio runtime error: " +
-				$"\"Error when register {key}. Type property should have format \\\"VendorPrefix.ConverterTypeName\\\"\". " +
-				"Call get-guidance with name 'page-schema-converters' for the correct converter format.");
-		}
-		return result;
-	}
-
-	private static List<string> EnumerateTopLevelConverterKeys(string objectContent) {
-		var keys = new List<string>();
-		int depth = 0;
-		bool inString = false;
-		char stringChar = '"';
-		int index = 0;
-		while (index < objectContent.Length) {
-			if (JsParserHelper.TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
-				continue;
-			}
-			if (JsParserHelper.TrySkipComment(objectContent, index, out int afterComment)) {
-				index = afterComment;
-				continue;
-			}
-			char current = objectContent[index];
-			if (depth == 1 &&
-			    TryReadConverterEntry(objectContent, index, current, out string key, out int afterEntryIndex)) {
-				keys.Add(key);
-				index = afterEntryIndex;
-				continue;
-			}
-			if (JsParserHelper.TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
-				continue;
-			}
-			index++;
-		}
-		return keys;
-	}
-
-	private static bool TryReadConverterEntry(
-		string content, int startIndex, char current,
-		out string keyName, out int afterEntryIndex) {
-		keyName = string.Empty;
-		afterEntryIndex = startIndex;
-		int afterName;
-		string name;
-		if (current == '"' || current == '\'') {
-			if (!TryReadQuotedConverterKey(content, startIndex, current, out name, out afterName)) {
-				return false;
-			}
-		} else if (JsParserHelper.IsIdentifierStart(current)) {
-			ReadIdentifierConverterKey(content, startIndex, out name, out afterName);
-		} else {
-			return false;
-		}
-		int afterWhitespace = JsParserHelper.SkipWhitespace(content, afterName);
-		if (afterWhitespace >= content.Length) {
-			return false;
-		}
-		char delimiter = content[afterWhitespace];
-		if (delimiter != ':' && delimiter != '(') {
-			return false;
-		}
-		int valueStart = delimiter == ':'
-			? JsParserHelper.SkipWhitespace(content, afterWhitespace + 1)
-			: afterWhitespace;
-		SkipBalancedConverterValue(content, valueStart, out int afterValue);
-		keyName = name;
-		afterEntryIndex = afterValue;
-		return true;
-	}
-
-	private static bool TryReadQuotedConverterKey(
-		string content, int startIndex, char quote,
-		out string keyName, out int afterNameIndex) {
-		keyName = string.Empty;
-		afterNameIndex = startIndex;
-		int endQuoteIndex = startIndex + 1;
-		while (endQuoteIndex < content.Length) {
-			if (content[endQuoteIndex] == '\\') {
-				endQuoteIndex += endQuoteIndex + 1 < content.Length ? 2 : 1;
-				continue;
-			}
-			if (content[endQuoteIndex] == quote) {
-				break;
-			}
-			endQuoteIndex++;
-		}
-		if (endQuoteIndex >= content.Length || content[endQuoteIndex] != quote) {
-			return false;
-		}
-		keyName = content.Substring(startIndex + 1, endQuoteIndex - startIndex - 1);
-		afterNameIndex = endQuoteIndex + 1;
-		return true;
-	}
-
-	private static void ReadIdentifierConverterKey(
-		string content, int startIndex,
-		out string keyName, out int afterNameIndex) {
-		int index = startIndex + 1;
-		while (index < content.Length && JsParserHelper.IsIdentifierPart(content[index])) {
-			index++;
-		}
-		keyName = content.Substring(startIndex, index - startIndex);
-		afterNameIndex = index;
-	}
-
-	private static void SkipBalancedConverterValue(string content, int valueStart, out int afterValueIndex) {
-		int braceDepth = 0;
-		int bracketDepth = 0;
-		int parenDepth = 0;
-		bool inString = false;
-		char stringChar = '"';
-		int index = valueStart;
-		while (index < content.Length) {
-			if (JsParserHelper.TryConsumeStringLiteralCharacter(content, ref index, ref inString, stringChar)) {
-				continue;
-			}
-			if (JsParserHelper.TrySkipComment(content, index, out int afterComment)) {
-				index = afterComment;
-				continue;
-			}
-			char current = content[index];
-			bool atTopLevel = braceDepth == 0 && bracketDepth == 0 && parenDepth == 0;
-			if (atTopLevel && (current == ',' || current == '}')) {
-				afterValueIndex = index;
-				return;
-			}
-			if (current is '"' or '\'' or '`') {
-				inString = true;
-				stringChar = current;
-				index++;
-				continue;
-			}
-			switch (current) {
-				case '{': braceDepth++; break;
-				case '}': braceDepth--; break;
-				case '[': bracketDepth++; break;
-				case ']': bracketDepth--; break;
-				case '(': parenDepth++; break;
-				case ')': parenDepth--; break;
-			}
-			index++;
-		}
-		afterValueIndex = index;
-	}
-
-	/// <summary>
-	/// Validates that all keys in <c>SCHEMA_HANDLERS</c> follow the required
-	/// <c>VendorPrefix.HandlerName</c> format. A missing dot causes a Creatio runtime error:
-	/// "Error when register X. Type property should have format VendorPrefix.HandlerTypeName".
-	/// </summary>
-	public static SchemaValidationResult ValidateHandlerDeclarations(string jsBody) {
-		return ValidatePrefixedDeclarations(jsBody, SchemaHandlersMarker, "Handler");
-	}
+	public static SchemaValidationResult ValidateConverterDeclarations(string jsBody) =>
+		ValidatePrefixedDeclarations(jsBody, SchemaConvertersMarker, "Converter", "page-schema-converters");
 
 	/// <summary>
 	/// Validates that all keys in <c>SCHEMA_VALIDATORS</c> follow the required
-	/// <c>VendorPrefix.ValidatorName</c> format. A missing dot causes a Creatio runtime error:
+	/// <c>VendorPrefix.ValidatorName</c> format. A malformed key causes a Creatio runtime error:
 	/// "Error when register X. Type property should have format VendorPrefix.ValidatorTypeName".
 	/// </summary>
-	public static SchemaValidationResult ValidateValidatorDeclarations(string jsBody) {
-		return ValidatePrefixedDeclarations(jsBody, SchemaValidatorsMarker, "Validator");
-	}
+	public static SchemaValidationResult ValidateValidatorDeclarations(string jsBody) =>
+		ValidatePrefixedDeclarations(jsBody, SchemaValidatorsMarker, "Validator", "page-schema-validators");
 
-	private static SchemaValidationResult ValidatePrefixedDeclarations(string jsBody, string markerName, string elementType) {
+	private static SchemaValidationResult ValidatePrefixedDeclarations(
+		string jsBody, string markerName, string elementType, string guidanceName) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrEmpty(jsBody)) {
 			return result;
@@ -1711,15 +1547,15 @@ public static class SchemaValidationService
 			return result;
 		}
 		foreach (string key in EnumerateTopLevelDeclarationKeys(trimmed)) {
-			if (key.Contains('.')) {
+			if (VendorPrefixedNamePattern.IsMatch(key)) {
 				continue;
 			}
 			result.IsValid = false;
 			result.Errors.Add(
-				$"{elementType} '{key}' in {markerName} does not follow the required 'VendorPrefix.{elementType}Name' format (missing dot). " +
-				$"Rename it to '<vendor>.{key}' (for example 'usr.{key}') — a missing dot causes a Creatio runtime error: " +
+				$"{elementType} '{key}' in {markerName} does not follow the required 'VendorPrefix.{elementType}Name' format. " +
+				$"Rename it to '<vendor>.{key}' (for example 'usr.{key}') — a malformed key causes a Creatio runtime error: " +
 				$"\"Error when register {key}. Type property should have format \\\"VendorPrefix.{elementType}TypeName\\\"\". " +
-				$"Call get-guidance with name 'page-schema-handlers' or 'page-schema-validators' for the correct format.");
+				$"Call get-guidance with name '{guidanceName}' for the correct format.");
 		}
 		return result;
 	}

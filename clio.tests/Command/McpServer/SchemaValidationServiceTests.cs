@@ -2046,65 +2046,104 @@ public sealed class SchemaValidationServiceTests {
 
 	#endregion
 
-	#region ValidateHandlerDeclarations
+	#region ValidateHandlerStructure - request format
 
 	[Test]
-	[Description("Null body returns valid without throwing")]
-	public void ValidateHandlerDeclarations_NullBody_ReturnsValid() {
-		SchemaValidationResult result = SchemaValidationService.ValidateHandlerDeclarations(null);
-		result.IsValid.Should().BeTrue("because a null body is handled by the early-return guard");
-		result.Errors.Should().BeEmpty("because a null body produces no validation errors");
-	}
-
-	[Test]
-	[Description("Empty string body returns valid without throwing")]
-	public void ValidateHandlerDeclarations_EmptyBody_ReturnsValid() {
-		SchemaValidationResult result = SchemaValidationService.ValidateHandlerDeclarations(string.Empty);
-		result.IsValid.Should().BeTrue("because an empty body is handled by the early-return guard");
-		result.Errors.Should().BeEmpty("because an empty body produces no validation errors");
-	}
-
-	[Test]
-	[Description("Empty handlers object passes validation")]
-	public void ValidateHandlerDeclarations_EmptyHandlers_ReturnsValid() {
-		SchemaValidationResult result = SchemaValidationService.ValidateHandlerDeclarations(ValidListPageBody);
-		result.IsValid.Should().BeTrue("because an empty SCHEMA_HANDLERS object has no keys to validate");
-		result.Errors.Should().BeEmpty("because no keys means no format errors");
-	}
-
-	[Test]
-	[Description("Handler with correct usr. prefix passes validation")]
-	public void ValidateHandlerDeclarations_CorrectPrefixedKey_ReturnsValid() {
+	[Description("Handler entry whose request value matches the VendorPrefix.HandlerName format passes validation")]
+	public void ValidateHandlerStructure_RequestWithCorrectVendorPrefix_ReturnsValid() {
 		string body = ValidListPageBody.Replace(
-			"/**SCHEMA_HANDLERS*/{}/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/{ \"usr.SaveHandler\": (request) => { return request; } }/**SCHEMA_HANDLERS*/");
-		SchemaValidationResult result = SchemaValidationService.ValidateHandlerDeclarations(body);
-		result.IsValid.Should().BeTrue("because 'usr.SaveHandler' has the required VendorPrefix.Name dot-format");
-		result.Errors.Should().BeEmpty("because a correctly prefixed key produces no errors");
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+		result.IsValid.Should().BeTrue(
+			"because 'crt.HandleViewModelInitRequest' is a well-formed VendorPrefix.HandlerName value");
+		result.Errors.Should().BeEmpty("because a correctly prefixed request value produces no errors");
 	}
 
 	[Test]
-	[Description("Handler key without a dot fails validation with a descriptive runtime-error message")]
-	public void ValidateHandlerDeclarations_KeyWithoutDot_ReturnsInvalid() {
+	[Description("Handler entry whose request value misses the dot fails validation with a descriptive runtime-error message")]
+	public void ValidateHandlerStructure_RequestWithoutDot_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
-			"/**SCHEMA_HANDLERS*/{}/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/{ \"SaveHandler\": (request) => { return request; } }/**SCHEMA_HANDLERS*/");
-		SchemaValidationResult result = SchemaValidationService.ValidateHandlerDeclarations(body);
-		result.IsValid.Should().BeFalse("because 'SaveHandler' lacks a dot and violates the VendorPrefix.HandlerName format");
-		result.Errors.Should().Contain(error => error.Contains("SaveHandler") && error.Contains("VendorPrefix.HandlerName"),
-			"because the error message should mention both the key name and the required format");
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"BadHandlerRequest\", " +
+			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+		result.IsValid.Should().BeFalse(
+			"because 'BadHandlerRequest' violates the VendorPrefix.HandlerName format");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("BadHandlerRequest") && e.Contains("VendorPrefix.HandlerName") && e.Contains("page-schema-handlers"),
+			because: "the error must name the offending request value, reference the format, and direct the agent at the handler guidance");
 	}
 
 	[Test]
-	[Description("Mixed handlers with good and bad keys reports only the bad one")]
-	public void ValidateHandlerDeclarations_MixedKeys_ReportsOnlyBadOne() {
+	[Description("Handler entry with a leading-dot request value fails validation as malformed")]
+	public void ValidateHandlerStructure_RequestStartingWithDot_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
-			"/**SCHEMA_HANDLERS*/{}/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/{ \"usr.GoodHandler\": () => {}, \"BadHandler\": () => {} }/**SCHEMA_HANDLERS*/");
-		SchemaValidationResult result = SchemaValidationService.ValidateHandlerDeclarations(body);
-		result.IsValid.Should().BeFalse("because 'BadHandler' lacks a dot");
-		result.Errors.Should().HaveCount(1, "because only 'BadHandler' fails the validation");
-		result.Errors[0].Should().Contain("BadHandler", "because the error should mention the bad key");
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \".LeadingDot\", " +
+			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+		result.IsValid.Should().BeFalse(
+			"because '.LeadingDot' has an empty vendor prefix and breaks Creatio's parser");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains(".LeadingDot") && e.Contains("VendorPrefix"),
+			because: "the validator should reject malformed request values, not only ones missing the dot entirely");
+	}
+
+	[Test]
+	[Description("Mixed handler array with one good and one bad request reports exactly one error for the bad entry")]
+	public void ValidateHandlerStructure_MixedRequestValues_ReportsOnlyBadOne() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[" +
+			"{ request: \"crt.HandleViewModelInitRequest\", handler: async (req, next) => { await next?.handle(req); } }, " +
+			"{ request: \"BadRequest\", handler: async (req, next) => { await next?.handle(req); } }" +
+			"]/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+		result.IsValid.Should().BeFalse("because 'BadRequest' violates the VendorPrefix.HandlerName format");
+		result.Errors.Should().ContainSingle(e => e.Contains("BadRequest"),
+			because: "only the malformed request value should generate an error");
+		result.Errors.Should().NotContain(e => e.Contains("crt.HandleViewModelInitRequest"),
+			because: "the correctly prefixed request should not generate an error");
+	}
+
+	[Test]
+	[Description("Empty handlers array passes validation (no entries to check)")]
+	public void ValidateHandlerStructure_EmptyHandlers_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(ValidListPageBody);
+		result.IsValid.Should().BeTrue("because an empty SCHEMA_HANDLERS array has no entries to validate");
+		result.Errors.Should().BeEmpty("because no entries means no format errors");
+	}
+
+	[Test]
+	[Description("Handler entry with a trailing-dot request value fails validation as malformed")]
+	public void ValidateHandlerStructure_RequestEndingWithDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"usr.\", " +
+			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+		result.IsValid.Should().BeFalse(
+			"because 'usr.' has an empty handler name after the dot and breaks Creatio's parser");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("usr.") && e.Contains("VendorPrefix"),
+			because: "trailing-dot request values must be flagged so the agent fixes them before the runtime does");
+	}
+
+	[Test]
+	[Description("Handler entry with a multi-dot request value fails validation as malformed")]
+	public void ValidateHandlerStructure_RequestWithMultipleDots_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"usr.sub.HandleRequest\", " +
+			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+		result.IsValid.Should().BeFalse(
+			"because Creatio expects exactly one dot between the vendor prefix and the handler name");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("usr.sub.HandleRequest") && e.Contains("VendorPrefix"),
+			because: "multi-dot request values must be flagged before the runtime parser rejects them");
 	}
 
 	#endregion
@@ -2168,6 +2207,62 @@ public sealed class SchemaValidationServiceTests {
 		result.IsValid.Should().BeFalse("because 'BadValidator' lacks a dot");
 		result.Errors.Should().HaveCount(1, "because only 'BadValidator' fails the validation");
 		result.Errors[0].Should().Contain("BadValidator", "because the error should mention the bad key");
+	}
+
+	#endregion
+
+	#region VendorPrefixedName format edge cases
+
+	[Test]
+	[Description("Converter key starting with a dot is rejected as malformed even though it contains a dot")]
+	public void ValidateConverterDeclarations_KeyStartingWithDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \".LeadingDot\": value => value }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse(
+			"because a leading dot leaves the prefix empty and breaks Creatio's VendorPrefix.Name parser");
+		result.Errors.Should().ContainSingle(e => e.Contains(".LeadingDot") && e.Contains("VendorPrefix"),
+			because: "the validator should reject malformed keys, not only keys missing the dot entirely");
+	}
+
+	[Test]
+	[Description("Converter key ending with a dot is rejected as malformed")]
+	public void ValidateConverterDeclarations_KeyEndingWithDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.\": value => value }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse(
+			"because an empty name after the dot breaks Creatio's VendorPrefix.Name parser");
+		result.Errors.Should().ContainSingle(e => e.Contains("usr.") && e.Contains("VendorPrefix"),
+			because: "the validator should reject trailing-dot keys, not accept them as 'has a dot'");
+	}
+
+	[Test]
+	[Description("Converter key with two dots is rejected as malformed")]
+	public void ValidateConverterDeclarations_KeyWithMultipleDots_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.sub.Name\": value => value }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse(
+			"because Creatio expects exactly one dot between prefix and name");
+		result.Errors.Should().ContainSingle(e => e.Contains("usr.sub.Name") && e.Contains("VendorPrefix"),
+			because: "multi-dot keys should be flagged so the agent fixes them before the runtime does");
+	}
+
+	[Test]
+	[Description("Validator error message references the page-schema-validators guidance, not the handler one")]
+	public void ValidateValidatorDeclarations_ErrorMessage_ReferencesValidatorGuidance() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"BadValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'BadValidator' has no dot");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("page-schema-validators") && !e.Contains("page-schema-handlers"),
+			because: "validator errors must point the agent at validator guidance, not handler guidance");
 	}
 
 	#endregion
