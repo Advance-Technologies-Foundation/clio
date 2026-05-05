@@ -75,7 +75,7 @@ namespace Clio.Command {
 					filters[ItemsKey]["Name"] = BuildComparisonFilter("Name", nameFilter, 1, ContainsComparisonType);
 				}
 				if (!string.IsNullOrWhiteSpace(options.UId)) {
-					filters[ItemsKey]["UId"] = BuildComparisonFilter("UId", options.UId, 1, 3);
+					filters[ItemsKey]["UId"] = BuildComparisonFilter("UId", options.UId, 0, 3);
 				}
 				var selectQuery = new JObject {
 					["rootSchemaName"] = "SysSchema",
