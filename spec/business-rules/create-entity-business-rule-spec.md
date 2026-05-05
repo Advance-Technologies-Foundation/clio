@@ -47,6 +47,8 @@ Entity-level rule creation must:
       - make required
       - make optional
    - support multiple actions
+   - support set value targets:
+      - constant value (text, number, boolean, date/time)
    - support multiple targets per action
 - generate internal identifiers automatically
 - append the new rule without changing the order of existing rules

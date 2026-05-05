@@ -31,7 +31,7 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 							new BusinessRuleExpression("Const", null, System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("\"Draft\"")))
 					]),
 				[
-					new BusinessRuleAction("make-required", ["Owner"])
+					new MakeRequiredBusinessRuleAction(["Owner"])
 				])
 		};
 		businessRuleService.Create(Arg.Any<BusinessRuleCreateRequest>())
@@ -49,8 +49,8 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 				&& request.EntitySchemaName == "UsrOrder"
 				&& request.Rule.Caption == "Require owner for drafts"
 				&& request.Rule.Actions.Count == 1
-				&& request.Rule.Actions[0].Items.Count == 1
-				&& request.Rule.Actions[0].Items[0] == "Owner"));
+				&& request.Rule.Actions[0].FieldSelectionItems.Count == 1
+				&& request.Rule.Actions[0].FieldSelectionItems[0] == "Owner"));
 		logger.Received(1).WriteInfo("Rule name: BusinessRule_1234567");
 		logger.Received(1).WriteInfo("Done");
 	}
@@ -80,3 +80,4 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 		logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("environment-name is required.")));
 	}
 }
+
