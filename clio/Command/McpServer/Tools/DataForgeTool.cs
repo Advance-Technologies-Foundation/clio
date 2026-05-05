@@ -182,13 +182,12 @@ public sealed class DataForgeTool(
 		try {
 			EnsureRequired(args.TableName, "table-name");
 			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
 			RuntimeEntitySchemaResult runtimeSchema = ExecuteWithOptions(options, o => {
 				IRuntimeEntitySchemaReader reader = ResolveService(o, runtimeEntitySchemaReader);
 				return reader.GetByName(args.TableName!);
 			});
 			IReadOnlyList<DataForgeColumnResult> results = DataForgeRuntimeSchemaMapper.MapColumns(runtimeSchema);
-			return new DataForgeColumnsResponse(true, SourceName, string.Empty, warnings, null, results);
+			return new DataForgeColumnsResponse(true, SourceName, string.Empty, [], null, results);
 		} catch (Exception ex) {
 			return new DataForgeColumnsResponse(
 				false,
