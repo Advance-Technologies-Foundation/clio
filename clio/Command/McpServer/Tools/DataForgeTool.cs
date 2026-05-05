@@ -43,8 +43,7 @@ public sealed class DataForgeTool(
 		DataForgeHealthArgs args) {
 		try {
 			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
-			DataForgeHealthResult health = await ExecuteWithOptions(options, async o => {
+			(IReadOnlyList<string> warnings, DataForgeHealthResult health) = await ExecuteWithGateAsync(options, async o => {
 				IDataForgeClient client = ResolveService(o, dataForgeClient);
 				return await client.CheckHealthAsync(BuildConfigRequest(o));
 			});
@@ -69,8 +68,7 @@ public sealed class DataForgeTool(
 		DataForgeStatusArgs args) {
 		try {
 			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
-			(DataForgeHealthResult health, DataForgeMaintenanceStatusResult status) = await ExecuteWithOptions(options, async o => {
+			(IReadOnlyList<string> warnings, (DataForgeHealthResult health, DataForgeMaintenanceStatusResult status)) = await ExecuteWithGateAsync(options, async o => {
 				IDataForgeClient client = ResolveService(o, dataForgeClient);
 				IDataForgeMaintenanceClient maintenance = ResolveService(o, maintenanceClient);
 				DataForgeHealthResult resolvedHealth = await client.CheckHealthAsync(BuildConfigRequest(o));
@@ -100,8 +98,7 @@ public sealed class DataForgeTool(
 		try {
 			EnsureRequired(args.Query, "query");
 			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
-			IReadOnlyList<SimilarTableResult> results = await ExecuteWithOptions(options, async o => {
+			(IReadOnlyList<string> warnings, IReadOnlyList<SimilarTableResult> results) = await ExecuteWithGateAsync(options, async o => {
 				IDataForgeClient client = ResolveService(o, dataForgeClient);
 				return await client.FindSimilarTablesAsync(args.Query!, args.Limit, BuildConfigRequest(o));
 			});
@@ -127,8 +124,7 @@ public sealed class DataForgeTool(
 		try {
 			EnsureRequired(args.Query, "query");
 			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
-			IReadOnlyList<SimilarLookupResult> results = await ExecuteWithOptions(options, async o => {
+			(IReadOnlyList<string> warnings, IReadOnlyList<SimilarLookupResult> results) = await ExecuteWithGateAsync(options, async o => {
 				IDataForgeClient client = ResolveService(o, dataForgeClient);
 				return await client.FindSimilarLookupsAsync(args.Query!, args.SchemaName, args.Limit, BuildConfigRequest(o));
 			});
@@ -155,8 +151,7 @@ public sealed class DataForgeTool(
 			EnsureRequired(args.SourceTable, "source-table");
 			EnsureRequired(args.TargetTable, "target-table");
 			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
-			IReadOnlyList<string> results = await ExecuteWithOptions(options, async o => {
+			(IReadOnlyList<string> warnings, IReadOnlyList<string> results) = await ExecuteWithGateAsync(options, async o => {
 				IDataForgeClient client = ResolveService(o, dataForgeClient);
 				return await client.GetTableRelationshipsAsync(args.SourceTable!, args.TargetTable!, args.Limit, BuildConfigRequest(o));
 			});
@@ -208,8 +203,7 @@ public sealed class DataForgeTool(
 		DataForgeContextArgs args) {
 		try {
 			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IReadOnlyList<string> gateWarnings = EnsureGateAndCollectWarnings(options);
-			DataForgeContextAggregationResult contextResult = await ExecuteWithOptions(options, async o => {
+			(IReadOnlyList<string> gateWarnings, DataForgeContextAggregationResult contextResult) = await ExecuteWithGateAsync(options, async o => {
 				IDataForgeContextService resolvedContextService = ResolveService(o, contextService);
 				return await resolvedContextService.GetContextAsync(
 					new DataForgeContextRequest(
@@ -259,8 +253,7 @@ public sealed class DataForgeTool(
 		DataForgeMaintenanceArgs args) {
 		try {
 			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
-			DataForgeMaintenanceStatusResult result = ExecuteWithOptions(options, o => {
+			(IReadOnlyList<string> warnings, DataForgeMaintenanceStatusResult result) = ExecuteWithGate(options, o => {
 				IDataForgeMaintenanceClient maintenance = ResolveService(o, maintenanceClient);
 				return maintenance.Initialize();
 			});
@@ -285,8 +278,7 @@ public sealed class DataForgeTool(
 		DataForgeMaintenanceArgs args) {
 		try {
 			DataForgeTargetOptions options = CreateTargetOptions(args);
-			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
-			DataForgeMaintenanceStatusResult result = ExecuteWithOptions(options, o => {
+			(IReadOnlyList<string> warnings, DataForgeMaintenanceStatusResult result) = ExecuteWithGate(options, o => {
 				IDataForgeMaintenanceClient maintenance = ResolveService(o, maintenanceClient);
 				return maintenance.Update();
 			});
@@ -310,6 +302,24 @@ public sealed class DataForgeTool(
 	private Task<T> ExecuteWithOptions<T>(DataForgeTargetOptions options, Func<DataForgeTargetOptions, Task<T>> action) {
 		string? targetHost = GetTargetHost(options);
 		return proxySafeExecutor.ExecuteAsync(() => action(options), targetHost);
+	}
+
+	private (IReadOnlyList<string> warnings, T result) ExecuteWithGate<T>(
+		DataForgeTargetOptions options, Func<DataForgeTargetOptions, T> action) {
+		string? targetHost = GetTargetHost(options);
+		return proxySafeExecutor.Execute(() => {
+			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
+			return (warnings, action(options));
+		}, targetHost);
+	}
+
+	private Task<(IReadOnlyList<string> warnings, T result)> ExecuteWithGateAsync<T>(
+		DataForgeTargetOptions options, Func<DataForgeTargetOptions, Task<T>> action) {
+		string? targetHost = GetTargetHost(options);
+		return proxySafeExecutor.ExecuteAsync(async () => {
+			IReadOnlyList<string> warnings = EnsureGateAndCollectWarnings(options);
+			return (warnings, await action(options));
+		}, targetHost);
 	}
 
 	private IReadOnlyList<string> EnsureGateAndCollectWarnings(DataForgeTargetOptions options) {
