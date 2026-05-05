@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Threading;
 using Clio.Package;
 using Clio.WebApplication;
 
@@ -44,6 +45,10 @@ public sealed class ClioGateEnsurer : IClioGateEnsurer {
 	private static readonly ConcurrentDictionary<string, bool> ConfirmedEnvironments =
 		new(StringComparer.OrdinalIgnoreCase);
 
+	// Per-environment install lock — prevents concurrent installs for the same URI.
+	private static readonly ConcurrentDictionary<string, SemaphoreSlim> InstallLocks =
+		new(StringComparer.OrdinalIgnoreCase);
+
 	private readonly EnvironmentSettings _environmentSettings;
 	private readonly IClioGateway _clioGateway;
 	private readonly IPackageInstaller _packageInstaller;
@@ -67,20 +72,33 @@ public sealed class ClioGateEnsurer : IClioGateEnsurer {
 	public ClioGateEnsureResult EnsureInstalled() {
 		string cacheKey = NormalizeUri(_environmentSettings?.Uri);
 
+		// Fast path — lock-free read.
 		if (ConfirmedEnvironments.ContainsKey(cacheKey)) {
 			return ClioGateEnsureResult.Present();
 		}
 
+		// Slow path — serialize per environment to prevent duplicate installs.
+		SemaphoreSlim gate = InstallLocks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
+		gate.Wait();
 		try {
-			if (_clioGateway.GetInstalledVersion() != null) {
-				ConfirmedEnvironments.TryAdd(cacheKey, true);
+			// Double-check: another thread may have installed while we were waiting.
+			if (ConfirmedEnvironments.ContainsKey(cacheKey)) {
 				return ClioGateEnsureResult.Present();
 			}
-		} catch {
-			// Cannot check — proceed to install attempt.
-		}
 
-		return TryInstall(cacheKey);
+			try {
+				if (_clioGateway.GetInstalledVersion() != null) {
+					ConfirmedEnvironments.TryAdd(cacheKey, true);
+					return ClioGateEnsureResult.Present();
+				}
+			} catch {
+				// Cannot check — proceed to install attempt.
+			}
+
+			return TryInstall(cacheKey);
+		} finally {
+			gate.Release();
+		}
 	}
 
 	private ClioGateEnsureResult TryInstall(string cacheKey) {
