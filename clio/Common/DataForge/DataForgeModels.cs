@@ -19,7 +19,6 @@ public sealed record DataForgeConfigRequest {
 	public string? ClientId { get; init; }
 	public string? ClientSecret { get; init; }
 	public string? Scope { get; init; }
-	public bool AllowSysSettingsAuthFallback { get; init; }
 }
 
 public sealed record DataForgeResolvedConfig(
@@ -36,8 +35,6 @@ public sealed record DataForgeResolvedConfig(
 );
 
 public sealed class DataForgeTargetOptions : EnvironmentOptions {
-	public bool AllowSysSettingsAuthFallback { get; set; }
-
 	[Description("OAuth scope for dataforge-service token requests. Defaults to use_enrichment.")]
 	public string? Scope { get; set; }
 }

@@ -357,7 +357,6 @@ public sealed class DataForgeTool(
 			AuthAppUri = options.AuthAppUri,
 			ClientId = options.ClientId,
 			ClientSecret = options.ClientSecret,
-			AllowSysSettingsAuthFallback = options.AllowSysSettingsAuthFallback,
 			Scope = options.Scope
 		};
 	}
@@ -371,7 +370,6 @@ public sealed class DataForgeTool(
 			ClientId = args.ClientId,
 			ClientSecret = args.ClientSecret,
 			AuthAppUri = args.AuthAppUri,
-			AllowSysSettingsAuthFallback = args.AllowSysSettingsAuthFallback,
 			Scope = string.IsNullOrWhiteSpace(args.Scope) ? DefaultDataForgeScope : args.Scope.Trim()
 		};
 	}
@@ -421,9 +419,6 @@ public abstract record DataForgeConnectionArgsBase {
 	[JsonPropertyName("auth-app-uri")]
 	[Description("OAuth application URI for direct connection mode. Emergency fallback only.")]
 	public string? AuthAppUri { get; init; }
-
-	[JsonPropertyName("allow-syssettings-auth-fallback")]
-	public bool AllowSysSettingsAuthFallback { get; init; } = true;
 
 	[JsonPropertyName("scope")]
 	public string? Scope { get; init; }

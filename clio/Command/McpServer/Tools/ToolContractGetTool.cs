@@ -2505,11 +2505,6 @@ internal static class ToolContractCatalog {
 			"Use 'auth-app-uri' instead of 'authAppUri'.");
 	}
 
-	private static ToolContractAlias AllowSysSettingsAuthFallbackParameterAlias() {
-		return Alias(ParameterScope, "allow-syssettings-auth-fallback", "allowSysSettingsAuthFallback", RejectedStatus,
-			"Use 'allow-syssettings-auth-fallback' instead of 'allowSysSettingsAuthFallback'.");
-	}
-
 	private static ToolContractAlias TitleParameterAlias() {
 		return Alias(ParameterScope, TitleLocalizationsFieldName, "title", RejectedStatus,
 			$"Use '{TitleLocalizationsFieldName}' instead of legacy scalar 'title'.");
@@ -2547,7 +2542,6 @@ internal static class ToolContractCatalog {
 			ClientIdParameterAlias(),
 			ClientSecretParameterAlias(),
 			AuthAppUriParameterAlias(),
-			AllowSysSettingsAuthFallbackParameterAlias(),
 			..extraAliases
 		];
 	}

@@ -52,7 +52,6 @@ public sealed class DataForgeEnrichmentBuilder(IToolCommandResolver commandResol
 		try {
 			DataForgeTargetOptions options = new() {
 				Environment = request.EnvironmentName,
-				AllowSysSettingsAuthFallback = true,
 				Scope = DefaultScope
 			};
 			IDataForgeContextService contextService = commandResolver.Resolve<IDataForgeContextService>(options);
@@ -63,7 +62,6 @@ public sealed class DataForgeEnrichmentBuilder(IToolCommandResolver commandResol
 					request.LookupHints ?? [],
 					[]),
 				new DataForgeConfigRequest {
-					AllowSysSettingsAuthFallback = true,
 					Scope = DefaultScope
 				},
 				cancellationToken);

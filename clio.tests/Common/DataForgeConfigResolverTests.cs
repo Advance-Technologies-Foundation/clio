@@ -53,9 +53,7 @@ public sealed class DataForgeConfigResolverTests {
 		});
 		DataForgeConfigResolver resolver = CreateResolver(directReader);
 
-		DataForgeResolvedConfig result = resolver.Resolve(new DataForgeConfigRequest {
-			AllowSysSettingsAuthFallback = false
-		});
+		DataForgeResolvedConfig result = resolver.Resolve(new DataForgeConfigRequest());
 
 		result.AuthMode.Should().Be(DataForgeAuthMode.OAuthClientCredentials);
 		result.TokenUrl.Should().Be("https://identity-from-syssettings/connect/token");

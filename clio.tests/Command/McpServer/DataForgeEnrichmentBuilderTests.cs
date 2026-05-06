@@ -61,7 +61,6 @@ public sealed class DataForgeEnrichmentBuilderTests {
 		// Assert
 		commandResolver.Received(1).Resolve<IDataForgeContextService>(Arg.Is<DataForgeTargetOptions>(options =>
 			options.Environment == "sandbox" &&
-			options.AllowSysSettingsAuthFallback &&
 			options.Scope == "use_enrichment"));
 		capturedRequest.Should().NotBeNull(
 			because: "the builder should call the Data Forge context service with one normalized aggregation request");
@@ -75,8 +74,6 @@ public sealed class DataForgeEnrichmentBuilderTests {
 			because: "lookup hints should be forwarded verbatim to the Data Forge context service");
 		capturedConfig.Should().NotBeNull(
 			because: "the builder should forward explicit Data Forge auth defaults to the context layer");
-		capturedConfig!.AllowSysSettingsAuthFallback.Should().BeTrue(
-			because: "MCP enrichment should keep the Data Forge syssettings auth fallback enabled by default");
 		capturedConfig.Scope.Should().Be("use_enrichment",
 			because: "MCP enrichment should use the standard Data Forge OAuth scope");
 		result.Used.Should().BeTrue(

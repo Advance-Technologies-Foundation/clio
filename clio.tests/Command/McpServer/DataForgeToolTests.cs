@@ -173,9 +173,7 @@ public sealed class DataForgeToolTests {
 		response.Success.Should().BeTrue(because: "health requests should succeed when the underlying client succeeds");
 		capturedRequest.Should().NotBeNull(
 			because: "the tool should forward a Data Forge config request to the client");
-		capturedRequest!.AllowSysSettingsAuthFallback.Should().BeTrue(
-			because: "MCP Data Forge calls default to syssettings auth fallback for environments that only store OAuth credentials in Creatio");
-		capturedRequest.Scope.Should().Be("use_enrichment",
+		capturedRequest!.Scope.Should().Be("use_enrichment",
 			because: "MCP Data Forge calls should default to the service scope expected by the current environments");
 	}
 
