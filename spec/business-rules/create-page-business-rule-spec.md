@@ -53,8 +53,14 @@ Page-level rule creation must:
    - support action types:
       - hide element
       - show element
+      - make editable
+      - make read-only
+      - make required
+      - make optional
    - support any named page element collected recursively from `bundle.viewConfig`
    - use page element names in payloads, for example `Input_0dqt4ly` or `EscalateButton`
+   - validate only that each target page element exists in the resolved recursive `viewConfig`
+   - do not validate designer group membership or component-specific support for editability, read-only, required, or optional behavior
    - support multiple actions
    - support multiple page elements per action
 - generate internal identifiers automatically
