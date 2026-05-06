@@ -219,7 +219,10 @@ public class SysSettingsManager : ISysSettingsManager
 				try {
 					return JsonSerializer.Deserialize<string>(result, _jsonSerializerOptions) ?? string.Empty;
 				} catch {
-					return result.Trim('"');
+					// Response is not a valid JSON string — strip exactly one surrounding quote pair if present.
+					return result.Length >= 2 && result[0] == '"' && result[^1] == '"'
+						? result[1..^1]
+						: result;
 				}
 			}
 		} catch {
