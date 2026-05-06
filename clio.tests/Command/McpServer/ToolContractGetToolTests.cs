@@ -308,7 +308,7 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the canonical create-page-business-rule contract with page attribute validation and show/hide workflow guidance.")]
+	[Description("Returns the canonical create-page-business-rule contract with page attribute validation and page-action workflow guidance.")]
 	public void ToolContractGet_Should_Return_PageBusinessRuleCreate_Contract() {
 		// Arrange
 		ToolContractGetTool tool = new();
@@ -328,8 +328,12 @@ public sealed class ToolContractGetToolTests {
 				validator.Name == "enum" &&
 				validator.Field == "rule.actions[*].type" &&
 				validator.Context!.Contains("hide-element", StringComparison.Ordinal) &&
-				validator.Context.Contains("show-element", StringComparison.Ordinal),
-			because: "the page rule contract should advertise only page show/hide actions");
+				validator.Context.Contains("show-element", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-editable", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-read-only", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-required", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-optional", StringComparison.Ordinal),
+			because: "the page rule contract should advertise all supported page actions");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "page-element" &&
 				validator.Field == "rule.actions[*].items" &&
@@ -370,6 +374,18 @@ public sealed class ToolContractGetToolTests {
 		bool hasShowElementExample = contract.Examples.Any(HasPageActionExample("show-element"));
 		hasShowElementExample.Should().BeTrue(
 			because: "the contract should include a show-element page rule example");
+		bool hasMakeEditableExample = contract.Examples.Any(HasPageActionExample("make-editable"));
+		hasMakeEditableExample.Should().BeTrue(
+			because: "the contract should include a make-editable page rule example");
+		bool hasMakeReadOnlyExample = contract.Examples.Any(HasPageActionExample("make-read-only"));
+		hasMakeReadOnlyExample.Should().BeTrue(
+			because: "the contract should include a make-read-only page rule example");
+		bool hasMakeRequiredExample = contract.Examples.Any(HasPageActionExample("make-required"));
+		hasMakeRequiredExample.Should().BeTrue(
+			because: "the contract should include a make-required page rule example");
+		bool hasMakeOptionalExample = contract.Examples.Any(HasPageActionExample("make-optional"));
+		hasMakeOptionalExample.Should().BeTrue(
+			because: "the contract should include a make-optional page rule example");
 	}
 
 	private static Func<ToolContractExample, bool> HasPageActionExample(string actionType) =>

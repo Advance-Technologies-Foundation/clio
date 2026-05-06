@@ -1408,14 +1408,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates a page-level Freedom UI business rule that shows or hides named page elements using datasource-bound page attributes and constants.",
+			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements using datasource-bound page attributes and constants.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, PageSchemaNameCamelFieldName, RuleFieldName],
 				[
 					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameCamelFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
 					Field(PageSchemaNameCamelFieldName, StringType, "Target Freedom UI page schema name."),
-					Field(RuleFieldName, ObjectType, "Structured page business-rule definition with caption, one top-level condition group, and one or more show/hide actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
+					Field(RuleFieldName, ObjectType, "Structured page business-rule definition with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -1433,6 +1433,41 @@ internal static class ToolContractCatalog {
 			[],
 			[],
 			[
+				PageBusinessRuleExample(
+					"Make priority editable when page status is filled",
+					"Case_FormPage",
+					"Make priority editable when status is filled",
+					"PDS_Status",
+					"is-filled-in",
+					"make-editable",
+					["PriorityInput"]),
+				PageBusinessRuleExample(
+					"Make amount read-only when amount exceeds threshold",
+					"UsrOrder_FormPage",
+					"Make amount read-only over threshold",
+					"PDS_UsrAmount",
+					"greater-than",
+					"make-read-only",
+					["AmountInput"],
+					100000),
+				PageBusinessRuleExample(
+					"Make close date required when stage is closed",
+					"UsrOrder_FormPage",
+					"Require close date for closed stage",
+					"PDS_UsrStage",
+					"equal",
+					"make-required",
+					["CloseDateInput"],
+					"Closed"),
+				PageBusinessRuleExample(
+					"Make comment optional when page flag is false",
+					"UsrOrder_FormPage",
+					"Make comment optional when flag is false",
+					"PDS_UsrFlag",
+					"equal",
+					"make-optional",
+					["CommentInput"],
+					false),
 				PageBusinessRuleExample(
 					"Hide Escalate when priority matches a lookup constant",
 					"Case_FormPage",
@@ -1557,7 +1592,21 @@ internal static class ToolContractCatalog {
 		string comparisonType,
 		string actionType,
 		object[] actionItems,
-		object constantValue) {
+		object? constantValue = null) {
+		Dictionary<string, object?> condition = new() {
+			["leftExpression"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = leftPath
+			},
+			["comparisonType"] = comparisonType
+		};
+		if (constantValue is not null) {
+			condition["rightExpression"] = new Dictionary<string, object?> {
+				["type"] = "Const",
+				["value"] = constantValue
+			};
+		}
+
 		return Example(summary, new Dictionary<string, object?> {
 			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
 			[PackageNameCamelFieldName] = ExamplePackageName,
@@ -1567,17 +1616,7 @@ internal static class ToolContractCatalog {
 				["condition"] = new Dictionary<string, object?> {
 					["logicalOperation"] = "AND",
 					["conditions"] = new object[] {
-						new Dictionary<string, object?> {
-							["leftExpression"] = new Dictionary<string, object?> {
-								["type"] = "AttributeValue",
-								["path"] = leftPath
-							},
-							["comparisonType"] = comparisonType,
-							["rightExpression"] = new Dictionary<string, object?> {
-								["type"] = "Const",
-								["value"] = constantValue
-							}
-						}
+						condition
 					}
 				},
 				["actions"] = new object[] {

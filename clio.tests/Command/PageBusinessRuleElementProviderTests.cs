@@ -60,6 +60,6 @@ public sealed class PageBusinessRuleElementProviderTests {
 
 		// Assert
 		result.Should().BeEquivalentTo(["Root", "Input_One", "Tab", "RefreshButton", "AddRecordButton", "NestedMetadataButton"],
-			because: "show/hide page actions can target any named element discovered recursively in viewConfig");
+			because: "page actions can target any named element discovered recursively in viewConfig");
 	}
 }

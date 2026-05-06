@@ -634,7 +634,11 @@ public sealed class ToolContractGetToolE2ETests {
 				validator.Name == "enum" &&
 				validator.Field == "rule.actions[*].type" &&
 				validator.Context!.Contains("hide-element", StringComparison.Ordinal) &&
-				validator.Context.Contains("show-element", StringComparison.Ordinal),
+				validator.Context.Contains("show-element", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-editable", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-read-only", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-required", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-optional", StringComparison.Ordinal),
 			because: "the contract should advertise page-only action values");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "page-element" &&

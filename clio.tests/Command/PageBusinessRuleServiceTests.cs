@@ -69,8 +69,8 @@ public sealed class PageBusinessRuleServiceTests {
 			Arg.Any<BusinessRuleMetadataDto>());
 		capturedMetadata.Should().NotBeNull(
 			because: "the service should convert the validated page rule before saving the add-on");
-		capturedMetadata!.Cases.Single().Actions.Single().TypeName.Should().Be(BusinessRuleConstants.BusinessRuleShowElementTypeName,
-			because: "page show-element actions should be converted into the Creatio show element action type");
+		capturedMetadata!.Cases.Single().Actions.Single().TypeName.Should().Be(BusinessRuleConstants.BusinessRuleReadonlyElementTypeName,
+			because: "page field-state actions should be converted into the matching Creatio action type");
 	}
 
 	[Test]
@@ -116,7 +116,7 @@ public sealed class PageBusinessRuleServiceTests {
 
 	private static BusinessRule CreatePageRule(string actionElementName = "Input_One") =>
 		new(
-			"Show input",
+			"Make input read-only",
 			new BusinessRuleConditionGroup(
 				"AND",
 				[
@@ -126,6 +126,6 @@ public sealed class PageBusinessRuleServiceTests {
 						new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"Ready\"")))
 				]),
 			[
-				new ShowElementBusinessRuleAction([actionElementName])
+				new MakeReadOnlyBusinessRuleAction([actionElementName])
 			]);
 }

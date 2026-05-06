@@ -269,7 +269,7 @@ public sealed record PageBusinessRuleMcpContract
 	/// Gets the page-level actions to execute when the condition group matches.
 	/// </summary>
 	[JsonPropertyName("actions")]
-	[Description("One or more page-level show/hide actions to execute when the condition group matches.")]
+	[Description("One or more page-level actions to execute when the condition group matches.")]
 	[Required]
 	public List<PageBusinessRuleActionMcpContract> Actions { get; init; } = null!;
 
@@ -293,6 +293,10 @@ public sealed record PageBusinessRuleMcpContract
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 [JsonDerivedType(typeof(PageHideElementBusinessRuleActionMcpContract), "hide-element")]
 [JsonDerivedType(typeof(PageShowElementBusinessRuleActionMcpContract), "show-element")]
+[JsonDerivedType(typeof(PageMakeEditableBusinessRuleActionMcpContract), "make-editable")]
+[JsonDerivedType(typeof(PageMakeReadOnlyBusinessRuleActionMcpContract), "make-read-only")]
+[JsonDerivedType(typeof(PageMakeRequiredBusinessRuleActionMcpContract), "make-required")]
+[JsonDerivedType(typeof(PageMakeOptionalBusinessRuleActionMcpContract), "make-optional")]
 public abstract record PageBusinessRuleActionMcpContract
 {
 	protected PageBusinessRuleActionMcpContract()
@@ -357,6 +361,70 @@ public sealed record PageShowElementBusinessRuleActionMcpContract : PageElementS
 	internal override BusinessRuleAction ToBusinessRuleAction() => new ShowElementBusinessRuleAction(Items ?? []);
 }
 
+/// <summary>
+/// MCP action contract that makes page elements editable.
+/// </summary>
+public sealed record PageMakeEditableBusinessRuleActionMcpContract : PageElementSelectionBusinessRuleActionMcpContract
+{
+	public PageMakeEditableBusinessRuleActionMcpContract()
+	{
+	}
+
+	public PageMakeEditableBusinessRuleActionMcpContract(List<string> items) : base(items)
+	{
+	}
+
+	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeEditableBusinessRuleAction(Items ?? []);
+}
+
+/// <summary>
+/// MCP action contract that makes page elements read-only.
+/// </summary>
+public sealed record PageMakeReadOnlyBusinessRuleActionMcpContract : PageElementSelectionBusinessRuleActionMcpContract
+{
+	public PageMakeReadOnlyBusinessRuleActionMcpContract()
+	{
+	}
+
+	public PageMakeReadOnlyBusinessRuleActionMcpContract(List<string> items) : base(items)
+	{
+	}
+
+	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeReadOnlyBusinessRuleAction(Items ?? []);
+}
+
+/// <summary>
+/// MCP action contract that makes page elements required.
+/// </summary>
+public sealed record PageMakeRequiredBusinessRuleActionMcpContract : PageElementSelectionBusinessRuleActionMcpContract
+{
+	public PageMakeRequiredBusinessRuleActionMcpContract()
+	{
+	}
+
+	public PageMakeRequiredBusinessRuleActionMcpContract(List<string> items) : base(items)
+	{
+	}
+
+	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeRequiredBusinessRuleAction(Items ?? []);
+}
+
+/// <summary>
+/// MCP action contract that makes page elements optional.
+/// </summary>
+public sealed record PageMakeOptionalBusinessRuleActionMcpContract : PageElementSelectionBusinessRuleActionMcpContract
+{
+	public PageMakeOptionalBusinessRuleActionMcpContract()
+	{
+	}
+
+	public PageMakeOptionalBusinessRuleActionMcpContract(List<string> items) : base(items)
+	{
+	}
+
+	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeOptionalBusinessRuleAction(Items ?? []);
+}
+
 [McpServerToolType]
 public sealed class CreatePageBusinessRuleTool(
 	CreatePageBusinessRuleCommand command,
@@ -368,7 +436,7 @@ public sealed class CreatePageBusinessRuleTool(
 
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Creates a page-level Freedom UI business rule that shows or hides page elements.")]
+	[Description("Creates a page-level Freedom UI business rule that changes page element visibility, editability, or required state.")]
 	public CommandExecutionResult BusinessRuleCreate(
 		[Description("Creatio environment name.")]
 		[Required]

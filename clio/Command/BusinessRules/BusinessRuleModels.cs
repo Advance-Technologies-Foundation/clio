@@ -157,7 +157,7 @@ public abstract record FieldSelectionBusinessRuleAction : BusinessRuleAction
 
     [JsonPropertyName("items")]
     [Description(
-        "Action items. Field-state actions use attribute names. Page show/hide actions use page element names.")]
+        "Action items. Entity actions use attribute names. Page actions use page element names.")]
     [Required]
     public List<string> Items { get; init; } = [];
 

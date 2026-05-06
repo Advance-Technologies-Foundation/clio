@@ -456,7 +456,7 @@ public sealed class BusinessRuleToolTests {
 			.Returns(new BusinessRuleCreateResult("BusinessRule_7654321"));
 		CreatePageBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
 		PageBusinessRuleMcpContract rule = new(
-			"Show escalation when priority is high",
+			"Make escalation read-only when priority is high",
 			new BusinessRuleConditionGroup(
 				"AND",
 				[
@@ -467,7 +467,7 @@ public sealed class BusinessRuleToolTests {
 							JsonSerializer.Deserialize<JsonElement>("\"High\"")))
 				]),
 			[
-				new PageShowElementBusinessRuleActionMcpContract(["EscalateButton"])
+				new PageMakeReadOnlyBusinessRuleActionMcpContract(["EscalateButton"])
 			]);
 
 		// Act
@@ -484,10 +484,10 @@ public sealed class BusinessRuleToolTests {
 			Arg.Is<PageBusinessRuleCreateRequest>(request =>
 				request.PackageName == "UsrPkg"
 				&& request.PageSchemaName == "UsrCase_FormPage"
-				&& request.Rule.Caption == "Show escalation when priority is high"
+				&& request.Rule.Caption == "Make escalation read-only when priority is high"
 				&& request.Rule.Condition.LogicalOperation == "AND"
 				&& request.Rule.Actions.Count == 1
-				&& request.Rule.Actions[0].ActionType == "show-element"
+				&& request.Rule.Actions[0].ActionType == "make-read-only"
 				&& request.Rule.Actions[0].FieldSelectionItems.Single() == "EscalateButton"));
 	}
 
@@ -554,7 +554,7 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Deserializes create-page-business-rule show and hide action payloads without accepting entity action branches.")]
+	[Description("Deserializes create-page-business-rule page action payloads without accepting object-only action branches.")]
 	public void PageBusinessRuleCreate_Should_Deserialize_Page_Action_Payload() {
 		// Arrange
 		string payload = """
@@ -584,6 +584,22 @@ public sealed class BusinessRuleToolTests {
 		      {
 		        "type": "hide-element",
 		        "items": [ "EscalateButton" ]
+		      },
+		      {
+		        "type": "make-editable",
+		        "items": [ "PriorityInput" ]
+		      },
+		      {
+		        "type": "make-read-only",
+		        "items": [ "AmountInput" ]
+		      },
+		      {
+		        "type": "make-required",
+		        "items": [ "CloseDateInput" ]
+		      },
+		      {
+		        "type": "make-optional",
+		        "items": [ "CommentInput" ]
 		      }
 		    ]
 		  }
@@ -597,9 +613,21 @@ public sealed class BusinessRuleToolTests {
 		payloadArgs.Should().NotBeNull(
 			because: "page business-rule payloads should deserialize from the MCP JSON shape");
 		BusinessRule rule = payloadArgs!.Rule.ToBusinessRule();
-		rule.Actions.Single().ActionType.Should().Be("hide-element",
-			because: "the page action discriminator should be preserved");
-		rule.Actions.Single().FieldSelectionItems.Should().Equal(["EscalateButton"],
+		rule.Actions.Select(action => action.ActionType).Should().Equal([
+				"hide-element",
+				"make-editable",
+				"make-read-only",
+				"make-required",
+				"make-optional"
+			],
+			because: "the page action discriminators should be preserved");
+		rule.Actions.SelectMany(action => action.FieldSelectionItems).Should().Equal([
+				"EscalateButton",
+				"PriorityInput",
+				"AmountInput",
+				"CloseDateInput",
+				"CommentInput"
+			],
 			because: "page element action items should deserialize as target element names");
 	}
 

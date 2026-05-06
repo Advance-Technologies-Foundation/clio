@@ -43,7 +43,8 @@ internal static class BusinessRuleConstants {
 		"equal, not-equal, is-filled-in, is-not-filled-in, greater-than, greater-than-or-equal, less-than, less-than-or-equal";
 	internal const string SupportedActionTypesDescription =
 		"make-editable, make-read-only, make-required, make-optional, set-values";
-	internal const string SupportedPageActionTypesDescription = "hide-element, show-element";
+	internal const string SupportedPageActionTypesDescription =
+		"hide-element, show-element, make-editable, make-read-only, make-required, make-optional";
 
 	internal static readonly JsonSerializerOptions JsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -94,7 +95,11 @@ internal static class BusinessRuleConstants {
 	internal static readonly IReadOnlyDictionary<string, string> SupportedPageActionTypeNames =
 		new Dictionary<string, string> {
 			["hide-element"] = BusinessRuleHideElementTypeName,
-			["show-element"] = BusinessRuleShowElementTypeName
+			["show-element"] = BusinessRuleShowElementTypeName,
+			["make-editable"] = BusinessRuleEditableElementTypeName,
+			["make-read-only"] = BusinessRuleReadonlyElementTypeName,
+			["make-required"] = BusinessRuleRequiredElementTypeName,
+			["make-optional"] = BusinessRuleOptionalElementTypeName
 		};
 
 	internal static readonly IReadOnlyDictionary<string, int> SupportedComparisonTypeValues =
