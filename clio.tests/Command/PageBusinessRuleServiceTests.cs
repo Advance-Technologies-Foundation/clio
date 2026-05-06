@@ -73,7 +73,48 @@ public sealed class PageBusinessRuleServiceTests {
 			because: "page show-element actions should be converted into the Creatio show element action type");
 	}
 
-	private static BusinessRule CreatePageRule() =>
+	[Test]
+	[Category("Unit")]
+	[Description("Stops before add-on mutation when page business-rule validation fails.")]
+	public void Create_Should_Not_Append_Addon_When_Page_Rule_Validation_Fails() {
+		// Arrange
+		IBusinessRulePackageResolver packageResolver = Substitute.For<IBusinessRulePackageResolver>();
+		IPageBusinessRuleSchemaProvider schemaProvider = Substitute.For<IPageBusinessRuleSchemaProvider>();
+		IPageBusinessRuleAttributeProvider attributeProvider = Substitute.For<IPageBusinessRuleAttributeProvider>();
+		IPageBusinessRuleElementProvider elementProvider = Substitute.For<IPageBusinessRuleElementProvider>();
+		IBusinessRuleAddonService addonService = Substitute.For<IBusinessRuleAddonService>();
+		Guid packageUId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+		PageBundleInfo bundle = new();
+		BusinessRule rule = CreatePageRule(actionElementName: "MissingInput");
+		packageResolver.ResolveUId("UsrPkg").Returns(packageUId);
+		schemaProvider.GetSchema("UsrPage", packageUId).Returns(new PageBusinessRuleSchemaContext(
+			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+			bundle));
+		attributeProvider.GetAttributes(bundle, packageUId).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
+			["PDS_Text"] = new("PDS_Text", "Text", null)
+		});
+		elementProvider.GetElementNames(bundle).Returns(new HashSet<string>(StringComparer.Ordinal) {
+			"Input_One"
+		});
+		PageBusinessRuleService service = new(
+			packageResolver,
+			schemaProvider,
+			attributeProvider,
+			elementProvider,
+			addonService);
+
+		// Act
+		Action act = () => service.Create(new PageBusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Unknown page element 'MissingInput' in rule.actions[*].items. Available page elements: Input_One.",
+				because: "invalid page element targets should be rejected before destructive add-on writes");
+		addonService.DidNotReceiveWithAnyArgs().AppendRule(default!, default!, default!);
+	}
+
+	private static BusinessRule CreatePageRule(string actionElementName = "Input_One") =>
 		new(
 			"Show input",
 			new BusinessRuleConditionGroup(
@@ -85,6 +126,6 @@ public sealed class PageBusinessRuleServiceTests {
 						new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"Ready\"")))
 				]),
 			[
-				new ShowElementBusinessRuleAction(["Input_One"])
+				new ShowElementBusinessRuleAction([actionElementName])
 			]);
 }

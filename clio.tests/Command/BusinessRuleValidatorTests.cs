@@ -1169,6 +1169,57 @@ public sealed class BusinessRuleValidatorTests {
 				because: "the validator should only allow the supported right-hand operand kinds");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects null condition entries with a deterministic validation error.")]
+	public void Validate_Should_Reject_Null_Condition_Entry() {
+		// Arrange
+		BusinessRule rule = new(
+			"Rule caption",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					null!
+				]),
+			[
+				new MakeRequiredBusinessRuleAction(["Owner"])
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.condition.conditions[*] is required.",
+				because: "malformed MCP condition arrays should return stable validation errors instead of null reference failures");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects null set-values item entries with a deterministic validation error.")]
+	public void Validate_Should_Reject_Null_SetValues_Item_Entry() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				new SetValuesBusinessRuleAction(
+					new List<BusinessRuleSetValueItem> {
+						null!
+					})
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.actions[*].items[*] is required.",
+				because: "malformed MCP set-values arrays should return stable validation errors instead of null reference failures");
+	}
+
 	private static BusinessRule CreateRule(
 		string caption = "Rule caption",
 		string logicalOperation = "AND",

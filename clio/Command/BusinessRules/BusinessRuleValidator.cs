@@ -53,6 +53,10 @@ internal static class BusinessRuleValidator {
 		}
 
 		foreach (BusinessRuleCondition condition in rule.Condition.Conditions) {
+			if (condition is null) {
+				throw new ArgumentException("rule.condition.conditions[*] is required.");
+			}
+
 			ValidateCondition(condition, attributeMap);
 		}
 
@@ -131,6 +135,10 @@ internal static class BusinessRuleValidator {
 		}
 
 		foreach (BusinessRuleSetValueItem item in setValueItems) {
+			if (item is null) {
+				throw new ArgumentException("rule.actions[*].items[*] is required.");
+			}
+
 			ValidateSetValueItem(item, attributeMap);
 		}
 	}
