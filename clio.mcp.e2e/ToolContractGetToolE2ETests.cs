@@ -603,6 +603,54 @@ public sealed class ToolContractGetToolE2ETests {
 	}
 
 	[Test]
+	[Description("Advertises create-page-business-rule validation and workflow guidance through the real MCP server.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("tool-contract-get advertises create-page-business-rule validation and workflow guidance")]
+	public async Task ToolContractGet_Should_Advertise_Page_Business_Rule_Create_Contract() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					CreatePageBusinessRuleTool.BusinessRuleCreateToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the page business-rule mutation tool should be discoverable through tool-contract-get");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.InputSchema.Required.Should().Contain(["environmentName", "packageName", "pageSchemaName", "rule"],
+			because: "page-business-rule creation requires environment package page and rule payload");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "enum" &&
+				validator.Field == "rule.actions[*].type" &&
+				validator.Context!.Contains("hide-element", StringComparison.Ordinal) &&
+				validator.Context.Contains("show-element", StringComparison.Ordinal),
+			because: "the contract should advertise page-only action values");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "page-element" &&
+				validator.Field == "rule.actions[*].items" &&
+				validator.Context!.Contains("recursive get-page bundle.viewConfig", StringComparison.Ordinal),
+			because: "the contract should point callers to recursive page element discovery");
+		contract.PreferredFlow.Tools.Should().Equal(
+			[
+				PageListTool.ToolName,
+				PageGetTool.ToolName,
+				CreatePageBusinessRuleTool.BusinessRuleCreateToolName
+			],
+			because: "page business-rule creation should be preceded by page list/get discovery");
+		contract.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "create-page-business-rule returns the standard command execution result payload");
+	}
+
+	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises page discovery selectors and raw body semantics")]
 	public async Task ToolContractGet_Should_Advertise_Page_List_And_Page_Get_Metadata() {

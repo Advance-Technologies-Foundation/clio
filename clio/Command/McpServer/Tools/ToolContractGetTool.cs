@@ -259,6 +259,7 @@ internal static class ToolContractCatalog {
 	private const string EnvironmentNameCamelFieldName = "environmentName";
 	private const string PackageNameCamelFieldName = "packageName";
 	private const string EntitySchemaNameCamelFieldName = "entitySchemaName";
+	private const string PageSchemaNameCamelFieldName = "pageSchemaName";
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
 	private const string ValuesFieldName = "values";
 	private const string BindingNameDescription = "Binding name.";
@@ -315,7 +316,8 @@ internal static class ToolContractCatalog {
 			[ComponentInfoTool.ToolName] = BuildComponentInfo(),
 			[PageUpdateTool.ToolName] = BuildPageUpdate(),
 			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete(),
-			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate()
+			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate(),
+			[CreatePageBusinessRuleTool.BusinessRuleCreateToolName] = BuildPageBusinessRuleCreate()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
@@ -325,6 +327,7 @@ internal static class ToolContractCatalog {
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 		CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
+		CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
 		ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
 		ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
 		ApplicationGetInfoTool.ApplicationGetInfoToolName,
@@ -1323,18 +1326,7 @@ internal static class ToolContractCatalog {
 					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets.")
 				],
 				Validators: [
-					new ToolContractValidator("enum", "unsupported-operator", "rule.condition.logicalOperation",
-						Context: "Supported values: AND, OR."),
-					new ToolContractValidator("enum", "unsupported-comparison", "rule.condition.conditions[*].comparisonType",
-						Context: $"Supported values: {BusinessRuleConstants.SupportedComparisonTypesDescription}."),
-					new ToolContractValidator("conditional-field", "invalid-right-expression-shape", "rule.condition.conditions[*].rightExpression",
-						Context: "Required for equal, not-equal, greater-than, greater-than-or-equal, less-than, and less-than-or-equal. Omit or null for is-filled-in and is-not-filled-in."),
-					new ToolContractValidator("comparison-family", "unsupported-relational-operands", "rule.condition.conditions[*]",
-						Context: "greater-than, greater-than-or-equal, less-than, and less-than-or-equal only support numeric and date/time left attributes (Date, DateTime, Time). Attribute-to-attribute relational comparisons must use matching data value types."),
-					new ToolContractValidator("comparison-family", "unsupported-equality-operands", "rule.condition.conditions[*]",
-						Context: "equal and not-equal are not supported when the left attribute data value type is RichText or Image. Use is-filled-in or is-not-filled-in for those attributes."),
-					new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
-						Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm')."),
+					.. BusinessRuleConditionValidators(),
 					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
 						Context: "Supported values: make-editable, make-read-only, make-required, make-optional, set-values."),
 					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rule.actions[*].items[*]",
@@ -1409,6 +1401,95 @@ internal static class ToolContractCatalog {
 			[]);
 	}
 
+	private static ToolContractDefinition BuildPageBusinessRuleCreate() {
+		return new ToolContractDefinition(
+			CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
+			"Creates a page-level Freedom UI business rule that shows or hides named page elements using datasource-bound page attributes and constants.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, PageSchemaNameCamelFieldName, RuleFieldName],
+				[
+					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameCamelFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
+					Field(PageSchemaNameCamelFieldName, StringType, "Target Freedom UI page schema name."),
+					Field(RuleFieldName, ObjectType, "Structured page business-rule definition with caption, one top-level condition group, and one or more show/hide actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
+				],
+				Validators: [
+					.. BusinessRuleConditionValidators(),
+					new ToolContractValidator("page-attribute", "unsupported-condition-attribute", "rule.condition.conditions[*].leftExpression.path",
+						Context: "Use declared datasource-bound page attribute names from bundle.viewModelConfig.attributes, for example PDS_Priority. Do not use datasource paths like PDS.Priority."),
+					new ToolContractValidator("page-attribute", "unsupported-right-attribute", "rule.condition.conditions[*].rightExpression.path",
+						Context: "Right-side AttributeValue is supported only when it is also a declared datasource-bound page attribute and resolves to the same data value type as the left attribute."),
+					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
+						Context: $"Supported values: {BusinessRuleConstants.SupportedPageActionTypesDescription}."),
+					new ToolContractValidator("page-element", "unknown-page-element", "rule.actions[*].items",
+						Context: "Use any named element from recursive get-page bundle.viewConfig.")
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				PageBusinessRuleExample(
+					"Hide Escalate when priority matches a lookup constant",
+					"Case_FormPage",
+					"Hide Escalate when priority matches",
+					"PDS_Priority",
+					"equal",
+					"hide-element",
+					["EscalateButton"],
+					"00000000-0000-0000-0000-000000000001"),
+				PageBusinessRuleExample(
+					"Show a warning label when amount exceeds threshold",
+					"UsrOrder_FormPage",
+					"Show warning for high amount",
+					"PDS_UsrAmount",
+					"greater-than",
+					"show-element",
+					["HighAmountWarningLabel"],
+					100000),
+				PageBusinessRuleAttributeComparisonExample()
+			],
+			Flow(
+				[
+					PageListTool.ToolName,
+					PageGetTool.ToolName,
+					CreatePageBusinessRuleTool.BusinessRuleCreateToolName
+				],
+				"Use list-pages or application discovery to choose the page, call get-page to inspect bundle.viewConfig and bundle.viewModelConfig.attributes, then create the page rule. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
+			[
+				Flow(
+					[
+						ApplicationGetListTool.ApplicationGetListToolName,
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						PageGetTool.ToolName,
+						CreatePageBusinessRuleTool.BusinessRuleCreateToolName
+					],
+					"When the target page belongs to a known application, inspect the application first and then fetch the page bundle before creating the rule.")
+			],
+			[],
+			[
+				new ToolAntiPattern(
+					"Using datasource paths like PDS.Priority in rule.condition.conditions[*].leftExpression.path.",
+					"Page business rules use declared view-model attribute names from bundle.viewModelConfig.attributes so the generated metadata and triggers match the page runtime.")
+			]);
+	}
+
+	private static ToolContractValidator[] BusinessRuleConditionValidators() =>
+		[
+			new ToolContractValidator("enum", "unsupported-operator", "rule.condition.logicalOperation",
+				Context: "Supported values: AND, OR."),
+			new ToolContractValidator("enum", "unsupported-comparison", "rule.condition.conditions[*].comparisonType",
+				Context: $"Supported values: {BusinessRuleConstants.SupportedComparisonTypesDescription}."),
+			new ToolContractValidator("conditional-field", "invalid-right-expression-shape", "rule.condition.conditions[*].rightExpression",
+				Context: "Required for equal, not-equal, greater-than, greater-than-or-equal, less-than, and less-than-or-equal. Omit or null for is-filled-in and is-not-filled-in."),
+			new ToolContractValidator("comparison-family", "unsupported-relational-operands", "rule.condition.conditions[*]",
+				Context: "greater-than, greater-than-or-equal, less-than, and less-than-or-equal only support numeric and date/time left attributes (Date, DateTime, Time). Attribute-to-attribute relational comparisons must use matching data value types."),
+			new ToolContractValidator("comparison-family", "unsupported-equality-operands", "rule.condition.conditions[*]",
+				Context: "equal and not-equal are not supported when the left attribute data value type is RichText or Image. Use is-filled-in or is-not-filled-in for those attributes."),
+			new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
+				Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm').")
+		];
+
 	private static ToolContractExample BusinessRuleExample(
 		string summary,
 		string entitySchemaName,
@@ -1462,6 +1543,80 @@ internal static class ToolContractCatalog {
 				["value"] = value
 			}
 		};
+	}
+
+	private static ToolContractExample PageBusinessRuleExample(
+		string summary,
+		string pageSchemaName,
+		string caption,
+		string leftPath,
+		string comparisonType,
+		string actionType,
+		object[] actionItems,
+		object constantValue) {
+		return Example(summary, new Dictionary<string, object?> {
+			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+			[PackageNameCamelFieldName] = ExamplePackageName,
+			[PageSchemaNameCamelFieldName] = pageSchemaName,
+			[RuleFieldName] = new Dictionary<string, object?> {
+				["caption"] = caption,
+				["condition"] = new Dictionary<string, object?> {
+					["logicalOperation"] = "AND",
+					["conditions"] = new object[] {
+						new Dictionary<string, object?> {
+							["leftExpression"] = new Dictionary<string, object?> {
+								["type"] = "AttributeValue",
+								["path"] = leftPath
+							},
+							["comparisonType"] = comparisonType,
+							["rightExpression"] = new Dictionary<string, object?> {
+								["type"] = "Const",
+								["value"] = constantValue
+							}
+						}
+					}
+				},
+				["actions"] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = actionType,
+						["items"] = actionItems
+					}
+				}
+			}
+		});
+	}
+
+	private static ToolContractExample PageBusinessRuleAttributeComparisonExample() {
+		return Example("Hide a warning when two datasource-bound page attributes match", new Dictionary<string, object?> {
+			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+			[PackageNameCamelFieldName] = ExamplePackageName,
+			[PageSchemaNameCamelFieldName] = "UsrOrder_FormPage",
+			[RuleFieldName] = new Dictionary<string, object?> {
+				["caption"] = "Hide warning when planned and actual dates match",
+				["condition"] = new Dictionary<string, object?> {
+					["logicalOperation"] = "AND",
+					["conditions"] = new object[] {
+						new Dictionary<string, object?> {
+							["leftExpression"] = new Dictionary<string, object?> {
+								["type"] = "AttributeValue",
+								["path"] = "PDS_UsrPlannedDate"
+							},
+							["comparisonType"] = "equal",
+							["rightExpression"] = new Dictionary<string, object?> {
+								["type"] = "AttributeValue",
+								["path"] = "PDS_UsrActualDate"
+							}
+						}
+					}
+				},
+				["actions"] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = "hide-element",
+						["items"] = new object[] { "DateMismatchWarningLabel" }
+					}
+				}
+			}
+		});
 	}
 
 	private static ToolContractDefinition BuildSchemaSync() {

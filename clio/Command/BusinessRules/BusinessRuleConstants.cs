@@ -23,6 +23,9 @@ internal static class BusinessRuleConstants {
 	internal const string BusinessRuleOptionalElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionOptionalElement";
 	internal const string BusinessRuleSetValuesElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionSetValues";
 	internal const string BusinessRuleSetValueItemTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleSetValueItem";
+	internal const string BusinessRuleHideElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionHideElement";
+	internal const string BusinessRuleShowElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionShowElement";
+	internal const string ClientUnitSchemaManagerName = "ClientUnitSchemaManager";
 	internal const string SetValuesActionTypeName = "set-values";
 	internal const int ChangeAttributeValueTriggerType = 0;
 	internal const int DataLoadedTriggerType = 2;
@@ -40,6 +43,7 @@ internal static class BusinessRuleConstants {
 		"equal, not-equal, is-filled-in, is-not-filled-in, greater-than, greater-than-or-equal, less-than, less-than-or-equal";
 	internal const string SupportedActionTypesDescription =
 		"make-editable, make-read-only, make-required, make-optional, set-values";
+	internal const string SupportedPageActionTypesDescription = "hide-element, show-element";
 
 	internal static readonly JsonSerializerOptions JsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -85,6 +89,12 @@ internal static class BusinessRuleConstants {
 			["make-read-only"] = BusinessRuleReadonlyElementTypeName,
 			["make-required"] = BusinessRuleRequiredElementTypeName,
 			["make-optional"] = BusinessRuleOptionalElementTypeName
+		};
+
+	internal static readonly IReadOnlyDictionary<string, string> SupportedPageActionTypeNames =
+		new Dictionary<string, string> {
+			["hide-element"] = BusinessRuleHideElementTypeName,
+			["show-element"] = BusinessRuleShowElementTypeName
 		};
 
 	internal static readonly IReadOnlyDictionary<string, int> SupportedComparisonTypeValues =

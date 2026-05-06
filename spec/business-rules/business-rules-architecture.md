@@ -15,7 +15,10 @@ flowchart LR
 
         subgraph Core["Business Rule Core"]
             Command["CreateEntityBusinessRuleCommand"]
-            Service["BusinessRuleService"]
+            Service["EntityBusinessRuleService"]
+            SchemaProvider["EntityBusinessRuleSchemaProvider"]
+            AttributeProvider["EntityBusinessRuleAttributeProvider"]
+            AddonService["BusinessRuleAddonService"]
             Validator["BusinessRuleValidator"]
             Converter["BusinessRuleMetadataConverter"]
         end
@@ -27,10 +30,13 @@ flowchart LR
 
     Tool -->|"options"| Command
     Command -->|"request"| Service
-    Service -->|"rule"| Validator
-    Service -->|"rule + columns"| Converter
+    Service -->|"schema name"| AttributeProvider
+    AttributeProvider -->|"schema name"| SchemaProvider
+    Service -->|"rule + attributes"| Validator
+    Service -->|"rule + attributes"| Converter
     Converter -->|"dto"| Service
-    Service -->|"load/save add-on"| Addon
+    Service -->|"dto"| AddonService
+    AddonService -->|"load/save add-on"| Addon
 ```
 
 
@@ -189,9 +195,10 @@ flowchart LR
 
 - Persist business rules through `AddonSchemaDesignerService.svc`, not runtime business-rule endpoints.
 - Route MCP execution through `CreateEntityBusinessRuleCommand` so environment-specific dependencies are resolved per request through the standard command pipeline.
-- Keep request-level preconditions in `BusinessRuleService`, while `BusinessRuleValidator` owns complete rule validation including schema-aware checks.
+- Keep request-level preconditions in `EntityBusinessRuleService`, while `BusinessRuleValidator` owns complete rule validation including schema-aware checks.
 - Keep `BusinessRuleMetadataConverter` isolated so MCP request DTOs do not become the persistence model.
 - Start with `CreateEntityBusinessRuleTool`, but keep the service structure extensible for additional tools later.
+- Treat `IEntityBusinessRuleService` and `EntityBusinessRuleCreateRequest` as the intentional entity-specific service API after the page-rule split. The old generic `IBusinessRuleService` / `BusinessRuleCreateRequest` names are not preserved because the supported compatibility boundary is the CLI/MCP contract, not internal command-service abstractions.
 
 ## Related Docs
 

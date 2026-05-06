@@ -52,6 +52,7 @@ public sealed class ToolContractGetToolTests {
 				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 				ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 				CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
+				CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
 				DataForgeTool.DataForgeHealthToolName,
 				DataForgeTool.DataForgeContextToolName,
 				PageSyncTool.ToolName,
@@ -303,6 +304,80 @@ public sealed class ToolContractGetToolTests {
 		hasSetValuesExample.Should().BeTrue(
 			because: "the contract should include a set-values example with text number boolean Date DateTime and Time constants");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical create-page-business-rule contract with page attribute validation and show/hide workflow guidance.")]
+	public void ToolContractGet_Should_Return_PageBusinessRuleCreate_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			CreatePageBusinessRuleTool.BusinessRuleCreateToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "tool-contract-get should expose the create-page-business-rule contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.InputSchema.Required.Should().Contain(["environmentName", "packageName", "pageSchemaName", "rule"],
+			because: "page-business-rule creation requires environment package page and rule payload");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "enum" &&
+				validator.Field == "rule.actions[*].type" &&
+				validator.Context!.Contains("hide-element", StringComparison.Ordinal) &&
+				validator.Context.Contains("show-element", StringComparison.Ordinal),
+			because: "the page rule contract should advertise only page show/hide actions");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "page-element" &&
+				validator.Field == "rule.actions[*].items" &&
+				validator.Context!.Contains("recursive get-page bundle.viewConfig", StringComparison.Ordinal),
+			because: "the contract should direct callers to recursive page element discovery");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "page-attribute" &&
+				validator.Field == "rule.condition.conditions[*].leftExpression.path",
+			because: "page rule conditions must use declared page view-model attributes");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "conditional-field" &&
+				validator.Field == "rule.condition.conditions[*].rightExpression" &&
+				validator.Context!.Contains("Omit or null for is-filled-in and is-not-filled-in", StringComparison.Ordinal),
+			because: "page rules share the business-rule unary-versus-binary rightExpression contract");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "comparison-family" &&
+				validator.Code == "unsupported-relational-operands" &&
+				validator.Field == "rule.condition.conditions[*]" &&
+				validator.Context!.Contains("date/time left attributes", StringComparison.Ordinal),
+			because: "page rules share the numeric and date/time scope for relational comparisons");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "date-time-constant" &&
+				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Context!.Contains("timezone suffix", StringComparison.Ordinal),
+			because: "page rules share the DateTime and Time constant timezone requirement");
+		contract.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "create-page-business-rule returns the standard command execution result payload");
+		contract.PreferredFlow.Tools.Should().Equal(
+				new[] {
+					PageListTool.ToolName,
+					PageGetTool.ToolName,
+					CreatePageBusinessRuleTool.BusinessRuleCreateToolName
+				},
+				because: "the contract should require page discovery before rule creation");
+		bool hasHideElementExample = contract.Examples.Any(HasPageActionExample("hide-element"));
+		hasHideElementExample.Should().BeTrue(
+			because: "the contract should include a hide-element page rule example");
+		bool hasShowElementExample = contract.Examples.Any(HasPageActionExample("show-element"));
+		hasShowElementExample.Should().BeTrue(
+			because: "the contract should include a show-element page rule example");
+	}
+
+	private static Func<ToolContractExample, bool> HasPageActionExample(string actionType) =>
+		example =>
+			example.Arguments["rule"] is Dictionary<string, object?> rule
+			&& rule.TryGetValue("actions", out object? actionsValue)
+			&& actionsValue is object[] actions
+			&& actions.OfType<Dictionary<string, object?>>().Any(action =>
+				string.Equals(action["type"]?.ToString(), actionType, StringComparison.Ordinal));
 
 	private static bool HasSetValuesConstantExample(ToolContractExample example) {
 		if (example.Arguments["rule"] is not Dictionary<string, object?> rule
@@ -1047,7 +1122,8 @@ public sealed class ToolContractGetToolTests {
 
 		result.Success.Should().BeFalse(
 			because: "unknown args should not silently fall back to listing all tools");
-		result.Error.Should().NotBeNull();
+		result.Error.Should().NotBeNull(
+			because: "legacy alias failures should return structured error details");
 		result.Error!.Code.Should().Be("invalid-parameter-alias",
 			because: "legacy camelCase args should be reported as alias errors");
 		result.Error.Message.Should().Contain("tool-names",
@@ -1068,7 +1144,8 @@ public sealed class ToolContractGetToolTests {
 
 		ToolContractGetResponse result = tool.GetToolContracts(args);
 
-		result.Success.Should().BeFalse();
+		result.Success.Should().BeFalse(
+			because: "unknown args should not silently fall back to listing all tools");
 		result.Error!.Message.Should().Contain("'foo'",
 			because: "unknown args should be quoted back so the caller sees what was rejected");
 		result.Error.Message.Should().Contain("tool-names",

@@ -196,6 +196,41 @@ public sealed class BusinessRuleMetadataConverterTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps page lookup attribute expressions without reference schema metadata while preserving lookup constants.")]
+	public void ToPageMetadata_Should_Omit_Reference_Schema_For_Page_Attribute_Expressions() {
+		// Arrange
+		const string countryId = "11111111-1111-1111-1111-111111111111";
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["PDS_UsrLookupCountry_qs19ss4"] = new("PDS_UsrLookupCountry_qs19ss4", "Lookup", "Country")
+			};
+		BusinessRule rule = new(
+			"Show country input",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "PDS_UsrLookupCountry_qs19ss4", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json(countryId)))
+				]),
+			[
+				new ShowElementBusinessRuleAction(["Input_0dqt4ly"])
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+
+		// Assert
+		BusinessRuleConditionMetadataDto condition = metadata.Cases[0].Condition!.Conditions[0];
+		condition.LeftExpression.ReferenceSchemaName.Should().BeNull(
+			because: "page AttributeValue metadata should match Creatio page add-on shape and omit referenceSchemaName");
+		condition.RightExpression!.ReferenceSchemaName.Should().Be("Country",
+			because: "lookup constant metadata still needs the referenced schema for value interpretation");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Maps set-values constant assignments into BusinessRuleActionSetValues metadata with typed item expressions.")]
 	public void ToMetadata_Should_Map_SetValues_Constant_Action_Metadata() {
 		// Arrange
