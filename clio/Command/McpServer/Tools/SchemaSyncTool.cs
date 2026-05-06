@@ -360,7 +360,12 @@ public sealed record SchemaSyncOperation(
 	string Type,
 
 	[property: JsonPropertyName("schema-name")]
-	[property: Description("Target entity schema name")]
+	[property: Description("Target entity schema name. " +
+		"For create-entity and create-lookup operations, must use the active SchemaNamePrefix as prefix " +
+		"(e.g. 'UsrAlpha' when prefix is 'Usr', 'MyPrefixAlpha' when prefix is 'MyPrefix'). " +
+		"When `schema-name-prefix` is empty, use plain PascalCase with no prefix. " +
+		"Read the prefix from the `schema-name-prefix` field returned by `get-app-info`, " +
+		"or call `get-schema-name-prefix` if you have not called `get-app-info` yet.")]
 	[property: Required]
 	string SchemaName,
 
@@ -377,7 +382,10 @@ public sealed record SchemaSyncOperation(
 	bool ExtendParent = false,
 
 	[property: JsonPropertyName("columns")]
-	[property: Description("Initial columns for create-lookup or create-entity operations")]
+	[property: Description("Initial columns for create-lookup or create-entity operations. " +
+		"Column codes must also use the active SchemaNamePrefix (e.g. 'UsrEmail' when prefix is 'Usr'). " +
+		"When `schema-name-prefix` is empty, use plain column names with no prefix. " +
+		"Use the same prefix value from `schema-name-prefix`.")]
 	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null,
 
 	[property: JsonPropertyName("update-operations")]

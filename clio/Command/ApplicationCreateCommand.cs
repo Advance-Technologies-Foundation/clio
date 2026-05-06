@@ -13,7 +13,7 @@ public sealed class CreateAppOptions : EnvironmentOptions
 	[Option("name", Required = true, HelpText = "Application display name")]
 	public string Name { get; set; } = string.Empty;
 
-	[Option("code", Required = true, HelpText = "Application code starting with Usr prefix, e.g. UsrMyApp")]
+	[Option("code", Required = true, HelpText = "Application code (active SchemaNamePrefix is auto-applied; default prefix is Usr)")]
 	public string Code { get; set; } = string.Empty;
 
 	[Option("template-code", Required = true, HelpText = "Technical template name (AppFreedomUIv2, AppFreedomUI, AppWithHomePage, EmptyApp)")]

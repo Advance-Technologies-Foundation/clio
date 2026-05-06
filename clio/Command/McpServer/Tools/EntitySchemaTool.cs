@@ -510,7 +510,11 @@ public abstract record EntitySchemaCreateArgsBase(
 	string PackageName,
 
 	[property: JsonPropertyName("schema-name")]
-	[property: Description("Entity schema name. Maximum length is 22 characters.")]
+	[property: Description("Entity schema name. Maximum length is 22 characters. " +
+		"Must use the active SchemaNamePrefix as prefix (e.g. 'UsrAlpha' when prefix is 'Usr', 'MyPrefixAlpha' when prefix is 'MyPrefix'). " +
+		"When `schema-name-prefix` is empty, use no prefix (plain PascalCase, e.g. 'Alpha'). " +
+		"Read the prefix from the `schema-name-prefix` field returned by `get-app-info`, " +
+		"or call `get-schema-name-prefix` if you have not called `get-app-info` yet.")]
 	[property: Required]
 	string SchemaName,
 
@@ -525,7 +529,10 @@ public abstract record EntitySchemaCreateArgsBase(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("columns")]
-	[property: Description("Optional initial columns to add to the schema.")]
+	[property: Description("Optional initial columns to add to the schema. " +
+		"Column codes must also use the active SchemaNamePrefix (e.g. 'UsrEmail' when prefix is 'Usr'). " +
+		"When `schema-name-prefix` is empty, use plain column names with no prefix. " +
+		"Use the same prefix value from `schema-name-prefix`.")]
 	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null
 ) {
 	[property: JsonPropertyName("title")]
@@ -604,7 +611,10 @@ public sealed record UpdateEntitySchemaArgs(
 /// </summary>
 public sealed record CreateEntitySchemaColumnArgs(
 	[property: JsonPropertyName("name")]
-	[property: Description("Column name")]
+	[property: Description("Column code. Must use the active SchemaNamePrefix as prefix " +
+		"(e.g. 'UsrStatus' when prefix is 'Usr', 'MyStatus' when prefix is 'My'). " +
+		"When `schema-name-prefix` is empty, use plain PascalCase with no prefix (e.g. 'Status'). " +
+		"Use the same prefix value from `schema-name-prefix`.")]
 	[property: Required]
 	string Name,
 

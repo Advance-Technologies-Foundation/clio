@@ -36,6 +36,7 @@ public sealed record ApplicationContextResponse(
 	[property: JsonPropertyName("application-version")] string? ApplicationVersion = null,
 	[property: JsonPropertyName("entities")] IReadOnlyList<ApplicationEntityResult>? Entities = null,
 	[property: JsonPropertyName("pages")] IReadOnlyList<PageListItem>? Pages = null,
+	[property: JsonPropertyName("schema-name-prefix")] string? SchemaNamePrefix = null,
 	[property: JsonPropertyName("dataforge")] ApplicationDataForgeResult? DataForge = null,
 	[property: JsonPropertyName("error")] string? Error = null);
 

@@ -108,6 +108,8 @@ public sealed class ApplicationToolE2ETests {
 			because: "get-app-info should include entity summaries in the structured metadata envelope even when the list is empty");
 		infoResult.Result.Error.Should().BeNullOrWhiteSpace(
 			because: "successful get-app-info calls should not include an error payload");
+		infoResult.Result.SchemaNamePrefix.Should().NotBeNull(
+			because: "get-app-info should return the active SchemaNamePrefix so agents can use the correct prefix for schema names in the session");
 	}
 
 	[Test]

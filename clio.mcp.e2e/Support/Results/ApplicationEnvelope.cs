@@ -24,6 +24,7 @@ internal sealed record ApplicationContextResponseEnvelope(
 	[property: JsonPropertyName("application-name")] string? ApplicationName,
 	[property: JsonPropertyName("application-code")] string? ApplicationCode,
 	[property: JsonPropertyName("application-version")] string? ApplicationVersion,
+	[property: JsonPropertyName("schema-name-prefix")] string? SchemaNamePrefix,
 	[property: JsonPropertyName("entities")] IReadOnlyList<ApplicationEntityEnvelope>? Entities,
 	[property: JsonPropertyName("pages")] IReadOnlyList<ApplicationPageEnvelope>? Pages,
 	[property: JsonPropertyName("dataforge")] ApplicationDataForgeEnvelope? DataForge,
