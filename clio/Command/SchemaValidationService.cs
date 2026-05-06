@@ -928,38 +928,13 @@ public static class SchemaValidationService
 	}
 
 	private static bool TryGetTopLevelObjectPropertyValue(string objectContent, string propertyName, out string expression) {
+		foreach ((string key, string valueExpression) in EnumerateTopLevelObjectEntries(objectContent)) {
+			if (string.Equals(key, propertyName, StringComparison.Ordinal)) {
+				expression = valueExpression;
+				return !string.IsNullOrWhiteSpace(expression);
+			}
+		}
 		expression = string.Empty;
-		if (string.IsNullOrEmpty(objectContent) || objectContent[0] != '{') {
-			return false;
-		}
-		int depth = 0;
-		bool inString = false;
-		char stringChar = '"';
-		int index = 0;
-		while (index < objectContent.Length) {
-			if (JsParserHelper.TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
-				continue;
-			}
-			if (JsParserHelper.TrySkipComment(objectContent, index, out int afterComment)) {
-				index = afterComment;
-				continue;
-			}
-			char current = objectContent[index];
-			if (depth == 1 &&
-				TryReadKeyValueRange(objectContent, index, current, out string key, out int valueStart, out int afterEntry)) {
-				if (string.Equals(key, propertyName, StringComparison.Ordinal)) {
-					string raw = objectContent.Substring(valueStart, afterEntry - valueStart);
-					expression = raw.TrimEnd(',').Trim();
-					return !string.IsNullOrWhiteSpace(expression);
-				}
-				index = afterEntry;
-				continue;
-			}
-			if (JsParserHelper.TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
-				continue;
-			}
-			index++;
-		}
 		return false;
 	}
 
@@ -981,10 +956,9 @@ public static class SchemaValidationService
 			}
 			char current = objectContent[index];
 			if (depth == 1 &&
-				TryReadKeyValueRange(objectContent, index, current, out string key, out int valueStart, out int afterEntry)) {
+				TryReadDeclarationEntry(objectContent, index, current, out string key, out int valueStart, out int afterEntry)) {
 				string raw = objectContent.Substring(valueStart, afterEntry - valueStart);
-				string expression = raw.TrimEnd(',').Trim();
-				yield return (key, expression);
+				yield return (key, raw.TrimEnd(',').Trim());
 				index = afterEntry;
 				continue;
 			}
@@ -995,73 +969,25 @@ public static class SchemaValidationService
 		}
 	}
 
-	private static bool TryReadKeyValueRange(
-		string content, int startIndex, char current,
-		out string keyName, out int valueStartIndex, out int afterEntryIndex) {
-		keyName = string.Empty;
-		valueStartIndex = startIndex;
-		afterEntryIndex = startIndex;
-		int afterName;
-		string name;
-		if (current == '"' || current == '\'') {
-			if (!TryReadQuotedDeclarationKey(content, startIndex, current, out name, out afterName)) {
-				return false;
-			}
-		} else if (JsParserHelper.IsIdentifierStart(current)) {
-			ReadIdentifierDeclarationKey(content, startIndex, out name, out afterName);
-		} else {
-			return false;
-		}
-		int afterWhitespace = JsParserHelper.SkipWhitespace(content, afterName);
-		if (afterWhitespace >= content.Length) {
-			return false;
-		}
-		char delimiter = content[afterWhitespace];
-		if (delimiter != ':' && delimiter != '(') {
-			return false;
-		}
-		// For colon-style entries the value starts after the colon; for method-shorthand
-		// entries the value starts at the opening `(` so the captured expression covers
-		// both the parameter list and the body.
-		int valueStart = delimiter == ':'
-			? JsParserHelper.SkipWhitespace(content, afterWhitespace + 1)
-			: afterWhitespace;
-		SkipBalancedDeclarationValue(content, valueStart, out int afterValue);
-		keyName = name;
-		valueStartIndex = valueStart;
-		afterEntryIndex = afterValue;
-		return true;
-	}
-
 	private static bool IsCallableFunctionExpression(string expression) {
-		string trimmed = expression.Trim().TrimEnd(',').Trim();
+		string trimmed = TrimAndStripAsync(expression);
 		if (string.IsNullOrEmpty(trimmed)) {
 			return false;
 		}
-		if (trimmed.StartsWith("async ", StringComparison.Ordinal)) {
-			trimmed = trimmed["async ".Length..].TrimStart();
-		}
-		if (trimmed.StartsWith("function", StringComparison.Ordinal)) {
-			return true;
-		}
-		if (LooksLikeMethodShorthandValue(trimmed)) {
-			return true;
-		}
-		return FindFirstTopLevelArrow(trimmed) >= 0;
+		return trimmed.StartsWith("function", StringComparison.Ordinal)
+			|| LooksLikeMethodShorthandValue(trimmed)
+			|| JsParserHelper.FindFirstTopLevelArrow(trimmed) >= 0;
 	}
 
 	private static bool LooksLikeFactoryShape(string expression) {
-		string trimmed = expression.Trim().TrimEnd(',').Trim();
+		string trimmed = TrimAndStripAsync(expression);
 		if (string.IsNullOrEmpty(trimmed)) {
 			return false;
 		}
-		if (trimmed.StartsWith("async ", StringComparison.Ordinal)) {
-			trimmed = trimmed["async ".Length..].TrimStart();
-		}
 		if (trimmed.StartsWith("function", StringComparison.Ordinal) || LooksLikeMethodShorthandValue(trimmed)) {
-			return ReturnFunctionPattern.IsMatch(StripStringsAndComments(trimmed));
+			return ReturnFunctionPattern.IsMatch(JsParserHelper.StripStringsAndComments(trimmed));
 		}
-		int arrowIndex = FindFirstTopLevelArrow(trimmed);
+		int arrowIndex = JsParserHelper.FindFirstTopLevelArrow(trimmed);
 		if (arrowIndex < 0) {
 			return false;
 		}
@@ -1070,16 +996,19 @@ public static class SchemaValidationService
 			return false;
 		}
 		if (afterArrow[0] == '{') {
-			return ReturnFunctionPattern.IsMatch(StripStringsAndComments(afterArrow));
+			return ReturnFunctionPattern.IsMatch(JsParserHelper.StripStringsAndComments(afterArrow));
 		}
-		string body = afterArrow;
-		if (body.StartsWith("async ", StringComparison.Ordinal)) {
-			body = body["async ".Length..].TrimStart();
+		string body = TrimAndStripAsync(afterArrow);
+		return body.StartsWith("function", StringComparison.Ordinal)
+			|| JsParserHelper.FindFirstTopLevelArrow(body) >= 0;
+	}
+
+	private static string TrimAndStripAsync(string expression) {
+		string trimmed = expression.Trim().TrimEnd(',').Trim();
+		if (trimmed.StartsWith("async ", StringComparison.Ordinal)) {
+			trimmed = trimmed["async ".Length..].TrimStart();
 		}
-		if (body.StartsWith("function", StringComparison.Ordinal)) {
-			return true;
-		}
-		return FindFirstTopLevelArrow(body) >= 0;
+		return trimmed;
 	}
 
 	/// <summary>
@@ -1119,80 +1048,6 @@ public static class SchemaValidationService
 			index++;
 		}
 		return false;
-	}
-
-	/// <summary>
-	/// Returns a copy of <paramref name="expression"/> with string literals and comments
-	/// replaced by whitespace of equivalent length. Used to make regex scans for keywords
-	/// such as <c>return function</c> immune to false matches inside string literals or
-	/// comments while preserving original character offsets.
-	/// </summary>
-	private static string StripStringsAndComments(string expression) {
-		if (string.IsNullOrEmpty(expression)) {
-			return expression;
-		}
-		var builder = new System.Text.StringBuilder(expression.Length);
-		bool inString = false;
-		char stringChar = '"';
-		int index = 0;
-		while (index < expression.Length) {
-			if (JsParserHelper.TryConsumeStringLiteralCharacter(expression, ref index, ref inString, stringChar)) {
-				builder.Append(' ');
-				continue;
-			}
-			if (JsParserHelper.TrySkipComment(expression, index, out int afterComment)) {
-				for (int i = index; i < afterComment; i++) {
-					builder.Append(' ');
-				}
-				index = afterComment;
-				continue;
-			}
-			char current = expression[index];
-			if (current is '"' or '\'' or '`') {
-				inString = true;
-				stringChar = current;
-				builder.Append(' ');
-				index++;
-				continue;
-			}
-			builder.Append(current);
-			index++;
-		}
-		return builder.ToString();
-	}
-
-	private static int FindFirstTopLevelArrow(string expression) {
-		int braceDepth = 0, bracketDepth = 0, parenDepth = 0;
-		bool inString = false;
-		char stringChar = '"';
-		int index = 0;
-		while (index < expression.Length) {
-			if (JsParserHelper.TryConsumeStringLiteralCharacter(expression, ref index, ref inString, stringChar)) {
-				continue;
-			}
-			char current = expression[index];
-			if (current is '"' or '\'' or '`') {
-				inString = true;
-				stringChar = current;
-				index++;
-				continue;
-			}
-			if (braceDepth == 0 && bracketDepth == 0 && parenDepth == 0
-				&& index + 1 < expression.Length
-				&& expression[index] == '=' && expression[index + 1] == '>') {
-				return index;
-			}
-			switch (current) {
-				case '{': braceDepth++; break;
-				case '}': braceDepth--; break;
-				case '[': bracketDepth++; break;
-				case ']': bracketDepth--; break;
-				case '(': parenDepth++; break;
-				case ')': parenDepth--; break;
-			}
-			index++;
-		}
-		return -1;
 	}
 
 	/// <summary>
@@ -1970,39 +1825,14 @@ public static class SchemaValidationService
 		return result;
 	}
 
-	private static List<string> EnumerateTopLevelDeclarationKeys(string objectContent) {
-		var keys = new List<string>();
-		int depth = 0;
-		bool inString = false;
-		char stringChar = '"';
-		int index = 0;
-		while (index < objectContent.Length) {
-			if (JsParserHelper.TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
-				continue;
-			}
-			if (JsParserHelper.TrySkipComment(objectContent, index, out int afterComment)) {
-				index = afterComment;
-				continue;
-			}
-			char current = objectContent[index];
-			if (depth == 1 &&
-				TryReadDeclarationEntry(objectContent, index, current, out string key, out int afterEntryIndex)) {
-				keys.Add(key);
-				index = afterEntryIndex;
-				continue;
-			}
-			if (JsParserHelper.TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
-				continue;
-			}
-			index++;
-		}
-		return keys;
-	}
+	private static List<string> EnumerateTopLevelDeclarationKeys(string objectContent) =>
+		EnumerateTopLevelObjectEntries(objectContent).Select(entry => entry.Key).ToList();
 
 	private static bool TryReadDeclarationEntry(
 		string content, int startIndex, char current,
-		out string keyName, out int afterEntryIndex) {
+		out string keyName, out int valueStartIndex, out int afterEntryIndex) {
 		keyName = string.Empty;
+		valueStartIndex = startIndex;
 		afterEntryIndex = startIndex;
 		int afterName;
 		string name;
@@ -2028,6 +1858,7 @@ public static class SchemaValidationService
 			: afterWhitespace;
 		SkipBalancedDeclarationValue(content, valueStart, out int afterValue);
 		keyName = name;
+		valueStartIndex = valueStart;
 		afterEntryIndex = afterValue;
 		return true;
 	}
