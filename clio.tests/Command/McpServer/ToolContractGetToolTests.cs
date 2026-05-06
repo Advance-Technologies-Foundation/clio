@@ -56,9 +56,10 @@ public sealed class ToolContractGetToolTests {
 				DataForgeTool.DataForgeContextToolName,
 				PageSyncTool.ToolName,
 				PageUpdateTool.ToolName,
-				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
+				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+				SchemaNamePrefixTool.GetSchemaNamePrefixToolName
 			],
-			because: "the canonical contract set should include bootstrap diagnostics, read-only Data Forge discovery/context tools, and the key existing-app discovery and page mutation tools");
+			because: "the canonical contract set should include bootstrap diagnostics, read-only Data Forge discovery/context tools, the key existing-app discovery and page mutation tools, and the prefix discovery tool");
 		result.Tools!.Select(contract => contract.Name).Should().NotContain([
 				DataForgeTool.DataForgeInitializeToolName,
 				DataForgeTool.DataForgeUpdateToolName
@@ -822,6 +823,8 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract should advertise the installed application code");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "application-version",
 			because: "the contract should advertise the installed application version");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "schema-name-prefix",
+			because: "the contract should advertise the active SchemaNamePrefix so agents know the correct prefix for subsequent schema names");
 	}
 
 	[Test]
@@ -842,6 +845,8 @@ public sealed class ToolContractGetToolTests {
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "canonical-main-entity-name",
 			because: "create-app should advertise the canonical main entity field in its response shape");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "schema-name-prefix",
+			because: "create-app should advertise the active SchemaNamePrefix so agents know the correct prefix for all subsequent schema codes");
 		contract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "dataforge" &&
 				field.Description.Contains("context-summary", StringComparison.Ordinal),
@@ -1029,6 +1034,32 @@ public sealed class ToolContractGetToolTests {
 			because: "the validation error should identify the exact offending entry");
 		result.Error.FieldErrors![0].Field.Should().Be("tool-names[0]",
 			because: "the field path should point to the blank element inside tool-names");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the get-schema-name-prefix contract so contract-driven clients can discover its input and response shape before invoking it.")]
+	public void ToolContractGet_Should_Return_GetSchemaNamePrefix_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			SchemaNamePrefixTool.GetSchemaNamePrefixToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-schema-name-prefix is a registered clio MCP tool and its contract should be discoverable through get-tool-contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.InputSchema.Required.Should().Contain("environment-name",
+			because: "get-schema-name-prefix requires the target environment to resolve the active SchemaNamePrefix setting");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "schema-name-prefix",
+			because: "the contract should advertise the schema-name-prefix field so callers know how to read the returned prefix");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "success",
+			because: "the contract should advertise the success field so callers can detect failures structurally");
+		contract.Examples.Should().NotBeEmpty(
+			because: "the contract should include at least one example showing the minimal required input shape");
 	}
 
 	[Test]

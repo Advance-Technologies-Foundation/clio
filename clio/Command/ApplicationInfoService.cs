@@ -39,10 +39,12 @@ public interface IApplicationInfoService
 public sealed class ApplicationInfoService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
-	IServiceUrlBuilderFactory serviceUrlBuilderFactory)
+	IServiceUrlBuilderFactory serviceUrlBuilderFactory,
+	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory)
 	: IApplicationInfoService
 {
 	private const string BaseObjectCaption = "Base object";
+
 	private static readonly JsonSerializerOptions JsonOptions = new()
 	{
 		PropertyNameCaseInsensitive = true
@@ -148,6 +150,8 @@ public sealed class ApplicationInfoService(
 			.ThenBy(entity => entity.Name, StringComparer.OrdinalIgnoreCase)
 			.ToList();
 		IReadOnlyList<PageListItem> pages = GetApplicationPages(client, serviceUrlBuilder, primaryPackage.Name);
+		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
+		string schemaNamePrefix = ReadSchemaNamePrefix(sysSettingsManager);
 
 		return new ApplicationInfoResult(
 			primaryPackage.UId,
@@ -157,8 +161,12 @@ public sealed class ApplicationInfoService(
 			application.Id,
 			application.Name,
 			application.Code,
-			application.Version);
+			application.Version,
+			schemaNamePrefix);
 	}
+
+	private static string ReadSchemaNamePrefix(ISysSettingsManager sysSettingsManager) =>
+		SysSettingCodes.ReadSchemaNamePrefix(sysSettingsManager);
 
 	/// <inheritdoc />
 	public InstalledAppSummary FindApplicationId(string environmentName, string code)
@@ -876,7 +884,8 @@ public sealed record ApplicationInfoResult(
 	string? ApplicationId = null,
 	string? ApplicationName = null,
 	string? ApplicationCode = null,
-	string? ApplicationVersion = null);
+	string? ApplicationVersion = null,
+	string? SchemaNamePrefix = null);
 
 /// <summary>
 /// Structured entity information returned as part of application info results.
