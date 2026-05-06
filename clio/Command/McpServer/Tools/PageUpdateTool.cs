@@ -93,7 +93,9 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateValidatorBindingPlacement(body), errors);
 		Collect(SchemaValidationService.ValidateStandardValidatorUsage(body), errors);
 		Collect(SchemaValidationService.ValidateCustomValidatorParamCompleteness(body), errors);
+		Collect(SchemaValidationService.ValidateCustomValidatorFactoryShape(body), errors);
 		Collect(SchemaValidationService.ValidateConverterDeclarations(body), errors);
+		Collect(SchemaValidationService.ValidateConverterFunctionShape(body), errors);
 		Collect(SchemaValidationService.ValidateHandlerStructure(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorDeclarations(body), errors);
 		return errors.Count > 0 ? "Validation failed: " + string.Join("; ", errors) : null;

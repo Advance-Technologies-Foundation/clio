@@ -47,10 +47,14 @@ public sealed class PageValidateTool {
 			() => SchemaValidationService.ValidateColumnBindings(body));
 		SchemaValidationResult converterDeclResult = RunContentValidation(contentResult,
 			() => SchemaValidationService.ValidateConverterDeclarations(body));
+		SchemaValidationResult converterFunctionShapeResult = RunContentValidation(contentResult,
+			() => SchemaValidationService.ValidateConverterFunctionShape(body));
 		SchemaValidationResult handlerStructureResult = RunContentValidation(contentResult,
 			() => SchemaValidationService.ValidateHandlerStructure(body));
 		SchemaValidationResult validatorDeclResult = RunContentValidation(contentResult,
 			() => SchemaValidationService.ValidateValidatorDeclarations(body));
+		SchemaValidationResult validatorFactoryShapeResult = RunContentValidation(contentResult,
+			() => SchemaValidationService.ValidateCustomValidatorFactoryShape(body));
 		var errors = new List<string>();
 		var warnings = new List<string>();
 		if (!markerResult.IsValid) errors.AddRange(markerResult.Errors);
@@ -60,13 +64,16 @@ public sealed class PageValidateTool {
 		if (fieldResult.Warnings.Count > 0) warnings.AddRange(fieldResult.Warnings);
 		if (!bindingResult.IsValid) warnings.AddRange(bindingResult.Errors);
 		if (!converterDeclResult.IsValid) errors.AddRange(converterDeclResult.Errors);
+		if (!converterFunctionShapeResult.IsValid) errors.AddRange(converterFunctionShapeResult.Errors);
 		if (!handlerStructureResult.IsValid) errors.AddRange(handlerStructureResult.Errors);
 		if (!validatorDeclResult.IsValid) errors.AddRange(validatorDeclResult.Errors);
+		if (!validatorFactoryShapeResult.IsValid) errors.AddRange(validatorFactoryShapeResult.Errors);
 		return new PageSyncValidationResult {
 			MarkersOk = markerResult.IsValid,
 			JsSyntaxOk = syntaxResult.IsValid,
-			ContentOk = contentResult.IsValid && fieldResult.IsValid && converterDeclResult.IsValid && 
-				handlerStructureResult.IsValid && validatorDeclResult.IsValid,
+			ContentOk = contentResult.IsValid && fieldResult.IsValid && converterDeclResult.IsValid &&
+				converterFunctionShapeResult.IsValid && handlerStructureResult.IsValid &&
+				validatorDeclResult.IsValid && validatorFactoryShapeResult.IsValid,
 			Errors = errors.Count > 0 ? errors : null,
 			Warnings = warnings.Count > 0 ? warnings : null
 		};

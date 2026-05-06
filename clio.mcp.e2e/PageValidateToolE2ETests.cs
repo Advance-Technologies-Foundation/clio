@@ -179,6 +179,72 @@ public sealed class PageValidateToolE2ETests {
 			because: "the error must name the offending key and direct the agent at the validator guidance");
 	}
 
+	[Test]
+	[Description("Returns valid: false when a custom validator uses 'validate' key instead of the runtime-recognised 'validator' factory key.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects custom validator with 'validate' key alias")]
+	[AllureDescription("Sends a page body where SCHEMA_VALIDATORS uses the misleading 'validate' key alias instead of the canonical 'validator' factory key, and verifies that validate-page reports the validator never executes.")]
+	public async Task PageValidateTool_Should_Reject_Validator_With_Validate_Key_Alias() {
+		// Arrange
+		string bodyWithValidateAlias = ValidPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"usr.PhoneFormatValidator\": { params: [{ \"name\": \"message\" }], async: false, " +
+			"validate: function(value, config) { return null; } } }/**SCHEMA_VALIDATORS*/");
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithValidateAlias);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "the runtime ignores any key other than 'validator', so a 'validate' alias means the validator never executes");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeFalse(
+			because: "validator factory shape failure is a content-level error");
+		response.Validation.Errors.Should().NotBeNullOrEmpty(
+			because: "the validation result must list the specific factory-shape error");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("usr.PhoneFormatValidator") && e.Contains("'validate'") && e.Contains("'validator'") &&
+			     e.Contains("page-schema-validators"),
+			because: "the error must name the offending validator and the wrong key, and direct the agent at the validator guidance");
+	}
+
+	[Test]
+	[Description("Returns valid: false when a custom converter is declared as an object literal instead of a callable function expression.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects converter declared as object literal")]
+	[AllureDescription("Sends a page body where SCHEMA_CONVERTERS contains an object literal in place of a function value and verifies that validate-page reports the converter is not callable.")]
+	public async Task PageValidateTool_Should_Reject_Converter_With_Object_Literal_Value() {
+		// Arrange
+		string bodyWithObjectConverter = ValidPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.WrongShape\": { transform: \"upper\" } }/**SCHEMA_CONVERTERS*/");
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithObjectConverter);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "converters must be callable function expressions; an object literal silently fails to apply at the binding site");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeFalse(
+			because: "converter function shape failure is a content-level error");
+		response.Validation.Errors.Should().NotBeNullOrEmpty(
+			because: "the validation result must list the specific function-shape error");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("usr.WrongShape") && e.Contains("not callable") && e.Contains("page-schema-converters"),
+			because: "the error must name the offending converter and direct the agent at the converter guidance");
+	}
+
 	private static async Task<PageValidateResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
