@@ -30,6 +30,8 @@ internal sealed class PageBusinessRuleElementProvider : IPageBusinessRuleElement
 					}
 					break;
 				case JsonObject obj:
+					// In Freedom UI viewConfig, "name" is reserved for element declarations.
+					// Traversing every branch keeps discovery aligned with valid nested element placements.
 					string name = obj["name"]?.GetValue<string>() ?? string.Empty;
 					if (!string.IsNullOrWhiteSpace(name)) {
 						sink.Add(name);
