@@ -129,6 +129,7 @@ public sealed class ClioGateEnsurerTests {
 
 		ManualResetEventSlim installStarted = new(false);
 		ManualResetEventSlim releaseInstall = new(false);
+		ManualResetEventSlim t2Waiting = new(false);
 
 		gateway.GetInstalledVersion().Returns(default(PackageVersion));
 		installer.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(), null, null, true)
@@ -145,12 +146,15 @@ public sealed class ClioGateEnsurerTests {
 		ClioGateEnsureResult? result2 = null;
 
 		Task t1 = Task.Run(() => result1 = ensurer1.EnsureInstalled());
-		// Wait until t1 is inside Install, then launch t2 which will block on the semaphore.
+		// Wait until t1 is inside Install (holding the semaphore), then start t2.
 		installStarted.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue("t1 should reach Install() within 5 s");
-		Task t2 = Task.Run(() => result2 = ensurer2.EnsureInstalled());
-
-		// Give t2 time to reach gate.Wait() before releasing the install.
-		Thread.Sleep(100);
+		// t2 will immediately block on gate.Wait() because t1 still holds the semaphore.
+		Task t2 = Task.Run(() => {
+			t2Waiting.Set();
+			result2 = ensurer2.EnsureInstalled();
+		});
+		// Wait for t2 to start (so it is past the fast-path check and heading to gate.Wait()).
+		t2Waiting.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue("t2 should start within 5 s");
 		releaseInstall.Set();
 		Task.WaitAll(new[] { t1, t2 }, TimeSpan.FromSeconds(10)).Should().BeTrue("both tasks must finish");
 
