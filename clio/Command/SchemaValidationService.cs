@@ -785,6 +785,9 @@ public static class SchemaValidationService
 		return result;
 	}
 
+	private const string ValidatorFactoryShapeGuidanceHint =
+		"Call get-guidance with name 'page-schema-validators' for the canonical factory shape.";
+
 	private static readonly HashSet<string> MisleadingValidatorAliases = new(StringComparer.Ordinal) {
 		"validate", "validateFn", "validation", "validatorFn",
 		"fn", "check", "rule", "test", "isValid"
@@ -893,20 +896,20 @@ public static class SchemaValidationService
 					$"Validator '{validatorType}' uses key '{alias}' instead of 'validator'. " +
 					$"The Creatio runtime looks up the 'validator' key on each entry in {SchemaValidatorsMarker} and ignores any other key, so this validator never executes. " +
 					$"Rename '{alias}' to 'validator' and structure its value as a factory: an outer function that returns the inner validator function. " +
-					"Call get-guidance with name 'page-schema-validators' for the canonical factory shape.");
+					ValidatorFactoryShapeGuidanceHint);
 				return;
 			}
 			result.Errors.Add(
 				$"Validator '{validatorType}' is missing the required 'validator' key. " +
 				$"Each entry in {SchemaValidatorsMarker} must declare 'validator' as a factory function that returns the inner validator. " +
-				"Call get-guidance with name 'page-schema-validators' for the canonical factory shape.");
+				ValidatorFactoryShapeGuidanceHint);
 			return;
 		}
 
 		if (!TryGetTopLevelObjectPropertyValue(innerObject, "validator", out string validatorExpression)) {
 			result.Errors.Add(
 				$"Validator '{validatorType}' has a 'validator' key, but its value could not be parsed as a JavaScript expression. " +
-				"Call get-guidance with name 'page-schema-validators' for the canonical factory shape.");
+				ValidatorFactoryShapeGuidanceHint);
 			return;
 		}
 
@@ -914,7 +917,7 @@ public static class SchemaValidationService
 			result.Errors.Add(
 				$"Validator '{validatorType}' has a 'validator' key whose value is not a function. " +
 				"It must be a factory function — an outer function that returns an inner validator function. " +
-				"Call get-guidance with name 'page-schema-validators' for the canonical factory shape.");
+				ValidatorFactoryShapeGuidanceHint);
 			return;
 		}
 
@@ -923,7 +926,7 @@ public static class SchemaValidationService
 				$"Validator '{validatorType}' uses a flat 'validator' function instead of the required factory shape. " +
 				"The outer function must return another function (the actual validator that receives a control). " +
 				"Wrap the existing logic so the outer function takes only the config parameter and returns an inner function that performs the check via control.value. " +
-				"Call get-guidance with name 'page-schema-validators' for the canonical factory shape.");
+				ValidatorFactoryShapeGuidanceHint);
 		}
 	}
 
