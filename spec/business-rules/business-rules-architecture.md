@@ -10,17 +10,33 @@ This document describes the current internal architecture for the `business-rule
 flowchart LR
     subgraph Clio["clio"]
         subgraph MCP["mcp"]
-            Tool["CreateEntityBusinessRuleTool"]
+            EntityTool["CreateEntityBusinessRuleTool"]
+            PageTool["CreatePageBusinessRuleTool"]
         end
 
         subgraph Core["Business Rule Core"]
-            Command["CreateEntityBusinessRuleCommand"]
-            Service["EntityBusinessRuleService"]
-            SchemaProvider["EntityBusinessRuleSchemaProvider"]
-            AttributeProvider["EntityBusinessRuleAttributeProvider"]
+            subgraph EntityCore["Entity business rules"]
+                EntityCommand["CreateEntityBusinessRuleCommand"]
+                EntityService["EntityBusinessRuleService"]
+                EntitySchemaProvider["EntityBusinessRuleSchemaProvider"]
+                EntityAttributeProvider["EntityBusinessRuleAttributeProvider"]
+            end
+
+            subgraph PageCore["Page business rules"]
+                PageCommand["CreatePageBusinessRuleCommand"]
+                PageService["PageBusinessRuleService"]
+                PageSchemaProvider["PageBusinessRuleSchemaProvider"]
+                PageAttributeProvider["PageBusinessRuleAttributeProvider"]
+                PageElementProvider["PageBusinessRuleElementProvider"]
+                PageValidator["PageBusinessRuleValidator"]
+            end
+
+            subgraph SharedCore["Shared business-rule infrastructure"]
+                Validator["BusinessRuleValidator"]
+                Converter["BusinessRuleMetadataConverter"]
+            end
+
             AddonService["BusinessRuleAddonService"]
-            Validator["BusinessRuleValidator"]
-            Converter["BusinessRuleMetadataConverter"]
         end
     end
 
@@ -28,14 +44,25 @@ flowchart LR
         Addon["AddonSchemaDesignerService.svc"]
     end
 
-    Tool -->|"options"| Command
-    Command -->|"request"| Service
-    Service -->|"schema name"| AttributeProvider
-    AttributeProvider -->|"schema name"| SchemaProvider
-    Service -->|"rule + attributes"| Validator
-    Service -->|"rule + attributes"| Converter
-    Converter -->|"dto"| Service
-    Service -->|"dto"| AddonService
+    EntityTool -->|"options"| EntityCommand
+    EntityCommand -->|"request"| EntityService
+    EntityService -->|"schema name"| EntityAttributeProvider
+    EntityAttributeProvider -->|"schema name"| EntitySchemaProvider
+    EntityService -->|"rule + entity attributes"| Validator
+    EntityService -->|"rule + entity attributes"| Converter
+    EntityService -->|"converted dto"| AddonService
+
+    PageTool -->|"options"| PageCommand
+    PageCommand -->|"request"| PageService
+    PageService -->|"page schema name"| PageSchemaProvider
+    PageService -->|"bundle"| PageAttributeProvider
+    PageAttributeProvider -->|"datasource entity schema"| EntityAttributeProvider
+    PageService -->|"bundle"| PageElementProvider
+    PageService -->|"rule + page attributes + element names"| PageValidator
+    PageValidator -->|"shared condition checks"| Validator
+    PageService -->|"rule + page attributes"| Converter
+    PageService -->|"converted dto"| AddonService
+
     AddonService -->|"load/save add-on"| Addon
 ```
 
