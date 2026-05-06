@@ -1,0 +1,92 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using static Clio.Command.BusinessRules.BusinessRuleConstants;
+
+namespace Clio.Command.BusinessRules;
+
+internal static class PageBusinessRuleValidator {
+
+	internal static void Validate(
+		BusinessRule rule,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlySet<string> elementNames) {
+		RejectDatasourcePaths(rule);
+		try {
+			BusinessRuleValidator.Validate(rule, attributeMap, ValidatePageAction(elementNames));
+		} catch (ArgumentException exception) {
+			throw new ArgumentException(AppendCandidateHint(exception.Message, attributeMap, elementNames), exception);
+		}
+	}
+
+	private static Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> ValidatePageAction(
+		IReadOnlySet<string> elementNames) =>
+		(action, _) => {
+			if (string.IsNullOrEmpty(action.ActionType)) {
+				throw new ArgumentException("rule.actions[*].type is required.");
+			}
+
+			if (!SupportedPageActionTypeNames.ContainsKey(action.ActionType)) {
+				throw new ArgumentException(
+					$"Unsupported rule.actions[*].type '{action.ActionType}'. Supported values: {SupportedPageActionTypesDescription}.");
+			}
+
+			List<string> items = action.FieldSelectionItems;
+			if (items.Count == 0) {
+				throw new ArgumentException("rule.actions[*].items must contain at least one page element name.");
+			}
+
+			foreach (string target in items) {
+				if (string.IsNullOrWhiteSpace(target)) {
+					throw new ArgumentException("rule.actions[*].items cannot contain empty page element names.");
+				}
+
+				if (!elementNames.Contains(target)) {
+					throw new ArgumentException($"Unknown page element '{target}' in rule.actions[*].items.");
+				}
+			}
+		};
+
+	private static void RejectDatasourcePaths(BusinessRule rule) {
+		foreach (BusinessRuleCondition condition in rule.Condition?.Conditions ?? []) {
+			RejectDatasourcePath(condition.LeftExpression, "rule.condition.conditions[*].leftExpression.path");
+			if (condition.RightExpression is not null
+				&& string.Equals(condition.RightExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
+				RejectDatasourcePath(condition.RightExpression, "rule.condition.conditions[*].rightExpression.path");
+			}
+		}
+	}
+
+	private static void RejectDatasourcePath(BusinessRuleExpression? expression, string fieldName) {
+		if (expression?.Path?.Contains('.', StringComparison.Ordinal) == true) {
+			throw new ArgumentException(
+				$"{fieldName} must use the declared page attribute name from bundle.viewModelConfig.attributes, not datasource path '{expression.Path}'.");
+		}
+	}
+
+	private static string AppendCandidateHint(
+		string message,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlySet<string> elementNames) {
+		string result = message.Replace(
+			"Unknown attribute",
+			"Unknown or unsupported datasource-bound page attribute",
+			StringComparison.Ordinal);
+		if (result.Contains("rule.condition.conditions", StringComparison.Ordinal)) {
+			result += $" Available condition attributes: {FormatCandidates(attributeMap.Keys)}.";
+		}
+		if (result.Contains("rule.actions", StringComparison.Ordinal)) {
+			result += $" Available page elements: {FormatCandidates(elementNames)}.";
+		}
+		return result;
+	}
+
+	private static string FormatCandidates(IEnumerable<string> candidates) {
+		string[] values = candidates
+			.Where(candidate => !string.IsNullOrWhiteSpace(candidate))
+			.OrderBy(candidate => candidate, StringComparer.OrdinalIgnoreCase)
+			.Take(20)
+			.ToArray();
+		return values.Length == 0 ? "<none>" : string.Join(", ", values);
+	}
+}

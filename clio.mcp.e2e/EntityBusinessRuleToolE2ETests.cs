@@ -1,6 +1,8 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Common;
 using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
@@ -46,6 +48,8 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		JsonElement anyOf = actionSchema.GetProperty("anyOf");
 		anyOf.GetArrayLength().Should().Be(5,
 			because: "the real MCP tools/list schema should describe each supported business-rule action subtype");
+		anyOf.EnumerateArray().Select(GetActionType).Should().NotContain(["hide-element", "show-element"],
+			because: "page-only show/hide actions should not appear in the entity business-rule runtime schema");
 		anyOf.EnumerateArray().Should().Contain(branch =>
 				branch.GetProperty("properties").GetProperty("type").GetProperty("const").GetString() == "make-required"
 				&& branch.GetProperty("properties").GetProperty("items").GetProperty("items").GetProperty("type").GetString() == "string",
@@ -92,8 +96,117 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the failure should come from resolving the requested environment, not from deserializing the Set values payload");
 	}
 
+	[Test]
+	[Description("Creates an entity business rule for Contact in the Custom package through the real MCP server and Creatio environment.")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tool creates a Contact rule")]
+	[AllureDescription("Requires a reachable sandbox environment and destructive opt-in. Calls create-entity-business-rule for Contact in Custom and verifies that Creatio command execution succeeds.")]
+	public async Task BusinessRuleCreate_Should_Create_Contact_Rule_In_Creatio() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false - skipping destructive create-entity-business-rule test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		string packageName = ResolvePackageName(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		// Intentional destructive fixture: Contact in Custom is the canonical sandbox target.
+		// There is no business-rule delete action yet, so each run writes a uniquely captioned rule and verifies readback.
+		string caption = $"MCP E2E Contact entity {Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["environmentName"] = environmentName,
+				["packageName"] = packageName,
+				["entitySchemaName"] = "Contact",
+				["rule"] = CreateContactEntityRule(caption)
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid Contact entity rule should return the standard command execution envelope");
+		execution.ExitCode.Should().Be(0,
+			because: "the Contact rule should be created in the configured Creatio sandbox");
+		execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
+			because: "successful command-path MCP calls should include at least one info log message");
+		execution.Output.Should().Contain(message => ContainsText(message.Value, "Rule name:"),
+			because: "successful business-rule creation should report the generated rule name");
+		await BusinessRuleAddonReadback.AssertEntityRuleExistsAsync(
+			settings,
+			environmentName,
+			packageName,
+			"Contact",
+			caption,
+			"Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionReadonlyElement",
+			["Name"],
+			"Name",
+			arrangeContext.CancellationTokenSource.Token);
+	}
+
 	private static bool ContainsText(string? value, string expectedText) =>
 		value != null && value.Contains(expectedText, StringComparison.OrdinalIgnoreCase);
+
+	private static string? GetActionType(JsonElement branch) =>
+		branch.GetProperty("properties").GetProperty("type").GetProperty("const").GetString();
+
+	private static string ResolvePackageName(McpE2ESettings settings) =>
+		string.IsNullOrWhiteSpace(settings.Sandbox.PackageName)
+			? "Custom"
+			: settings.Sandbox.PackageName;
+
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
+		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(configuredEnvironmentName)) {
+			Assert.Ignore("create-entity-business-rule MCP E2E requires McpE2E:Sandbox:EnvironmentName for destructive tests.");
+			return string.Empty;
+		}
+
+		if (await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
+			return configuredEnvironmentName;
+		}
+
+		Assert.Ignore(
+			$"create-entity-business-rule MCP E2E requires a reachable configured sandbox environment. Environment '{configuredEnvironmentName}' was not reachable.");
+		return string.Empty;
+	}
+
+	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
+		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
+		try {
+			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+				settings,
+				["ping-app", "-e", environmentName],
+				cancellationToken: cts.Token);
+			return result.ExitCode == 0;
+		} catch (OperationCanceledException) {
+			return false;
+		}
+	}
+
+	private static IReadOnlyDictionary<string, object?> CreateContactEntityRule(string caption) =>
+		new Dictionary<string, object?> {
+			["caption"] = caption,
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = new object[] {
+					new Dictionary<string, object?> {
+						["leftExpression"] = CreateAttributeExpression("Name"),
+						["comparisonType"] = "is-filled-in"
+					}
+				}
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "make-read-only",
+					["items"] = new object[] { "Name" }
+				}
+			}
+		};
 
 	private static IReadOnlyDictionary<string, object?> CreateSetValuesRule() =>
 		new Dictionary<string, object?> {

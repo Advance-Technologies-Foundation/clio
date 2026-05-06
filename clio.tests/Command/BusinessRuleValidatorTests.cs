@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using Clio.Command.BusinessRules;
 using Clio.Command.EntitySchemaDesigner;
@@ -70,6 +71,52 @@ public sealed class BusinessRuleValidatorTests {
 		new object[] { 7, "PlannedOn", "\"2025-01-15T13:45:00+02:00\"" },
 		new object[] { 9, "ReminderTime", "\"13:45:00+02:00\"" }
 	];
+
+	[Test]
+	[Category("Unit")]
+	[Description("Deserializes shared page show and hide action discriminators into business-rule action models.")]
+	[TestCase("hide-element", nameof(HideElementBusinessRuleAction))]
+	[TestCase("show-element", nameof(ShowElementBusinessRuleAction))]
+	public void BusinessRule_Should_Deserialize_Page_Action_Discriminators(
+		string actionType,
+		string expectedActionTypeName) {
+		// Arrange
+		string payload = $$"""
+		{
+		  "caption": "Toggle page element",
+		  "condition": {
+		    "logicalOperation": "AND",
+		    "conditions": [
+		      {
+		        "leftExpression": {
+		          "type": "AttributeValue",
+		          "path": "PDS_Name"
+		        },
+		        "comparisonType": "is-filled-in"
+		      }
+		    ]
+		  },
+		  "actions": [
+		    {
+		      "type": "{{actionType}}",
+		      "items": [ "NameInput" ]
+		    }
+		  ]
+		}
+		""";
+
+		// Act
+		BusinessRule? result = JsonSerializer.Deserialize<BusinessRule>(payload);
+
+		// Assert
+		result.Should().NotBeNull(
+			because: "page business-rule actions should be supported by the shared model discriminator map");
+		BusinessRuleAction action = result!.Actions.Single();
+		action.GetType().Name.Should().Be(expectedActionTypeName,
+			because: "the shared model should materialize the page action type selected by the discriminator");
+		action.FieldSelectionItems.Should().Equal(["NameInput"],
+			because: "page action item names should survive shared BusinessRule deserialization");
+	}
 
 	[Test]
 	[Category("Unit")]
@@ -764,6 +811,26 @@ public sealed class BusinessRuleValidatorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects null action entries instead of allowing malformed payloads to be applied partially.")]
+	public void Validate_Should_Reject_Null_Action_Entry() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [null!]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.actions[*].type is required.",
+				because: "null action entries should fail validation before any partial mutation can be saved");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects condition groups that do not contain any child conditions.")]
 	public void Validate_Should_Reject_Empty_Condition_List() {
 		// Arrange
@@ -1100,6 +1167,57 @@ public sealed class BusinessRuleValidatorTests {
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue' or 'Const'.",
 				because: "the validator should only allow the supported right-hand operand kinds");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects null condition entries with a deterministic validation error.")]
+	public void Validate_Should_Reject_Null_Condition_Entry() {
+		// Arrange
+		BusinessRule rule = new(
+			"Rule caption",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					null!
+				]),
+			[
+				new MakeRequiredBusinessRuleAction(["Owner"])
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.condition.conditions[*] is required.",
+				because: "malformed MCP condition arrays should return stable validation errors instead of null reference failures");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects null set-values item entries with a deterministic validation error.")]
+	public void Validate_Should_Reject_Null_SetValues_Item_Entry() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				new SetValuesBusinessRuleAction(
+					new List<BusinessRuleSetValueItem> {
+						null!
+					})
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.actions[*].items[*] is required.",
+				because: "malformed MCP set-values arrays should return stable validation errors instead of null reference failures");
 	}
 
 	private static BusinessRule CreateRule(

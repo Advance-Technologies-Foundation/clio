@@ -204,8 +204,17 @@ public class BindingsModule {
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
 		services.AddTransient<UpdateAppSectionCommand>();
 		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
-		services.AddTransient<IBusinessRuleService, BusinessRuleService>();
+		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
+		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();
+		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
+		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
+		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
 		services.AddTransient<CreateEntityBusinessRuleCommand>();
+		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();
+		services.AddTransient<IPageBusinessRuleAttributeProvider, PageBusinessRuleAttributeProvider>();
+		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
+		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
+		services.AddTransient<CreatePageBusinessRuleCommand>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
@@ -244,6 +253,7 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionCreateTool>();
 		services.AddTransient<ApplicationSectionUpdateTool>();
 		services.AddTransient<CreateEntityBusinessRuleTool>();
+		services.AddTransient<CreatePageBusinessRuleTool>();
 		services.AddTransient<ApplicationSectionDeleteTool>();
 		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();

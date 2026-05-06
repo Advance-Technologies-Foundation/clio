@@ -10,14 +10,33 @@ This document describes the current internal architecture for the `business-rule
 flowchart LR
     subgraph Clio["clio"]
         subgraph MCP["mcp"]
-            Tool["CreateEntityBusinessRuleTool"]
+            EntityTool["CreateEntityBusinessRuleTool"]
+            PageTool["CreatePageBusinessRuleTool"]
         end
 
         subgraph Core["Business Rule Core"]
-            Command["CreateEntityBusinessRuleCommand"]
-            Service["BusinessRuleService"]
-            Validator["BusinessRuleValidator"]
-            Converter["BusinessRuleMetadataConverter"]
+            subgraph EntityCore["Entity business rules"]
+                EntityCommand["CreateEntityBusinessRuleCommand"]
+                EntityService["EntityBusinessRuleService"]
+                EntitySchemaProvider["EntityBusinessRuleSchemaProvider"]
+                EntityAttributeProvider["EntityBusinessRuleAttributeProvider"]
+            end
+
+            subgraph PageCore["Page business rules"]
+                PageCommand["CreatePageBusinessRuleCommand"]
+                PageService["PageBusinessRuleService"]
+                PageSchemaProvider["PageBusinessRuleSchemaProvider"]
+                PageAttributeProvider["PageBusinessRuleAttributeProvider"]
+                PageElementProvider["PageBusinessRuleElementProvider"]
+                PageValidator["PageBusinessRuleValidator"]
+            end
+
+            subgraph SharedCore["Shared business-rule infrastructure"]
+                Validator["BusinessRuleValidator"]
+                Converter["BusinessRuleMetadataConverter"]
+            end
+
+            AddonService["BusinessRuleAddonService"]
         end
     end
 
@@ -25,12 +44,26 @@ flowchart LR
         Addon["AddonSchemaDesignerService.svc"]
     end
 
-    Tool -->|"options"| Command
-    Command -->|"request"| Service
-    Service -->|"rule"| Validator
-    Service -->|"rule + columns"| Converter
-    Converter -->|"dto"| Service
-    Service -->|"load/save add-on"| Addon
+    EntityTool -->|"options"| EntityCommand
+    EntityCommand -->|"request"| EntityService
+    EntityService -->|"schema name"| EntityAttributeProvider
+    EntityAttributeProvider -->|"schema name"| EntitySchemaProvider
+    EntityService -->|"rule + entity attributes"| Validator
+    EntityService -->|"rule + entity attributes"| Converter
+    EntityService -->|"converted dto"| AddonService
+
+    PageTool -->|"options"| PageCommand
+    PageCommand -->|"request"| PageService
+    PageService -->|"page schema name"| PageSchemaProvider
+    PageService -->|"bundle"| PageAttributeProvider
+    PageAttributeProvider -->|"datasource entity schema"| EntityAttributeProvider
+    PageService -->|"bundle"| PageElementProvider
+    PageService -->|"rule + page attributes + element names"| PageValidator
+    PageValidator -->|"shared condition checks"| Validator
+    PageService -->|"rule + page attributes"| Converter
+    PageService -->|"converted dto"| AddonService
+
+    AddonService -->|"load/save add-on"| Addon
 ```
 
 
@@ -189,9 +222,10 @@ flowchart LR
 
 - Persist business rules through `AddonSchemaDesignerService.svc`, not runtime business-rule endpoints.
 - Route MCP execution through `CreateEntityBusinessRuleCommand` so environment-specific dependencies are resolved per request through the standard command pipeline.
-- Keep request-level preconditions in `BusinessRuleService`, while `BusinessRuleValidator` owns complete rule validation including schema-aware checks.
+- Keep request-level preconditions in `EntityBusinessRuleService`, while `BusinessRuleValidator` owns complete rule validation including schema-aware checks.
 - Keep `BusinessRuleMetadataConverter` isolated so MCP request DTOs do not become the persistence model.
 - Start with `CreateEntityBusinessRuleTool`, but keep the service structure extensible for additional tools later.
+- Treat `IEntityBusinessRuleService` and `EntityBusinessRuleCreateRequest` as the intentional entity-specific service API after the page-rule split. The old generic `IBusinessRuleService` / `BusinessRuleCreateRequest` names are not preserved because the supported compatibility boundary is the CLI/MCP contract, not internal command-service abstractions.
 
 ## Related Docs
 
