@@ -154,6 +154,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="comp-pkg"></a>
 <a id="compress"></a>
 - [`generate-pkg-zip`](docs/commands/generate-pkg-zip.md) - Prepare an archive of creatio package, `comp-pkg`, `compress`
+<a id="generate-source-code"></a>
+<a id="gsc"></a>
+- [`generate-source-code`](docs/commands/generate-source-code.md) - Generate source code for schemas in Creatio, `gsc`
 <a id="get-pkg-list"></a>
 <a id="list-packages"></a>
 <a id="packages"></a>
