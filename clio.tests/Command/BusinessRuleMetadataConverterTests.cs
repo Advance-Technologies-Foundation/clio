@@ -47,7 +47,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule);
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		BusinessRuleConditionMetadataDto condition = metadata.Cases[0].Condition!.Conditions[0];
@@ -92,7 +92,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule);
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		metadata.Name.Should().StartWith("BusinessRule_",
@@ -178,7 +178,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule);
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		BusinessRuleExpressionMetadataDto rightExpression = metadata.Cases[0].Condition!.Conditions[0].RightExpression;
@@ -242,7 +242,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule);
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single();
@@ -265,7 +265,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			.BeEquivalentTo(["typeName", "uId", "type", "dataValueTypeName", "path"],
 				because: "object-level set-values expressions should rely on the core default root scope");
 		items[0].Value.Type.Should().Be("Const",
-			because: "this delivery supports constant set-values sources only");
+			because: "constant set-values sources should emit value expressions");
 		items[0].Value.DataValueTypeName.Should().Be("Text",
 			because: "constant values should inherit the target column type");
 		serializedItems[0].GetProperty("value").GetProperty("value").GetString().Should().Be("Ready",
@@ -294,6 +294,158 @@ public sealed class BusinessRuleMetadataConverterTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps set-values formula assignments into BusinessRuleFormulaExpression metadata and adds triggers for formula source fields.")]
+	public void ToMetadata_Should_Map_SetValues_Formula_Action_Metadata() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("EstimatedMinutes", 4),
+			CreateColumn("OvertimeMinutes", 4),
+			CreateColumn("SpentMinutes", 4));
+		BusinessRule rule = new(
+			"Calculate spent minutes",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Draft")))
+				]),
+			[
+				new SetValuesBusinessRuleAction(
+					new List<BusinessRuleSetValueItem> {
+						new(
+							new BusinessRuleExpression("AttributeValue", "SpentMinutes", null),
+							new BusinessRuleExpression("Formula", expression: "EstimatedMinutes + OvertimeMinutes"))
+					})
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+
+		// Assert
+		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single();
+		List<BusinessRuleSetValueItemMetadataDto> items = (List<BusinessRuleSetValueItemMetadataDto>)action.Items!;
+		BusinessRuleExpressionMetadataDto value = items.Single().Value;
+		value.TypeName.Should().Be(BusinessRuleConstants.BusinessRuleFormulaExpressionTypeName,
+			because: "formula set-values sources should use the core formula expression contract");
+		value.Type.Should().Be("Formula",
+			because: "the persisted business-rule expression should keep its Formula discriminator");
+		value.ParameterMappings.Should().NotBeNull().And.HaveCount(2,
+			because: "formula expressions need mappings for record id and field-values context parameters");
+		value.ParameterMappings![0].ParameterName.Should().Be("UsrTaskIdParameter",
+			because: "the record primary value should be passed through a deterministic id parameter");
+		value.ParameterMappings[1].ParameterName.Should().Be("UsrTaskfieldValuesParameter",
+			because: "the current field-values context should be passed through the field-values parameter");
+		value.ExpressionSchema.Should().NotBeNull(
+			because: "formula expressions persist a nested expression schema in BRF2");
+		value.ExpressionSchema!.Expression.Should().Be("#UsrTaskRecord.EstimatedMinutes# + #UsrTaskRecord.OvertimeMinutes#",
+			because: "agent-friendly direct field references should be translated to PowerFx record references");
+		value.ExpressionSchema.ResultDataValueType.Should().Be("Integer",
+			because: "the formula result type should inherit the target column data value type");
+		value.ExpressionSchema.ExpressionVariables.Should().ContainSingle(
+			because: "a direct entity formula should use one record variable");
+		value.ExpressionSchema.ExpressionVariables[0].Name.Should().Be("UsrTaskRecord",
+			because: "the record variable should be deterministic for the target entity schema");
+		value.ExpressionSchema.ExpressionVariables[0].Config!.Value.Should().Be("UsrTask",
+			because: "the variable config should reference the target entity schema");
+		value.ExpressionSchema.ExpressionVariables[0].Config!.PrimaryValue!.Value.Should().Be("UsrTaskIdParameter",
+			because: "the variable primary value should bind to the id parameter");
+		value.ExpressionSchema.ExpressionVariables[0].Config!.FieldValues!.Value.Should().Be("UsrTaskfieldValuesParameter",
+			because: "runtime formula execution should receive the edited field-values context");
+		metadata.Triggers.Should().Contain(trigger =>
+				trigger.Type == BusinessRuleConstants.ChangeAttributeValueTriggerType && trigger.Name == "EstimatedMinutes",
+			because: "formula source fields should trigger business-rule recalculation");
+		metadata.Triggers.Should().Contain(trigger =>
+				trigger.Type == BusinessRuleConstants.ChangeAttributeValueTriggerType && trigger.Name == "OvertimeMinutes",
+			because: "formula source fields should trigger business-rule recalculation");
+		metadata.Triggers.Should().Contain(trigger =>
+				trigger.Type == BusinessRuleConstants.DataLoadedTriggerType && trigger.Name == string.Empty,
+			because: "formula rules should still run on DataLoaded");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects formula assignments when expression translation cannot resolve a source attribute.")]
+	public void ToMetadata_Should_Reject_SetValues_Formula_With_Unknown_Source_Attribute() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("BaseScore", 4),
+			CreateColumn("Score", 4));
+		BusinessRule rule = CreateFormulaRule("Score", "BaseScore + MissingScore");
+
+		// Act
+		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Unknown attribute 'MissingScore' in rule.actions[*].items[*].value.expression formula.",
+				because: "formula translation should resolve source fields before metadata is persisted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects formula assignments that do not contain source fields for trigger generation.")]
+	public void ToMetadata_Should_Reject_SetValues_Formula_Without_Source_Attributes() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Score", 4));
+		BusinessRule rule = CreateFormulaRule("Score", "1 + 2");
+
+		// Act
+		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Formula for 'Score' must reference at least one entity attribute.",
+				because: "formula source fields are needed to build recalculation triggers");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects formula functions because current formula support is limited to simple direct-field expressions.")]
+	public void ToMetadata_Should_Reject_SetValues_Formula_Function_Call() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("BaseScore", 4),
+			CreateColumn("Score", 4));
+		BusinessRule rule = CreateFormulaRule("Score", "If(BaseScore > 0, BaseScore, 0)");
+
+		// Act
+		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Formula functions are not supported in rule.actions[*].items[*].value.expression. Use a simple direct-field expression instead of 'If(...)'.",
+				because: "PowerFx functions are outside the current simple formula scope");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects formula assignments with operators outside the local arithmetic expression whitelist.")]
+	public void ToMetadata_Should_Reject_SetValues_Formula_With_Unsupported_Operator() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("BaseScore", 4),
+			CreateColumn("Score", 4));
+		BusinessRule rule = CreateFormulaRule("Score", "BaseScore > 0");
+
+		// Act
+		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Formula expression supports only direct entity fields, numbers, arithmetic operators (+, -, *, /), dots, parentheses, and whitespace.",
+				because: "local validation should keep formula scope aligned with the expression designer arithmetic whitelist");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Serializes constant expressions with dataValueTypeName before value so sequential metadata readers interpret numeric constants correctly.")]
 	public void ToMetadata_Should_Serialize_DataValueTypeName_Before_Value_For_And_Equal_Conditions() {
 		// Arrange
@@ -314,7 +466,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule);
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
 		string json = JsonSerializer.Serialize(metadata, BusinessRuleConstants.JsonOptions);
 
 		// Assert
@@ -379,7 +531,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule);
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
 		BusinessRuleExpressionMetadataDto rightExpression = metadata.Cases[0].Condition!.Conditions[0].RightExpression!;
 		string json = JsonSerializer.Serialize(metadata, BusinessRuleConstants.JsonOptions);
 
@@ -424,7 +576,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule);
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
 		BusinessRuleExpressionMetadataDto rightExpression = metadata.Cases[0].Condition!.Conditions[0].RightExpression!;
 		string json = JsonSerializer.Serialize(metadata, BusinessRuleConstants.JsonOptions);
 
@@ -466,6 +618,26 @@ public sealed class BusinessRuleMetadataConverterTests {
 				}
 		};
 	}
+
+	private static BusinessRule CreateFormulaRule(string targetPath, string formula) =>
+		new(
+			"Formula rule",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Draft")))
+				]),
+			[
+				new SetValuesBusinessRuleAction(
+					new List<BusinessRuleSetValueItem> {
+						new(
+							new BusinessRuleExpression("AttributeValue", targetPath, null),
+							new BusinessRuleExpression("Formula", expression: formula))
+					})
+			]);
 
 	private static JsonElement Json(string value) =>
 		JsonSerializer.Deserialize<JsonElement>($"\"{value}\"");

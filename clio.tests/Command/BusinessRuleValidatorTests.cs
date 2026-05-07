@@ -909,6 +909,29 @@ public sealed class BusinessRuleValidatorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Accepts set-values actions with Formula sources when the formula payload is a non-empty string.")]
+	public void Validate_Should_Accept_SetValues_Action_With_Formula_Source() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("Score", new BusinessRuleExpression("Formula", expression: "BaseScore + BonusScore"))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Score", 4),
+			CreateColumn("BaseScore", 4),
+			CreateColumn("BonusScore", 4));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "formula set-values structure should be validated before field resolution and expression-schema translation");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects set-values actions that try to assign from another attribute.")]
 	public void Validate_Should_Reject_SetValues_Action_With_Attribute_Value_Source() {
 		// Arrange
@@ -925,8 +948,54 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.actions[*].items[*].value.type must be 'Const'.",
-				because: "attribute-source assignments are outside the current set-values support scope");
+			.WithMessage("rule.actions[*].items[*].value.type must be 'Const' or 'Formula'.",
+				because: "attribute-source assignments must use an explicit Formula when calculation is needed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects set-values Formula sources when the formula expression is missing.")]
+	public void Validate_Should_Reject_SetValues_Formula_With_Missing_Expression() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("Score", new BusinessRuleExpression("Formula"))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Score", 4),
+			CreateColumn("BaseScore", 4));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.actions[*].items[*].value.expression must be a non-empty string when value.type is 'Formula'.",
+				because: "the formula contract should receive agent-friendly expression text before expression-schema translation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects set-values Formula sources that contain symbols outside the local arithmetic whitelist.")]
+	public void Validate_Should_Reject_SetValues_Formula_With_Unsupported_Operator() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("Score", new BusinessRuleExpression("Formula", expression: "BaseScore > 0"))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Score", 4),
+			CreateColumn("BaseScore", 4));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Formula expression supports only direct entity fields, numbers, arithmetic operators (+, -, *, /), dots, parentheses, and whitespace.",
+				because: "local validation should reject expressions outside the supported arithmetic scope before server validation");
 	}
 
 	[Test]

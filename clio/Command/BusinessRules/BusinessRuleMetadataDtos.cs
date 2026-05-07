@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -137,4 +138,117 @@ internal sealed class BusinessRuleExpressionMetadataDto {
 	[JsonPropertyOrder(6)]
 	[JsonPropertyName("value")]
 	public object? Value { get; set; }
+
+	[JsonPropertyOrder(7)]
+	[JsonPropertyName("parameterMappings")]
+	public List<BusinessRuleFormulaParameterMappingDto>? ParameterMappings { get; set; }
+
+	[JsonPropertyOrder(8)]
+	[JsonPropertyName("expressionSchema")]
+	public BusinessRuleExpressionSchemaDto? ExpressionSchema { get; set; }
+}
+
+internal sealed class BusinessRuleFormulaParameterMappingDto {
+	[JsonPropertyName("typeName")]
+	public string TypeName { get; set; } = BusinessRuleConstants.BusinessRuleParameterMappingTypeName;
+
+	[JsonPropertyName("uId")]
+	public string UId { get; set; } = Guid.NewGuid().ToString();
+
+	[JsonPropertyName("parameterName")]
+	public string ParameterName { get; set; } = string.Empty;
+
+	[JsonPropertyName("expression")]
+	public BusinessRuleExpressionMetadataDto? Expression { get; set; }
+}
+
+internal sealed class BusinessRuleExpressionSchemaDto {
+	[JsonPropertyName("uId")]
+	public string UId { get; set; } = Guid.NewGuid().ToString();
+
+	[JsonPropertyName("name")]
+	public string Name { get; set; } = string.Empty;
+
+	[JsonPropertyName("engineType")]
+	public string EngineType { get; set; } = "PowerFx";
+
+	[JsonPropertyName("expression")]
+	public string Expression { get; set; } = string.Empty;
+
+	[JsonPropertyName("resultDataValueType")]
+	public string ResultDataValueType { get; set; } = string.Empty;
+
+	[JsonPropertyName("expressionVariables")]
+	public List<BusinessRuleExpressionSchemaVariableDto> ExpressionVariables { get; set; } = [];
+
+	[JsonPropertyName("parameters")]
+	public List<BusinessRuleExpressionSchemaParameterDto> Parameters { get; set; } = [];
+}
+
+internal sealed class BusinessRuleExpressionSchemaVariableDto {
+	[JsonPropertyName("typeName")]
+	public string TypeName { get; set; } = BusinessRuleConstants.ExpressionSchemaVariableTypeName;
+
+	[JsonPropertyName("uId")]
+	public string UId { get; set; } = Guid.NewGuid().ToString();
+
+	[JsonPropertyName("name")]
+	public string Name { get; set; } = string.Empty;
+
+	[JsonPropertyName("variableType")]
+	public string VariableType { get; set; } = "Record";
+
+	[JsonPropertyName("dataValueType")]
+	public string DataValueType { get; set; } = "Lookup";
+
+	[JsonPropertyName("config")]
+	public BusinessRuleExpressionSchemaRecordVariableConfigDto? Config { get; set; }
+}
+
+internal sealed class BusinessRuleExpressionSchemaRecordVariableConfigDto {
+	[JsonPropertyName("typeName")]
+	public string TypeName { get; set; } = BusinessRuleConstants.ExpressionSchemaRecordVariableConfigTypeName;
+
+	[JsonPropertyName("uId")]
+	public string UId { get; set; } = Guid.NewGuid().ToString();
+
+	[JsonPropertyName("name")]
+	public string Name { get; set; } = "VariableConfig";
+
+	[JsonPropertyName("value")]
+	public string Value { get; set; } = string.Empty;
+
+	[JsonPropertyName("recordType")]
+	public string RecordType { get; set; } = "Entity";
+
+	[JsonPropertyName("primaryValue")]
+	public BusinessRuleExpressionSchemaSourceValueConfigDto? PrimaryValue { get; set; }
+
+	[JsonPropertyName("fieldValues")]
+	public BusinessRuleExpressionSchemaSourceValueConfigDto? FieldValues { get; set; }
+
+	[JsonPropertyName("columns")]
+	public List<string> Columns { get; set; } = [];
+}
+
+internal sealed class BusinessRuleExpressionSchemaSourceValueConfigDto {
+	[JsonPropertyName("type")]
+	public string Type { get; set; } = "Parameter";
+
+	[JsonPropertyName("value")]
+	public string Value { get; set; } = string.Empty;
+}
+
+internal sealed class BusinessRuleExpressionSchemaParameterDto {
+	[JsonPropertyName("typeName")]
+	public string TypeName { get; set; } = BusinessRuleConstants.ExpressionSchemaParameterTypeName;
+
+	[JsonPropertyName("uId")]
+	public string UId { get; set; } = Guid.NewGuid().ToString();
+
+	[JsonPropertyName("name")]
+	public string Name { get; set; } = string.Empty;
+
+	[JsonPropertyName("dataValueType")]
+	public string DataValueType { get; set; } = string.Empty;
 }

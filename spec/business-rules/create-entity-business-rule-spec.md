@@ -49,6 +49,7 @@ Entity-level rule creation must:
    - support multiple actions
    - support set value targets:
       - constant value (text, number, boolean, date/time)
+      - formula value using a simple direct-field arithmetic expression such as `(Field1 + Field2) / 2`
    - support multiple targets per action
 - generate internal identifiers automatically
 - append the new rule without changing the order of existing rules
@@ -68,4 +69,7 @@ Entity-level rule creation must reject the request when:
 - a relational comparison targets a non-numeric and non-temporal left attribute
 - a referenced condition attribute does not exist in the target entity scope
 - a referenced action target does not exist in the target entity scope
+- a referenced formula source attribute does not exist in the target entity scope
+- a formula source does not reference any entity attribute
+- a formula uses a function call, comparison operator, string literal, or another expression shape outside the current arithmetic whitelist
 - persistence fails

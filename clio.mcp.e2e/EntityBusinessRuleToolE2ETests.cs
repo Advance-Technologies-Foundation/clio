@@ -114,7 +114,8 @@ public sealed class EntityBusinessRuleToolE2ETests {
 						CreateSetValuesItem("UsrTextResult", "Ready"),
 						CreateSetValuesItem("UsrScore", 42),
 						CreateSetValuesItem("UsrCompleted", true),
-						CreateSetValuesItem("UsrPlannedOn", "2025-01-01T00:00:00Z")
+						CreateSetValuesItem("UsrPlannedOn", "2025-01-01T00:00:00Z"),
+						CreateFormulaSetValuesItem("UsrTotalScore", "UsrScore + UsrBonusScore")
 					}
 				}
 			}
@@ -126,6 +127,15 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			["value"] = new Dictionary<string, object?> {
 				["type"] = "Const",
 				["value"] = value
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateFormulaSetValuesItem(string path, string formula) =>
+		new Dictionary<string, object?> {
+			["expression"] = CreateAttributeExpression(path),
+			["value"] = new Dictionary<string, object?> {
+				["type"] = "Formula",
+				["expression"] = formula
 			}
 		};
 

@@ -39,7 +39,8 @@ public sealed record BusinessRuleCreateResult(string RuleName);
 internal sealed class BusinessRuleService(
 	IAddonSchemaDesignerClient addonSchemaDesignerClient,
 	IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
-	IApplicationPackageListProvider applicationPackageListProvider)
+	IApplicationPackageListProvider applicationPackageListProvider,
+	IBusinessRuleFormulaValidationService formulaValidationService)
 	: IBusinessRuleService {
 	
 	public BusinessRuleCreateResult Create(BusinessRuleCreateRequest request) {
@@ -53,12 +54,13 @@ internal sealed class BusinessRuleService(
 		EntityDesignSchemaDto entitySchema = LoadEntitySchema(request.EntitySchemaName, packageUId);
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = BusinessRuleHelpers.BuildColumnMap(entitySchema);
 		BusinessRuleValidator.Validate(request.Rule, columnMap);
+		ValidateFormulas(entitySchema.Name, columnMap, request.Rule);
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(BuildAddonSchemaRequest(entitySchema, packageUId));
 		JsonObject metadata = ParseMetadata(schema.MetaData);
 		JsonArray rules = GetOrCreateRules(metadata);
 		List<AddonResourceDto> resources = NormalizeResourceKeys(schema.Resources.ToList());
 
-		BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToMetadata(columnMap, request.Rule);
+		BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToMetadata(columnMap, request.Rule, entitySchema.Name);
 		rules.Add(SerializeCreatedRule(createdRule));
 		UpsertCaptionResource(resources, createdRule.UId, request.Rule.Caption.Trim());
 
@@ -90,6 +92,15 @@ internal sealed class BusinessRuleService(
 
 		if (request.Rule is null) {
 			throw new ArgumentException("rule is required.");
+		}
+	}
+
+	private void ValidateFormulas(
+		string entitySchemaName,
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		BusinessRule rule) {
+		foreach (var context in BusinessRuleFormulaBuilder.BuildValidationContexts(entitySchemaName, columnMap, rule)) {
+			formulaValidationService.Validate(context);
 		}
 	}
 

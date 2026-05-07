@@ -14,10 +14,11 @@ internal static class BusinessRuleMetadataConverter {
 
 	internal static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
-		BusinessRule rule) {
+		BusinessRule rule,
+		string entitySchemaName) {
 		string ruleUId = Guid.NewGuid().ToString();
-		BusinessRuleCaseMetadataDto @case = BuildCase(columnMap, rule);
-		List<BusinessRuleTriggerMetadataDto> triggers = BuildTriggers(rule.Condition.Conditions);
+		BusinessRuleCaseMetadataDto @case = BuildCase(columnMap, rule, entitySchemaName);
+		List<BusinessRuleTriggerMetadataDto> triggers = BuildTriggers(columnMap, rule);
 		return new BusinessRuleMetadataDto {
 			TypeName = BusinessRuleTypeName,
 			UId = ruleUId,
@@ -31,12 +32,13 @@ internal static class BusinessRuleMetadataConverter {
 
 	private static BusinessRuleCaseMetadataDto BuildCase(
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
-		BusinessRule rule) {
+		BusinessRule rule,
+		string entitySchemaName) {
 		return new BusinessRuleCaseMetadataDto {
 			TypeName = BusinessRuleCaseTypeName,
 			UId = Guid.NewGuid().ToString(),
 			Condition = BuildConditionGroup(columnMap, rule.Condition),
-			Actions = rule.Actions.Select(action => BuildAction(columnMap, action)).ToList()
+			Actions = rule.Actions.Select(action => BuildAction(columnMap, action, entitySchemaName)).ToList()
 		};
 	}
 
@@ -107,9 +109,10 @@ internal static class BusinessRuleMetadataConverter {
 
 	private static FieldSelectionBusinessRuleActionMetadataDto BuildAction(
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
-		BusinessRuleAction action) {
+		BusinessRuleAction action,
+		string entitySchemaName) {
 		if (string.Equals(action.ActionType, SetValuesActionTypeName, StringComparison.OrdinalIgnoreCase)) {
-			return BuildSetValuesAction(columnMap, action);
+			return BuildSetValuesAction(columnMap, action, entitySchemaName);
 		}
 
 		return new FieldSelectionBusinessRuleActionMetadataDto {
@@ -122,42 +125,71 @@ internal static class BusinessRuleMetadataConverter {
 
 	private static FieldSelectionBusinessRuleActionMetadataDto BuildSetValuesAction(
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
-		BusinessRuleAction action) {
+		BusinessRuleAction action,
+		string entitySchemaName) {
 		return new FieldSelectionBusinessRuleActionMetadataDto {
 			TypeName = BusinessRuleSetValuesElementTypeName,
 			UId = Guid.NewGuid().ToString(),
 			Enabled = true,
-			Items = action.SetValueItems.Select(item => BuildSetValueItem(columnMap, item)).ToList()
+			Items = action.SetValueItems.Select(item => BuildSetValueItem(columnMap, item, entitySchemaName)).ToList()
 		};
 	}
 
 	private static BusinessRuleSetValueItemMetadataDto BuildSetValueItem(
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
-		BusinessRuleSetValueItem item) {
+		BusinessRuleSetValueItem item,
+		string entitySchemaName) {
 		string targetPath = item.Expression.Path!;
 		EntitySchemaColumnDto targetDescriptor = columnMap[targetPath];
 		string dataValueTypeName = MapDataValueTypeName(targetDescriptor.DataValueType);
-		object? value = ConvertJsonElement(item.Value.Value!.Value, dataValueTypeName);
+		BusinessRuleExpressionMetadataDto valueExpression = BuildSetValueItemValueExpression(
+			columnMap,
+			item,
+			entitySchemaName,
+			targetPath,
+			targetDescriptor,
+			dataValueTypeName);
 		return new BusinessRuleSetValueItemMetadataDto {
 			TypeName = BusinessRuleSetValueItemTypeName,
 			UId = Guid.NewGuid().ToString(),
 			Enabled = true,
 			Expression = BuildAttributeExpression(targetDescriptor, targetPath, dataValueTypeName),
-			Value = new BusinessRuleExpressionMetadataDto {
-				TypeName = BusinessRuleValueExpressionTypeName,
-				UId = Guid.NewGuid().ToString(),
-				Type = "Const",
-				DataValueTypeName = dataValueTypeName,
-				ReferenceSchemaName = targetDescriptor.ReferenceSchema?.Name,
-				Value = value
-			}
+			Value = valueExpression
+		};
+	}
+
+	private static BusinessRuleExpressionMetadataDto BuildSetValueItemValueExpression(
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		BusinessRuleSetValueItem item,
+		string entitySchemaName,
+		string targetPath,
+		EntitySchemaColumnDto targetDescriptor,
+		string dataValueTypeName) {
+		if (BusinessRuleFormulaBuilder.IsFormulaExpression(item.Value)) {
+			return BusinessRuleFormulaBuilder.BuildValueExpression(
+				entitySchemaName,
+				columnMap,
+				targetPath,
+				BusinessRuleFormulaBuilder.GetRequiredFormulaText(item.Value),
+				dataValueTypeName);
+		}
+		object? value = ConvertJsonElement(item.Value.Value!.Value, dataValueTypeName);
+		return new BusinessRuleExpressionMetadataDto {
+			TypeName = BusinessRuleValueExpressionTypeName,
+			UId = Guid.NewGuid().ToString(),
+			Type = "Const",
+			DataValueTypeName = dataValueTypeName,
+			ReferenceSchemaName = targetDescriptor.ReferenceSchema?.Name,
+			Value = value
 		};
 	}
 
 	private static List<BusinessRuleTriggerMetadataDto> BuildTriggers(
-		IReadOnlyList<BusinessRuleCondition> conditions) {
-		List<BusinessRuleTriggerMetadataDto> triggers = conditions
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		BusinessRule rule) {
+		List<BusinessRuleTriggerMetadataDto> triggers = rule.Condition.Conditions
 			.SelectMany(EnumerateTriggerNames)
+			.Concat(rule.Actions.SelectMany(action => EnumerateFormulaTriggerNames(action, columnMap)))
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.Select(triggerName => new BusinessRuleTriggerMetadataDto {
 				TypeName = BusinessRuleTriggerTypeName,
@@ -181,6 +213,24 @@ internal static class BusinessRuleMetadataConverter {
 			&& string.Equals(condition.RightExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)
 			&& !string.IsNullOrWhiteSpace(condition.RightExpression.Path)) {
 			yield return condition.RightExpression.Path;
+		}
+	}
+
+	private static IEnumerable<string> EnumerateFormulaTriggerNames(
+		BusinessRuleAction action,
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
+		if (!string.Equals(action.ActionType, SetValuesActionTypeName, StringComparison.OrdinalIgnoreCase)) {
+			yield break;
+		}
+		foreach (var item in action.SetValueItems) {
+			if (!BusinessRuleFormulaBuilder.IsFormulaExpression(item.Value)) {
+				continue;
+			}
+			foreach (var path in BusinessRuleFormulaBuilder.GetFormulaSourcePaths(
+				BusinessRuleFormulaBuilder.GetRequiredFormulaText(item.Value),
+				columnMap)) {
+				yield return path;
+			}
 		}
 	}
 

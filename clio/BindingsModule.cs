@@ -204,6 +204,7 @@ public class BindingsModule {
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
 		services.AddTransient<UpdateAppSectionCommand>();
 		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
+		services.AddTransient<IBusinessRuleFormulaValidationService, BusinessRuleFormulaValidationService>();
 		services.AddTransient<IBusinessRuleService, BusinessRuleService>();
 		services.AddTransient<CreateEntityBusinessRuleCommand>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();

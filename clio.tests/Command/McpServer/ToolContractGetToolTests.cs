@@ -161,13 +161,22 @@ public sealed class ToolContractGetToolTests {
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-shape" &&
 				validator.Field == "rule.actions[*].items[*]" &&
-				validator.Context!.Contains("Attribute value sources are not supported", StringComparison.Ordinal),
+				validator.Context!.Contains("Attribute value sources, formula functions, comparison operators, and string literals are not supported", StringComparison.Ordinal),
 			because: "the contract should keep attribute-source assignments out of the current set-values scope");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-constant" &&
 				validator.Field == "rule.actions[*].items[*].value.value" &&
 				validator.Context!.Contains("JSON number", StringComparison.Ordinal),
 			because: "the contract should document typed constant payloads for set-values");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "set-values-formula" &&
+				validator.Field == "rule.actions[*].items[*].value.expression" &&
+				validator.Context!.Contains("ExpressionService.svc/Validate", StringComparison.Ordinal),
+			because: "the contract should document remote formula validation after expression-schema translation");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "set-values-shape" &&
+				validator.Context!.Contains("direct-field arithmetic expression", StringComparison.Ordinal),
+			because: "the contract should document the current simple direct-field formula scope");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rule.condition.conditions[*].comparisonType" &&
@@ -302,6 +311,9 @@ public sealed class ToolContractGetToolTests {
 		bool hasSetValuesExample = contract.Examples.Any(HasSetValuesConstantExample);
 		hasSetValuesExample.Should().BeTrue(
 			because: "the contract should include a set-values example with text number boolean Date DateTime and Time constants");
+		bool hasSetValuesFormulaExample = contract.Examples.Any(HasSetValuesFormulaExample);
+		hasSetValuesFormulaExample.Should().BeTrue(
+			because: "the contract should include a set-values formula example using direct field names");
 	}
 
 	private static bool HasSetValuesConstantExample(ToolContractExample example) {
@@ -327,6 +339,27 @@ public sealed class ToolContractGetToolTests {
 			&& values.Contains("2025-01-01")
 			&& values.Contains("12:00:00+02:00")
 			&& values.Contains("2025-01-01T00:00:00Z");
+	}
+
+	private static bool HasSetValuesFormulaExample(ToolContractExample example) {
+		if (example.Arguments["rule"] is not Dictionary<string, object?> rule
+			|| !rule.TryGetValue("actions", out object? actionsValue)
+			|| actionsValue is not object[] actions
+			|| actions.SingleOrDefault() is not Dictionary<string, object?> action
+			|| !string.Equals(action["type"]?.ToString(), "set-values", StringComparison.Ordinal)
+			|| !action.TryGetValue("items", out object? itemsValue)
+			|| itemsValue is not object[] items) {
+			return false;
+		}
+
+		return items
+			.OfType<Dictionary<string, object?>>()
+			.Select(item => item["value"])
+			.OfType<Dictionary<string, object?>>()
+			.Any(valueExpression =>
+				string.Equals(valueExpression["type"]?.ToString(), "Formula", StringComparison.Ordinal)
+				&& string.Equals(valueExpression["expression"]?.ToString(), "UsrEstimatedEffort + UsrExtraEffort",
+					StringComparison.Ordinal));
 	}
 
 	[Test]

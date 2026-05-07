@@ -312,6 +312,66 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Deserializes set-values actions with Formula payloads and preserves the agent-friendly formula text.")]
+	public void BusinessRuleCreate_Should_Deserialize_SetValues_Action_With_Formula_Item() {
+		// Arrange
+		string payload = """
+		{
+		  "environment-name": "dev",
+		  "package-name": "UsrPkg",
+		  "entity-schema-name": "UsrOrder",
+		  "rule": {
+		    "caption": "Calculate totals",
+		    "condition": {
+		      "logicalOperation": "AND",
+		      "conditions": [
+		        {
+		          "leftExpression": {
+		            "type": "AttributeValue",
+		            "path": "Name"
+		          },
+		          "comparisonType": "is-filled-in"
+		        }
+		      ]
+		    },
+		    "actions": [
+		      {
+		        "type": "set-values",
+		        "items": [
+		          {
+		            "expression": {
+		              "type": "AttributeValue",
+		              "path": "UsrTotal"
+		            },
+		            "value": {
+		              "type": "Formula",
+		              "expression": "UsrAmount + UsrTax"
+		            }
+		          }
+		        ]
+		      }
+		    ]
+		  }
+		}
+		""";
+
+		// Act
+		BusinessRuleToolPayload? payloadArgs = JsonSerializer.Deserialize<BusinessRuleToolPayload>(payload);
+
+		// Assert
+		payloadArgs.Should().NotBeNull(
+			because: "set-values formula business-rule payloads should deserialize from the MCP JSON shape");
+		BusinessRuleSetValueItem item = payloadArgs!.Rule.Actions.Single().SetValueItems.Single();
+		item.Expression.Path.Should().Be("UsrTotal",
+			because: "the target expression path should be preserved");
+		item.Value.Type.Should().Be("Formula",
+			because: "the formula discriminator should be preserved for downstream expression-schema translation");
+		item.Value.Expression.Should().Be("UsrAmount + UsrTax",
+			because: "agents should send simple formula text, not prebuilt BRF2 metadata");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Deserializes unary business-rule payloads that omit rightExpression for filled-state comparisons.")]
 	public void BusinessRuleCreate_Should_Deserialize_Unary_Payload_Without_Right_Expression() {
 		// Arrange

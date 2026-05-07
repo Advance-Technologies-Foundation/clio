@@ -553,13 +553,18 @@ public sealed class ToolContractGetToolE2ETests {
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-shape" &&
 				validator.Field == "rule.actions[*].items[*]" &&
-				validator.Context!.Contains("Attribute value sources are not supported", StringComparison.Ordinal),
-			because: "the contract should advertise the current constant-only Set values scope");
+				validator.Context!.Contains("Attribute value sources, formula functions, comparison operators, and string literals are not supported", StringComparison.Ordinal),
+			because: "the contract should advertise the current Set values scope");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-constant" &&
 				validator.Field == "rule.actions[*].items[*].value.value" &&
 				validator.Context!.Contains("JSON number", StringComparison.Ordinal),
 			because: "the contract should document typed constant payloads for Set values");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "set-values-formula" &&
+				validator.Field == "rule.actions[*].items[*].value.expression" &&
+				validator.Context!.Contains("ExpressionService.svc/Validate", StringComparison.Ordinal),
+			because: "the contract should document formula payloads for Set values");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rule.condition.conditions[*].comparisonType" &&
