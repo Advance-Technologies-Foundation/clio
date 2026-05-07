@@ -260,7 +260,10 @@ internal static class ToolContractCatalog {
 	private const string PackageNameCamelFieldName = "packageName";
 	private const string EntitySchemaNameCamelFieldName = "entitySchemaName";
 	private const string PageSchemaNameCamelFieldName = "pageSchemaName";
+	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
+	private const string MakeReadOnlyActionTypeName = "make-read-only";
+	private const string MakeRequiredActionTypeName = "make-required";
 	private const string ValuesFieldName = "values";
 	private const string BindingNameDescription = "Binding name.";
 	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
@@ -1332,7 +1335,7 @@ internal static class ToolContractCatalog {
 				Validators: [
 					.. BusinessRuleConditionValidators(),
 					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
-						Context: "Supported values: make-editable, make-read-only, make-required, make-optional, set-values."),
+						Context: $"Supported values: {BusinessRuleConstants.SupportedActionTypesDescription}."),
 					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rule.actions[*].items[*]",
 						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }. Attribute value sources are not supported in this scope."),
 					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rule.actions[*].items[*].value.value",
@@ -1346,22 +1349,22 @@ internal static class ToolContractCatalog {
 			[
 				BusinessRuleExample("Create a required-field rule when owner equals a lookup constant",
 					"UsrTask", "Require status for a specific owner", "Owner", "equal",
-					"make-required", ["Status"], "00000000-0000-0000-0000-000000000001"),
+					MakeRequiredActionTypeName, ["Status"], "00000000-0000-0000-0000-000000000001"),
 				BusinessRuleExample("Create a readonly rule when a text field is filled in",
 					"UsrTask", "Lock planned date when name is filled", "Name", "is-filled-in",
-					"make-read-only", ["PlannedDate"]),
+					MakeReadOnlyActionTypeName, ["PlannedDate"]),
 				BusinessRuleExample("Create a readonly rule when completed is true",
 					"UsrTask", "Lock name and description when completed", "Completed", "equal",
-					"make-read-only", ["Name", "Description"], true),
+					MakeReadOnlyActionTypeName, ["Name", "Description"], true),
 				BusinessRuleExample("Create a required-field rule when annual revenue reaches a numeric threshold",
 					"Account", "Require owner for high-revenue accounts", "AnnualRevenue", "greater-than-or-equal",
-					"make-required", ["Owner"], 1000000),
+					MakeRequiredActionTypeName, ["Owner"], 1000000),
 				BusinessRuleExample("Create a required-field rule when created date is before a cutoff",
 					"UsrTask", "Require owner before the 2025 cutoff", "CreatedOn", "less-than-or-equal",
-					"make-required", ["Owner"], "2025-01-01T00:00:00Z"),
+					MakeRequiredActionTypeName, ["Owner"], "2025-01-01T00:00:00Z"),
 				BusinessRuleExample("Create a readonly rule when reminder time is after a timezone-aware cutoff",
 					"UsrTask", "Lock reminder note after local noon", "ReminderTime", "greater-than",
-					"make-read-only", ["ReminderNote"], "12:00:00+02:00"),
+					MakeReadOnlyActionTypeName, ["ReminderNote"], "12:00:00+02:00"),
 				BusinessRuleExample("Create a Set values rule with text number boolean Date DateTime and Time constants",
 					"UsrTask", "Populate defaults when name is filled", "Name", "is-filled-in",
 					"set-values", [
@@ -1443,25 +1446,25 @@ internal static class ToolContractCatalog {
 					["PriorityInput"]),
 				PageBusinessRuleExample(
 					"Make amount read-only when amount exceeds threshold",
-					"UsrOrder_FormPage",
+					ExampleOrderPageSchemaName,
 					"Make amount read-only over threshold",
 					"PDS_UsrAmount",
 					"greater-than",
-					"make-read-only",
+					MakeReadOnlyActionTypeName,
 					["AmountInput"],
 					100000),
 				PageBusinessRuleExample(
 					"Make close date required when stage is closed",
-					"UsrOrder_FormPage",
+					ExampleOrderPageSchemaName,
 					"Require close date for closed stage",
 					"PDS_UsrStage",
 					"equal",
-					"make-required",
+					MakeRequiredActionTypeName,
 					["CloseDateInput"],
 					"Closed"),
 				PageBusinessRuleExample(
 					"Make comment optional when page flag is false",
-					"UsrOrder_FormPage",
+					ExampleOrderPageSchemaName,
 					"Make comment optional when flag is false",
 					"PDS_UsrFlag",
 					"equal",
@@ -1479,7 +1482,7 @@ internal static class ToolContractCatalog {
 					"00000000-0000-0000-0000-000000000001"),
 				PageBusinessRuleExample(
 					"Show a warning label when amount exceeds threshold",
-					"UsrOrder_FormPage",
+					ExampleOrderPageSchemaName,
 					"Show warning for high amount",
 					"PDS_UsrAmount",
 					"greater-than",
@@ -1633,7 +1636,7 @@ internal static class ToolContractCatalog {
 		return Example("Hide a warning when two datasource-bound page attributes match", new Dictionary<string, object?> {
 			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
 			[PackageNameCamelFieldName] = ExamplePackageName,
-			[PageSchemaNameCamelFieldName] = "UsrOrder_FormPage",
+			[PageSchemaNameCamelFieldName] = ExampleOrderPageSchemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = "Hide warning when planned and actual dates match",
 				["condition"] = new Dictionary<string, object?> {
