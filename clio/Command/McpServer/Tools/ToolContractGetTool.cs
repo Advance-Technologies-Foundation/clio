@@ -206,6 +206,7 @@ internal static class ToolContractCatalog {
 	private const string EnvironmentNameFieldName = "environment-name";
 	private const string ErrorFieldName = "error";
 	private const string ExampleEnvironmentName = "local";
+	private const string ExampleLookupValueId = "00000000-0000-0000-0000-000000000001";
 	private const string ExamplePackageName = "UsrTaskApp";
 	private const string ExampleTaskStatusSchemaName = "UsrTaskStatus";
 	private const string FailureMessageDescription = "Human-readable failure message.";
@@ -1349,7 +1350,7 @@ internal static class ToolContractCatalog {
 			[
 				BusinessRuleExample("Create a required-field rule when owner equals a lookup constant",
 					"UsrTask", "Require status for a specific owner", "Owner", "equal",
-					MakeRequiredActionTypeName, ["Status"], "00000000-0000-0000-0000-000000000001"),
+					MakeRequiredActionTypeName, ["Status"], ExampleLookupValueId),
 				BusinessRuleExample("Create a readonly rule when a text field is filled in",
 					"UsrTask", "Lock planned date when name is filled", "Name", "is-filled-in",
 					MakeReadOnlyActionTypeName, ["PlannedDate"]),
@@ -1479,7 +1480,7 @@ internal static class ToolContractCatalog {
 					"equal",
 					"hide-element",
 					["EscalateButton"],
-					"00000000-0000-0000-0000-000000000001"),
+					ExampleLookupValueId),
 				PageBusinessRuleExample(
 					"Show a warning label when amount exceeds threshold",
 					ExampleOrderPageSchemaName,
@@ -1540,39 +1541,9 @@ internal static class ToolContractCatalog {
 		string comparisonType,
 		string actionType,
 		object[] actionItems,
-		object? constantValue = null) {
-		Dictionary<string, object?> condition = new() {
-			["leftExpression"] = new Dictionary<string, object?> {
-				["type"] = "AttributeValue",
-				["path"] = leftPath
-			},
-			["comparisonType"] = comparisonType
-		};
-		if (constantValue is not null) {
-			condition["rightExpression"] = new Dictionary<string, object?> {
-				["type"] = "Const",
-				["value"] = constantValue
-			};
-		}
-		return Example(summary, new Dictionary<string, object?> {
-			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
-			[PackageNameCamelFieldName] = ExamplePackageName,
-			[EntitySchemaNameCamelFieldName] = entitySchemaName,
-			[RuleFieldName] = new Dictionary<string, object?> {
-				["caption"] = caption,
-				["condition"] = new Dictionary<string, object?> {
-					["logicalOperation"] = "AND",
-					["conditions"] = new object[] { condition }
-				},
-				["actions"] = new object[] {
-					new Dictionary<string, object?> {
-						["type"] = actionType,
-						["items"] = actionItems
-					}
-				}
-			}
-		});
-	}
+		object? constantValue = null) =>
+		BusinessRuleExample(summary, EntitySchemaNameCamelFieldName, entitySchemaName, caption, leftPath,
+			comparisonType, actionType, actionItems, constantValue);
 
 	private static Dictionary<string, object?> BusinessRuleSetValueItem(string path, object value) {
 		return new Dictionary<string, object?> {
@@ -1590,6 +1561,19 @@ internal static class ToolContractCatalog {
 	private static ToolContractExample PageBusinessRuleExample(
 		string summary,
 		string pageSchemaName,
+		string caption,
+		string leftPath,
+		string comparisonType,
+		string actionType,
+		object[] actionItems,
+		object? constantValue = null) =>
+		BusinessRuleExample(summary, PageSchemaNameCamelFieldName, pageSchemaName, caption, leftPath,
+			comparisonType, actionType, actionItems, constantValue);
+
+	private static ToolContractExample BusinessRuleExample(
+		string summary,
+		string schemaFieldName,
+		string schemaName,
 		string caption,
 		string leftPath,
 		string comparisonType,
@@ -1613,7 +1597,7 @@ internal static class ToolContractCatalog {
 		return Example(summary, new Dictionary<string, object?> {
 			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
 			[PackageNameCamelFieldName] = ExamplePackageName,
-			[PageSchemaNameCamelFieldName] = pageSchemaName,
+			[schemaFieldName] = schemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = caption,
 				["condition"] = new Dictionary<string, object?> {
@@ -2140,7 +2124,7 @@ internal static class ToolContractCatalog {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName,
 					[BindingNameFieldName] = ExampleTaskStatusSchemaName,
-					[KeyValueFieldName] = "00000000-0000-0000-0000-000000000001"
+					[KeyValueFieldName] = ExampleLookupValueId
 				})
 			],
 			Flow([RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName], "Standalone DB-first binding maintenance."),
@@ -2288,7 +2272,7 @@ internal static class ToolContractCatalog {
 					[PackageNameFieldName] = ExamplePackageName,
 					[BindingNameFieldName] = ExampleTaskStatusSchemaName,
 					[WorkspacePathFieldName] = ExampleWorkspacePath,
-					[KeyValueFieldName] = "00000000-0000-0000-0000-000000000001"
+					[KeyValueFieldName] = ExampleLookupValueId
 				})
 			],
 			Flow([RemoveDataBindingRowTool.RemoveDataBindingRowToolName], "Standalone local binding maintenance."),
