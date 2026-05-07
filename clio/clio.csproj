@@ -96,32 +96,6 @@
 	</ItemGroup>
 
 	<Choose>
-		<When Condition="Exists('..\..\creatioclient\creatioclient\creatioclient.csproj')">
-			<ItemGroup>
-				<ProjectReference Include="..\..\creatioclient\creatioclient\creatioclient.csproj"/>
-			</ItemGroup>
-		</When>
-		<Otherwise>
-			<ItemGroup>
-				<PackageReference Include="creatio.client" />
-			</ItemGroup>
-		</Otherwise>
-	</Choose>
-	
-	<Choose>
-		<When Condition="Exists('..\..\repository\ATF.Repository\ATF.Repository.csproj')">
-			<ItemGroup>
-				<ProjectReference Include="..\..\repository\ATF.Repository\ATF.Repository.csproj"/>
-			</ItemGroup>
-		</When>
-		<Otherwise>
-			<ItemGroup>
-				<PackageReference Include="ATF.Repository" />
-			</ItemGroup>
-		</Otherwise>
-	</Choose>
-
-	<Choose>
 		<When Condition="'$(TargetFramework)' == 'net8.0'">
 			<ItemGroup>
 				<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/>
@@ -154,6 +128,8 @@
 	</ItemGroup>
 	
 	<ItemGroup Label="Centrally Managed Package Versions">
+		<PackageReference Include="creatio.client" />
+		<PackageReference Include="ATF.Repository" />
 		<PackageReference Include="MediatR" />
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" />
 		<PackageReference Include="Microsoft.Web.Administration" />
