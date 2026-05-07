@@ -101,7 +101,27 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Locks packages via ClioGate (bypasses DataService ESQ permission checks).
 		/// </summary>
-		LockPackages = 37
+		LockPackages = 37,
+
+		/// <summary>
+		///     Generates source code for all schemas.
+		/// </summary>
+		GenerateAllSchemasSources = 38,
+
+		/// <summary>
+		///     Generates source code only for modified schemas.
+		/// </summary>
+		GenerateModifiedSchemasSources = 39,
+
+		/// <summary>
+		///     Starts source code generation for all schemas as a background task.
+		/// </summary>
+		GenerateAllSchemasSourcesInBackground = 40,
+
+		/// <summary>
+		///     Generates source code for schemas that require it.
+		/// </summary>
+		GenerateRequiredSchemasSources = 41
 
 	}
 
@@ -152,6 +172,10 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GetBoundSchemaData, "ServiceModel/SchemaDataDesignerService.svc/GetBoundSchemaData"},
 		{KnownRoute.UnlockPackages, "/rest/CreatioApiGateway/UnlockPackages"},
 		{KnownRoute.LockPackages, "/rest/CreatioApiGateway/LockPackages"},
+		{KnownRoute.GenerateAllSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateAllSchemasSources"},
+		{KnownRoute.GenerateModifiedSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateModifiedSchemasSources"},
+		{KnownRoute.GenerateAllSchemasSourcesInBackground, "ServiceModel/WorkspaceExplorerService.svc/GenerateAllSchemasSourcesInBackground"},
+		{KnownRoute.GenerateRequiredSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateRequiredSchemasSources"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

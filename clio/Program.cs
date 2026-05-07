@@ -205,8 +205,9 @@ internal class Program {
 		typeof(AssertOptions),
 		typeof(McpServerCommandOptions),
 		typeof(QuizCommandOptions),
-		
-		
+		typeof(GenerateSourceCodeOptions),
+
+
 	];
 	private static readonly Lazy<IReadOnlyList<CommandSuggestionEntry>> CommandSuggestionsCatalog =
 		new(CreateCommandSuggestionsCatalog);
@@ -409,6 +410,7 @@ internal class Program {
 			PageUpdateOptions opts => Resolve<PageUpdateCommand>(opts).Execute(opts),
 			PageListOptions opts => Resolve<PageListCommand>(opts).Execute(opts),
 			QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
+			GenerateSourceCodeOptions opts => Resolve<GenerateSourceCodeCommand>(opts).Execute(opts),
 			var _ => 1
 		};
 	};

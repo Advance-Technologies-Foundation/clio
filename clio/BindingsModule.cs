@@ -503,6 +503,7 @@ public class BindingsModule {
 		services.AddTransient<ClioGateway>();
 		services.AddTransient<CompileConfigurationCommand>();
 		services.AddTransient<CompileWorkspaceCommand>();
+		services.AddTransient<GenerateSourceCodeCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();
