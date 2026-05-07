@@ -220,6 +220,14 @@ public class BindingsModule {
 		services.AddTransient<DeleteAppSectionCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
+		services.AddTransient<IdentityProviderListCommand>();
+		services.AddTransient<IdentityProviderUpsertCommand>();
+		services.AddTransient<IdentityProviderSetSecretCommand>();
+		services.AddTransient<IdentityProviderDeleteCommand>();
+		services.AddTransient<IdentityProviderSetDefaultCommand>();
+		services.AddTransient<IdentityProviderBindCommand>();
+		services.AddTransient<IdentityProviderUnbindCommand>();
+		services.AddTransient<IdentityProviderServicesCommand>();
 		services.AddTransient<CreateAppCommand>();
 		services.AddTransient<GetAppInfoCommand>();
 		services.AddTransient<CreateLookupCommand>();

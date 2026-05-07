@@ -39,6 +39,22 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`delete-app-section`](docs/commands/delete-app-section.md) - Delete a section and its artifacts from an existing installed application
 <a id="list-app-sections"></a>
 - [`list-app-sections`](docs/commands/list-app-sections.md) - List sections of an existing installed application
+<a id="idp-list"></a>
+- [`idp-list`](docs/commands/idp-list.md) - List identity providers
+<a id="idp-upsert"></a>
+- [`idp-upsert`](docs/commands/idp-upsert.md) - Create or update an identity provider
+<a id="idp-set-secret"></a>
+- [`idp-set-secret`](docs/commands/idp-set-secret.md) - Set identity provider client secret
+<a id="idp-delete"></a>
+- [`idp-delete`](docs/commands/idp-delete.md) - Delete an identity provider
+<a id="idp-set-default"></a>
+- [`idp-set-default`](docs/commands/idp-set-default.md) - Set the default identity provider
+<a id="idp-bind"></a>
+- [`idp-bind`](docs/commands/idp-bind.md) - Bind an identity provider to an external service code
+<a id="idp-unbind"></a>
+- [`idp-unbind`](docs/commands/idp-unbind.md) - Unbind an identity provider from an external service code
+<a id="idp-services"></a>
+- [`idp-services`](docs/commands/idp-services.md) - List external services and identity provider bindings
 <a id="get-info"></a>
 <a id="describe"></a>
 <a id="describe-creatio"></a>
