@@ -1324,23 +1324,25 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildEntityBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, and Set values actions from constants.",
+			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, and Set values actions from constants or formulas.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, EntitySchemaNameCamelFieldName, RuleFieldName],
 				[
 					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameCamelFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameCamelFieldName, StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets.")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets, plus Formula assignments with simple direct-field expressions such as Field1 + Field2.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
 					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
 						Context: $"Supported values: {BusinessRuleConstants.SupportedActionTypesDescription}."),
 					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rule.actions[*].items[*]",
-						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }. Attribute value sources are not supported in this scope."),
+						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value } or { type: Formula, expression }. Formula expression must be a string using a simple direct-field arithmetic expression, for example Field1 + Field2. Attribute value sources, formula functions, comparison operators, and string literals are not supported in this scope."),
 					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rule.actions[*].items[*].value.value",
-						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, and ISO 8601 time strings with timezone suffix for Time targets.")
+						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, and ISO 8601 time strings with timezone suffix for Time targets."),
+					new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rule.actions[*].items[*].value.expression",
+						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against an arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct source fields are added as business-rule triggers.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -1375,6 +1377,11 @@ internal static class ToolContractCatalog {
 						BusinessRuleSetValueItem("UsrStartDate", "2025-01-01"),
 						BusinessRuleSetValueItem("UsrPlannedOn", "2025-01-01T00:00:00Z"),
 						BusinessRuleSetValueItem("UsrReminderTime", "12:00:00+02:00")
+					]),
+				BusinessRuleExample("Create a Set values rule with a formula that sums two number fields",
+					"UsrTask", "Calculate total effort when name is filled", "Name", "is-filled-in",
+					"set-values", [
+						BusinessRuleFormulaSetValueItem("UsrTotalEffort", "UsrEstimatedEffort + UsrExtraEffort")
 					])
 			],
 			Flow(
@@ -1554,6 +1561,19 @@ internal static class ToolContractCatalog {
 			["value"] = new Dictionary<string, object?> {
 				["type"] = "Const",
 				["value"] = value
+			}
+		};
+	}
+
+	private static Dictionary<string, object?> BusinessRuleFormulaSetValueItem(string path, string formula) {
+		return new Dictionary<string, object?> {
+			["expression"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = path
+			},
+			["value"] = new Dictionary<string, object?> {
+				["type"] = "Formula",
+				["expression"] = formula
 			}
 		};
 	}

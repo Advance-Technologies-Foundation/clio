@@ -165,15 +165,29 @@ internal static class BusinessRuleValidator {
 			throw new ArgumentException("rule.actions[*].items[*].value is required.");
 		}
 
-		if (!string.Equals(item.Value.Type, "Const", StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException("rule.actions[*].items[*].value.type must be 'Const'.");
+		if (string.Equals(item.Value.Type, ConstExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			if (item.Value.Value is null) {
+				throw new ArgumentException("rule.actions[*].items[*].value.value is required when value.type is 'Const'.");
+			}
+
+			ValidateSetValueConstant(item.Value.Value.Value, targetDataValueTypeName);
+			return;
 		}
 
-		if (item.Value.Value is null) {
-			throw new ArgumentException("rule.actions[*].items[*].value.value is required when value.type is 'Const'.");
+		if (string.Equals(item.Value.Type, FormulaExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			ValidateSetValueFormula(item.Value, attributeMap, item.Expression.Path);
+			return;
 		}
 
-		ValidateSetValueConstant(item.Value.Value.Value, targetDataValueTypeName);
+		throw new ArgumentException("rule.actions[*].items[*].value.type must be 'Const' or 'Formula'.");
+	}
+
+	private static void ValidateSetValueFormula(
+		BusinessRuleExpression value,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		string targetPath) {
+		string formula = BusinessRuleFormulaBuilder.GetRequiredFormulaText(value);
+		BusinessRuleFormulaBuilder.ValidateFormulaScope(formula, attributeMap, targetPath);
 	}
 
 	private static void ValidateSetValueConstant(JsonElement value, string targetDataValueTypeName) {

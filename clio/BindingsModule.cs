@@ -206,6 +206,7 @@ public class BindingsModule {
 		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
 		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
 		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();
+		services.AddTransient<IBusinessRuleFormulaValidationService, BusinessRuleFormulaValidationService>();
 		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
 		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
 		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();

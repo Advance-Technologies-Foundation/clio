@@ -17,6 +17,12 @@ internal static class BusinessRuleConstants {
 	internal const string BusinessRuleConditionTypeName = "Terrasoft.Core.BusinessRules.Models.Conditions.BusinessRuleCondition";
 	internal const string BusinessRuleAttributeExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleAttributeExpression";
 	internal const string BusinessRuleValueExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleValueExpression";
+	internal const string BusinessRuleFormulaExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleFormulaExpression";
+	internal const string BusinessRuleContextExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleContextExpression";
+	internal const string BusinessRuleParameterMappingTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.ParameterMapping";
+	internal const string ExpressionSchemaVariableTypeName = "Terrasoft.Core.ExpressionEngine.Schema.Variables.ExpressionSchemaVariable";
+	internal const string ExpressionSchemaRecordVariableConfigTypeName = "Terrasoft.Core.ExpressionEngine.Schema.Variables.ExpressionSchemaRecordVariableConfig";
+	internal const string ExpressionSchemaParameterTypeName = "Terrasoft.Core.ExpressionEngine.Schema.Parameters.ExpressionSchemaParameter";
 	internal const string BusinessRuleEditableElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionEditableElement";
 	internal const string BusinessRuleReadonlyElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionReadonlyElement";
 	internal const string BusinessRuleRequiredElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionRequiredElement";
@@ -27,6 +33,9 @@ internal static class BusinessRuleConstants {
 	internal const string BusinessRuleShowElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionShowElement";
 	internal const string ClientUnitSchemaManagerName = "ClientUnitSchemaManager";
 	internal const string SetValuesActionTypeName = "set-values";
+	internal const string AttributeValueExpressionType = "AttributeValue";
+	internal const string ConstExpressionType = "Const";
+	internal const string FormulaExpressionType = "Formula";
 	internal const int ChangeAttributeValueTriggerType = 0;
 	internal const int DataLoadedTriggerType = 2;
 	internal const int LogicalAnd = 1;
