@@ -1846,5 +1846,886 @@ public sealed class SchemaValidationServiceTests {
 			error => error.Contains("UsrStatus") && error.Contains("$DS1_UsrStatus") && error.Contains("$UsrStatus"),
 			because: "the error should identify the wrong datasource binding and the correct view-model attribute binding");
 	}
+
+	#region ValidateConverterDeclarations
+
+	[Test]
+	[Description("Null body returns valid without throwing")]
+	public void ValidateConverterDeclarations_NullBody_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(null);
+		result.IsValid.Should().BeTrue("because a null body is handled by the early-return guard");
+		result.Errors.Should().BeEmpty("because a null body produces no validation errors");
+	}
+
+	[Test]
+	[Description("Empty string body returns valid without throwing")]
+	public void ValidateConverterDeclarations_EmptyBody_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(string.Empty);
+		result.IsValid.Should().BeTrue("because an empty body is handled by the early-return guard");
+		result.Errors.Should().BeEmpty("because an empty body produces no validation errors");
+	}
+
+	[Test]
+	[Description("Empty converters object passes validation")]
+	public void ValidateConverterDeclarations_EmptyConverters_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(ValidListPageBody);
+		result.IsValid.Should().BeTrue("because an empty SCHEMA_CONVERTERS object has no keys to validate");
+		result.Errors.Should().BeEmpty("because no keys means no format errors");
+	}
+
+	[Test]
+	[Description("Converter with correct usr. prefix passes validation")]
+	public void ValidateConverterDeclarations_CorrectPrefixedKey_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.ToUpperCase\": function(value) { return value?.toUpperCase() ?? ''; } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeTrue("because 'usr.ToUpperCase' has the required VendorPrefix.Name dot-format");
+		result.Errors.Should().BeEmpty("because a correctly prefixed key produces no errors");
+	}
+
+	[Test]
+	[Description("Async arrow converter with correct prefix passes validation")]
+	public void ValidateConverterDeclarations_AsyncArrowConverterCorrectKey_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.FormatPhone\": async (value) => { return value; } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeTrue("because 'usr.FormatPhone' has the required dot-format");
+		result.Errors.Should().BeEmpty("because async arrow shape with a correct key produces no errors");
+	}
+
+	[Test]
+	[Description("Converter key without a dot fails validation with a descriptive runtime-error message")]
+	public void ValidateConverterDeclarations_KeyWithoutDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"UsrPhoneCallConverter\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'UsrPhoneCallConverter' is missing the required dot separator");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("UsrPhoneCallConverter") && e.Contains("usr.UsrPhoneCallConverter") && e.Contains("VendorPrefix"),
+			because: "the error should name the offending key, suggest the fix, and explain the runtime consequence");
+	}
+
+	[Test]
+	[Description("Multiple converters — one valid, one missing dot — reports exactly one error for the bad key")]
+	public void ValidateConverterDeclarations_MixedKeys_ReportsOnlyBadOne() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ " +
+			"\"usr.ToUpperCase\": function(value) { return value?.toUpperCase() ?? ''; }, " +
+			"\"BadConverter\": function(value) { return value; } " +
+			"}/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'BadConverter' is missing the dot");
+		result.Errors.Should().ContainSingle(e => e.Contains("BadConverter"),
+			because: "only the key without a dot should generate an error");
+		result.Errors.Should().NotContain(e => e.Contains("usr.ToUpperCase"),
+			because: "the valid key should not generate an error");
+	}
+
+	[Test]
+	[Description("crt.* converter declared in SCHEMA_CONVERTERS passes format validation (wrong practice, but not a dot-format error)")]
+	public void ValidateConverterDeclarations_CrtPrefixedKey_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"crt.SomeConverter\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeTrue(
+			"because the dot-format check passes for 'crt.SomeConverter' — declaring crt.* is unnecessary but not a format error");
+	}
+
+	[Test]
+	[Description("No-paren single-arg arrow converter without a dot fails validation")]
+	public void ValidateConverterDeclarations_NoParenArrowMissingDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"BadArrow\": value => value }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'BadArrow' is missing the required dot separator");
+		result.Errors.Should().ContainSingle(e => e.Contains("BadArrow") && e.Contains("VendorPrefix"),
+			because: "no-paren single-arg arrow converters must be checked by the same dot-format rule");
+	}
+
+	[Test]
+	[Description("No-paren single-arg arrow converter with correct prefix passes validation")]
+	public void ValidateConverterDeclarations_NoParenArrowCorrectKey_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.Trim\": value => value.trim() }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeTrue("because 'usr.Trim' has the required dot-format");
+		result.Errors.Should().BeEmpty("because no-paren arrow shape with a correct key produces no errors");
+	}
+
+	[Test]
+	[Description("ES6 method-shorthand converter without a dot fails validation")]
+	public void ValidateConverterDeclarations_MethodShorthandMissingDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"BadShorthand\"(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'BadShorthand' is missing the required dot separator");
+		result.Errors.Should().ContainSingle(e => e.Contains("BadShorthand") && e.Contains("VendorPrefix"),
+			because: "ES6 method-shorthand converters must be checked by the same dot-format rule");
+	}
+
+	[Test]
+	[Description("Quoted property name inside a converter body is not flagged as a top-level key")]
+	public void ValidateConverterDeclarations_NestedStringKey_DoesNotFalsePositive() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.Outer\": function(value) { " +
+			"return JSON.stringify({ \"nested_no_dot\": value }); } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeTrue(
+			"because 'nested_no_dot' lives inside the converter's body, not at the SCHEMA_CONVERTERS top level");
+		result.Errors.Should().BeEmpty("because nested-string keys must not be flagged as top-level converter keys");
+	}
+
+	[Test]
+	[Description("Error message mentions a placeholder vendor prefix and 'usr.' as an example, not as a hardcoded rename")]
+	public void ValidateConverterDeclarations_ErrorMessage_MentionsVendorPrefixPlaceholder() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"PhoneCall\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'PhoneCall' is missing the required dot separator");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("<vendor>.PhoneCall") && e.Contains("for example 'usr.PhoneCall'"),
+			because: "the rename suggestion should not hardcode 'usr.' for vendors that ship a different prefix");
+	}
+
+	[Test]
+	[Description("Unquoted identifier-key converter without a dot fails validation")]
+	public void ValidateConverterDeclarations_IdentifierKeyMissingDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ BadConverter: value => value }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse(
+			"because identifier-key syntax cannot contain a dot, so 'BadConverter' violates the VendorPrefix.Name rule");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("BadConverter") && e.Contains("VendorPrefix"),
+			because: "the validator must recognize unquoted identifier keys, not only quoted strings");
+	}
+
+	[Test]
+	[Description("Unquoted ES6 method-shorthand converter without a dot fails validation")]
+	public void ValidateConverterDeclarations_IdentifierMethodShorthandMissingDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ BadShorthand(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'BadShorthand' has no dot");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("BadShorthand") && e.Contains("VendorPrefix"),
+			because: "method-shorthand with an unquoted identifier key must be checked too");
+	}
+
+	[Test]
+	[Description("Mixed quoted and identifier keys — both bad keys are reported")]
+	public void ValidateConverterDeclarations_MixedQuotedAndIdentifierBadKeys_ReportsBoth() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ " +
+			"\"usr.Good\": function(value) { return value; }, " +
+			"BadIdent: value => value, " +
+			"\"BadQuoted\": function(value) { return value; } " +
+			"}/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse("because two keys violate the dot-format rule");
+		result.Errors.Should().HaveCount(2,
+			because: "both the unquoted identifier and the quoted dot-less key must be reported");
+		result.Errors.Should().Contain(e => e.Contains("BadIdent"));
+		result.Errors.Should().Contain(e => e.Contains("BadQuoted"));
+		result.Errors.Should().NotContain(e => e.Contains("usr.Good"),
+			because: "the prefixed key is well-formed");
+	}
+
+	#endregion
+
+	#region ValidateHandlerStructure - request format
+
+	[Test]
+	[Description("Handler entry whose request value matches the VendorPrefix.HandlerName format passes validation")]
+	public void ValidateHandlerStructure_RequestWithCorrectVendorPrefix_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+		result.IsValid.Should().BeTrue(
+			"because 'crt.HandleViewModelInitRequest' is a well-formed VendorPrefix.HandlerName value");
+		result.Errors.Should().BeEmpty("because a correctly prefixed request value produces no errors");
+	}
+
+	[Test]
+	[Description("Handler entry whose request value misses the dot fails validation with a descriptive runtime-error message")]
+	public void ValidateHandlerStructure_RequestWithoutDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"BadHandlerRequest\", " +
+			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+		result.IsValid.Should().BeFalse(
+			"because 'BadHandlerRequest' violates the VendorPrefix.HandlerName format");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("BadHandlerRequest") && e.Contains("VendorPrefix.HandlerName") && e.Contains("page-schema-handlers"),
+			because: "the error must name the offending request value, reference the format, and direct the agent at the handler guidance");
+	}
+
+	[Test]
+	[Description("Handler entry with a leading-dot request value fails validation as malformed")]
+	public void ValidateHandlerStructure_RequestStartingWithDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \".LeadingDot\", " +
+			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+		result.IsValid.Should().BeFalse(
+			"because '.LeadingDot' has an empty vendor prefix and breaks Creatio's parser");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains(".LeadingDot") && e.Contains("VendorPrefix"),
+			because: "the validator should reject malformed request values, not only ones missing the dot entirely");
+	}
+
+	[Test]
+	[Description("Mixed handler array with one good and one bad request reports exactly one error for the bad entry")]
+	public void ValidateHandlerStructure_MixedRequestValues_ReportsOnlyBadOne() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[" +
+			"{ request: \"crt.HandleViewModelInitRequest\", handler: async (req, next) => { await next?.handle(req); } }, " +
+			"{ request: \"BadRequest\", handler: async (req, next) => { await next?.handle(req); } }" +
+			"]/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+		result.IsValid.Should().BeFalse("because 'BadRequest' violates the VendorPrefix.HandlerName format");
+		result.Errors.Should().ContainSingle(e => e.Contains("BadRequest"),
+			because: "only the malformed request value should generate an error");
+		result.Errors.Should().NotContain(e => e.Contains("crt.HandleViewModelInitRequest"),
+			because: "the correctly prefixed request should not generate an error");
+	}
+
+	[Test]
+	[Description("Empty handlers array passes validation (no entries to check)")]
+	public void ValidateHandlerStructure_EmptyHandlers_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(ValidListPageBody);
+		result.IsValid.Should().BeTrue("because an empty SCHEMA_HANDLERS array has no entries to validate");
+		result.Errors.Should().BeEmpty("because no entries means no format errors");
+	}
+
+	[Test]
+	[Description("Handler entry with a trailing-dot request value fails validation as malformed")]
+	public void ValidateHandlerStructure_RequestEndingWithDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"usr.\", " +
+			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+		result.IsValid.Should().BeFalse(
+			"because 'usr.' has an empty handler name after the dot and breaks Creatio's parser");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("usr.") && e.Contains("VendorPrefix"),
+			because: "trailing-dot request values must be flagged so the agent fixes them before the runtime does");
+	}
+
+	[Test]
+	[Description("Handler entry with a multi-dot request value fails validation as malformed")]
+	public void ValidateHandlerStructure_RequestWithMultipleDots_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"usr.sub.HandleRequest\", " +
+			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
+		result.IsValid.Should().BeFalse(
+			"because Creatio expects exactly one dot between the vendor prefix and the handler name");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("usr.sub.HandleRequest") && e.Contains("VendorPrefix"),
+			because: "multi-dot request values must be flagged before the runtime parser rejects them");
+	}
+
+	#endregion
+
+	#region ValidateValidatorDeclarations
+
+	[Test]
+	[Description("Null body returns valid without throwing")]
+	public void ValidateValidatorDeclarations_NullBody_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(null);
+		result.IsValid.Should().BeTrue("because a null body is handled by the early-return guard");
+		result.Errors.Should().BeEmpty("because a null body produces no validation errors");
+	}
+
+	[Test]
+	[Description("Empty string body returns valid without throwing")]
+	public void ValidateValidatorDeclarations_EmptyBody_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(string.Empty);
+		result.IsValid.Should().BeTrue("because an empty body is handled by the early-return guard");
+		result.Errors.Should().BeEmpty("because an empty body produces no validation errors");
+	}
+
+	[Test]
+	[Description("Empty validators object passes validation")]
+	public void ValidateValidatorDeclarations_EmptyValidators_ReturnsValid() {
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(ValidListPageBody);
+		result.IsValid.Should().BeTrue("because an empty SCHEMA_VALIDATORS object has no keys to validate");
+		result.Errors.Should().BeEmpty("because no keys means no format errors");
+	}
+
+	[Test]
+	[Description("Validator with correct usr. prefix passes validation")]
+	public void ValidateValidatorDeclarations_CorrectPrefixedKey_ReturnsValid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"usr.RequiredValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(body);
+		result.IsValid.Should().BeTrue("because 'usr.RequiredValidator' has the required VendorPrefix.Name dot-format");
+		result.Errors.Should().BeEmpty("because a correctly prefixed key produces no errors");
+	}
+
+	[Test]
+	[Description("Validator key without a dot fails validation with a descriptive runtime-error message")]
+	public void ValidateValidatorDeclarations_KeyWithoutDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"RequiredValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'RequiredValidator' lacks a dot and violates the VendorPrefix.ValidatorName format");
+		result.Errors.Should().Contain(error => error.Contains("RequiredValidator") && error.Contains("VendorPrefix.ValidatorName"),
+			"because the error message should mention both the key name and the required format");
+	}
+
+	[Test]
+	[Description("Mixed validators with good and bad keys reports only the bad one")]
+	public void ValidateValidatorDeclarations_MixedKeys_ReportsOnlyBadOne() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"usr.GoodValidator\": { params: [] }, \"BadValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'BadValidator' lacks a dot");
+		result.Errors.Should().HaveCount(1, "because only 'BadValidator' fails the validation");
+		result.Errors[0].Should().Contain("BadValidator", "because the error should mention the bad key");
+	}
+
+	#endregion
+
+	#region VendorPrefixedName format edge cases
+
+	[Test]
+	[Description("Converter key starting with a dot is rejected as malformed even though it contains a dot")]
+	public void ValidateConverterDeclarations_KeyStartingWithDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \".LeadingDot\": value => value }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse(
+			"because a leading dot leaves the prefix empty and breaks Creatio's VendorPrefix.Name parser");
+		result.Errors.Should().ContainSingle(e => e.Contains(".LeadingDot") && e.Contains("VendorPrefix"),
+			because: "the validator should reject malformed keys, not only keys missing the dot entirely");
+	}
+
+	[Test]
+	[Description("Converter key ending with a dot is rejected as malformed")]
+	public void ValidateConverterDeclarations_KeyEndingWithDot_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.\": value => value }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse(
+			"because an empty name after the dot breaks Creatio's VendorPrefix.Name parser");
+		result.Errors.Should().ContainSingle(e => e.Contains("usr.") && e.Contains("VendorPrefix"),
+			because: "the validator should reject trailing-dot keys, not accept them as 'has a dot'");
+	}
+
+	[Test]
+	[Description("Converter key with two dots is rejected as malformed")]
+	public void ValidateConverterDeclarations_KeyWithMultipleDots_ReturnsInvalid() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.sub.Name\": value => value }/**SCHEMA_CONVERTERS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
+		result.IsValid.Should().BeFalse(
+			"because Creatio expects exactly one dot between prefix and name");
+		result.Errors.Should().ContainSingle(e => e.Contains("usr.sub.Name") && e.Contains("VendorPrefix"),
+			because: "multi-dot keys should be flagged so the agent fixes them before the runtime does");
+	}
+
+	[Test]
+	[Description("Validator error message references the page-schema-validators guidance, not the handler one")]
+	public void ValidateValidatorDeclarations_ErrorMessage_ReferencesValidatorGuidance() {
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"BadValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(body);
+		result.IsValid.Should().BeFalse("because 'BadValidator' has no dot");
+		result.Errors.Should().ContainSingle(
+			e => e.Contains("page-schema-validators") && !e.Contains("page-schema-handlers"),
+			because: "validator errors must point the agent at validator guidance, not handler guidance");
+	}
+
+	#endregion
+
+	#region ValidateCustomValidatorFactoryShape
+
+	[Test]
+	[Description("Empty body passes validator factory shape check without errors")]
+	public void ValidateCustomValidatorFactoryShape_EmptyBody_ReturnsValid() {
+		// Arrange & Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(string.Empty);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because there is nothing to validate");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Page body with empty SCHEMA_VALIDATORS passes validator factory shape check")]
+	public void ValidateCustomValidatorFactoryShape_EmptyValidators_ReturnsValid() {
+		// Arrange & Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(ValidListPageBody);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the validators section is an empty object");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Canonical factory validator with quoted property keys passes the factory shape check")]
+	public void ValidateCustomValidatorFactoryShape_CanonicalQuotedKeys_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.UpperCaseValidator\":{\"validator\":function(config){return function(control){" +
+			"var v=control.value;if(!v||v===v.toUpperCase())return null;return{\"usr.UpperCaseValidator\":{message:config.message}};" +
+			"};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the validator follows the canonical factory shape");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Canonical factory validator with unquoted property keys passes the factory shape check")]
+	public void ValidateCustomValidatorFactoryShape_CanonicalUnquotedKeys_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.UpperCaseValidator\":{validator:function(config){return function(control){return null;};}," +
+			"params:[{name:\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because unquoted JS property keys are valid syntax for SCHEMA_VALIDATORS");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Async outer factory function (async config => returns inner function) passes the factory shape check")]
+	public void ValidateCustomValidatorFactoryShape_AsyncOuterFactory_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.AsyncValidator\":{\"validator\":async function(config){return async function(control){return null;};}," +
+			"\"params\":[{\"name\":\"message\"}],\"async\":true}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because async factories are valid as long as the outer returns the inner function");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Arrow factory (config) => (control) => result passes the factory shape check")]
+	public void ValidateCustomValidatorFactoryShape_ArrowFactory_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.ArrowValidator\":{\"validator\":(config) => (control) => null," +
+			"\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because curried arrow functions are a valid factory form");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Function returning an arrow inner validator passes the factory shape check")]
+	public void ValidateCustomValidatorFactoryShape_FunctionReturningArrow_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.MixedValidator\":{\"validator\":function(config){return (control) => null;}," +
+			"\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because returning an arrow function from a function expression is a valid factory");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Method-shorthand factory 'validator(config) { return function(control) {...}; }' passes the factory shape check")]
+	public void ValidateCustomValidatorFactoryShape_MethodShorthandFactory_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.ShorthandValidator\":{validator(config){return function(control){return null;};}," +
+			"params:[{name:\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because method-shorthand syntax is valid JS for object methods and the body still returns a function");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Built-in crt.* validator names are skipped — only usr.* validators are checked for factory shape")]
+	public void ValidateCustomValidatorFactoryShape_CrtPrefixSkipped_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"crt.Required\":{}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because crt.* validators are referenced but not declared with bodies in SCHEMA_VALIDATORS");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Validator type without a vendor prefix dot is skipped — naming is enforced by ValidateValidatorDeclarations")]
+	public void ValidateCustomValidatorFactoryShape_MalformedNameSkipped_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"BadName\":{validator:function(c){return function(x){return null;};}}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because malformed validator names are reported by ValidateValidatorDeclarations, not the factory shape check");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Validator using 'validate' key instead of 'validator' is rejected with a clear renaming hint")]
+	public void ValidateCustomValidatorFactoryShape_WrongKeyValidate_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.PhoneFormatValidator\":{async:false,params:[{\"name\":\"message\"}]," +
+			"validate:function(value,config){if(!value)return null;return{\"usr.PhoneFormatValidator\":{message:config.message}};}" +
+			"}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because Creatio runtime ignores keys other than 'validator', so the validator never executes");
+		result.Errors.Should().ContainSingle(e =>
+				e.Contains("usr.PhoneFormatValidator") && e.Contains("'validate'") && e.Contains("'validator'") &&
+				e.Contains("page-schema-validators"),
+			because: "the error must name the offending validator and the wrong key, and point to the validator guidance");
+	}
+
+	[Test]
+	[Description("Validator using 'fn' key instead of 'validator' is rejected as a misleading alias")]
+	public void ValidateCustomValidatorFactoryShape_WrongKeyFn_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.MyValidator\":{fn:function(c){return function(x){return null;};}}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because 'fn' is not the runtime-recognised key");
+		result.Errors.Should().ContainSingle(e => e.Contains("usr.MyValidator") && e.Contains("'fn'"),
+			because: "the misleading alias should be reported alongside the validator name");
+	}
+
+	[Test]
+	[Description("Validator missing the 'validator' key entirely is rejected with a missing-key message")]
+	public void ValidateCustomValidatorFactoryShape_MissingValidatorKey_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.NoBody\":{params:[{\"name\":\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because the validator object has no 'validator' key at all");
+		result.Errors.Should().ContainSingle(e =>
+				e.Contains("usr.NoBody") && e.Contains("missing the required 'validator' key"),
+			because: "the error must explain that the canonical 'validator' key is required");
+	}
+
+	[Test]
+	[Description("Validator whose 'validator' value is a string literal instead of a function is rejected")]
+	public void ValidateCustomValidatorFactoryShape_ValidatorValueIsString_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.StringValidator\":{validator:\"not a function\"}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because the validator value must be a function expression");
+		result.Errors.Should().ContainSingle(e => e.Contains("usr.StringValidator") && e.Contains("not a function"),
+			because: "the error must name the validator and report that the value is not callable");
+	}
+
+	[Test]
+	[Description("Validator whose 'validator' value is an object literal instead of a function is rejected")]
+	public void ValidateCustomValidatorFactoryShape_ValidatorValueIsObject_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.ObjectValidator\":{validator:{check:true}}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because the validator value must be a function, not an object");
+		result.Errors.Should().ContainSingle(e => e.Contains("usr.ObjectValidator") && e.Contains("not a function"));
+	}
+
+	[Test]
+	[Description("Flat 'validator: function(value, config) {...}' instead of factory is rejected with the factory-shape hint")]
+	public void ValidateCustomValidatorFactoryShape_FlatFunctionInsteadOfFactory_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.FlatValidator\":{validator:function(value,config){if(!value)return null;" +
+			"return{\"usr.FlatValidator\":{message:config.message}};},params:[{\"name\":\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because a flat function never returns the inner validator the runtime expects");
+		result.Errors.Should().ContainSingle(e =>
+				e.Contains("usr.FlatValidator") && e.Contains("flat") && e.Contains("factory"),
+			because: "the error must call out the flat-vs-factory mismatch and point to the canonical shape");
+	}
+
+	[Test]
+	[Description("Flat single-arrow validator '(control) => null' is rejected (no inner returned function)")]
+	public void ValidateCustomValidatorFactoryShape_FlatSingleArrow_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.FlatArrowValidator\":{validator:(control) => null,params:[{\"name\":\"message\"}]}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because a single arrow that returns a primitive is flat, not a factory");
+		result.Errors.Should().ContainSingle(e => e.Contains("usr.FlatArrowValidator") && e.Contains("factory"));
+	}
+
+	[Test]
+	[Description("Flat function whose body contains the literal text 'return function' inside a string is still rejected")]
+	public void ValidateCustomValidatorFactoryShape_FlatFunctionWithMisleadingStringLiteral_ReturnsInvalid() {
+		// Arrange — the string literal 'return function' must NOT be treated as a real factory return.
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{\"usr.MisleadingValidator\":{validator:function(value,config){" +
+			"var hint=\"return function(control){...}\";if(!value)return null;return null;}," +
+			"params:[{\"name\":\"message\"}]}}/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because string-literal content must not be treated as real factory-return code");
+		result.Errors.Should().ContainSingle(e => e.Contains("usr.MisleadingValidator") && e.Contains("factory"),
+			because: "the sanitiser must blank string literals before the regex scan to avoid false positives");
+	}
+
+	#endregion
+
+	#region ValidateConverterFunctionShape
+
+	[Test]
+	[Description("Empty body passes converter function shape check without errors")]
+	public void ValidateConverterFunctionShape_EmptyBody_ReturnsValid() {
+		// Arrange & Act
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(string.Empty);
+
+		// Assert
+		result.IsValid.Should().BeTrue();
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Page body with empty SCHEMA_CONVERTERS passes the function shape check")]
+	public void ValidateConverterFunctionShape_EmptyConverters_ReturnsValid() {
+		// Arrange & Act
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(ValidListPageBody);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the converters section is an empty object");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Converter as classic function expression passes the function shape check")]
+	public void ValidateConverterFunctionShape_FunctionExpression_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{\"usr.ToUpperCase\":function(value){return value && value.toUpperCase();}}/**SCHEMA_CONVERTERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue();
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Converter as arrow function passes the function shape check")]
+	public void ValidateConverterFunctionShape_ArrowFunction_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{\"usr.ToCallDisplay\":(value) => value ? \"Call: \" + value : \"\"}/**SCHEMA_CONVERTERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue();
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Async converter (function or arrow) passes the function shape check")]
+	public void ValidateConverterFunctionShape_AsyncFunction_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{\"usr.FormatPhone\":async function(value){return value;}}/**SCHEMA_CONVERTERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because async converters are explicitly allowed");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Method-shorthand converter '\"usr.X\"(value) {...}' passes the function shape check")]
+	public void ValidateConverterFunctionShape_MethodShorthand_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{\"usr.ShorthandConverter\"(value){return value;}}/**SCHEMA_CONVERTERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because method-shorthand syntax is valid JS for object-literal methods");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Built-in crt.* converter names are skipped — only usr.* converters are checked for function shape")]
+	public void ValidateConverterFunctionShape_CrtPrefixSkipped_ReturnsValid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{\"crt.ToBoolean\":{}}/**SCHEMA_CONVERTERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because crt.* converters are built-in and not declared with bodies in SCHEMA_CONVERTERS");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Converter whose value is an object literal instead of a function is rejected")]
+	public void ValidateConverterFunctionShape_ObjectLiteralValue_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{\"usr.WrongShape\":{transform:\"upper\"}}/**SCHEMA_CONVERTERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because converters must be function expressions, not config objects");
+		result.Errors.Should().ContainSingle(e =>
+				e.Contains("usr.WrongShape") && e.Contains("not callable") && e.Contains("page-schema-converters"),
+			because: "the error must identify the converter and point to the converter guidance");
+	}
+
+	[Test]
+	[Description("Converter whose value is a string literal instead of a function is rejected")]
+	public void ValidateConverterFunctionShape_StringValue_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{\"usr.StringConverter\":\"upperCase\"}/**SCHEMA_CONVERTERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because a string is not callable");
+		result.Errors.Should().ContainSingle(e => e.Contains("usr.StringConverter") && e.Contains("not callable"));
+	}
+
+	[Test]
+	[Description("Converter whose value is an array literal instead of a function is rejected")]
+	public void ValidateConverterFunctionShape_ArrayValue_ReturnsInvalid() {
+		// Arrange
+		string body = ValidListPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{\"usr.ArrayConverter\":[1,2,3]}/**SCHEMA_CONVERTERS*/");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because an array is not callable");
+		result.Errors.Should().ContainSingle(e => e.Contains("usr.ArrayConverter") && e.Contains("not callable"));
+	}
+
+	#endregion
+
 }
 

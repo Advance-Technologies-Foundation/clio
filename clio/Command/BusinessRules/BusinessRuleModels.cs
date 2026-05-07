@@ -133,6 +133,8 @@ public sealed record BusinessRuleExpression
 [JsonDerivedType(typeof(MakeRequiredBusinessRuleAction), "make-required")]
 [JsonDerivedType(typeof(MakeOptionalBusinessRuleAction), "make-optional")]
 [JsonDerivedType(typeof(SetValuesBusinessRuleAction), "set-values")]
+[JsonDerivedType(typeof(HideElementBusinessRuleAction), "hide-element")]
+[JsonDerivedType(typeof(ShowElementBusinessRuleAction), "show-element")]
 public abstract record BusinessRuleAction
 {
     protected BusinessRuleAction()
@@ -157,18 +159,18 @@ public abstract record FieldSelectionBusinessRuleAction : BusinessRuleAction
 
     protected FieldSelectionBusinessRuleAction(List<string> items)
     {
-        Items = items;
+        Items = items ?? [];
     }
 
 
     [JsonPropertyName("items")]
     [Description(
-        "Action items. Field-state actions use attribute names. Set values actions use target/value assignment objects.")]
+        "Action items. Field-state actions use attribute names. Page show/hide actions use page element names.")]
     [Required]
     public List<string> Items { get; init; } = [];
 
 
-    [JsonIgnore] public override List<string> FieldSelectionItems => Items;
+    [JsonIgnore] public override List<string> FieldSelectionItems => Items ?? [];
 
 
     [JsonIgnore] public override List<BusinessRuleSetValueItem> SetValueItems => [];
@@ -233,6 +235,42 @@ public sealed record MakeOptionalBusinessRuleAction : FieldSelectionBusinessRule
     [JsonIgnore] public override string ActionType => "make-optional";
 }
 
+/// <summary>
+/// Hides page elements when a page-level business-rule condition matches.
+/// </summary>
+public sealed record HideElementBusinessRuleAction : FieldSelectionBusinessRuleAction
+{
+    public HideElementBusinessRuleAction()
+    {
+    }
+
+
+    public HideElementBusinessRuleAction(List<string> items) : base(items)
+    {
+    }
+
+
+    [JsonIgnore] public override string ActionType => "hide-element";
+}
+
+/// <summary>
+/// Shows page elements when a page-level business-rule condition matches.
+/// </summary>
+public sealed record ShowElementBusinessRuleAction : FieldSelectionBusinessRuleAction
+{
+    public ShowElementBusinessRuleAction()
+    {
+    }
+
+
+    public ShowElementBusinessRuleAction(List<string> items) : base(items)
+    {
+    }
+
+
+    [JsonIgnore] public override string ActionType => "show-element";
+}
+
 public sealed record SetValuesBusinessRuleAction : BusinessRuleAction
 {
     public SetValuesBusinessRuleAction()
@@ -242,7 +280,7 @@ public sealed record SetValuesBusinessRuleAction : BusinessRuleAction
 
     public SetValuesBusinessRuleAction(List<BusinessRuleSetValueItem> items)
     {
-        Items = items;
+        Items = items ?? [];
     }
 
     [JsonIgnore] public override string ActionType => "set-values";
@@ -256,7 +294,7 @@ public sealed record SetValuesBusinessRuleAction : BusinessRuleAction
     [JsonIgnore] public override List<string> FieldSelectionItems => [];
 
 
-    [JsonIgnore] public override List<BusinessRuleSetValueItem> SetValueItems => Items;
+    [JsonIgnore] public override List<BusinessRuleSetValueItem> SetValueItems => Items ?? [];
 }
 
 public sealed record CustomBusinessRuleAction : FieldSelectionBusinessRuleAction

@@ -247,6 +247,96 @@ public sealed class PageUpdateToolE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects a custom validator that uses 'validate' alias instead of the canonical 'validator' factory key through update-page dry-run.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects validator with 'validate' key alias in dry-run mode")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with SCHEMA_VALIDATORS using the misleading 'validate' key alias, and verifies that the tool returns a structured factory-shape validation error pointing at page-schema-validators guidance.")]
+	public async Task PageUpdateTool_Should_Reject_Validator_With_Validate_Key_Alias_In_DryRun_Mode() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string bodyWithValidateAlias = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{ \"usr.PhoneFormatValidator\": { params: [{ \"name\": \"message\" }], async: false, " +
+			"validate: function(value, config) { return null; } } }/**SCHEMA_VALIDATORS*/ }; });";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrValidatorAlias_FormPage",
+					["body"] = bodyWithValidateAlias,
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "validator factory-shape failures should be surfaced as structured update-page responses");
+		response.Success.Should().BeFalse(
+			because: "the runtime ignores any key other than 'validator', so update-page must reject the schema before save");
+		response.Error.Should().Contain("usr.PhoneFormatValidator")
+			.And.Contain("'validate'")
+			.And.Contain("'validator'")
+			.And.Contain("page-schema-validators",
+				because: "the error must name the offending validator and the wrong key, and direct the agent at the validator guidance");
+	}
+
+	[Test]
+	[Description("Rejects a custom converter declared as object literal instead of a callable function value through update-page dry-run.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects converter with object literal value in dry-run mode")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with SCHEMA_CONVERTERS containing an object literal in place of a function value, and verifies that the tool returns a structured function-shape validation error pointing at page-schema-converters guidance.")]
+	public async Task PageUpdateTool_Should_Reject_Converter_With_Object_Literal_Value_In_DryRun_Mode() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string bodyWithObjectConverter = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{ \"usr.WrongShape\": { transform: \"upper\" } }/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrConverterShape_FormPage",
+					["body"] = bodyWithObjectConverter,
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "converter function-shape failures should be surfaced as structured update-page responses");
+		response.Success.Should().BeFalse(
+			because: "an object-literal converter silently fails to apply at the binding site and must be rejected before save");
+		response.Error.Should().Contain("usr.WrongShape")
+			.And.Contain("not callable")
+			.And.Contain("page-schema-converters",
+				because: "the error must name the offending converter and direct the agent at the converter guidance");
+	}
+
+	[Test]
 	[Description("Rejects request.viewModel handler APIs through update-page dry-run and returns a handler-guidance recovery hint.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page rejects request.viewModel handler APIs in dry-run mode")]
@@ -288,6 +378,126 @@ public sealed class PageUpdateToolE2ETests {
 			.And.Contain("request.value")
 			.And.Contain("request.$context",
 				because: "the failure should redirect callers to the clio handler guidance and canonical handler patterns");
+	}
+
+	[Test]
+	[Description("Rejects a SCHEMA_CONVERTERS entry whose key is missing the required dot separator through update-page dry-run before any remote calls are attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects converter key without dot in dry-run mode")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with a SCHEMA_CONVERTERS entry whose key has no dot separator, and verifies that the tool returns a structured validation error naming the key and the VendorPrefix requirement.")]
+	public async Task PageUpdateTool_Should_Reject_Converter_Key_Without_Dot_In_DryRun_Mode() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string bodyWithBadConverter = MinimalMarkerPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"UsrBadConverter\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrBadConverter_FormPage",
+					["body"] = bodyWithBadConverter,
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "converter key validation failures should be surfaced as structured update-page responses");
+		response.Success.Should().BeFalse(
+			because: "a converter key without a dot causes a Creatio runtime error and must be rejected before save");
+		response.Error.Should().Contain("UsrBadConverter")
+			.And.Contain("VendorPrefix",
+				because: "the failure should name the offending key and reference the VendorPrefix.Name format requirement");
+	}
+
+	[Test]
+	[Description("Rejects a SCHEMA_HANDLERS entry whose request value is missing the required dot separator through update-page dry-run before any remote calls are attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects handler request value without dot in dry-run mode")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with a SCHEMA_HANDLERS array entry whose request value has no dot separator, and verifies that the tool returns a structured validation error naming the value and the VendorPrefix requirement.")]
+	public async Task PageUpdateTool_Should_Reject_Handler_Request_Without_Dot_In_DryRun_Mode() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string bodyWithBadHandler = MinimalMarkerPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"BadHandlerRequest\", " +
+			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrBadHandler_FormPage",
+					["body"] = bodyWithBadHandler,
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "handler request validation failures should be surfaced as structured update-page responses");
+		response.Success.Should().BeFalse(
+			because: "a handler request value without a dot causes a Creatio runtime error and must be rejected before save");
+		response.Error.Should().Contain("BadHandlerRequest")
+			.And.Contain("VendorPrefix")
+			.And.Contain("page-schema-handlers",
+				because: "the failure should name the offending request value and direct the agent at the handler guidance");
+	}
+
+	[Test]
+	[Description("Rejects a SCHEMA_VALIDATORS entry whose key is missing the required dot separator through update-page dry-run before any remote calls are attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects validator key without dot in dry-run mode")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with a SCHEMA_VALIDATORS entry whose key has no dot separator, and verifies that the tool returns a structured validation error naming the key and the VendorPrefix requirement.")]
+	public async Task PageUpdateTool_Should_Reject_Validator_Key_Without_Dot_In_DryRun_Mode() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string bodyWithBadValidator = MinimalMarkerPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"BadValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrBadValidator_FormPage",
+					["body"] = bodyWithBadValidator,
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "validator key validation failures should be surfaced as structured update-page responses");
+		response.Success.Should().BeFalse(
+			because: "a validator key without a dot causes a Creatio runtime error and must be rejected before save");
+		response.Error.Should().Contain("BadValidator")
+			.And.Contain("VendorPrefix")
+			.And.Contain("page-schema-validators",
+				because: "the failure should name the offending key and direct the agent at the validator guidance");
 	}
 
 	[Test]

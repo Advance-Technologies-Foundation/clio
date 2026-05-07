@@ -53,14 +53,34 @@ public sealed class PageModificationGuidanceResource {
 		       - `page` — metadata of the editable replacing schema: `schemaName`, `schemaUId`, `packageName`, `packageUId`, `parentSchemaName`.
 		       - `raw.body` — full JavaScript body of the replacing schema (with markers). Read-only reference; see the CRITICAL warning below before reusing it as the write payload.
 		       - `bundle` — read-only merged view across the full hierarchy. Do not send `bundle` or `bundle.viewConfig` as the body payload.
-		       - `bundle.containers` — flat list of usable `parentName` values.
 
-		       CRITICAL — multi-app replacements and target-package-uid
-		       - Many platform pages are replaced by MULTIPLE apps (for example `Opportunities_ListPage` is replaced by both `CrtLeadOppMgmt` and `CrtWaterfallPipelineInLeadOppMgmt`). Each replacement lives in a different design package.
-		       - `get-page` returns the most-derived replacement plus `page.designPackageUId` — the package where `update-page` will save by default. If `page.willCreateReplacingInDesignPackage` is `true`, a NEW replacing schema will be materialized in the design package.
-		       - The auto-picked design package comes from the user's currently active app. If the wrong app wins the resolution, the saved button never shows up in the workspace the user is actually viewing.
-		       - When in doubt, pass `target-package-uid` explicitly to `update-page`. Discover the candidate packages via `list-pages` (shows every schema named `Opportunities_ListPage` with its package) and pick the one owned by the workplace where the user expects the change.
-		       - Symptom if the wrong package is picked: `update-page` returns `success: true` but the button is absent at runtime, the designer URL hangs or loads an empty page, and Workspace Explorer shows the page in an unexpected package.
+		       bundle.json shape (top-level keys)
+		       - `name` — string, the page schema name.
+		       - `viewConfig` — ARRAY container that wraps the merged root tree as its single element. By design: in `body.js`, `viewConfigDiff` is an array of operations; in `bundle.json`, `viewConfig` holds the result of applying those diffs, wrapped as `[ rootObject ]`. Walk it as `.viewConfig[0]` for the merged root, or `.viewConfig | .. | objects | ...` for recursive search.
+		       - `containers` — ARRAY of objects `{ name, type, childCount, path }`, NOT a keyed object. Use `.containers[]`, never `.containers | keys[]` or `.containers | to_entries[]`.
+		       - `resources` — nested object (localizable strings); not flat — `to_entries` plus `@tsv` will fail on nested values.
+		       - `handlers`, `converters`, `validators` — plain JavaScript SOURCE STRINGS, not parsed JSON. Read with `jq -r '.handlers'`.
+		       - `viewModelConfig`, `modelConfig`, `optionalProperties`, `parameters` — structured (object/array) merged metadata.
+
+		       jq recipes for bundle.json
+		       - Find a tab or container by name pattern (use `containers`, the index):
+		         `jq '.containers[] | select(.name | test("Sales"; "i"))' .clio-pages/<schema>/bundle.json`
+		       - List all tab containers:
+		         `jq '.containers[] | select(.type == "crt.TabContainer") | {name, path, childCount}' .clio-pages/<schema>/bundle.json`
+		       - Read the merged root object:
+		         `jq '.viewConfig[0]' .clio-pages/<schema>/bundle.json`
+		       - Find a node deep in viewConfig by name (recursive):
+		         `jq '.viewConfig | .. | objects | select(.name? == "SalesTab")' .clio-pages/<schema>/bundle.json`
+		       - Resolve a parent path for a known node:
+		         `jq '.containers[] | select(.name == "SalesTab") | .path' .clio-pages/<schema>/bundle.json`
+		       - Inspect handler source code:
+		         `jq -r '.handlers' .clio-pages/<schema>/bundle.json`
+		       Always use `.containers[]` (array iteration) and `.viewConfig[0]` for the merged root. Casting through `keys`, `to_entries`, or `@csv`/`@tsv` on these structures produces the errors `"object is not valid in a csv row"` or `"number cannot be matched, as it is not a string"`.
+
+		       Design-package resolution (trust the backend)
+		       - `get-page` returns `page.designPackageUId` — the package where `update-page` will save. `page.willCreateReplacingInDesignPackage: true` means a NEW replacing schema will be materialized on save (the package itself is virtual until then; the backend creates it from the cached `AppVirtualPackageInfo` at SaveSchema time).
+		       - The backend resolves the design package deterministically from the locked schema's owning app via `SysPackageInInstalledApp` — there is no per-user "active app" to manage and no ambiguity between installed apps.
+		       - Do NOT pass `target-package-uid` in normal flows. The override exists for niche scenarios where you have already discovered a specific replacing schema (for example via `list-pages` filtered by name) and want to bypass hierarchy resolution; otherwise, omit it and let the backend pick.
 
 		       update-page write modes
 		       - `mode: "replace"` (default): the body you pass replaces the schema body verbatim. Use only when composing the full schema body from scratch. All six marker pairs must be present.

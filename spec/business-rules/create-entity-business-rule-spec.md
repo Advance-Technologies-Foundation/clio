@@ -20,7 +20,6 @@ Entity-level rule creation must:
       - GUID
       - date/time
    - support comparison types:
-   - currently implemented:
       - equal
       - not equal
       - is filled in

@@ -56,4 +56,29 @@ public sealed class PageJsonPathDiffApplierTests {
 		items[1]!["_id"]!.ToString().Should().Be("Field2",
 			because: "insert should resolve the aliased parent container before appending the new item");
 	}
+
+	[Test]
+	[Description("Apply merges into the root object when the operation path is empty")]
+	public void Apply_WhenMergeOperationHasEmptyPath_MergesValuesIntoRoot() {
+		IPageJsonPathDiffApplier applier = new PageJsonPathDiffApplier();
+		JObject source = new();
+		JArray operations = [
+			new JObject {
+				["operation"] = "merge",
+				["path"] = new JArray(),
+				["values"] = new JObject {
+					["attributes"] = new JObject {
+						["UsrName"] = new JObject {
+							["modelConfig"] = new JObject {
+								["path"] = "PDS.UsrName"
+							}
+						}
+					}
+				}
+			}
+		];
+		JObject result = applier.Apply(source, operations);
+		result["attributes"]!["UsrName"]!["modelConfig"]!["path"]!.ToString().Should().Be("PDS.UsrName",
+			because: "a merge with an empty path must apply values to the root, otherwise viewModelConfig and modelConfig stay empty in the bundle");
+	}
 }

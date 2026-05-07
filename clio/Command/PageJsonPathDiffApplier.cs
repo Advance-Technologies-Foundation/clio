@@ -39,8 +39,7 @@ internal sealed class PageJsonPathDiffApplier : IPageJsonPathDiffApplier {
 	private static void Merge(JObject root, JObject operation) {
 		PageJsonPathTarget target = ResolveTarget(root, operation);
 		if (target.Token is JObject targetObject && operation[ValuesPropertyName] is JObject values) {
-			JObject merged = PageBundleMergeHelpers.DeepMerge(targetObject, values);
-			ReplaceToken(target, merged);
+			PageBundleMergeHelpers.MergeInPlace(targetObject, values);
 		}
 	}
 

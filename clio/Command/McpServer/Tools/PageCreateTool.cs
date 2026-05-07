@@ -49,7 +49,11 @@ public sealed class PageCreateTool(
 
 public sealed record PageCreateArgs(
 	[property: JsonPropertyName("schema-name")]
-	[property: Description("New page schema name, e.g. 'UsrMyApp_BlankPage'. Must start with a letter; letters, digits and underscores only.")]
+	[property: Description("New page schema name, e.g. 'UsrMyApp_BlankPage'. Must start with a letter; letters, digits and underscores only. " +
+		"Must use the active SchemaNamePrefix as prefix (e.g. 'UsrAlpha_FormPage' when prefix is 'Usr', 'MyPrefixAlpha_FormPage' when prefix is 'MyPrefix'). " +
+		"When `schema-name-prefix` is empty, use plain PascalCase with no prefix (e.g. 'Alpha_FormPage'). " +
+		"Read the prefix from the `schema-name-prefix` field returned by `get-app-info`, " +
+		"or call `get-schema-name-prefix` if you have not called `get-app-info` yet.")]
 	[property: Required]
 	string SchemaName,
 

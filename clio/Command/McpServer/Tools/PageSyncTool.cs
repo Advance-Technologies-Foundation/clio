@@ -29,9 +29,12 @@ public sealed class PageSyncTool(
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
 	             "For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
+	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
+	             "(SCHEMA_CONVERTERS and SCHEMA_VALIDATORS keys; SCHEMA_HANDLERS entry `request` values). " +
 	             "Section authoring rules for the body payload: " +
 	             "if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 	             "if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
+	             "if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
 	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public async Task<PageSyncResponse> SyncPages(
 		[Description("Parameters: environment-name (required); pages array (required); validate, verify, skip-sampling (optional)")]
@@ -196,6 +199,14 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateStandardValidatorUsage(body));
 		SchemaValidationResult validatorParamCompletenessResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateCustomValidatorParamCompleteness(body));
+		SchemaValidationResult validatorFactoryShapeResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateCustomValidatorFactoryShape(body));
+		SchemaValidationResult converterDeclResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateConverterDeclarations(body));
+		SchemaValidationResult converterFunctionShapeResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateConverterFunctionShape(body));
+		SchemaValidationResult validatorDeclResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateValidatorDeclarations(body));
 		SchemaValidationResult bindingResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateColumnBindings(body));
 		List<string> errors = CollectErrors(
@@ -208,7 +219,11 @@ public sealed class PageSyncTool(
 			validatorPlacementResult,
 			validatorParamResult,
 			standardValidatorResult,
-			validatorParamCompletenessResult);
+			validatorParamCompletenessResult,
+			validatorFactoryShapeResult,
+			converterDeclResult,
+			converterFunctionShapeResult,
+			validatorDeclResult);
 		List<string> warnings = CollectWarnings(fieldResult, bindingResult);
 		bool contentOk = IsContentValidationSuccessful(
 			contentResult,
@@ -218,7 +233,11 @@ public sealed class PageSyncTool(
 			validatorPlacementResult,
 			validatorParamResult,
 			standardValidatorResult,
-			validatorParamCompletenessResult);
+			validatorParamCompletenessResult,
+			validatorFactoryShapeResult,
+			converterDeclResult,
+			converterFunctionShapeResult,
+			validatorDeclResult);
 		return BuildValidationResult(markerResult, syntaxResult, contentOk, errors, warnings);
 	}
 

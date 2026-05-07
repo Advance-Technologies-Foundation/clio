@@ -111,6 +111,16 @@ internal static class SchemaHandlerValidationService
 			return;
 		}
 
+		if (!SchemaValidationService.VendorPrefixedNamePattern.IsMatch(requestType)) {
+			result.IsValid = false;
+			result.Errors.Add(
+				$"Handler entry at index {entryIndex} in {SchemaValidationService.SchemaHandlersMarker} declares '{RequestPropertyName}: \"{requestType}\"' which does not follow the required 'VendorPrefix.HandlerName' format. " +
+				$"Rename it to '<vendor>.{requestType}' (for example 'usr.{requestType}') — a malformed request type causes a Creatio runtime error: " +
+				$"\"Error when register {requestType}. Type property should have format \\\"VendorPrefix.HandlerTypeName\\\"\". " +
+				"Call get-guidance with name 'page-schema-handlers' for the correct format.");
+			return;
+		}
+
 		if (!TryGetTopLevelPropertyValueExpression(handlerBody, HandlerPropertyName, out string handlerExpression) ||
 		    !IsCallableHandlerExpression(handlerExpression)) {
 			result.IsValid = false;

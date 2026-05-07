@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using Clio.Command.EntitySchemaDesigner;
 
 namespace Clio.Command.BusinessRules;
 
@@ -21,7 +20,7 @@ internal static class BusinessRuleFormulaBuilder {
 
 	internal static IReadOnlyList<BusinessRuleFormulaValidationContext> BuildValidationContexts(
 		string entitySchemaName,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule) {
 		var contexts = new List<BusinessRuleFormulaValidationContext>();
 		foreach (var action in rule.Actions) {
@@ -33,11 +32,10 @@ internal static class BusinessRuleFormulaBuilder {
 					continue;
 				}
 				var targetPath = item.Expression.Path ?? string.Empty;
-				var targetColumn = BusinessRuleValidator.GetRequiredColumn(columnMap, targetPath,
+				var targetDescriptor = ResolveRequiredAttribute(attributeMap, targetPath,
 					"rule.actions[*].items[*].expression.path");
 				var formula = GetRequiredFormulaText(item.Value);
-				var targetDataValueTypeName = BusinessRuleHelpers.MapDataValueTypeName(targetColumn.DataValueType);
-				contexts.Add(BuildValidationContext(entitySchemaName, columnMap, targetPath, formula, targetDataValueTypeName));
+				contexts.Add(BuildValidationContext(entitySchemaName, attributeMap, targetPath, formula, targetDescriptor.DataValueTypeName));
 			}
 		}
 		return contexts;
@@ -45,11 +43,11 @@ internal static class BusinessRuleFormulaBuilder {
 
 	internal static BusinessRuleExpressionMetadataDto BuildValueExpression(
 		string entitySchemaName,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		string targetPath,
 		string formula,
 		string targetDataValueTypeName) {
-		var context = BuildFormulaContext(entitySchemaName, columnMap, targetPath, formula, targetDataValueTypeName);
+		var context = BuildFormulaContext(entitySchemaName, attributeMap, targetPath, formula, targetDataValueTypeName);
 		return new BusinessRuleExpressionMetadataDto {
 			TypeName = BusinessRuleConstants.BusinessRuleFormulaExpressionTypeName,
 			UId = Guid.NewGuid().ToString(),
@@ -79,11 +77,11 @@ internal static class BusinessRuleFormulaBuilder {
 
 	internal static BusinessRuleFormulaValidationContext BuildValidationContext(
 		string entitySchemaName,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		string targetPath,
 		string formula,
 		string targetDataValueTypeName) {
-		var context = BuildFormulaContext(entitySchemaName, columnMap, targetPath, formula, targetDataValueTypeName);
+		var context = BuildFormulaContext(entitySchemaName, attributeMap, targetPath, formula, targetDataValueTypeName);
 		return new BusinessRuleFormulaValidationContext(
 			targetPath,
 			formula,
@@ -120,8 +118,8 @@ internal static class BusinessRuleFormulaBuilder {
 
 	internal static IReadOnlyList<string> GetFormulaSourcePaths(
 		string formula,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
-		var translation = TranslateAndValidateFormula(formula, "Record", columnMap);
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		var translation = TranslateAndValidateFormula(formula, "Record", attributeMap);
 		return translation.SourcePaths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 	}
 
@@ -130,9 +128,9 @@ internal static class BusinessRuleFormulaBuilder {
 
 	internal static void ValidateFormulaScope(
 		string formula,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		string targetPath) =>
-		TranslateAndValidateFormula(formula, "Record", columnMap, targetPath);
+		TranslateAndValidateFormula(formula, "Record", attributeMap, targetPath);
 
 	internal static string GetRequiredFormulaText(BusinessRuleExpression? expression) {
 		if (string.IsNullOrWhiteSpace(expression?.Expression)) {
@@ -142,16 +140,26 @@ internal static class BusinessRuleFormulaBuilder {
 		return expression.Expression;
 	}
 
+	private static BusinessRuleAttributeDescriptor ResolveRequiredAttribute(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		string path,
+		string fieldName) {
+		if (!attributeMap.TryGetValue(path, out BusinessRuleAttributeDescriptor? descriptor)) {
+			throw new ArgumentException($"Unknown attribute '{path}' in {fieldName}.");
+		}
+		return descriptor;
+	}
+
 	private static BusinessRuleFormulaContext BuildFormulaContext(
 		string entitySchemaName,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		string targetPath,
 		string formula,
 		string targetDataValueTypeName) {
 		var recordVariableName = $"{entitySchemaName}Record";
 		var idParameterName = $"{entitySchemaName}IdParameter";
 		var fieldValuesParameterName = $"{entitySchemaName}fieldValuesParameter";
-		var translation = TranslateAndValidateFormula(formula, recordVariableName, columnMap, targetPath);
+		var translation = TranslateAndValidateFormula(formula, recordVariableName, attributeMap, targetPath);
 		var expressionSchema = new BusinessRuleExpressionSchemaDto {
 			Expression = translation.Expression,
 			ResultDataValueType = targetDataValueTypeName,
@@ -193,11 +201,11 @@ internal static class BusinessRuleFormulaBuilder {
 	private static BusinessRuleFormulaTranslation TranslateAndValidateFormula(
 		string formula,
 		string recordVariableName,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		string? targetPath = null) {
-		var columnsByName = BuildColumnsByName(columnMap);
+		var attributesByName = BuildAttributesByName(attributeMap);
 		var sourcePaths = new List<string>();
-		var expression = TranslateFormula(formula, recordVariableName, columnsByName, sourcePaths);
+		var expression = TranslateFormula(formula, recordVariableName, attributesByName, sourcePaths);
 		ValidateSupportedExpressionSyntax(expression);
 		if (sourcePaths.Count == 0) {
 			throw new ArgumentException(targetPath is null
@@ -210,18 +218,18 @@ internal static class BusinessRuleFormulaBuilder {
 	private static string TranslateFormula(
 		string formula,
 		string recordVariableName,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnsByName,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributesByName,
 		ICollection<string> sourcePaths) =>
-		BuildTranslatedFormula(formula, recordVariableName, columnsByName, sourcePaths);
+		BuildTranslatedFormula(formula, recordVariableName, attributesByName, sourcePaths);
 
 	private static string BuildTranslatedFormula(
 		string formula,
 		string recordVariableName,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnsByName,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributesByName,
 		ICollection<string> sourcePaths) {
 		var result = new StringBuilder(formula.Length);
 		for (var index = 0; index < formula.Length;) {
-			AppendTranslatedFormulaPart(formula, recordVariableName, columnsByName, sourcePaths, result, ref index);
+			AppendTranslatedFormulaPart(formula, recordVariableName, attributesByName, sourcePaths, result, ref index);
 		}
 		return result.ToString();
 	}
@@ -229,7 +237,7 @@ internal static class BusinessRuleFormulaBuilder {
 	private static void AppendTranslatedFormulaPart(
 		string formula,
 		string recordVariableName,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnsByName,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributesByName,
 		ICollection<string> sourcePaths,
 		StringBuilder result,
 		ref int index) {
@@ -239,7 +247,7 @@ internal static class BusinessRuleFormulaBuilder {
 			return;
 		}
 		if (IsIdentifierStart(current)) {
-			AppendTranslatedIdentifier(formula, recordVariableName, columnsByName, sourcePaths, result, ref index);
+			AppendTranslatedIdentifier(formula, recordVariableName, attributesByName, sourcePaths, result, ref index);
 			return;
 		}
 		result.Append(current);
@@ -249,12 +257,12 @@ internal static class BusinessRuleFormulaBuilder {
 	private static void AppendTranslatedIdentifier(
 		string formula,
 		string recordVariableName,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnsByName,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributesByName,
 		ICollection<string> sourcePaths,
 		StringBuilder result,
 		ref int index) {
 		var identifier = ReadIdentifier(formula, ref index);
-		if (TryAppendColumnReference(identifier, recordVariableName, columnsByName, sourcePaths, result)) {
+		if (TryAppendAttributeReference(identifier, recordVariableName, attributesByName, sourcePaths, result)) {
 			return;
 		}
 		if (_knownIdentifiers.Contains(identifier)) {
@@ -273,17 +281,17 @@ internal static class BusinessRuleFormulaBuilder {
 		return formula[start..index];
 	}
 
-	private static bool TryAppendColumnReference(
+	private static bool TryAppendAttributeReference(
 		string identifier,
 		string recordVariableName,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnsByName,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributesByName,
 		ICollection<string> sourcePaths,
 		StringBuilder result) {
-		if (!columnsByName.TryGetValue(identifier, out var column)) {
+		if (!attributesByName.TryGetValue(identifier, out var descriptor)) {
 			return false;
 		}
-		result.Append('#').Append(recordVariableName).Append('.').Append(column.Name).Append('#');
-		sourcePaths.Add(column.Name);
+		result.Append('#').Append(recordVariableName).Append('.').Append(descriptor.Path).Append('#');
+		sourcePaths.Add(descriptor.Path);
 		return true;
 	}
 
@@ -323,13 +331,16 @@ internal static class BusinessRuleFormulaBuilder {
 		}
 	}
 
-	private static IReadOnlyDictionary<string, EntitySchemaColumnDto> BuildColumnsByName(
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
-		var columnsByName = new Dictionary<string, EntitySchemaColumnDto>(StringComparer.OrdinalIgnoreCase);
-		foreach (var column in columnMap.Values.Where(column => !string.IsNullOrWhiteSpace(column.Name))) {
-			columnsByName.TryAdd(column.Name, column);
+	private static IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> BuildAttributesByName(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		var attributesByName = new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.OrdinalIgnoreCase);
+		foreach (var pair in attributeMap) {
+			if (string.IsNullOrWhiteSpace(pair.Key)) {
+				continue;
+			}
+			attributesByName.TryAdd(pair.Key, pair.Value);
 		}
-		return columnsByName;
+		return attributesByName;
 	}
 
 	private static bool IsFunctionCall(string formula, int index) {
@@ -353,3 +364,4 @@ internal static class BusinessRuleFormulaBuilder {
 		string Expression,
 		IReadOnlyList<string> SourcePaths);
 }
+

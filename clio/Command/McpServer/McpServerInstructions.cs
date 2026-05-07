@@ -58,6 +58,17 @@ internal static class McpServerInstructions
 		  and `*-by-credentials` (takes raw URL/username/password). Prefer the environment-name variant.
 		- Read the `docs://help/command/{CommandName}` resources for detailed usage of any command.
 
+		### Edit a page from a Creatio designer URL
+		A Freedom UI designer URL is one of:
+		- `#/PageDesigner/<pageUId>` — first edit of a page that lives in a locked package; the backend will create a virtual replacing package automatically on first save.
+		- `#/PageDesigner/<pageUId>?packageUId=<packageUId>` — subsequent edit of an already-replaced page; the URL's packageUId points to the existing substitution.
+
+		Canonical flow in BOTH cases:
+		1. Identify the active environment from the host — use `list-environments` to confirm the matching `environment-name`.
+		2. Call `list-pages uid=<pageUId>` — returns the exact page with its `schema-name` and `packageName` in one call.
+		3. Call `get-page schema-name=<matched schema-name>` to retrieve the editable body and bundle.
+		4. Call `update-page schema-name=<matched schema-name> body=<...>` to save. Do NOT pass `target-package-uid`: the backend's `GetDesignPackageUId` resolves the correct package automatically — it materializes a virtual package on first save (locked-source case) or reuses the existing replacing package (already-substituted case). Each platform package has a deterministic owning app, so there is no ambiguity to override.
+
 		## Error handling
 		- Every tool response includes a `correlation-id` for tracing.
 		- Errors include the full exception chain. Look at inner exceptions for root cause.

@@ -14,7 +14,18 @@ internal static class BusinessRuleValidator {
 
 	internal static void Validate(
 		BusinessRule rule,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) =>
+		Validate(rule, BuildAttributeDescriptorMap(columnMap));
+
+	internal static void Validate(
+		BusinessRule rule,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) =>
+		Validate(rule, attributeMap, ValidateEntityAction);
+
+	internal static void Validate(
+		BusinessRule rule,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction) {
 		ArgumentNullException.ThrowIfNull(rule);
 
 		if (string.IsNullOrWhiteSpace(rule.Caption)) {
@@ -42,17 +53,25 @@ internal static class BusinessRuleValidator {
 		}
 
 		foreach (BusinessRuleCondition condition in rule.Condition.Conditions) {
-			ValidateCondition(condition, columnMap);
+			if (condition is null) {
+				throw new ArgumentException("rule.condition.conditions[*] is required.");
+			}
+
+			ValidateCondition(condition, attributeMap);
 		}
 
 		foreach (BusinessRuleAction action in rule.Actions) {
-			ValidateAction(action, columnMap);
+			if (action is null) {
+				throw new ArgumentException("rule.actions[*].type is required.");
+			}
+
+			validateAction(action, attributeMap);
 		}
 	}
 
 	private static void ValidateCondition(
 		BusinessRuleCondition condition,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
 		if (condition.LeftExpression is null || !string.Equals(condition.LeftExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
 			throw new ArgumentException("rule.condition.conditions[*].leftExpression.type must be 'AttributeValue'.");
 		}
@@ -62,29 +81,29 @@ internal static class BusinessRuleValidator {
 		}
 
 		string leftPath = condition.LeftExpression.Path;
-		EntitySchemaColumnDto leftDescriptor = ResolveColumn(
-			columnMap,
+		BusinessRuleAttributeDescriptor leftDescriptor = ResolveAttribute(
+			attributeMap,
 			leftPath,
 			"rule.condition.conditions[*].leftExpression.path");
 		string comparisonType = GetSupportedComparisonType(condition.ComparisonType);
-		string leftDataValueTypeName = MapDataValueTypeName(leftDescriptor.DataValueType);
+		string leftDataValueTypeName = leftDescriptor.DataValueTypeName;
 		ValidateComparisonOperands(
 			condition.RightExpression,
 			comparisonType,
 			leftPath,
 			leftDataValueTypeName,
-			columnMap);
+			attributeMap);
 	}
 
-	private static void ValidateAction(
+	private static void ValidateEntityAction(
 		BusinessRuleAction action,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
 		if (string.IsNullOrEmpty(action.ActionType)) {
 			throw new ArgumentException("rule.actions[*].type is required.");
 		}
 
 		if (string.Equals(action.ActionType, SetValuesActionTypeName, StringComparison.OrdinalIgnoreCase)) {
-			ValidateSetValuesAction(action, columnMap);
+			ValidateSetValuesAction(action, attributeMap);
 			return;
 		}
 
@@ -103,26 +122,30 @@ internal static class BusinessRuleValidator {
 				throw new ArgumentException("rule.actions[*].items cannot contain empty attribute names.");
 			}
 
-			ResolveColumn(columnMap, target, "rule.actions[*].items");
+			ResolveAttribute(attributeMap, target, "rule.actions[*].items");
 		}
 	}
 
 	private static void ValidateSetValuesAction(
 		BusinessRuleAction action,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
 		List<BusinessRuleSetValueItem> setValueItems = action.SetValueItems;
 		if (setValueItems.Count == 0) {
 			throw new ArgumentException("rule.actions[*].items must contain at least one set-values item.");
 		}
 
 		foreach (BusinessRuleSetValueItem item in setValueItems) {
-			ValidateSetValueItem(item, columnMap);
+			if (item is null) {
+				throw new ArgumentException("rule.actions[*].items[*] is required.");
+			}
+
+			ValidateSetValueItem(item, attributeMap);
 		}
 	}
 
 	private static void ValidateSetValueItem(
 		BusinessRuleSetValueItem item,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
 		if (item.Expression is null
 			|| !string.Equals(item.Expression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
 			throw new ArgumentException("rule.actions[*].items[*].expression.type must be 'AttributeValue'.");
@@ -132,11 +155,11 @@ internal static class BusinessRuleValidator {
 			throw new ArgumentException("rule.actions[*].items[*].expression.path is required.");
 		}
 
-		EntitySchemaColumnDto targetDescriptor = ResolveColumn(
-			columnMap,
+		BusinessRuleAttributeDescriptor targetDescriptor = ResolveAttribute(
+			attributeMap,
 			item.Expression.Path,
 			"rule.actions[*].items[*].expression.path");
-		string targetDataValueTypeName = MapDataValueTypeName(targetDescriptor.DataValueType);
+		string targetDataValueTypeName = targetDescriptor.DataValueTypeName;
 
 		if (item.Value is null) {
 			throw new ArgumentException("rule.actions[*].items[*].value is required.");
@@ -152,7 +175,7 @@ internal static class BusinessRuleValidator {
 		}
 
 		if (string.Equals(item.Value.Type, FormulaExpressionType, StringComparison.OrdinalIgnoreCase)) {
-			ValidateSetValueFormula(item.Value, columnMap, item.Expression.Path);
+			ValidateSetValueFormula(item.Value, attributeMap, item.Expression.Path);
 			return;
 		}
 
@@ -161,10 +184,10 @@ internal static class BusinessRuleValidator {
 
 	private static void ValidateSetValueFormula(
 		BusinessRuleExpression value,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		string targetPath) {
 		string formula = BusinessRuleFormulaBuilder.GetRequiredFormulaText(value);
-		BusinessRuleFormulaBuilder.ValidateFormulaScope(formula, columnMap, targetPath);
+		BusinessRuleFormulaBuilder.ValidateFormulaScope(formula, attributeMap, targetPath);
 	}
 
 	private static void ValidateSetValueConstant(JsonElement value, string targetDataValueTypeName) {
@@ -253,7 +276,7 @@ internal static class BusinessRuleValidator {
 		string comparisonType,
 		string leftPath,
 		string leftDataValueTypeName,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) {
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
 		if (IsUnaryComparisonType(comparisonType)) {
 			if (rightExpression is not null) {
 				throw new ArgumentException(
@@ -278,16 +301,16 @@ internal static class BusinessRuleValidator {
 				$"rule.condition.conditions[*].comparisonType '{comparisonType}' is not supported for left attribute '{leftPath}' with type {leftDataValueTypeName}. RichText and Image attributes do not support equal or not-equal business-rule conditions.");
 		}
 
-		ValidateRightExpression(rightExpression, columnMap, leftPath, leftDataValueTypeName);
+		ValidateRightExpression(rightExpression, attributeMap, leftPath, leftDataValueTypeName);
 	}
 
 	private static void ValidateRightExpression(
 		BusinessRuleExpression rightExpression,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		string leftPath,
 		string leftDataValueTypeName) {
 		if (string.Equals(rightExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
-			ValidateAttributeRightExpression(rightExpression, columnMap, leftPath, leftDataValueTypeName);
+			ValidateAttributeRightExpression(rightExpression, attributeMap, leftPath, leftDataValueTypeName);
 			return;
 		}
 
@@ -300,7 +323,7 @@ internal static class BusinessRuleValidator {
 
 	private static void ValidateAttributeRightExpression(
 		BusinessRuleExpression rightExpression,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		string leftPath,
 		string leftDataValueTypeName) {
 		if (string.IsNullOrWhiteSpace(rightExpression.Path)) {
@@ -308,11 +331,11 @@ internal static class BusinessRuleValidator {
 		}
 
 		string rightPath = rightExpression.Path;
-		EntitySchemaColumnDto rightDescriptor = ResolveColumn(
-			columnMap,
+		BusinessRuleAttributeDescriptor rightDescriptor = ResolveAttribute(
+			attributeMap,
 			rightPath,
 			"rule.condition.conditions[*].rightExpression.path");
-		string rightDataValueTypeName = MapDataValueTypeName(rightDescriptor.DataValueType);
+		string rightDataValueTypeName = rightDescriptor.DataValueTypeName;
 		if (!string.Equals(leftDataValueTypeName, rightDataValueTypeName, StringComparison.OrdinalIgnoreCase)) {
 			throw new ArgumentException(
 				$"rule.condition.conditions[*] compares left attribute '{leftPath}' ({leftDataValueTypeName}) to right attribute '{rightPath}' ({rightDataValueTypeName}). Both attributes must have the same data value type.");
@@ -379,16 +402,11 @@ internal static class BusinessRuleValidator {
 		}
 	}
 
-	internal static EntitySchemaColumnDto GetRequiredColumn(
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
-		string path,
-		string fieldName) => ResolveColumn(columnMap, path, fieldName);
-
-	private static EntitySchemaColumnDto ResolveColumn(
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+	private static BusinessRuleAttributeDescriptor ResolveAttribute(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		string path,
 		string fieldName) {
-		if (!columnMap.TryGetValue(path, out EntitySchemaColumnDto? descriptor)) {
+		if (!attributeMap.TryGetValue(path, out BusinessRuleAttributeDescriptor? descriptor)) {
 			throw new ArgumentException($"Unknown attribute '{path}' in {fieldName}.");
 		}
 
