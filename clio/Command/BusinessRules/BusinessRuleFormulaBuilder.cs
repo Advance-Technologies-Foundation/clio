@@ -9,7 +9,8 @@ namespace Clio.Command.BusinessRules;
 internal static class BusinessRuleFormulaBuilder {
 	private static readonly Regex _supportedExpressionRegex = new(
 		@"^(?:#\w+(?:\.\w+)*#|[\d\s+\-*/.()])*$",
-		RegexOptions.Compiled | RegexOptions.CultureInvariant);
+		RegexOptions.Compiled | RegexOptions.CultureInvariant,
+		TimeSpan.FromSeconds(1));
 
 	private static readonly HashSet<string> _knownIdentifiers = new(StringComparer.OrdinalIgnoreCase) {
 		"Blank",
