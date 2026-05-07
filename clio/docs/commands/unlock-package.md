@@ -2,106 +2,94 @@
 
 ## Description
 
-unlock-package - Unlock packages in Creatio environment
+Unlocks one or more packages in a Creatio environment to enable editing and modifications.
+Uses ClioGate direct database queries to update `InstallType = 0` on the `SysPackage` record,
+bypassing the DataService ESQ permission layer that can deny access even for privileged users.
+
+When unlocking, the package `Maintainer` field is set to the environment's current
+`Maintainer` system setting value. The original maintainer is stored in the package
+`Description` field and restored automatically when the package is locked again with
+`lock-package`.
 
 ## Synopsis
 
 ```bash
 clio unlock-package [package-names] [options]
-clio unlock-package [package-names] [options]
+clio up [package-names] [options]
 ```
-
-## Description
-
-Unlocks one or more packages in a Creatio environment to enable editing
-and modifications. Use this command when you need to make changes to
-packages that are currently locked in the system.
 
 ## Arguments
 
-```bash
-package-names
-Comma-separated list of package names to unlock. If omitted, unlocks
-all packages in the environment.
-Example: MyPackage,AnotherPackage,ThirdPackage
-```
+| Argument | Description |
+|---|---|
+| `package-names` | Comma-separated list of package names to unlock. If omitted, unlocks all packages whose Maintainer matches the environment's sys setting. |
 
 ## Options
 
-```bash
--m, --maintainer <NAME>
-Maintainer value used to set Maintainer system setting and clear
-SchemaNamePrefix before unlocking all packages.
-Required when unlocking all packages (without package-names).
-
--e, --environment <NAME>
-Environment name from configuration (recommended)
-
--u, --uri <URI>
-Creatio application URI (alternative to environment)
-
--l, --login <LOGIN>
-Username for authentication
-
--p, --password <PASSWORD>
-Password for authentication
-
---clientid <ID>
-OAuth Client ID (alternative authentication)
-
---clientsecret <SECRET>
-OAuth Client Secret (alternative authentication)
-
---authappuri <URI>
-OAuth Authentication App URI (alternative authentication)
-```
+| Option | Description |
+|---|---|
+| `-m, --maintainer <NAME>` | Maintainer value. Sets the Maintainer system setting and clears SchemaNamePrefix before unlocking all packages. **Required** when no package names are specified. |
+| `-e, --environment <NAME>` | Environment name from configuration (recommended) |
+| `-u, --uri <URI>` | Creatio application URI (alternative to `-e`) |
+| `-l, --login <LOGIN>` | Username for authentication |
+| `-p, --password <PASSWORD>` | Password for authentication |
+| `--clientid <ID>` | OAuth Client ID |
+| `--clientsecret <SECRET>` | OAuth Client Secret |
+| `--authappuri <URI>` | OAuth Authentication App URI |
 
 ## Examples
 
 ```bash
-Unlock a single package:
+# Unlock a single package
 clio unlock-package MyPackage -e dev
-clio unlock-package MyPackage -e dev
+clio up MyPackage -e dev
 
-Unlock multiple packages:
+# Unlock multiple packages
 clio unlock-package Package1,Package2,Package3 -e dev
 
-Unlock all packages:
+# Unlock all packages (sets Maintainer sys setting first)
 clio unlock-package -m Creatio -e dev
+```
 
-Output:
+Output for unlock all:
+```
 Setting Maintainer sys setting to 'Creatio'.
 Setting SchemaNamePrefix sys setting to an empty value.
 Unlocking all packages in environment 'dev' for maintainer 'Creatio'.
 Done
+```
 
-Using direct authentication:
-clio unlock-package MyPackage --uri https://myapp.com -l admin -p pass
+```bash
+# Using direct credentials instead of a named environment
+clio unlock-package MyPackage --uri https://myapp.creatio.com -l admin -p pass
 ```
 
 ## Requirements
 
-This command requires cliogate package version 2.0.0.0 or higher installed
-on the target Creatio environment.
+- **cliogate >= 2.0.0.42** must be installed on the target Creatio environment.
+- The authenticated user must have the **CanManageSolution** system operation permission.
 
-To install cliogate:
+```bash
+# Install or update cliogate
 clio install-gate -e <ENVIRONMENT_NAME>
 
-To check cliogate version:
+# Check installed cliogate version
 clio get-info -e <ENVIRONMENT_NAME>
+```
 
 ## Notes
 
-- Package names are case-sensitive and must match exactly
-- Use environment configuration for easier command usage
-- Remember to lock packages after completing changes
-- Administrator permissions required on target environment
+- Package names are case-sensitive and must match exactly as stored in Creatio.
+- After unlock the package `Maintainer` is set to the environment's `Maintainer` sys setting;
+  the original maintainer is preserved in the `Description` field.
+- Lock packages again with `lock-package` after completing changes to protect them.
+- This command replaced a DataService-based implementation that silently failed with a
+  `SecurityException` on `SysPackage` for some permission configurations (see issue #585).
 
 ## See Also
 
-lock-package      Lock packages to prevent modifications
-install-gate      Install or update cliogate package
-push-workspace    Push workspace changes to environment
-get-info          Check environment and cliogate information
-
+- [`lock-package`](lock-package.md) — Lock packages to prevent modifications
+- [`install-gate`](install-gate.md) — Install or update the cliogate package
+- [`push-workspace`](push-workspace.md) — Push workspace changes to an environment
+- [`get-info`](get-info.md) — Check environment and cliogate information
 - [Clio Command Reference](../../Commands.md#unlock-package)
