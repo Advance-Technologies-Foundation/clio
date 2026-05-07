@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -79,9 +80,54 @@ internal abstract class BaseBusinessRuleActionMetadataDto {
 	public bool Enabled { get; set; }
 }
 
-internal sealed class FieldSelectionBusinessRuleActionMetadataDto : BaseBusinessRuleActionMetadataDto {
+// Hand-written serialization so SetFilterBusinessRuleActionMetadataDto, which inherits
+// from FieldSelectionBusinessRuleActionMetadataDto, emits its own Expression / Value
+// properties when the case-level Actions list carries the field-selection static type.
+// STJ resolves converters by the declared element type, not the runtime type, so writing
+// properties manually is the simplest way to keep the case Actions list element type stable
+// while still emitting the SetFilter shape.
+internal sealed class BusinessRuleActionMetadataDtoJsonConverter
+	: JsonConverter<FieldSelectionBusinessRuleActionMetadataDto> {
+	public override FieldSelectionBusinessRuleActionMetadataDto Read(
+		ref Utf8JsonReader reader,
+		Type typeToConvert,
+		JsonSerializerOptions options) =>
+		throw new NotSupportedException(
+			"Reading FieldSelectionBusinessRuleActionMetadataDto from JSON is not supported; clio writes add-on metadata only.");
+
+	public override void Write(
+		Utf8JsonWriter writer,
+		FieldSelectionBusinessRuleActionMetadataDto value,
+		JsonSerializerOptions options) {
+		writer.WriteStartObject();
+		writer.WriteString("typeName", value.TypeName);
+		writer.WriteString("uId", value.UId);
+		writer.WriteBoolean("enabled", value.Enabled);
+		if (value is SetFilterBusinessRuleActionMetadataDto setFilter) {
+			writer.WritePropertyName("expression");
+			JsonSerializer.Serialize(writer, setFilter.Expression, options);
+			writer.WritePropertyName("value");
+			JsonSerializer.Serialize(writer, setFilter.Value, options);
+		} else if (value.Items is not null) {
+			writer.WritePropertyName("items");
+			JsonSerializer.Serialize(writer, value.Items, options);
+		}
+		writer.WriteEndObject();
+	}
+}
+
+[JsonConverter(typeof(BusinessRuleActionMetadataDtoJsonConverter))]
+internal class FieldSelectionBusinessRuleActionMetadataDto : BaseBusinessRuleActionMetadataDto {
 	[JsonPropertyName("items")]
 	public object? Items { get; set; }
+}
+
+internal sealed class SetFilterBusinessRuleActionMetadataDto : FieldSelectionBusinessRuleActionMetadataDto {
+	[JsonPropertyName("expression")]
+	public BusinessRuleExpressionMetadataDto Expression { get; set; } = default!;
+
+	[JsonPropertyName("value")]
+	public BusinessRuleExpressionMetadataDto Value { get; set; } = default!;
 }
 
 internal sealed class BusinessRuleSetValueItemMetadataDto : BaseBusinessRuleActionMetadataDto {

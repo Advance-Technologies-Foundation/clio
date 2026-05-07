@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.BusinessRules;
 using Clio.Common;
@@ -109,6 +110,7 @@ public sealed record EntityBusinessRuleMcpContract
 [JsonDerivedType(typeof(EntityMakeRequiredBusinessRuleActionMcpContract), "make-required")]
 [JsonDerivedType(typeof(EntityMakeOptionalBusinessRuleActionMcpContract), "make-optional")]
 [JsonDerivedType(typeof(EntitySetValuesBusinessRuleActionMcpContract), "set-values")]
+[JsonDerivedType(typeof(EntityApplyStaticFilterBusinessRuleActionMcpContract), "apply-static-filter")]
 public abstract record EntityBusinessRuleActionMcpContract
 {
 	protected EntityBusinessRuleActionMcpContract()
@@ -231,6 +233,48 @@ public sealed record EntitySetValuesBusinessRuleActionMcpContract : EntityBusine
 }
 
 /// <summary>
+/// MCP action contract that applies a static filter to a lookup attribute.
+/// </summary>
+public sealed record EntityApplyStaticFilterBusinessRuleActionMcpContract : EntityBusinessRuleActionMcpContract
+{
+	public EntityApplyStaticFilterBusinessRuleActionMcpContract()
+	{
+	}
+
+	public EntityApplyStaticFilterBusinessRuleActionMcpContract(string targetAttribute, JsonElement filter)
+	{
+		TargetAttribute = targetAttribute;
+		Filter = filter;
+	}
+
+	/// <summary>
+	/// Gets the lookup attribute on the entity that the static filter restricts.
+	/// </summary>
+	[JsonPropertyName("targetAttribute")]
+	[Description("Lookup attribute on the entity that the static filter restricts.")]
+	[Required]
+	public string TargetAttribute { get; init; } = null!;
+
+	/// <summary>
+	/// Gets the friendly filter group restricting the lookup's reference schema.
+	/// </summary>
+	[JsonPropertyName("filter")]
+	[Description("Friendly filter group (logicalOperation + filters[] + backwardReferenceFilters[]) restricting the lookup's reference schema.")]
+	[Required]
+	public JsonElement Filter { get; init; }
+
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+
+	internal override BusinessRuleAction ToBusinessRuleAction() {
+		ApplyStaticFilterBusinessRuleAction action = new(TargetAttribute, Filter);
+		return ExtensionData is null
+			? action
+			: action with { ExtensionData = new Dictionary<string, JsonElement>(ExtensionData) };
+	}
+}
+
+/// <summary>
 /// MCP contract for a page-level Freedom UI business rule.
 /// </summary>
 public sealed record PageBusinessRuleMcpContract
@@ -293,6 +337,7 @@ public sealed record PageBusinessRuleMcpContract
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 [JsonDerivedType(typeof(PageHideElementBusinessRuleActionMcpContract), "hide-element")]
 [JsonDerivedType(typeof(PageShowElementBusinessRuleActionMcpContract), "show-element")]
+[JsonDerivedType(typeof(PageApplyStaticFilterBusinessRuleActionMcpContract), "apply-static-filter")]
 public abstract record PageBusinessRuleActionMcpContract
 {
 	protected PageBusinessRuleActionMcpContract()
@@ -355,6 +400,30 @@ public sealed record PageShowElementBusinessRuleActionMcpContract : PageElementS
 	}
 
 	internal override BusinessRuleAction ToBusinessRuleAction() => new ShowElementBusinessRuleAction(Items ?? []);
+}
+
+/// <summary>
+/// MCP action contract registered on the page polymorphic surface so apply-static-filter
+/// payloads deserialize cleanly and reach the page validator, which rejects them with a
+/// clear "use create-entity-business-rule instead" message.
+/// </summary>
+public sealed record PageApplyStaticFilterBusinessRuleActionMcpContract : PageBusinessRuleActionMcpContract
+{
+	[JsonPropertyName("targetAttribute")]
+	public string? TargetAttribute { get; init; }
+
+	[JsonPropertyName("filter")]
+	public JsonElement Filter { get; init; }
+
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+
+	internal override BusinessRuleAction ToBusinessRuleAction() =>
+		new ApplyStaticFilterBusinessRuleAction {
+			TargetAttribute = TargetAttribute ?? string.Empty,
+			Filter = Filter,
+			ExtensionData = ExtensionData
+		};
 }
 
 [McpServerToolType]

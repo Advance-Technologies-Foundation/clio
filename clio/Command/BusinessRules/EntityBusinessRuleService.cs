@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Clio.Command.AddonSchemaDesigner;
+using Clio.Command.BusinessRules.Filters;
 using Clio.Command.EntitySchemaDesigner;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
@@ -30,7 +31,8 @@ public sealed record EntityBusinessRuleCreateRequest(
 internal sealed class EntityBusinessRuleService(
 	IBusinessRulePackageResolver packageResolver,
 	IEntityBusinessRuleAttributeProvider attributeProvider,
-	IBusinessRuleAddonService businessRuleAddonService)
+	IBusinessRuleAddonService businessRuleAddonService,
+	IEsqFilterConverterClient esqConverterClient)
 	: IEntityBusinessRuleService {
 
 	public BusinessRuleCreateResult Create(EntityBusinessRuleCreateRequest request) {
@@ -43,7 +45,10 @@ internal sealed class EntityBusinessRuleService(
 			packageUId);
 		BusinessRuleValidator.Validate(request.Rule, attributeContext.Attributes);
 
-		BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToMetadata(attributeContext.Attributes, request.Rule);
+		BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToMetadata(
+			attributeContext.Attributes,
+			request.Rule,
+			esqConverterClient);
 		return businessRuleAddonService.AppendRule(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			request.Rule,

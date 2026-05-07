@@ -4,7 +4,9 @@ using System.Text.Json;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.BusinessRules;
+using Clio.Command.BusinessRules.Filters;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Common;
 using Clio.Package;
 using FluentAssertions;
 using NSubstitute;
@@ -46,7 +48,8 @@ public sealed class EntityBusinessRuleServiceTests {
 		_service = new EntityBusinessRuleService(
 			new BusinessRulePackageResolver(_applicationPackageListProvider),
 			new EntityBusinessRuleAttributeProvider(new EntityBusinessRuleSchemaProvider(_entitySchemaDesignerClient)),
-			new BusinessRuleAddonService(_addonSchemaDesignerClient));
+			new BusinessRuleAddonService(_addonSchemaDesignerClient, new SynchronousBackgroundTaskRunner()),
+			Substitute.For<IEsqFilterConverterClient>());
 	}
 
 	[TestCase("", "UsrOrder", true, "package-name is required.")]

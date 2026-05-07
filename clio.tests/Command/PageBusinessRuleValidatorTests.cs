@@ -62,6 +62,26 @@ public sealed class PageBusinessRuleValidatorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects apply-static-filter actions for page business rules with a tailored message pointing callers to create-entity-business-rule.")]
+	public void Validate_Should_Reject_Apply_Static_Filter_For_Page_Scope() {
+		// Arrange
+		BusinessRule rule = CreatePageRule(
+			action: new ApplyStaticFilterBusinessRuleAction {
+				TargetAttribute = "UsrCity",
+				Filter = System.Text.Json.JsonDocument.Parse("{\"logicalOperation\":\"AND\",\"filters\":[]}").RootElement.Clone()
+			});
+
+		// Act
+		Action act = () => PageBusinessRuleValidator.Validate(rule, CreateAttributeMap(), CreateElementNames());
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.actions[*].type 'apply-static-filter' is not supported for page-level rules.*Use create-entity-business-rule with apply-static-filter instead.*",
+				because: "page-scope rejection must point callers at the entity-rule tool rather than fail with a generic JsonException at the MCP boundary");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects empty page element names in page show or hide actions.")]
 	public void Validate_Should_Reject_Blank_Page_Element_Item() {
 		// Arrange

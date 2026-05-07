@@ -204,17 +204,7 @@ public class BindingsModule {
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
 		services.AddTransient<UpdateAppSectionCommand>();
 		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
-		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
-		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();
-		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
-		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
-		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
-		services.AddTransient<CreateEntityBusinessRuleCommand>();
-		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();
-		services.AddTransient<IPageBusinessRuleAttributeProvider, PageBusinessRuleAttributeProvider>();
-		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
-		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
-		services.AddTransient<CreatePageBusinessRuleCommand>();
+		RegisterBusinessRuleServices(services);
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
@@ -586,6 +576,22 @@ public class BindingsModule {
 	}
 	
 	
+	private static void RegisterBusinessRuleServices(IServiceCollection services) {
+		services.AddSingleton<IBackgroundTaskRunner, TaskRunBackgroundTaskRunner>();
+		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
+		services.AddTransient<Clio.Command.BusinessRules.Filters.IEsqFilterConverterClient, Clio.Command.BusinessRules.Filters.EsqFilterConverterClient>();
+		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();
+		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
+		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
+		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
+		services.AddTransient<CreateEntityBusinessRuleCommand>();
+		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();
+		services.AddTransient<IPageBusinessRuleAttributeProvider, PageBusinessRuleAttributeProvider>();
+		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
+		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
+		services.AddTransient<CreatePageBusinessRuleCommand>();
+	}
+
 	private static void RegisterAssemblyInterfaceTypes(IServiceCollection services){
 		Type[] types = Assembly.GetExecutingAssembly().GetTypes();
 		foreach (Type type in types) {

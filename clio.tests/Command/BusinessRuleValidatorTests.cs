@@ -760,8 +760,8 @@ public sealed class BusinessRuleValidatorTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects missing condition groups before evaluating rule expressions.")]
-	public void Validate_Should_Reject_Missing_Condition() {
+	[Description("Accepts rules without a top-level condition group — the rule then applies unconditionally (used for apply-static-filter and other always-on actions).")]
+	public void Validate_Should_Accept_Missing_Condition() {
 		// Arrange
 		BusinessRule rule = new(
 			"Rule caption",
@@ -777,9 +777,8 @@ public sealed class BusinessRuleValidatorTests {
 		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
 
 		// Assert
-		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition is required.",
-				because: "a business rule cannot be validated without a top-level condition group");
+		act.Should().NotThrow(
+			because: "condition is optional; an action-only rule is a valid 'always-on' rule");
 	}
 
 	[Test]
@@ -902,7 +901,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("Unsupported rule.actions[*].type 'set-visible'. Supported values: make-editable, make-read-only, make-required, make-optional, set-values.",
+			.WithMessage("Unsupported rule.actions[*].type 'set-visible'. Supported values: make-editable, make-read-only, make-required, make-optional, set-values, apply-static-filter.",
 				because: "the current business-rule action subset is intentionally limited to field state changes and constant Set values");
 	}
 

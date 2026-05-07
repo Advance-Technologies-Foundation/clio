@@ -25,9 +25,8 @@ public sealed record BusinessRule
     public string Caption { get; init; } = null!;
 
     [JsonPropertyName("condition")]
-    [Description("Top-level condition group. Supports one group with logicalOperation AND or OR.")]
-    [Required]
-    public BusinessRuleConditionGroup Condition { get; init; } = null!;
+    [Description("Optional top-level condition group. Supports one group with logicalOperation AND or OR. Omit to make the rule always apply (e.g. for an unconditional apply-static-filter).")]
+    public BusinessRuleConditionGroup? Condition { get; init; }
 
     [JsonPropertyName("actions")]
     [Description("One or more actions to execute when the condition group matches.")]
@@ -125,6 +124,7 @@ public sealed record BusinessRuleExpression
 [JsonDerivedType(typeof(MakeRequiredBusinessRuleAction), "make-required")]
 [JsonDerivedType(typeof(MakeOptionalBusinessRuleAction), "make-optional")]
 [JsonDerivedType(typeof(SetValuesBusinessRuleAction), "set-values")]
+[JsonDerivedType(typeof(ApplyStaticFilterBusinessRuleAction), "apply-static-filter")]
 [JsonDerivedType(typeof(HideElementBusinessRuleAction), "hide-element")]
 [JsonDerivedType(typeof(ShowElementBusinessRuleAction), "show-element")]
 public abstract record BusinessRuleAction
@@ -287,6 +287,41 @@ public sealed record SetValuesBusinessRuleAction : BusinessRuleAction
 
 
     [JsonIgnore] public override List<BusinessRuleSetValueItem> SetValueItems => Items ?? [];
+}
+
+public sealed record ApplyStaticFilterBusinessRuleAction : BusinessRuleAction
+{
+    public ApplyStaticFilterBusinessRuleAction()
+    {
+    }
+
+    public ApplyStaticFilterBusinessRuleAction(string targetAttribute, JsonElement filter)
+    {
+        TargetAttribute = targetAttribute;
+        Filter = filter;
+    }
+
+    [JsonPropertyName("targetAttribute")]
+    [Description("Lookup attribute on the entity that the static filter restricts.")]
+    [Required]
+    public string TargetAttribute { get; init; } = null!;
+
+    [JsonPropertyName("filter")]
+    [Description("Friendly filter group (logicalOperation + filters[] + backwardReferenceFilters[]) restricting the lookup's reference schema.")]
+    [Required]
+    public JsonElement Filter { get; init; }
+
+    // Captures wire-level fields not bound to declared properties so the validator can
+    // surface filter.items-not-allowed when callers send `items` alongside targetAttribute /
+    // filter. STJ would otherwise silently drop those keys.
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+
+    [JsonIgnore] public override string ActionType => "apply-static-filter";
+
+    [JsonIgnore] public override List<string> FieldSelectionItems => [];
+
+    [JsonIgnore] public override List<BusinessRuleSetValueItem> SetValueItems => [];
 }
 
 public sealed record CustomBusinessRuleAction : FieldSelectionBusinessRuleAction

@@ -22,11 +22,15 @@ internal static class BusinessRuleConstants {
 	internal const string BusinessRuleRequiredElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionRequiredElement";
 	internal const string BusinessRuleOptionalElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionOptionalElement";
 	internal const string BusinessRuleSetValuesElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionSetValues";
+	internal const string BusinessRuleActionSetFilterTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionSetFilter";
 	internal const string BusinessRuleSetValueItemTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleSetValueItem";
 	internal const string BusinessRuleHideElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionHideElement";
 	internal const string BusinessRuleShowElementTypeName = "Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionShowElement";
 	internal const string ClientUnitSchemaManagerName = "ClientUnitSchemaManager";
 	internal const string SetValuesActionTypeName = "set-values";
+	internal const string ApplyStaticFilterActionTypeName = "apply-static-filter";
+	internal const string AttributeValueExpressionType = "AttributeValue";
+	internal const string ConstExpressionType = "Const";
 	internal const int ChangeAttributeValueTriggerType = 0;
 	internal const int DataLoadedTriggerType = 2;
 	internal const int LogicalAnd = 1;
@@ -42,7 +46,7 @@ internal static class BusinessRuleConstants {
 	internal const string SupportedComparisonTypesDescription =
 		"equal, not-equal, is-filled-in, is-not-filled-in, greater-than, greater-than-or-equal, less-than, less-than-or-equal";
 	internal const string SupportedActionTypesDescription =
-		"make-editable, make-read-only, make-required, make-optional, set-values";
+		"make-editable, make-read-only, make-required, make-optional, set-values, apply-static-filter";
 	internal const string SupportedPageActionTypesDescription = "hide-element, show-element";
 
 	internal static readonly JsonSerializerOptions JsonOptions = new() {
@@ -88,7 +92,8 @@ internal static class BusinessRuleConstants {
 			["make-editable"] = BusinessRuleEditableElementTypeName,
 			["make-read-only"] = BusinessRuleReadonlyElementTypeName,
 			["make-required"] = BusinessRuleRequiredElementTypeName,
-			["make-optional"] = BusinessRuleOptionalElementTypeName
+			["make-optional"] = BusinessRuleOptionalElementTypeName,
+			[ApplyStaticFilterActionTypeName] = BusinessRuleActionSetFilterTypeName
 		};
 
 	internal static readonly IReadOnlyDictionary<string, string> SupportedPageActionTypeNames =

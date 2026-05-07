@@ -54,7 +54,11 @@ internal static class GuidanceCatalog {
 			["support-mode"] = Create(
 				"support-mode",
 				"Canonical MCP guidance for diagnostic-first execution under support mode: severity routing, confirmation probes, fail-fast evidence, and reporting.",
-				SupportModeGuidanceResource.Guide)
+				SupportModeGuidanceResource.Guide),
+			["business-rule-filters"] = Create(
+				"business-rule-filters",
+				"Canonical MCP guidance for the friendly-filter contract used by the apply-static-filter business-rule action of create-entity-business-rule.",
+				BusinessRuleFiltersGuidanceResource.Guide)
 		};
 
 	/// <summary>

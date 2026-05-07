@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Common;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
 namespace Clio.Command.BusinessRules;
@@ -17,7 +18,8 @@ internal interface IBusinessRuleAddonService {
 }
 
 internal sealed class BusinessRuleAddonService(
-	IAddonSchemaDesignerClient addonSchemaDesignerClient)
+	IAddonSchemaDesignerClient addonSchemaDesignerClient,
+	IBackgroundTaskRunner backgroundTaskRunner)
 	: IBusinessRuleAddonService {
 
 	public BusinessRuleCreateResult AppendRule(
@@ -44,7 +46,12 @@ internal sealed class BusinessRuleAddonService(
 		// crt-business-rules-cache is cleared immediately, and writes a new
 		// ConfigurationHash to disk so offline users get cache invalidation on
 		// their next startup via the /api/ClientCache/Hashes hash comparison.
-		addonSchemaDesignerClient.BuildConfiguration();
+		// BuildConfiguration is dispatched in the background because on large
+		// configurations it can take 30+ seconds — longer than typical MCP-client
+		// request timeouts. The rule is already persisted by SaveSchema above, so
+		// returning fast does not lose data; the cache rebuild simply finishes
+		// shortly after the response is delivered.
+		backgroundTaskRunner.Run(() => addonSchemaDesignerClient.BuildConfiguration());
 
 		return new BusinessRuleCreateResult(createdRule.Name);
 	}

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using Clio.Command.BusinessRules.Filters;
 using Clio.Command.EntitySchemaDesigner;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 using static Clio.Command.BusinessRules.BusinessRuleHelpers;
@@ -31,40 +32,48 @@ internal static class BusinessRuleValidator {
 		if (string.IsNullOrWhiteSpace(rule.Caption)) {
 			throw new ArgumentException("rule.caption is required.");
 		}
-
-		if (rule.Condition is null) {
-			throw new ArgumentException("rule.condition is required.");
-		}
-
 		if (rule.Actions is null || rule.Actions.Count == 0) {
 			throw new ArgumentException("rule.actions must contain at least one action.");
 		}
-		if (string.IsNullOrWhiteSpace(rule.Condition.LogicalOperation)) {
+
+		ValidateOptionalConditionGroup(rule.Condition, attributeMap);
+		ValidateActions(rule.Actions, validateAction, attributeMap);
+	}
+
+	// `condition` is optional — when omitted the rule applies unconditionally
+	// (used for apply-static-filter where the lookup must always be narrowed).
+	private static void ValidateOptionalConditionGroup(
+		BusinessRuleConditionGroup? condition,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		if (condition is null) {
+			return;
+		}
+		if (string.IsNullOrWhiteSpace(condition.LogicalOperation)) {
 			throw new ArgumentException("rule.condition.logicalOperation is required.");
 		}
-
-		if (!string.Equals(rule.Condition.LogicalOperation, "AND", StringComparison.OrdinalIgnoreCase)
-			&& !string.Equals(rule.Condition.LogicalOperation, "OR", StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException($"Unsupported rule.condition.logicalOperation '{rule.Condition.LogicalOperation}'. Use AND or OR.");
+		if (!string.Equals(condition.LogicalOperation, "AND", StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(condition.LogicalOperation, "OR", StringComparison.OrdinalIgnoreCase)) {
+			throw new ArgumentException($"Unsupported rule.condition.logicalOperation '{condition.LogicalOperation}'. Use AND or OR.");
 		}
-
-		if (rule.Condition.Conditions is null || rule.Condition.Conditions.Count == 0) {
+		if (condition.Conditions is null || condition.Conditions.Count == 0) {
 			throw new ArgumentException("rule.condition.conditions must contain at least one condition.");
 		}
-
-		foreach (BusinessRuleCondition condition in rule.Condition.Conditions) {
-			if (condition is null) {
+		foreach (BusinessRuleCondition entry in condition.Conditions) {
+			if (entry is null) {
 				throw new ArgumentException("rule.condition.conditions[*] is required.");
 			}
-
-			ValidateCondition(condition, attributeMap);
+			ValidateCondition(entry, attributeMap);
 		}
+	}
 
-		foreach (BusinessRuleAction action in rule.Actions) {
+	private static void ValidateActions(
+		List<BusinessRuleAction> actions,
+		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		foreach (BusinessRuleAction action in actions) {
 			if (action is null) {
 				throw new ArgumentException("rule.actions[*].type is required.");
 			}
-
 			validateAction(action, attributeMap);
 		}
 	}
@@ -72,7 +81,7 @@ internal static class BusinessRuleValidator {
 	private static void ValidateCondition(
 		BusinessRuleCondition condition,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
-		if (condition.LeftExpression is null || !string.Equals(condition.LeftExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
+		if (condition.LeftExpression is null || !string.Equals(condition.LeftExpression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
 			throw new ArgumentException("rule.condition.conditions[*].leftExpression.type must be 'AttributeValue'.");
 		}
 
@@ -98,6 +107,11 @@ internal static class BusinessRuleValidator {
 	private static void ValidateEntityAction(
 		BusinessRuleAction action,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		if (action is ApplyStaticFilterBusinessRuleAction setFilter) {
+			ValidateSetFilterAction(setFilter, attributeMap);
+			return;
+		}
+
 		if (string.IsNullOrEmpty(action.ActionType)) {
 			throw new ArgumentException("rule.actions[*].type is required.");
 		}
@@ -126,6 +140,54 @@ internal static class BusinessRuleValidator {
 		}
 	}
 
+	private static void ValidateSetFilterAction(
+		ApplyStaticFilterBusinessRuleAction action,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+
+		if (action.ExtensionData is not null && action.ExtensionData.ContainsKey("items")) {
+			throw new ArgumentException(
+				$"{BusinessRuleFilterErrorCodes.ItemsNotAllowed}: rule.actions[*].items is not allowed when type is 'apply-static-filter'; use targetAttribute and filter only.");
+		}
+
+		if (string.IsNullOrWhiteSpace(action.TargetAttribute)) {
+			throw new ArgumentException(
+				$"{BusinessRuleFilterErrorCodes.TargetAttributeRequired}: rule.actions[*].targetAttribute is required for apply-static-filter.");
+		}
+
+		if (!attributeMap.TryGetValue(action.TargetAttribute, out BusinessRuleAttributeDescriptor? targetDescriptor)) {
+			throw new ArgumentException(
+				$"{BusinessRuleFilterErrorCodes.TargetAttributeUnknown}: targetAttribute '{action.TargetAttribute}' was not found on the entity schema.");
+		}
+
+		if (!string.Equals(targetDescriptor.DataValueTypeName, "Lookup", StringComparison.Ordinal)
+			|| string.IsNullOrWhiteSpace(targetDescriptor.ReferenceSchemaName)) {
+			throw new ArgumentException(
+				$"{BusinessRuleFilterErrorCodes.TargetAttributeNotLookup}: targetAttribute '{action.TargetAttribute}' must be a Lookup column with a reference schema.");
+		}
+
+		if (action.Filter.ValueKind == JsonValueKind.Undefined || action.Filter.ValueKind == JsonValueKind.Null) {
+			throw new ArgumentException(
+				$"{BusinessRuleFilterErrorCodes.FilterRequired}: rule.actions[*].filter is required for apply-static-filter.");
+		}
+
+		StaticFilterGroup friendly;
+		try {
+			friendly = action.Filter.Deserialize<StaticFilterGroup>(JsonOptions)
+				?? throw new ArgumentException(
+					$"{BusinessRuleFilterErrorCodes.FilterRequired}: rule.actions[*].filter could not be deserialized as a friendly filter group.");
+		} catch (JsonException ex) {
+			throw new ArgumentException(
+				$"{BusinessRuleFilterErrorCodes.FilterRequired}: rule.actions[*].filter is not valid JSON: {ex.Message}",
+				ex);
+		}
+
+		try {
+			StaticFilterStructuralValidator.Validate(friendly);
+		} catch (BusinessRuleFilterException ex) {
+			throw new ArgumentException($"{ex.ErrorCode}: {ex.Message} (path={ex.FieldPath})", ex);
+		}
+	}
+
 	private static void ValidateSetValuesAction(
 		BusinessRuleAction action,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
@@ -147,7 +209,7 @@ internal static class BusinessRuleValidator {
 		BusinessRuleSetValueItem item,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
 		if (item.Expression is null
-			|| !string.Equals(item.Expression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
+			|| !string.Equals(item.Expression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
 			throw new ArgumentException("rule.actions[*].items[*].expression.type must be 'AttributeValue'.");
 		}
 
@@ -165,7 +227,7 @@ internal static class BusinessRuleValidator {
 			throw new ArgumentException("rule.actions[*].items[*].value is required.");
 		}
 
-		if (!string.Equals(item.Value.Type, "Const", StringComparison.OrdinalIgnoreCase)) {
+		if (!string.Equals(item.Value.Type, ConstExpressionType, StringComparison.OrdinalIgnoreCase)) {
 			throw new ArgumentException("rule.actions[*].items[*].value.type must be 'Const'.");
 		}
 
@@ -295,12 +357,12 @@ internal static class BusinessRuleValidator {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		string leftPath,
 		string leftDataValueTypeName) {
-		if (string.Equals(rightExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
+		if (string.Equals(rightExpression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
 			ValidateAttributeRightExpression(rightExpression, attributeMap, leftPath, leftDataValueTypeName);
 			return;
 		}
 
-		if (!string.Equals(rightExpression.Type, "Const", StringComparison.OrdinalIgnoreCase)) {
+		if (!string.Equals(rightExpression.Type, ConstExpressionType, StringComparison.OrdinalIgnoreCase)) {
 			throw new ArgumentException("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue' or 'Const'.");
 		}
 

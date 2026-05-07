@@ -7,10 +7,19 @@ namespace Clio.Command.BusinessRules;
 
 internal static class PageBusinessRuleValidator {
 
+	private const string ApplyStaticFilterAtPageScopeMessage =
+		"rule.actions[*].type 'apply-static-filter' is not supported for page-level rules. " +
+		"Static lookup filters apply at the entity level, so every page and editable list bound to the entity " +
+		"sees the narrowed lookup. Use create-entity-business-rule with apply-static-filter instead.";
+
 	internal static void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		IReadOnlySet<string> elementNames) {
+		// Reject apply-static-filter at page scope before any condition / element validation
+		// runs, so callers don't have to fix unrelated condition errors only to be told the
+		// action is not supported on pages. Static lookup filters belong on the entity rule.
+		RejectApplyStaticFilterAtPageScope(rule);
 		RejectDatasourcePaths(rule);
 		try {
 			BusinessRuleValidator.Validate(rule, attributeMap, ValidatePageAction(elementNames));
@@ -19,39 +28,52 @@ internal static class PageBusinessRuleValidator {
 		}
 	}
 
+	private static void RejectApplyStaticFilterAtPageScope(BusinessRule rule) {
+		bool hasApplyStaticFilter = (rule.Actions ?? [])
+			.OfType<ApplyStaticFilterBusinessRuleAction>()
+			.Any();
+		if (hasApplyStaticFilter) {
+			throw new ArgumentException(ApplyStaticFilterAtPageScopeMessage);
+		}
+	}
+
 	private static Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> ValidatePageAction(
 		IReadOnlySet<string> elementNames) =>
-		(action, _) => {
-			if (string.IsNullOrEmpty(action.ActionType)) {
-				throw new ArgumentException("rule.actions[*].type is required.");
-			}
+		(action, _) => ValidateSinglePageAction(action, elementNames);
 
-			if (!SupportedPageActionTypeNames.ContainsKey(action.ActionType)) {
-				throw new ArgumentException(
-					$"Unsupported rule.actions[*].type '{action.ActionType}'. Supported values: {SupportedPageActionTypesDescription}.");
-			}
+	private static void ValidateSinglePageAction(BusinessRuleAction action, IReadOnlySet<string> elementNames) {
+		if (string.IsNullOrEmpty(action.ActionType)) {
+			throw new ArgumentException("rule.actions[*].type is required.");
+		}
+		if (action is ApplyStaticFilterBusinessRuleAction) {
+			throw new ArgumentException(ApplyStaticFilterAtPageScopeMessage);
+		}
+		if (!SupportedPageActionTypeNames.ContainsKey(action.ActionType)) {
+			throw new ArgumentException(
+				$"Unsupported rule.actions[*].type '{action.ActionType}'. Supported values: {SupportedPageActionTypesDescription}.");
+		}
+		ValidatePageActionItems(action.FieldSelectionItems, elementNames);
+	}
 
-			List<string> items = action.FieldSelectionItems;
-			if (items.Count == 0) {
-				throw new ArgumentException("rule.actions[*].items must contain at least one page element name.");
+	private static void ValidatePageActionItems(List<string> items, IReadOnlySet<string> elementNames) {
+		if (items.Count == 0) {
+			throw new ArgumentException("rule.actions[*].items must contain at least one page element name.");
+		}
+		foreach (string target in items) {
+			if (string.IsNullOrWhiteSpace(target)) {
+				throw new ArgumentException("rule.actions[*].items cannot contain empty page element names.");
 			}
-
-			foreach (string target in items) {
-				if (string.IsNullOrWhiteSpace(target)) {
-					throw new ArgumentException("rule.actions[*].items cannot contain empty page element names.");
-				}
-
-				if (!elementNames.Contains(target)) {
-					throw new ArgumentException($"Unknown page element '{target}' in rule.actions[*].items.");
-				}
+			if (!elementNames.Contains(target)) {
+				throw new ArgumentException($"Unknown page element '{target}' in rule.actions[*].items.");
 			}
-		};
+		}
+	}
 
 	private static void RejectDatasourcePaths(BusinessRule rule) {
 		foreach (BusinessRuleCondition condition in rule.Condition?.Conditions ?? []) {
 			RejectDatasourcePath(condition.LeftExpression, "rule.condition.conditions[*].leftExpression.path");
 			if (condition.RightExpression is not null
-				&& string.Equals(condition.RightExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
+				&& string.Equals(condition.RightExpression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
 				RejectDatasourcePath(condition.RightExpression, "rule.condition.conditions[*].rightExpression.path");
 			}
 		}

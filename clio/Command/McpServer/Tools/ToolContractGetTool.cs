@@ -1327,16 +1327,18 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameCamelFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameCamelFieldName, StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets.")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets. Apply-static-filter actions narrow a Lookup attribute by an ESQ filter on its reference schema.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
 					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
-						Context: "Supported values: make-editable, make-read-only, make-required, make-optional, set-values."),
+						Context: $"Supported values: {BusinessRuleConstants.SupportedActionTypesDescription}."),
 					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rule.actions[*].items[*]",
 						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }. Attribute value sources are not supported in this scope."),
 					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rule.actions[*].items[*].value.value",
-						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, and ISO 8601 time strings with timezone suffix for Time targets.")
+						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, and ISO 8601 time strings with timezone suffix for Time targets."),
+					new ToolContractValidator("apply-static-filter-shape", "invalid-apply-static-filter", "rule.actions[*]",
+						Context: "When rule.actions[*].type is apply-static-filter, the action must provide targetAttribute (a Lookup column name on the entity) and filter (a friendly group with logicalOperation AND or OR, filters[] of leaves, optional backwardReferenceFilters[]). The action must NOT include items. Supported leaf comparisonType tokens: EQUAL, NOT_EQUAL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, IS_NULL, IS_NOT_NULL, START_WITH, NOT_START_WITH, CONTAIN, NOT_CONTAIN, END_WITH, NOT_END_WITH. The rootSchemaName is inferred from targetAttribute's reference schema; do not pass it. Schema-aware errors (unknown column path, datatype mismatch, missing lookup record, malformed backward reference) are returned by the server-side LlmEsqConverterService and surface as filter.server-rejected.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -1505,14 +1507,14 @@ internal static class ToolContractCatalog {
 		object? constantValue = null) {
 		Dictionary<string, object?> condition = new() {
 			["leftExpression"] = new Dictionary<string, object?> {
-				["type"] = "AttributeValue",
+				["type"] = BusinessRuleConstants.AttributeValueExpressionType,
 				["path"] = leftPath
 			},
 			["comparisonType"] = comparisonType
 		};
 		if (constantValue is not null) {
 			condition["rightExpression"] = new Dictionary<string, object?> {
-				["type"] = "Const",
+				["type"] = BusinessRuleConstants.ConstExpressionType,
 				["value"] = constantValue
 			};
 		}
@@ -1539,11 +1541,11 @@ internal static class ToolContractCatalog {
 	private static Dictionary<string, object?> BusinessRuleSetValueItem(string path, object value) {
 		return new Dictionary<string, object?> {
 			["expression"] = new Dictionary<string, object?> {
-				["type"] = "AttributeValue",
+				["type"] = BusinessRuleConstants.AttributeValueExpressionType,
 				["path"] = path
 			},
 			["value"] = new Dictionary<string, object?> {
-				["type"] = "Const",
+				["type"] = BusinessRuleConstants.ConstExpressionType,
 				["value"] = value
 			}
 		};
@@ -1569,12 +1571,12 @@ internal static class ToolContractCatalog {
 					["conditions"] = new object[] {
 						new Dictionary<string, object?> {
 							["leftExpression"] = new Dictionary<string, object?> {
-								["type"] = "AttributeValue",
+								["type"] = BusinessRuleConstants.AttributeValueExpressionType,
 								["path"] = leftPath
 							},
 							["comparisonType"] = comparisonType,
 							["rightExpression"] = new Dictionary<string, object?> {
-								["type"] = "Const",
+								["type"] = BusinessRuleConstants.ConstExpressionType,
 								["value"] = constantValue
 							}
 						}
@@ -1602,12 +1604,12 @@ internal static class ToolContractCatalog {
 					["conditions"] = new object[] {
 						new Dictionary<string, object?> {
 							["leftExpression"] = new Dictionary<string, object?> {
-								["type"] = "AttributeValue",
+								["type"] = BusinessRuleConstants.AttributeValueExpressionType,
 								["path"] = "PDS_UsrPlannedDate"
 							},
 							["comparisonType"] = "equal",
 							["rightExpression"] = new Dictionary<string, object?> {
-								["type"] = "AttributeValue",
+								["type"] = BusinessRuleConstants.AttributeValueExpressionType,
 								["path"] = "PDS_UsrActualDate"
 							}
 						}
