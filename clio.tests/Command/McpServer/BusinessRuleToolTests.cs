@@ -493,6 +493,48 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps a page field-state action payload into the page business-rule service request without breaking page element items.")]
+	public void PageBusinessRuleCreate_Should_Map_Field_State_Action_Arguments() {
+		// Arrange
+		IPageBusinessRuleService service = Substitute.For<IPageBusinessRuleService>();
+		CreatePageBusinessRuleCommand command = new(service, ConsoleLogger.Instance);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreatePageBusinessRuleCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		service.Create(Arg.Any<PageBusinessRuleCreateRequest>())
+			.Returns(new BusinessRuleCreateResult("BusinessRule_7654321"));
+		CreatePageBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		PageBusinessRuleMcpContract rule = new(
+			"Make escalation read-only when priority is high",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "PDS_Priority", null),
+						"equal",
+						new BusinessRuleExpression("Const", null,
+							JsonSerializer.Deserialize<JsonElement>("\"High\"")))
+				]),
+			[
+				new PageMakeReadOnlyBusinessRuleActionMcpContract(["EscalateButton"])
+			]);
+
+		// Act
+		CommandExecutionResult result = tool.BusinessRuleCreate("dev", "UsrPkg", "UsrCase_FormPage", rule);
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a successful page business-rule service call should return the standard success exit code");
+		service.Received(1).Create(
+			Arg.Is<PageBusinessRuleCreateRequest>(request =>
+				request.PackageName == "UsrPkg"
+				&& request.PageSchemaName == "UsrCase_FormPage"
+				&& request.Rule.Actions.Count == 1
+				&& request.Rule.Actions[0].ActionType == "make-read-only"
+				&& request.Rule.Actions[0].FieldSelectionItems.Single() == "EscalateButton"));
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Resolves the page business-rule command from the payload environment so nested dependencies use the requested MCP target.")]
 	public void PageBusinessRuleCreate_Should_Resolve_Command_From_Requested_Environment() {
 		// Arrange
@@ -554,7 +596,7 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Deserializes create-page-business-rule show and hide action payloads without accepting entity action branches.")]
+	[Description("Deserializes create-page-business-rule page action payloads without accepting object-only action branches.")]
 	public void PageBusinessRuleCreate_Should_Deserialize_Page_Action_Payload() {
 		// Arrange
 		string payload = """
@@ -584,6 +626,22 @@ public sealed class BusinessRuleToolTests {
 		      {
 		        "type": "hide-element",
 		        "items": [ "EscalateButton" ]
+		      },
+		      {
+		        "type": "make-editable",
+		        "items": [ "PriorityInput" ]
+		      },
+		      {
+		        "type": "make-read-only",
+		        "items": [ "AmountInput" ]
+		      },
+		      {
+		        "type": "make-required",
+		        "items": [ "CloseDateInput" ]
+		      },
+		      {
+		        "type": "make-optional",
+		        "items": [ "CommentInput" ]
 		      }
 		    ]
 		  }
@@ -597,9 +655,21 @@ public sealed class BusinessRuleToolTests {
 		payloadArgs.Should().NotBeNull(
 			because: "page business-rule payloads should deserialize from the MCP JSON shape");
 		BusinessRule rule = payloadArgs!.Rule.ToBusinessRule();
-		rule.Actions.Single().ActionType.Should().Be("hide-element",
-			because: "the page action discriminator should be preserved");
-		rule.Actions.Single().FieldSelectionItems.Should().Equal(["EscalateButton"],
+		rule.Actions.Select(action => action.ActionType).Should().Equal([
+				"hide-element",
+				"make-editable",
+				"make-read-only",
+				"make-required",
+				"make-optional"
+			],
+			because: "the page action discriminators should be preserved");
+		rule.Actions.SelectMany(action => action.FieldSelectionItems).Should().Equal([
+				"EscalateButton",
+				"PriorityInput",
+				"AmountInput",
+				"CloseDateInput",
+				"CommentInput"
+			],
 			because: "page element action items should deserialize as target element names");
 	}
 

@@ -26,10 +26,10 @@ public sealed class PageBusinessRuleToolE2ETests {
 	private const string ToolName = CreatePageBusinessRuleTool.BusinessRuleCreateToolName;
 
 	[Test]
-	[Description("Advertises polymorphic anyOf runtime schema branches only for page show/hide actions through the real MCP server.")]
+	[Description("Advertises polymorphic anyOf runtime schema branches only for page actions through the real MCP server.")]
 	[AllureTag(ToolName)]
 	[AllureName("Page business-rule MCP tool advertises page-only action schema")]
-	[AllureDescription("Starts the real clio MCP server, lists tools, and verifies create-page-business-rule exposes only hide-element and show-element action branches.")]
+	[AllureDescription("Starts the real clio MCP server, lists tools, and verifies create-page-business-rule exposes only page action branches.")]
 	public async Task BusinessRuleCreate_Should_Advertise_Page_Only_Action_Runtime_Schema() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
@@ -48,9 +48,16 @@ public sealed class PageBusinessRuleToolE2ETests {
 			.GetProperty("actions")
 			.GetProperty("items")
 			.GetProperty("anyOf");
-		anyOf.GetArrayLength().Should().Be(2,
-			because: "the page tool should advertise only page show/hide action payload branches");
-		anyOf.EnumerateArray().Select(GetActionType).Should().BeEquivalentTo(["hide-element", "show-element"],
+		anyOf.GetArrayLength().Should().Be(6,
+			because: "the page tool should advertise only page action payload branches");
+		anyOf.EnumerateArray().Select(GetActionType).Should().BeEquivalentTo([
+				"hide-element",
+				"show-element",
+				"make-editable",
+				"make-read-only",
+				"make-required",
+				"make-optional"
+			],
 			because: "entity-only actions should not appear in the page business-rule runtime schema");
 	}
 

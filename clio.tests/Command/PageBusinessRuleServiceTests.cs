@@ -70,7 +70,7 @@ public sealed class PageBusinessRuleServiceTests {
 		capturedMetadata.Should().NotBeNull(
 			because: "the service should convert the validated page rule before saving the add-on");
 		capturedMetadata!.Cases.Single().Actions.Single().TypeName.Should().Be(BusinessRuleConstants.BusinessRuleShowElementTypeName,
-			because: "page show-element actions should be converted into the Creatio show element action type");
+			because: "page show-element actions should still be converted into the Creatio show element action type");
 	}
 
 	[Test]

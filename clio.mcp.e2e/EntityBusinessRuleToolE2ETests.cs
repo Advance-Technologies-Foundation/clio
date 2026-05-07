@@ -49,7 +49,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		anyOf.GetArrayLength().Should().Be(5,
 			because: "the real MCP tools/list schema should describe each supported business-rule action subtype");
 		anyOf.EnumerateArray().Select(GetActionType).Should().NotContain(["hide-element", "show-element"],
-			because: "page-only show/hide actions should not appear in the entity business-rule runtime schema");
+			because: "page-only actions should not appear in the entity business-rule runtime schema");
 		anyOf.EnumerateArray().Should().Contain(branch =>
 				branch.GetProperty("properties").GetProperty("type").GetProperty("const").GetString() == "make-required"
 				&& branch.GetProperty("properties").GetProperty("items").GetProperty("items").GetProperty("type").GetString() == "string",

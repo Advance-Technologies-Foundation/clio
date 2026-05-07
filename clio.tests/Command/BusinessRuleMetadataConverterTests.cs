@@ -231,6 +231,51 @@ public sealed class BusinessRuleMetadataConverterTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps page field-state actions to Creatio page business-rule action metadata type names.")]
+	public void ToPageMetadata_Should_Map_Page_Field_State_Action_Metadata() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["PDS_Status"] = new("PDS_Status", "Text", null)
+			};
+		BusinessRule rule = new(
+			"Change page element state",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "PDS_Status", null),
+						"is-filled-in")
+				]),
+			[
+				new MakeEditableBusinessRuleAction(["NameInput"]),
+				new MakeReadOnlyBusinessRuleAction(["AmountInput"]),
+				new MakeRequiredBusinessRuleAction(["CloseDateInput"]),
+				new MakeOptionalBusinessRuleAction(["CommentInput"])
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+
+		// Assert
+		metadata.Cases.Single().Actions.Select(action => action.TypeName).Should().Equal([
+				BusinessRuleConstants.BusinessRuleEditableElementTypeName,
+				BusinessRuleConstants.BusinessRuleReadonlyElementTypeName,
+				BusinessRuleConstants.BusinessRuleRequiredElementTypeName,
+				BusinessRuleConstants.BusinessRuleOptionalElementTypeName
+			],
+			because: "page editability and required-state actions should persist using Creatio business-rule metadata type names");
+		metadata.Cases.Single().Actions.Select(action => action.Items).Should().Equal([
+				"NameInput",
+				"AmountInput",
+				"CloseDateInput",
+				"CommentInput"
+			],
+			because: "page action items should stay as page element names");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Maps set-values constant assignments into BusinessRuleActionSetValues metadata with typed item expressions.")]
 	public void ToMetadata_Should_Map_SetValues_Constant_Action_Metadata() {
 		// Arrange
