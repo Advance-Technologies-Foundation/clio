@@ -456,6 +456,54 @@ public sealed class BusinessRuleToolTests {
 			.Returns(new BusinessRuleCreateResult("BusinessRule_7654321"));
 		CreatePageBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
 		PageBusinessRuleMcpContract rule = new(
+			"Show escalation when priority is high",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "PDS_Priority", null),
+						"equal",
+						new BusinessRuleExpression("Const", null,
+							JsonSerializer.Deserialize<JsonElement>("\"High\"")))
+				]),
+			[
+				new PageShowElementBusinessRuleActionMcpContract(["EscalateButton"])
+			]);
+
+		// Act
+		CommandExecutionResult result = tool.BusinessRuleCreate("dev", "UsrPkg", "UsrCase_FormPage", rule);
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a successful page business-rule service call should return the standard success exit code");
+		result.Output.Select(message => (string)message.Value).Should().Contain("Rule name: BusinessRule_7654321",
+			because: "the MCP tool should preserve the generated internal rule name in execution logs");
+		commandResolver.Received(1).Resolve<CreatePageBusinessRuleCommand>(Arg.Is<EnvironmentOptions>(options =>
+			options.Environment == "dev"));
+		service.Received(1).Create(
+			Arg.Is<PageBusinessRuleCreateRequest>(request =>
+				request.PackageName == "UsrPkg"
+				&& request.PageSchemaName == "UsrCase_FormPage"
+				&& request.Rule.Caption == "Show escalation when priority is high"
+				&& request.Rule.Condition.LogicalOperation == "AND"
+				&& request.Rule.Actions.Count == 1
+				&& request.Rule.Actions[0].ActionType == "show-element"
+				&& request.Rule.Actions[0].FieldSelectionItems.Single() == "EscalateButton"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps a page field-state action payload into the page business-rule service request without breaking page element items.")]
+	public void PageBusinessRuleCreate_Should_Map_Field_State_Action_Arguments() {
+		// Arrange
+		IPageBusinessRuleService service = Substitute.For<IPageBusinessRuleService>();
+		CreatePageBusinessRuleCommand command = new(service, ConsoleLogger.Instance);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreatePageBusinessRuleCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		service.Create(Arg.Any<PageBusinessRuleCreateRequest>())
+			.Returns(new BusinessRuleCreateResult("BusinessRule_7654321"));
+		CreatePageBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		PageBusinessRuleMcpContract rule = new(
 			"Make escalation read-only when priority is high",
 			new BusinessRuleConditionGroup(
 				"AND",
@@ -476,16 +524,10 @@ public sealed class BusinessRuleToolTests {
 		// Assert
 		result.ExitCode.Should().Be(0,
 			because: "a successful page business-rule service call should return the standard success exit code");
-		result.Output.Select(message => (string)message.Value).Should().Contain("Rule name: BusinessRule_7654321",
-			because: "the MCP tool should preserve the generated internal rule name in execution logs");
-		commandResolver.Received(1).Resolve<CreatePageBusinessRuleCommand>(Arg.Is<EnvironmentOptions>(options =>
-			options.Environment == "dev"));
 		service.Received(1).Create(
 			Arg.Is<PageBusinessRuleCreateRequest>(request =>
 				request.PackageName == "UsrPkg"
 				&& request.PageSchemaName == "UsrCase_FormPage"
-				&& request.Rule.Caption == "Make escalation read-only when priority is high"
-				&& request.Rule.Condition.LogicalOperation == "AND"
 				&& request.Rule.Actions.Count == 1
 				&& request.Rule.Actions[0].ActionType == "make-read-only"
 				&& request.Rule.Actions[0].FieldSelectionItems.Single() == "EscalateButton"));
