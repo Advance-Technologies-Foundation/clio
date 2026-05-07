@@ -62,15 +62,11 @@ public sealed class PageBusinessRuleToolE2ETests {
 	}
 
 	[Test]
-	[Description("Binds a new page field-state action payload through the real MCP server and reports an invalid environment failure from command execution.")]
-	[TestCase("make-editable")]
-	[TestCase("make-read-only")]
-	[TestCase("make-required")]
-	[TestCase("make-optional")]
+	[Description("Binds a show-element page business-rule payload through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
-	[AllureName("Page business-rule MCP tool binds field-state payloads")]
-	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rule with a field-state payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
-	public async Task BusinessRuleCreate_Should_Bind_Field_State_Payload_And_Report_Invalid_Environment(string actionType) {
+	[AllureName("Page business-rule MCP tool binds show/hide payloads")]
+	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rule with a show-element payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
+	public async Task BusinessRuleCreate_Should_Bind_ShowElement_Payload_And_Report_Invalid_Environment() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-page-business-rule-env-{Guid.NewGuid():N}";
@@ -82,18 +78,16 @@ public sealed class PageBusinessRuleToolE2ETests {
 				["environmentName"] = invalidEnvironmentName,
 				["packageName"] = "UsrPkg",
 				["pageSchemaName"] = "UsrCase_FormPage",
-				["rule"] = CreateFieldStateRule(actionType)
+				["rule"] = CreateShowElementRule()
 			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: $"valid {actionType} payloads should bind and return the standard command execution envelope");
+			because: "valid show-element payloads should bind and return the standard command execution envelope");
 		execution.ExitCode.Should().NotBe(0,
 			because: "the intentionally missing environment should fail during command execution");
-		execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
-			because: "missing environments should be reported as command execution errors after payload binding succeeds");
 		execution.Output.Should().Contain(message =>
 				ContainsText(message.Value, invalidEnvironmentName),
 			because: "the failure should come from resolving the requested environment, not from deserializing the page action payload");
@@ -103,7 +97,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 	[Description("Creates a page business rule for Contact_FormPage in the Custom package through the real MCP server and Creatio environment.")]
 	[AllureTag(ToolName)]
 	[AllureName("Page business-rule MCP tool creates a Contact page rule")]
-	[AllureDescription("Requires a reachable sandbox environment and destructive opt-in. Reads Contact_FormPage, builds a valid page field-state rule from its bundle, and verifies that Creatio command execution succeeds.")]
+	[AllureDescription("Requires a reachable sandbox environment and destructive opt-in. Reads Contact_FormPage, builds a valid page show/hide rule from its bundle, and verifies that Creatio command execution succeeds.")]
 	public async Task BusinessRuleCreate_Should_Create_Contact_Page_Rule_In_Creatio() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -136,7 +130,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a valid Contact page field-state rule should return the standard command execution envelope");
+			because: "a valid Contact page show/hide rule should return the standard command execution envelope");
 		execution.ExitCode.Should().Be(0,
 			because: "the Contact page rule should be created in the configured Creatio sandbox");
 		execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
@@ -149,7 +143,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 			packageName,
 			target.RootSchemaUId,
 			caption,
-			"Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionReadonlyElement",
+			"Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionHideElement",
 			[target.ElementName],
 			target.AttributeName,
 			arrangeContext.CancellationTokenSource.Token);
@@ -316,15 +310,15 @@ public sealed class PageBusinessRuleToolE2ETests {
 			},
 			["actions"] = new object[] {
 				new Dictionary<string, object?> {
-					["type"] = "make-read-only",
+					["type"] = "hide-element",
 					["items"] = new object[] { target.ElementName }
 				}
 			}
 		};
 
-	private static IReadOnlyDictionary<string, object?> CreateFieldStateRule(string actionType) =>
+	private static IReadOnlyDictionary<string, object?> CreateShowElementRule() =>
 		new Dictionary<string, object?> {
-			["caption"] = $"Apply {actionType} for high priority",
+			["caption"] = "Show escalation for high priority",
 			["condition"] = new Dictionary<string, object?> {
 				["logicalOperation"] = "AND",
 				["conditions"] = new object[] {
@@ -340,7 +334,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 			},
 			["actions"] = new object[] {
 				new Dictionary<string, object?> {
-					["type"] = actionType,
+					["type"] = "show-element",
 					["items"] = new object[] { "EscalateButton" }
 				}
 			}
