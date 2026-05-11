@@ -1320,14 +1320,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildEntityBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, and Set values actions from constants.",
+			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, Set values actions from constants, and Apply-static-filter actions that narrow Lookup attributes by ESQ filter on the reference schema. For the friendly-filter wire shape, comparison tokens, and column-path rules, read MCP resource docs://mcp/guides/business-rule-filters before composing an apply-static-filter payload.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, EntitySchemaNameCamelFieldName, RuleFieldName],
 				[
 					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameCamelFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameCamelFieldName, StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets. Apply-static-filter actions narrow a Lookup attribute by an ESQ filter on its reference schema.")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, an optional top-level condition group, and one or more actions. Omit condition to make the rule always apply (useful for unconditional apply-static-filter). Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets. Apply-static-filter actions narrow a Lookup attribute by an ESQ filter on its reference schema.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -1373,7 +1373,69 @@ internal static class ToolContractCatalog {
 						BusinessRuleSetValueItem("UsrStartDate", "2025-01-01"),
 						BusinessRuleSetValueItem("UsrPlannedOn", "2025-01-01T00:00:00Z"),
 						BusinessRuleSetValueItem("UsrReminderTime", "12:00:00+02:00")
-					])
+					]),
+				Example("Apply a static filter to narrow a lookup to active records only",
+					new Dictionary<string, object?> {
+						[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+						[PackageNameCamelFieldName] = ExamplePackageName,
+						[EntitySchemaNameCamelFieldName] = "UsrTask",
+						[RuleFieldName] = new Dictionary<string, object?> {
+							["caption"] = "Show only active statuses when name is filled",
+							["condition"] = new Dictionary<string, object?> {
+								["logicalOperation"] = "AND",
+								["conditions"] = new object[] {
+									new Dictionary<string, object?> {
+										["leftExpression"] = new Dictionary<string, object?> {
+											["type"] = BusinessRuleConstants.AttributeValueExpressionType,
+											["path"] = "Name"
+										},
+										["comparisonType"] = "is-filled-in"
+									}
+								}
+							},
+							["actions"] = new object[] {
+								new Dictionary<string, object?> {
+									["type"] = "apply-static-filter",
+									["targetAttribute"] = "Status",
+									["filter"] = new Dictionary<string, object?> {
+										["logicalOperation"] = "AND",
+										["filters"] = new object[] {
+											new Dictionary<string, object?> {
+												["columnPath"] = "IsActive",
+												["comparisonType"] = "EQUAL",
+												["value"] = true
+											}
+										}
+									}
+								}
+							}
+						}
+					}),
+				Example("Apply an unconditional static filter to always narrow a lookup",
+					new Dictionary<string, object?> {
+						[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+						[PackageNameCamelFieldName] = ExamplePackageName,
+						[EntitySchemaNameCamelFieldName] = "UsrOrder",
+						[RuleFieldName] = new Dictionary<string, object?> {
+							["caption"] = "Always show only active contacts",
+							["actions"] = new object[] {
+								new Dictionary<string, object?> {
+									["type"] = "apply-static-filter",
+									["targetAttribute"] = "Contact",
+									["filter"] = new Dictionary<string, object?> {
+										["logicalOperation"] = "AND",
+										["filters"] = new object[] {
+											new Dictionary<string, object?> {
+												["columnPath"] = "Active",
+												["comparisonType"] = "EQUAL",
+												["value"] = true
+											}
+										}
+									}
+								}
+							}
+						}
+					})
 			],
 			Flow(
 				[

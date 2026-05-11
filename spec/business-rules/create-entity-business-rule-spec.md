@@ -39,16 +39,26 @@ Entity-level rule creation must:
       - `Time` constants use ISO 8601 time with a required timezone suffix (`Z` or `±HH:mm`)
    - support multiple conditions 
    - support grouping conditions by AND or OR (without nested groups)
+- condition
+   - optional: omitting condition makes the rule always apply (useful for unconditional apply-static-filter)
 - actions
    - support action types:
       - make readonly
       - make editable
       - make required
       - make optional
+      - set values
+      - apply-static-filter
    - support multiple actions
    - support set value targets:
       - constant value (text, number, boolean, date/time)
    - support multiple targets per action
+   - apply-static-filter action:
+      - requires `targetAttribute` (Lookup column name on the entity)
+      - requires `filter` (friendly group with `logicalOperation`, `filters[]` leaves, optional `backwardReferenceFilters[]`)
+      - must not include `items`
+      - filter leaves support comparisonType tokens: EQUAL, NOT_EQUAL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, IS_NULL, IS_NOT_NULL, START_WITH, NOT_START_WITH, CONTAIN, NOT_CONTAIN, END_WITH, NOT_END_WITH
+      - `rootSchemaName` is inferred from the targetAttribute's reference schema; do not pass it
 - generate internal identifiers automatically
 - append the new rule without changing the order of existing rules
 
@@ -67,4 +77,8 @@ Entity-level rule creation must reject the request when:
 - a relational comparison targets a non-numeric and non-temporal left attribute
 - a referenced condition attribute does not exist in the target entity scope
 - a referenced action target does not exist in the target entity scope
+- an apply-static-filter action includes `items`
+- an apply-static-filter action omits `targetAttribute`
+- an apply-static-filter action omits `filter`
+- an apply-static-filter action's filter is rejected by the server-side ESQ converter (e.g. unknown column path, datatype mismatch, missing lookup record, malformed backward reference)
 - persistence fails
