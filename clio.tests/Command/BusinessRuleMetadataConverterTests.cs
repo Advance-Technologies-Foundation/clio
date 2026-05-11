@@ -447,6 +447,71 @@ public sealed class BusinessRuleMetadataConverterTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps set-values AttributeValue assignments into attribute expression metadata and trigger roots.")]
+	public void ToMetadata_Should_Map_SetValues_Attribute_Value_Action_Metadata() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null),
+				["UsrNameCopy"] = new("UsrNameCopy", "Text", null),
+				["Name"] = new("Name", "Text", null),
+				["UsrCreatorAge"] = new("UsrCreatorAge", "Integer", null),
+				["CreatedBy"] = new("CreatedBy", "Lookup", "Contact"),
+				["CreatedBy.Age"] = new("CreatedBy.Age", "Integer", null)
+			};
+		BusinessRule rule = new(
+			"Copy values",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Draft")))
+				]),
+			[
+				new SetValuesBusinessRuleAction(
+					new List<BusinessRuleSetValueItem> {
+						new(
+							new BusinessRuleExpression("AttributeValue", "UsrNameCopy", null),
+							new BusinessRuleExpression("AttributeValue", "Name", null)),
+						new(
+							new BusinessRuleExpression("AttributeValue", "UsrCreatorAge", null),
+							new BusinessRuleExpression("AttributeValue", "CreatedBy.Age", null))
+					})
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(attributeMap, rule, "UsrTask");
+
+		// Assert
+		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single();
+		List<BusinessRuleSetValueItemMetadataDto> items = (List<BusinessRuleSetValueItemMetadataDto>)action.Items!;
+		items[0].Value.TypeName.Should().Be(BusinessRuleConstants.BusinessRuleAttributeExpressionTypeName,
+			because: "direct AttributeValue sources should persist as core attribute expressions");
+		items[0].Value.Type.Should().Be("AttributeValue",
+			because: "the source discriminator should stay AttributeValue in add-on metadata");
+		items[0].Value.Path.Should().Be("Name",
+			because: "direct source attribute paths should be preserved");
+		items[1].Value.Path.Should().Be("CreatedBy.Age",
+			because: "forward reference source paths should be preserved for core evaluation");
+		items[1].Value.DataValueTypeName.Should().Be("Integer",
+			because: "the source expression should describe the final source column type");
+		metadata.Triggers.Should().Contain(trigger =>
+				trigger.Type == BusinessRuleConstants.ChangeAttributeValueTriggerType && trigger.Name == "Name",
+			because: "direct AttributeValue sources should recalculate when the source column changes");
+		metadata.Triggers.Should().Contain(trigger =>
+				trigger.Type == BusinessRuleConstants.ChangeAttributeValueTriggerType && trigger.Name == "CreatedBy",
+			because: "forward AttributeValue sources should match designer metadata and trigger on the root lookup column");
+		metadata.Triggers.Should().NotContain(trigger => trigger.Name == "CreatedBy.Age",
+			because: "designer-generated business-rule metadata does not emit full forward-path triggers");
+		metadata.Triggers.Should().Contain(trigger =>
+				trigger.Type == BusinessRuleConstants.DataLoadedTriggerType && trigger.Name == string.Empty,
+			because: "Set values rules should still run on DataLoaded");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects formula assignments when expression translation cannot resolve a source attribute.")]
 	public void ToMetadata_Should_Reject_SetValues_Formula_With_Unknown_Source_Attribute() {
 		// Arrange

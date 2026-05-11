@@ -163,8 +163,8 @@ public sealed class ToolContractGetToolTests {
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-shape" &&
 				validator.Field == "rule.actions[*].items[*]" &&
-				validator.Context!.Contains("Attribute value sources, formula functions, comparison operators, and string literals are not supported", StringComparison.Ordinal),
-			because: "the contract should keep attribute-source assignments out of the current set-values scope");
+				validator.Context!.Contains("forward reference paths like LookupColumn.SourceColumn", StringComparison.Ordinal),
+			because: "the contract should advertise AttributeValue source assignments in the current set-values scope");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-constant" &&
 				validator.Field == "rule.actions[*].items[*].value.value" &&
@@ -316,6 +316,9 @@ public sealed class ToolContractGetToolTests {
 		bool hasSetValuesFormulaExample = contract.Examples.Any(HasSetValuesFormulaExample);
 		hasSetValuesFormulaExample.Should().BeTrue(
 			because: "the contract should include a set-values formula example using direct field names");
+		bool hasSetValuesAttributeExample = contract.Examples.Any(HasSetValuesAttributeExample);
+		hasSetValuesAttributeExample.Should().BeTrue(
+			because: "the contract should include a set-values AttributeValue example using a forward reference source path");
 	}
 
 	[Test]
@@ -452,6 +455,26 @@ public sealed class ToolContractGetToolTests {
 				string.Equals(valueExpression["type"]?.ToString(), "Formula", StringComparison.Ordinal)
 				&& string.Equals(valueExpression["expression"]?.ToString(), "UsrEstimatedEffort + UsrExtraEffort",
 					StringComparison.Ordinal));
+	}
+
+	private static bool HasSetValuesAttributeExample(ToolContractExample example) {
+		if (example.Arguments["rule"] is not Dictionary<string, object?> rule
+			|| !rule.TryGetValue("actions", out object? actionsValue)
+			|| actionsValue is not object[] actions
+			|| actions.SingleOrDefault() is not Dictionary<string, object?> action
+			|| !string.Equals(action["type"]?.ToString(), "set-values", StringComparison.Ordinal)
+			|| !action.TryGetValue("items", out object? itemsValue)
+			|| itemsValue is not object[] items) {
+			return false;
+		}
+
+		return items
+			.OfType<Dictionary<string, object?>>()
+			.Select(item => item["value"])
+			.OfType<Dictionary<string, object?>>()
+			.Any(valueExpression =>
+				string.Equals(valueExpression["type"]?.ToString(), "AttributeValue", StringComparison.Ordinal)
+				&& string.Equals(valueExpression["path"]?.ToString(), "CreatedBy.Age", StringComparison.Ordinal));
 	}
 
 	[Test]

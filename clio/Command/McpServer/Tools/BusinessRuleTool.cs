@@ -206,7 +206,7 @@ public sealed record EntityMakeOptionalBusinessRuleActionMcpContract : EntityFie
 }
 
 /// <summary>
-/// MCP action contract that assigns constant values to entity attributes.
+/// MCP action contract that assigns constants, formulas, or attribute values to entity attributes.
 /// </summary>
 public sealed record EntitySetValuesBusinessRuleActionMcpContract : EntityBusinessRuleActionMcpContract
 {

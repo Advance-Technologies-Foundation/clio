@@ -555,8 +555,8 @@ public sealed class ToolContractGetToolE2ETests {
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-shape" &&
 				validator.Field == "rule.actions[*].items[*]" &&
-				validator.Context!.Contains("Attribute value sources, formula functions, comparison operators, and string literals are not supported", StringComparison.Ordinal),
-			because: "the contract should advertise the current Set values scope");
+				validator.Context!.Contains("forward reference paths like LookupColumn.SourceColumn", StringComparison.Ordinal),
+			because: "the contract should advertise AttributeValue source support for Set values");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-constant" &&
 				validator.Field == "rule.actions[*].items[*].value.value" &&
@@ -607,6 +607,11 @@ public sealed class ToolContractGetToolE2ETests {
 				StringComparison.Ordinal));
 		hasSetValuesExample.Should().BeTrue(
 			because: "the contract should include a Set values example for constant assignments across supported target families");
+		bool hasSetValuesAttributeExample = contract.Examples.Any(example =>
+			string.Equals(example.Summary, "Create a Set values rule from a forward reference attribute",
+				StringComparison.Ordinal));
+		hasSetValuesAttributeExample.Should().BeTrue(
+			because: "the contract should include a Set values example for AttributeValue source assignments");
 	}
 
 	[Test]
