@@ -210,6 +210,7 @@ internal static class BusinessRuleMetadataConverter {
 			attributeMap,
 			item,
 			entitySchemaName,
+			includeAttributeReferenceSchemaName,
 			targetPath,
 			targetDescriptor,
 			dataValueTypeName);
@@ -230,6 +231,7 @@ internal static class BusinessRuleMetadataConverter {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRuleSetValueItem item,
 		string? entitySchemaName,
+		bool includeAttributeReferenceSchemaName,
 		string targetPath,
 		BusinessRuleAttributeDescriptor targetDescriptor,
 		string dataValueTypeName) {
@@ -245,6 +247,17 @@ internal static class BusinessRuleMetadataConverter {
 				BusinessRuleFormulaBuilder.GetRequiredFormulaText(item.Value),
 				dataValueTypeName);
 		}
+
+		if (IsAttributeValueExpression(item.Value)) {
+			string sourcePath = item.Value.Path!;
+			BusinessRuleAttributeDescriptor sourceDescriptor = attributeMap[sourcePath];
+			return BuildAttributeExpression(
+				sourceDescriptor,
+				sourcePath,
+				sourceDescriptor.DataValueTypeName,
+				includeAttributeReferenceSchemaName);
+		}
+
 		object? value = ConvertJsonElement(item.Value.Value!.Value, dataValueTypeName);
 		return new BusinessRuleExpressionMetadataDto {
 			TypeName = BusinessRuleValueExpressionTypeName,
@@ -264,8 +277,11 @@ internal static class BusinessRuleMetadataConverter {
 		IEnumerable<string> formulaTriggers = string.IsNullOrWhiteSpace(entitySchemaName)
 			? Enumerable.Empty<string>()
 			: rule.Actions.SelectMany(action => EnumerateFormulaTriggerNames(action, attributeMap));
+		IEnumerable<string> attributeValueSourceTriggers =
+			rule.Actions.SelectMany(EnumerateSetValuesAttributeSourceTriggerNames);
 		List<BusinessRuleTriggerMetadataDto> triggers = conditionTriggers
 			.Concat(formulaTriggers)
+			.Concat(attributeValueSourceTriggers)
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.Select(triggerName => new BusinessRuleTriggerMetadataDto {
 				TypeName = BusinessRuleTriggerTypeName,
@@ -309,6 +325,22 @@ internal static class BusinessRuleMetadataConverter {
 			}
 		}
 	}
+
+	private static IEnumerable<string> EnumerateSetValuesAttributeSourceTriggerNames(BusinessRuleAction action) {
+		if (!string.Equals(action.ActionType, SetValuesActionTypeName, StringComparison.OrdinalIgnoreCase)) {
+			yield break;
+		}
+
+		foreach (BusinessRuleSetValueItem item in action.SetValueItems) {
+			if (IsAttributeValueExpression(item.Value)
+				&& !string.IsNullOrWhiteSpace(item.Value.Path)) {
+				yield return GetRootAttributePath(item.Value.Path);
+			}
+		}
+	}
+
+	private static bool IsAttributeValueExpression(BusinessRuleExpression? expression) =>
+		string.Equals(expression?.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase);
 
 	private static string GenerateBusinessRuleName() => $"BusinessRule_{Guid.NewGuid():N}"[..20];
 }

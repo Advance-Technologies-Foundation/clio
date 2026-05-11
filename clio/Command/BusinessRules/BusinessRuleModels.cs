@@ -329,7 +329,7 @@ public sealed record BusinessRuleSetValueItem
 
 
     [JsonPropertyName("value")]
-    [Description("Source value expression. Supported values are Const and Formula.")]
+    [Description("Source value expression. Supported values are Const, Formula, and AttributeValue. AttributeValue may use a direct source column path or a forward reference path such as LookupColumn.SourceColumn.")]
     [Required]
     public BusinessRuleExpression Value { get; init; } = null!;
 }
