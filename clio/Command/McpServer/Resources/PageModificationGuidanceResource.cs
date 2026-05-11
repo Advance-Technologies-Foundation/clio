@@ -27,6 +27,7 @@ public sealed class PageModificationGuidanceResource {
 
 		       | Requirement pattern | Call get-guidance with name | Why |
 		       | --- | --- | --- |
+		       | conditional visibility, editability, or required state based on field values (e.g. "when Status=Closed hide field X") | `business-rules` | Business rules are SEPARATE artifacts — do NOT implement them as JavaScript handlers or validators. Use `create-page-business-rule` or `create-entity-business-rule`. |
 		       | email as mailto link, phone as tel link, text uppercase/lowercase, boolean inversion, number/currency formatting, any display-only transformation | `page-schema-converters` | Determines whether a converter is the right tool BEFORE you choose a component type. Skipping this causes AI to use crt.EmailInput instead of crt.ToEmailLink, or crt.Label instead of a converter binding. |
 		       | business logic, cross-field orchestration, async data loading, side effects | `page-schema-handlers` | Handlers are NOT the same as converters. |
 		       | required field, max length, format enforcement with error message | `page-schema-validators` | Validators write to viewModelConfigDiff, not viewConfigDiff. |
