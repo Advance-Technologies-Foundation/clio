@@ -20,6 +20,7 @@ Clio MCP server експонує AI-агентам набір інструмен
 3. [03-available-components.md](03-available-components.md) — повний список 92 компонентів за категоріями (containers / fields / interactive / display / filtering).
 4. [04-multi-version-target-structure.md](04-multi-version-target-structure.md) — цільова структура для підтримки кількох версій платформи: per-entry `availability`, resolver версії, `target-version` resolution stack, відкриті питання.
 5. [05-source-of-truth-automation.md](05-source-of-truth-automation.md) — автоматичний SoT із репо `creatio-ui`: AST-екстракція з `@CrtViewElement` декораторів + `*ViewConfig` інтерфейсів, JSDoc-вокабуляр, CI pipeline, npm-публікація, composer-фаза в clio.
+6. [06-diagrams.md](06-diagrams.md) — дві діаграми: мінімальна реалізація (pilot, без automation) і кінцеве рішення з повним flow `creatio-ui → composer → MCP`.
 
 ## Зведена картина
 
@@ -33,20 +34,23 @@ Clio MCP server експонує AI-агентам набір інструмен
 │  component-registry.<ver>.json                     │
 │              │                                     │
 │  Jenkins (.pipeline/Jenkinsfile.Registry)          │
-│              │                                     │
-│  npm publish @creatio/component-registry@<ver>     │
+│   ├─ branch-cut → baseline artifact (no publish)   │
+│   ├─ push       → refresh baseline artifact        │
+│   └─ GA tag     → npm publish @<ver>               │
 └──────────────┼─────────────────────────────────────┘
                ▼
 ┌──────────────────── clio ──────────────────────────┐
 │                                                    │
+│  supported-versions.json  ← explicit manual PR     │
+│              │                                     │
 │  composer:                                         │
 │  • npm install усіх підтримуваних версій           │
-│  • diff snapshot-ів → availability ranges         │
+│  • diff snapshot-ів → availability ranges          │
 │  • merge overrides.json (AI-специфічні хінти)      │
 │              │                                     │
 │  ComponentRegistry.json (with availability)        │
 │              │                                     │
-│  ComponentInfoCatalog → IPlatformVersionResolver  │
+│  ComponentInfoCatalog → IPlatformVersionResolver   │
 │              │                                     │
 │  MCP: get-component-info → відфільтровано по версії│
 └────────────────────────────────────────────────────┘

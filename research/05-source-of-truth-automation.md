@@ -76,10 +76,24 @@ export interface ButtonViewConfig extends ViewElementConfig<BaseElementConfig> {
 
 ### Розмір розриву між source і curated registry
 
-- **324** `@CrtViewElement` декорувань (без `*.spec.ts`)
-- **92** записи у курованому JSON
+Станом на `creatio-ui@master`, після уточнених ексклюзивних фільтрів (test/mock + `apps/pkgs` + `interface-designer-properties-panel` + `**/designtime/**`):
 
-Більшість 324 — це `*PropertiesPanel`, `crt.*Request`, `crt.*Converter`. Ручний registry свідомо звужено до AI-релевантних UI-компонентів. Це треба формалізувати у **фільтр-правилі** (інакше автогенерація поверне «шум»).
+- **192** унікальних `@CrtViewElement` декорувань (designer config UI вилучено на рівні фільтра)
+- **92** записи у курованому `ComponentRegistry.json`
+- **0** регресій (всі 92 курованих знаходяться в extracted-сеті)
+- **0** `*PropertiesPanel` у extracted-сеті (повна санація `**/designtime/**`-фільтром)
+
+З 192 extracted:
+- **92** уже в курованому реєстрі
+- **100** нових кандидатів, з них:
+  - ~30 internal `Table*Cell` / `DataTableEdit*Cell` (рендеряться `DataGrid`, AI не інстанціює)
+  - ~10 app-shell / infra (`AppBackground`, `RouterOutlet`, `ModuleLoader`, …)
+  - ~5 deprecated (`DeprecatedInput`, `Angular7XDetail`, …)
+  - **~55 справжніх UI-компонентів** для перевірки AI-командою (`ChatComposer`, `EmailComposer`, `EmojiSelect`, `Switch`, `TabPanelHeader`, `Timer`, `TranslateToggle`, `WaterfallWidget` тощо)
+
+Деталі і повні списки — у [03-available-components.md](03-available-components.md#авто-екстракція-з-creatio-ui-актуалізовано).
+
+**Висновок:** designer-only UI відсікаємо на рівні extractor-а (folder-фільтр — точний інваріант). Решта «шуму» (internal cells, app-shell, deprecated) — задача overlay-у в clio composer. Це знімає потребу в семантичних `@aiHidden`/`@aiInclude` тегах у platform code.
 
 ## Версійні якорі вже в репо
 
@@ -128,10 +142,28 @@ export interface ButtonViewConfig extends ViewElementConfig<BaseElementConfig> {
 
 ## Етапи екстракції (в `tools/component-registry-extractor/`)
 
-1. **AST walk** усіх `*.ts` в `libs/` (виключно `**/*.spec.ts`, `**/node_modules/**`).
+1. **AST walk** усіх `*.ts` із наступними фільтрами.
+
+   **Інклюзивний критерій:** клас із декоратором `@CrtViewElement`. Жодних інших евристик (suffix-фільтрів, name-конвенцій) — це джерело false-negatives.
+
+   **Ексклюзивні фільтри** (всі застосовуються):
+
+   | Категорія | Glob |
+   |---|---|
+   | Тестові файли | `**/*.spec.ts`, `**/*.spec.ui.ts`, `**/*.spec.tsx`, `**/*.test.ts`, `**/*.test.tsx` |
+   | Моки | `**/*.mock.ts`, `**/mocks/**`, `**/__mocks__/**` |
+   | Built artifacts | `apps/pkgs/**` |
+   | Designer-only UI (lib) | `libs/studio-enterprise/ui/interface-designer-properties-panel/**` |
+   | Designer-only UI (subpath) | `**/designtime/**` |
+   | Стандартні | `**/node_modules/**`, `dist/**` |
+
+   **Чому `**/designtime/**` потрапив у фільтри:** усі 44 `*PropertiesPanel`-компоненти живуть у subpath `designtime/` всередині своїх lib-папок (розкидано по 27 різних lib — `approval`, `calendar`, `chat-panel`, `compact-profile`, `feed`, `folder-tree`, `message-composer`, ...). Перевірено інваріант на `creatio-ui@master`: 44/44 PropertiesPanel-компонентів — у `**/designtime/**`; 0/192 не-PropertiesPanel — у `**/designtime/**`. Точний і повний filter без false-positive/negative. Прибирає потребу в overlay-rule `aiHidden: true` для 44 рядків.
+
+   **Critical:** парсер `@CrtViewElement` має ігнорувати декоратор всередині JSDoc-коментарів (`/** @CrtViewElement({ type: 'usr.Example' }) */` у файлах декоратор-визначень типу [view-element-registration-config.ts](https://github.com/Advance-Technologies-Foundation/creatio-ui/blob/master/libs/devkit/common/src/lib/public/models/view-element/view-element-registration-config.ts) — інакше підхопить `usr.Example` як псевдо-компонент). Реалізація: strip block- і line-коментарів перед AST-walk, АБО використати ts-morph node-level decorator API замість текстового пошуку.
+
 2. Для кожного класу з `@CrtViewElement`:
    - `componentType` = `decorator.arguments[0].type` (string literal `'crt.X'`).
-   - `aiHidden`: якщо JSDoc на класі/декораторі має `@aiHidden`, або тип містить `PropertiesPanel|Request|Converter|Handler` — пропустити (override: explicit `@aiInclude`).
+   - **БЕЗ** semantic-фільтрації по суфіксах. `*PropertiesPanel`, `*Request`-named тощо — включаються в extracted-сет; їх «приховування від AI» — задача `overrides.json` на стороні clio composer (`aiHidden: true`), не extractor-а.
 3. Резолвити пов'язаний `ViewConfig` interface:
    - конвенція: `<ComponentName>ViewConfig` у `view-models/` сусіднього файлу, або декларовано через property type / generic.
 4. Для кожного property у ViewConfig:
@@ -181,9 +213,9 @@ export interface ButtonViewConfig extends ... {
 - `@since <version>` — `availability.since`
 - `@deprecated <version> - <reason>` — `availability.until` + `description` suffix
 - `@aiCategory <name>` — категорія (containers/fields/interactive/display/filtering)
-- `@aiHidden` — не експортувати в registry
-- `@aiInclude` — explicit override на heuristic skip
 - `@aiHint "..."` — інлайн-порада для AI
+
+Тег `@aiHidden` **видалено** з вокабуляру extractor-а: оскільки інклюзивний критерій тепер — лише `@CrtViewElement`, без heuristic skip-у по суфіксах, потреби в `@aiInclude` як override-і немає. Приховування «шумних» компонентів (`*PropertiesPanel`, internal table cells, app shell) — задача clio-овського `overrides.json`, не extractor-а. Це чітко розділяє відповідальність: платформа звітує про все, що в неї є; AI-team вирішує, що показувати моделі.
 
 ## Шар «overrides» на стороні clio
 
@@ -226,6 +258,64 @@ Merge-порядок: `auto-registry` → накладається `overrides`. 
 - Тільки висмикує trigger «composer» — оркеструє запуск pipeline + auto-PR.
 - На самому extractor-у нічого не змінює.
 
+### Release branch lifecycle (виділення нової release-лінії)
+
+Базовий тригер `push у release-branch` працює для **вже існуючих** ліній (`8.1.x`, `8.2.x`). Окремо описуємо подію «creatio-ui виділяє нову гілку для майбутнього релізу» — момент, коли `master` (8.4-dev) форкається у `8.3.x` під майбутній GA.
+
+**Політичне рішення:** prerelease-публікацій немає. Внутрішні extractor-build-и на release-branch до GA-тега в npm не публікуються — тільки локальні Jenkins-артефакти.
+
+```
+master (8.4 dev) ─┬─ cut → 8.3.x branch created
+                  │     │
+                  │     ├─ Jenkins on-branch-create (Jenkinsfile.Registry)
+                  │     │    ├─ extract @ branch HEAD
+                  │     │    ├─ produce baseline component-registry.json як Jenkins artifact
+                  │     │    │   (інспекція + регресійний детектор; НЕ npm-publish)
+                  │     │    └─ diff vs previous-line GA snapshot → preview звіт у Slack/Jira
+                  │     │
+                  │     └─ ongoing commits на 8.3.x → re-extract, refresh artifact
+                  │          (теж без npm-publish)
+                  │
+                  └─ tag 8.3.0 (GA) ─ extract → npm publish @creatio/component-registry@8.3.0
+                                            └─ manual PR у clio:
+                                                supported-versions.json += "8.3.0"
+                                                  └─ composer rebuilds unified registry
+                                                       └─ auto-PR with new ComponentRegistry.json
+```
+
+Етапи:
+
+1. **Branch-cut event у creatio-ui.** Jenkins-pipeline-library має або branch-creation hook, або nightly diff-job, що детектує нові гілки за naming-pattern (`^\d+\.\d+(\.x|\.\d+)?$`). Запускається `Jenkinsfile.Registry` у спеціальному «baseline mode»:
+   - extract → archive як build artifact (`component-registry.<branch>.json`);
+   - **NO npm publish** — це pre-GA work-in-progress;
+   - diff vs остання GA-публікація попередньої лінії → preview-звіт: «що нового з'являється, що зникає, що змінюється в properties».
+   - Цей preview ловить регресії в extractor-і та неузгодженості політики (наприклад, помилково знятий `@aiHidden`) **до** GA.
+
+2. **Ongoing commits у release-branch до GA.** Той самий `Jenkinsfile.Registry` re-runs на кожен push, refresh-ить artifact. Композиція в clio не торкається — нової версії у `supported-versions.json` нема.
+
+3. **GA tag.** Push tag `8.3.0` тригерить **публікаційний mode** того ж pipeline:
+   - extract → npm publish `@creatio/component-registry@8.3.0`;
+   - npm dist-tag `latest` оновлюється тільки якщо це найбільша версія (інакше per-line dist-tag типу `8.3` зберігає сумісність зі старими споживачами).
+
+4. **Реєстрація нової версії на стороні clio (explicit, не auto-discover).**
+   - У clio repo живе [supported-versions.json](../clio/Command/McpServer/Data/supported-versions.json) (новий файл) — список minor-ліній, для яких composer тягне snapshot-и:
+     ```json
+     ["8.0.x", "8.1.x", "8.2.x"]
+     ```
+   - Додавання нової лінії — manual PR із обґрунтуванням («команда зафіксувала підтримку 8.3.x»).
+   - Auto-PR (бот, що моніторить npm registry) — як **опційне** прискорення, але прийняття рішення про підтримку — людське.
+
+5. **Composer-пробіг.** Після bump-у `supported-versions.json` composer (в CI clio) тягне npm-пакети для всього списку, перебудовує unified `ComponentRegistry.json` із оновленим `availability`, відкриває PR.
+
+6. **Branch retirement.** Коли підтримка старої лінії припиняється — PR в clio, що знімає її з `supported-versions.json`. Composer:
+   - якщо компонент/property був із цієї лінії і відсутній у наступній — `availability.until` отримує значення першої не-підтримуваної версії;
+   - якщо компонент/property присутній у всіх лініях, що залишились — без змін.
+
+**Що дає baseline-mode без публікації:**
+- Раннє ловіння extractor-регресій (нова версія платформи з новим декоратор-патерном → padding-у extractor-і).
+- Раннє ловіння конфліктів з overlay-ями clio (deprecated в нові версії, але overlay вказує на нього).
+- Preview-звіт для AI-команди завчасно (за тижні до GA).
+
 ## Що НЕ робити (антипатерни)
 
 - **Не парсити `*.api.md` як JSON.** Це Markdown rollup, призначений для review, не для машинного парсингу. Замість цього — `docModel: true` у api-extractor конфігах, якщо api-extractor буде вторинним джерелом.
@@ -243,6 +333,10 @@ Merge-порядок: `auto-registry` → накладається `overrides`. 
 6. **Backfill for v8.0/v8.1.** Перший прохід — на історичних branches, чи лише з v8.2 forward (legacy fallback = «availability відсутня = завжди»)?
 7. **Що робити з `composable-apps/*`?** У них теж є власні крт-компоненти — це app-level, не platform. Можливо, окремий extractor pass із tag-ом scope в record.
 8. **Properties panels.** Поточний кур-registry їх свідомо не містить. Підтверджуємо це як правило і додаємо у фільтр.
+9. **Branch-creation hook у Jenkins.** Чи доступний у `@Library('pipeline-library')` готовий тригер на створення нової гілки? Якщо ні — nightly job, що порівнює `git branch -r` із попередньою ітерацією і запускає baseline-extract для нових `^\d+\.\d+(\.x|\.\d+)?$`-branch-ів.
+10. **npm dist-tag policy.** `latest` = max-версія (звичайна semver-семантика) чи per-line tag (`8.2`, `8.3`)? Перше простіше, друге стабільніше для споживачів, що пінять mінорну лінію.
+11. **Cadence GA-тегів.** Чи кожен build створює GA-тег (`8.3.0`, `8.3.1`, …) — тоді composer ребіл-диться часто; чи тільки на minor-зрізах — composer оновлюється раз у місяць. Впливає на навантаження на clio-CI і частоту auto-PR.
+12. **Реєстрація підтримки — людська чи автоматична.** Manual PR у `supported-versions.json` (default) vs auto-PR бота, що пушить, як тільки нова npm-версія з'являється. Manual безпечніше, але потребує дисципліни команди.
 
 ## Pilot-план (мінімальний валідаційний цикл, ~2 тижні)
 
