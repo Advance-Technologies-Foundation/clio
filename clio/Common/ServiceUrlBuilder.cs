@@ -91,7 +91,37 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Retrieves bound schema data rows from the remote DB.
 		/// </summary>
-		GetBoundSchemaData = 35
+		GetBoundSchemaData = 35,
+
+		/// <summary>
+		///     Unlocks packages via ClioGate (bypasses DataService ESQ permission checks).
+		/// </summary>
+		UnlockPackages = 36,
+
+		/// <summary>
+		///     Locks packages via ClioGate (bypasses DataService ESQ permission checks).
+		/// </summary>
+		LockPackages = 37,
+
+		/// <summary>
+		///     Generates source code for all schemas.
+		/// </summary>
+		GenerateAllSchemasSources = 38,
+
+		/// <summary>
+		///     Generates source code only for modified schemas.
+		/// </summary>
+		GenerateModifiedSchemasSources = 39,
+
+		/// <summary>
+		///     Starts source code generation for all schemas as a background task.
+		/// </summary>
+		GenerateAllSchemasSourcesInBackground = 40,
+
+		/// <summary>
+		///     Generates source code for schemas that require it.
+		/// </summary>
+		GenerateRequiredSchemasSources = 41
 
 	}
 
@@ -140,6 +170,12 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.SaveSchemaData, "ServiceModel/SchemaDataDesignerService.svc/SaveSchema"},
 		{KnownRoute.DeletePackageSchemaData, "DataService/json/SyncReply/DeletePackageSchemaDataRequest"},
 		{KnownRoute.GetBoundSchemaData, "ServiceModel/SchemaDataDesignerService.svc/GetBoundSchemaData"},
+		{KnownRoute.UnlockPackages, "/rest/CreatioApiGateway/UnlockPackages"},
+		{KnownRoute.LockPackages, "/rest/CreatioApiGateway/LockPackages"},
+		{KnownRoute.GenerateAllSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateAllSchemasSources"},
+		{KnownRoute.GenerateModifiedSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateModifiedSchemasSources"},
+		{KnownRoute.GenerateAllSchemasSourcesInBackground, "ServiceModel/WorkspaceExplorerService.svc/GenerateAllSchemasSourcesInBackground"},
+		{KnownRoute.GenerateRequiredSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateRequiredSchemasSources"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

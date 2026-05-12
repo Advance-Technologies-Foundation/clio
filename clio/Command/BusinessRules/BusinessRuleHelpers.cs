@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Globalization;
@@ -30,6 +31,28 @@ internal static class BusinessRuleHelpers {
 		}
 
 		return columns;
+	}
+
+	internal static IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> BuildAttributeDescriptorMap(
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) =>
+		new LazyBusinessRuleAttributeDescriptorMap(columnMap);
+
+	internal static BusinessRuleAttributeDescriptor BuildAttributeDescriptor(
+		string path,
+		EntitySchemaColumnDto column) =>
+		new(
+			path,
+			MapDataValueTypeName(column.DataValueType),
+			column.ReferenceSchema?.Name);
+
+	internal static bool IsForwardReferencePath(string path) =>
+		path.Contains('.', StringComparison.Ordinal);
+
+	internal static string GetRootAttributePath(string path) {
+		int separatorIndex = path.IndexOf('.');
+		return separatorIndex > 0
+			? path[..separatorIndex]
+			: path;
 	}
 
 	internal static string MapDataValueTypeName(int? dataValueType) {
@@ -199,5 +222,44 @@ internal static class BusinessRuleHelpers {
 			JsonValueKind.Array or JsonValueKind.Object => JsonNode.Parse(element.GetRawText()),
 			_ => element.ToString()
 		};
+	}
+
+	private sealed class LazyBusinessRuleAttributeDescriptorMap(
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columns)
+		: IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> {
+
+		public IEnumerable<string> Keys => columns.Keys;
+
+		public IEnumerable<BusinessRuleAttributeDescriptor> Values =>
+			columns.Select(pair => BuildAttributeDescriptor(pair.Key, pair.Value));
+
+		public int Count => columns.Count;
+
+		public BusinessRuleAttributeDescriptor this[string key] =>
+			TryGetValue(key, out BusinessRuleAttributeDescriptor? value)
+				? value
+				: throw new KeyNotFoundException($"Attribute '{key}' was not found.");
+
+		public bool ContainsKey(string key) => columns.ContainsKey(key);
+
+		public bool TryGetValue(string key, out BusinessRuleAttributeDescriptor value) {
+			if (!columns.TryGetValue(key, out EntitySchemaColumnDto? column)) {
+				value = default!;
+				return false;
+			}
+
+			value = BuildAttributeDescriptor(key, column);
+			return true;
+		}
+
+		public IEnumerator<KeyValuePair<string, BusinessRuleAttributeDescriptor>> GetEnumerator() {
+			foreach (KeyValuePair<string, EntitySchemaColumnDto> pair in columns) {
+				yield return new KeyValuePair<string, BusinessRuleAttributeDescriptor>(
+					pair.Key,
+					BuildAttributeDescriptor(pair.Key, pair.Value));
+			}
+		}
+
+		IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 	}
 }

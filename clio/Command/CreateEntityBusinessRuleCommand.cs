@@ -19,7 +19,7 @@ public sealed class CreateEntityBusinessRuleOptions : EnvironmentNameOptions {
 /// Creates an entity-level Freedom UI business rule through the business-rule service.
 /// </summary>
 public sealed class CreateEntityBusinessRuleCommand(
-	IBusinessRuleService businessRuleService,
+	IEntityBusinessRuleService businessRuleService,
 	ILogger logger)
 	: Command<CreateEntityBusinessRuleOptions> {
 	
@@ -27,7 +27,7 @@ public sealed class CreateEntityBusinessRuleCommand(
 		ArgumentNullException.ThrowIfNull(options);
 		try {
 			Validate(options);
-			BusinessRuleCreateResult result = businessRuleService.Create(new BusinessRuleCreateRequest(
+			BusinessRuleCreateResult result = businessRuleService.Create(new EntityBusinessRuleCreateRequest(
 				options.PackageName,
 				options.EntitySchemaName,
 				options.Rule));

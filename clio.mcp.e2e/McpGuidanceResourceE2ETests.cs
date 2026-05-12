@@ -24,6 +24,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	private static readonly string PageSchemaValidatorsUri = BuildGuideUri("page-schema-validators");
 	private static readonly string AgentExecutionUri = BuildGuideUri("agent-execution");
 	private static readonly string SupportModeUri = BuildGuideUri("support-mode");
+	private static readonly string BusinessRulesUri = BuildGuideUri("business-rules");
 
 	[Test]
 	[AllureTag("mcp-guidance-resources")]
@@ -47,9 +48,10 @@ public sealed class McpGuidanceResourceE2ETests {
 				PageSchemaCreatioDevkitCommonUri,
 				PageSchemaValidatorsUri,
 				AgentExecutionUri,
-				SupportModeUri
+				SupportModeUri,
+				BusinessRulesUri
 			],
-			because: "the MCP server should advertise creation existing-app converter handler validator sdk-common agent-execution and support-mode guidance resources");
+			because: "the MCP server should advertise creation existing-app converter handler validator sdk-common agent-execution support-mode and business-rules guidance resources");
 	}
 
 	[Test]

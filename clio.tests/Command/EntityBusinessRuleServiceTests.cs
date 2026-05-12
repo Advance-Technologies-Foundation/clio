@@ -14,11 +14,12 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 [Property("Module", "Command")]
-public sealed class BusinessRuleServiceTests {
+public sealed class EntityBusinessRuleServiceTests {
 	private IAddonSchemaDesignerClient _addonSchemaDesignerClient = null!;
 	private IApplicationPackageListProvider _applicationPackageListProvider = null!;
 	private IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient = null!;
-	private BusinessRuleService _service = null!;
+	private IBusinessRuleFormulaValidationService _formulaValidationService = null!;
+	private EntityBusinessRuleService _service = null!;
 	private AddonSchemaDto? _savedAddonSchema;
 
 	[SetUp]
@@ -27,6 +28,7 @@ public sealed class BusinessRuleServiceTests {
 		_addonSchemaDesignerClient = Substitute.For<IAddonSchemaDesignerClient>();
 		_entitySchemaDesignerClient = Substitute.For<IRemoteEntitySchemaDesignerClient>();
 		_applicationPackageListProvider = Substitute.For<IApplicationPackageListProvider>();
+		_formulaValidationService = Substitute.For<IBusinessRuleFormulaValidationService>();
 		_applicationPackageListProvider.GetPackages().Returns(new[] {
 			new PackageInfo(new PackageDescriptor {
 				Name = "UsrPkg",
@@ -43,10 +45,11 @@ public sealed class BusinessRuleServiceTests {
 		_addonSchemaDesignerClient
 			.When(client => client.SaveSchema(Arg.Any<AddonSchemaDto>()))
 			.Do(callInfo => _savedAddonSchema = callInfo.Arg<AddonSchemaDto>());
-		_service = new BusinessRuleService(
-			_addonSchemaDesignerClient,
-			_entitySchemaDesignerClient,
-			_applicationPackageListProvider);
+		_service = new EntityBusinessRuleService(
+			new BusinessRulePackageResolver(_applicationPackageListProvider),
+			new EntityBusinessRuleAttributeProvider(new EntityBusinessRuleSchemaProvider(_entitySchemaDesignerClient)),
+			new BusinessRuleAddonService(_addonSchemaDesignerClient),
+			_formulaValidationService);
 	}
 
 	[TestCase("", "UsrOrder", true, "package-name is required.")]
@@ -60,7 +63,7 @@ public sealed class BusinessRuleServiceTests {
 		bool includeRule,
 		string expectedMessage) {
 		// Arrange
-		BusinessRuleCreateRequest request = new(
+		EntityBusinessRuleCreateRequest request = new(
 			packageName,
 			entitySchemaName,
 			includeRule ? CreateRule() : null!);
@@ -81,7 +84,7 @@ public sealed class BusinessRuleServiceTests {
 	[Description("Fails before schema designer calls when the requested package cannot be found in the installed package list.")]
 	public void Create_Should_Reject_When_Package_Cannot_Be_Resolved() {
 		// Arrange
-		BusinessRuleCreateRequest request = new(
+		EntityBusinessRuleCreateRequest request = new(
 			"MissingPkg",
 			"UsrOrder",
 			CreateRule());
@@ -102,7 +105,7 @@ public sealed class BusinessRuleServiceTests {
 	[Description("Loads the target entity schema, appends the new rule metadata, normalizes resources, and saves the updated add-on payload.")]
 	public void Create_Should_Load_Target_Entity_And_Append_Rule_Before_Saving_Addon_Metadata() {
 		// Arrange
-		BusinessRuleCreateRequest request = new(
+		EntityBusinessRuleCreateRequest request = new(
 			"UsrPkg",
 			"UsrOrder",
 			CreateRule(actions: [
@@ -153,6 +156,9 @@ public sealed class BusinessRuleServiceTests {
 				resource.Key == "existing-rule.Caption",
 			because: "existing resource keys should be normalized instead of being rewritten with the server prefix");
 		_savedAddonSchema.Resources.Should().Contain(resource =>
+				resource.Key == "LocalizableStrings.Module.Title",
+			because: "non business-rule resource keys should not be normalized as rule captions");
+		_savedAddonSchema.Resources.Should().Contain(resource =>
 				resource.Key == $"{rules[1].GetProperty("uId").GetString()}.Caption"
 				&& resource.Value[0].Value == "Require owner for drafts",
 			because: "the service should upsert the caption resource for the generated rule id");
@@ -166,7 +172,7 @@ public sealed class BusinessRuleServiceTests {
 	[Description("Calls BuildConfiguration after a successful save so that the ConfigurationHash is updated and offline users get cache invalidation on their next startup.")]
 	public void Create_Should_Call_BuildConfiguration_After_Successful_Save() {
 		// Arrange
-		BusinessRuleCreateRequest request = new(
+		EntityBusinessRuleCreateRequest request = new(
 			"UsrPkg",
 			"UsrOrder",
 			CreateRule());
@@ -185,7 +191,7 @@ public sealed class BusinessRuleServiceTests {
 	[Description("Calls ResetClientScriptCache after a successful save so the saved addon schema is visible to the current user immediately.")]
 	public void Create_Should_Call_ResetClientScriptCache_After_Successful_Save() {
 		// Arrange
-		BusinessRuleCreateRequest request = new(
+		EntityBusinessRuleCreateRequest request = new(
 			"UsrPkg",
 			"UsrOrder",
 			CreateRule());
@@ -201,10 +207,72 @@ public sealed class BusinessRuleServiceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Validates formula set-values expressions through the expression service contract before loading or saving add-on metadata.")]
+	public void Create_Should_Validate_SetValues_Formulas_Before_Saving_Addon_Metadata() {
+		// Arrange
+		EntityBusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			CreateRule(actions: [
+				new SetValuesBusinessRuleAction(
+					new List<BusinessRuleSetValueItem> {
+						new(
+							new BusinessRuleExpression("AttributeValue", "TotalScore", null),
+							new BusinessRuleExpression("Formula", expression: "BaseScore + BonusScore"))
+					})
+			]));
+
+		// Act
+		BusinessRuleCreateResult result = _service.Create(request);
+
+		// Assert
+		result.RuleName.Should().StartWith("BusinessRule_",
+			because: "formula validation should allow the service to continue when the remote validator accepts the expression");
+		_formulaValidationService.Received(1).Validate(Arg.Is<BusinessRuleFormulaValidationContext>(context =>
+			context.TargetPath == "TotalScore"
+			&& context.Formula == "BaseScore + BonusScore"
+			&& context.Metadata.Expression == "#UsrOrderRecord.BaseScore# + #UsrOrderRecord.BonusScore#"
+			&& context.Metadata.ResultDataValueType == "Integer"));
+		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Stops before loading add-on metadata when remote formula validation returns an error.")]
+	public void Create_Should_Not_Save_Addon_Metadata_When_Formula_Validation_Fails() {
+		// Arrange
+		_formulaValidationService
+			.When(service => service.Validate(Arg.Any<BusinessRuleFormulaValidationContext>()))
+			.Do(_ => throw new ArgumentException("Formula validation failed."));
+		EntityBusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			CreateRule(actions: [
+				new SetValuesBusinessRuleAction(
+					new List<BusinessRuleSetValueItem> {
+						new(
+							new BusinessRuleExpression("AttributeValue", "TotalScore", null),
+							new BusinessRuleExpression("Formula", expression: "BaseScore + BonusScore"))
+					})
+			]));
+
+		// Act
+		Action act = () => _service.Create(request);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Formula validation failed.",
+				because: "invalid formula metadata should stop before add-on metadata is changed");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Stops before saving add-on metadata when business-rule validation fails against the loaded entity schema.")]
 	public void Create_Should_Not_Save_Addon_Metadata_When_Rule_Validation_Fails() {
 		// Arrange
-		BusinessRuleCreateRequest request = new(
+		EntityBusinessRuleCreateRequest request = new(
 			"UsrPkg",
 			"UsrOrder",
 			CreateRule(leftPath: "MissingStatus"));
@@ -248,6 +316,21 @@ public sealed class BusinessRuleServiceTests {
 					UId = Guid.Parse("10000000-0000-0000-0000-000000000003"),
 					Name = "Amount",
 					DataValueType = 6
+				},
+				new EntitySchemaColumnDto {
+					UId = Guid.Parse("10000000-0000-0000-0000-000000000005"),
+					Name = "BaseScore",
+					DataValueType = 4
+				},
+				new EntitySchemaColumnDto {
+					UId = Guid.Parse("10000000-0000-0000-0000-000000000006"),
+					Name = "BonusScore",
+					DataValueType = 4
+				},
+				new EntitySchemaColumnDto {
+					UId = Guid.Parse("10000000-0000-0000-0000-000000000007"),
+					Name = "TotalScore",
+					DataValueType = 4
 				}
 			],
 			InheritedColumns = [],
@@ -269,6 +352,15 @@ public sealed class BusinessRuleServiceTests {
 						new AddonResourceValueDto {
 							Key = "en-US",
 							Value = "Existing rule"
+						}
+					]
+				},
+				new AddonResourceDto {
+					Key = "LocalizableStrings.Module.Title",
+					Value = [
+						new AddonResourceValueDto {
+							Key = "en-US",
+							Value = "Module title"
 						}
 					]
 				}

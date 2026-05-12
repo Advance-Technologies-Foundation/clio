@@ -78,8 +78,21 @@ namespace Clio.Command {
 			IServiceUrlBuilder serviceUrlBuilder,
 			string schemaName,
 			string packageUId) {
+			var (uId, _) = QueryExistingSchemaInPackage(
+				applicationClient,
+				serviceUrlBuilder,
+				schemaName,
+				packageUId);
+			return uId;
+		}
+
+		internal static (string uId, string error) QueryExistingSchemaInPackage(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string schemaName,
+			string packageUId) {
 			if (string.IsNullOrWhiteSpace(schemaName) || string.IsNullOrWhiteSpace(packageUId))
-				return null;
+				return (null, null);
 			var query = new JObject {
 				[RootSchemaNameKey] = "SysSchema", [OperationTypeKey] = 0,
 				[FiltersKey] = BuildFilterGroup(
@@ -89,8 +102,10 @@ namespace Clio.Command {
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
 			};
-			var (rows, _) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
-			return rows.Count > 0 ? rows[0]?["UId"]?.ToString() : null;
+			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (!success)
+				return (null, "Failed to query schema metadata in target package.");
+			return (rows.Count > 0 ? rows[0]?["UId"]?.ToString() : null, null);
 		}
 
 		internal static string QueryPackageName(

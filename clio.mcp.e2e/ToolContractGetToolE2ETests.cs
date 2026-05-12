@@ -555,13 +555,18 @@ public sealed class ToolContractGetToolE2ETests {
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-shape" &&
 				validator.Field == "rule.actions[*].items[*]" &&
-				validator.Context!.Contains("Attribute value sources are not supported", StringComparison.Ordinal),
-			because: "the contract should advertise the current constant-only Set values scope");
+				validator.Context!.Contains("forward reference paths like LookupColumn.SourceColumn", StringComparison.Ordinal),
+			because: "the contract should advertise AttributeValue source support for Set values");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-constant" &&
 				validator.Field == "rule.actions[*].items[*].value.value" &&
 				validator.Context!.Contains("JSON number", StringComparison.Ordinal),
 			because: "the contract should document typed constant payloads for Set values");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "set-values-formula" &&
+				validator.Field == "rule.actions[*].items[*].value.expression" &&
+				validator.Context!.Contains("ExpressionService.svc/Validate", StringComparison.Ordinal),
+			because: "the contract should document formula payloads for Set values");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rule.condition.conditions[*].comparisonType" &&
@@ -602,6 +607,63 @@ public sealed class ToolContractGetToolE2ETests {
 				StringComparison.Ordinal));
 		hasSetValuesExample.Should().BeTrue(
 			because: "the contract should include a Set values example for constant assignments across supported target families");
+		bool hasSetValuesAttributeExample = contract.Examples.Any(example =>
+			string.Equals(example.Summary, "Create a Set values rule from a forward reference attribute",
+				StringComparison.Ordinal));
+		hasSetValuesAttributeExample.Should().BeTrue(
+			because: "the contract should include a Set values example for AttributeValue source assignments");
+	}
+
+	[Test]
+	[Description("Advertises create-page-business-rule validation and workflow guidance through the real MCP server.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("tool-contract-get advertises create-page-business-rule validation and workflow guidance")]
+	public async Task ToolContractGet_Should_Advertise_Page_Business_Rule_Create_Contract() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					CreatePageBusinessRuleTool.BusinessRuleCreateToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the page business-rule mutation tool should be discoverable through tool-contract-get");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.InputSchema.Required.Should().Contain(["environmentName", "packageName", "pageSchemaName", "rule"],
+			because: "page-business-rule creation requires environment package page and rule payload");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "enum" &&
+				validator.Field == "rule.actions[*].type" &&
+				validator.Context!.Contains("hide-element", StringComparison.Ordinal) &&
+				validator.Context.Contains("show-element", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-editable", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-read-only", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-required", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-optional", StringComparison.Ordinal),
+			because: "the contract should advertise page-only action values");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "page-element" &&
+				validator.Field == "rule.actions[*].items" &&
+				validator.Context!.Contains("recursive get-page bundle.viewConfig", StringComparison.Ordinal),
+			because: "the contract should point callers to recursive page element discovery");
+		contract.PreferredFlow.Tools.Should().Equal(
+			[
+				PageListTool.ToolName,
+				PageGetTool.ToolName,
+				CreatePageBusinessRuleTool.BusinessRuleCreateToolName
+			],
+			because: "page business-rule creation should be preceded by page list/get discovery");
+		contract.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "create-page-business-rule returns the standard command execution result payload");
 	}
 
 	[Test]

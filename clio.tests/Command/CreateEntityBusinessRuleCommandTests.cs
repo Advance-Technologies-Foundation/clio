@@ -13,7 +13,7 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 	[Description("Maps environment-scoped options into the business-rule service request and returns success when creation completes.")]
 	public void Execute_Should_Map_Options_To_Service_Request() {
 		// Arrange
-		IBusinessRuleService businessRuleService = Substitute.For<IBusinessRuleService>();
+		IEntityBusinessRuleService businessRuleService = Substitute.For<IEntityBusinessRuleService>();
 		ILogger logger = Substitute.For<ILogger>();
 		CreateEntityBusinessRuleCommand command = new(businessRuleService, logger);
 		CreateEntityBusinessRuleOptions options = new() {
@@ -34,7 +34,7 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 					new MakeRequiredBusinessRuleAction(["Owner"])
 				])
 		};
-		businessRuleService.Create(Arg.Any<BusinessRuleCreateRequest>())
+		businessRuleService.Create(Arg.Any<EntityBusinessRuleCreateRequest>())
 			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
 
 		// Act
@@ -44,7 +44,7 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 		result.Should().Be(0,
 			because: "successful business-rule creation should return the standard success exit code");
 		businessRuleService.Received(1).Create(
-			Arg.Is<BusinessRuleCreateRequest>(request =>
+			Arg.Is<EntityBusinessRuleCreateRequest>(request =>
 				request.PackageName == "UsrPkg"
 				&& request.EntitySchemaName == "UsrOrder"
 				&& request.Rule.Caption == "Require owner for drafts"
@@ -59,7 +59,7 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 	[Description("Returns a failure exit code and logs a readable error when the command omits environment-name.")]
 	public void Execute_Should_Fail_When_Environment_Is_Missing() {
 		// Arrange
-		IBusinessRuleService businessRuleService = Substitute.For<IBusinessRuleService>();
+		IEntityBusinessRuleService businessRuleService = Substitute.For<IEntityBusinessRuleService>();
 		ILogger logger = Substitute.For<ILogger>();
 		CreateEntityBusinessRuleCommand command = new(businessRuleService, logger);
 

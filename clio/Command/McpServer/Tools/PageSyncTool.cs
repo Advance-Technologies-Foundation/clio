@@ -31,6 +31,7 @@ public sealed class PageSyncTool(
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
 	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
 	             "(SCHEMA_CONVERTERS and SCHEMA_VALIDATORS keys; SCHEMA_HANDLERS entry `request` values). " +
+	             "For conditional visibility, editability, or required state based on field values (e.g. \"when Status=Closed, hide Description\"), use business rules instead of writing handlers or validators in page body \u2014 call get-guidance with name `business-rules` to learn more. " +
 	             "Section authoring rules for the body payload: " +
 	             "if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 	             "if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
@@ -199,8 +200,12 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateStandardValidatorUsage(body));
 		SchemaValidationResult validatorParamCompletenessResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateCustomValidatorParamCompleteness(body));
+		SchemaValidationResult validatorFactoryShapeResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateCustomValidatorFactoryShape(body));
 		SchemaValidationResult converterDeclResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateConverterDeclarations(body));
+		SchemaValidationResult converterFunctionShapeResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateConverterFunctionShape(body));
 		SchemaValidationResult validatorDeclResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateValidatorDeclarations(body));
 		SchemaValidationResult bindingResult = RunContentValidation(
@@ -216,7 +221,9 @@ public sealed class PageSyncTool(
 			validatorParamResult,
 			standardValidatorResult,
 			validatorParamCompletenessResult,
+			validatorFactoryShapeResult,
 			converterDeclResult,
+			converterFunctionShapeResult,
 			validatorDeclResult);
 		List<string> warnings = CollectWarnings(fieldResult, bindingResult);
 		bool contentOk = IsContentValidationSuccessful(
@@ -228,7 +235,9 @@ public sealed class PageSyncTool(
 			validatorParamResult,
 			standardValidatorResult,
 			validatorParamCompletenessResult,
+			validatorFactoryShapeResult,
 			converterDeclResult,
+			converterFunctionShapeResult,
 			validatorDeclResult);
 		return BuildValidationResult(markerResult, syntaxResult, contentOk, errors, warnings);
 	}

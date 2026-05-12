@@ -54,7 +54,11 @@ internal static class GuidanceCatalog {
 			["support-mode"] = Create(
 				"support-mode",
 				"Canonical MCP guidance for diagnostic-first execution under support mode: severity routing, confirmation probes, fail-fast evidence, and reporting.",
-				SupportModeGuidanceResource.Guide)
+				SupportModeGuidanceResource.Guide),
+			["business-rules"] = Create(
+				"business-rules",
+				"Canonical MCP guidance for Freedom UI business rules: entity-level and page-level declarative condition-action rules for field/element visibility, editability, required state, and value assignment.",
+				BusinessRulesGuidanceResource.Guide)
 		};
 
 	/// <summary>

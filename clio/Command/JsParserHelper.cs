@@ -230,4 +230,88 @@ internal static class JsParserHelper
 		return false;
 	}
 
+	/// <summary>
+	/// Returns a copy of <paramref name="expression"/> with string literals and <c>//</c>/<c>/* */</c>
+	/// comments replaced by whitespace of equivalent length. Use to make regex/keyword scans
+	/// immune to false matches inside strings or comments while preserving original character
+	/// offsets for downstream parsing.
+	/// </summary>
+	internal static string StripStringsAndComments(string expression) {
+		if (string.IsNullOrEmpty(expression)) {
+			return expression;
+		}
+		var builder = new System.Text.StringBuilder(expression.Length);
+		bool inString = false;
+		char stringChar = '"';
+		int index = 0;
+		while (index < expression.Length) {
+			if (TryConsumeStringLiteralCharacter(expression, ref index, ref inString, stringChar)) {
+				builder.Append(' ');
+				continue;
+			}
+			if (TrySkipComment(expression, index, out int afterComment)) {
+				for (int i = index; i < afterComment; i++) {
+					builder.Append(' ');
+				}
+				index = afterComment;
+				continue;
+			}
+			char current = expression[index];
+			if (current is '"' or '\'' or '`') {
+				inString = true;
+				stringChar = current;
+				builder.Append(' ');
+				index++;
+				continue;
+			}
+			builder.Append(current);
+			index++;
+		}
+		return builder.ToString();
+	}
+
+	/// <summary>
+	/// Returns the index of the first top-level <c>=&gt;</c> arrow token in <paramref name="expression"/>,
+	/// or <c>-1</c> when no top-level arrow exists. String literals are skipped via the standard
+	/// lexer; tokens inside braces, brackets, or parentheses are ignored. Does not strip regex
+	/// literals — callers that author regex-bearing expressions must sanitise the input first.
+	/// </summary>
+	internal static int FindFirstTopLevelArrow(string expression) {
+		if (string.IsNullOrEmpty(expression)) {
+			return -1;
+		}
+		int braceDepth = 0, bracketDepth = 0, parenDepth = 0;
+		bool inString = false;
+		char stringChar = '"';
+		int index = 0;
+		while (index < expression.Length) {
+			if (TryConsumeStringLiteralCharacter(expression, ref index, ref inString, stringChar)) {
+				continue;
+			}
+			char current = expression[index];
+			if (current is '"' or '\'' or '`') {
+				inString = true;
+				stringChar = current;
+				index++;
+				continue;
+			}
+			bool atTopLevel = braceDepth == 0 && bracketDepth == 0 && parenDepth == 0;
+			if (atTopLevel
+				&& index + 1 < expression.Length
+				&& current == '=' && expression[index + 1] == '>') {
+				return index;
+			}
+			switch (current) {
+				case '{': braceDepth++; break;
+				case '}': braceDepth--; break;
+				case '[': bracketDepth++; break;
+				case ']': bracketDepth--; break;
+				case '(': parenDepth++; break;
+				case ')': parenDepth--; break;
+			}
+			index++;
+		}
+		return -1;
+	}
+
 }
