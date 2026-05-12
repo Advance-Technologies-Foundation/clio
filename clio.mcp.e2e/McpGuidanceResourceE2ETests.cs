@@ -1,5 +1,6 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Command.McpServer.Resources;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
@@ -16,6 +17,8 @@ public sealed class McpGuidanceResourceE2ETests {
 	private const string DocsScheme = "docs";
 	private const string GuidesPath = "mcp/guides";
 	private static readonly string AppModelingUri = BuildGuideUri("app-modeling");
+	private static readonly string ConfigurationWebServiceUri = BuildGuideUri("configuration-webservice");
+	private static readonly string ConfigurationWebServiceTestsUri = BuildGuideUri("configuration-webservice-tests");
 	private static readonly string DataBindingsUri = BuildGuideUri("data-bindings");
 	private static readonly string ExistingAppMaintenanceUri = BuildGuideUri("existing-app-maintenance");
 	private static readonly string PageSchemaConvertersUri = BuildGuideUri("page-schema-converters");
@@ -24,6 +27,20 @@ public sealed class McpGuidanceResourceE2ETests {
 	private static readonly string PageSchemaValidatorsUri = BuildGuideUri("page-schema-validators");
 	private static readonly string AgentExecutionUri = BuildGuideUri("agent-execution");
 	private static readonly string SupportModeUri = BuildGuideUri("support-mode");
+	private static readonly string ConfigurationWebServiceDtoPatternsUri =
+		BuildReferenceUri("configuration-webservice", "dto-patterns");
+	private static readonly string ConfigurationWebServiceStatusCodePatternsUri =
+		BuildReferenceUri("configuration-webservice", "status-code-patterns");
+	private static readonly string ConfigurationWebServiceCompositionRootPatternUri =
+		BuildReferenceUri("configuration-webservice", "composition-root-pattern");
+	private static readonly string ConfigurationWebServiceManualRuntimeChecklistUri =
+		BuildReferenceUri("configuration-webservice", "manual-runtime-checklist");
+	private static readonly string ConfigurationWebServiceTestsTestFixturePatternUri =
+		BuildReferenceUri("configuration-webservice-tests", "test-fixture-pattern");
+	private static readonly string ConfigurationWebServiceTestsAssertionStyleUri =
+		BuildReferenceUri("configuration-webservice-tests", "assertion-style");
+	private static readonly string ConfigurationWebServiceTestsEndpointTestPatternsUri =
+		BuildReferenceUri("configuration-webservice-tests", "endpoint-test-patterns");
 
 	[Test]
 	[AllureTag("mcp-guidance-resources")]
@@ -38,8 +55,10 @@ public sealed class McpGuidanceResourceE2ETests {
 		IList<McpClientResource> resources = await context.Session.ListResourcesAsync(context.CancellationTokenSource.Token);
 
 		// Assert
-		resources.Select(resource => resource.Uri).Should().Contain([
+		string[] expectedStaticUris = [
 				AppModelingUri,
+				ConfigurationWebServiceUri,
+				ConfigurationWebServiceTestsUri,
 				DataBindingsUri,
 				ExistingAppMaintenanceUri,
 				PageSchemaConvertersUri,
@@ -47,9 +66,125 @@ public sealed class McpGuidanceResourceE2ETests {
 				PageSchemaCreatioDevkitCommonUri,
 				PageSchemaValidatorsUri,
 				AgentExecutionUri,
-				SupportModeUri
-			],
-			because: "the MCP server should advertise creation existing-app converter handler validator sdk-common agent-execution and support-mode guidance resources");
+				SupportModeUri,
+				ConfigurationWebServiceDtoPatternsUri,
+				ConfigurationWebServiceStatusCodePatternsUri,
+				ConfigurationWebServiceCompositionRootPatternUri,
+				ConfigurationWebServiceManualRuntimeChecklistUri,
+				ConfigurationWebServiceTestsTestFixturePatternUri,
+				ConfigurationWebServiceTestsAssertionStyleUri,
+				ConfigurationWebServiceTestsEndpointTestPatternsUri
+			];
+		string[] expectedGeneratedUris = ComposableAppSkillResourceCatalog.Entries
+			.Select(entry => entry.Article.Uri)
+			.ToArray();
+
+		resources.Select(resource => resource.Uri).Should().Contain(
+			expectedStaticUris.Concat(expectedGeneratedUris),
+			because: "the MCP server should advertise creation existing-app configuration-webservice converter handler validator sdk-common agent-execution support-mode and reference resources");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns configuration web-service guidance and representative references")]
+	public async Task McpServer_Should_Return_Configuration_WebService_Guidance_And_References() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult guideResult = await context.Session.ReadResourceAsync(
+			ConfigurationWebServiceUri,
+			context.CancellationTokenSource.Token);
+		ReadResourceResult dtoReferenceResult = await context.Session.ReadResourceAsync(
+			ConfigurationWebServiceDtoPatternsUri,
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents guide = guideResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the configuration web-service guide should resolve to a single plain-text article").Subject;
+		guide.Uri.Should().Be(ConfigurationWebServiceUri,
+			because: "the returned article should preserve the stable configuration web-service guide URI");
+		guide.Text.Should().Contain("creatio-config-webservice",
+			because: "the guide should identify the source skill guidance");
+		guide.Text.Should().Contain("docs://mcp/references/configuration-webservice/dto-patterns",
+			because: "the guide should route detailed DTO guidance to the reference resource");
+
+		TextResourceContents dtoReference = dtoReferenceResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the DTO reference should resolve to a single plain-text article").Subject;
+		dtoReference.Uri.Should().Be(ConfigurationWebServiceDtoPatternsUri,
+			because: "the returned reference should preserve the stable DTO reference URI");
+		dtoReference.Text.Should().Contain("Return a concrete DTO type",
+			because: "the DTO reference should preserve concrete return-type guidance");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns configuration web-service test guidance and representative references")]
+	public async Task McpServer_Should_Return_Configuration_WebService_Tests_Guidance_And_References() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult guideResult = await context.Session.ReadResourceAsync(
+			ConfigurationWebServiceTestsUri,
+			context.CancellationTokenSource.Token);
+		ReadResourceResult fixtureReferenceResult = await context.Session.ReadResourceAsync(
+			ConfigurationWebServiceTestsTestFixturePatternUri,
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents guide = guideResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the configuration web-service test guide should resolve to a single plain-text article").Subject;
+		guide.Uri.Should().Be(ConfigurationWebServiceTestsUri,
+			because: "the returned article should preserve the stable configuration web-service test guide URI");
+		guide.Text.Should().Contain("configuration-webservice-tests",
+			because: "the guide should identify the source test skill guidance");
+		guide.Text.Should().Contain("docs://mcp/references/configuration-webservice-tests/test-fixture-pattern",
+			because: "the guide should route fixture details to the reference resource");
+
+		TextResourceContents fixtureReference = fixtureReferenceResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the fixture reference should resolve to a single plain-text article").Subject;
+		fixtureReference.Uri.Should().Be(ConfigurationWebServiceTestsTestFixturePatternUri,
+			because: "the returned reference should preserve the stable fixture reference URI");
+		fixtureReference.Text.Should().Contain("Register test doubles through InjectedServices",
+			because: "the fixture reference should preserve dependency-injection mocking guidance");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns generated composable-app skill guidance and representative references")]
+	public async Task McpServer_Should_Return_Generated_Composable_App_Skill_Guidance_And_References() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult guideResult = await context.Session.ReadResourceAsync(
+			"docs://mcp/guides/atf-repository-dev",
+			context.CancellationTokenSource.Token);
+		ReadResourceResult referenceResult = await context.Session.ReadResourceAsync(
+			"docs://mcp/references/sys-setting-tests/setup-sys-settings-pattern",
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents guide = guideResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "a generated skill guide should resolve to a single plain-text article").Subject;
+		guide.Uri.Should().Be("docs://mcp/guides/atf-repository-dev",
+			because: "the returned generated guide should preserve its stable URI");
+		guide.Text.Should().Contain("ATF.Repository",
+			because: "the generated guide should preserve the source skill content");
+
+		TextResourceContents reference = referenceResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "a generated skill reference should resolve to a single plain-text article").Subject;
+		reference.Uri.Should().Be("docs://mcp/references/sys-setting-tests/setup-sys-settings-pattern",
+			because: "the returned generated reference should preserve its stable URI");
+		reference.Text.Should().Contain("SetupSysSettings",
+			because: "the generated reference should preserve the source reference content");
 	}
 
 	[Test]
@@ -637,6 +772,9 @@ public sealed class McpGuidanceResourceE2ETests {
 	}
 
 	private static string BuildGuideUri(string guideName) => $"{DocsScheme}://{GuidesPath}/{guideName}";
+
+	private static string BuildReferenceUri(string guideName, string referenceName) =>
+		$"{DocsScheme}://mcp/references/{guideName}/{referenceName}";
 
 	private sealed record ArrangeContext(
 		McpServerSession Session,

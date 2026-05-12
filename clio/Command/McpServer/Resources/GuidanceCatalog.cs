@@ -10,7 +10,10 @@ namespace Clio.Command.McpServer.Resources;
 /// </summary>
 internal static class GuidanceCatalog {
 	private static readonly IReadOnlyDictionary<string, GuidanceCatalogEntry> Entries =
-		new Dictionary<string, GuidanceCatalogEntry>(StringComparer.OrdinalIgnoreCase) {
+		CreateEntries();
+
+	private static IReadOnlyDictionary<string, GuidanceCatalogEntry> CreateEntries() {
+		Dictionary<string, GuidanceCatalogEntry> entries = new(StringComparer.OrdinalIgnoreCase) {
 			["app-modeling"] = Create(
 				"app-modeling",
 				"Canonical MCP guidance for Creatio application modeling, schema design, and page-editing workflows.",
@@ -27,6 +30,14 @@ internal static class GuidanceCatalog {
 				"dataforge-orchestration",
 				"Canonical MCP guidance for DataForge orchestration across active and passive enrichment flows.",
 				DataForgeOrchestrationGuidanceResource.Guide),
+			["configuration-webservice"] = Create(
+				"configuration-webservice",
+				"Canonical MCP guidance for implementing Creatio configuration web services.",
+				ConfigurationWebServiceGuidanceResource.Guide),
+			["configuration-webservice-tests"] = Create(
+				"configuration-webservice-tests",
+				"Canonical MCP guidance for testing Creatio configuration web services.",
+				ConfigurationWebServiceTestsGuidanceResource.Guide),
 			["page-schema-converters"] = Create(
 				"page-schema-converters",
 				"Canonical MCP guidance for creating and editing Freedom UI page converters inside raw page schema bodies.",
@@ -56,6 +67,13 @@ internal static class GuidanceCatalog {
 				"Canonical MCP guidance for diagnostic-first execution under support mode: severity routing, confirmation probes, fail-fast evidence, and reporting.",
 				SupportModeGuidanceResource.Guide)
 		};
+
+		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.Guides) {
+			entries[guide.Skill] = new GuidanceCatalogEntry(guide.Skill, guide.Description, guide.Article);
+		}
+
+		return entries;
+	}
 
 	/// <summary>
 	/// Returns the stable set of registered guidance names.
