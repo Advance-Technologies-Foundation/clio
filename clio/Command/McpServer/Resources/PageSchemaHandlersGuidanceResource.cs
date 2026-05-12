@@ -33,6 +33,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call, stop and read `page-schema-creatio-devkit-common` before choosing between `request.$context.executeRequest(...)`, SDK services, `sdk.Model`, or `fetch`.
 
 		       Decision tree
+		       - If the requirement is conditional field/element visibility, editability, or required state based on another field's value (e.g. "when Status is Closed, hide field X" or "when Type is Internal, make Description required"), this is a BUSINESS RULE, not a handler. Use `create-page-business-rule` or `create-entity-business-rule`. Call `get-guidance` with name `business-rules` first.
 		       - If the requirement is field-value validation, stop and read `page-schema-validators`.
 		       - If the requirement is max/min/length/range/regex validation whose threshold comes from a system setting, SDK lookup, or other async read, it is still validator work. Do NOT default to an init handler that only sets `maxLength` or another UI-only property.
 		       - Else if the requirement is a pure value transform for bound data, use `SCHEMA_CONVERTERS`, not `SCHEMA_HANDLERS`.

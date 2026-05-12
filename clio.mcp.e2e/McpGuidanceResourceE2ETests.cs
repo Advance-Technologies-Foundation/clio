@@ -27,6 +27,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	private static readonly string PageSchemaValidatorsUri = BuildGuideUri("page-schema-validators");
 	private static readonly string AgentExecutionUri = BuildGuideUri("agent-execution");
 	private static readonly string SupportModeUri = BuildGuideUri("support-mode");
+	private static readonly string BusinessRulesUri = BuildGuideUri("business-rules");
 	private static readonly string ConfigurationWebServiceDtoPatternsUri =
 		BuildReferenceUri("configuration-webservice", "dto-patterns");
 	private static readonly string ConfigurationWebServiceStatusCodePatternsUri =
@@ -67,6 +68,7 @@ public sealed class McpGuidanceResourceE2ETests {
 				PageSchemaValidatorsUri,
 				AgentExecutionUri,
 				SupportModeUri,
+				BusinessRulesUri,
 				ConfigurationWebServiceDtoPatternsUri,
 				ConfigurationWebServiceStatusCodePatternsUri,
 				ConfigurationWebServiceCompositionRootPatternUri,
@@ -81,7 +83,7 @@ public sealed class McpGuidanceResourceE2ETests {
 
 		resources.Select(resource => resource.Uri).Should().Contain(
 			expectedStaticUris.Concat(expectedGeneratedUris),
-			because: "the MCP server should advertise creation existing-app configuration-webservice converter handler validator sdk-common agent-execution support-mode and reference resources");
+			because: "the MCP server should advertise creation existing-app configuration-webservice converter handler validator sdk-common agent-execution support-mode business-rules and reference resources");
 	}
 
 	[Test]
