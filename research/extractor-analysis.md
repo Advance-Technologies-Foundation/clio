@@ -1,37 +1,37 @@
-# Extractor: фільтр, інваріанти, кандидати
+# Extractor: filter, invariants, candidates
 
-Реальні цифри і список «шуму» для імплементації `tools/component-registry-extractor/` у [creatio-ui](https://github.com/Advance-Technologies-Foundation/creatio-ui). Документ підтверджує, що інклюзивний критерій `@CrtViewElement` плюс ексклюзивні folder-фільтри дають детерміністичний superset поточного ручного `ComponentRegistry.json`.
+Real numbers and the "noise" list for implementing `tools/component-registry-extractor/` in [creatio-ui](https://github.com/Advance-Technologies-Foundation/creatio-ui). This document confirms that the inclusion criterion `@CrtViewElement` plus exclusion folder filters give a deterministic superset of the current manually maintained `ComponentRegistry.json`.
 
-## Критерії фільтрації
+## Filtering criteria
 
-**Інклюзивний фільтр** — клас із декоратором `@CrtViewElement`.
+**Inclusion filter** — a class with the `@CrtViewElement` decorator.
 
-**Ексклюзивні фільтри** (паралельні, всі застосовуються):
-- тестові файли: `**/*.spec.ts`, `**/*.spec.ui.ts`, `**/*.spec.tsx`, `**/*.test.ts`, `**/*.test.tsx`
-- моки: `**/*.mock.ts`, `**/mocks/**`, `**/__mocks__/**`
-- папка `apps/pkgs/**` (built artifacts, не source)
-- папка `libs/studio-enterprise/ui/interface-designer-properties-panel/**` (designer-only UI)
-- subpath `**/designtime/**` (designer config panels — всі 44 `*PropertiesPanel`-компоненти розкидані по lib-папках, але строго у `designtime/`)
-- стандартні: `**/node_modules/**`, `dist/**`
+**Exclusion filters** (parallel, all applied):
+- test files: `**/*.spec.ts`, `**/*.spec.ui.ts`, `**/*.spec.tsx`, `**/*.test.ts`, `**/*.test.tsx`
+- mocks: `**/*.mock.ts`, `**/mocks/**`, `**/__mocks__/**`
+- the folder `apps/pkgs/**` (built artifacts, not source)
+- the folder `libs/studio-enterprise/ui/interface-designer-properties-panel/**` (designer-only UI)
+- the subpath `**/designtime/**` (designer config panels — all 44 `*PropertiesPanel` components are scattered across lib folders, but strictly under `designtime/`)
+- standard: `**/node_modules/**`, `dist/**`
 
-**Технічно важливо:** парсер має ігнорувати `@CrtViewElement` всередині коментарів (JSDoc-приклади у файлах декоратор-визначень), інакше підхопить `usr.Example` як «псевдо-компонент».
+**Technically important:** the parser must ignore `@CrtViewElement` inside comments (JSDoc examples in decorator-definition files), otherwise it picks up `usr.Example` as a "pseudo-component".
 
-## Цифри станом на `creatio-ui@master`
+## Numbers as of `creatio-ui@master`
 
-| Сегмент | Кількість |
+| Segment | Count |
 |---|---|
-| Усі `@CrtViewElement` після ексклюзій | **192** |
-| З них уже у ручному `ComponentRegistry.json` | 92 (повна перетинка) |
-| Нові кандидати | 100 |
-| `*PropertiesPanel` залишилось у наборі | 0 (відсіяно `**/designtime/**`) |
+| All `@CrtViewElement` after exclusions | **192** |
+| Of those already in the manual `ComponentRegistry.json` | 92 (full intersection) |
+| New candidates | 100 |
+| `*PropertiesPanel` remaining in the set | 0 (filtered out by `**/designtime/**`) |
 
-**Регресія:** жоден компонент із поточних 92 курованих НЕ зникає з extracted-сету. Авто-каталог — суперсет ручного.
+**Regression:** none of the current 92 curated components disappears from the extracted set. The auto-catalog is a superset of the manual one.
 
-**Чому `**/designtime/**` — точний фільтр:** 44/44 `*PropertiesPanel`-компонентів — у `**/designtime/**`; 0/192 не-PropertiesPanel — у `**/designtime/**`. Жодного false-positive, жодного false-negative.
+**Why `**/designtime/**` is an exact filter:** 44/44 `*PropertiesPanel` components are in `**/designtime/**`; 0/192 non-PropertiesPanel are in `**/designtime/**`. No false positives, no false negatives.
 
-## 100 нових кандидатів (треба ревью AI-команди)
+## 100 new candidates (require AI-team review)
 
-Без додаткової семантичної фільтрації — щоб команда побачила весь шум і вирішила, що включати:
+Without additional semantic filtering — so that the team sees all the noise and decides what to include:
 
 ```
 crt.ActionDashboard              crt.HtmlCodeEditor
@@ -89,18 +89,18 @@ crt.FilterableList               crt.Timer
                                  crt.WebTextInput
 ```
 
-Видно три природні підкатегорії «шуму», які composer-овський `overrides.json` має приховати через `aiHidden`:
+Three natural subcategories of "noise" are visible, which the composer's `overrides.json` must hide via `aiHidden`:
 
-- **Internal table cells**: `crt.DataTableEdit*Cell`, `crt.Table*Cell`, `crt.EditTypedValueCell`, `crt.TypedValueCell` — рендеряться `crt.DataGrid` сам, AI не повинен їх інстанціювати напряму.
-- **App shell / infra**: `crt.AppBackground`, `crt.AppToolbar`, `crt.NavigationPanel*`, `crt.RouterOutlet`, `crt.ModuleLoader`, `crt.LazyElement`, `crt.SkipLinks` — каркасні елементи, не для бізнес-сторінок.
-- **Deprecated / legacy**: `crt.DeprecatedInput`, `crt.DeprecatedLabel`, `crt.Angular7XDetail`, `crt.BaseTimelineLabel`, `crt.BaseMessageComposer*` — або застаріле, або base-класи без самостійного UX.
+- **Internal table cells**: `crt.DataTableEdit*Cell`, `crt.Table*Cell`, `crt.EditTypedValueCell`, `crt.TypedValueCell` — rendered by `crt.DataGrid` itself, the AI should not instantiate them directly.
+- **App shell / infra**: `crt.AppBackground`, `crt.AppToolbar`, `crt.NavigationPanel*`, `crt.RouterOutlet`, `crt.ModuleLoader`, `crt.LazyElement`, `crt.SkipLinks` — frame elements, not for business pages.
+- **Deprecated / legacy**: `crt.DeprecatedInput`, `crt.DeprecatedLabel`, `crt.Angular7XDetail`, `crt.BaseTimelineLabel`, `crt.BaseMessageComposer*` — either obsolete, or base classes without standalone UX.
 
-**Реальні нові кандидати для каталогу** (після відсіювання трьох груп вище): ~60 компонентів, зокрема `crt.ButtonToggleGroupItem`, `crt.ChatComposer`, `crt.ChatList`, `crt.EmailComposer`, `crt.EmojiSelect`, `crt.HtmlCodeEditor`, `crt.Icon`, `crt.NextBestOffer`, `crt.Switch`, `crt.TabPanelHeader`, `crt.TemplateGallery`, `crt.TemplateSelect`, `crt.Timer`, `crt.TranslateToggle`, `crt.WaterfallWidget`, `crt.WebTextInput` — це список для перевірки і додавання у ручний overlay або експозиції через extractor.
+**Real new candidates for the catalog** (after filtering out the three groups above): ~60 components, including `crt.ButtonToggleGroupItem`, `crt.ChatComposer`, `crt.ChatList`, `crt.EmailComposer`, `crt.EmojiSelect`, `crt.HtmlCodeEditor`, `crt.Icon`, `crt.NextBestOffer`, `crt.Switch`, `crt.TabPanelHeader`, `crt.TemplateGallery`, `crt.TemplateSelect`, `crt.Timer`, `crt.TranslateToggle`, `crt.WaterfallWidget`, `crt.WebTextInput` — this is the list to review and either add to the manual overlay or expose through the extractor.
 
-## Designer config panels (`*PropertiesPanel`) — відсіяно фільтром
+## Designer config panels (`*PropertiesPanel`) — filtered out
 
-44 `*PropertiesPanel`-компоненти (designer-конфігурація властивостей у правій панелі Interface Designer-а) розкидані по 27 lib-папках (`approval`, `calendar`, `chat-panel`, `compact-profile`, `feed`, `folder-tree`, `message-composer`, `timeline`, ...), але всі строго у subpath `**/designtime/**`. Цей glob додано до extractor-ексклюзій → жоден `*PropertiesPanel` не потрапляє в extracted-сет, потреби в `aiHidden: true` overlay-правилах для них немає.
+44 `*PropertiesPanel` components (designer configuration of properties in the right pane of the Interface Designer) are scattered across 27 lib folders (`approval`, `calendar`, `chat-panel`, `compact-profile`, `feed`, `folder-tree`, `message-composer`, `timeline`, ...), but all strictly under the subpath `**/designtime/**`. This glob has been added to the extractor exclusions → no `*PropertiesPanel` makes it into the extracted set, there is no need for `aiHidden: true` overlay rules for them.
 
-## Звідки взяті ці фільтри і цифри
+## Where these filters and numbers come from
 
-Емпіричні дані з прохода по `creatio-ui@master` (попередня research-сесія). Розширений контекст архітектури — [architecture.md](architecture.md); цільова структура реєстру в clio — [clio-target-structure.md](clio-target-structure.md).
+Empirical data from a pass over `creatio-ui@master` (a prior research session). Extended architectural context is in [architecture.md](architecture.md); the target registry structure in clio is in [clio-target-structure.md](clio-target-structure.md).

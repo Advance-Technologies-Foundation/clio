@@ -1,31 +1,31 @@
-# Implementation Plan — Частина 1: NuGet-distribution `Creatio.ComponentRegistry@0.1.0` і clio loader міграція
+# Implementation Plan — Part 1: NuGet distribution `Creatio.ComponentRegistry@0.1.0` and the clio loader migration
 
-> **Статус:** усі open questions закриті (див. секцію [§ Decisions log](#decisions-log)). Готово до implementation.
+> **Status:** all open questions are closed (see the [§ Decisions log](#decisions-log) section). Ready for implementation.
 
-## 0. Цільовий стан цієї частини
+## 0. Target state of this part
 
-- Новий repo **[`creatio-component-registry-composer`](https://github.com/Advance-Technologies-Foundation/creatio-component-registry-composer)** (public, MIT) із .NET 8 composer-логікою.
-- v0.1.0 input — **bridge-snapshot** з [`clio/Command/McpServer/Data/ComponentRegistry.json`](../clio/Command/McpServer/Data/ComponentRegistry.json), pinned через sidecar `origin.json` із commit SHA і sha256. На v0.2.0+ (після extractor у creatio-ui) input стане npm пакетом `@creatio/component-registry`.
-- NuGet-пакет **`Creatio.ComponentRegistry@0.1.0`** опублікований на **public `api.nuget.org`** під ATF owner (той самий що публікує `clio`).
-- Пакет містить DLL з двома **embedded resources**: `ComponentRegistry.json` (data) + `metadata.json` (provenance).
-- У clio:
-  - `Directory.Packages.props` отримує `<PackageVersion Include="Creatio.ComponentRegistry" Version="0.1.0" />`
-  - `clio/clio.csproj` отримує `<PackageReference Include="Creatio.ComponentRegistry" />` і втрачає `<Content Include="Command\McpServer\Data\**">`
-  - `clio/Command/McpServer/Data/ComponentRegistry.json` **видалено** з repo
-  - `ComponentInfoCatalog.cs` читає embedded resource через `Assembly.GetManifestResourceStream(...)` із parameterless ctor + `internal static LoadFromStream` factory для тестів
-- Поведінка MCP-tool `get-component-info` **бітово ідентична** до міграції (perfect drop-in)
-- Інваріанти збережені: `Lazy<>` ініціалізація, fail-on-duplicate, `CategoryOrder` (тимчасово hardcoded — data-driven categories — це етап 6)
+- New repo **[`creatio-component-registry-composer`](https://github.com/Advance-Technologies-Foundation/creatio-component-registry-composer)** (public, MIT) with .NET 8 composer logic.
+- v0.1.0 input — a **bridge snapshot** from [`clio/Command/McpServer/Data/ComponentRegistry.json`](../clio/Command/McpServer/Data/ComponentRegistry.json), pinned via a sidecar `origin.json` with commit SHA and sha256. At v0.2.0+ (after the extractor in creatio-ui) the input becomes the npm package `@creatio/component-registry`.
+- The NuGet package **`Creatio.ComponentRegistry@0.1.0`** is published to **public `api.nuget.org`** under the ATF owner (the same one that publishes `clio`).
+- The package contains a DLL with two **embedded resources**: `ComponentRegistry.json` (data) + `metadata.json` (provenance).
+- In clio:
+  - `Directory.Packages.props` gains `<PackageVersion Include="Creatio.ComponentRegistry" Version="0.1.0" />`
+  - `clio/clio.csproj` gains `<PackageReference Include="Creatio.ComponentRegistry" />` and loses `<Content Include="Command\McpServer\Data\**">`
+  - `clio/Command/McpServer/Data/ComponentRegistry.json` **is removed** from the repo
+  - `ComponentInfoCatalog.cs` reads the embedded resource via `Assembly.GetManifestResourceStream(...)` with a parameterless ctor + an `internal static LoadFromStream` factory for tests
+- The behavior of the MCP tool `get-component-info` is **bit-for-bit identical** to before the migration (perfect drop-in)
+- Invariants are preserved: `Lazy<>` initialization, fail-on-duplicate, `CategoryOrder` (temporarily hardcoded — data-driven categories is stage 6)
 
 ---
 
-## 1. Steady-state architecture (для довідки)
+## 1. Steady-state architecture (for reference)
 
 ```
 creatio-ui (Platform-UI team) ─── GA-tag `8.3.0`
     │
     └─ Jenkins extractor → npm publish @creatio/component-registry@8.3.0
         │
-        ├── (branch-cut НЕ публікує — лише baseline artifact для регресій)
+        ├── (branch-cut does NOT publish — only a baseline artifact for regressions)
         │
         ▼
 composer-repo (AI/clio team) ─── webhook/cron pickup
@@ -35,44 +35,44 @@ composer-repo (AI/clio team) ─── webhook/cron pickup
         ▼ dotnet pack + dotnet nuget push
 public api.nuget.org ─── Creatio.ComponentRegistry@X.Y.Z (under ATF)
     │
-    ▼ Renovate/Dependabot моніторить
-clio (clio team) ─── auto-PR з bumped <PackageVersion …/>
+    ▼ Renovate/Dependabot monitors
+clio (clio team) ─── auto-PR with bumped <PackageVersion …/>
     │
     └─ human review + merge
 ```
 
 **Ownership boundaries:**
-- creatio-ui: декоратори, JSDoc, extractor, npm publish — **own CI**, не торкається composer
-- composer-repo: `supported-versions.json`, `overrides.json`, merge-логіка, NuGet publish — **own CI у composer-repo (GitHub Actions)**, не у creatio-ui Jenkins
-- clio: loader, MCP tools — bump через bot-PR, **не direct commit** від composer pipeline
+- creatio-ui: decorators, JSDoc, extractor, npm publish — **own CI**, does not touch the composer
+- composer-repo: `supported-versions.json`, `overrides.json`, merge logic, NuGet publish — **own CI in composer-repo (GitHub Actions)**, not in creatio-ui Jenkins
+- clio: loader, MCP tools — bump via a bot-PR, **not a direct commit** from the composer pipeline
 
-Це **5 окремих CI runs**, не один master pipeline. Розрив за ownership — навмисний (запобігає cross-team coupling).
+This is **5 separate CI runs**, not a single master pipeline. The split by ownership is deliberate (prevents cross-team coupling).
 
 ---
 
-## 2. Repo layout для `creatio-component-registry-composer`
+## 2. Repo layout for `creatio-component-registry-composer`
 
-### 2.1 Стек: .NET 8 console app
+### 2.1 Stack: .NET 8 console app
 
-| Обґрунтування |
+| Rationale |
 |---|
-| `dotnet pack` — native крок; composer і NuGet output в одному toolchain |
-| Команда AI/clio пише C# (clio repo) — без context-switch |
-| Той самий `System.Text.Json.JsonSerializer` що в clio → нульовий serialization-drift |
-| Tests через NUnit/xUnit — той самий патерн що clio.tests |
-| ubuntu-latest GH runner має .NET 8 SDK preinstalled |
+| `dotnet pack` — native step; composer and NuGet output in one toolchain |
+| The AI/clio team writes C# (clio repo) — no context switch |
+| The same `System.Text.Json.JsonSerializer` as in clio → zero serialization drift |
+| Tests via NUnit/xUnit — the same pattern as clio.tests |
+| ubuntu-latest GH runner has the .NET 8 SDK preinstalled |
 
-### 2.2 Структура папок
+### 2.2 Folder structure
 
 ```
 creatio-component-registry-composer/
 ├── LICENSE                                   (MIT)
 ├── README.md
-├── .gitignore                                (стандартний .NET)
+├── .gitignore                                (standard .NET)
 ├── .editorconfig
 ├── nuget.config                              (public nuget.org only)
 ├── Directory.Packages.props
-├── global.json                               (pin SDK на 8.0.x)
+├── global.json                               (pin SDK to 8.0.x)
 ├── composer.sln
 │
 ├── src/
@@ -82,16 +82,16 @@ creatio-component-registry-composer/
 │   │   ├── ComposerRunner.cs                 (orchestrator)
 │   │   ├── Input/
 │   │   │   ├── IInputSource.cs
-│   │   │   ├── LocalJsonInputSource.cs       (v0.1.0 — читає data/input/<line>/)
-│   │   │   └── NpmInputSource.cs             (stub, NotImplemented — для етапу 7)
+│   │   │   ├── LocalJsonInputSource.cs       (v0.1.0 — reads data/input/<line>/)
+│   │   │   └── NpmInputSource.cs             (stub, NotImplemented — for stage 7)
 │   │   ├── Merge/
-│   │   │   ├── RegistryMerger.cs             (v0.1.0: passthrough, одна версія)
+│   │   │   ├── RegistryMerger.cs             (v0.1.0: passthrough, single version)
 │   │   │   └── OverridesApplier.cs           (apply aiHidden / aiOverlay)
 │   │   ├── Output/
-│   │   │   ├── BundleWriter.cs               (пише ComponentRegistry.json у obj/composed/)
+│   │   │   ├── BundleWriter.cs               (writes ComponentRegistry.json to obj/composed/)
 │   │   │   └── MetadataStamper.cs            (provenance: composer SHA, origin.json copy)
 │   │   └── Validation/
-│   │       ├── DuplicateDetector.cs          (mirror fail-on-duplicate інваріанту clio)
+│   │       ├── DuplicateDetector.cs          (mirror of clio's fail-on-duplicate invariant)
 │   │       └── OriginIntegrityChecker.cs     (sha256(snapshot) ≡ origin.json.sha256;
 │   │                                          gh api commits/<sha> == 200)
 │   │
@@ -113,7 +113,7 @@ creatio-component-registry-composer/
 │   ├── overrides.json                        ({"aiHidden":[],"aiOverlay":{}})
 │   └── input/
 │       └── 8.2.x/
-│           ├── ComponentRegistry.json        (snapshot із clio — 92 records)
+│           ├── ComponentRegistry.json        (snapshot from clio — 92 records)
 │           └── origin.json                   (pinned commit + sha256)
 │
 ├── .github/
@@ -122,18 +122,18 @@ creatio-component-registry-composer/
 │       └── release.yml                       (manual trigger: pack + nuget push + tag)
 │
 └── docs/
-    ├── how-to-update-snapshot.md             (процедура bump-у data/input/8.2.x/)
-    └── how-to-release.md                     (як зробити bump 0.1.x → 0.1.y)
+    ├── how-to-update-snapshot.md             (the procedure for bumping data/input/8.2.x/)
+    └── how-to-release.md                     (how to do a 0.1.x → 0.1.y bump)
 ```
 
-### 2.3 Ключові файли
+### 2.3 Key files
 
 **`global.json`:**
 ```json
 { "sdk": { "version": "8.0.0", "rollForward": "latestMinor" } }
 ```
 
-**`nuget.config`** (public-only, **без Nexus**):
+**`nuget.config`** (public-only, **without Nexus**):
 ```xml
 <configuration>
   <packageSources>
@@ -166,7 +166,7 @@ creatio-component-registry-composer/
 
 ---
 
-## 3. Composer-логіка для v0.1.0
+## 3. Composer logic for v0.1.0
 
 ### 3.1 Pipeline
 
@@ -174,24 +174,24 @@ creatio-component-registry-composer/
 data/supported-versions.json (["8.2.x"])
             │
             ▼
-LocalJsonInputSource → читає data/input/8.2.x/ComponentRegistry.json (92 items)
+LocalJsonInputSource → reads data/input/8.2.x/ComponentRegistry.json (92 items)
             │
             ▼
 OriginIntegrityChecker → assert sha256(snapshot) ≡ origin.json.sha256
                        → assert gh api commits/<origin.originCommit> == 200
-            │ (fail на mismatch — захист від stale snapshot)
+            │ (fail on mismatch — protection against a stale snapshot)
             ▼
-RegistryMerger v0.1.0 → passthrough (одна версія)
+RegistryMerger v0.1.0 → passthrough (single version)
             │
             ▼
-OverridesApplier → no-op на v0.1.0 (overrides порожні)
+OverridesApplier → no-op at v0.1.0 (overrides are empty)
             │
             ▼
-DuplicateDetector → throw при дублях componentType
+DuplicateDetector → throw on duplicate componentType
             │
             ▼
-BundleWriter → obj/composed/ComponentRegistry.json (top-level масив, ідентичний input)
-MetadataStamper → obj/composed/metadata.json (composer SHA + copy origin.json)
+BundleWriter → obj/composed/ComponentRegistry.json (top-level array, identical to input)
+MetadataStamper → obj/composed/metadata.json (composer SHA + copy of origin.json)
             │
             ▼
 dotnet pack Creatio.ComponentRegistry → .nupkg → artifacts/
@@ -200,9 +200,9 @@ dotnet pack Creatio.ComponentRegistry → .nupkg → artifacts/
 dotnet nuget push artifacts/*.nupkg → api.nuget.org
 ```
 
-### 3.2 Output schema (v0.1.0 — **спрощений**, drop-in compatible)
+### 3.2 Output schema (v0.1.0 — **simplified**, drop-in compatible)
 
-**`ComponentRegistry.json`** у NuGet pkg — **той самий top-level масив 92 записів**, що зараз лежить у clio. Жодних обгорток типу `{ "schemaVersion": ..., "components": [...] }` — це етап 3 (модель `Availability`) і етап 6 (data-driven categories). `JsonSerializer.Deserialize<ComponentRegistryEntry[]>` у clio працює без змін.
+**`ComponentRegistry.json`** in the NuGet pkg — **the same top-level array of 92 records** that currently sits in clio. No wrappers like `{ "schemaVersion": ..., "components": [...] }` — that is stage 3 (the `Availability` model) and stage 6 (data-driven categories). `JsonSerializer.Deserialize<ComponentRegistryEntry[]>` in clio works without changes.
 
 **`metadata.json`** (v0.1.0):
 ```json
@@ -226,9 +226,9 @@ dotnet nuget push artifacts/*.nupkg → api.nuget.org
 }
 ```
 
-`metadata.json` — це фактично `composer.gitSha` + `overrides.appliedCount` + повний copy `origin.json` з composer-repo. Жодної логіки розв'язання на runtime — все determined by content of `data/input/<line>/origin.json`.
+`metadata.json` is effectively `composer.gitSha` + `overrides.appliedCount` + a full copy of `origin.json` from the composer-repo. No resolution logic at runtime — everything is determined by the content of `data/input/<line>/origin.json`.
 
-### 3.3 Packing JSON як embedded resource
+### 3.3 Packing JSON as an embedded resource
 
 **`src/Creatio.ComponentRegistry/Creatio.ComponentRegistry.csproj`:**
 ```xml
@@ -251,7 +251,7 @@ dotnet nuget push artifacts/*.nupkg → api.nuget.org
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Файли генеруються composer-runner-ом у obj/composed/ ПЕРЕД dotnet pack -->
+    <!-- Files are generated by the composer-runner in obj/composed/ BEFORE dotnet pack -->
     <EmbeddedResource Include="$(MSBuildProjectDirectory)/../../obj/composed/ComponentRegistry.json">
       <LogicalName>Creatio.ComponentRegistry.ComponentRegistry.json</LogicalName>
     </EmbeddedResource>
@@ -262,7 +262,7 @@ dotnet nuget push artifacts/*.nupkg → api.nuget.org
 </Project>
 ```
 
-**Критично:** `LogicalName` фіксує exact resource name. Без нього MSBuild згенерує щось на кшталт `Creatio.ComponentRegistry.._..obj.composed.ComponentRegistry.json` (бо файли поза csproj-папкою).
+**Critical:** `LogicalName` fixes the exact resource name. Without it MSBuild generates something like `Creatio.ComponentRegistry.._..obj.composed.ComponentRegistry.json` (because the files live outside the csproj folder).
 
 **`PackageMarker.cs`:**
 ```csharp
@@ -278,25 +278,25 @@ public static class PackageMarker { }
 
 ---
 
-## 4. NuGet-пакет — структура і identification
+## 4. NuGet package — structure and identification
 
-### 4.1 Метадані
+### 4.1 Metadata
 
-| Поле | Значення |
+| Field | Value |
 |---|---|
 | `PackageId` | `Creatio.ComponentRegistry` |
-| `Version` | `0.1.0` (semver 3-part, без `v` prefix у тегах) |
-| Owner на nuget.org | `ATF` (той самий що публікує clio) |
+| `Version` | `0.1.0` (3-part semver, without a `v` prefix in tags) |
+| Owner on nuget.org | `ATF` (the same one that publishes clio) |
 | `Authors` | `ATF` |
 | `Company` | `Creatio` |
 | `Description` | `Curated Freedom UI component catalog consumed by clio MCP server.` |
 | `PackageLicenseExpression` | `MIT` |
 | `RepositoryUrl` | `https://github.com/Advance-Technologies-Foundation/creatio-component-registry-composer` |
 | `PackageTags` | `creatio;clio;mcp;ai;freedom-ui` |
-| `TargetFramework` | `netstandard2.0` (max сумісність з clio `net8.0;net10.0`) |
+| `TargetFramework` | `netstandard2.0` (max compatibility with clio `net8.0;net10.0`) |
 | Destination feed | `https://api.nuget.org/v3/index.json` (public) |
 
-### 4.2 Структура `.nupkg`
+### 4.2 `.nupkg` structure
 
 ```
 Creatio.ComponentRegistry.0.1.0.nupkg
@@ -305,50 +305,50 @@ Creatio.ComponentRegistry.0.1.0.nupkg
 ├── Creatio.ComponentRegistry.nuspec
 └── lib/
     └── netstandard2.0/
-        └── Creatio.ComponentRegistry.dll  ← містить 2 embedded resources
+        └── Creatio.ComponentRegistry.dll  ← contains 2 embedded resources
 ```
 
-**Local verification після `dotnet pack`:**
+**Local verification after `dotnet pack`:**
 ```csharp
 var asm = Assembly.LoadFrom("Creatio.ComponentRegistry.dll");
 foreach (var n in asm.GetManifestResourceNames()) Console.WriteLine(n);
-// Очікувано:
+// Expected:
 // Creatio.ComponentRegistry.ComponentRegistry.json
 // Creatio.ComponentRegistry.metadata.json
 ```
 
-### 4.3 Чому DLL з embedded resource (а не `contentFiles/`)
+### 4.3 Why a DLL with an embedded resource (and not `contentFiles/`)
 
-| Підхід | Pros | Cons |
+| Approach | Pros | Cons |
 |---|---|---|
-| **embedded resource у DLL** (вибрано) | `Assembly.GetManifestResourceStream` — стандарт; нульова залежність від filesystem; works з `PackAsTool=true` у clio | Потрібен один marker class |
-| `contentFiles/any/any/*.json` | Plain file для інспекції | `PackAsTool=true` нестабільно обробляє content-файли; ламає offline-інваріант |
+| **embedded resource in DLL** (chosen) | `Assembly.GetManifestResourceStream` — standard; zero dependency on the filesystem; works with `PackAsTool=true` in clio | A single marker class is required |
+| `contentFiles/any/any/*.json` | A plain file for inspection | `PackAsTool=true` unstably handles content files; breaks the offline invariant |
 
 ---
 
-## 5. Зміни у clio repo
+## 5. Changes in the clio repo
 
-### 5.1 Файли під зміну
+### 5.1 Files to change
 
-| Файл | Дія |
+| File | Action |
 |---|---|
-| `clio/Command/McpServer/Data/ComponentRegistry.json` | **Видалити** |
-| `Directory.Packages.props` | Додати `<PackageVersion Include="Creatio.ComponentRegistry" Version="0.1.0" />` |
-| `clio/clio.csproj` | Додати `<PackageReference Include="Creatio.ComponentRegistry" />`; видалити `<Content Include="Command\McpServer\Data\**">` block |
-| `clio/Command/McpServer/Tools/ComponentInfoCatalog.cs` | Переписати: drop `IFileSystem`/`IWorkingDirectoriesProvider` deps; parameterless ctor + `internal static LoadFromStream(Stream)` factory |
-| `clio/Program.cs` (DI registration) | Перевірити, що `ComponentInfoCatalog` реєструється без `IFileSystem` залежності |
-| `clio.tests/Command/McpServer/ComponentInfoToolTests.cs` | Hybrid (Variant C): 6 існуючих тестів → `LoadFromStream(MemoryStream)` (hermetic), додати 2-3 smoke-тести для real embedded resource |
-| `clio.mcp.e2e/ComponentInfoToolE2ETests.cs` | Жодних змін |
-| `nuget.config` | **Жодних змін** — wildcard `*` → nuget.org підхопить `Creatio.ComponentRegistry` |
-| `clio/Command/McpServer/AGENTS.md` | Оновити секцію про джерело даних (тепер у NuGet, не in-repo) |
+| `clio/Command/McpServer/Data/ComponentRegistry.json` | **Delete** |
+| `Directory.Packages.props` | Add `<PackageVersion Include="Creatio.ComponentRegistry" Version="0.1.0" />` |
+| `clio/clio.csproj` | Add `<PackageReference Include="Creatio.ComponentRegistry" />`; delete the `<Content Include="Command\McpServer\Data\**">` block |
+| `clio/Command/McpServer/Tools/ComponentInfoCatalog.cs` | Rewrite: drop `IFileSystem`/`IWorkingDirectoriesProvider` deps; parameterless ctor + `internal static LoadFromStream(Stream)` factory |
+| `clio/Program.cs` (DI registration) | Verify that `ComponentInfoCatalog` is registered without an `IFileSystem` dependency |
+| `clio.tests/Command/McpServer/ComponentInfoToolTests.cs` | Hybrid (Variant C): 6 existing tests → `LoadFromStream(MemoryStream)` (hermetic), add 2-3 smoke tests for the real embedded resource |
+| `clio.mcp.e2e/ComponentInfoToolE2ETests.cs` | No changes |
+| `nuget.config` | **No changes** — the wildcard `*` → nuget.org will pick up `Creatio.ComponentRegistry` |
+| `clio/Command/McpServer/AGENTS.md` | Update the section about the data source (now in NuGet, not in-repo) |
 
-### 5.2 Перевірки інфраструктури clio
+### 5.2 clio infrastructure checks
 
-- `Directory.Packages.props` має `<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>` → `<PackageReference>` у `clio.csproj` без `Version=` — інваріант **дотримано**.
-- `clio.csproj` має `<PackAsTool>true</PackAsTool>` — embedded resources у `Creatio.ComponentRegistry.dll` працюють у tool-режимі (DLL копіюється в `tools/<tfm>/any/`).
-- `clio.csproj` уже має `InternalsVisibleTo("clio.tests")` і `InternalsVisibleTo("clio.mcp.e2e")` — `internal static LoadFromStream(Stream)` дешевий, без додаткових змін csproj.
+- `Directory.Packages.props` has `<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>` → `<PackageReference>` in `clio.csproj` without `Version=` — the invariant is **upheld**.
+- `clio.csproj` has `<PackAsTool>true</PackAsTool>` — embedded resources in `Creatio.ComponentRegistry.dll` work in tool mode (the DLL is copied into `tools/<tfm>/any/`).
+- `clio.csproj` already has `InternalsVisibleTo("clio.tests")` and `InternalsVisibleTo("clio.mcp.e2e")` — `internal static LoadFromStream(Stream)` is cheap, without additional csproj changes.
 
-### 5.3 Ескіз нового `ComponentInfoCatalog.cs`
+### 5.3 Sketch of the new `ComponentInfoCatalog.cs`
 
 ```csharp
 using System;
@@ -373,11 +373,11 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 
     private readonly Lazy<ComponentCatalogState> _catalogState;
 
-    // Public parameterless ctor — для DI (виробничий шлях)
+    // Public parameterless ctor — for DI (production path)
     public ComponentInfoCatalog()
         : this(() => LoadCatalogStateFromEmbeddedResource()) { }
 
-    // Internal ctor — для тестів через LoadFromStream
+    // Internal ctor — for tests via LoadFromStream
     internal ComponentInfoCatalog(Func<ComponentCatalogState> loader) {
         _catalogState = new Lazy<ComponentCatalogState>(loader, isThreadSafe: true);
     }
@@ -407,7 +407,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
         return LoadFromStream(stream);
     }
 
-    // Internal для тестів (доступно через InternalsVisibleTo)
+    // Internal for tests (accessible via InternalsVisibleTo)
     internal static ComponentCatalogState LoadFromStream(Stream stream) {
         ComponentRegistryEntry[]? rawEntries = JsonSerializer.Deserialize<ComponentRegistryEntry[]>(
             stream,
@@ -415,24 +415,24 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
         if (rawEntries is null || rawEntries.Length == 0) {
             throw new InvalidOperationException("Component registry is empty or invalid.");
         }
-        // duplicate detection + ordering + lookup dictionary (1:1 з поточної логіки)
+        // duplicate detection + ordering + lookup dictionary (1:1 with the current logic)
         // ...
         return new ComponentCatalogState(orderedEntries, lookup);
     }
 
-    // Matches / Contains / GetCategorySortKey — без змін з поточного коду
+    // Matches / Contains / GetCategorySortKey — unchanged from the current code
 }
 ```
 
-### 5.4 Перевірка call-sites
+### 5.4 Call-site check
 
-Перед PR: `grep -rn "new ComponentInfoCatalog" /Users/a.kravchuk/Projects/clio/clio/ /Users/a.kravchuk/Projects/clio/clio.tests/ /Users/a.kravchuk/Projects/clio/clio.mcp.e2e/`.
+Before the PR: `grep -rn "new ComponentInfoCatalog" /Users/a.kravchuk/Projects/clio/clio/ /Users/a.kravchuk/Projects/clio/clio.tests/ /Users/a.kravchuk/Projects/clio/clio.mcp.e2e/`.
 
-DI registration (`services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>()`) лишається без змін — DI авто-resolve-ить parameterless ctor.
+DI registration (`services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>()`) stays unchanged — DI auto-resolves the parameterless ctor.
 
 ---
 
-## 6. CI/CD для composer-repo — GitHub Actions ubuntu-latest
+## 6. CI/CD for composer-repo — GitHub Actions ubuntu-latest
 
 ### 6.1 `.github/workflows/ci.yml` (PR builds)
 
@@ -562,7 +562,7 @@ jobs:
           dotnet nuget push "artifacts/Creatio.ComponentRegistry.${PACKAGE_VERSION}.nupkg" \
             --api-key "${{ secrets.CLIO_NUGET_API_KEY }}" \
             --source https://api.nuget.org/v3/index.json
-          # БЕЗ --skip-duplicate: explicit fail-on-duplicate
+          # WITHOUT --skip-duplicate: explicit fail-on-duplicate
 
       - name: Create git tag
         run: |
@@ -570,26 +570,26 @@ jobs:
           git push origin "${PACKAGE_VERSION}"
 ```
 
-### 6.3 Налаштування секретів composer-repo
+### 6.3 composer-repo secret setup
 
-- `CLIO_NUGET_API_KEY` — той самий API key (ATF on nuget.org), що публікує clio. Скопіювати у GH Secrets composer-repo.
-- `GITHUB_TOKEN` — auto-provisioned, потрібен для `check-origin` (verify clio commit existence через `gh api`).
+- `CLIO_NUGET_API_KEY` — the same API key (ATF on nuget.org) that publishes clio. Copy into GH Secrets of composer-repo.
+- `GITHUB_TOKEN` — auto-provisioned, needed for `check-origin` (verifying clio commit existence via `gh api`).
 
 ---
 
-## 7. Послідовність робіт (PR-flow)
+## 7. Sequence of work (PR flow)
 
 ### 7.1 Cross-repo dependency
 
-clio не може merge-нути PR з `<PackageReference Include="Creatio.ComponentRegistry" />`, поки `0.1.0` не опубліковано на nuget.org.
+clio cannot merge a PR with `<PackageReference Include="Creatio.ComponentRegistry" />` until `0.1.0` is published to nuget.org.
 
-### 7.2 Порядок
+### 7.2 Order
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │ COMPOSER-REPO BOOTSTRAP                                             │
 │ 1. PR #1: layout (sln, csprojs, data/, .github/workflows/, docs/)   │
-│    + snapshot ComponentRegistry.json + origin.json з pinned clio SHA│
+│    + snapshot ComponentRegistry.json + origin.json with pinned clio SHA│
 │ 2. PR #2: composer runtime (Program.cs, Input, Merge, Output)        │
 │ 3. PR #3: composer tests + DuplicateDetector + MetadataStamper +    │
 │           OriginIntegrityChecker                                     │
@@ -597,30 +597,30 @@ clio не може merge-нути PR з `<PackageReference Include="Creatio.Comp
                            │
 ┌──────────────────────────▼──────────────────────────────────────────┐
 │ FIRST NuGet PUBLISH                                                 │
-│ 4. Manual trigger `release-to-nuget` workflow з PACKAGE_VERSION=0.1.0│
+│ 4. Manual trigger of the `release-to-nuget` workflow with PACKAGE_VERSION=0.1.0│
 │    - Origin integrity check passes                                  │
-│    - Composer tests passes                                          │
-│    - dotnet pack + push до api.nuget.org                            │
-│    - git tag 0.1.0 створено                                         │
-│ 5. ВЕРИФІКАЦІЯ: `dotnet nuget locals all --clear` локально →        │
+│    - Composer tests pass                                            │
+│    - dotnet pack + push to api.nuget.org                            │
+│    - git tag 0.1.0 created                                          │
+│ 5. VERIFICATION: `dotnet nuget locals all --clear` locally →        │
 │    `dotnet add package Creatio.ComponentRegistry --version 0.1.0` → │
 │    `Assembly.GetManifestResourceNames()` → 2 resources              │
 └──────────────────────────┬──────────────────────────────────────────┘
                            │
 ┌──────────────────────────▼──────────────────────────────────────────┐
 │ CLIO MIGRATION PR                                                   │
-│ 6. PR у clio repo, single commit-set:                               │
+│ 6. PR in the clio repo, single commit set:                          │
 │    - Directory.Packages.props: + PackageVersion                     │
 │    - clio.csproj: + PackageReference, - Content Include             │
-│    - ComponentInfoCatalog.cs: переписати loader (Variant C)         │
+│    - ComponentInfoCatalog.cs: rewrite the loader (Variant C)        │
 │    - ComponentInfoToolTests.cs: hermetic LoadFromStream + smoke     │
 │    - delete clio/Command/McpServer/Data/ComponentRegistry.json      │
 │    - update AGENTS.md                                               │
-│ 7. CI clio (build.yml) пройти:                                       │
-│    - dotnet restore тягне Creatio.ComponentRegistry@0.1.0 з n.org   │
-│    - unit tests зелені                                              │
-│    - E2E (ComponentInfoToolE2ETests) зелені — drop-in proof         │
-│ 8. Merge clio PR                                                    │
+│ 7. clio CI (build.yml) passes:                                      │
+│    - dotnet restore pulls Creatio.ComponentRegistry@0.1.0 from n.org│
+│    - unit tests green                                               │
+│    - E2E (ComponentInfoToolE2ETests) green — drop-in proof          │
+│ 8. Merge the clio PR                                                │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -628,21 +628,21 @@ clio не може merge-нути PR з `<PackageReference Include="Creatio.Comp
 
 | # | Gotcha | Mitigation |
 |---|---|---|
-| G1 | clio CI падає бо ще не бачить `Creatio.ComponentRegistry` | Запушити NuGet ДО відкриття clio PR (strict ordering у §7.2). |
-| G2 | nuget.org не дозволяє overwrite опублікованої версії — `0.1.0` immutable | Якщо знайшли баг — bump на `0.1.1`. CI-перший пробіг через CI workflow (auto on PR) тестує pack-логіку без push. |
-| G3 | `dotnet pack` саккає embedded resources з `obj/composed/`, файл там через runtime composer-step. `obj/` typically gitignored — checkout не має цих файлів | OK: composer-runner запускається на тому ж checkout ПЕРЕД `dotnet pack`. `.gitignore` ігнорує `obj/` як category, але MSBuild створює `obj/composed/` content вже після checkout. |
-| G4 | `LogicalName` ≠ constant у clio coordinator | `RegistryResourceName` constant у `ComponentInfoCatalog.cs` + test у Composer.Tests, що build-ить pack і інспектує assembly. |
-| G5 | netstandard2.0 vs net8/net10 — NuGet warnings | `netstandard2.0` універсально consume-иться з net8+. Жодних warnings очікувано. |
-| G6 | DI: змінений ctor `ComponentInfoCatalog()` ламає explicit `new ComponentInfoCatalog(fs, wd)` | `grep -rn "new ComponentInfoCatalog"` перед PR. |
-| G7 | Snapshot input у composer-repo і файл у clio до merge clio-PR — два джерела | Mitigation: composer bootstrap PR одразу робиться; clio-PR з міграцією заплановано як наступний крок. Window короткий. |
+| G1 | clio CI fails because it does not yet see `Creatio.ComponentRegistry` | Push the NuGet BEFORE opening the clio PR (strict ordering in §7.2). |
+| G2 | nuget.org does not allow overwriting a published version — `0.1.0` is immutable | If a bug is found — bump to `0.1.1`. The CI-first pass through the CI workflow (auto on PR) tests the pack logic without push. |
+| G3 | `dotnet pack` sucks embedded resources from `obj/composed/`, the file is there via a runtime composer step. `obj/` is typically gitignored — checkout does not have these files | OK: the composer-runner is launched on the same checkout BEFORE `dotnet pack`. `.gitignore` ignores `obj/` as a category, but MSBuild creates the `obj/composed/` content after checkout. |
+| G4 | `LogicalName` ≠ constant in the clio coordinator | The `RegistryResourceName` constant in `ComponentInfoCatalog.cs` + a test in Composer.Tests that builds the pack and inspects the assembly. |
+| G5 | netstandard2.0 vs net8/net10 — NuGet warnings | `netstandard2.0` is universally consumable from net8+. No warnings are expected. |
+| G6 | DI: the changed ctor `ComponentInfoCatalog()` breaks an explicit `new ComponentInfoCatalog(fs, wd)` | `grep -rn "new ComponentInfoCatalog"` before the PR. |
+| G7 | Snapshot input in composer-repo and a file in clio until the clio-PR is merged — two sources | Mitigation: the composer bootstrap PR is done immediately; the clio-PR with the migration is planned as the next step. The window is short. |
 
 ---
 
-## 8. Тестова стратегія — Variant C (Hybrid)
+## 8. Test strategy — Variant C (Hybrid)
 
-### 8.1 Юніт-тести у clio.tests (hermetic)
+### 8.1 Unit tests in clio.tests (hermetic)
 
-6 існуючих тестів конвертуємо до `LoadFromStream` (через `internal` factory):
+Convert the 6 existing tests to `LoadFromStream` (via the `internal` factory):
 
 ```csharp
 private static ComponentInfoTool CreateTool() {
@@ -653,14 +653,14 @@ private static ComponentInfoTool CreateTool() {
 }
 ```
 
-**Що зберігається:**
-- 100% поточних assertions (Count == 6, exact crt.Gallery bulkActions, тощо)
-- `MockFileSystem` + `WorkingDirectoriesProvider` зникають
-- Tests deterministic + hermetic
+**What is preserved:**
+- 100% of the current assertions (Count == 6, exact crt.Gallery bulkActions, etc.)
+- `MockFileSystem` + `WorkingDirectoriesProvider` disappear
+- Tests are deterministic + hermetic
 
-### 8.2 Smoke-тести (real embedded resource)
+### 8.2 Smoke tests (real embedded resource)
 
-2-3 нові тести у тому ж suite:
+2-3 new tests in the same suite:
 
 ```csharp
 [Test] public void Real_Registry_Should_Load_From_Embedded_Resource() {
@@ -682,88 +682,88 @@ private static ComponentInfoTool CreateTool() {
 }
 ```
 
-Smoke-тести катастрофічно ловлять `LogicalName` mismatch (loader падав би at startup).
+Smoke tests catastrophically catch a `LogicalName` mismatch (the loader would fail at startup).
 
-### 8.3 E2E у clio.mcp.e2e
+### 8.3 E2E in clio.mcp.e2e
 
-`ComponentInfoToolE2ETests.cs` залишається без змін — стартує real clio process, читає real embedded resource. Це є наш **drop-in regression detector** (Variant D з Q13 — обраний як заміна snapshot-baseline test).
+`ComponentInfoToolE2ETests.cs` remains unchanged — starts a real clio process, reads the real embedded resource. This is our **drop-in regression detector** (Variant D from Q13 — chosen as a replacement for a snapshot-baseline test).
 
-### 8.4 Composer-tests у composer-repo
+### 8.4 Composer tests in composer-repo
 
-| Test | Перевіряє |
+| Test | Verifies |
 |---|---|
-| `LocalJsonInputSource_Should_Parse_Manual_Snapshot` | Парсинг 92 записів |
-| `OriginIntegrityChecker_Should_Throw_When_Hash_Mismatches` | Захист від stale snapshot |
+| `LocalJsonInputSource_Should_Parse_Manual_Snapshot` | Parsing of 92 records |
+| `OriginIntegrityChecker_Should_Throw_When_Hash_Mismatches` | Protection against a stale snapshot |
 | `OriginIntegrityChecker_Should_Validate_Commit_Exists` | gh api commit lookup |
-| `DuplicateDetector_Should_Throw_On_Duplicates` | Mirror інваріанту clio |
+| `DuplicateDetector_Should_Throw_On_Duplicates` | Mirror of the clio invariant |
 | `OverridesApplier_NoOp_When_Overrides_Empty` | v0.1.0 base case |
-| `OverridesApplier_Hides_Components_Listed_In_AiHidden` | Готовність до 0.2.0 |
+| `OverridesApplier_Hides_Components_Listed_In_AiHidden` | Readiness for 0.2.0 |
 | `MetadataStamper_Should_Embed_Origin_Json_Verbatim` | Provenance |
 | `BundleWriter_Should_Produce_Top_Level_Array_Compatible_With_Clio` | drop-in compatibility |
-| `Packed_Assembly_Should_Expose_Two_Embedded_Resources` | Build pack локально, інспектувати |
+| `Packed_Assembly_Should_Expose_Two_Embedded_Resources` | Build pack locally, inspect |
 
 ### 8.5 Acceptance criteria
 
-- [ ] `Creatio.ComponentRegistry@0.1.0` опубліковано на api.nuget.org під ATF
-- [ ] `assembly.GetManifestResourceNames()` повертає рівно 2 imena
-- [ ] `JsonSerializer.Deserialize<ComponentRegistryEntry[]>(stream)` повертає 92 entries
-- [ ] clio build на CI зелений з `<PackageReference Include="Creatio.ComponentRegistry" />`
-- [ ] `clio/Command/McpServer/Data/ComponentRegistry.json` видалений з git
-- [ ] `ComponentInfoToolTests` зелені (hermetic Variant C + 3 smoke-тести)
-- [ ] `ComponentInfoToolE2ETests` зелені (drop-in proof)
-- [ ] git tag `0.1.0` у composer-repo створено
-- [ ] `metadata.json` усередині пакета містить composer SHA + точну copy `origin.json`
+- [ ] `Creatio.ComponentRegistry@0.1.0` is published to api.nuget.org under ATF
+- [ ] `assembly.GetManifestResourceNames()` returns exactly 2 names
+- [ ] `JsonSerializer.Deserialize<ComponentRegistryEntry[]>(stream)` returns 92 entries
+- [ ] clio build on CI is green with `<PackageReference Include="Creatio.ComponentRegistry" />`
+- [ ] `clio/Command/McpServer/Data/ComponentRegistry.json` is removed from git
+- [ ] `ComponentInfoToolTests` is green (hermetic Variant C + 3 smoke tests)
+- [ ] `ComponentInfoToolE2ETests` is green (drop-in proof)
+- [ ] git tag `0.1.0` in composer-repo is created
+- [ ] `metadata.json` inside the package contains composer SHA + an exact copy of `origin.json`
 
 ---
 
-## 9. Out-of-scope (явні нагадування)
+## 9. Out-of-scope (explicit reminders)
 
-Не входить у цю частину:
-- Жодних змін у моделі `ComponentRegistryEntry`/`ComponentPropertyDefinition` (поля `Availability`, top-level wrapper — це етап 3 і 6)
-- Жодних змін у `ComponentInfoArgs`/`ComponentInfoResponse` (нові args — це етап 5)
-- Жодного `IPlatformVersionResolver`, жодного cliogate-integration (етап 4)
-- Жодного auto-bump, cron-trigger у composer (етап 9)
-- Жодного NPM `@creatio/component-registry` integration (етап 7)
-- Жодних змін у creatio-ui repo
-- Hardcoded `CategoryOrder` залишається (data-driven — етап 6)
+Not part of this section:
+- No changes in the `ComponentRegistryEntry`/`ComponentPropertyDefinition` model (the `Availability` fields, top-level wrapper — that is stages 3 and 6)
+- No changes in `ComponentInfoArgs`/`ComponentInfoResponse` (new args — that is stage 5)
+- No `IPlatformVersionResolver`, no cliogate integration (stage 4)
+- No auto-bump, cron trigger in the composer (stage 9)
+- No NPM `@creatio/component-registry` integration (stage 7)
+- No changes in the creatio-ui repo
+- Hardcoded `CategoryOrder` remains (data-driven — stage 6)
 
 ---
 
 ## Critical Files for Implementation
 
-- [clio/Command/McpServer/Tools/ComponentInfoCatalog.cs](../clio/Command/McpServer/Tools/ComponentInfoCatalog.cs) — переписаний loader
-- [clio/Command/McpServer/Data/ComponentRegistry.json](../clio/Command/McpServer/Data/ComponentRegistry.json) — джерело snapshot-у (потім видаляється)
-- [Directory.Packages.props](../Directory.Packages.props) — `<PackageVersion …/>` додати
-- [clio/clio.csproj](../clio/clio.csproj) — `<PackageReference …/>` додати, `<Content Include…>` видалити
+- [clio/Command/McpServer/Tools/ComponentInfoCatalog.cs](../clio/Command/McpServer/Tools/ComponentInfoCatalog.cs) — the rewritten loader
+- [clio/Command/McpServer/Data/ComponentRegistry.json](../clio/Command/McpServer/Data/ComponentRegistry.json) — the snapshot source (then deleted)
+- [Directory.Packages.props](../Directory.Packages.props) — add `<PackageVersion …/>`
+- [clio/clio.csproj](../clio/clio.csproj) — add `<PackageReference …/>`, remove `<Content Include…>`
 - [clio.tests/Command/McpServer/ComponentInfoToolTests.cs](../clio.tests/Command/McpServer/ComponentInfoToolTests.cs) — Variant C rewrite
 
 ---
 
 ## Decisions log
 
-Всі open questions закриті в Q&A із власником плану. Підсумок:
+All open questions are closed in the Q&A with the plan owner. Summary:
 
-| # | Питання | Рішення |
+| # | Question | Decision |
 |---|---|---|
-| 1 | Технологія composer-а | **.NET 8 console app** (C#, NUnit). Той самий toolchain що clio → нульовий serialization-drift. |
-| 2 | `originCommit` provenance | **Sidecar `data/input/<line>/origin.json`** із pinned commit SHA + sha256. CI-check `OriginIntegrityChecker`: sha256(snapshot) ≡ origin.json.sha256 і commit existsAt clio repo. |
-| 3 | License | **MIT** для всього composer-repo (consistency з clio). |
-| 4 | Hosting composer-repo | **Public GitHub** `Advance-Technologies-Foundation/creatio-component-registry-composer` (consistency з clio екосистемою). |
-| 5 | Test strategy для `ComponentInfoCatalog` | **Variant C (Hybrid):** 6 existing tests → hermetic `LoadFromStream`; +3 smoke-тести проти real embedded resource. |
-| 6 | NuGet API key | **Reuse `CLIO_NUGET_API_KEY`** (той самий ATF account на nuget.org). Bus-factor можна адресувати пізніше. |
-| 7 | Хто створює composer-repo | **Створено** користувачем self-service. Repo empty, ready for first PR. |
-| ~~8~~ | ~~Jenkins folder~~ | **N/A** — composer-repo public GitHub → GitHub Actions, не Jenkins. |
-| 9 | CI runner | **`ubuntu-latest`** (GH-hosted, free для public repo). nuget.org reachable з public internet (HTTP 403 = auth required, не network block). |
-| 10 | `--skip-duplicate` flag | **Без flag** (consistency з clio release.yml). Fail-on-duplicate = explicit signal «bump потрібен». |
-| 11.a | Version format | **3-part semver** `0.1.0` (відповідає research MAJOR.MINOR.PATCH rules). |
-| 11.b | Tag prefix | **Без `v`** (consistency з clio convention `1.0.0.1`, `2.0.0.1`, …). |
-| 12 | Constructor strategy | **Parameterless public ctor** для DI + **internal static `LoadFromStream(Stream)` factory** для hermetic тестів. `InternalsVisibleTo("clio.tests")` уже налаштовано. |
-| 13 | Drop-in regression test | **Variant D** — без snapshot baseline test; покладаємось на existing `ComponentInfoToolE2ETests` як regression detector. |
+| 1 | Composer technology | **.NET 8 console app** (C#, NUnit). The same toolchain as clio → zero serialization drift. |
+| 2 | `originCommit` provenance | **Sidecar `data/input/<line>/origin.json`** with pinned commit SHA + sha256. CI check `OriginIntegrityChecker`: sha256(snapshot) ≡ origin.json.sha256 and commit exists in the clio repo. |
+| 3 | License | **MIT** for the entire composer-repo (consistency with clio). |
+| 4 | composer-repo hosting | **Public GitHub** `Advance-Technologies-Foundation/creatio-component-registry-composer` (consistency with the clio ecosystem). |
+| 5 | Test strategy for `ComponentInfoCatalog` | **Variant C (Hybrid):** 6 existing tests → hermetic `LoadFromStream`; +3 smoke tests against the real embedded resource. |
+| 6 | NuGet API key | **Reuse `CLIO_NUGET_API_KEY`** (the same ATF account on nuget.org). Bus factor can be addressed later. |
+| 7 | Who creates composer-repo | **Created** by the user self-service. Repo empty, ready for the first PR. |
+| ~~8~~ | ~~Jenkins folder~~ | **N/A** — composer-repo public GitHub → GitHub Actions, not Jenkins. |
+| 9 | CI runner | **`ubuntu-latest`** (GH-hosted, free for a public repo). nuget.org is reachable from the public internet (HTTP 403 = auth required, not a network block). |
+| 10 | `--skip-duplicate` flag | **Without the flag** (consistency with clio release.yml). Fail-on-duplicate = explicit signal "a bump is needed". |
+| 11.a | Version format | **3-part semver** `0.1.0` (matches the research MAJOR.MINOR.PATCH rules). |
+| 11.b | Tag prefix | **Without `v`** (consistency with the clio convention `1.0.0.1`, `2.0.0.1`, …). |
+| 12 | Constructor strategy | **Parameterless public ctor** for DI + **internal static `LoadFromStream(Stream)` factory** for hermetic tests. `InternalsVisibleTo("clio.tests")` is already configured. |
+| 13 | Drop-in regression test | **Variant D** — without a snapshot baseline test; rely on the existing `ComponentInfoToolE2ETests` as the regression detector. |
 
-### Архітектурні uplifts (з'явилися в Q&A):
+### Architectural uplifts (emerged during Q&A):
 
-- **Final NuGet destination — public `api.nuget.org`, не Terrasoft Nexus.** clio публікується на nuget.org під ATF owner; `Creatio.ComponentRegistry` слідує тому самому patern-у. Symmetric public ecosystem.
-- **Steady-state тригер — GA-tag у creatio-ui, не branch-cut.** Branch-cut виробляє baseline artifact для регресій extractor-а; реальний publish тригериться по GA-tag (`8.3.0`, `8.3.1`, …).
-- **Composer має own CI у composer-repo (GitHub Actions),** а не запускається з creatio-ui Jenkins. Це consciously розрив за ownership (Platform-UI ≠ AI/clio team).
-- **clio bump через Renovate/Dependabot auto-PR**, не direct commit від composer pipeline. Review-gating preserve-ється.
-- **`overrides.json` і `supported-versions.json` живуть у composer-repo** (AI/clio team-owned), не у creatio-ui Jenkins.
+- **The final NuGet destination is public `api.nuget.org`, not Terrasoft Nexus.** clio is published to nuget.org under the ATF owner; `Creatio.ComponentRegistry` follows the same pattern. A symmetric public ecosystem.
+- **The steady-state trigger is the GA tag in creatio-ui, not branch-cut.** Branch-cut produces a baseline artifact for extractor regressions; the real publish is triggered by the GA tag (`8.3.0`, `8.3.1`, …).
+- **The composer has its own CI in composer-repo (GitHub Actions),** rather than running from creatio-ui Jenkins. This is a conscious ownership split (Platform-UI ≠ AI/clio team).
+- **clio bump via Renovate/Dependabot auto-PR**, not a direct commit from the composer pipeline. Review gating is preserved.
+- **`overrides.json` and `supported-versions.json` live in composer-repo** (AI/clio team-owned), not in creatio-ui Jenkins.

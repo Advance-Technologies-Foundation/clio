@@ -1,25 +1,25 @@
-# Дослідження: MCP-компоненти і версіонування
+# Research: MCP components and versioning
 
-Дослідження з еволюції каталогу Freedom UI компонентів, що доступний AI через clio MCP server.
+Research on the evolution of the Freedom UI component catalog that is exposed to AI through the clio MCP server.
 
-## Контекст
+## Context
 
-Clio MCP server експонує AI-агентам набір інструментів для роботи з Creatio: створення сторінок, схем, компонентів, керування середовищами. Один із ключових інструментів — `get-component-info` — повертає AI кур-каталог Freedom UI компонентів із описом властивостей.
+The clio MCP server exposes to AI agents a set of tools for working with Creatio: creating pages, schemas, components, managing environments. One of the key tools — `get-component-info` — returns to AI a curated catalog of Freedom UI components with property descriptions.
 
-Поточний каталог:
-- 92 компоненти в 5 категоріях
-- Зашитий у [clio/Command/McpServer/Data/ComponentRegistry.json](../clio/Command/McpServer/Data/ComponentRegistry.json)
-- Жодної version-метадати
+Current catalog:
+- 92 components in 5 categories
+- Hardcoded into [clio/Command/McpServer/Data/ComponentRegistry.json](../clio/Command/McpServer/Data/ComponentRegistry.json)
+- No version metadata at all
 
-Це дослідження визначає **цільову архітектуру**: як підтримувати каталог при еволюції платформи (нові версії додають/змінюють/прибирають компоненти і властивості), як зробити цю підтримку автоматичною на основі коду платформи, і як вибрати оптимальне сховище та distribution-канали.
+This research defines the **target architecture**: how to maintain the catalog as the platform evolves (new versions add/change/remove components and properties), how to make this maintenance automatic based on the platform code, and how to choose the optimal storage and distribution channels.
 
-## Документи
+## Documents
 
-- [architecture.md](architecture.md) — цільова архітектура SoT із трьома доменами: creatio-ui (source) → composer-repo (integration) → clio (consumer). NuGet-distribution, ownership matrix, failure-mode design, версіонування `Creatio.ComponentRegistry`.
-- [clio-target-structure.md](clio-target-structure.md) — цільова структура реєстру в clio: per-entry `availability`, resolver версії, `target-version` resolution stack, fallback policy, NuGet-base loader.
-- [extractor-analysis.md](extractor-analysis.md) — extractor-фільтри, інваріант `**/designtime/**`, цифри 192/92/100, повний список 100 нових кандидатів для seeding `overrides.json`.
+- [architecture.md](architecture.md) — target SoT architecture with three domains: creatio-ui (source) → composer-repo (integration) → clio (consumer). NuGet distribution, ownership matrix, failure-mode design, versioning of `Creatio.ComponentRegistry`.
+- [clio-target-structure.md](clio-target-structure.md) — target registry structure in clio: per-entry `availability`, version resolver, `target-version` resolution stack, fallback policy, NuGet-based loader.
+- [extractor-analysis.md](extractor-analysis.md) — extractor filters, the `**/designtime/**` invariant, the 192/92/100 numbers, the full list of 100 new candidates for seeding `overrides.json`.
 
-## Цільова архітектура
+## Target architecture
 
 ```
                   ┌──────────── creatio-ui ────────────┐
@@ -51,7 +51,7 @@ Clio MCP server експонує AI-агентам набір інструмен
        │   ComponentRegistry.json (unified)        │
        │   metadata.json (provenance)              │
        └─────────────┼─────────────────────────────┘
-                     │ <PackageReference> у Directory.Packages.props
+                     │ <PackageReference> in Directory.Packages.props
                      ▼
            ┌─────── clio.csproj ────────┐
            │   ComponentInfoCatalog     │
@@ -62,18 +62,18 @@ Clio MCP server експонує AI-агентам набір інструмен
            └────────────────────────────┘
 ```
 
-## Ключові архітектурні рішення
+## Key architectural decisions
 
-- **Три ізольовані домени** з ownership matrix: creatio-ui (Platform-UI team), composer-repo (AI / clio team), clio (clio team). Жоден не має write-access до іншого окрім стандартних PR-flow.
-- **Distribution**: NPM (UI → composer) + NuGet (composer → clio). Незалежні semver на обох ланцюгах.
-- **Storage у clio = NuGet embedded resource.** Файл `clio/Command/McpServer/Data/ComponentRegistry.json` видаляється з clio repo; loader читає через `Assembly.GetManifestResourceStream`.
-- **Runtime serving — 100% offline.** Жодного network call під час AI MCP сесії.
-- **Version resolution**: explicit > environment-name + GetSysInfo probe > latest-fallback. Завжди повертається `resolvedTargetVersion` + `resolvedFrom`.
-- **Fallback policy**: `latest known` (максимальна `since`-версія, обчислена composer-фазою). Не `unrestricted`, не `error`, не `oldest`.
-- **Composer живе у власному repo** `creatio-component-registry-composer` — single responsibility, ізольована CI, відокремлена від UI source і consumer.
+- **Three isolated domains** with an ownership matrix: creatio-ui (Platform-UI team), composer-repo (AI / clio team), clio (clio team). None of them has write access to another beyond the standard PR flow.
+- **Distribution**: NPM (UI → composer) + NuGet (composer → clio). Independent semver on both chains.
+- **Storage in clio = NuGet embedded resource.** The file `clio/Command/McpServer/Data/ComponentRegistry.json` is removed from the clio repo; the loader reads via `Assembly.GetManifestResourceStream`.
+- **Runtime serving — 100% offline.** No network calls during an AI MCP session.
+- **Version resolution**: explicit > environment-name + GetSysInfo probe > latest-fallback. Always returns `resolvedTargetVersion` + `resolvedFrom`.
+- **Fallback policy**: `latest known` (the maximum `since` version, computed by the composer phase). Not `unrestricted`, not `error`, not `oldest`.
+- **The composer lives in its own repo** `creatio-component-registry-composer` — single responsibility, isolated CI, separate from UI source and consumer.
 
-## Статус
+## Status
 
-Документи описують **цільовий стан**. Реалізація поки не розпочата; поточний `ComponentInfoCatalog` залишається без змін.
+The documents describe the **target state**. Implementation has not started yet; the current `ComponentInfoCatalog` remains unchanged.
 
-Етапи доставки — у [clio-target-structure.md](clio-target-structure.md#етапи-доставки-target-architecture). Без проміжного pilot-етапу; кожен етап завершується release-ом NuGet/NPM-пакета у production-feed.
+Delivery stages are in [clio-target-structure.md](clio-target-structure.md#delivery-stages-target-architecture). There is no intermediate pilot stage; each stage finishes with a release of a NuGet/NPM package to the production feed.
