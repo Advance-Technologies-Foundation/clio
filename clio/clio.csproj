@@ -160,6 +160,10 @@
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" />
 		<PackageReference Include="Microsoft.Data.SqlClient" />
 	</ItemGroup>
+	
+	<ItemGroup>
+	  <Folder Include="tpl\workspace\.codex\skills\" />
+	</ItemGroup>
 
 	<!-- Reads the latest X.Y.Z.W git tag for local builds. Skipped when CI provides /p:AssemblyVersion. -->
 	<Target Name="SetVersionFromGitTag"
