@@ -1128,4 +1128,59 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().Contain("Support mode is on. Please share this session with support for analysis.",
 			because: "the guide should encode the canonical handoff line appended to support-mode final responses");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for Freedom UI business rules so AI callers use declarative rules instead of handlers.")]
+	public void BusinessRulesGuidanceResource_Should_Return_Canonical_Business_Rules_Guide() {
+		// Arrange
+		BusinessRulesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the business-rules guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/business-rules",
+			because: "the resource should expose a stable MCP URI for business-rules guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the business-rules guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP business rules guide",
+			because: "the article should identify itself as the dedicated business-rules guide");
+		article.Text.Should().Contain("create-entity-business-rule",
+			because: "the guide should advertise the entity-level business rule tool");
+		article.Text.Should().Contain("create-page-business-rule",
+			because: "the guide should advertise the page-level business rule tool");
+		article.Text.Should().Contain("SEPARATE first-class artifacts",
+			because: "the guide should make clear that business rules are not page-body code");
+		article.Text.Should().Contain("Do NOT write JavaScript handler or validator code",
+			because: "the guide should explicitly forbid implementing business-rule logic as handlers");
+		article.Text.Should().Contain("condition group",
+			because: "the guide should explain the condition-action structure of business rules");
+		article.Text.Should().Contain("Entity-level business rules",
+			because: "the guide should distinguish entity-level from page-level rules");
+		article.Text.Should().Contain("Page-level business rules",
+			because: "the guide should distinguish page-level from entity-level rules");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes business-rules so AI callers can retrieve business-rule authoring guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Business_Rules_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("business-rules", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose business-rules so get-guidance can return it by name");
+		entry.Name.Should().Be("business-rules",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("business rules",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/business-rules",
+			because: "the article URI in the catalog must match the resource URI");
+	}
 }
