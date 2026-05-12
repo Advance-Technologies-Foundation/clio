@@ -130,7 +130,7 @@ NuGet pkg містить два файли:
 
 ## Sources в creatio-ui
 
-Витяг із [03-available-components.md](03-available-components.md) і дослідження репо:
+Витяг із [03-extraction-analysis.md](03-extraction-analysis.md) і дослідження репо:
 
 | Джерело | Що дає | Якість |
 |---|---|---|
@@ -369,6 +369,19 @@ master (8.4 dev) ─┬─ cut → 8.3.x branch created
 - **Overrides versioning.** `overrides.json` теж має semver чи живе як частина composer git history? Перше чистіше, друге простіше.
 - **Telemetry contract.** Чи composer записує use-frequency у NuGet metadata, щоб back-port популярних overrides у `creatio-ui` як JSDoc? Сильна оптимізація, але вимагає телеметрії від MCP server-ів — окремий design issue.
 - **Композиція `composable-apps/*` компонентів.** Як їх scope-увати у unified registry — окремий design issue для v2.
+
+## Чому NuGet, а не in-repo JSON
+
+Розглядалися альтернативи фінального зберігання — single embedded JSON commit-нутий у clio repo, per-component sharded у clio, SQLite, cloud-fetch. Деталі порівняння — у git history (PR #595, видалений файл `06-storage-distribution-analysis.md`).
+
+NuGet-вибір розв'язує 4 конкретні проблеми, які тягне in-repo JSON commit:
+
+1. **Auto-PR noise.** Composer-бот робить commit registry-діффу 500KB–1MB на кожен пробіг. PR-review цього diff-у безкорисний (величезний автоген).
+2. **Implicit versioning.** clio v1.10 і v1.11 з різними registry-станами ідентифікуються тільки git-blame-ом. NuGet semver дає explicit pin.
+3. **Dependabot-blind.** Bot-commit не моніториться dependabot/Renovate. NuGet PackageReference — стандарт.
+4. **Parallel-PR collisions.** Code-PR і registry-bump-PR постійно стикаються в одному файлі. NuGet pin живе в `Directory.Packages.props`, code — окремо.
+
+Цина: один додатковий step у composer pipeline (`dotnet pack` + `dotnet nuget push`) і одна додаткова налаштована залежність у clio. Втрата візуальної інспекції JSON у IDE mitigated публікацією human-readable artifact-у в Jenkins / release notes.
 
 ## Що НЕ робити (антипатерни)
 

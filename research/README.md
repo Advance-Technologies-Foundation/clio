@@ -15,12 +15,9 @@ Clio MCP server експонує AI-агентам набір інструмен
 
 ## Документи
 
-1. [01-mcp-overview.md](01-mcp-overview.md) — що MCP дозволяє створювати AI (повний перелік `create-*`/`add-*` інструментів і guidance resources).
-2. [02-adding-components-to-pages.md](02-adding-components-to-pages.md) — детальний flow, як AI додає компонент на Freedom UI сторінку (`get-page` → `update-page`, marker envelope, append-mode, виявлення parentName).
-3. [03-available-components.md](03-available-components.md) — повний список 92 компонентів за категоріями + результати extraction з creatio-ui.
-4. [04-multi-version-target-structure.md](04-multi-version-target-structure.md) — цільова структура для підтримки кількох версій платформи: per-entry `availability`, resolver версії, `target-version` resolution stack, fallback policy, NuGet-base loader.
-5. [05-source-of-truth-automation.md](05-source-of-truth-automation.md) — цільова архітектура SoT із трьома доменами: creatio-ui (source) → composer-repo (integration) → clio (consumer). NuGet-distribution, ownership matrix, failure-mode design, версіонування `Creatio.ComponentRegistry`.
-6. [06-storage-distribution-analysis.md](06-storage-distribution-analysis.md) — порівняння 10 варіантів сховища і distribution-каналів. AI Coding Agent UX як окремий критерій. Чому композиція `#6 (NPM) + #7 (NuGet) + #2 (sharded authoring)`.
+1. [03-extraction-analysis.md](03-extraction-analysis.md) — extractor-фільтри, інваріант `**/designtime/**`, цифри 192/92/100, повний список 100 нових кандидатів для seeding `overrides.json`.
+2. [04-multi-version-target-structure.md](04-multi-version-target-structure.md) — цільова структура реєстру в clio: per-entry `availability`, resolver версії, `target-version` resolution stack, fallback policy, NuGet-base loader.
+3. [05-source-of-truth-automation.md](05-source-of-truth-automation.md) — цільова архітектура SoT із трьома доменами: creatio-ui (source) → composer-repo (integration) → clio (consumer). NuGet-distribution, ownership matrix, failure-mode design, версіонування `Creatio.ComponentRegistry`.
 
 ## Цільова архітектура
 
