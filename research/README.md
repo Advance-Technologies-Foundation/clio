@@ -4,58 +4,79 @@
 
 ## Контекст
 
-Clio MCP server експонує AI-агентам набір інструментів для роботи з Creatio: створення сторінок, схем, компонентів, керування середовищами тощо. Один із ключових інструментів — `get-component-info` — повертає AI кур-каталог Freedom UI компонентів із описом властивостей.
+Clio MCP server експонує AI-агентам набір інструментів для роботи з Creatio: створення сторінок, схем, компонентів, керування середовищами. Один із ключових інструментів — `get-component-info` — повертає AI кур-каталог Freedom UI компонентів із описом властивостей.
 
 Поточний каталог:
 - 92 компоненти в 5 категоріях
 - Зашитий у [clio/Command/McpServer/Data/ComponentRegistry.json](../clio/Command/McpServer/Data/ComponentRegistry.json)
 - Жодної version-метадати
 
-Це дослідження аналізує, **як підтримувати каталог при еволюції платформи** (нові версії додають/змінюють/прибирають компоненти і властивості) і **як зробити цю підтримку автоматичною** на основі коду платформи.
+Це дослідження визначає **цільову архітектуру**: як підтримувати каталог при еволюції платформи (нові версії додають/змінюють/прибирають компоненти і властивості), як зробити цю підтримку автоматичною на основі коду платформи, і як вибрати оптимальне сховище та distribution-канали.
 
 ## Документи
 
 1. [01-mcp-overview.md](01-mcp-overview.md) — що MCP дозволяє створювати AI (повний перелік `create-*`/`add-*` інструментів і guidance resources).
 2. [02-adding-components-to-pages.md](02-adding-components-to-pages.md) — детальний flow, як AI додає компонент на Freedom UI сторінку (`get-page` → `update-page`, marker envelope, append-mode, виявлення parentName).
-3. [03-available-components.md](03-available-components.md) — повний список 92 компонентів за категоріями (containers / fields / interactive / display / filtering).
-4. [04-multi-version-target-structure.md](04-multi-version-target-structure.md) — цільова структура для підтримки кількох версій платформи: per-entry `availability`, resolver версії, `target-version` resolution stack, відкриті питання.
-5. [05-source-of-truth-automation.md](05-source-of-truth-automation.md) — автоматичний SoT із репо `creatio-ui`: AST-екстракція з `@CrtViewElement` декораторів + `*ViewConfig` інтерфейсів, JSDoc-вокабуляр, CI pipeline, npm-публікація, composer-фаза в clio.
-6. [06-diagrams.md](06-diagrams.md) — дві діаграми: мінімальна реалізація (pilot, без automation) і кінцеве рішення з повним flow `creatio-ui → composer → MCP`.
+3. [03-available-components.md](03-available-components.md) — повний список 92 компонентів за категоріями + результати extraction з creatio-ui.
+4. [04-multi-version-target-structure.md](04-multi-version-target-structure.md) — цільова структура для підтримки кількох версій платформи: per-entry `availability`, resolver версії, `target-version` resolution stack, fallback policy, NuGet-base loader.
+5. [05-source-of-truth-automation.md](05-source-of-truth-automation.md) — цільова архітектура SoT із трьома доменами: creatio-ui (source) → composer-repo (integration) → clio (consumer). NuGet-distribution, ownership matrix, failure-mode design, версіонування `Creatio.ComponentRegistry`.
+6. [06-storage-distribution-analysis.md](06-storage-distribution-analysis.md) — порівняння 10 варіантів сховища і distribution-каналів. AI Coding Agent UX як окремий критерій. Чому композиція `#6 (NPM) + #7 (NuGet) + #2 (sharded authoring)`.
 
-## Зведена картина
+## Цільова архітектура
 
 ```
-┌──────────────────── creatio-ui ────────────────────┐
-│                                                    │
-│  @CrtViewElement + *ViewConfig + JSDoc             │
-│              │                                     │
-│  AST extractor (tools/component-registry-extractor)│
-│              │                                     │
-│  component-registry.<ver>.json                     │
-│              │                                     │
-│  Jenkins (.pipeline/Jenkinsfile.Registry)          │
-│   ├─ branch-cut → baseline artifact (no publish)   │
-│   ├─ push       → refresh baseline artifact        │
-│   └─ GA tag     → npm publish @<ver>               │
-└──────────────┼─────────────────────────────────────┘
-               ▼
-┌──────────────────── clio ──────────────────────────┐
-│                                                    │
-│  supported-versions.json  ← explicit manual PR     │
-│              │                                     │
-│  composer:                                         │
-│  • npm install усіх підтримуваних версій           │
-│  • diff snapshot-ів → availability ranges          │
-│  • merge overrides.json (AI-специфічні хінти)      │
-│              │                                     │
-│  ComponentRegistry.json (with availability)        │
-│              │                                     │
-│  ComponentInfoCatalog → IPlatformVersionResolver   │
-│              │                                     │
-│  MCP: get-component-info → відфільтровано по версії│
-└────────────────────────────────────────────────────┘
+                  ┌──────────── creatio-ui ────────────┐
+                  │   @CrtViewElement + *ViewConfig    │
+                  │   + JSDoc (@since, @aiCategory)    │
+                  │             │                      │
+                  │   AST extractor (Jenkins on        │
+                  │   branch-cut / push / GA-tag)      │
+                  └─────────────┼──────────────────────┘
+                                │ npm publish (GA only)
+                                ▼
+              ┌─────── @creatio/component-registry ─────┐
+              │   per-version sharded JSON              │
+              └─────────────┼───────────────────────────┘
+                            │ npm install (composer CI)
+                            ▼
+   ┌────── creatio-component-registry-composer ────────┐
+   │   supported-versions.json (manual PR)             │
+   │   overrides.json (AI team owned)                  │
+   │   ──────────────────────                          │
+   │   diff snapshots → availability ranges            │
+   │   merge overrides → unified bundle                │
+   │   stamp metadata.json (provenance)                │
+   │   dotnet pack + nuget push                        │
+   └─────────────┼─────────────────────────────────────┘
+                 │ NuGet publish (independent semver)
+                 ▼
+       ┌─── Creatio.ComponentRegistry NuGet pkg ───┐
+       │   ComponentRegistry.json (unified)        │
+       │   metadata.json (provenance)              │
+       └─────────────┼─────────────────────────────┘
+                     │ <PackageReference> у Directory.Packages.props
+                     ▼
+           ┌─────── clio.csproj ────────┐
+           │   ComponentInfoCatalog     │
+           │     (Assembly.GetManifest  │
+           │      ResourceStream)       │
+           │   IPlatformVersionResolver │
+           │   MCP get-component-info   │
+           └────────────────────────────┘
 ```
+
+## Ключові архітектурні рішення
+
+- **Три ізольовані домени** з ownership matrix: creatio-ui (Platform-UI team), composer-repo (AI / clio team), clio (clio team). Жоден не має write-access до іншого окрім стандартних PR-flow.
+- **Distribution**: NPM (UI → composer) + NuGet (composer → clio). Незалежні semver на обох ланцюгах.
+- **Storage у clio = NuGet embedded resource.** Файл `clio/Command/McpServer/Data/ComponentRegistry.json` видаляється з clio repo; loader читає через `Assembly.GetManifestResourceStream`.
+- **Runtime serving — 100% offline.** Жодного network call під час AI MCP сесії.
+- **Version resolution**: explicit > environment-name + GetSysInfo probe > latest-fallback. Завжди повертається `resolvedTargetVersion` + `resolvedFrom`.
+- **Fallback policy**: `latest known` (максимальна `since`-версія, обчислена composer-фазою). Не `unrestricted`, не `error`, не `oldest`.
+- **Composer живе у власному repo** `creatio-component-registry-composer` — single responsibility, ізольована CI, відокремлена від UI source і consumer.
 
 ## Статус
 
-Документи описують цільовий стан і проміжні рішення; реалізація поки не розпочата. Поточний `ComponentInfoCatalog` залишається без змін до моменту pilot-фази.
+Документи описують **цільовий стан**. Реалізація поки не розпочата; поточний `ComponentInfoCatalog` залишається без змін.
+
+Етапи доставки — у [04-multi-version-target-structure.md](04-multi-version-target-structure.md#етапи-доставки-target-architecture). Без проміжного pilot-етапу; кожен етап завершується release-ом NuGet/NPM-пакета у production-feed.

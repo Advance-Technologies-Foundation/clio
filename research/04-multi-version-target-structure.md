@@ -12,13 +12,25 @@
 
 | Аспект | Стан |
 |---|---|
-| Сховище | один файл [ComponentRegistry.json](../clio/Command/McpServer/Data/ComponentRegistry.json) (92 записи) |
-| Loader | [ComponentInfoCatalog.cs](../clio/Command/McpServer/Tools/ComponentInfoCatalog.cs) — `Lazy<>`, in-memory, fail-on-duplicate |
+| Сховище | один файл [ComponentRegistry.json](../clio/Command/McpServer/Data/ComponentRegistry.json) у clio repo (92 записи) |
+| Loader | [ComponentInfoCatalog.cs](../clio/Command/McpServer/Tools/ComponentInfoCatalog.cs) — `Lazy<>`, in-memory, fail-on-duplicate, читає з file-system |
 | Модель | `ComponentRegistryEntry` (`componentType`, `category`, `description`, `container`, `parentTypes`, `properties`, `typicalChildren`, `example`) — **жодного поля версії** |
 | Property | `ComponentPropertyDefinition` (`type`, `description`, `required`, `default`, `values`) — **жодного поля версії** |
 | MCP tool args | `component-type`, `search` — без `environment-name`, без `target-version` |
 | Категорії | hardcoded у двох місцях |
 | Version probe | існує (`GetSysInfo.CoreVersion`), але **в каталозі не використовується** |
+
+## Цільова структура (target)
+
+| Аспект | Стан |
+|---|---|
+| Сховище | NuGet-пакет `Creatio.ComponentRegistry` із embedded JSON, **не в clio repo** |
+| Loader | `Assembly.GetManifestResourceStream` — читає з NuGet-вбудованого ресурсу |
+| Модель | `ComponentRegistryEntry.Availability` + per-property `Availability` |
+| Top-level | `latestKnownVersion`, `categories` (data-driven), `$schema`, `schemaVersion` |
+| MCP tool args | + `environment-name`, + `target-version` |
+| Версіонування | Незалежний semver NuGet (MAJOR/MINOR/PATCH за semantic-rules — див. [05](05-source-of-truth-automation.md#версіонування-creatiocomponentregistry-nuget)) |
+| Distribution | NPM → composer-repo → NuGet (див. [05](05-source-of-truth-automation.md)) |
 
 ## Що має підтримувати цільова структура
 
@@ -135,9 +147,7 @@ Guidance ([PageModificationGuidanceResource.cs](../clio/Command/McpServer/Resour
 
 - `ComponentRegistryEntry.Availability` → `AvailabilityRange? { Since, Until }` (nullable record).
 - `ComponentPropertyDefinition.Availability` → той самий тип.
-- `ComponentRegistry` стає або:
-  - `{ "components": [...], "categories": [{"id":"containers","order":0,"label":"Containers"}] }` — обгортка-маніфест, або
-  - окремий `Categories.json` (простіше для review).
+- `ComponentRegistry` стає wrapper-маніфестом: `{ "$schema": ..., "schemaVersion": ..., "latestKnownVersion": ..., "categories": [...], "components": [...] }`.
 
 ### 2. Резолвер версії
 
@@ -166,9 +176,27 @@ public sealed record ComponentInfoArgs(
 
 ### 5. Категорії — data-driven
 
-Винести `CategoryOrder` із [ComponentInfoCatalog.cs:40](../clio/Command/McpServer/Tools/ComponentInfoCatalog.cs#L40) і [ComponentInfoTool.cs:17](../clio/Command/McpServer/Tools/ComponentInfoTool.cs#L17) у каталог. Це дозволить новим категоріям у нових версіях платформи з'являтися без code-changes.
+Винести `CategoryOrder` із [ComponentInfoCatalog.cs:40](../clio/Command/McpServer/Tools/ComponentInfoCatalog.cs#L40) і [ComponentInfoTool.cs:17](../clio/Command/McpServer/Tools/ComponentInfoTool.cs#L17) у каталог. Categories — частина top-level маніфесту, поставляється у NuGet pkg.
 
-### 6. Guidance оновлення
+### 6. Loader → embedded resource з NuGet pkg
+
+Заміна поточної реалізації [ComponentInfoCatalog.cs:74](../clio/Command/McpServer/Tools/ComponentInfoCatalog.cs#L74):
+
+```csharp
+// Поточне (читання з clio repo):
+// string registryPath = fileSystem.Path.Combine(
+//     workingDirectoriesProvider.ExecutingDirectory,
+//     "Command", "McpServer", "Data", "ComponentRegistry.json");
+
+// Цільове (читання з NuGet-вбудованого ресурсу):
+using var stream = typeof(ComponentRegistryEntry).Assembly
+    .GetManifestResourceStream("Creatio.ComponentRegistry.ComponentRegistry.json")
+    ?? throw new InvalidOperationException("Embedded registry resource not found.");
+```
+
+Файл `clio/Command/McpServer/Data/ComponentRegistry.json` **видаляється з clio repo** одночасно з додаванням `<PackageReference Include="Creatio.ComponentRegistry" />`. Дані живуть тільки у NuGet feed, версія pin-ається через `Directory.Packages.props`.
+
+### 7. Guidance оновлення
 
 [PageModificationGuidanceResource.cs](../clio/Command/McpServer/Resources/PageModificationGuidanceResource.cs) повинен пояснювати AI:
 - передавати `environment-name` у `get-component-info` для коректної фільтрації;
@@ -183,12 +211,17 @@ public sealed record ComponentInfoArgs(
 5. **`example` payload на компонент** теж може залежати від версії (нові props у прикладі). Чи робити мульти-`example` із `availability`, чи тримати один canonical приклад на «latest known»?
 6. **Перевірки в CI.** Перевіряти, що жодна `since` не перевищує найбільшу зареєстровану версію (захист від типів).
 
-## Що НЕ блокує і чого НЕ варто чіпати
+## Що зберігається (zero-break-міграція)
 
-- Існуючий `Lazy<>` залишається — додається вторинний фільтр-кеш per `(version, search)`.
+- `Lazy<>`-обгортка завантаження — залишається; додається вторинний фільтр-кеш per `(version, search)`.
 - Fail-on-duplicate ([ComponentInfoCatalog.cs:101](../clio/Command/McpServer/Tools/ComponentInfoCatalog.cs#L101)) залишається — критично.
-- Існуючі callers без `target-version` зберігають поточну поведінку — zero-break.
-- **Не дробити** на per-version snapshot файли. На цьому масштабі один файл виграє по review-friendliness і entry barrier для контриб'ютора.
+- Існуючі callers без `target-version` зберігають поточну поведінку (`latest-fallback`).
+
+## Що змінюється і чого більше не робимо
+
+- **Не зберігаємо** registry-дані у clio repo. Цей файл переїжджає у `Creatio.ComponentRegistry` NuGet pkg.
+- **Не дробимо** на per-version snapshot файли в clio — diff-операції живуть всередині composer-репо. clio бачить один unified bundle.
+- **Не використовуємо** file-system path lookup у loader-і — тільки `Assembly.GetManifestResourceStream`.
 
 ## Mandatory follow-up для реалізації
 
@@ -196,12 +229,20 @@ public sealed record ComponentInfoArgs(
 - Зміни `get-component-info` потребують unit + E2E coverage у [clio.mcp.e2e](../clio.mcp.e2e).
 - Резолвер версії — окремий unit suite (fake `IApplicationClient`).
 - Guidance resources оновлюються в тій самій PR.
+- Зміна loader-а потребує тестування з реальним pinned NuGet (mock-NuGet або test feed).
 
-## Рекомендований порядок робіт
+## Етапи доставки (target architecture)
 
-1. **Spike** — додати `availability` до моделі + 1–2 пілотні записи + filter API без MCP-параметра. Перевірити, що каталог продовжує завантажуватися.
-2. **`IPlatformVersionResolver`** + cliogate guard + кеш. Окремий PR — реюзабельно поза каталогом.
-3. **Розширення `ComponentInfoArgs`/`Response`** + інтеграція resolver-а.
-4. **Категорії data-driven**.
-5. **Backfill** `availability` для записів, де команда впевнена в `since`-версії (опціонально, можна відкласти).
-6. **Guidance & docs**.
+Без проміжного pilot-етапу. Порядок робіт продиктований залежностями, не валідацією.
+
+1. **Composer-repo bootstrap** — створити `creatio-component-registry-composer` із одним `supported-versions.json` (наприклад `["8.2.x"]`) і `overrides.json: {}`. Реалізувати merge-логіку поверх ручного JSON-у із поточного clio repo (як тимчасова input-data, поки extractor у creatio-ui не готовий). Output — NuGet pkg `Creatio.ComponentRegistry@0.1.0`.
+2. **clio-loader** — `Assembly.GetManifestResourceStream`, видалення `Data/ComponentRegistry.json`, додавання `<PackageReference>`. Реліз clio із `Creatio.ComponentRegistry 0.1.0` як perfect drop-in заміною поточного in-repo JSON.
+3. **Модель `Availability`** + filter pipeline + nullable-by-default semantics (zero-break).
+4. **`IPlatformVersionResolver`** + cliogate guard + кеш + `GetSysInfo` integration.
+5. **MCP контракт** — `ComponentInfoArgs` + `ComponentInfoResponse` extension, fallback policy, guidance updates.
+6. **Категорії data-driven** — top-level `categories` field у маніфесті.
+7. **Extractor у creatio-ui** — `tools/component-registry-extractor` із AST-walk, JSDoc-парсингом, output у NPM `@creatio/component-registry`. Перехід composer-а з ручного input-у на NPM-feed.
+8. **Jenkins у creatio-ui** — `Jenkinsfile.Registry` з branch-cut / push / GA-tag тригерами.
+9. **Composer CI** — cron + auto-bump, dependabot-flow на стороні clio.
+
+Кожен етап завершується release-ом відповідного NuGet/NPM-пакету у production-feed. Жодних мокованих stage-feed-ів.

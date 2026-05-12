@@ -1,192 +1,186 @@
-# Source of truth: автоматичне оновлення каталогу з creatio-ui
+# Source of truth: автоматичний реєстр з трьома ізольованими доменами
 
-При еволюції компонентів каталог [ComponentRegistry.json](../clio/Command/McpServer/Data/ComponentRegistry.json) має оновлюватися автоматично, на основі коду платформи. Це дослідження джерел SoT у репо `creatio-ui` і pipeline-у автоматизації.
+Каталог компонентів — це data product. Його еволюція (поява компонентів, властивостей, deprecation) має відбуватися автоматично, без ручного редагування JSON у clio. Документ описує цільову архітектуру з трьома ізольованими доменами: **creatio-ui** (source), **composer** (integration), **clio** (consumer).
 
-> Примітка: у постановці згадано TeamCity. Фактично у `creatio-ui` працює **Jenkins** (`.pipeline/Jenkinsfile*`). Тож «план на TeamCity» з постановки треба читати як «CI/CD-pipeline» — конкретна реалізація буде Jenkins у creatio-ui, або TeamCity у clio-стороні (якщо це звичний оркестратор для clio). Оркестратор взаємозамінний.
+## Архітектурні рішення (закріплено)
 
-## Артефакти-кандидати на SoT у `creatio-ui`
+1. **Source-of-truth — TS-декоратори + ViewConfig + JSDoc у creatio-ui.** Жодного ручного JSON-у на стороні платформи.
+2. **Composer живе в окремому repo** `creatio-component-registry-composer`. Не в clio (змішує consumer і integration), не в creatio-ui (composer ≠ UI source).
+3. **Distribution UI → composer**: NPM пакет `@creatio/component-registry` (semver = platform version, наприклад `8.3.0`).
+4. **Distribution composer → clio**: NuGet пакет `Creatio.ComponentRegistry` (незалежний semver — див. політику нижче).
+5. **clio споживає через `PackageReference`**, registry-дані ніколи не commit-яться у clio repo.
+6. **Runtime serving — embedded resource у NuGet pkg**, читається через `Assembly.GetManifestResourceStream`. Жодного network call на runtime.
+7. **Sharded authoring у NPM** (per-component JSON), **unified bundle у NuGet**. Composer collapses sharding під час merge.
+8. **`supported-versions.json` і `overrides.json` — у composer-repo**, не в clio і не в creatio-ui.
 
-| Джерело | Що дає | Якість |
-|---|---|---|
-| `@CrtViewElement({ type: 'crt.X' })` декоратор | Канонічне ім'я компонента, мапінг на TS-клас | **Високо** — AST-видобувне, ~327 декорувань в `libs/**/*.ts` |
-| `*ViewConfig` TS-interface (наприклад `ButtonViewConfig`) | Повний контракт властивостей з типами, optional/required | **Високо** — TS-typed, JSDoc-friendly |
-| `@CrtInterfaceDesignerItem` декоратор | Toolbar-позиція, defaults (`defaultPropertyValues`), `typeCaption`, `viewElementGroupType`, `propertiesPanel` reference | **Високо** — designer metadata, defaults |
-| `api-extractor` (`docModel`) | Стабільний JSON-rollup публічного API | **Середньо** — вже сконфігуровано для `devkit/common,base,interface-designer`, `docModel: false`. Бачить тільки експорти, не sees decorator content |
-| Runtime registry (`BaseViewElementRegistry`) | Ground truth: що реально зареєстровано після bootstrap | **Високо** — потребує запуску Angular app, найважче в CI |
+## Цільова архітектура
 
-### Приклад декорацій
-
-`libs/studio-enterprise/ui/components/src/lib/button/components/button.component.ts`:
-
-```typescript
-@CrtViewElement({
-    type: 'crt.Button',
-    reuseStrategy: ViewElementReuseStrategy.Reuse,
-})
-@CrtInterfaceDesignerItem({
-    toolbarConfig: {
-        position: 10,
-        icon: require('!!raw-loader?{esModule:false}!../../../assets/button.svg'),
-        defaultPropertyValues: {
-            caption: '',
-            color: 'default',
-            disabled: false,
-        },
-        defaultLocalizableStrings: {
-            caption: 'Components.Button.Caption',
-        },
-    },
-    propertiesPanel: 'crt.ButtonPropertiesPanel',
-    collectionPropertyNames: ['menuItems'],
-    typeCaption: 'Components.Button.Caption',
-    viewElementGroupType: ViewElementGroupType.Components,
-})
-@Component({
-    selector: 'crt-button',
-    ...
-})
-export class CrtButtonComponent extends CrtBaseButtonComponent {}
+```
+                  ┌──────────── creatio-ui ────────────┐
+                  │   @CrtViewElement + *ViewConfig    │
+                  │   + JSDoc (@since, @aiCategory,    │
+                  │           @aiHint, @deprecated)    │
+                  │             │                      │
+                  │   AST extractor (Jenkins on        │
+                  │   branch-cut / push / GA-tag)      │
+                  └─────────────┼──────────────────────┘
+                                │ npm publish on GA-tag only
+                                ▼
+              ┌─────── @creatio/component-registry ─────┐
+              │   per-version JSON snapshots            │
+              │   (sharded внутрішньо: один файл per    │
+              │    component, для review)               │
+              └─────────────┼───────────────────────────┘
+                            │ npm install (composer CI)
+                            ▼
+   ┌────── creatio-component-registry-composer ────────┐
+   │   supported-versions.json (manual PR)             │
+   │   overrides.json (AI team owned)                  │
+   │   ──────────────────────                          │
+   │   1. pull NPM snapshots для supported versions    │
+   │   2. diff snapshots → availability ranges         │
+   │   3. merge overrides                              │
+   │   4. collapse sharding → single bundle            │
+   │   5. stamp metadata.json (provenance)             │
+   │   6. dotnet pack + nuget push                     │
+   └─────────────┼─────────────────────────────────────┘
+                 │ NuGet publish (independent semver)
+                 ▼
+       ┌─── Creatio.ComponentRegistry NuGet pkg ───┐
+       │   ComponentRegistry.json (unified)        │
+       │   metadata.json (provenance)              │
+       │   $schema reference                       │
+       └─────────────┼─────────────────────────────┘
+                     │ <PackageReference> в Directory.Packages.props
+                     ▼
+           ┌─────── clio.csproj ────────┐
+           │   ComponentInfoCatalog     │
+           │     (reads embedded JSON   │
+           │      через Assembly.       │
+           │      GetManifestResource)  │
+           │   IPlatformVersionResolver │
+           │   MCP get-component-info   │
+           └────────────────────────────┘
 ```
 
-`libs/studio-enterprise/ui/components/src/lib/button/view-models/button-view-config.model.ts`:
+## Ownership matrix
 
-```typescript
-export interface ButtonViewConfig extends ViewElementConfig<BaseElementConfig> {
-    disabled?: boolean | string;
-    caption?: string;
-    icon?: string | ButtonIcon | ButtonAnimatedIcon;
-    size?: SizeEnum;
-    iconSize?: SizeEnum;
-    iconPosition?: IconPositionEnum;
-    ariaLabel?: string;
-    title?: string;
-    textTransform?: TextTransform;
-    type?: ButtonType | string;
-    displayType?: ButtonDisplayType;
-    disableRipple?: boolean;
-    isIconModeSizePx?: number;
-    clickMode?: ButtonClickMode | string;
-    menuItems?: CrtMenuItemViewElementConfig[] | string;
-    menuPanelClass?: string;
-    useGlassmorphism?: boolean;
-    clicked?: RequestBindingConfig;
-    color?: ButtonColor;
+| Repo | Власник | Source-of-truth для |
+|---|---|---|
+| **creatio-ui** | Platform-UI team | `@CrtViewElement` декоратори, `*ViewConfig` interfaces, JSDoc-метадані (`@since`, `@deprecated`, `@aiCategory`, `@aiHint`) |
+| **creatio-component-registry-composer** | AI / clio team | `supported-versions.json`, `overrides.json`, composer-merge-logic, NuGet publish |
+| **clio** | clio team | `ComponentInfoCatalog` loader, `IPlatformVersionResolver`, MCP tools, guidance resources |
+
+Жоден з трьох не має write-access до іншого крім стандартного PR-flow. NPM і NuGet — **transport contracts**, не shared mutable state.
+
+## Версіонування `Creatio.ComponentRegistry` (NuGet)
+
+Незалежний semver, decoupled від обох (clio version, platform version). Правила бампу:
+
+- **MAJOR** — breaking schema change. Наприклад, формат `availability` змінився, поле `componentType` перейменовано, top-level structure JSON-у не back-compat. Consumer (clio) потребує coordinated update.
+- **MINOR** — нова supported platform line, нові компоненти, нові properties, нові категорії. Backwards-compatible — старий clio читає без модифікацій.
+- **PATCH** — оновлення descriptions, defaults, examples, AI hints. Pure data refresh.
+
+Це дає dependabot правильну поведінку: PATCH auto-merge, MINOR з review-checklist, MAJOR — блокуючий PR із migration plan на стороні clio.
+
+## Schema versioning і metadata всередині пакету
+
+NuGet pkg містить два файли:
+
+**`ComponentRegistry.json`** (data) — top-level:
+
+```json
+{
+  "$schema": "https://schema.creatio.com/component-registry/v1.json",
+  "schemaVersion": "1.0",
+  "latestKnownVersion": "8.3.2",
+  "categories": [
+    { "id": "containers", "order": 0, "label": "Containers" },
+    ...
+  ],
+  "components": [ ... ]
 }
 ```
 
-### Розмір розриву між source і curated registry
+`schemaVersion` — independent від `registryVersion` (NuGet pkg version). Consumer перевіряє лише schema-сумісність — додатковий запобіжник проти несумісних змін.
 
-Станом на `creatio-ui@master`, після уточнених ексклюзивних фільтрів (test/mock + `apps/pkgs` + `interface-designer-properties-panel` + `**/designtime/**`):
+**`metadata.json`** (provenance):
 
-- **192** унікальних `@CrtViewElement` декорувань (designer config UI вилучено на рівні фільтра)
-- **92** записи у курованому `ComponentRegistry.json`
-- **0** регресій (всі 92 курованих знаходяться в extracted-сеті)
-- **0** `*PropertiesPanel` у extracted-сеті (повна санація `**/designtime/**`-фільтром)
-
-З 192 extracted:
-- **92** уже в курованому реєстрі
-- **100** нових кандидатів, з них:
-  - ~30 internal `Table*Cell` / `DataTableEdit*Cell` (рендеряться `DataGrid`, AI не інстанціює)
-  - ~10 app-shell / infra (`AppBackground`, `RouterOutlet`, `ModuleLoader`, …)
-  - ~5 deprecated (`DeprecatedInput`, `Angular7XDetail`, …)
-  - **~55 справжніх UI-компонентів** для перевірки AI-командою (`ChatComposer`, `EmailComposer`, `EmojiSelect`, `Switch`, `TabPanelHeader`, `Timer`, `TranslateToggle`, `WaterfallWidget` тощо)
-
-Деталі і повні списки — у [03-available-components.md](03-available-components.md#авто-екстракція-з-creatio-ui-актуалізовано).
-
-**Висновок:** designer-only UI відсікаємо на рівні extractor-а (folder-фільтр — точний інваріант). Решта «шуму» (internal cells, app-shell, deprecated) — задача overlay-у в clio composer. Це знімає потребу в семантичних `@aiHidden`/`@aiInclude` тегах у platform code.
-
-## Версійні якорі вже в репо
-
-- Branches: `origin/8.1.3`, `origin/8.1.4`, `origin/8.1.5`, `origin/8.2.0`, `origin/8.2.2`, `origin/8.2.3`, `origin/8.3.x` — формат `<major>.<minor>.<build>`.
-- `git log` має semver-теги для деяких піддерев.
-- Кожен `package.json`/`VERSION` тримає поточну версію бібліотеки.
-
-Цього достатньо для прив'язки «snapshot ↔ platform version».
-
-## Рекомендована цільова архітектура SoT
-
-```
-┌────────────────────── creatio-ui repo ─────────────────────┐
-│                                                            │
-│  TS source ─┬─ @CrtViewElement decorators                  │
-│             ├─ ViewConfig interfaces (+ JSDoc)             │
-│             └─ @CrtInterfaceDesignerItem (defaults,        │
-│                  category hint, propertiesPanel)           │
-│                            │                               │
-│            tools/component-registry-extractor/             │
-│              (нова Nx-таска, ts-morph based)               │
-│                            │                               │
-│              component-registry.<ver>.json                 │
-│                            │                               │
-│   Jenkins .pipeline/Jenkinsfile.Release (per release branch)│
-│                            │                               │
-│            publishes → npm: @creatio/component-registry    │
-│                            (semver = platform version)     │
-└────────────────────────────┼───────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────── clio repo ──────────────────────────┐
-│                                                            │
-│  composer (build-time):                                    │
-│    1. npm install @creatio/component-registry@8.1.x \      │
-│       @creatio/component-registry@8.2.x …                  │
-│    2. diff supported versions → produce one unified        │
-│       ComponentRegistry.json with availability ranges      │
-│    3. merge ComponentRegistry.overrides.json               │
-│       (hand-curated AI hints: aiHidden, replaced-by,       │
-│        prefer-converter, deprecation notes)                │
-│                            │                               │
-│  ships in clio/Command/McpServer/Data/ComponentRegistry.json│
-└────────────────────────────────────────────────────────────┘
+```json
+{
+  "registryVersion": "1.5.0",
+  "schemaVersion": "1.0",
+  "buildTime": "2026-05-12T10:00:00Z",
+  "supportedPlatformVersions": ["8.0.x", "8.1.x", "8.2.x", "8.3.x"],
+  "latestKnownVersion": "8.3.2",
+  "sources": {
+    "creatioUi": {
+      "8.0.x": { "npmVersion": "8.0.18", "gitSha": "abc..." },
+      "8.1.x": { "npmVersion": "8.1.7",  "gitSha": "def..." },
+      "8.2.x": { "npmVersion": "8.2.3",  "gitSha": "ghi..." },
+      "8.3.x": { "npmVersion": "8.3.2",  "gitSha": "jkl..." }
+    },
+    "composer": { "gitSha": "mno...", "version": "2.4.1" },
+    "overrides": { "gitSha": "mno...", "appliedCount": 17 }
+  }
+}
 ```
 
-## Етапи екстракції (в `tools/component-registry-extractor/`)
+Це закриває диагностику. На питання «чому в clio `1.10` з `Creatio.ComponentRegistry 1.5.0` AI не бачить `crt.NewWidget`, який є в creatio-ui 8.3 branch?» — відкриваємо metadata, бачимо, що `1.5.0` побудовано до того, як `8.3.x` потрапив у `supported-versions.json`.
 
-1. **AST walk** усіх `*.ts` із наступними фільтрами.
+## Sources в creatio-ui
 
-   **Інклюзивний критерій:** клас із декоратором `@CrtViewElement`. Жодних інших евристик (suffix-фільтрів, name-конвенцій) — це джерело false-negatives.
+Витяг із [03-available-components.md](03-available-components.md) і дослідження репо:
 
-   **Ексклюзивні фільтри** (всі застосовуються):
+| Джерело | Що дає | Якість |
+|---|---|---|
+| `@CrtViewElement({ type: 'crt.X' })` декоратор | Канонічне ім'я компонента | **Високо** — AST-видобувне |
+| `*ViewConfig` TS-interface (наприклад `ButtonViewConfig`) | Контракт властивостей з типами | **Високо** — TS-typed, JSDoc-friendly |
+| `@CrtInterfaceDesignerItem` декоратор | Defaults (`defaultPropertyValues`), `typeCaption`, `viewElementGroupType` | **Високо** — designer metadata |
+| `api-extractor` (`docModel`) | JSON-rollup public API | **Середньо** — не sees decorator content |
+| Runtime registry (`BaseViewElementRegistry`) | Ground truth після bootstrap | **Високо**, але важко в CI |
 
-   | Категорія | Glob |
-   |---|---|
-   | Тестові файли | `**/*.spec.ts`, `**/*.spec.ui.ts`, `**/*.spec.tsx`, `**/*.test.ts`, `**/*.test.tsx` |
-   | Моки | `**/*.mock.ts`, `**/mocks/**`, `**/__mocks__/**` |
-   | Built artifacts | `apps/pkgs/**` |
-   | Designer-only UI (lib) | `libs/studio-enterprise/ui/interface-designer-properties-panel/**` |
-   | Designer-only UI (subpath) | `**/designtime/**` |
-   | Стандартні | `**/node_modules/**`, `dist/**` |
+**Інклюзивний критерій:** клас із декоратором `@CrtViewElement`. Жодних інших евристик.
 
-   **Чому `**/designtime/**` потрапив у фільтри:** усі 44 `*PropertiesPanel`-компоненти живуть у subpath `designtime/` всередині своїх lib-папок (розкидано по 27 різних lib — `approval`, `calendar`, `chat-panel`, `compact-profile`, `feed`, `folder-tree`, `message-composer`, ...). Перевірено інваріант на `creatio-ui@master`: 44/44 PropertiesPanel-компонентів — у `**/designtime/**`; 0/192 не-PropertiesPanel — у `**/designtime/**`. Точний і повний filter без false-positive/negative. Прибирає потребу в overlay-rule `aiHidden: true` для 44 рядків.
+**Ексклюзивні фільтри:**
 
-   **Critical:** парсер `@CrtViewElement` має ігнорувати декоратор всередині JSDoc-коментарів (`/** @CrtViewElement({ type: 'usr.Example' }) */` у файлах декоратор-визначень типу [view-element-registration-config.ts](https://github.com/Advance-Technologies-Foundation/creatio-ui/blob/master/libs/devkit/common/src/lib/public/models/view-element/view-element-registration-config.ts) — інакше підхопить `usr.Example` як псевдо-компонент). Реалізація: strip block- і line-коментарів перед AST-walk, АБО використати ts-morph node-level decorator API замість текстового пошуку.
+| Категорія | Glob |
+|---|---|
+| Тестові файли | `**/*.spec.ts`, `**/*.spec.ui.ts`, `**/*.spec.tsx`, `**/*.test.ts`, `**/*.test.tsx` |
+| Моки | `**/*.mock.ts`, `**/mocks/**`, `**/__mocks__/**` |
+| Built artifacts | `apps/pkgs/**` |
+| Designer-only UI (lib) | `libs/studio-enterprise/ui/interface-designer-properties-panel/**` |
+| Designer-only UI (subpath) | `**/designtime/**` |
+| Стандартні | `**/node_modules/**`, `dist/**` |
 
+`**/designtime/**` — точний інваріант: 44/44 `*PropertiesPanel` у `designtime/`, 0/192 не-PropertiesPanel у `designtime/`. Перевірено на `creatio-ui@master`.
+
+**Critical:** парсер ігнорує декоратор `@CrtViewElement` всередині JSDoc-коментарів (інакше підхопить `usr.Example` з прикладів у файлах декоратор-визначень). Реалізація — ts-morph node-level decorator API, не текстовий пошук.
+
+## Extractor pipeline (NPM package authoring)
+
+1. **AST walk** усіх `*.ts` із застосуванням фільтрів.
 2. Для кожного класу з `@CrtViewElement`:
-   - `componentType` = `decorator.arguments[0].type` (string literal `'crt.X'`).
-   - **БЕЗ** semantic-фільтрації по суфіксах. `*PropertiesPanel`, `*Request`-named тощо — включаються в extracted-сет; їх «приховування від AI» — задача `overrides.json` на стороні clio composer (`aiHidden: true`), не extractor-а.
-3. Резолвити пов'язаний `ViewConfig` interface:
-   - конвенція: `<ComponentName>ViewConfig` у `view-models/` сусіднього файлу, або декларовано через property type / generic.
+   - `componentType` = `decorator.arguments[0].type` (string literal).
+   - **БЕЗ** semantic-фільтрації по суфіксах. `*PropertiesPanel`, `*Request`-named включаються — їхнє приховування делегується composer-овському `overrides.json` (`aiHidden: true`).
+3. Резолвити пов'язаний `ViewConfig` interface (конвенція: `<ComponentName>ViewConfig` у `view-models/`).
 4. Для кожного property у ViewConfig:
    - `type` — текстова репрезентація TS-типу
-   - `description` — JSDoc `@description` або leading коментар
+   - `description` — JSDoc `@description` або leading-коментар
    - `required` — відсутність `?` модифікатора
    - `values` — для union-типів стрічкових літералів
-   - `default` — з `@CrtInterfaceDesignerItem.defaultPropertyValues[name]` (компоненто-рівневий декоратор)
-   - `availability` — з JSDoc `@since`/`@until`/`@deprecated`
-5. Збираємо `category`:
-   - JSDoc `@aiCategory containers` overrides все
-   - інакше — мапінг через `viewElementGroupType` + конвенції імен файлів (`containers/*` → containers, `widgets/*` → interactive)
-6. **Validation step**: запустити runtime registry (опціонально, окремий job) — порівняти AST-видобутий set із зареєстрованим у `BaseViewElementRegistry`. Розбіжності → fail.
-7. Output: `component-registry.<version>.json` зі stable schema (та сама форма, що ми вже узгодили: per-entry `availability`).
+   - `default` — з `@CrtInterfaceDesignerItem.defaultPropertyValues[name]`
+   - `availability` — з JSDoc `@since`/`@deprecated`
+5. `category` — JSDoc `@aiCategory` overrides; інакше — мапінг через `viewElementGroupType`.
+6. **Validation step**: порівняти AST-видобутий set із `BaseViewElementRegistry` runtime (опційний job). Розбіжності → fail.
+7. **Output:** sharded JSON у NPM-пакет — один файл per component (`components/crt.Button.json`, `crt.Input.json`, …) + `manifest.json` із загальними метаданими.
 
-## JSDoc-вокабуляр у `creatio-ui`
-
-Невелика стандартизована JSDoc-мова (узгодити з UI-командою). Це найдешевший спосіб зробити SoT durable.
+## JSDoc-вокабуляр у creatio-ui
 
 ```typescript
 /**
  * @aiCategory interactive
- * @aiHint "Use crt.ButtonToggleGroup for segmented selection — better UX than multiple buttons."
+ * @aiHint "Use crt.ButtonToggleGroup for segmented selection"
  */
 @CrtViewElement({ type: 'crt.Button', ... })
 export class CrtButtonComponent { ... }
@@ -208,149 +202,187 @@ export interface ButtonViewConfig extends ... {
 }
 ```
 
-### Теги, які екстрактор має поважати
+Вокабуляр (рекомендований для lint-правила):
 
-- `@since <version>` — `availability.since`
-- `@deprecated <version> - <reason>` — `availability.until` + `description` suffix
-- `@aiCategory <name>` — категорія (containers/fields/interactive/display/filtering)
-- `@aiHint "..."` — інлайн-порада для AI
+- `@since <version>` → `availability.since`
+- `@deprecated <version> - <reason>` → `availability.until` + опис suffix-ується reason-ом
+- `@aiCategory <name>` → категорія (containers/fields/interactive/display/filtering)
+- `@aiHint "..."` → інлайн-порада для AI
 
-Тег `@aiHidden` **видалено** з вокабуляру extractor-а: оскільки інклюзивний критерій тепер — лише `@CrtViewElement`, без heuristic skip-у по суфіксах, потреби в `@aiInclude` як override-і немає. Приховування «шумних» компонентів (`*PropertiesPanel`, internal table cells, app shell) — задача clio-овського `overrides.json`, не extractor-а. Це чітко розділяє відповідальність: платформа звітує про все, що в неї є; AI-team вирішує, що показувати моделі.
+`@aiHidden` / `@aiInclude` свідомо **видалено** з вокабуляру: інклюзивний критерій лише `@CrtViewElement`, шумні компоненти приховуються composer-овським `overrides.json`. Розділення відповідальності: платформа звітує про все; AI-team вирішує, що показувати.
 
-## Шар «overrides» на стороні clio
+## Composer-логіка
 
-Авто-видобуток не вирішує AI-специфічні рішення на кшталт:
-- «для display-only пошти AI має брати converter, а не `crt.EmailInput`»
-- «`crt.SchemaOutlet` низького пріоритету — не пропонувати без explicit user intent»
-- хитрі парні правила, які платформа не знає (бо це не платформ-логіка, а AI prompt engineering)
+Repo: `creatio-component-registry-composer`. Файли під версією:
 
-→ окремий файл `ComponentRegistry.overrides.json` у clio, в тому ж форматі, дві операції merge:
-- `aiOverlay`: додавати/перевизначати поля (`description`, `aiHint`, `replacedBy`)
-- `aiHidden`: «черні» записи, якщо платформа щось експортує, а AI це непотрібно
+- `supported-versions.json` — список minor-ліній, які composer враховує:
+  ```json
+  ["8.0.x", "8.1.x", "8.2.x", "8.3.x"]
+  ```
+- `overrides.json` — AI-специфічні правила:
+  ```json
+  {
+    "aiHidden": ["crt.TableBooleanCell", "crt.RouterOutlet", "crt.ModuleLoader"],
+    "aiOverlay": {
+      "crt.EmailInput": {
+        "aiHint": "For display-only email rendering prefer crt.ToEmailLink converter."
+      }
+    }
+  }
+  ```
+- `composer.config.ts` — runtime config (NuGet feed URL, npm registry URL, kerb auth).
 
-Merge-порядок: `auto-registry` → накладається `overrides`. Якщо authoritative auto-видобуток виявляє конфлікт (`since` зміщений у новій версії, а override застарів) — composer падає у CI з conflict-report.
+**CI-пробіг (Jenkins у composer-repo):**
 
-## CI flow
+1. Тригер: cron (щодоби), webhook на npm `@creatio/component-registry` publish, або manual.
+2. Pull `@creatio/component-registry@<v>` для всіх версій із `supported-versions.json` (latest patch у кожній minor-лінії).
+3. Збираємо unified bundle:
+   - для кожного `componentType`: якщо є у `vN`, нема в `vN-1` → `availability.since = vN`; якщо був у `vN-1`, зник у `vN` → `availability.until = vN`. Те саме на рівні properties.
+4. Apply `overrides.json`:
+   - `aiHidden` записи виключаються повністю.
+   - `aiOverlay` мерджиться поверх auto-data (overlay wins for описних полів).
+   - Conflict-detection: якщо `aiOverlay` посилається на `componentType`, який не існує в жодній з підтримуваних версій — composer падає з ошибкою (захист від stale overrides).
+5. Stamp `metadata.json` із provenance (NPM versions, git SHA-и).
+6. `dotnet pack` + `dotnet nuget push` у internal NuGet feed.
+7. Bump version per semver-rule:
+   - детектуємо breaking schema-changes → MAJOR;
+   - детектуємо нові компоненти / properties / supported version → MINOR;
+   - інше → PATCH.
+8. Push git tag `v<X.Y.Z>` у composer-repo для traceability.
 
-### Jenkins у creatio-ui (новий pipeline `Jenkinsfile.Registry`)
+## Failure-mode design
 
-1. Тригер: push у release-branch (`8.x.y`) або git-tag.
-2. `nx run component-registry-extractor:build` — генерує `component-registry.<version>.json`.
-3. Publish artifact: npm пакет `@creatio/component-registry@<version>` у внутрішній npm-registry (вже існує `docker-rnd.creatio.com` екосистема).
-4. Optional: post-validation проти runtime registry.
+Архітектурний інваріант: **кожен шар деградує незалежно; consumer на runtime не залежить від мережі.**
 
-### Composer у clio (новий короткий tool)
+| Сценарій | Поведінка |
+|---|---|
+| NPM creatio-ui недоступний | Composer не build-ить нову версію → clio тримає попередню NuGet pinned version → AI бачить останній стабільний registry |
+| Composer CI зламаний | NuGet feed має попередні версії → clio працює; dependabot тимчасово не бамп-ить |
+| Internal NuGet feed недоступний | Build clio падає; локальний NuGet cache рятує більшість dev-кейсів; existing clio інсталяції unaffected |
+| Composer випустив bad NuGet | Pin попередню version у `Directory.Packages.props` (1 рядок) → новий clio build → instant rollback |
+| AI клієнт offline | `Creatio.ComponentRegistry` embedded у clio binary через NuGet content → 0 runtime network dependency |
+| Schema breaking change | MAJOR bump → clio CI fail на старому loader → coordinated migration PR |
 
-Можливі форми: `clio/Command/McpServer/Data/build-registry.cjs` або окрема .NET утиліта.
+Жоден сценарій не торкається AI runtime UX — це архітектурна сила NuGet-варіанту проти cloud-fetch.
 
-1. Тригер: вручну / cron в TeamCity / при бампі залежностей / при PR-боті.
-2. Pull `@creatio/component-registry@<v1>..@<vN>` для всіх підтримуваних версій (`8.0.x`, `8.1.x`, `8.2.x`).
-3. Для кожного `componentType`:
-   - якщо присутній у `vN`, відсутній у `vN-1` → `availability.since = vN`
-   - якщо був у `vN-1`, зник у `vN` → `availability.until = vN`
-   - те ж саме на рівні `properties`
-4. Merge `overrides.json`.
-5. Output: одна `ComponentRegistry.json` зі повними availability-range.
-6. Опційно: відкриває PR у clio через бота.
+## Інтеграція в clio
 
-### TeamCity на стороні clio (якщо це звичний оркестратор)
+### `Directory.Packages.props`
 
-- Тільки висмикує trigger «composer» — оркеструє запуск pipeline + auto-PR.
-- На самому extractor-у нічого не змінює.
+```xml
+<Project>
+  <ItemGroup>
+    <PackageVersion Include="Creatio.ComponentRegistry" Version="1.5.0" />
+    ...
+  </ItemGroup>
+</Project>
+```
 
-### Release branch lifecycle (виділення нової release-лінії)
+### `clio.csproj`
 
-Базовий тригер `push у release-branch` працює для **вже існуючих** ліній (`8.1.x`, `8.2.x`). Окремо описуємо подію «creatio-ui виділяє нову гілку для майбутнього релізу» — момент, коли `master` (8.4-dev) форкається у `8.3.x` під майбутній GA.
+```xml
+<ItemGroup>
+  <PackageReference Include="Creatio.ComponentRegistry" />
+</ItemGroup>
+```
 
-**Політичне рішення:** prerelease-публікацій немає. Внутрішні extractor-build-и на release-branch до GA-тега в npm не публікуються — тільки локальні Jenkins-артефакти.
+### `ComponentInfoCatalog` loader
+
+Заміна поточної реалізації:
+
+```csharp
+// Поточне:
+// string registryPath = Path.Combine(executingDirectory, "Command", "McpServer", "Data", "ComponentRegistry.json");
+
+// Цільове:
+using var stream = typeof(ComponentRegistryEntry).Assembly
+    .GetManifestResourceStream("Creatio.ComponentRegistry.ComponentRegistry.json")
+    ?? throw new InvalidOperationException("Embedded registry resource not found.");
+```
+
+Файл [clio/Command/McpServer/Data/ComponentRegistry.json](../clio/Command/McpServer/Data/ComponentRegistry.json) **видаляється** з clio repo. Loader читає з NuGet-вбудованого embedded resource.
+
+## Release branch lifecycle у creatio-ui
+
+Базовий тригер `push у release-branch` працює для **вже існуючих** ліній. Окремо — подія «creatio-ui виділяє нову гілку для майбутнього релізу» (`master` форкається у `8.3.x`).
+
+**Політика:** prerelease-публікацій немає. Внутрішні extractor-build-и на release-branch до GA-тега в npm не публікуються — тільки локальні Jenkins-артефакти.
 
 ```
 master (8.4 dev) ─┬─ cut → 8.3.x branch created
                   │     │
                   │     ├─ Jenkins on-branch-create (Jenkinsfile.Registry)
                   │     │    ├─ extract @ branch HEAD
-                  │     │    ├─ produce baseline component-registry.json як Jenkins artifact
+                  │     │    ├─ baseline component-registry.json як Jenkins artifact
                   │     │    │   (інспекція + регресійний детектор; НЕ npm-publish)
-                  │     │    └─ diff vs previous-line GA snapshot → preview звіт у Slack/Jira
+                  │     │    └─ diff vs previous-line GA snapshot → preview звіт
                   │     │
-                  │     └─ ongoing commits на 8.3.x → re-extract, refresh artifact
+                  │     └─ ongoing commits → re-extract, refresh artifact
                   │          (теж без npm-publish)
                   │
                   └─ tag 8.3.0 (GA) ─ extract → npm publish @creatio/component-registry@8.3.0
-                                            └─ manual PR у clio:
-                                                supported-versions.json += "8.3.0"
-                                                  └─ composer rebuilds unified registry
-                                                       └─ auto-PR with new ComponentRegistry.json
+                                            └─ composer-CI cron picks up next run
+                                                  └─ manual PR у composer-repo:
+                                                      supported-versions.json += "8.3.x"
+                                                        └─ composer rebuilds → NuGet bump
+                                                            └─ clio dependabot bump
 ```
 
 Етапи:
 
-1. **Branch-cut event у creatio-ui.** Jenkins-pipeline-library має або branch-creation hook, або nightly diff-job, що детектує нові гілки за naming-pattern (`^\d+\.\d+(\.x|\.\d+)?$`). Запускається `Jenkinsfile.Registry` у спеціальному «baseline mode»:
-   - extract → archive як build artifact (`component-registry.<branch>.json`);
-   - **NO npm publish** — це pre-GA work-in-progress;
-   - diff vs остання GA-публікація попередньої лінії → preview-звіт: «що нового з'являється, що зникає, що змінюється в properties».
-   - Цей preview ловить регресії в extractor-і та неузгодженості політики (наприклад, помилково знятий `@aiHidden`) **до** GA.
+1. **Branch-cut у creatio-ui.** Jenkins запускає `Jenkinsfile.Registry` у baseline-mode: extract → Jenkins artifact + preview-діфф vs остання GA-публікація попередньої лінії. **No npm publish.** Це ловить регресії extractor-а і неузгодженості ДО GA.
 
-2. **Ongoing commits у release-branch до GA.** Той самий `Jenkinsfile.Registry` re-runs на кожен push, refresh-ить artifact. Композиція в clio не торкається — нової версії у `supported-versions.json` нема.
+2. **Ongoing commits на release-branch до GA.** Той самий pipeline re-runs, refresh-ить artifact. Composer не торкається.
 
-3. **GA tag.** Push tag `8.3.0` тригерить **публікаційний mode** того ж pipeline:
-   - extract → npm publish `@creatio/component-registry@8.3.0`;
-   - npm dist-tag `latest` оновлюється тільки якщо це найбільша версія (інакше per-line dist-tag типу `8.3` зберігає сумісність зі старими споживачами).
+3. **GA tag.** `npm publish @creatio/component-registry@8.3.0`. npm dist-tag `latest` оновлюється тільки якщо це max-версія.
 
-4. **Реєстрація нової версії на стороні clio (explicit, не auto-discover).**
-   - У clio repo живе [supported-versions.json](../clio/Command/McpServer/Data/supported-versions.json) (новий файл) — список minor-ліній, для яких composer тягне snapshot-и:
-     ```json
-     ["8.0.x", "8.1.x", "8.2.x"]
-     ```
-   - Додавання нової лінії — manual PR із обґрунтуванням («команда зафіксувала підтримку 8.3.x»).
-   - Auto-PR (бот, що моніторить npm registry) — як **опційне** прискорення, але прийняття рішення про підтримку — людське.
+4. **Реєстрація у composer-repo.** Manual PR у `supported-versions.json` (свідоме рішення команди підтримувати нову лінію). Auto-PR від npm-monitoring бота — опційне прискорення.
 
-5. **Composer-пробіг.** Після bump-у `supported-versions.json` composer (в CI clio) тягне npm-пакети для всього списку, перебудовує unified `ComponentRegistry.json` із оновленим `availability`, відкриває PR.
+5. **Composer-пробіг.** Перебудовує unified registry, bump-ить NuGet semver.
 
-6. **Branch retirement.** Коли підтримка старої лінії припиняється — PR в clio, що знімає її з `supported-versions.json`. Composer:
-   - якщо компонент/property був із цієї лінії і відсутній у наступній — `availability.until` отримує значення першої не-підтримуваної версії;
-   - якщо компонент/property присутній у всіх лініях, що залишились — без змін.
+6. **clio bump.** Dependabot/Renovate створює PR із bumped `<PackageVersion Include="Creatio.ComponentRegistry" Version="x.y.z" />`. Review checklist відповідно до semver-bump-рівня.
 
-**Що дає baseline-mode без публікації:**
-- Раннє ловіння extractor-регресій (нова версія платформи з новим декоратор-патерном → padding-у extractor-і).
-- Раннє ловіння конфліктів з overlay-ями clio (deprecated в нові версії, але overlay вказує на нього).
-- Preview-звіт для AI-команди завчасно (за тижні до GA).
+7. **Branch retirement.** PR у composer-repo, що знімає лінію з `supported-versions.json`. Composer:
+   - якщо компонент/property відсутній у решті ліній — `availability.until` отримує значення першої не-підтримуваної версії;
+   - якщо присутній у всіх — без змін.
+
+## Закриті раніше відкриті питання
+
+| # | Питання | Рішення |
+|---|---|---|
+| 1 | Власник `tools/component-registry-extractor/` | Platform-UI team (у creatio-ui repo) |
+| 2 | JSDoc-вокабуляр як стандарт | Так, з eslint-правилом обов'язковості при додаванні нового `@CrtViewElement` |
+| 3 | Хто володіє `overrides.json` | AI / clio team у composer-repo |
+| 4 | Версійна політика подачі AI | `latest patch` кожної supported minor-лінії; AI бачить unified registry |
+| 5 | Внутрішній npm registry | `docker-rnd.creatio.com` екосистема (existing) |
+| 6 | Backfill v8.0/v8.1 | Forward-only від першої лінії, що буде у `supported-versions.json` на момент launch |
+| 7 | `composable-apps/*` | Окремий extractor pass із tag-ом `scope: "app"` в record (поза скоупом v1) |
+| 8 | Properties panels | Виключаються `**/designtime/**` фільтром на extractor-рівні |
+| 9 | Branch-creation hook у Jenkins | Якщо немає — nightly diff-job (`git branch -r` vs cached) |
+| 10 | npm dist-tag policy | `latest` = max версія + per-line tag (`8.2`, `8.3`) для backwards-compat consumer-pinning |
+| 11 | Cadence GA-тегів | Per build (`8.3.0`, `8.3.1`, …); composer-cron підбирає в наступному циклі |
+| 12 | Реєстрація підтримки | Manual PR у `supported-versions.json` (default); auto-PR бот — опційний |
+
+## Залишаються до закриття (нижчого рівня)
+
+- **MAJOR-bump migration path.** Якщо schema v2 з'являється, як clio підтримує обидві версії одночасно? Multi-target reader; адаптер у `ComponentInfoCatalog` — окремий design issue.
+- **Overrides versioning.** `overrides.json` теж має semver чи живе як частина composer git history? Перше чистіше, друге простіше.
+- **Telemetry contract.** Чи composer записує use-frequency у NuGet metadata, щоб back-port популярних overrides у `creatio-ui` як JSDoc? Сильна оптимізація, але вимагає телеметрії від MCP server-ів — окремий design issue.
+- **Композиція `composable-apps/*` компонентів.** Як їх scope-увати у unified registry — окремий design issue для v2.
 
 ## Що НЕ робити (антипатерни)
 
-- **Не парсити `*.api.md` як JSON.** Це Markdown rollup, призначений для review, не для машинного парсингу. Замість цього — `docModel: true` у api-extractor конфігах, якщо api-extractor буде вторинним джерелом.
-- **Не зберігати per-version snapshot файли в clio repo.** Якщо підтримуємо 10 версій — це 10× дублювання, mess у review. Краще — npm-залежності у composer-фазі і ОДИН агрегований файл у clio.
-- **Не робити decorator-extraction через regex.** AST-walk через `ts-morph` (TypeScript Compiler API) — єдиний надійний шлях; regex впаде на multi-line, generics, шаблонах.
-- **Не блокувати реліз креатіо на extractor.** Build registry окремим job, який падає isolated, не break-ить core deploy pipeline.
+- **Не commit-ити composed JSON у clio repo.** Втрачаємо explicit versioning, dependabot, parallel-PR ergonomics. Final storage = NuGet pkg, не git-tracked файл.
+- **Не парсити `*.api.md` як JSON.** Markdown rollup призначений для review, не для парсингу.
+- **Не зберігати per-version snapshot файли у clio repo.** Підтримка 10 версій = 10× дублювання. Замість цього — NPM-залежності у composer і unified bundle у NuGet.
+- **Не робити decorator-extraction через regex.** AST-walk через `ts-morph`.
+- **Не блокувати реліз creatio-ui на extractor.** Build registry окремим job, який падає isolated.
+- **Не комітити registry-дані з write-access composer-а у clio.** Composer пише тільки в NuGet feed. clio підбирає через PackageReference.
 
-## Відкриті питання для команди
+## Артефакти інфраструктури, які можна реюзати
 
-1. **Власник `tools/component-registry-extractor/`.** Платформ-команда чи clio/AI-команда? Краще — платформ, ближче до source. Але потребує buy-in.
-2. **JSDoc-вокабуляр як стандарт.** Узгодити з UI-командою; пройти через lint-правило (esbuild/eslint custom rule) для обов'язковості при додаванні нового `@CrtViewElement`. Інакше extractor буде fragile.
-3. **Хто володіє `ComponentRegistry.overrides.json`.** AI-команда / clio.
-4. **Версійна політика подачі AI**: вибираємо «snap до точної версії пакету» чи «matrix підтримки» (наприклад: «AI завжди знає про all entries у minor-line, фільтрує по `build`»).
-5. **Внутрішній npm registry** для `@creatio/component-registry` — який саме? Доступний з clio-CI?
-6. **Backfill for v8.0/v8.1.** Перший прохід — на історичних branches, чи лише з v8.2 forward (legacy fallback = «availability відсутня = завжди»)?
-7. **Що робити з `composable-apps/*`?** У них теж є власні крт-компоненти — це app-level, не platform. Можливо, окремий extractor pass із tag-ом scope в record.
-8. **Properties panels.** Поточний кур-registry їх свідомо не містить. Підтверджуємо це як правило і додаємо у фільтр.
-9. **Branch-creation hook у Jenkins.** Чи доступний у `@Library('pipeline-library')` готовий тригер на створення нової гілки? Якщо ні — nightly job, що порівнює `git branch -r` із попередньою ітерацією і запускає baseline-extract для нових `^\d+\.\d+(\.x|\.\d+)?$`-branch-ів.
-10. **npm dist-tag policy.** `latest` = max-версія (звичайна semver-семантика) чи per-line tag (`8.2`, `8.3`)? Перше простіше, друге стабільніше для споживачів, що пінять mінорну лінію.
-11. **Cadence GA-тегів.** Чи кожен build створює GA-тег (`8.3.0`, `8.3.1`, …) — тоді composer ребіл-диться часто; чи тільки на minor-зрізах — composer оновлюється раз у місяць. Впливає на навантаження на clio-CI і частоту auto-PR.
-12. **Реєстрація підтримки — людська чи автоматична.** Manual PR у `supported-versions.json` (default) vs auto-PR бота, що пушить, як тільки нова npm-версія з'являється. Manual безпечніше, але потребує дисципліни команди.
-
-## Pilot-план (мінімальний валідаційний цикл, ~2 тижні)
-
-1. Написати `component-registry-extractor` за зразковими 5 компонентами (`crt.Button`, `crt.Input`, `crt.ComboBox`, `crt.FlexContainer`, `crt.TabPanel`).
-2. На гілці `8.2.x` дати ему вистрілити локально, порівняти з ручним JSON-ом у clio — як точно AST-видобуток матчить.
-3. Додати кілька JSDoc-анотацій (`@since`, `@aiHint`) в одному з ViewConfig — переконатися, що екстрактор їх правильно тягне.
-4. Поексперементувати з composer-merge на 2 версіях (`8.1.x` + `8.2.x`) і подивитися на згенерований `availability`-діапазон.
-5. Якщо результат сходиться з ручним — підв'язати у Jenkins для однієї бранчі, потім масштабувати.
-
-Це дешевий gate-test: пілот покаже, чи варто інвестувати у full pipeline, до того, як питання pipeline-оркестрації стане blocking.
-
-## Артефакти, які вже існують у creatio-ui (готова інфра)
-
-- **api-extractor конфіги** у `libs/devkit/common`, `libs/devkit/base`, `libs/devkit/interface-designer` — `apiReport.enabled: true`, `docModel: false` (`.api-extractor/*.api.md` вже генерується).
-- **Nx monorepo** — `nx.json`, `project.json` у кожному lib — стандартний шлях для нової `tools/component-registry-extractor` таски.
-- **Jenkins pipeline-library** — `@Library('pipeline-library')` патерн, використовується у `Jenkinsfile.Release`. Готова інфра для додавання Registry pipeline.
-- **Docker-rnd registry** (`docker-rnd.creatio.com/monorepo-worker:1.0.12`) — внутрішня екосистема публікації артефактів.
+- **api-extractor конфіги** у `libs/devkit/{common,base,interface-designer}` — `apiReport.enabled: true`. Можна використати як вторинне джерело валідації.
+- **Nx monorepo** у creatio-ui — `nx.json`, `project.json` у кожній lib — стандартний шлях для extractor-таски.
+- **Jenkins pipeline-library** — `@Library('pipeline-library')` патерн вже використовується.
+- **`docker-rnd.creatio.com`** — внутрішня екосистема публікації артефактів (NPM + NuGet feeds).
+- **dependabot/Renovate** — стандартний інструмент для bump-у NuGet залежностей у clio.
