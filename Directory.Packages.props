@@ -18,6 +18,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     
   </PropertyGroup>
   <ItemGroup Label="Used in production">
+    <PackageVersion Include="Creatio.ComponentRegistry" Version="0.1.0" />
     <PackageVersion Include="ModelContextProtocol" Version="1.2.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="$(MsPackageVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="$(MsPackageVersion)" />

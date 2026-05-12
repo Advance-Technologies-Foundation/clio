@@ -89,10 +89,6 @@
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
 
-		<Content Include="Command\McpServer\Data\**">
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</Content>
-		
 	</ItemGroup>
 
 	<Choose>
@@ -154,6 +150,7 @@
 	</ItemGroup>
 	
 	<ItemGroup Label="Centrally Managed Package Versions">
+		<PackageReference Include="Creatio.ComponentRegistry" />
 		<PackageReference Include="MediatR" />
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" />
 		<PackageReference Include="Microsoft.Web.Administration" />

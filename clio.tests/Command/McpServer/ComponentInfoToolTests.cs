@@ -1,12 +1,10 @@
-using System;
-using System.Collections.Generic;
 using System.IO;
-using System.IO.Abstractions.TestingHelpers;
+using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
-using Clio.Common;
+using Creatio.ComponentRegistry;
 using FluentAssertions;
-using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -15,8 +13,6 @@ namespace Clio.Tests.Command.McpServer;
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class ComponentInfoToolTests {
-	private static readonly string RegistryRoot = GetRootedPath("clio");
-	private static readonly string RegistryPath = Path.Combine(RegistryRoot, "Command", "McpServer", "Data", "ComponentRegistry.json");
 	private const string TestRegistryJson = """
 	[
 	  {
@@ -141,11 +137,6 @@ public sealed class ComponentInfoToolTests {
 	]
 	""";
 
-	[TearDown]
-	public void TearDown() {
-		WorkingDirectoriesProvider._executingDirectory = null;
-	}
-
 	[Test]
 	[Description("Advertises the stable MCP tool name for get-component-info so callers and tests share the same production identifier.")]
 	public void ComponentInfoTool_Should_Advertise_Stable_Tool_Name() {
@@ -181,14 +172,14 @@ public sealed class ComponentInfoToolTests {
 	[Description("Returns grouped component summaries when component-type is omitted.")]
 	public void ComponentInfoTool_Should_Return_Grouped_List_When_Component_Type_Is_Omitted() {
 		// Arrange
-		ComponentInfoTool tool = CreateTool();
+		ComponentInfoTool tool = CreateToolFromTestRegistry();
 
 		// Act
 		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs());
 
 		// Assert
 		response.Success.Should().BeTrue(
-			because: "list mode should succeed when the shipped registry is available");
+			because: "list mode should succeed when the catalog is available");
 		response.Mode.Should().Be("list",
 			because: "omitting component-type should switch the tool into list mode");
 		response.Count.Should().Be(6,
@@ -205,7 +196,7 @@ public sealed class ComponentInfoToolTests {
 	[Description("Returns full component details when component-type matches a curated entry.")]
 	public void ComponentInfoTool_Should_Return_Detail_When_Component_Type_Matches() {
 		// Arrange
-		ComponentInfoTool tool = CreateTool();
+		ComponentInfoTool tool = CreateToolFromTestRegistry();
 
 		// Act
 		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
@@ -229,7 +220,7 @@ public sealed class ComponentInfoToolTests {
 	[Description("Filters grouped list results by keyword search across the curated registry.")]
 	public void ComponentInfoTool_Should_Filter_List_By_Search() {
 		// Arrange
-		ComponentInfoTool tool = CreateTool();
+		ComponentInfoTool tool = CreateToolFromTestRegistry();
 
 		// Act
 		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs(Search: "tab"));
@@ -251,7 +242,7 @@ public sealed class ComponentInfoToolTests {
 	[Description("Finds components by frontend-derived property metadata such as bulkActions.")]
 	public void ComponentInfoTool_Should_Search_Across_Property_Metadata() {
 		// Arrange
-		ComponentInfoTool tool = CreateTool();
+		ComponentInfoTool tool = CreateToolFromTestRegistry();
 
 		// Act
 		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs(Search: "bulkActions"));
@@ -273,7 +264,7 @@ public sealed class ComponentInfoToolTests {
 	[Description("Returns nested menu component details so action collections can be expanded safely.")]
 	public void ComponentInfoTool_Should_Return_Detail_For_Nested_Menu_Component() {
 		// Arrange
-		ComponentInfoTool tool = CreateTool();
+		ComponentInfoTool tool = CreateToolFromTestRegistry();
 
 		// Act
 		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs("crt.MenuItem"));
@@ -297,7 +288,7 @@ public sealed class ComponentInfoToolTests {
 	[Description("Returns a readable error and available types when component-type does not exist.")]
 	public void ComponentInfoTool_Should_Return_Readable_Error_When_Component_Type_Is_Unknown() {
 		// Arrange
-		ComponentInfoTool tool = CreateTool();
+		ComponentInfoTool tool = CreateToolFromTestRegistry();
 
 		// Act
 		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs("crt.Unknown"));
@@ -313,23 +304,45 @@ public sealed class ComponentInfoToolTests {
 			because: "the fallback list should expose the full catalog when no search filter is applied");
 	}
 
-	private static ComponentInfoTool CreateTool() {
-		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData> {
-			[RegistryPath] = new(TestRegistryJson)
-		}, RegistryRoot);
-		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		workingDirectoriesProvider.ExecutingDirectory.Returns(RegistryRoot);
-		ComponentInfoCatalog catalog = new(fileSystem, workingDirectoriesProvider);
-		return new ComponentInfoTool(catalog);
+	[Test]
+	[Description("Smoke test: catalog loads from the embedded resource shipped by the Creatio.ComponentRegistry NuGet package.")]
+	public void Real_Registry_Should_Load_From_Embedded_Resource() {
+		// Arrange + Act
+		ComponentInfoCatalog catalog = new();
+
+		// Assert
+		catalog.GetAll().Count.Should().BeGreaterThan(50,
+			because: "the shipped registry contains ~92 curated components; loose bound absorbs future churn");
 	}
 
-	private static string GetRootedPath(params string[] segments) {
-		string path = OperatingSystem.IsWindows()
-			? @"C:\"
-			: Path.DirectorySeparatorChar.ToString();
-		foreach (string segment in segments) {
-			path = Path.Combine(path, segment);
-		}
-		return path;
+	[Test]
+	[Description("Smoke test: canonical components present in every shipped registry are resolvable through the real loader.")]
+	public void Real_Registry_Should_Contain_Canonical_Components() {
+		// Arrange
+		ComponentInfoCatalog catalog = new();
+
+		// Act + Assert
+		catalog.Find("crt.TabContainer").Should().NotBeNull(
+			because: "crt.TabContainer is a long-stable container component shipped in every registry");
+		catalog.Find("crt.Button").Should().NotBeNull(
+			because: "crt.Button is a long-stable interactive component");
+		catalog.Find("crt.MenuItem").Should().NotBeNull(
+			because: "crt.MenuItem is a long-stable nested-menu component");
+	}
+
+	[Test]
+	[Description("Smoke test: the Creatio.ComponentRegistry assembly exposes the registry payload under the contracted LogicalName.")]
+	public void Real_Registry_Should_Expose_Expected_Embedded_Resource() {
+		Assembly registryAssembly = typeof(PackageMarker).Assembly;
+		registryAssembly.GetManifestResourceNames().Should().Contain(
+			"Creatio.ComponentRegistry.ComponentRegistry.json",
+			because: "ComponentInfoCatalog resolves the catalog by this exact LogicalName");
+	}
+
+	private static ComponentInfoTool CreateToolFromTestRegistry() {
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(TestRegistryJson));
+		ComponentInfoCatalog.ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+		ComponentInfoCatalog catalog = new(() => state);
+		return new ComponentInfoTool(catalog);
 	}
 }
