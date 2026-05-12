@@ -77,7 +77,7 @@ public sealed class McpGuidanceResourceE2ETests {
 				ConfigurationWebServiceTestsAssertionStyleUri,
 				ConfigurationWebServiceTestsEndpointTestPatternsUri
 			];
-		string[] expectedGeneratedUris = ComposableAppSkillResourceCatalog.Entries
+		string[] expectedGeneratedUris = ComposableAppSkillResourceCatalog.GetEntries()
 			.Select(entry => entry.Article.Uri)
 			.ToArray();
 

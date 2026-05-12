@@ -367,14 +367,14 @@ internal static class ComposableAppSkillResourceCatalog {
 	/// <summary>
 	/// Returns every generated composable-app skill MCP resource entry.
 	/// </summary>
-	internal static IReadOnlyList<ComposableAppSkillResourceEntry> Entries => EntriesByUri.Values
+	internal static IReadOnlyList<ComposableAppSkillResourceEntry> GetEntries() => EntriesByUri.Values
 		.OrderBy(entry => entry.Article.Uri, StringComparer.OrdinalIgnoreCase)
 		.ToArray();
 
 	/// <summary>
 	/// Returns top-level guide resources that should be exposed through get-guidance.
 	/// </summary>
-	internal static IReadOnlyList<ComposableAppSkillResourceEntry> Guides => Entries
+	internal static IReadOnlyList<ComposableAppSkillResourceEntry> GetGuides() => GetEntries()
 		.Where(entry => entry.IsGuide)
 		.ToArray();
 

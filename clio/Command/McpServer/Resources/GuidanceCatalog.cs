@@ -72,7 +72,7 @@ internal static class GuidanceCatalog {
 				BusinessRulesGuidanceResource.Guide)
 		};
 
-		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.Guides) {
+		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {
 			entries[guide.Skill] = new GuidanceCatalogEntry(guide.Skill, guide.Description, guide.Article);
 		}
 

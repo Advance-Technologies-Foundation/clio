@@ -1207,7 +1207,7 @@ public sealed class McpGuidanceResourceTests {
 	[Description("Generated composable-app skill resources expose all remaining skill guides and references as plain-text MCP articles.")]
 	public void ComposableAppSkillResourceCatalog_Should_Expose_All_Generated_Skill_Resources() {
 		// Arrange
-		IReadOnlyList<ComposableAppSkillResourceEntry> entries = ComposableAppSkillResourceCatalog.Entries;
+		IReadOnlyList<ComposableAppSkillResourceEntry> entries = ComposableAppSkillResourceCatalog.GetEntries();
 
 		// Act
 		ComposableAppSkillResourceEntry atfGuide = entries.Single(entry =>
@@ -1246,8 +1246,8 @@ public sealed class McpGuidanceResourceTests {
 	[Description("GuidanceCatalog exposes generated composable-app skill guides while keeping generated references resource-only.")]
 	public void GuidanceCatalog_Should_Include_Generated_Composable_App_Skill_Guides() {
 		// Arrange
-		IReadOnlyList<ComposableAppSkillResourceEntry> generatedGuides = ComposableAppSkillResourceCatalog.Guides;
-		IReadOnlyList<ComposableAppSkillResourceEntry> generatedReferences = ComposableAppSkillResourceCatalog.Entries
+		IReadOnlyList<ComposableAppSkillResourceEntry> generatedGuides = ComposableAppSkillResourceCatalog.GetGuides();
+		IReadOnlyList<ComposableAppSkillResourceEntry> generatedReferences = ComposableAppSkillResourceCatalog.GetEntries()
 			.Where(entry => !entry.IsGuide)
 			.ToArray();
 
