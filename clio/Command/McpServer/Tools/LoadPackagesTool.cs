@@ -19,7 +19,7 @@ public class LoadPackagesTool(
 	/// </summary>
 	/// <param name="environmentName">Target environment name.</param>
 	/// <returns>Execution result for the operation.</returns>
-	[McpServerTool(Name = "pkg-to-file-system", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpServerTool(Name = "pkg-to-file-system", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Loads packages from the database into the file system on a Creatio web application")]
 	public CommandExecutionResult LoadPackagesToFileSystem(
 		[Description("Target environment name")] [Required] string environmentName
@@ -35,7 +35,7 @@ public class LoadPackagesTool(
 	/// </summary>
 	/// <param name="environmentName">Target environment name.</param>
 	/// <returns>Execution result for the operation.</returns>
-	[McpServerTool(Name = "pkg-to-db", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpServerTool(Name = "pkg-to-db", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Loads packages from the file system into the database on a Creatio web application")]
 	public CommandExecutionResult LoadPackagesToDb(
 		[Description("Target environment name")] [Required] string environmentName

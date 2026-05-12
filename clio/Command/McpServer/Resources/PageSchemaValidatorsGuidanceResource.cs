@@ -52,6 +52,10 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 			       - Create a custom `usr.*Validator` only when the requirement is not covered by `crt.Required`, `crt.EmptyOrWhiteSpace`, `crt.MinLength`, `crt.MaxLength`, `crt.Min`, or `crt.Max`, or when the validation logic is genuinely domain-specific.
 			       - All `crt.*` validators accept an optional `message` param to override the built-in localized error text (e.g., `"message": "#ResourceString(SomeKey)#"`). Omit `message` to use the automatic built-in error text. Only add `message` when you specifically need to override the default error.
 
+			       Server-side compilation
+			       - Validators live in the Freedom UI page body, which is an AMD module served at runtime. After `update-page` or `sync-pages` your changes are live.
+			       - Do NOT call `compile-creatio` — it is for C# schema changes, not page-body JavaScript. Compilation forces a runtime reload, breaks the active session, and is never required as a follow-up to a page-body edit.
+
 			       NON-NEGOTIABLES
 			       - Keep validators focused on field-value validation.
 			       - Implement field validation as a validator entry, not as logic inside a handler.

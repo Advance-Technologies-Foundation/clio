@@ -135,7 +135,7 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Exposes non-read-only MCP metadata for compilation because the command mutates build state but is not destructive.")]
+	[Description("Exposes destructive MCP metadata for compilation so hosts can prompt for confirmation before the long-running runtime reload.")]
 	public void CompileCreatio_Should_Expose_Expected_Mcp_Metadata()
 	{
 		// Arrange
@@ -151,8 +151,8 @@ public sealed class CompileCreatioToolTests
 			because: "the metadata should reuse the production tool-name constant");
 		attribute.ReadOnly.Should().BeFalse(
 			because: "compilation changes target environment build state");
-		attribute.Destructive.Should().BeFalse(
-			because: "compilation should not be classified as a destructive operation");
+		attribute.Destructive.Should().BeTrue(
+			because: "compilation forces a runtime reload that interrupts the active session, so hosts must treat it as destructive");
 	}
 
 	[Test]
