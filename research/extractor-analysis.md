@@ -103,4 +103,4 @@ crt.FilterableList               crt.Timer
 
 ## Звідки взяті ці фільтри і цифри
 
-Емпіричні дані з прохода по `creatio-ui@master` (попередня research-сесія). Розширений контекст архітектури — [05-source-of-truth-automation.md](05-source-of-truth-automation.md); цільова структура реєстру в clio — [04-multi-version-target-structure.md](04-multi-version-target-structure.md).
+Емпіричні дані з прохода по `creatio-ui@master` (попередня research-сесія). Розширений контекст архітектури — [architecture.md](architecture.md); цільова структура реєстру в clio — [clio-target-structure.md](clio-target-structure.md).

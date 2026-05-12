@@ -15,9 +15,9 @@ Clio MCP server експонує AI-агентам набір інструмен
 
 ## Документи
 
-1. [03-extraction-analysis.md](03-extraction-analysis.md) — extractor-фільтри, інваріант `**/designtime/**`, цифри 192/92/100, повний список 100 нових кандидатів для seeding `overrides.json`.
-2. [04-multi-version-target-structure.md](04-multi-version-target-structure.md) — цільова структура реєстру в clio: per-entry `availability`, resolver версії, `target-version` resolution stack, fallback policy, NuGet-base loader.
-3. [05-source-of-truth-automation.md](05-source-of-truth-automation.md) — цільова архітектура SoT із трьома доменами: creatio-ui (source) → composer-repo (integration) → clio (consumer). NuGet-distribution, ownership matrix, failure-mode design, версіонування `Creatio.ComponentRegistry`.
+- [architecture.md](architecture.md) — цільова архітектура SoT із трьома доменами: creatio-ui (source) → composer-repo (integration) → clio (consumer). NuGet-distribution, ownership matrix, failure-mode design, версіонування `Creatio.ComponentRegistry`.
+- [clio-target-structure.md](clio-target-structure.md) — цільова структура реєстру в clio: per-entry `availability`, resolver версії, `target-version` resolution stack, fallback policy, NuGet-base loader.
+- [extractor-analysis.md](extractor-analysis.md) — extractor-фільтри, інваріант `**/designtime/**`, цифри 192/92/100, повний список 100 нових кандидатів для seeding `overrides.json`.
 
 ## Цільова архітектура
 
@@ -76,4 +76,4 @@ Clio MCP server експонує AI-агентам набір інструмен
 
 Документи описують **цільовий стан**. Реалізація поки не розпочата; поточний `ComponentInfoCatalog` залишається без змін.
 
-Етапи доставки — у [04-multi-version-target-structure.md](04-multi-version-target-structure.md#етапи-доставки-target-architecture). Без проміжного pilot-етапу; кожен етап завершується release-ом NuGet/NPM-пакета у production-feed.
+Етапи доставки — у [clio-target-structure.md](clio-target-structure.md#етапи-доставки-target-architecture). Без проміжного pilot-етапу; кожен етап завершується release-ом NuGet/NPM-пакета у production-feed.

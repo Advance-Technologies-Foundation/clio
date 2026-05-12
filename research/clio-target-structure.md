@@ -29,8 +29,8 @@
 | Модель | `ComponentRegistryEntry.Availability` + per-property `Availability` |
 | Top-level | `latestKnownVersion`, `categories` (data-driven), `$schema`, `schemaVersion` |
 | MCP tool args | + `environment-name`, + `target-version` |
-| Версіонування | Незалежний semver NuGet (MAJOR/MINOR/PATCH за semantic-rules — див. [05](05-source-of-truth-automation.md#версіонування-creatiocomponentregistry-nuget)) |
-| Distribution | NPM → composer-repo → NuGet (див. [05](05-source-of-truth-automation.md)) |
+| Версіонування | Незалежний semver NuGet (MAJOR/MINOR/PATCH за semantic-rules — див. [architecture.md](architecture.md#версіонування-creatiocomponentregistry-nuget)) |
+| Distribution | NPM → composer-repo → NuGet (див. [architecture.md](architecture.md)) |
 
 ## Що має підтримувати цільова структура
 
@@ -204,7 +204,7 @@ using var stream = typeof(ComponentRegistryEntry).Assembly
 
 ## Відкриті питання для координації з командою
 
-1. **Source of truth довгостроково.** Hand-curated forever vs. auto-extraction з платформи. **Окреме дослідження** — див. [05-source-of-truth-automation.md](05-source-of-truth-automation.md).
+1. **Source of truth довгостроково.** Hand-curated forever vs. auto-extraction з платформи. **Окреме дослідження** — див. [architecture.md](architecture.md).
 2. ~~**Fallback-семантика, коли версія не відома.**~~ **Закрито:** `latest known` із маркером `resolvedFrom: "latest-fallback"`. Деталі і edge-cases у секції [Fallback policy](#fallback-policy-закріплено).
 3. **Версійна гранулярність.** `Major.Minor.Build` чи semver-стиль? Чи потрібен `pre-release` (`8.2.0-rc1`)?
 4. **Migration plan для існуючих 92 записів.** Базова позиція — не чіпати (всі без `availability` = «завжди»). Питання, чи проставити explicit `since: "8.0.0"` у наступному релізі для clarity.

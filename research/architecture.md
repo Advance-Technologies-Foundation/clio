@@ -130,7 +130,7 @@ NuGet pkg містить два файли:
 
 ## Sources в creatio-ui
 
-Витяг із [03-extraction-analysis.md](03-extraction-analysis.md) і дослідження репо:
+Витяг із [extractor-analysis.md](extractor-analysis.md) і дослідження репо:
 
 | Джерело | Що дає | Якість |
 |---|---|---|
