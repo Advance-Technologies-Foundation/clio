@@ -287,6 +287,7 @@ public class BindingsModule {
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<DataForgeTool>();
+		services.AddTransient<ODataReadTool>();
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
