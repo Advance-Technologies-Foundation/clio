@@ -89,10 +89,68 @@
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
 
-		<Content Include="Command\McpServer\Data\**">
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</Content>
-		
+	</ItemGroup>
+
+	<!--
+		Component registry embedded snapshot.
+		The MSBuild target below fetches the freshest catalog from the academy.creatio.com CDN
+		at build time and embeds it into clio.dll. On fetch failure the committed seed file
+		(Command\McpServer\Data\ComponentRegistry.seed.json) is used instead, so offline
+		builds and pre-CDN bootstrap still succeed. See research/clio-target-structure.md
+		and research/implementation-plan-part1-cdn.md for the design.
+	-->
+	<PropertyGroup>
+		<CdnSnapshotUrl Condition="'$(CdnSnapshotUrl)' == ''">https://academy.creatio.com/api/component-registry/latest.json</CdnSnapshotUrl>
+		<!--
+			Staging is rooted at $(MSBuildProjectDirectory)/obj/ rather than $(IntermediateOutputPath)
+			because the latter is empty at the time top-level PropertyGroup is evaluated (before
+			$(TargetFramework) is bound), which would dump the staging into the project root.
+		-->
+		<CdnSnapshotStaging>$(MSBuildProjectDirectory)/obj/component-registry/</CdnSnapshotStaging>
+		<CdnSnapshotPath>$(CdnSnapshotStaging)ComponentRegistry.json</CdnSnapshotPath>
+		<CdnSnapshotMetadataPath>$(CdnSnapshotStaging)embedded-metadata.json</CdnSnapshotMetadataPath>
+		<SeedSnapshotPath>$(MSBuildProjectDirectory)/Command/McpServer/Data/ComponentRegistry.seed.json</SeedSnapshotPath>
+	</PropertyGroup>
+
+	<Target Name="ResolveCdnSnapshot"
+			BeforeTargets="PrepareResources;CoreCompile"
+			Inputs="$(SeedSnapshotPath)"
+			Outputs="$(CdnSnapshotPath);$(CdnSnapshotMetadataPath)">
+		<MakeDir Directories="$(CdnSnapshotStaging)" />
+
+		<DownloadFile SourceUrl="$(CdnSnapshotUrl)"
+					  DestinationFolder="$(CdnSnapshotStaging)"
+					  DestinationFileName="ComponentRegistry.json"
+					  Retries="3"
+					  RetryDelayMilliseconds="1000"
+					  ContinueOnError="WarnAndContinue" />
+
+		<PropertyGroup>
+			<_ComponentRegistryFallbackToSeed Condition="!Exists('$(CdnSnapshotPath)')">true</_ComponentRegistryFallbackToSeed>
+			<_ComponentRegistryFallbackToSeed Condition="'$(_ComponentRegistryFallbackToSeed)' == ''">false</_ComponentRegistryFallbackToSeed>
+		</PropertyGroup>
+
+		<Copy SourceFiles="$(SeedSnapshotPath)"
+			  DestinationFiles="$(CdnSnapshotPath)"
+			  Condition="'$(_ComponentRegistryFallbackToSeed)' == 'true'" />
+
+		<WriteLinesToFile File="$(CdnSnapshotMetadataPath)"
+						  Overwrite="true"
+						  Lines='{ "embeddedVersion": "latest", "embeddedAt": "$([System.DateTime]::UtcNow.ToString(o))", "fallbackToSeed": $(_ComponentRegistryFallbackToSeed) }' />
+
+		<Message Importance="High"
+				 Text="ResolveCdnSnapshot: fallbackToSeed=$(_ComponentRegistryFallbackToSeed) snapshot=$(CdnSnapshotPath)" />
+	</Target>
+
+	<ItemGroup>
+		<EmbeddedResource Include="$(CdnSnapshotPath)">
+			<LogicalName>Clio.ComponentRegistry.ComponentRegistry.json</LogicalName>
+			<Visible>false</Visible>
+		</EmbeddedResource>
+		<EmbeddedResource Include="$(CdnSnapshotMetadataPath)">
+			<LogicalName>Clio.ComponentRegistry.embedded-metadata.json</LogicalName>
+			<Visible>false</Visible>
+		</EmbeddedResource>
 	</ItemGroup>
 
 	<Choose>

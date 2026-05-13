@@ -252,6 +252,7 @@ public class BindingsModule {
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
 		services.AddTransient<IPageBundleBuilder, PageBundleBuilder>();
+		services.AddSingleton<IEmbeddedRegistryReader, EmbeddedRegistryReader>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		
 		// MCP Tools

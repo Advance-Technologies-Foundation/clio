@@ -1,12 +1,10 @@
-using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Abstractions.TestingHelpers;
+using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
-using Clio.Common;
 using FluentAssertions;
-using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -15,8 +13,6 @@ namespace Clio.Tests.Command.McpServer;
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class ComponentInfoToolTests {
-	private static readonly string RegistryRoot = GetRootedPath("clio");
-	private static readonly string RegistryPath = Path.Combine(RegistryRoot, "Command", "McpServer", "Data", "ComponentRegistry.json");
 	private const string TestRegistryJson = """
 	[
 	  {
@@ -140,11 +136,6 @@ public sealed class ComponentInfoToolTests {
 	  }
 	]
 	""";
-
-	[TearDown]
-	public void TearDown() {
-		WorkingDirectoriesProvider._executingDirectory = null;
-	}
 
 	[Test]
 	[Description("Advertises the stable MCP tool name for get-component-info so callers and tests share the same production identifier.")]
@@ -313,23 +304,65 @@ public sealed class ComponentInfoToolTests {
 			because: "the fallback list should expose the full catalog when no search filter is applied");
 	}
 
+	[Test]
+	[Description("Production constructor wires the embedded registry resource that ships with clio.dll.")]
+	public void ComponentInfoCatalog_Should_Load_From_Embedded_Resource() {
+		// Arrange
+		ComponentInfoCatalog catalog = new(new EmbeddedRegistryReader());
+
+		// Act
+		IReadOnlyList<ComponentRegistryEntry> entries = catalog.GetAll();
+
+		// Assert
+		entries.Should().NotBeEmpty(
+			because: "the embedded registry resource must ship with clio.dll");
+		entries.Count.Should().BeGreaterThan(50,
+			because: "the curated catalog contains the full Freedom UI surface, not the test sample");
+	}
+
+	[Test]
+	[Description("Embedded registry exposes canonical Freedom UI components that AI flows depend on.")]
+	public void ComponentInfoCatalog_Embedded_Resource_Should_Expose_Canonical_Components() {
+		// Arrange
+		ComponentInfoCatalog catalog = new(new EmbeddedRegistryReader());
+
+		// Act / Assert
+		catalog.Find("crt.TabContainer").Should().NotBeNull(
+			because: "TabContainer is part of the canonical container surface");
+		catalog.Find("crt.Button").Should().NotBeNull(
+			because: "Button is part of the canonical interactive surface");
+		catalog.Find("crt.MenuItem").Should().NotBeNull(
+			because: "MenuItem is part of the canonical interactive surface");
+	}
+
+	[Test]
+	[Description("Both embedded resources required by the CDN-driven loader are present in the assembly.")]
+	public void Clio_Assembly_Should_Expose_Component_Registry_Embedded_Resources() {
+		// Arrange
+		Assembly clioAssembly = typeof(ComponentInfoCatalog).Assembly;
+
+		// Act
+		string[] resourceNames = clioAssembly.GetManifestResourceNames();
+
+		// Assert
+		resourceNames.Should().Contain("Clio.ComponentRegistry.ComponentRegistry.json",
+			because: "ResolveCdnSnapshot MSBuild target must embed the registry JSON resource");
+		resourceNames.Should().Contain("Clio.ComponentRegistry.embedded-metadata.json",
+			because: "ResolveCdnSnapshot MSBuild target must embed the provenance metadata resource");
+	}
+
 	private static ComponentInfoTool CreateTool() {
-		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData> {
-			[RegistryPath] = new(TestRegistryJson)
-		}, RegistryRoot);
-		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		workingDirectoriesProvider.ExecutingDirectory.Returns(RegistryRoot);
-		ComponentInfoCatalog catalog = new(fileSystem, workingDirectoriesProvider);
+		ComponentInfoCatalog catalog = CreateCatalog(TestRegistryJson);
 		return new ComponentInfoTool(catalog);
 	}
 
-	private static string GetRootedPath(params string[] segments) {
-		string path = OperatingSystem.IsWindows()
-			? @"C:\"
-			: Path.DirectorySeparatorChar.ToString();
-		foreach (string segment in segments) {
-			path = Path.Combine(path, segment);
-		}
-		return path;
+	private static ComponentInfoCatalog CreateCatalog(string registryJson) {
+		ComponentCatalogState state = LoadStateFromJson(registryJson);
+		return new ComponentInfoCatalog(() => state);
+	}
+
+	private static ComponentCatalogState LoadStateFromJson(string registryJson) {
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(registryJson));
+		return ComponentInfoCatalog.LoadFromStream(stream);
 	}
 }

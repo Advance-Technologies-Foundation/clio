@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
-using Clio.Common;
-using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -33,14 +32,31 @@ public interface IComponentInfoCatalog {
 }
 
 /// <summary>
-/// Loads the curated Freedom UI component catalog from the shipped JSON registry.
+/// Loads the curated Freedom UI component catalog from the embedded registry resource
+/// shipped with the clio assembly.
 /// </summary>
-public sealed class ComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirectoriesProvider workingDirectoriesProvider)
-	: IComponentInfoCatalog {
+/// <remarks>
+/// In a later step of the CDN migration a CDN-backed client will provide the stream,
+/// falling back to this embedded resource. For Part 1 / Commit 2 the embedded resource
+/// is the only source: drop-in compatible with the previous in-repo JSON.
+/// </remarks>
+public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	private static readonly string[] CategoryOrder = ["containers", "fields", "interactive", "display"];
-	private readonly Lazy<ComponentCatalogState> _catalogState = new(() =>
-		LoadCatalogState(fileSystem, workingDirectoriesProvider),
-		true);
+	private readonly Lazy<ComponentCatalogState> _catalogState;
+
+	/// <summary>
+	/// Production constructor used by the DI container.
+	/// </summary>
+	public ComponentInfoCatalog(IEmbeddedRegistryReader embeddedRegistryReader)
+		: this(() => LoadStateFromEmbeddedReader(embeddedRegistryReader)) {
+	}
+
+	/// <summary>
+	/// Internal constructor for hermetic tests.
+	/// </summary>
+	internal ComponentInfoCatalog(Func<ComponentCatalogState> loader) {
+		_catalogState = new Lazy<ComponentCatalogState>(loader, isThreadSafe: true);
+	}
 
 	/// <inheritdoc />
 	public IReadOnlyList<ComponentRegistryEntry> GetAll() {
@@ -68,27 +84,20 @@ public sealed class ComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirecto
 			: null;
 	}
 
-	private static ComponentCatalogState LoadCatalogState(
-		IFileSystem fileSystem,
-		IWorkingDirectoriesProvider workingDirectoriesProvider) {
-		string registryPath = fileSystem.Path.Combine(
-			workingDirectoriesProvider.ExecutingDirectory,
-			"Command",
-			"McpServer",
-			"Data",
-			"ComponentRegistry.json");
-		if (!fileSystem.File.Exists(registryPath)) {
-			throw new InvalidOperationException(
-				$"Component registry file was not found at '{registryPath}'.");
+	/// <summary>
+	/// Builds a catalog state from a raw registry JSON stream. Public so that future
+	/// CDN-aware loaders can reuse the same parse, ordering, and duplicate-detection logic.
+	/// </summary>
+	public static ComponentCatalogState LoadFromStream(Stream stream) {
+		if (stream is null) {
+			throw new ArgumentNullException(nameof(stream));
 		}
 
-		string json = fileSystem.File.ReadAllText(registryPath);
 		ComponentRegistryEntry[]? rawEntries = JsonSerializer.Deserialize<ComponentRegistryEntry[]>(
-			json,
+			stream,
 			new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 		if (rawEntries is null || rawEntries.Length == 0) {
-			throw new InvalidOperationException(
-				$"Component registry file '{registryPath}' is empty or invalid.");
+			throw new InvalidOperationException("Component registry stream is empty or invalid.");
 		}
 
 		string[] duplicateTypes = rawEntries
@@ -109,13 +118,17 @@ public sealed class ComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirecto
 			.ThenBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
 			.ToArray();
 		if (orderedEntries.Length == 0) {
-			throw new InvalidOperationException(
-				$"Component registry file '{registryPath}' does not contain valid component types.");
+			throw new InvalidOperationException("Component registry stream does not contain valid component types.");
 		}
 
 		Dictionary<string, ComponentRegistryEntry> lookup = orderedEntries
 			.ToDictionary(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase);
 		return new ComponentCatalogState(orderedEntries, lookup);
+	}
+
+	private static ComponentCatalogState LoadStateFromEmbeddedReader(IEmbeddedRegistryReader reader) {
+		using Stream stream = reader.OpenRegistryStream();
+		return LoadFromStream(stream);
 	}
 
 	private static bool Matches(ComponentRegistryEntry entry, string query) {
@@ -142,8 +155,11 @@ public sealed class ComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirecto
 			item => string.Equals(item, category, StringComparison.OrdinalIgnoreCase));
 		return index >= 0 ? index : CategoryOrder.Length;
 	}
-
-	private sealed record ComponentCatalogState(
-		IReadOnlyList<ComponentRegistryEntry> Entries,
-		IReadOnlyDictionary<string, ComponentRegistryEntry> Lookup);
 }
+
+/// <summary>
+/// Parsed snapshot of the component registry ready for catalog operations.
+/// </summary>
+public sealed record ComponentCatalogState(
+	IReadOnlyList<ComponentRegistryEntry> Entries,
+	IReadOnlyDictionary<string, ComponentRegistryEntry> Lookup);
