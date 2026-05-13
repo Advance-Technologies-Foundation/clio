@@ -555,13 +555,18 @@ public sealed class ToolContractGetToolE2ETests {
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-shape" &&
 				validator.Field == "rule.actions[*].items[*]" &&
-				validator.Context!.Contains("Attribute value sources are not supported", StringComparison.Ordinal),
-			because: "the contract should advertise the current constant-only Set values scope");
+				validator.Context!.Contains("forward reference paths like LookupColumn.SourceColumn", StringComparison.Ordinal),
+			because: "the contract should advertise AttributeValue source support for Set values");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-constant" &&
 				validator.Field == "rule.actions[*].items[*].value.value" &&
 				validator.Context!.Contains("JSON number", StringComparison.Ordinal),
 			because: "the contract should document typed constant payloads for Set values");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "set-values-formula" &&
+				validator.Field == "rule.actions[*].items[*].value.expression" &&
+				validator.Context!.Contains("ExpressionService.svc/Validate", StringComparison.Ordinal),
+			because: "the contract should document formula payloads for Set values");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rule.condition.conditions[*].comparisonType" &&
@@ -602,6 +607,11 @@ public sealed class ToolContractGetToolE2ETests {
 				StringComparison.Ordinal));
 		hasSetValuesExample.Should().BeTrue(
 			because: "the contract should include a Set values example for constant assignments across supported target families");
+		bool hasSetValuesAttributeExample = contract.Examples.Any(example =>
+			string.Equals(example.Summary, "Create a Set values rule from a forward reference attribute",
+				StringComparison.Ordinal));
+		hasSetValuesAttributeExample.Should().BeTrue(
+			because: "the contract should include a Set values example for AttributeValue source assignments");
 	}
 
 	[Test]
@@ -634,7 +644,11 @@ public sealed class ToolContractGetToolE2ETests {
 				validator.Name == "enum" &&
 				validator.Field == "rule.actions[*].type" &&
 				validator.Context!.Contains("hide-element", StringComparison.Ordinal) &&
-				validator.Context.Contains("show-element", StringComparison.Ordinal),
+				validator.Context.Contains("show-element", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-editable", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-read-only", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-required", StringComparison.Ordinal) &&
+				validator.Context.Contains("make-optional", StringComparison.Ordinal),
 			because: "the contract should advertise page-only action values");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "page-element" &&

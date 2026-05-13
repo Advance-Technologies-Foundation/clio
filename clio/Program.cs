@@ -113,6 +113,14 @@ internal class Program {
 		typeof(UpdateAppSectionOptions),
 		typeof(DeleteAppSectionOptions),
 		typeof(ApplicationSectionGetListOptions),
+		typeof(IdentityProviderListOptions),
+		typeof(IdentityProviderUpsertOptions),
+		typeof(IdentityProviderSetSecretOptions),
+		typeof(IdentityProviderDeleteOptions),
+		typeof(IdentityProviderSetDefaultOptions),
+		typeof(IdentityProviderBindOptions),
+		typeof(IdentityProviderUnbindOptions),
+		typeof(IdentityProviderServicesOptions),
 		typeof(CreateAppOptions),
 		typeof(GetAppInfoOptions),
 		typeof(CreateLookupOptions),
@@ -197,8 +205,9 @@ internal class Program {
 		typeof(AssertOptions),
 		typeof(McpServerCommandOptions),
 		typeof(QuizCommandOptions),
-		
-		
+		typeof(GenerateSourceCodeOptions),
+
+
 	];
 	private static readonly Lazy<IReadOnlyList<CommandSuggestionEntry>> CommandSuggestionsCatalog =
 		new(CreateCommandSuggestionsCatalog);
@@ -246,6 +255,14 @@ internal class Program {
 			UpdateAppSectionOptions opts => Resolve<UpdateAppSectionCommand>(opts).Execute(opts),
 			DeleteAppSectionOptions opts => Resolve<DeleteAppSectionCommand>(opts).Execute(opts),
 			ApplicationSectionGetListOptions opts => Resolve<GetAppSectionsCommand>(opts).Execute(opts),
+			IdentityProviderListOptions opts => Resolve<IdentityProviderListCommand>(opts).Execute(opts),
+			IdentityProviderUpsertOptions opts => Resolve<IdentityProviderUpsertCommand>(opts).Execute(opts),
+			IdentityProviderSetSecretOptions opts => Resolve<IdentityProviderSetSecretCommand>(opts).Execute(opts),
+			IdentityProviderDeleteOptions opts => Resolve<IdentityProviderDeleteCommand>(opts).Execute(opts),
+			IdentityProviderSetDefaultOptions opts => Resolve<IdentityProviderSetDefaultCommand>(opts).Execute(opts),
+			IdentityProviderBindOptions opts => Resolve<IdentityProviderBindCommand>(opts).Execute(opts),
+			IdentityProviderUnbindOptions opts => Resolve<IdentityProviderUnbindCommand>(opts).Execute(opts),
+			IdentityProviderServicesOptions opts => Resolve<IdentityProviderServicesCommand>(opts).Execute(opts),
 			CreateAppOptions opts => Resolve<CreateAppCommand>(opts).Execute(opts),
 			GetAppInfoOptions opts => Resolve<GetAppInfoCommand>(opts).Execute(opts),
 			CreateLookupOptions opts => Resolve<CreateLookupCommand>(opts).Execute(opts),
@@ -393,6 +410,7 @@ internal class Program {
 			PageUpdateOptions opts => Resolve<PageUpdateCommand>(opts).Execute(opts),
 			PageListOptions opts => Resolve<PageListCommand>(opts).Execute(opts),
 			QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
+			GenerateSourceCodeOptions opts => Resolve<GenerateSourceCodeCommand>(opts).Execute(opts),
 			var _ => 1
 		};
 	};

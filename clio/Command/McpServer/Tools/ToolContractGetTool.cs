@@ -206,6 +206,7 @@ internal static class ToolContractCatalog {
 	private const string EnvironmentNameFieldName = "environment-name";
 	private const string ErrorFieldName = "error";
 	private const string ExampleEnvironmentName = "local";
+	private const string ExampleLookupValueId = "00000000-0000-0000-0000-000000000001";
 	private const string ExamplePackageName = "UsrTaskApp";
 	private const string ExampleTaskStatusSchemaName = "UsrTaskStatus";
 	private const string FailureMessageDescription = "Human-readable failure message.";
@@ -260,7 +261,10 @@ internal static class ToolContractCatalog {
 	private const string PackageNameCamelFieldName = "packageName";
 	private const string EntitySchemaNameCamelFieldName = "entitySchemaName";
 	private const string PageSchemaNameCamelFieldName = "pageSchemaName";
+	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
+	private const string MakeReadOnlyActionTypeName = "make-read-only";
+	private const string MakeRequiredActionTypeName = "make-required";
 	private const string ValuesFieldName = "values";
 	private const string BindingNameDescription = "Binding name.";
 	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
@@ -1320,23 +1324,25 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildEntityBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, Set values actions from constants, and Apply-static-filter actions that narrow Lookup attributes by ESQ filter on the reference schema. For the friendly-filter wire shape, comparison tokens, and column-path rules, read MCP resource docs://mcp/guides/business-rule-filters before composing an apply-static-filter payload.",
+			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, Set values actions from constants, formulas, or attributes, and Apply-static-filter actions that narrow Lookup attributes by ESQ filter on the reference schema. For the friendly-filter wire shape, comparison tokens, and column-path rules, read MCP resource docs://mcp/guides/business-rule-filters before composing an apply-static-filter payload.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, EntitySchemaNameCamelFieldName, RuleFieldName],
 				[
 					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameCamelFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameCamelFieldName, StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, an optional top-level condition group, and one or more actions. Omit condition to make the rule always apply (useful for unconditional apply-static-filter). Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets. Apply-static-filter actions narrow a Lookup attribute by an ESQ filter on its reference schema.")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, an optional top-level condition group, and one or more actions. Omit condition to make the rule always apply (useful for unconditional apply-static-filter). Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets, Formula assignments with simple direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-static-filter actions narrow a Lookup attribute by an ESQ filter on its reference schema.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
 					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
 						Context: $"Supported values: {BusinessRuleConstants.SupportedActionTypesDescription}."),
 					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rule.actions[*].items[*]",
-						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }. Attribute value sources are not supported in this scope."),
+						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }, { type: Formula, expression }, or { type: AttributeValue, path }. Formula expression must be a string using a simple direct-field arithmetic expression, for example Field1 + Field2. AttributeValue source paths may be direct columns or forward reference paths like LookupColumn.SourceColumn; the final source attribute and target attribute must have the same data value type. Formula functions, comparison operators, and string literals are not supported in formula scope."),
 					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rule.actions[*].items[*].value.value",
 						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, and ISO 8601 time strings with timezone suffix for Time targets."),
+					new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rule.actions[*].items[*].value.expression",
+						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against an arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column."),
 					new ToolContractValidator("apply-static-filter-shape", "invalid-apply-static-filter", "rule.actions[*]",
 						Context: "When rule.actions[*].type is apply-static-filter, the action must provide targetAttribute (a Lookup column name on the entity) and filter (a friendly group with logicalOperation AND or OR, filters[] of leaves, optional backwardReferenceFilters[]). The action must NOT include items. Supported leaf comparisonType tokens: EQUAL, NOT_EQUAL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, IS_NULL, IS_NOT_NULL, START_WITH, NOT_START_WITH, CONTAIN, NOT_CONTAIN, END_WITH, NOT_END_WITH. The rootSchemaName is inferred from targetAttribute's reference schema; do not pass it. Schema-aware errors (unknown column path, datatype mismatch, missing lookup record, malformed backward reference) are returned by the server-side LlmEsqConverterService and surface as filter.server-rejected.")
 				]),
@@ -1348,22 +1354,22 @@ internal static class ToolContractCatalog {
 			[
 				BusinessRuleExample("Create a required-field rule when owner equals a lookup constant",
 					"UsrTask", "Require status for a specific owner", "Owner", "equal",
-					"make-required", ["Status"], "00000000-0000-0000-0000-000000000001"),
+					MakeRequiredActionTypeName, ["Status"], ExampleLookupValueId),
 				BusinessRuleExample("Create a readonly rule when a text field is filled in",
 					"UsrTask", "Lock planned date when name is filled", "Name", "is-filled-in",
-					"make-read-only", ["PlannedDate"]),
+					MakeReadOnlyActionTypeName, ["PlannedDate"]),
 				BusinessRuleExample("Create a readonly rule when completed is true",
 					"UsrTask", "Lock name and description when completed", "Completed", "equal",
-					"make-read-only", ["Name", "Description"], true),
+					MakeReadOnlyActionTypeName, ["Name", "Description"], true),
 				BusinessRuleExample("Create a required-field rule when annual revenue reaches a numeric threshold",
 					"Account", "Require owner for high-revenue accounts", "AnnualRevenue", "greater-than-or-equal",
-					"make-required", ["Owner"], 1000000),
+					MakeRequiredActionTypeName, ["Owner"], 1000000),
 				BusinessRuleExample("Create a required-field rule when created date is before a cutoff",
 					"UsrTask", "Require owner before the 2025 cutoff", "CreatedOn", "less-than-or-equal",
-					"make-required", ["Owner"], "2025-01-01T00:00:00Z"),
+					MakeRequiredActionTypeName, ["Owner"], "2025-01-01T00:00:00Z"),
 				BusinessRuleExample("Create a readonly rule when reminder time is after a timezone-aware cutoff",
 					"UsrTask", "Lock reminder note after local noon", "ReminderTime", "greater-than",
-					"make-read-only", ["ReminderNote"], "12:00:00+02:00"),
+					MakeReadOnlyActionTypeName, ["ReminderNote"], "12:00:00+02:00"),
 				BusinessRuleExample("Create a Set values rule with text number boolean Date DateTime and Time constants",
 					"UsrTask", "Populate defaults when name is filled", "Name", "is-filled-in",
 					"set-values", [
@@ -1373,6 +1379,16 @@ internal static class ToolContractCatalog {
 						BusinessRuleSetValueItem("UsrStartDate", "2025-01-01"),
 						BusinessRuleSetValueItem("UsrPlannedOn", "2025-01-01T00:00:00Z"),
 						BusinessRuleSetValueItem("UsrReminderTime", "12:00:00+02:00")
+					]),
+				BusinessRuleExample("Create a Set values rule with a formula that sums two number fields",
+					"UsrTask", "Calculate total effort when name is filled", "Name", "is-filled-in",
+					"set-values", [
+						BusinessRuleFormulaSetValueItem("UsrTotalEffort", "UsrEstimatedEffort + UsrExtraEffort")
+					]),
+				BusinessRuleExample("Create a Set values rule from a forward reference attribute",
+					"UsrTask", "Copy creator age when name changes", "Name", "is-filled-in",
+					"set-values", [
+						BusinessRuleAttributeSetValueItem("UsrCreatorAge", "CreatedBy.Age")
 					]),
 				Example("Apply a static filter to narrow a lookup to active records only",
 					new Dictionary<string, object?> {
@@ -1472,14 +1488,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates a page-level Freedom UI business rule that shows or hides named page elements using datasource-bound page attributes and constants.",
+			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements using datasource-bound page attributes and constants.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, PageSchemaNameCamelFieldName, RuleFieldName],
 				[
 					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameCamelFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
 					Field(PageSchemaNameCamelFieldName, StringType, "Target Freedom UI page schema name."),
-					Field(RuleFieldName, ObjectType, "Structured page business-rule definition with caption, one top-level condition group, and one or more show/hide actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
+					Field(RuleFieldName, ObjectType, "Structured page business-rule definition with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -1498,6 +1514,41 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				PageBusinessRuleExample(
+					"Make priority editable when page status is filled",
+					"Case_FormPage",
+					"Make priority editable when status is filled",
+					"PDS_Status",
+					"is-filled-in",
+					"make-editable",
+					["PriorityInput"]),
+				PageBusinessRuleExample(
+					"Make amount read-only when amount exceeds threshold",
+					ExampleOrderPageSchemaName,
+					"Make amount read-only over threshold",
+					"PDS_UsrAmount",
+					"greater-than",
+					MakeReadOnlyActionTypeName,
+					["AmountInput"],
+					100000),
+				PageBusinessRuleExample(
+					"Make close date required when stage is closed",
+					ExampleOrderPageSchemaName,
+					"Require close date for closed stage",
+					"PDS_UsrStage",
+					"equal",
+					MakeRequiredActionTypeName,
+					["CloseDateInput"],
+					"Closed"),
+				PageBusinessRuleExample(
+					"Make comment optional when page flag is false",
+					ExampleOrderPageSchemaName,
+					"Make comment optional when flag is false",
+					"PDS_UsrFlag",
+					"equal",
+					"make-optional",
+					["CommentInput"],
+					false),
+				PageBusinessRuleExample(
 					"Hide Escalate when priority matches a lookup constant",
 					"Case_FormPage",
 					"Hide Escalate when priority matches",
@@ -1505,10 +1556,10 @@ internal static class ToolContractCatalog {
 					"equal",
 					"hide-element",
 					["EscalateButton"],
-					"00000000-0000-0000-0000-000000000001"),
+					ExampleLookupValueId),
 				PageBusinessRuleExample(
 					"Show a warning label when amount exceeds threshold",
-					"UsrOrder_FormPage",
+					ExampleOrderPageSchemaName,
 					"Show warning for high amount",
 					"PDS_UsrAmount",
 					"greater-than",
@@ -1566,39 +1617,9 @@ internal static class ToolContractCatalog {
 		string comparisonType,
 		string actionType,
 		object[] actionItems,
-		object? constantValue = null) {
-		Dictionary<string, object?> condition = new() {
-			["leftExpression"] = new Dictionary<string, object?> {
-				["type"] = BusinessRuleConstants.AttributeValueExpressionType,
-				["path"] = leftPath
-			},
-			["comparisonType"] = comparisonType
-		};
-		if (constantValue is not null) {
-			condition["rightExpression"] = new Dictionary<string, object?> {
-				["type"] = BusinessRuleConstants.ConstExpressionType,
-				["value"] = constantValue
-			};
-		}
-		return Example(summary, new Dictionary<string, object?> {
-			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
-			[PackageNameCamelFieldName] = ExamplePackageName,
-			[EntitySchemaNameCamelFieldName] = entitySchemaName,
-			[RuleFieldName] = new Dictionary<string, object?> {
-				["caption"] = caption,
-				["condition"] = new Dictionary<string, object?> {
-					["logicalOperation"] = "AND",
-					["conditions"] = new object[] { condition }
-				},
-				["actions"] = new object[] {
-					new Dictionary<string, object?> {
-						["type"] = actionType,
-						["items"] = actionItems
-					}
-				}
-			}
-		});
-	}
+		object? constantValue = null) =>
+		BusinessRuleExample(summary, EntitySchemaNameCamelFieldName, entitySchemaName, caption, leftPath,
+			comparisonType, actionType, actionItems, constantValue);
 
 	private static Dictionary<string, object?> BusinessRuleSetValueItem(string path, object value) {
 		return new Dictionary<string, object?> {
@@ -1613,6 +1634,32 @@ internal static class ToolContractCatalog {
 		};
 	}
 
+	private static Dictionary<string, object?> BusinessRuleFormulaSetValueItem(string path, string formula) {
+		return new Dictionary<string, object?> {
+			["expression"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = path
+			},
+			["value"] = new Dictionary<string, object?> {
+				["type"] = "Formula",
+				["expression"] = formula
+			}
+		};
+	}
+
+	private static Dictionary<string, object?> BusinessRuleAttributeSetValueItem(string path, string sourcePath) {
+		return new Dictionary<string, object?> {
+			["expression"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = path
+			},
+			["value"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = sourcePath
+			}
+		};
+	}
+
 	private static ToolContractExample PageBusinessRuleExample(
 		string summary,
 		string pageSchemaName,
@@ -1621,27 +1668,44 @@ internal static class ToolContractCatalog {
 		string comparisonType,
 		string actionType,
 		object[] actionItems,
-		object constantValue) {
+		object? constantValue = null) =>
+		BusinessRuleExample(summary, PageSchemaNameCamelFieldName, pageSchemaName, caption, leftPath,
+			comparisonType, actionType, actionItems, constantValue);
+
+	private static ToolContractExample BusinessRuleExample(
+		string summary,
+		string schemaFieldName,
+		string schemaName,
+		string caption,
+		string leftPath,
+		string comparisonType,
+		string actionType,
+		object[] actionItems,
+		object? constantValue = null) {
+		Dictionary<string, object?> condition = new() {
+			["leftExpression"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = leftPath
+			},
+			["comparisonType"] = comparisonType
+		};
+		if (constantValue is not null) {
+			condition["rightExpression"] = new Dictionary<string, object?> {
+				["type"] = "Const",
+				["value"] = constantValue
+			};
+		}
+
 		return Example(summary, new Dictionary<string, object?> {
 			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
 			[PackageNameCamelFieldName] = ExamplePackageName,
-			[PageSchemaNameCamelFieldName] = pageSchemaName,
+			[schemaFieldName] = schemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = caption,
 				["condition"] = new Dictionary<string, object?> {
 					["logicalOperation"] = "AND",
 					["conditions"] = new object[] {
-						new Dictionary<string, object?> {
-							["leftExpression"] = new Dictionary<string, object?> {
-								["type"] = BusinessRuleConstants.AttributeValueExpressionType,
-								["path"] = leftPath
-							},
-							["comparisonType"] = comparisonType,
-							["rightExpression"] = new Dictionary<string, object?> {
-								["type"] = BusinessRuleConstants.ConstExpressionType,
-								["value"] = constantValue
-							}
-						}
+						condition
 					}
 				},
 				["actions"] = new object[] {
@@ -1658,7 +1722,7 @@ internal static class ToolContractCatalog {
 		return Example("Hide a warning when two datasource-bound page attributes match", new Dictionary<string, object?> {
 			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
 			[PackageNameCamelFieldName] = ExamplePackageName,
-			[PageSchemaNameCamelFieldName] = "UsrOrder_FormPage",
+			[PageSchemaNameCamelFieldName] = ExampleOrderPageSchemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = "Hide warning when planned and actual dates match",
 				["condition"] = new Dictionary<string, object?> {
@@ -2162,7 +2226,7 @@ internal static class ToolContractCatalog {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName,
 					[BindingNameFieldName] = ExampleTaskStatusSchemaName,
-					[KeyValueFieldName] = "00000000-0000-0000-0000-000000000001"
+					[KeyValueFieldName] = ExampleLookupValueId
 				})
 			],
 			Flow([RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName], "Standalone DB-first binding maintenance."),
@@ -2310,7 +2374,7 @@ internal static class ToolContractCatalog {
 					[PackageNameFieldName] = ExamplePackageName,
 					[BindingNameFieldName] = ExampleTaskStatusSchemaName,
 					[WorkspacePathFieldName] = ExampleWorkspacePath,
-					[KeyValueFieldName] = "00000000-0000-0000-0000-000000000001"
+					[KeyValueFieldName] = ExampleLookupValueId
 				})
 			],
 			Flow([RemoveDataBindingRowTool.RemoveDataBindingRowToolName], "Standalone local binding maintenance."),

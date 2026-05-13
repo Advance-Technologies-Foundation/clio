@@ -209,6 +209,14 @@ public class BindingsModule {
 		services.AddTransient<DeleteAppSectionCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
+		services.AddTransient<IdentityProviderListCommand>();
+		services.AddTransient<IdentityProviderUpsertCommand>();
+		services.AddTransient<IdentityProviderSetSecretCommand>();
+		services.AddTransient<IdentityProviderDeleteCommand>();
+		services.AddTransient<IdentityProviderSetDefaultCommand>();
+		services.AddTransient<IdentityProviderBindCommand>();
+		services.AddTransient<IdentityProviderUnbindCommand>();
+		services.AddTransient<IdentityProviderServicesCommand>();
 		services.AddTransient<CreateAppCommand>();
 		services.AddTransient<GetAppInfoCommand>();
 		services.AddTransient<CreateLookupCommand>();
@@ -484,6 +492,7 @@ public class BindingsModule {
 		services.AddTransient<ClioGateway>();
 		services.AddTransient<CompileConfigurationCommand>();
 		services.AddTransient<CompileWorkspaceCommand>();
+		services.AddTransient<GenerateSourceCodeCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();
@@ -581,6 +590,7 @@ public class BindingsModule {
 		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
 		services.AddTransient<Clio.Command.BusinessRules.Filters.IEsqFilterConverterClient, Clio.Command.BusinessRules.Filters.EsqFilterConverterClient>();
 		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();
+		services.AddTransient<IBusinessRuleFormulaValidationService, BusinessRuleFormulaValidationService>();
 		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
 		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
 		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();

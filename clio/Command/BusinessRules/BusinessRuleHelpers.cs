@@ -37,6 +37,24 @@ internal static class BusinessRuleHelpers {
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) =>
 		new LazyBusinessRuleAttributeDescriptorMap(columnMap);
 
+	internal static BusinessRuleAttributeDescriptor BuildAttributeDescriptor(
+		string path,
+		EntitySchemaColumnDto column) =>
+		new(
+			path,
+			MapDataValueTypeName(column.DataValueType),
+			column.ReferenceSchema?.Name);
+
+	internal static bool IsForwardReferencePath(string path) =>
+		path.Contains('.', StringComparison.Ordinal);
+
+	internal static string GetRootAttributePath(string path) {
+		int separatorIndex = path.IndexOf('.');
+		return separatorIndex > 0
+			? path[..separatorIndex]
+			: path;
+	}
+
 	internal static string MapDataValueTypeName(int? dataValueType) {
 		if (!dataValueType.HasValue) {
 			throw new InvalidOperationException("Entity schema column dataValueType is required.");
@@ -213,7 +231,7 @@ internal static class BusinessRuleHelpers {
 		public IEnumerable<string> Keys => columns.Keys;
 
 		public IEnumerable<BusinessRuleAttributeDescriptor> Values =>
-			columns.Select(pair => BuildDescriptor(pair.Key, pair.Value));
+			columns.Select(pair => BuildAttributeDescriptor(pair.Key, pair.Value));
 
 		public int Count => columns.Count;
 
@@ -230,7 +248,7 @@ internal static class BusinessRuleHelpers {
 				return false;
 			}
 
-			value = BuildDescriptor(key, column);
+			value = BuildAttributeDescriptor(key, column);
 			return true;
 		}
 
@@ -238,18 +256,10 @@ internal static class BusinessRuleHelpers {
 			foreach (KeyValuePair<string, EntitySchemaColumnDto> pair in columns) {
 				yield return new KeyValuePair<string, BusinessRuleAttributeDescriptor>(
 					pair.Key,
-					BuildDescriptor(pair.Key, pair.Value));
+					BuildAttributeDescriptor(pair.Key, pair.Value));
 			}
 		}
 
 		IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-
-		private static BusinessRuleAttributeDescriptor BuildDescriptor(
-			string path,
-			EntitySchemaColumnDto column) =>
-			new(
-				path,
-				MapDataValueTypeName(column.DataValueType),
-				column.ReferenceSchema?.Name);
 	}
 }

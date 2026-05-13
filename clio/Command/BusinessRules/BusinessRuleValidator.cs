@@ -90,6 +90,9 @@ internal static class BusinessRuleValidator {
 		}
 
 		string leftPath = condition.LeftExpression.Path;
+		ValidateDirectAttributePath(
+			leftPath,
+			"rule.condition.conditions[*].leftExpression.path");
 		BusinessRuleAttributeDescriptor leftDescriptor = ResolveAttribute(
 			attributeMap,
 			leftPath,
@@ -136,6 +139,7 @@ internal static class BusinessRuleValidator {
 				throw new ArgumentException("rule.actions[*].items cannot contain empty attribute names.");
 			}
 
+			ValidateDirectAttributePath(target, "rule.actions[*].items");
 			ResolveAttribute(attributeMap, target, "rule.actions[*].items");
 		}
 	}
@@ -217,6 +221,9 @@ internal static class BusinessRuleValidator {
 			throw new ArgumentException("rule.actions[*].items[*].expression.path is required.");
 		}
 
+		ValidateDirectAttributePath(
+			item.Expression.Path,
+			"rule.actions[*].items[*].expression.path");
 		BusinessRuleAttributeDescriptor targetDescriptor = ResolveAttribute(
 			attributeMap,
 			item.Expression.Path,
@@ -227,15 +234,60 @@ internal static class BusinessRuleValidator {
 			throw new ArgumentException("rule.actions[*].items[*].value is required.");
 		}
 
-		if (!string.Equals(item.Value.Type, ConstExpressionType, StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException("rule.actions[*].items[*].value.type must be 'Const'.");
+		if (string.Equals(item.Value.Type, ConstExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			if (item.Value.Value is null) {
+				throw new ArgumentException("rule.actions[*].items[*].value.value is required when value.type is 'Const'.");
+			}
+
+			ValidateSetValueConstant(item.Value.Value.Value, targetDataValueTypeName);
+			return;
 		}
 
-		if (item.Value.Value is null) {
-			throw new ArgumentException("rule.actions[*].items[*].value.value is required when value.type is 'Const'.");
+		if (string.Equals(item.Value.Type, FormulaExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			ValidateSetValueFormula(item.Value, attributeMap, item.Expression.Path);
+			return;
 		}
 
-		ValidateSetValueConstant(item.Value.Value.Value, targetDataValueTypeName);
+		if (string.Equals(item.Value.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
+			ValidateSetValueAttributeSource(
+				item.Value,
+				attributeMap,
+				item.Expression.Path,
+				targetDataValueTypeName);
+			return;
+		}
+
+		throw new ArgumentException("rule.actions[*].items[*].value.type must be 'Const', 'Formula', or 'AttributeValue'.");
+	}
+
+	private static void ValidateSetValueFormula(
+		BusinessRuleExpression value,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		string targetPath) {
+		string formula = BusinessRuleFormulaBuilder.GetRequiredFormulaText(value);
+		BusinessRuleFormulaBuilder.ValidateFormulaScope(formula, attributeMap, targetPath);
+	}
+
+	private static void ValidateSetValueAttributeSource(
+		BusinessRuleExpression value,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		string targetPath,
+		string targetDataValueTypeName) {
+		if (string.IsNullOrWhiteSpace(value.Path)) {
+			throw new ArgumentException(
+				"rule.actions[*].items[*].value.path is required when value.type is 'AttributeValue'.");
+		}
+
+		string sourcePath = value.Path;
+		BusinessRuleAttributeDescriptor sourceDescriptor = ResolveAttribute(
+			attributeMap,
+			sourcePath,
+			"rule.actions[*].items[*].value.path");
+		string sourceDataValueTypeName = sourceDescriptor.DataValueTypeName;
+		if (!string.Equals(targetDataValueTypeName, sourceDataValueTypeName, StringComparison.OrdinalIgnoreCase)) {
+			throw new ArgumentException(
+				$"rule.actions[*].items[*] assigns source attribute '{sourcePath}' ({sourceDataValueTypeName}) to target attribute '{targetPath}' ({targetDataValueTypeName}). Both attributes must have the same data value type.");
+		}
 	}
 
 	private static void ValidateSetValueConstant(JsonElement value, string targetDataValueTypeName) {
@@ -379,6 +431,9 @@ internal static class BusinessRuleValidator {
 		}
 
 		string rightPath = rightExpression.Path;
+		ValidateDirectAttributePath(
+			rightPath,
+			"rule.condition.conditions[*].rightExpression.path");
 		BusinessRuleAttributeDescriptor rightDescriptor = ResolveAttribute(
 			attributeMap,
 			rightPath,
@@ -459,5 +514,12 @@ internal static class BusinessRuleValidator {
 		}
 
 		return descriptor;
+	}
+
+	private static void ValidateDirectAttributePath(string path, string fieldName) {
+		if (IsForwardReferencePath(path)) {
+			throw new ArgumentException(
+				$"{fieldName} must reference a direct entity attribute. Forward reference paths are supported only in rule.actions[*].items[*].value.path.");
+		}
 	}
 }

@@ -32,7 +32,8 @@ internal sealed class EntityBusinessRuleService(
 	IBusinessRulePackageResolver packageResolver,
 	IEntityBusinessRuleAttributeProvider attributeProvider,
 	IBusinessRuleAddonService businessRuleAddonService,
-	IEsqFilterConverterClient esqConverterClient)
+	IEsqFilterConverterClient esqConverterClient,
+	IBusinessRuleFormulaValidationService formulaValidationService)
 	: IEntityBusinessRuleService {
 
 	public BusinessRuleCreateResult Create(EntityBusinessRuleCreateRequest request) {
@@ -44,15 +45,27 @@ internal sealed class EntityBusinessRuleService(
 			request.EntitySchemaName,
 			packageUId);
 		BusinessRuleValidator.Validate(request.Rule, attributeContext.Attributes);
+		ValidateFormulas(attributeContext.EntitySchema.Name, attributeContext.Attributes, request.Rule);
 
 		BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToMetadata(
 			attributeContext.Attributes,
 			request.Rule,
+			attributeContext.EntitySchema.Name,
 			esqConverterClient);
 		return businessRuleAddonService.AppendRule(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			request.Rule,
 			createdRule);
+	}
+
+	private void ValidateFormulas(
+		string entitySchemaName,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		BusinessRule rule) {
+		foreach (BusinessRuleFormulaValidationContext context
+			in BusinessRuleFormulaBuilder.BuildValidationContexts(entitySchemaName, attributeMap, rule)) {
+			formulaValidationService.Validate(context);
+		}
 	}
 
 	private static void ValidateCreateRequest(EntityBusinessRuleCreateRequest request) {

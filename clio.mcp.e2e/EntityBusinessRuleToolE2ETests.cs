@@ -49,7 +49,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		anyOf.GetArrayLength().Should().Be(5,
 			because: "the real MCP tools/list schema should describe each supported business-rule action subtype");
 		anyOf.EnumerateArray().Select(GetActionType).Should().NotContain(["hide-element", "show-element"],
-			because: "page-only show/hide actions should not appear in the entity business-rule runtime schema");
+			because: "page-only actions should not appear in the entity business-rule runtime schema");
 		anyOf.EnumerateArray().Should().Contain(branch =>
 				branch.GetProperty("properties").GetProperty("type").GetProperty("const").GetString() == "make-required"
 				&& branch.GetProperty("properties").GetProperty("items").GetProperty("items").GetProperty("type").GetString() == "string",
@@ -68,7 +68,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[Description("Binds a Set values business-rule payload through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
 	[AllureName("Entity business-rule MCP tool binds Set values payloads")]
-	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with a Set values constant payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
+	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with Set values constant formula and AttributeValue payloads and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_SetValues_Payload_And_Report_Invalid_Environment() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
@@ -227,7 +227,9 @@ public sealed class EntityBusinessRuleToolE2ETests {
 						CreateSetValuesItem("UsrTextResult", "Ready"),
 						CreateSetValuesItem("UsrScore", 42),
 						CreateSetValuesItem("UsrCompleted", true),
-						CreateSetValuesItem("UsrPlannedOn", "2025-01-01T00:00:00Z")
+						CreateSetValuesItem("UsrPlannedOn", "2025-01-01T00:00:00Z"),
+						CreateFormulaSetValuesItem("UsrTotalScore", "UsrScore + UsrBonusScore"),
+						CreateAttributeSetValuesItem("UsrCreatorAge", "CreatedBy.Age")
 					}
 				}
 			}
@@ -240,6 +242,21 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				["type"] = "Const",
 				["value"] = value
 			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateFormulaSetValuesItem(string path, string formula) =>
+		new Dictionary<string, object?> {
+			["expression"] = CreateAttributeExpression(path),
+			["value"] = new Dictionary<string, object?> {
+				["type"] = "Formula",
+				["expression"] = formula
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateAttributeSetValuesItem(string path, string sourcePath) =>
+		new Dictionary<string, object?> {
+			["expression"] = CreateAttributeExpression(path),
+			["value"] = CreateAttributeExpression(sourcePath)
 		};
 
 	private static IReadOnlyDictionary<string, object?> CreateAttributeExpression(string path) =>

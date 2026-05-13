@@ -96,15 +96,16 @@ public sealed record BusinessRuleExpression
     {
     }
 
-    public BusinessRuleExpression(string type, string? path = null, JsonElement? value = null)
+    public BusinessRuleExpression(string type, string? path = null, JsonElement? value = null, string? expression = null)
     {
         Type = type;
         Path = path;
         Value = value;
+        Expression = expression;
     }
 
     [JsonPropertyName("type")]
-    [Description("Expression type. Supported values: AttributeValue, Const.")]
+    [Description("Expression type. Supported values: AttributeValue, Const, Formula.")]
     [Required]
     public string Type { get; init; } = null!;
 
@@ -116,6 +117,13 @@ public sealed record BusinessRuleExpression
     [Description(
         "Constant value when type is Const. Boolean constants must use JSON booleans true/false without quotes. Numeric constants must use JSON numbers like 123 or 12.5 without quotes. For lookup constants pass a GUID string. Date constants use yyyy-MM-dd. DateTime constants use ISO 8601 with a timezone suffix ('Z' or '+/-HH:mm'). Time constants use ISO 8601 time with a timezone suffix ('Z' or '+/-HH:mm').")]
     public JsonElement? Value { get; init; }
+
+    /// <summary>
+    /// Formula text when <see cref="Type"/> is <c>Formula</c>.
+    /// </summary>
+    [JsonPropertyName("expression")]
+    [Description("Simple direct-field expression when type is Formula, for example 'Field1 + Field2'. Formula functions are not supported in this scope.")]
+    public string? Expression { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
@@ -157,7 +165,7 @@ public abstract record FieldSelectionBusinessRuleAction : BusinessRuleAction
 
     [JsonPropertyName("items")]
     [Description(
-        "Action items. Field-state actions use attribute names. Page show/hide actions use page element names.")]
+        "Action items. Entity actions use attribute names. Page actions use page element names.")]
     [Required]
     public List<string> Items { get; init; } = [];
 
@@ -356,7 +364,7 @@ public sealed record BusinessRuleSetValueItem
 
 
     [JsonPropertyName("value")]
-    [Description("Constant value expression. In this delivery only Const values are supported.")]
+    [Description("Source value expression. Supported values are Const, Formula, and AttributeValue. AttributeValue may use a direct source column path or a forward reference path such as LookupColumn.SourceColumn.")]
     [Required]
     public BusinessRuleExpression Value { get; init; } = null!;
 }

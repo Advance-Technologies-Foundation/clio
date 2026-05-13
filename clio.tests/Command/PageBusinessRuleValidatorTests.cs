@@ -45,19 +45,43 @@ public sealed class PageBusinessRuleValidatorTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects entity field-state actions for page business rules.")]
+	[Description("Accepts supported page field-state actions when every target exists in the page viewConfig.")]
+	[TestCase("make-editable")]
+	[TestCase("make-read-only")]
+	[TestCase("make-required")]
+	[TestCase("make-optional")]
+	public void Validate_Should_Accept_Page_Field_State_Action_Type(string actionType) {
+		// Arrange
+		BusinessRule rule = CreatePageRule(
+			action: CreateAction(actionType, ["NameInput"]));
+
+		// Act
+		Action act = () => PageBusinessRuleValidator.Validate(rule, CreateAttributeMap(), CreateElementNames());
+
+		// Assert
+		act.Should().NotThrow(
+			because: "page business rules should allow editable read-only required and optional actions for named page elements");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects object-only or otherwise unsupported actions for page business rules.")]
 	public void Validate_Should_Reject_Unsupported_Page_Action_Type() {
 		// Arrange
 		BusinessRule rule = CreatePageRule(
-			action: new MakeReadOnlyBusinessRuleAction(["NameInput"]));
+			action: new SetValuesBusinessRuleAction([
+				new BusinessRuleSetValueItem(
+					new BusinessRuleExpression("AttributeValue", "NameInput"),
+					new BusinessRuleExpression("Const", value: default))
+			]));
 
 		// Act
 		Action act = () => PageBusinessRuleValidator.Validate(rule, CreateAttributeMap(), CreateElementNames());
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("Unsupported rule.actions[*].type 'make-read-only'. Supported values: hide-element, show-element. Available page elements: NameInput, StatusInput.",
-				because: "page business rules support only show/hide element actions in this scope");
+			.WithMessage("Unsupported rule.actions[*].type 'set-values'. Supported values: hide-element, show-element, make-editable, make-read-only, make-required, make-optional. Available page elements: NameInput, StatusInput.",
+				because: "page business rules should reject unsupported action types with the full page action allow-list");
 	}
 
 	[Test]
@@ -159,5 +183,14 @@ public sealed class PageBusinessRuleValidatorTests {
 		new HashSet<string>(StringComparer.Ordinal) {
 			"NameInput",
 			"StatusInput"
+		};
+
+	private static BusinessRuleAction CreateAction(string actionType, List<string> items) =>
+		actionType switch {
+			"make-editable" => new MakeEditableBusinessRuleAction(items),
+			"make-read-only" => new MakeReadOnlyBusinessRuleAction(items),
+			"make-required" => new MakeRequiredBusinessRuleAction(items),
+			"make-optional" => new MakeOptionalBusinessRuleAction(items),
+			_ => throw new ArgumentOutOfRangeException(nameof(actionType), actionType, null)
 		};
 }

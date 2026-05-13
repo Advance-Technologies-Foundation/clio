@@ -313,6 +313,126 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Deserializes set-values actions with Formula payloads and preserves the agent-friendly formula text.")]
+	public void BusinessRuleCreate_Should_Deserialize_SetValues_Action_With_Formula_Item() {
+		// Arrange
+		string payload = """
+		{
+		  "environment-name": "dev",
+		  "package-name": "UsrPkg",
+		  "entity-schema-name": "UsrOrder",
+		  "rule": {
+		    "caption": "Calculate totals",
+		    "condition": {
+		      "logicalOperation": "AND",
+		      "conditions": [
+		        {
+		          "leftExpression": {
+		            "type": "AttributeValue",
+		            "path": "Name"
+		          },
+		          "comparisonType": "is-filled-in"
+		        }
+		      ]
+		    },
+		    "actions": [
+		      {
+		        "type": "set-values",
+		        "items": [
+		          {
+		            "expression": {
+		              "type": "AttributeValue",
+		              "path": "UsrTotal"
+		            },
+		            "value": {
+		              "type": "Formula",
+		              "expression": "UsrAmount + UsrTax"
+		            }
+		          }
+		        ]
+		      }
+		    ]
+		  }
+		}
+		""";
+
+		// Act
+		BusinessRuleToolPayload? payloadArgs = JsonSerializer.Deserialize<BusinessRuleToolPayload>(payload);
+
+		// Assert
+		payloadArgs.Should().NotBeNull(
+			because: "set-values formula business-rule payloads should deserialize from the MCP JSON shape");
+		BusinessRuleSetValueItem item = payloadArgs!.Rule.ToBusinessRule().Actions.Single().SetValueItems.Single();
+		item.Expression.Path.Should().Be("UsrTotal",
+			because: "the target expression path should be preserved");
+		item.Value.Type.Should().Be("Formula",
+			because: "the formula discriminator should be preserved for downstream expression-schema translation");
+		item.Value.Expression.Should().Be("UsrAmount + UsrTax",
+			because: "agents should send simple formula text, not prebuilt BRF2 metadata");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Deserializes set-values actions with AttributeValue source payloads and preserves direct and forward source paths.")]
+	public void BusinessRuleCreate_Should_Deserialize_SetValues_Action_With_Attribute_Value_Item() {
+		// Arrange
+		string payload = """
+		{
+		  "environment-name": "dev",
+		  "package-name": "UsrPkg",
+		  "entity-schema-name": "UsrOrder",
+		  "rule": {
+		    "caption": "Copy values",
+		    "condition": {
+		      "logicalOperation": "AND",
+		      "conditions": [
+		        {
+		          "leftExpression": {
+		            "type": "AttributeValue",
+		            "path": "Name"
+		          },
+		          "comparisonType": "is-filled-in"
+		        }
+		      ]
+		    },
+		    "actions": [
+		      {
+		        "type": "set-values",
+		        "items": [
+		          {
+		            "expression": {
+		              "type": "AttributeValue",
+		              "path": "UsrCreatorAge"
+		            },
+		            "value": {
+		              "type": "AttributeValue",
+		              "path": "CreatedBy.Age"
+		            }
+		          }
+		        ]
+		      }
+		    ]
+		  }
+		}
+		""";
+
+		// Act
+		BusinessRuleToolPayload? payloadArgs = JsonSerializer.Deserialize<BusinessRuleToolPayload>(payload);
+
+		// Assert
+		payloadArgs.Should().NotBeNull(
+			because: "set-values attribute-source business-rule payloads should deserialize from the MCP JSON shape");
+		BusinessRuleSetValueItem item = payloadArgs!.Rule.ToBusinessRule().Actions.Single().SetValueItems.Single();
+		item.Expression.Path.Should().Be("UsrCreatorAge",
+			because: "the target expression path should be preserved");
+		item.Value.Type.Should().Be("AttributeValue",
+			because: "the attribute-source discriminator should be preserved for downstream metadata conversion");
+		item.Value.Path.Should().Be("CreatedBy.Age",
+			because: "forward reference source paths should survive MCP payload binding");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Deserializes unary business-rule payloads that omit rightExpression for filled-state comparisons.")]
 	public void BusinessRuleCreate_Should_Deserialize_Unary_Payload_Without_Right_Expression() {
 		// Arrange
@@ -493,6 +613,48 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps a page field-state action payload into the page business-rule service request without breaking page element items.")]
+	public void PageBusinessRuleCreate_Should_Map_Field_State_Action_Arguments() {
+		// Arrange
+		IPageBusinessRuleService service = Substitute.For<IPageBusinessRuleService>();
+		CreatePageBusinessRuleCommand command = new(service, ConsoleLogger.Instance);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreatePageBusinessRuleCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		service.Create(Arg.Any<PageBusinessRuleCreateRequest>())
+			.Returns(new BusinessRuleCreateResult("BusinessRule_7654321"));
+		CreatePageBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		PageBusinessRuleMcpContract rule = new(
+			"Make escalation read-only when priority is high",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "PDS_Priority", null),
+						"equal",
+						new BusinessRuleExpression("Const", null,
+							JsonSerializer.Deserialize<JsonElement>("\"High\"")))
+				]),
+			[
+				new PageMakeReadOnlyBusinessRuleActionMcpContract(["EscalateButton"])
+			]);
+
+		// Act
+		CommandExecutionResult result = tool.BusinessRuleCreate("dev", "UsrPkg", "UsrCase_FormPage", rule);
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a successful page business-rule service call should return the standard success exit code");
+		service.Received(1).Create(
+			Arg.Is<PageBusinessRuleCreateRequest>(request =>
+				request.PackageName == "UsrPkg"
+				&& request.PageSchemaName == "UsrCase_FormPage"
+				&& request.Rule.Actions.Count == 1
+				&& request.Rule.Actions[0].ActionType == "make-read-only"
+				&& request.Rule.Actions[0].FieldSelectionItems.Single() == "EscalateButton"));
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Resolves the page business-rule command from the payload environment so nested dependencies use the requested MCP target.")]
 	public void PageBusinessRuleCreate_Should_Resolve_Command_From_Requested_Environment() {
 		// Arrange
@@ -554,7 +716,7 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Deserializes create-page-business-rule show and hide action payloads without accepting entity action branches.")]
+	[Description("Deserializes create-page-business-rule page action payloads without accepting object-only action branches.")]
 	public void PageBusinessRuleCreate_Should_Deserialize_Page_Action_Payload() {
 		// Arrange
 		string payload = """
@@ -584,6 +746,22 @@ public sealed class BusinessRuleToolTests {
 		      {
 		        "type": "hide-element",
 		        "items": [ "EscalateButton" ]
+		      },
+		      {
+		        "type": "make-editable",
+		        "items": [ "PriorityInput" ]
+		      },
+		      {
+		        "type": "make-read-only",
+		        "items": [ "AmountInput" ]
+		      },
+		      {
+		        "type": "make-required",
+		        "items": [ "CloseDateInput" ]
+		      },
+		      {
+		        "type": "make-optional",
+		        "items": [ "CommentInput" ]
 		      }
 		    ]
 		  }
@@ -597,9 +775,21 @@ public sealed class BusinessRuleToolTests {
 		payloadArgs.Should().NotBeNull(
 			because: "page business-rule payloads should deserialize from the MCP JSON shape");
 		BusinessRule rule = payloadArgs!.Rule.ToBusinessRule();
-		rule.Actions.Single().ActionType.Should().Be("hide-element",
-			because: "the page action discriminator should be preserved");
-		rule.Actions.Single().FieldSelectionItems.Should().Equal(["EscalateButton"],
+		rule.Actions.Select(action => action.ActionType).Should().Equal([
+				"hide-element",
+				"make-editable",
+				"make-read-only",
+				"make-required",
+				"make-optional"
+			],
+			because: "the page action discriminators should be preserved");
+		rule.Actions.SelectMany(action => action.FieldSelectionItems).Should().Equal([
+				"EscalateButton",
+				"PriorityInput",
+				"AmountInput",
+				"CloseDateInput",
+				"CommentInput"
+			],
 			because: "page element action items should deserialize as target element names");
 	}
 

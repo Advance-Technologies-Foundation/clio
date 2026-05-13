@@ -31,8 +31,8 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Documents page-schema-handlers as a known guidance name on the get-guidance argument contract.")]
-	public void GuidanceGet_Should_Document_Page_Schema_Handlers_In_Argument_Descriptions() {
+	[Description("Documents configuration web-service and page-schema guides as known guidance names on the get-guidance argument contract.")]
+	public void GuidanceGet_Should_Document_Known_Guides_In_Argument_Descriptions() {
 		// Arrange
 		ParameterInfo argsParameter = typeof(GuidanceGetTool)
 			.GetMethod(nameof(GuidanceGetTool.GetGuidance))!
@@ -51,8 +51,20 @@ public sealed class GuidanceGetToolTests {
 			.Single();
 
 		// Assert
+		parameterDescription.Description.Should().Contain("configuration-webservice",
+			because: "the top-level argument hint should mention the configuration web-service implementation guidance name");
+		parameterDescription.Description.Should().Contain("atf-repository-dev",
+			because: "the top-level argument hint should mention generated composable-app skill guidance names");
+		parameterDescription.Description.Should().Contain("feature-toggle-tests",
+			because: "the top-level argument hint should mention generated composable-app test guidance names");
 		parameterDescription.Description.Should().Contain("page-schema-handlers",
 			because: "the top-level argument hint should mention the dedicated handler guidance name");
+		propertyDescription.Description.Should().Contain("configuration-webservice",
+			because: "the serialized name field hint should mention the configuration web-service implementation guidance name");
+		propertyDescription.Description.Should().Contain("atf-repository-dev",
+			because: "the serialized name field hint should mention generated composable-app skill guidance names");
+		propertyDescription.Description.Should().Contain("feature-toggle-tests",
+			because: "the serialized name field hint should mention generated composable-app test guidance names");
 		propertyDescription.Description.Should().Contain("page-schema-handlers",
 			because: "the serialized name field hint should stay aligned with the known handler guidance name");
 	}
@@ -195,15 +207,103 @@ public sealed class GuidanceGetToolTests {
 		result.AvailableGuides.Should().Contain([
 				"agent-execution",
 				"app-modeling",
+				"atf-repository-dev",
+				"atf-repository-model-management",
+				"atf-repository-tests",
+				"composable-app-e2e-test-implementation",
+				"composable-app-repo-bootstrap",
+				"configuration-webservice",
+				"configuration-webservice-tests",
+				"configuration-entity-event-listener",
+				"configuration-entity-event-listener-tests",
+				"creatio-composable-app-development",
+				"creatio-freedom-iframe-section",
 				"data-bindings",
 				"existing-app-maintenance",
+				"feature-toggle",
+				"feature-toggle-tests",
 				"page-schema-converters",
 				"page-schema-handlers",
 				"page-schema-creatio-devkit-common",
 				"page-schema-validators",
+				"sys-setting",
+				"sys-setting-tests",
 				"support-mode"
 			],
 			because: "the failure response should help the caller recover with one of the registered guidance names");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical configuration web-service guidance article when the caller requests configuration-webservice.")]
+	public async Task GuidanceGet_Should_Return_Configuration_WebService_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("configuration-webservice"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "configuration-webservice is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/configuration-webservice",
+			because: "the guidance tool should preserve the canonical configuration web-service guide URI in the response");
+		result.Article.Text.Should().Contain("creatio-config-webservice",
+			because: "the guidance tool should return the canonical configuration web-service article text");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical configuration web-service test guidance article when the caller requests configuration-webservice-tests.")]
+	public async Task GuidanceGet_Should_Return_Configuration_WebService_Tests_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("configuration-webservice-tests"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "configuration-webservice-tests is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/configuration-webservice-tests",
+			because: "the guidance tool should preserve the canonical configuration web-service test guide URI in the response");
+		result.Article.Text.Should().Contain("configuration-webservice-tests",
+			because: "the guidance tool should return the canonical configuration web-service test article text");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns generated composable-app skill guidance articles by their skill names.")]
+	public async Task GuidanceGet_Should_Return_Generated_Composable_App_Skill_Articles() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse atfResult = await tool.GetGuidance(new GuidanceGetArgs("atf-repository-dev"));
+		GuidanceGetResponse sysSettingTestsResult = await tool.GetGuidance(new GuidanceGetArgs("sys-setting-tests"));
+
+		// Assert
+		atfResult.Success.Should().BeTrue(
+			because: "atf-repository-dev is a generated guidance name");
+		atfResult.Article.Should().NotBeNull(
+			because: "successful generated guidance lookups should return an article");
+		atfResult.Article!.Uri.Should().Be("docs://mcp/guides/atf-repository-dev",
+			because: "generated guidance lookup should preserve the stable guide URI");
+		atfResult.Article.Text.Should().Contain("ATF.Repository",
+			because: "the generated guidance article should preserve the source skill content");
+
+		sysSettingTestsResult.Success.Should().BeTrue(
+			because: "sys-setting-tests is a generated guidance name");
+		sysSettingTestsResult.Article.Should().NotBeNull(
+			because: "successful generated test guidance lookups should return an article");
+		sysSettingTestsResult.Article!.Uri.Should().Be("docs://mcp/guides/sys-setting-tests",
+			because: "generated test guidance lookup should preserve the stable guide URI");
+		sysSettingTestsResult.Article.Text.Should().Contain("SetupSysSettings",
+			because: "the generated test guidance article should preserve the source skill content");
 	}
 
 	[Test]

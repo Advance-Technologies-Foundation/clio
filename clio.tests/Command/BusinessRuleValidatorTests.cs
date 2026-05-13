@@ -975,8 +975,31 @@ public sealed class BusinessRuleValidatorTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects set-values actions that try to assign from another attribute.")]
-	public void Validate_Should_Reject_SetValues_Action_With_Attribute_Value_Source() {
+	[Description("Accepts set-values actions with Formula sources when the formula payload is a non-empty string.")]
+	public void Validate_Should_Accept_SetValues_Action_With_Formula_Source() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("Score", new BusinessRuleExpression("Formula", expression: "BaseScore + BonusScore"))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Score", 4),
+			CreateColumn("BaseScore", 4),
+			CreateColumn("BonusScore", 4));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "formula set-values structure should be validated before field resolution and expression-schema translation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts set-values actions that assign from another same-typed attribute.")]
+	public void Validate_Should_Accept_SetValues_Action_With_Attribute_Value_Source() {
 		// Arrange
 		BusinessRule rule = CreateRule(
 			actions: [
@@ -990,9 +1013,149 @@ public sealed class BusinessRuleValidatorTests {
 		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
 
 		// Assert
+		act.Should().NotThrow(
+			because: "Set values should support copying values from same-typed source attributes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects set-values AttributeValue sources that omit the source path.")]
+	public void Validate_Should_Reject_SetValues_Attribute_Source_With_Missing_Path() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("TextResult", new BusinessRuleExpression("AttributeValue"))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("TextResult", 1));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.actions[*].items[*].value.type must be 'Const'.",
-				because: "attribute-source assignments are outside the current set-values support scope");
+			.WithMessage("rule.actions[*].items[*].value.path is required when value.type is 'AttributeValue'.",
+				because: "attribute-source assignments need an explicit source column path");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects set-values AttributeValue sources when source and target data value types differ.")]
+	public void Validate_Should_Reject_SetValues_Attribute_Source_With_Different_Type() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("Score", new BusinessRuleExpression("AttributeValue", "Status", null))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Score", 4));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.actions[*].items[*] assigns source attribute 'Status' (Text) to target attribute 'Score' (Integer). Both attributes must have the same data value type.",
+				because: "copying from another attribute is only safe when the source and target metadata types match");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts set-values AttributeValue sources that use a same-typed forward reference path.")]
+	public void Validate_Should_Accept_SetValues_Attribute_Source_With_Forward_Path() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("Score", new BusinessRuleExpression("AttributeValue", "Owner.Age", null))
+			]);
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null),
+				["Owner"] = new("Owner", "Lookup", "Contact"),
+				["Owner.Age"] = new("Owner.Age", "Integer", null),
+				["Score"] = new("Score", "Integer", null)
+			};
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, attributeMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "forward-reference sources are valid when their final column type matches the target column");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Allows forward-reference paths only as set-values AttributeValue sources.")]
+	public void Validate_Should_Reject_Forward_Reference_Action_Targets() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("Owner.Age", new BusinessRuleExpression("AttributeValue", "Score", null))
+			]);
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null),
+				["Owner"] = new("Owner", "Lookup", "Contact"),
+				["Owner.Age"] = new("Owner.Age", "Integer", null),
+				["Score"] = new("Score", "Integer", null)
+			};
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, attributeMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.actions[*].items[*].expression.path must reference a direct entity attribute. Forward reference paths are supported only in rule.actions[*].items[*].value.path.",
+				because: "Set values can read through a lookup but must still write to a current-object column");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects set-values Formula sources when the formula expression is missing.")]
+	public void Validate_Should_Reject_SetValues_Formula_With_Missing_Expression() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("Score", new BusinessRuleExpression("Formula"))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Score", 4),
+			CreateColumn("BaseScore", 4));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.actions[*].items[*].value.expression must be a non-empty string when value.type is 'Formula'.",
+				because: "the formula contract should receive agent-friendly expression text before expression-schema translation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects set-values Formula sources that contain symbols outside the local arithmetic whitelist.")]
+	public void Validate_Should_Reject_SetValues_Formula_With_Unsupported_Operator() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("Score", new BusinessRuleExpression("Formula", expression: "BaseScore > 0"))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Score", 4),
+			CreateColumn("BaseScore", 4));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Formula expression supports only direct entity fields, numbers, arithmetic operators (+, -, *, /), dots, parentheses, and whitespace.",
+				because: "local validation should reject expressions outside the supported arithmetic scope before server validation");
 	}
 
 	[Test]

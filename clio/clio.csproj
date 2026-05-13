@@ -9,7 +9,7 @@
 		<PackageTags>cli ATF clio creatio</PackageTags>
 		<NeutralLanguage>en</NeutralLanguage>
 		<!-- Fallback for environments without git tags; overridden by SetVersionFromGitTag target or CI /p:AssemblyVersion -->
-		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.1.0.13</AssemblyVersion>
+		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.1.0.17</AssemblyVersion>
 		<FileVersion Condition="'$(FileVersion)' == ''">$(AssemblyVersion)</FileVersion>
 		<Version Condition="'$(Version)' == ''">$(AssemblyVersion)</Version>
 		<Description>CLI interface for Creatio</Description>
@@ -96,32 +96,6 @@
 	</ItemGroup>
 
 	<Choose>
-		<When Condition="Exists('..\..\creatioclient\creatioclient\creatioclient.csproj')">
-			<ItemGroup>
-				<ProjectReference Include="..\..\creatioclient\creatioclient\creatioclient.csproj"/>
-			</ItemGroup>
-		</When>
-		<Otherwise>
-			<ItemGroup>
-				<PackageReference Include="creatio.client" />
-			</ItemGroup>
-		</Otherwise>
-	</Choose>
-	
-	<Choose>
-		<When Condition="Exists('..\..\repository\ATF.Repository\ATF.Repository.csproj')">
-			<ItemGroup>
-				<ProjectReference Include="..\..\repository\ATF.Repository\ATF.Repository.csproj"/>
-			</ItemGroup>
-		</When>
-		<Otherwise>
-			<ItemGroup>
-				<PackageReference Include="ATF.Repository" />
-			</ItemGroup>
-		</Otherwise>
-	</Choose>
-
-	<Choose>
 		<When Condition="'$(TargetFramework)' == 'net8.0'">
 			<ItemGroup>
 				<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/>
@@ -154,6 +128,8 @@
 	</ItemGroup>
 	
 	<ItemGroup Label="Centrally Managed Package Versions">
+		<PackageReference Include="creatio.client" />
+		<PackageReference Include="ATF.Repository" />
 		<PackageReference Include="MediatR" />
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" />
 		<PackageReference Include="Microsoft.Web.Administration" />
@@ -183,6 +159,10 @@
 		<PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" />
 		<PackageReference Include="Microsoft.Data.SqlClient" />
+	</ItemGroup>
+	
+	<ItemGroup>
+	  <Folder Include="tpl\workspace\.codex\skills\" />
 	</ItemGroup>
 
 	<!-- Reads the latest X.Y.Z.W git tag for local builds. Skipped when CI provides /p:AssemblyVersion. -->
