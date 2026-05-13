@@ -315,6 +315,25 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("When the platform version resolver succeeds the response reports resolvedFrom=environment and the resolved version.")]
+	public async Task ComponentInfoTool_Should_Report_Environment_When_Resolver_Succeeds() {
+		// Arrange
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		ComponentInfoTool tool = new(catalog, StubPlatformVersionResolver.Environment("8.1.5"));
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the catalog still loads successfully through the in-memory client stub");
+		response.ResolvedTargetVersion.Should().Be("8.1.5",
+			because: "the catalog state must echo the version selected by the resolver");
+		response.ResolvedFrom.Should().Be("environment",
+			because: "a successful cliogate probe must surface as the 'environment' tier on the response");
+	}
+
+	[Test]
 	[Description("Catalog loaded through the embedded fallback exposes the full curated Freedom UI surface.")]
 	public async Task ComponentInfoCatalog_Should_Load_From_Embedded_Resource() {
 		// Arrange
@@ -363,7 +382,7 @@ public sealed class ComponentInfoToolTests {
 
 	private static ComponentInfoTool CreateTool() {
 		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
-		return new ComponentInfoTool(catalog);
+		return new ComponentInfoTool(catalog, StubPlatformVersionResolver.LatestFallback());
 	}
 
 	/// <summary>Test double that serves the same in-memory JSON for every version request.</summary>
@@ -380,6 +399,18 @@ public sealed class ComponentInfoToolTests {
 		public Task<bool> RefreshAsync(string version, CancellationToken cancellationToken = default) {
 			return Task.FromResult(false);
 		}
+	}
+
+	/// <summary>Test double that returns a pre-configured platform version resolution.</summary>
+	private sealed class StubPlatformVersionResolver(PlatformVersionResolution resolution) : IPlatformVersionResolver {
+		public static StubPlatformVersionResolver LatestFallback() =>
+			new(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback));
+
+		public static StubPlatformVersionResolver Environment(string semver) =>
+			new(new PlatformVersionResolution(semver, VersionResolutionSource.Environment));
+
+		public Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) =>
+			Task.FromResult(resolution);
 	}
 
 	/// <summary>Test double that exercises the real embedded resource in clio.dll.</summary>

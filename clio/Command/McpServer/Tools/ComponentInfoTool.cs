@@ -15,11 +15,12 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for curated Freedom UI component metadata.
 /// </summary>
 [McpServerToolType]
-public sealed class ComponentInfoTool(IComponentInfoCatalog catalog) {
+public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IPlatformVersionResolver versionResolver) {
 	private static readonly string[] CategoryOrder = ["containers", "fields", "interactive", "display"];
 
 	internal const string ToolName = "get-component-info";
-	private const string LatestFallbackMarker = "latest-fallback";
+	internal const string ResolvedFromEnvironment = "environment";
+	internal const string ResolvedFromLatestFallback = "latest-fallback";
 
 	/// <summary>
 	/// Returns grouped component summaries or full metadata for a specific component type.
@@ -35,16 +36,14 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog) {
 		ComponentInfoArgs args,
 		CancellationToken cancellationToken = default) {
 		try {
-			// TODO: once IPlatformVersionResolver lands (Commit 4) read the active environment
-			// and pass its resolved CoreVersion here. Until then the catalog is loaded against
-			// the CDN "latest" alias and the AI is told so via resolvedFrom = "latest-fallback".
-			ComponentCatalogState state = await catalog.LoadAsync(ComponentRegistryClient.LatestVersion, cancellationToken)
-				.ConfigureAwait(false);
+			PlatformVersionResolution version = await versionResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
+			ComponentCatalogState state = await catalog.LoadAsync(version.ResolvedVersion, cancellationToken).ConfigureAwait(false);
+			string resolvedFrom = MapResolverSource(version.Source);
 
 			if (string.IsNullOrWhiteSpace(args.ComponentType)
 				|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
 				IReadOnlyList<ComponentRegistryEntry> filtered = FilterEntries(state, args.Search);
-				return CreateListResponse(filtered, state);
+				return CreateListResponse(filtered, state, resolvedFrom);
 			}
 
 			ComponentRegistryEntry? entry = state.Lookup.TryGetValue(args.ComponentType.Trim(), out ComponentRegistryEntry? found)
@@ -59,7 +58,7 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog) {
 					Count = filtered.Count,
 					Groups = CreateGroups(filtered),
 					ResolvedTargetVersion = state.ResolvedVersion,
-					ResolvedFrom = LatestFallbackMarker
+					ResolvedFrom = resolvedFrom
 				};
 			}
 
@@ -76,7 +75,7 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog) {
 				TypicalChildren = entry.TypicalChildren,
 				Example = entry.Example,
 				ResolvedTargetVersion = state.ResolvedVersion,
-				ResolvedFrom = LatestFallbackMarker
+				ResolvedFrom = resolvedFrom
 			};
 		}
 		catch (Exception ex) {
@@ -89,6 +88,12 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog) {
 			};
 		}
 	}
+
+	private static string MapResolverSource(VersionResolutionSource source) => source switch {
+		VersionResolutionSource.Environment => ResolvedFromEnvironment,
+		VersionResolutionSource.LatestFallback => ResolvedFromLatestFallback,
+		_ => ResolvedFromLatestFallback
+	};
 
 	private static IReadOnlyList<ComponentRegistryEntry> FilterEntries(ComponentCatalogState state, string? search) {
 		if (string.IsNullOrWhiteSpace(search)) {
@@ -116,14 +121,14 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog) {
 			&& value.Contains(query, StringComparison.OrdinalIgnoreCase);
 	}
 
-	private static ComponentInfoResponse CreateListResponse(IReadOnlyList<ComponentRegistryEntry> entries, ComponentCatalogState state) {
+	private static ComponentInfoResponse CreateListResponse(IReadOnlyList<ComponentRegistryEntry> entries, ComponentCatalogState state, string resolvedFrom) {
 		return new ComponentInfoResponse {
 			Success = true,
 			Mode = "list",
 			Count = entries.Count,
 			Groups = CreateGroups(entries),
 			ResolvedTargetVersion = state.ResolvedVersion,
-			ResolvedFrom = LatestFallbackMarker
+			ResolvedFrom = resolvedFrom
 		};
 	}
 
