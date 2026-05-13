@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command.BusinessRules;
 using Clio.Command.BusinessRules.Filters;
+using Clio.Command.BusinessRules.Filters.Esq;
 using Clio.Command.EntitySchemaDesigner;
 using FluentAssertions;
 using NSubstitute;
@@ -25,7 +26,7 @@ public sealed class BusinessRuleMetadataConverterApplyStaticFilterTests {
 	[Description("Calls the server-side converter client with the rootSchemaName resolved from the entity column map.")]
 	public void ToMetadata_Should_Invoke_Client_With_ReferenceSchema_RootSchemaName() {
 		// Arrange
-		IEsqFilterConverterClient client = Substitute.For<IEsqFilterConverterClient>();
+		ILocalEsqFilterBuilder client = Substitute.For<ILocalEsqFilterBuilder>();
 		string capturedRoot = string.Empty;
 		client.ConvertToEsqFilter(Arg.Any<string>(), Arg.Any<StaticFilterGroup>())
 			.Returns(call => {
@@ -49,7 +50,7 @@ public sealed class BusinessRuleMetadataConverterApplyStaticFilterTests {
 	[Description("Embeds the server-returned envelope as a JSON STRING in BusinessRuleValueExpression.value — matches the platform's compressed BVE1 storage format (escape-once string).")]
 	public void ToMetadata_Should_Embed_Envelope_As_Escaped_Json_String() {
 		// Arrange
-		IEsqFilterConverterClient client = Substitute.For<IEsqFilterConverterClient>();
+		ILocalEsqFilterBuilder client = Substitute.For<ILocalEsqFilterBuilder>();
 		client.ConvertToEsqFilter(Arg.Any<string>(), Arg.Any<StaticFilterGroup>())
 			.Returns(EsqEnvelope);
 
@@ -77,7 +78,7 @@ public sealed class BusinessRuleMetadataConverterApplyStaticFilterTests {
 	[Description("Apply-static-filter expression emits only typeName/uId/type/path — no extra empty-string hints.")]
 	public void ToMetadata_Should_Emit_Minimal_Expression() {
 		// Arrange
-		IEsqFilterConverterClient client = Substitute.For<IEsqFilterConverterClient>();
+		ILocalEsqFilterBuilder client = Substitute.For<ILocalEsqFilterBuilder>();
 		client.ConvertToEsqFilter(Arg.Any<string>(), Arg.Any<StaticFilterGroup>())
 			.Returns(EsqEnvelope);
 
@@ -99,14 +100,14 @@ public sealed class BusinessRuleMetadataConverterApplyStaticFilterTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Throws when the converter is invoked without an IEsqFilterConverterClient; apply-static-filter requires it.")]
+	[Description("Throws when the converter is invoked without an ILocalEsqFilterBuilder; apply-static-filter requires it.")]
 	public void ToMetadata_Should_Throw_When_Client_Is_Missing() {
 		// Act
 		Action act = () => BusinessRuleMetadataConverter.ToMetadata(BuildColumnMap(), BuildRule());
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()
-			.WithMessage("*IEsqFilterConverterClient*");
+			.WithMessage("*ILocalEsqFilterBuilder*");
 	}
 
 	[Test]
@@ -114,7 +115,7 @@ public sealed class BusinessRuleMetadataConverterApplyStaticFilterTests {
 	[Description("Apply-static-filter rule with no `condition` produces a case with no condition group and a single DataLoaded trigger — matches the platform editor's default for unconditional static filters.")]
 	public void ToMetadata_Should_Allow_Apply_Static_Filter_Without_Condition() {
 		// Arrange
-		IEsqFilterConverterClient client = Substitute.For<IEsqFilterConverterClient>();
+		ILocalEsqFilterBuilder client = Substitute.For<ILocalEsqFilterBuilder>();
 		client.ConvertToEsqFilter(Arg.Any<string>(), Arg.Any<StaticFilterGroup>())
 			.Returns(EsqEnvelope);
 		BusinessRule rule = new() {

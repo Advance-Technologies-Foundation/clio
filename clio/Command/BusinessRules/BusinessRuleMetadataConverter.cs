@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command.BusinessRules.Filters;
+using Clio.Command.BusinessRules.Filters.Esq;
 using Clio.Command.EntitySchemaDesigner;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 using static Clio.Command.BusinessRules.BusinessRuleHelpers;
@@ -22,41 +23,41 @@ internal static class BusinessRuleMetadataConverter {
 	internal static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
 		BusinessRule rule,
-		IEsqFilterConverterClient? esqConverterClient) =>
-		ToMetadata(BuildAttributeDescriptorMap(columnMap), rule, entitySchemaName: null, esqConverterClient: esqConverterClient);
+		ILocalEsqFilterBuilder? esqFilterBuilder) =>
+		ToMetadata(BuildAttributeDescriptorMap(columnMap), rule, entitySchemaName: null, esqFilterBuilder: esqFilterBuilder);
 
 	internal static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
 		BusinessRule rule,
 		string? entitySchemaName,
-		IEsqFilterConverterClient? esqConverterClient = null) =>
-		ToMetadata(BuildAttributeDescriptorMap(columnMap), rule, entitySchemaName, esqConverterClient);
+		ILocalEsqFilterBuilder? esqFilterBuilder = null) =>
+		ToMetadata(BuildAttributeDescriptorMap(columnMap), rule, entitySchemaName, esqFilterBuilder);
 
 	internal static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule) =>
-		ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: null, esqConverterClient: null);
+		ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: null, esqFilterBuilder: null);
 
 	internal static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule,
 		string? entitySchemaName,
-		IEsqFilterConverterClient? esqConverterClient = null) =>
-		ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName, esqConverterClient: esqConverterClient);
+		ILocalEsqFilterBuilder? esqFilterBuilder = null) =>
+		ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName, esqFilterBuilder: esqFilterBuilder);
 
 	internal static BusinessRuleMetadataDto ToPageMetadata(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule) =>
-		ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: false, entitySchemaName: null, esqConverterClient: null);
+		ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: false, entitySchemaName: null, esqFilterBuilder: null);
 
 	private static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule,
 		bool includeAttributeReferenceSchemaName,
 		string? entitySchemaName,
-		IEsqFilterConverterClient? esqConverterClient) {
+		ILocalEsqFilterBuilder? esqFilterBuilder) {
 		string ruleUId = Guid.NewGuid().ToString();
-		BusinessRuleCaseMetadataDto @case = BuildCase(attributeMap, rule, includeAttributeReferenceSchemaName, entitySchemaName, esqConverterClient);
+		BusinessRuleCaseMetadataDto @case = BuildCase(attributeMap, rule, includeAttributeReferenceSchemaName, entitySchemaName, esqFilterBuilder);
 		List<BusinessRuleTriggerMetadataDto> triggers = BuildTriggers(attributeMap, rule, entitySchemaName);
 		return new BusinessRuleMetadataDto {
 			TypeName = BusinessRuleTypeName,
@@ -74,7 +75,7 @@ internal static class BusinessRuleMetadataConverter {
 		BusinessRule rule,
 		bool includeAttributeReferenceSchemaName,
 		string? entitySchemaName,
-		IEsqFilterConverterClient? esqConverterClient) {
+		ILocalEsqFilterBuilder? esqFilterBuilder) {
 		return new BusinessRuleCaseMetadataDto {
 			TypeName = BusinessRuleCaseTypeName,
 			UId = Guid.NewGuid().ToString(),
@@ -82,7 +83,7 @@ internal static class BusinessRuleMetadataConverter {
 				? null
 				: BuildConditionGroup(attributeMap, rule.Condition, includeAttributeReferenceSchemaName),
 			Actions = rule.Actions
-				.Select(action => BuildAction(attributeMap, action, includeAttributeReferenceSchemaName, entitySchemaName, esqConverterClient))
+				.Select(action => BuildAction(attributeMap, action, includeAttributeReferenceSchemaName, entitySchemaName, esqFilterBuilder))
 				.ToList()
 		};
 	}
@@ -175,13 +176,13 @@ internal static class BusinessRuleMetadataConverter {
 		BusinessRuleAction action,
 		bool includeAttributeReferenceSchemaName,
 		string? entitySchemaName,
-		IEsqFilterConverterClient? esqConverterClient) {
+		ILocalEsqFilterBuilder? esqFilterBuilder) {
 		if (action is ApplyStaticFilterBusinessRuleAction setFilter) {
 			if (!includeAttributeReferenceSchemaName) {
 				throw new InvalidOperationException(
 					"apply-static-filter is not supported in page-level business rules.");
 			}
-			return BuildApplyStaticFilterAction(attributeMap, setFilter, esqConverterClient);
+			return BuildApplyStaticFilterAction(attributeMap, setFilter, esqFilterBuilder);
 		}
 
 		if (string.Equals(action.ActionType, SetValuesActionTypeName, StringComparison.OrdinalIgnoreCase)) {
@@ -199,10 +200,10 @@ internal static class BusinessRuleMetadataConverter {
 	private static SetFilterBusinessRuleActionMetadataDto BuildApplyStaticFilterAction(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		ApplyStaticFilterBusinessRuleAction action,
-		IEsqFilterConverterClient? esqConverterClient) {
-		if (esqConverterClient is null) {
+		ILocalEsqFilterBuilder? esqFilterBuilder) {
+		if (esqFilterBuilder is null) {
 			throw new InvalidOperationException(
-				"BusinessRuleMetadataConverter.ToMetadata was invoked without an IEsqFilterConverterClient; apply-static-filter actions require the ESQ filter converter client to be wired through EntityBusinessRuleService.");
+				"BusinessRuleMetadataConverter.ToMetadata was invoked without an ILocalEsqFilterBuilder; apply-static-filter actions require the local ESQ filter builder to be wired through EntityBusinessRuleService.");
 		}
 		BusinessRuleAttributeDescriptor target = attributeMap[action.TargetAttribute];
 		string rootSchemaName = target.ReferenceSchemaName
@@ -211,7 +212,7 @@ internal static class BusinessRuleMetadataConverter {
 		StaticFilterGroup friendly = action.Filter.Deserialize<StaticFilterGroup>(JsonOptions)
 			?? throw new InvalidOperationException(
 				$"rule.actions[*].filter could not be deserialized as a friendly filter group for targetAttribute '{action.TargetAttribute}'.");
-		string esqEnvelopeJson = esqConverterClient.ConvertToEsqFilter(rootSchemaName, friendly);
+		string esqEnvelopeJson = esqFilterBuilder.ConvertToEsqFilter(rootSchemaName, friendly);
 		return new SetFilterBusinessRuleActionMetadataDto {
 			TypeName = BusinessRuleActionSetFilterTypeName,
 			UId = Guid.NewGuid().ToString(),

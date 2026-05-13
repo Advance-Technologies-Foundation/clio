@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.BusinessRules.Filters;
+using Clio.Command.BusinessRules.Filters.Esq;
 using Clio.Command.EntitySchemaDesigner;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
@@ -32,7 +33,7 @@ internal sealed class EntityBusinessRuleService(
 	IBusinessRulePackageResolver packageResolver,
 	IEntityBusinessRuleAttributeProvider attributeProvider,
 	IBusinessRuleAddonService businessRuleAddonService,
-	IEsqFilterConverterClient esqConverterClient,
+	ILocalEsqFilterBuilder esqFilterBuilder,
 	IBusinessRuleFormulaValidationService formulaValidationService,
 	IFilterSchemaProvider filterSchemaProvider)
 	: IEntityBusinessRuleService {
@@ -52,7 +53,7 @@ internal sealed class EntityBusinessRuleService(
 			attributeContext.Attributes,
 			request.Rule,
 			attributeContext.EntitySchema.Name,
-			esqConverterClient);
+			esqFilterBuilder);
 		return businessRuleAddonService.AppendRule(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			request.Rule,

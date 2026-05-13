@@ -5,6 +5,7 @@ using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.BusinessRules;
 using Clio.Command.BusinessRules.Filters;
+using Clio.Command.BusinessRules.Filters.Esq;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Package;
@@ -51,7 +52,7 @@ public sealed class EntityBusinessRuleServiceTests {
 			new BusinessRulePackageResolver(_applicationPackageListProvider),
 			new EntityBusinessRuleAttributeProvider(new EntityBusinessRuleSchemaProvider(_entitySchemaDesignerClient)),
 			new BusinessRuleAddonService(_addonSchemaDesignerClient),
-			Substitute.For<IEsqFilterConverterClient>(),
+			Substitute.For<ILocalEsqFilterBuilder>(),
 			_formulaValidationService,
 			Substitute.For<IFilterSchemaProvider>());
 	}
