@@ -237,36 +237,46 @@ internal sealed class SchemaAwareFilterValidator(IFilterSchemaProvider schemaPro
 		JsonElement element = value.Value;
 		JsonValueKind kind = element.ValueKind;
 		if (string.Equals(typeName, "Lookup", StringComparison.Ordinal)) {
-			if (kind != JsonValueKind.String || !Guid.TryParse(element.GetString(), out _)) {
-				throw new BusinessRuleFilterException(
-					BusinessRuleFilterErrorCodes.LookupValueNotGuid,
-					fieldPath,
-					$"Lookup column '{column.Name}' expects a JSON string GUID value; got JSON {kind} '{element}'. " +
-					"Resolve the lookup display name to its record Id (GUID) before passing it as a filter value.");
-			}
-			return;
-		}
-		if (string.Equals(typeName, "Boolean", StringComparison.Ordinal)) {
-			if (kind != JsonValueKind.True && kind != JsonValueKind.False) {
-				throw NewValueShape(column, typeName, "boolean", kind, fieldPath);
-			}
-			return;
-		}
-		if (SupportedNumericDataValueTypeNames.Contains(typeName)) {
-			if (kind != JsonValueKind.Number) {
-				throw NewValueShape(column, typeName, "number", kind, fieldPath);
-			}
-			return;
-		}
-		if (SupportedDateTimeDataValueTypeNames.Contains(typeName)
+			RequireLookupGuid(element, kind, column, fieldPath);
+		} else if (string.Equals(typeName, "Boolean", StringComparison.Ordinal)) {
+			RequireKind(kind, JsonValueKind.True, JsonValueKind.False, column, typeName, "boolean", fieldPath);
+		} else if (SupportedNumericDataValueTypeNames.Contains(typeName)) {
+			RequireKind(kind, JsonValueKind.Number, null, column, typeName, "number", fieldPath);
+		} else if (SupportedDateTimeDataValueTypeNames.Contains(typeName)
 			|| SupportedTextDataValueTypeNames.Contains(typeName)) {
-			if (kind != JsonValueKind.String) {
-				throw NewValueShape(column, typeName, "string", kind, fieldPath);
-			}
-			return;
+			RequireKind(kind, JsonValueKind.String, null, column, typeName, "string", fieldPath);
 		}
 		// Other datatypes (Guid, Image, Blob, File, Enum) are not exposed on the friendly filter
 		// surface today; let the server reject them if they slip through.
+	}
+
+	private static void RequireLookupGuid(
+		JsonElement element,
+		JsonValueKind kind,
+		EntitySchemaColumnDto column,
+		string fieldPath) {
+		if (kind == JsonValueKind.String && Guid.TryParse(element.GetString(), out _)) {
+			return;
+		}
+		throw new BusinessRuleFilterException(
+			BusinessRuleFilterErrorCodes.LookupValueNotGuid,
+			fieldPath,
+			$"Lookup column '{column.Name}' expects a JSON string GUID value; got JSON {kind} '{element}'. " +
+			"Resolve the lookup display name to its record Id (GUID) before passing it as a filter value.");
+	}
+
+	private static void RequireKind(
+		JsonValueKind actual,
+		JsonValueKind expectedPrimary,
+		JsonValueKind? expectedAlternate,
+		EntitySchemaColumnDto column,
+		string typeName,
+		string expectedLabel,
+		string fieldPath) {
+		if (actual == expectedPrimary || (expectedAlternate.HasValue && actual == expectedAlternate.Value)) {
+			return;
+		}
+		throw NewValueShape(column, typeName, expectedLabel, actual, fieldPath);
 	}
 
 	private static BusinessRuleFilterException NewValueShape(

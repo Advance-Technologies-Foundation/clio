@@ -254,6 +254,11 @@ internal static class ToolContractCatalog {
 	private const string PrimaryPackageIdentifierDescription = "Primary package identifier.";
 	private const string PrimaryPackageNameDescription = "Primary package name.";
 	private const string RuleFieldName = "rule";
+	private const string LogicalOperationFieldName = "logicalOperation";
+	private const string ComparisonTypeFieldName = "comparisonType";
+	private const string ActionsFieldName = "actions";
+	private const string ValueFieldName = "value";
+	private const string ExampleStatusAttributeName = "Status";
 	private const string SectionCodeFieldName = "section-code";
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
@@ -1354,7 +1359,7 @@ internal static class ToolContractCatalog {
 			[
 				BusinessRuleExample("Create a required-field rule when owner equals a lookup constant",
 					"UsrTask", "Require status for a specific owner", "Owner", "equal",
-					MakeRequiredActionTypeName, ["Status"], ExampleLookupValueId),
+					MakeRequiredActionTypeName, [ExampleStatusAttributeName], ExampleLookupValueId),
 				BusinessRuleExample("Create a readonly rule when a text field is filled in",
 					"UsrTask", "Lock planned date when name is filled", "Name", "is-filled-in",
 					MakeReadOnlyActionTypeName, ["PlannedDate"]),
@@ -1396,30 +1401,30 @@ internal static class ToolContractCatalog {
 						[PackageNameCamelFieldName] = ExamplePackageName,
 						[EntitySchemaNameCamelFieldName] = "UsrTask",
 						[RuleFieldName] = new Dictionary<string, object?> {
-							["caption"] = "Show only active statuses when name is filled",
+							[CaptionFieldName] = "Show only active statuses when name is filled",
 							["condition"] = new Dictionary<string, object?> {
-								["logicalOperation"] = "AND",
+								[LogicalOperationFieldName] = "AND",
 								["conditions"] = new object[] {
 									new Dictionary<string, object?> {
 										["leftExpression"] = new Dictionary<string, object?> {
 											["type"] = BusinessRuleConstants.AttributeValueExpressionType,
 											["path"] = "Name"
 										},
-										["comparisonType"] = "is-filled-in"
+										[ComparisonTypeFieldName] = "is-filled-in"
 									}
 								}
 							},
-							["actions"] = new object[] {
+							[ActionsFieldName] = new object[] {
 								new Dictionary<string, object?> {
 									["type"] = "apply-static-filter",
-									["targetAttribute"] = "Status",
+									["targetAttribute"] = ExampleStatusAttributeName,
 									["filter"] = new Dictionary<string, object?> {
-										["logicalOperation"] = "AND",
+										[LogicalOperationFieldName] = "AND",
 										["filters"] = new object[] {
 											new Dictionary<string, object?> {
 												["columnPath"] = "IsActive",
-												["comparisonType"] = "EQUAL",
-												["value"] = true
+												[ComparisonTypeFieldName] = "EQUAL",
+												[ValueFieldName] = true
 											}
 										}
 									}
@@ -1433,18 +1438,18 @@ internal static class ToolContractCatalog {
 						[PackageNameCamelFieldName] = ExamplePackageName,
 						[EntitySchemaNameCamelFieldName] = "UsrOrder",
 						[RuleFieldName] = new Dictionary<string, object?> {
-							["caption"] = "Always show only active contacts",
-							["actions"] = new object[] {
+							[CaptionFieldName] = "Always show only active contacts",
+							[ActionsFieldName] = new object[] {
 								new Dictionary<string, object?> {
 									["type"] = "apply-static-filter",
 									["targetAttribute"] = "Contact",
 									["filter"] = new Dictionary<string, object?> {
-										["logicalOperation"] = "AND",
+										[LogicalOperationFieldName] = "AND",
 										["filters"] = new object[] {
 											new Dictionary<string, object?> {
 												["columnPath"] = "Active",
-												["comparisonType"] = "EQUAL",
-												["value"] = true
+												[ComparisonTypeFieldName] = "EQUAL",
+												[ValueFieldName] = true
 											}
 										}
 									}
@@ -1627,9 +1632,9 @@ internal static class ToolContractCatalog {
 				["type"] = BusinessRuleConstants.AttributeValueExpressionType,
 				["path"] = path
 			},
-			["value"] = new Dictionary<string, object?> {
+			[ValueFieldName] = new Dictionary<string, object?> {
 				["type"] = BusinessRuleConstants.ConstExpressionType,
-				["value"] = value
+				[ValueFieldName] = value
 			}
 		};
 	}
@@ -1640,7 +1645,7 @@ internal static class ToolContractCatalog {
 				["type"] = "AttributeValue",
 				["path"] = path
 			},
-			["value"] = new Dictionary<string, object?> {
+			[ValueFieldName] = new Dictionary<string, object?> {
 				["type"] = "Formula",
 				["expression"] = formula
 			}
@@ -1653,7 +1658,7 @@ internal static class ToolContractCatalog {
 				["type"] = "AttributeValue",
 				["path"] = path
 			},
-			["value"] = new Dictionary<string, object?> {
+			[ValueFieldName] = new Dictionary<string, object?> {
 				["type"] = "AttributeValue",
 				["path"] = sourcePath
 			}
@@ -1687,12 +1692,12 @@ internal static class ToolContractCatalog {
 				["type"] = "AttributeValue",
 				["path"] = leftPath
 			},
-			["comparisonType"] = comparisonType
+			[ComparisonTypeFieldName] = comparisonType
 		};
 		if (constantValue is not null) {
 			condition["rightExpression"] = new Dictionary<string, object?> {
 				["type"] = "Const",
-				["value"] = constantValue
+				[ValueFieldName] = constantValue
 			};
 		}
 
@@ -1701,14 +1706,14 @@ internal static class ToolContractCatalog {
 			[PackageNameCamelFieldName] = ExamplePackageName,
 			[schemaFieldName] = schemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
-				["caption"] = caption,
+				[CaptionFieldName] = caption,
 				["condition"] = new Dictionary<string, object?> {
-					["logicalOperation"] = "AND",
+					[LogicalOperationFieldName] = "AND",
 					["conditions"] = new object[] {
 						condition
 					}
 				},
-				["actions"] = new object[] {
+				[ActionsFieldName] = new object[] {
 					new Dictionary<string, object?> {
 						["type"] = actionType,
 						["items"] = actionItems
@@ -1724,16 +1729,16 @@ internal static class ToolContractCatalog {
 			[PackageNameCamelFieldName] = ExamplePackageName,
 			[PageSchemaNameCamelFieldName] = ExampleOrderPageSchemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
-				["caption"] = "Hide warning when planned and actual dates match",
+				[CaptionFieldName] = "Hide warning when planned and actual dates match",
 				["condition"] = new Dictionary<string, object?> {
-					["logicalOperation"] = "AND",
+					[LogicalOperationFieldName] = "AND",
 					["conditions"] = new object[] {
 						new Dictionary<string, object?> {
 							["leftExpression"] = new Dictionary<string, object?> {
 								["type"] = BusinessRuleConstants.AttributeValueExpressionType,
 								["path"] = "PDS_UsrPlannedDate"
 							},
-							["comparisonType"] = "equal",
+							[ComparisonTypeFieldName] = "equal",
 							["rightExpression"] = new Dictionary<string, object?> {
 								["type"] = BusinessRuleConstants.AttributeValueExpressionType,
 								["path"] = "PDS_UsrActualDate"
@@ -1741,7 +1746,7 @@ internal static class ToolContractCatalog {
 						}
 					}
 				},
-				["actions"] = new object[] {
+				[ActionsFieldName] = new object[] {
 					new Dictionary<string, object?> {
 						["type"] = "hide-element",
 						["items"] = new object[] { "DateMismatchWarningLabel" }

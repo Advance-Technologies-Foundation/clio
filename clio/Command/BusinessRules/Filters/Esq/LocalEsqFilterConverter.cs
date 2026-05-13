@@ -46,7 +46,7 @@ internal sealed class LocalEsqFilterConverter(IFilterSchemaProvider schemaProvid
 		for (int i = 0; i < backwardRefs.Count; i++) {
 			envelope.Items.Add(
 				$"BackwardReferenceFilter_{i}",
-				BuildBackwardReference(backwardRefs[i], rootSchemaName, i));
+				BuildBackwardReference(backwardRefs[i], i));
 		}
 		return envelope;
 	}
@@ -64,7 +64,7 @@ internal sealed class LocalEsqFilterConverter(IFilterSchemaProvider schemaProvid
 		for (int i = 0; i < backwardRefs.Count; i++) {
 			items.Add(
 				$"BackwardReferenceFilter_{parentIndex}_{i}",
-				BuildBackwardReference(backwardRefs[i], schemaName, i));
+				BuildBackwardReference(backwardRefs[i], i));
 		}
 		return new SerializableFilters {
 			FilterType = EsqFilterType.FilterGroup,
@@ -97,7 +97,6 @@ internal sealed class LocalEsqFilterConverter(IFilterSchemaProvider schemaProvid
 
 	private SerializableFilter BuildBackwardReference(
 		StaticFilterBackwardReference brf,
-		string parentSchemaName,
 		int parentIndex) {
 		Match match = BackwardReferenceSyntax.Match(brf.ReferenceColumnPath);
 		if (!match.Success) {
@@ -366,15 +365,10 @@ internal sealed class LocalEsqFilterConverter(IFilterSchemaProvider schemaProvid
 	}
 
 	private static string ExtractCaption(EntitySchemaColumnDto column) {
-		if (column.Caption is null) {
-			return column.Name ?? string.Empty;
-		}
-		foreach (Clio.Command.EntitySchemaDesigner.LocalizableStringDto caption in column.Caption) {
-			if (!string.IsNullOrWhiteSpace(caption?.Value)) {
-				return caption.Value;
-			}
-		}
-		return column.Name ?? string.Empty;
+		string fallback = column.Name ?? string.Empty;
+		return column.Caption?
+			.FirstOrDefault(caption => !string.IsNullOrWhiteSpace(caption?.Value))?
+			.Value ?? fallback;
 	}
 
 	private EntitySchemaColumnDto ResolveLeafColumn(string columnPath, string rootSchemaName) {
