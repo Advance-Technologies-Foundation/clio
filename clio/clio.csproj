@@ -23,7 +23,15 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
 		<LangVersion>12</LangVersion>
-		<NoWarn>NU5119;NU5118;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169</NoWarn>
+		<!--
+			MSB3923 is emitted by the DownloadFile task in ResolveCdnSnapshot while
+			academy.creatio.com/api/component-registry/ is not yet hosted by the academy team.
+			Once the CDN endpoint goes live and successful downloads become the norm,
+			drop MSB3923 from this list so a future genuine fetch failure stays visible.
+			The Message task inside ResolveCdnSnapshot keeps fallbackToSeed=true visible
+			in the build log either way.
+		-->
+		<NoWarn>NU5119;NU5118;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169;MSB3923</NoWarn>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
