@@ -96,6 +96,17 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "menu items can host submenu items");
 		detailResponse.Properties.Should().ContainKey("items",
 			because: "nested menu contracts should expose their submenu slot metadata");
+
+		// CDN migration markers: every response from the real clio MCP server must now
+		// expose the resolver tier and the catalog version it landed on, so AI can react
+		// to a latest-fallback by adjusting the active environment.
+		string[] allowedResolvedFrom = ["environment", "latest-fallback"];
+		foreach (ComponentInfoResponse response in new[] { tabListResponse, propertySearchResponse, detailResponse }) {
+			response.ResolvedTargetVersion.Should().NotBeNullOrEmpty(
+				because: "every response should expose the catalog version actually loaded");
+			response.ResolvedFrom.Should().BeOneOf(allowedResolvedFrom,
+				because: "resolvedFrom must surface the resolver tier so AI can interpret the catalog correctly");
+		}
 	}
 
 	[Test]

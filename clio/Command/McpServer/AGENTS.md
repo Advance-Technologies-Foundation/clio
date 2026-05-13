@@ -71,6 +71,56 @@ When adding or updating an MCP tool, also review:
 - Do not stop at unit mapping tests; MCP implementation work is incomplete until the real `clio mcp-server` path is exercised end to end.
 - If an existing E2E harness cannot support the tool yet, extend the harness as part of the same task instead of deferring E2E coverage.
 
+## Component registry data source (`get-component-info`)
+
+The curated Freedom UI component catalog consumed by `get-component-info`
+no longer lives as a flat JSON file in the repo. Runtime resolution happens
+through a three-layer fallback chain implemented in
+`Tools/ComponentRegistryClient.cs`:
+
+1. **CDN.** `https://academy.creatio.com/api/component-registry/{version}.json`
+   (override via `CLIO_COMPONENT_REGISTRY_CDN_BASE_URL` env var). Per-platform-
+   version file plus a `latest.json` alias maintained by the producer-side CI.
+   Until the academy endpoint goes live, every fetch lands at 404 and the
+   chain falls through — this is expected.
+2. **File cache.** `~/.clio/cache/component-registry/{version}.json` with a
+   24h TTL and a `{version}.meta.json` sidecar (ETag, Last-Modified, SHA-256).
+   Cache hits return synchronously; stale entries return immediately while a
+   single background refresh runs (stale-while-revalidate). AI requests never
+   block on the network.
+3. **Embedded snapshot in `clio.dll`.** Manifest resources
+   `Clio.ComponentRegistry.ComponentRegistry.json` and
+   `Clio.ComponentRegistry.embedded-metadata.json` are produced at clio build
+   time by the `ResolveCdnSnapshot` MSBuild target — that target GETs the CDN
+   `latest.json` and on failure copies `Command/McpServer/Data/ComponentRegistry.seed.json`
+   instead. So even an offline `dotnet build` succeeds and ships a valid
+   catalog inside the assembly.
+
+The platform version is resolved per request by
+`Tools/PlatformVersionResolver.cs` via cliogate `GET /rest/CreatioApiGateway/GetSysInfo`,
+mapped to a 3-part SemVer (`SysInfo.CoreVersion` → `Major.Minor.Patch`), with
+a 5-minute in-process cache. Any failure class (HTTP error, missing CoreVersion,
+non-SemVer string, cliogate < `2.0.0.32`, no active environment) degrades softly
+to `latest`, and the MCP response carries the `resolvedFrom` marker
+(`"environment"` | `"latest-fallback"`) so AI can interpret the result correctly
+(see `Resources/PageModificationGuidanceResource.cs` for the guidance text).
+
+To force-refresh the local cache without waiting for the 24h TTL, use the
+`clio component-registry-refresh` verb:
+
+- no flags → refresh `latest.json`
+- `--version 8.2.1` → refresh that GA file
+- `--all` → refresh every per-version file currently in the cache directory
+
+Exit code is 0 only when every requested refresh got a 2xx from the CDN.
+
+When changing the catalog data source, refer to:
+
+- `research/architecture.md` — two-domain SoT (creatio-ui CI → CDN → clio).
+- `research/clio-target-structure.md` — consumer-side design.
+- `research/jenkins-pipeline-spec.md` — producer-side contract for the
+  creatio-ui team (URL pattern, JSON shape, GA-tag trigger, `latest.json` semver gate).
+
 ## Workspace-scoped tools
 
 For tools that operate on a local workspace:
