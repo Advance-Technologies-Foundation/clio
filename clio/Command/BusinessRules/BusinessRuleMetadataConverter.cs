@@ -22,7 +22,13 @@ internal static class BusinessRuleMetadataConverter {
 	internal static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
 		BusinessRule rule,
-		string entitySchemaName,
+		IEsqFilterConverterClient? esqConverterClient) =>
+		ToMetadata(BuildAttributeDescriptorMap(columnMap), rule, entitySchemaName: null, esqConverterClient: esqConverterClient);
+
+	internal static BusinessRuleMetadataDto ToMetadata(
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		BusinessRule rule,
+		string? entitySchemaName,
 		IEsqFilterConverterClient? esqConverterClient = null) =>
 		ToMetadata(BuildAttributeDescriptorMap(columnMap), rule, entitySchemaName, esqConverterClient);
 
@@ -34,7 +40,7 @@ internal static class BusinessRuleMetadataConverter {
 	internal static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule,
-		string entitySchemaName,
+		string? entitySchemaName,
 		IEsqFilterConverterClient? esqConverterClient = null) =>
 		ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName, esqConverterClient: esqConverterClient);
 

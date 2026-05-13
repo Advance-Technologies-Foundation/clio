@@ -586,7 +586,6 @@ public class BindingsModule {
 	
 	
 	private static void RegisterBusinessRuleServices(IServiceCollection services) {
-		services.AddSingleton<IBackgroundTaskRunner, TaskRunBackgroundTaskRunner>();
 		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
 		services.AddTransient<Clio.Command.BusinessRules.Filters.IEsqFilterConverterClient, Clio.Command.BusinessRules.Filters.EsqFilterConverterClient>();
 		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();

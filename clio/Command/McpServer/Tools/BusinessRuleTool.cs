@@ -72,12 +72,11 @@ public sealed record EntityBusinessRuleMcpContract
 	public string Caption { get; init; } = null!;
 
 	/// <summary>
-	/// Gets the top-level condition group.
+	/// Gets the top-level condition group. Optional; omit to make the rule always apply.
 	/// </summary>
 	[JsonPropertyName("condition")]
-	[Description("Top-level condition group. Supports one group with logicalOperation AND or OR.")]
-	[Required]
-	public BusinessRuleConditionGroup Condition { get; init; } = null!;
+	[Description("Optional top-level condition group with logicalOperation AND or OR. Omit to make the rule always apply (useful for unconditional apply-static-filter).")]
+	public BusinessRuleConditionGroup? Condition { get; init; }
 
 	/// <summary>
 	/// Gets the entity-level actions to execute when the condition group matches.

@@ -50,7 +50,7 @@ public sealed class EntityBusinessRuleServiceTests {
 		_service = new EntityBusinessRuleService(
 			new BusinessRulePackageResolver(_applicationPackageListProvider),
 			new EntityBusinessRuleAttributeProvider(new EntityBusinessRuleSchemaProvider(_entitySchemaDesignerClient)),
-			new BusinessRuleAddonService(_addonSchemaDesignerClient, new SynchronousBackgroundTaskRunner()),
+			new BusinessRuleAddonService(_addonSchemaDesignerClient),
 			Substitute.For<IEsqFilterConverterClient>(),
 			_formulaValidationService);
 	}

@@ -12,7 +12,7 @@ public sealed record BusinessRule
     {
     }
 
-    public BusinessRule(string caption, BusinessRuleConditionGroup condition, List<BusinessRuleAction> actions)
+    public BusinessRule(string caption, BusinessRuleConditionGroup? condition, List<BusinessRuleAction> actions)
     {
         Caption = caption;
         Condition = condition;
