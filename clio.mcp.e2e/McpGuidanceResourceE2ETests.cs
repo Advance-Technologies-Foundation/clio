@@ -1,5 +1,6 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Command.McpServer.Resources;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
@@ -16,14 +17,35 @@ public sealed class McpGuidanceResourceE2ETests {
 	private const string DocsScheme = "docs";
 	private const string GuidesPath = "mcp/guides";
 	private static readonly string AppModelingUri = BuildGuideUri("app-modeling");
+	private static readonly string ConfigurationWebServiceUri = BuildGuideUri("configuration-webservice");
+	private static readonly string ConfigurationWebServiceTestsUri = BuildGuideUri("configuration-webservice-tests");
+	private static readonly string DataBindingsUri = BuildGuideUri("data-bindings");
 	private static readonly string ExistingAppMaintenanceUri = BuildGuideUri("existing-app-maintenance");
+	private static readonly string PageSchemaConvertersUri = BuildGuideUri("page-schema-converters");
 	private static readonly string PageSchemaHandlersUri = BuildGuideUri("page-schema-handlers");
-	private static readonly string PageSchemaSdkCommonUri = BuildGuideUri("page-schema-sdk-common");
+	private static readonly string PageSchemaCreatioDevkitCommonUri = BuildGuideUri("page-schema-creatio-devkit-common");
 	private static readonly string PageSchemaValidatorsUri = BuildGuideUri("page-schema-validators");
+	private static readonly string AgentExecutionUri = BuildGuideUri("agent-execution");
+	private static readonly string SupportModeUri = BuildGuideUri("support-mode");
+	private static readonly string BusinessRulesUri = BuildGuideUri("business-rules");
+	private static readonly string ConfigurationWebServiceDtoPatternsUri =
+		BuildReferenceUri("configuration-webservice", "dto-patterns");
+	private static readonly string ConfigurationWebServiceStatusCodePatternsUri =
+		BuildReferenceUri("configuration-webservice", "status-code-patterns");
+	private static readonly string ConfigurationWebServiceCompositionRootPatternUri =
+		BuildReferenceUri("configuration-webservice", "composition-root-pattern");
+	private static readonly string ConfigurationWebServiceManualRuntimeChecklistUri =
+		BuildReferenceUri("configuration-webservice", "manual-runtime-checklist");
+	private static readonly string ConfigurationWebServiceTestsTestFixturePatternUri =
+		BuildReferenceUri("configuration-webservice-tests", "test-fixture-pattern");
+	private static readonly string ConfigurationWebServiceTestsAssertionStyleUri =
+		BuildReferenceUri("configuration-webservice-tests", "assertion-style");
+	private static readonly string ConfigurationWebServiceTestsEndpointTestPatternsUri =
+		BuildReferenceUri("configuration-webservice-tests", "endpoint-test-patterns");
 
 	[Test]
 	[AllureTag("mcp-guidance-resources")]
-	[AllureName("MCP server advertises modeling and existing-app guidance resources")]
+	[AllureName("MCP server advertises modeling, binding, existing-app, validator, agent-execution, and support-mode guidance resources")]
 	public async Task McpServer_Should_Advertise_Guidance_Resources() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -34,14 +56,228 @@ public sealed class McpGuidanceResourceE2ETests {
 		IList<McpClientResource> resources = await context.Session.ListResourcesAsync(context.CancellationTokenSource.Token);
 
 		// Assert
-		resources.Select(resource => resource.Uri).Should().Contain([
+		string[] expectedStaticUris = [
 				AppModelingUri,
+				ConfigurationWebServiceUri,
+				ConfigurationWebServiceTestsUri,
+				DataBindingsUri,
 				ExistingAppMaintenanceUri,
+				PageSchemaConvertersUri,
 				PageSchemaHandlersUri,
-				PageSchemaSdkCommonUri,
-				PageSchemaValidatorsUri
-			],
-			because: "the MCP server should advertise creation existing-app handler validator and sdk-common guidance resources");
+				PageSchemaCreatioDevkitCommonUri,
+				PageSchemaValidatorsUri,
+				AgentExecutionUri,
+				SupportModeUri,
+				BusinessRulesUri,
+				ConfigurationWebServiceDtoPatternsUri,
+				ConfigurationWebServiceStatusCodePatternsUri,
+				ConfigurationWebServiceCompositionRootPatternUri,
+				ConfigurationWebServiceManualRuntimeChecklistUri,
+				ConfigurationWebServiceTestsTestFixturePatternUri,
+				ConfigurationWebServiceTestsAssertionStyleUri,
+				ConfigurationWebServiceTestsEndpointTestPatternsUri
+			];
+		string[] expectedGeneratedUris = ComposableAppSkillResourceCatalog.GetEntries()
+			.Select(entry => entry.Article.Uri)
+			.ToArray();
+
+		resources.Select(resource => resource.Uri).Should().Contain(
+			expectedStaticUris.Concat(expectedGeneratedUris),
+			because: "the MCP server should advertise creation existing-app configuration-webservice converter handler validator sdk-common agent-execution support-mode business-rules and reference resources");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns configuration web-service guidance and representative references")]
+	public async Task McpServer_Should_Return_Configuration_WebService_Guidance_And_References() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult guideResult = await context.Session.ReadResourceAsync(
+			ConfigurationWebServiceUri,
+			context.CancellationTokenSource.Token);
+		ReadResourceResult dtoReferenceResult = await context.Session.ReadResourceAsync(
+			ConfigurationWebServiceDtoPatternsUri,
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents guide = guideResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the configuration web-service guide should resolve to a single plain-text article").Subject;
+		guide.Uri.Should().Be(ConfigurationWebServiceUri,
+			because: "the returned article should preserve the stable configuration web-service guide URI");
+		guide.Text.Should().Contain("creatio-config-webservice",
+			because: "the guide should identify the source skill guidance");
+		guide.Text.Should().Contain("docs://mcp/references/configuration-webservice/dto-patterns",
+			because: "the guide should route detailed DTO guidance to the reference resource");
+
+		TextResourceContents dtoReference = dtoReferenceResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the DTO reference should resolve to a single plain-text article").Subject;
+		dtoReference.Uri.Should().Be(ConfigurationWebServiceDtoPatternsUri,
+			because: "the returned reference should preserve the stable DTO reference URI");
+		dtoReference.Text.Should().Contain("Return a concrete DTO type",
+			because: "the DTO reference should preserve concrete return-type guidance");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns configuration web-service test guidance and representative references")]
+	public async Task McpServer_Should_Return_Configuration_WebService_Tests_Guidance_And_References() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult guideResult = await context.Session.ReadResourceAsync(
+			ConfigurationWebServiceTestsUri,
+			context.CancellationTokenSource.Token);
+		ReadResourceResult fixtureReferenceResult = await context.Session.ReadResourceAsync(
+			ConfigurationWebServiceTestsTestFixturePatternUri,
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents guide = guideResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the configuration web-service test guide should resolve to a single plain-text article").Subject;
+		guide.Uri.Should().Be(ConfigurationWebServiceTestsUri,
+			because: "the returned article should preserve the stable configuration web-service test guide URI");
+		guide.Text.Should().Contain("configuration-webservice-tests",
+			because: "the guide should identify the source test skill guidance");
+		guide.Text.Should().Contain("docs://mcp/references/configuration-webservice-tests/test-fixture-pattern",
+			because: "the guide should route fixture details to the reference resource");
+
+		TextResourceContents fixtureReference = fixtureReferenceResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the fixture reference should resolve to a single plain-text article").Subject;
+		fixtureReference.Uri.Should().Be(ConfigurationWebServiceTestsTestFixturePatternUri,
+			because: "the returned reference should preserve the stable fixture reference URI");
+		fixtureReference.Text.Should().Contain("Register test doubles through InjectedServices",
+			because: "the fixture reference should preserve dependency-injection mocking guidance");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns generated composable-app skill guidance and representative references")]
+	public async Task McpServer_Should_Return_Generated_Composable_App_Skill_Guidance_And_References() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult guideResult = await context.Session.ReadResourceAsync(
+			"docs://mcp/guides/atf-repository-dev",
+			context.CancellationTokenSource.Token);
+		ReadResourceResult referenceResult = await context.Session.ReadResourceAsync(
+			"docs://mcp/references/sys-setting-tests/setup-sys-settings-pattern",
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents guide = guideResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "a generated skill guide should resolve to a single plain-text article").Subject;
+		guide.Uri.Should().Be("docs://mcp/guides/atf-repository-dev",
+			because: "the returned generated guide should preserve its stable URI");
+		guide.Text.Should().Contain("ATF.Repository",
+			because: "the generated guide should preserve the source skill content");
+
+		TextResourceContents reference = referenceResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "a generated skill reference should resolve to a single plain-text article").Subject;
+		reference.Uri.Should().Be("docs://mcp/references/sys-setting-tests/setup-sys-settings-pattern",
+			because: "the returned generated reference should preserve its stable URI");
+		reference.Text.Should().Contain("SetupSysSettings",
+			because: "the generated reference should preserve the source reference content");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the agent-execution guidance article")]
+	public async Task McpServer_Should_Return_Agent_Execution_Guidance() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(AgentExecutionUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the agent-execution guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(AgentExecutionUri,
+			because: "the returned article should preserve the stable agent-execution guidance URI");
+		article.Text.Should().Contain("clio MCP agent execution guide",
+			because: "the article should identify itself as the dedicated agent-execution guide");
+		article.Text.Should().Contain("Execution order",
+			because: "the guide should publish a numbered execution order section");
+		article.Text.Should().Contain("Schema sync recovery patterns",
+			because: "the guide should cover schema-sync recovery patterns owned by clio");
+		article.Text.Should().Contain("delete the orphaned entity using `delete-schema`",
+			because: "the guide should encode the orphan-cleanup step for the section recovery path");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the support-mode guidance article")]
+	public async Task McpServer_Should_Return_Support_Mode_Guidance() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(SupportModeUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the support-mode guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(SupportModeUri,
+			because: "the returned article should preserve the stable support-mode guidance URI");
+		article.Text.Should().Contain("clio MCP support-mode guide",
+			because: "the article should identify itself as the dedicated support-mode guide");
+		article.Text.Should().Contain("Diagnostic-first execution",
+			because: "the guide should publish the diagnostic-first execution policy");
+		article.Text.Should().Contain("clio_mcp_issue",
+			because: "the guide should declare the primary critical defect category");
+		article.Text.Should().Contain("exit_decision=fail_fast",
+			because: "the guide should encode the fail-fast evidence triple emitted before stopping");
+		article.Text.Should().Contain("Support mode is on. Please share this session with support for analysis.",
+			because: "the guide should encode the canonical handoff line appended to support-mode final responses");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the data-bindings guidance article")]
+	public async Task McpServer_Should_Return_Data_Bindings_Guidance() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(DataBindingsUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the binding guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(DataBindingsUri,
+			because: "the returned article should preserve the stable binding guidance URI");
+		article.Text.Should().Contain("sync-schemas",
+			because: "the guide should advertise the canonical batched lookup-seeding path");
+		article.Text.Should().Contain("create-data-binding-db",
+			because: "the guide should advertise the DB-first binding path");
+		article.Text.Should().Contain("create-data-binding",
+			because: "the guide should advertise the local binding artifact path");
+		article.Text.Should().NotContain(".agents/skills/clio-data-bindings",
+			because: "the guide should stay valid after install-skills copies the bundle outside the source repo layout");
+		article.Text.Should().NotContain("assets/bindings-lookup.json",
+			because: "section-specific stable ID sourcing does not belong in the generic binding guide");
+		article.Text.Should().Contain("runtime-only columns are not blockers",
+			because: "the guide should explain the DB-first subset-column projection rule for Account-like schemas");
+		article.Text.Should().Contain("install logs or planned payloads",
+			because: "the guide should reject install-log-only verification for remote binding mutations");
+		article.Text.Should().Contain("Seed rows do not implement defaults",
+			because: "the guide should keep lookup seeding separate from default semantics");
 	}
 
 	[Test]
@@ -67,8 +303,8 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the article should explain how to discover the target installed application");
 		article.Text.Should().Contain("update-page",
 			because: "the article should describe the minimal page mutation path");
-		article.Text.Should().Contain("do not wrap MCP arguments inside `args`",
-			because: "the article should explicitly reject the request wrapper that caused the analyzed session failure");
+		article.Text.Should().Contain("Wrap MCP tool arguments under the top-level `args` JSON object",
+			because: "the article should explicitly publish the wrapped request shape required by the clio MCP tool schema");
 		article.Text.Should().Contain("do not send `bundle` or `bundle.viewConfig` as the body payload",
 			because: "the article should explain the concrete writable page payload shape");
 		article.Text.Should().Contain("JSON object string",
@@ -79,6 +315,33 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the article should describe the minimal single-column schema mutation path");
 		article.Text.Should().Contain("Read before write",
 			because: "the article should encode the canonical maintenance verification discipline");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the page-schema converters guidance article")]
+	public async Task McpServer_Should_Return_Page_Schema_Converters_Guidance() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(PageSchemaConvertersUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		result.Contents.Should().ContainSingle(
+			because: "the guidance resource should resolve to a single plain-text article");
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the converters guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(PageSchemaConvertersUri,
+			because: "the returned article should preserve the stable converter guidance URI");
+		article.Text.Should().Contain("SCHEMA_CONVERTERS",
+			because: "the converter guide should anchor editing to the correct page-body marker section");
+		article.Text.Should().Contain("NON-NEGOTIABLES",
+			because: "the converter guide must include the mandatory constraint section");
+		article.Text.Should().Contain("Only declare custom (`usr.*`) converters in `SCHEMA_CONVERTERS`",
+			because: "the converter guide should document that only usr.* keys are custom-declared here");
 	}
 
 	[Test]
@@ -100,9 +363,9 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the returned article should preserve the stable handler guidance URI");
 		article.Text.Should().Contain("SCHEMA_HANDLERS",
 			because: "the handler guide should anchor editing to the correct page-body marker section");
-		article.Text.Should().Contain("you MUST read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
+		article.Text.Should().Contain("you MUST read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
 			because: "the handler guide should point sdk-backed and service-backed handler edits to the dedicated sdk common guide");
-		article.Text.Should().Contain("you MUST read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
+		article.Text.Should().Contain("you MUST read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
 			because: "the handler guide should make sdk and service routing to the sdk-common guide mandatory");
 		article.Text.Should().Contain("Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call",
 			because: "the handler guide should force ai callers through the sdk-common guide before they choose a data or service implementation pattern");
@@ -118,7 +381,7 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the handler guide should explain the page-body request-dispatch choice explicitly");
 		article.Text.Should().Contain("| deployed page-body handler in `SCHEMA_HANDLERS` | `await request.$context.executeRequest(...)` |",
 			because: "the handler guide should prefer executeRequest for deployed page-body handlers");
-		article.Text.Should().Contain("Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-sdk-common`.",
+		article.Text.Should().Contain("Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-creatio-devkit-common`.",
 			because: "the handler guide should keep HandlerChainService out of the default page-body authoring path");
 		article.Text.Should().Contain("Chain-control rules",
 			because: "the handler guide should explain next-placement semantics from the handler chain contract");
@@ -134,7 +397,7 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the handler guide should explicitly reject invented and legacy sender/get/set access patterns");
 		article.Text.Should().Contain("Canonical rule for `crt.HandleViewModelAttributeChangeRequest`: use `request.value` for the triggering attribute, not `request.viewModel.get(...)`.",
 			because: "the handler guide should spell out the exact attribute-change API that prevents invented request.viewModel reads");
-		article.Text.Should().Contain("Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-sdk-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.",
+		article.Text.Should().Contain("Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-creatio-devkit-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.",
 			because: "the handler guide should stop callers from defaulting to raw platform fetches");
 		article.Text.Should().Contain("same declared view-model attribute that handlers read or write through `$context.set(\"<AttributeName>\", ...)`",
 			because: "the handler guide should make handler-driven control binding explicit without relying on datasource naming conventions");
@@ -290,12 +553,12 @@ public sealed class McpGuidanceResourceE2ETests {
 		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
 
 		// Act
-		ReadResourceResult result = await context.Session.ReadResourceAsync(PageSchemaSdkCommonUri, context.CancellationTokenSource.Token);
+		ReadResourceResult result = await context.Session.ReadResourceAsync(PageSchemaCreatioDevkitCommonUri, context.CancellationTokenSource.Token);
 
 		// Assert
 		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the sdk common guide should resolve to a single plain-text article").Subject;
-		article.Uri.Should().Be(PageSchemaSdkCommonUri,
+		article.Uri.Should().Be(PageSchemaCreatioDevkitCommonUri,
 			because: "the returned article should preserve the stable sdk common guidance URI");
 		article.Text.Should().Contain("clio MCP page-schema sdk common guide",
 			because: "the guide should identify itself as the dedicated sdk common article");
@@ -486,7 +749,7 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the returned article should preserve the stable validator guidance URI");
 		article.Text.Should().Contain("SCHEMA_VALIDATORS",
 			because: "the validator guide should anchor editing to the correct page-body marker section");
-		article.Text.Should().Contain("also read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service calls",
+		article.Text.Should().Contain("also read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service calls",
 			because: "the validator guide should point SDK-backed validator edits to the dedicated sdk common guide");
 		article.Text.Should().Contain("field-value validation",
 			because: "the validator guide should state the intended responsibility of validators");
@@ -511,6 +774,9 @@ public sealed class McpGuidanceResourceE2ETests {
 	}
 
 	private static string BuildGuideUri(string guideName) => $"{DocsScheme}://{GuidesPath}/{guideName}";
+
+	private static string BuildReferenceUri(string guideName, string referenceName) =>
+		$"{DocsScheme}://mcp/references/{guideName}/{referenceName}";
 
 	private sealed record ArrangeContext(
 		McpServerSession Session,

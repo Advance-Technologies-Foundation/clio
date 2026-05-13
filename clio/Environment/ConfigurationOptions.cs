@@ -329,7 +329,7 @@ namespace Clio
 			}
 		}
 
-		public bool Autoupdate {
+		public bool? Autoupdate {
 			get; set;
 		}
 
@@ -586,7 +586,12 @@ namespace Clio
 		}
 
 		public bool GetAutoupdate() {
-			return _settings.Autoupdate;
+			return _settings.Autoupdate ?? true;
+		}
+
+		public void SetAutoupdate(bool value) {
+			_settings.Autoupdate = value;
+			Save();
 		}
 
 		public void ConfigureEnvironment(string name, EnvironmentSettings environment) {

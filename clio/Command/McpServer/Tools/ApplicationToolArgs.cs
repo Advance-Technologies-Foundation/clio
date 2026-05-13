@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
@@ -48,14 +48,15 @@ public sealed record ApplicationCreateArgs(
 	string Name,
 
 	[property: JsonPropertyName("code")]
-	[property: Description("Application code starting with 'Usr' prefix, e.g. 'UsrMyApp'")]
+	[property: Description(
+		"Application code. Pass the business-meaningful part only (e.g. 'TodoList'). " +
+		"clio reads SchemaNamePrefix from the environment and applies it automatically. " +
+		"If you pass an already-prefixed code (e.g. 'UsrTodoList'), the prefix is not duplicated. " +
+		"The effective prefix and the resulting application code are returned in the response as 'schema-name-prefix' and 'application-code'. " +
+		"Use 'schema-name-prefix' from the response as the prefix for ALL subsequent schema names (lookups, entity columns, supporting entities). " +
+		"Creatio derives the package name, main entity schema name, and page schema names ({prefix}{code}_FormPage, {prefix}{code}_ListPage, etc.) directly from this code.")]
 	[property: Required]
 	string Code,
-
-	[property: JsonPropertyName("icon-background")]
-	[property: Description("Application icon background color in #RRGGBB format, e.g. '#1F5F8B'")]
-	[property: Required]
-	string IconBackground,
 
 	[property: JsonPropertyName("template-code")]
 	[property: Description("Technical template name (NOT display name). Known values: AppFreedomUI, AppFreedomUIv2, AppWithHomePage, EmptyApp. Defaults to AppFreedomUI when omitted — use this default unless you have a specific reason to change it.")]
@@ -64,6 +65,10 @@ public sealed record ApplicationCreateArgs(
 	[property: JsonPropertyName("description")]
 	[property: Description("Application description")]
 	string? Description = null,
+
+	[property: JsonPropertyName("icon-background")]
+	[property: Description("Optional Freedom UI palette color in #RRGGBB format. Must be one of: #A6DE00, #20A959, #22AC14, #FFAC07, #FF8800, #F9307F, #FF602E, #FF4013, #B87CCF, #7848EE, #247EE5, #0058EF, #009DE3, #4F43C2, #08857E, #00BFA5. Omit unless the user explicitly requested a specific color — a random palette color is assigned automatically when absent.")]
+	string? IconBackground = null,
 
 	[property: JsonPropertyName("icon-id")]
 	[property: Description("Optional application icon GUID (e.g. '00000000-0000-0000-0000-000000000000'), or 'auto' to resolve a random icon.")]
@@ -74,7 +79,12 @@ public sealed record ApplicationCreateArgs(
 	string? ClientTypeId = null,
 
 	[property: JsonPropertyName("optional-template-data-json")]
-	[property: Description("Optional JSON object: {useExistingEntitySchema, entitySchemaName, appSectionDescription, useAIContentGeneration}")]
+	[property: Description(
+		"Optional JSON object: {useExistingEntitySchema, entitySchemaName, appSectionDescription, useAIContentGeneration}. " +
+		"IMPORTANT: entitySchemaName is only valid together with useExistingEntitySchema=true, and the entity MUST already exist in Creatio " +
+		"before create-app is called. Providing both fields wires the app to that existing entity and suppresses auto-creation of a new one. " +
+		"Passing entitySchemaName without useExistingEntitySchema=true, or for an entity that does not yet exist, " +
+		"is unsupported and may fail server-side. useAIContentGeneration is not supported and will be rejected.")]
 	string? OptionalTemplateDataJson = null,
 
 	[property: JsonPropertyName("title-localizations")]

@@ -1,8 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Linq;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -17,48 +16,27 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 	#region Fields: Private
 
 	private IApplicationClient _applicationClientMock;
-	private StringWriter _textWriter;
-	private StringBuilder _sb;
-	private TextWriter _originalTextWriter;
-	private TextWriter _originalErrorWriter;
+	private static ConsoleLogger Logger => (ConsoleLogger)ConsoleLogger.Instance;
 
 	#endregion
 
 	#region Methods: Protected
 
-	
-	[OneTimeSetUp]
-	public void OneTimeSetUp(){
-		ConsoleLogger.Instance.Start();
-		_applicationClientMock = Substitute.For<IApplicationClient>();
-		_sb = new();
-		_textWriter = new StringWriter(_sb);
-		_originalTextWriter = Console.Out;
-		_originalErrorWriter = Console.Error;
-		Console.SetOut(_textWriter);
-		Console.SetError(_textWriter);
-	}
-	
-	
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
 		base.AdditionalRegistrations(containerBuilder);
 		containerBuilder.AddSingleton<IApplicationClient>(_applicationClientMock);
 	}
 
 	[OneTimeTearDown]
-	public void OneTearDown(){
-		Console.SetOut(_originalTextWriter);
-		Console.SetError(_originalTextWriter);
-		_sb.Clear();
-		_textWriter.Flush();
-		_textWriter.Close();
-		_textWriter.Dispose();
+	public void OneTimeTearDown(){
+		Logger.ClearMessages();
+		Logger.PreserveMessages = false;
 	}
-	
+
 	public override void Setup(){
 		_applicationClientMock = Substitute.For<IApplicationClient>();
-		_sb.Clear();
-		_textWriter.Flush();
+		Logger.PreserveMessages = true;
+		Logger.ClearMessages();
 		base.Setup();
 	}
 
@@ -71,58 +49,54 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 		_applicationClientMock.When(x => x.ExecuteGetRequest(Arg.Any<string>()))
 			.Do(x => throw new Exception(expectedErrorMessage));
 		LastCompilationLogCommand command = Container.GetRequiredService<LastCompilationLogCommand>();
-		
+
 		//Act
 		int result = command.Execute(new LastCompilationLogOptions());
 
 		//Assert
 		result.Should().Be(1);
-		Thread.Sleep(500);
-		_textWriter.ToString().Should().Contain($"[ERR] - {expectedErrorMessage}{Environment.NewLine}");
+		IReadOnlyList<LogMessage> messages = Logger.FlushAndSnapshotMessages(clearMessages: true);
+		messages.OfType<ErrorMessage>().Should()
+			.ContainSingle(m => m.Value.ToString() == expectedErrorMessage);
 	}
 
 	[TestCase("Examples/CompilationLog/Pair1/pair1-creatio-compilation-log.json","Examples/CompilationLog/Pair1/pair1-desired-output.txt")]
 	[TestCase("Examples/CompilationLog/Pair2/pair2-creatio-compilation-log.json","Examples/CompilationLog/Pair2/pair2-desired-output.txt")]
-	public void  Execute_ShouldReturnZero_WhenServiceReturnsResult(string input, string expectedOutput){
+	public void Execute_ShouldReturnZero_WhenServiceReturnsResult(string input, string expectedOutput){
 		//Arrange
-		string desiredOutputContent = System.IO.File.ReadAllText(expectedOutput);
-		string inputContent = System.IO.File.ReadAllText(input);
+		string desiredOutputContent = File.ReadAllText(expectedOutput);
+		string inputContent = File.ReadAllText(input);
 		_applicationClientMock.ExecuteGetRequest(Arg.Any<string>())
 			.Returns(inputContent);
-		
 		LastCompilationLogCommand command = Container.GetRequiredService<LastCompilationLogCommand>();
 
 		//Act
 		int result = command.Execute(new LastCompilationLogOptions());
-		
-		string NormalizeLineEndings(string text) =>
-		    text.Replace("\r\n", "\n").Replace("\r", "\n");
+
 		//Assert
 		result.Should().Be(0);
-		Thread.Sleep(500);
-		NormalizeLineEndings(_textWriter.ToString()).TrimEnd().Should().Contain(NormalizeLineEndings(desiredOutputContent));
-		//_textWriter.ToString().TrimEnd().Should().Contain(desiredOutputContent);
+		string NormalizeLineEndings(string text) => text.Replace("\r\n", "\n").Replace("\r", "\n");
+		IReadOnlyList<LogMessage> messages = Logger.FlushAndSnapshotMessages(clearMessages: true);
+		string messageText = NormalizeLineEndings(messages.Single().Value?.ToString() ?? string.Empty).TrimEnd();
+		messageText.Should().Contain(NormalizeLineEndings(desiredOutputContent));
 	}
-	
+
 	[TestCase("Examples/CompilationLog/Pair1/pair1-creatio-compilation-log.json","Examples/CompilationLog/Pair1/pair1-desired-output.txt")]
 	[TestCase("Examples/CompilationLog/Pair2/pair2-creatio-compilation-log.json","Examples/CompilationLog/Pair2/pair2-desired-output.txt")]
-	public void  Execute_ShouldReturnRawJson_WhenRawOptionUsed(string input, string expectedOutput){
+	public void Execute_ShouldReturnRawJson_WhenRawOptionUsed(string input, string expectedOutput){
 		//Arrange
 		string inputContent = File.ReadAllText(input);
 		_applicationClientMock.ExecuteGetRequest(Arg.Any<string>())
 			.Returns(inputContent);
-		
 		LastCompilationLogCommand command = Container.GetRequiredService<LastCompilationLogCommand>();
 
 		//Act
 		int result = command.Execute(new LastCompilationLogOptions{IsRaw = true});
-		
-		
+
 		//Assert
 		result.Should().Be(0);
-		Thread.Sleep(500);
-		_textWriter.ToString().TrimEnd().Should().Be(inputContent);
+		IReadOnlyList<LogMessage> messages = Logger.FlushAndSnapshotMessages(clearMessages: true);
+		messages.Should().ContainSingle(m => m.Value.ToString() == inputContent);
 	}
-	
 
 }

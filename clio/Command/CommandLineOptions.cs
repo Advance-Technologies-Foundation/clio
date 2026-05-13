@@ -226,11 +226,6 @@ namespace Clio
 			};
 	}
 
-	[Verb("install-gate", Aliases = ["gate", "update-gate", "installgate"], HelpText = "Install clio api gateway to application")]
-	internal class InstallGateOptions : EnvironmentNameOptions
-	{
-	}
-
 	[Verb("set-dev-mode", Aliases = ["dev", "unlock"], HelpText = "Activate developer mode for selected environment")]
 	internal class DeveloperModeOptions : EnvironmentNameOptions
 	{

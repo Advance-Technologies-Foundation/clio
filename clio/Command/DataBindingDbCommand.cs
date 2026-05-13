@@ -495,11 +495,13 @@ internal sealed class DataBindingDbService(
 
 		DataBindingDbSchema schema = FetchSchema(options.SchemaName);
 		List<Dictionary<string, JsonNode?>>? rows = ParseRowsJson(options.RowsJson);
+		ValidateRequestedBindingColumnsSupported(schema, rows);
 
 		Guid? existingBindingUId = TryLookupBindingUId(packageRef.UId, bindingName);
-		List<string> boundRecordIds = existingBindingUId.HasValue
-			? FetchExistingBoundRecordIds(existingBindingUId.Value)
+		List<Dictionary<string, JsonNode?>> existingBoundRows = existingBindingUId.HasValue
+			? FetchBoundRows(existingBindingUId.Value)
 			: [];
+		List<string> boundRecordIds = ExtractBoundRecordIds(existingBoundRows);
 
 		Dictionary<string, string> existingNameToId = ShouldFetchExistingNames(schema, rows)
 			? FetchExistingEntityNameToId(options.SchemaName)
@@ -507,9 +509,10 @@ internal sealed class DataBindingDbService(
 
 		(List<DataBindingCreatedRow> createdRows, List<DataBindingCreatedRow> skippedRows) =
 			ProcessRows(options.SchemaName, rows, schema, existingNameToId, boundRecordIds);
+		DataBindingDbSchema bindingSchema = BuildBindingSchemaProjection(schema, existingBoundRows, rows);
 
 		string requestBody = BuildSaveSchemaDataRequest(
-			packageRef, bindingName, options.SchemaName, schema, boundRecordIds,
+			packageRef, bindingName, options.SchemaName, bindingSchema, boundRecordIds,
 			existingBindingUId);
 		string response = applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveSchemaData),
@@ -578,9 +581,11 @@ internal sealed class DataBindingDbService(
 		(string entitySchemaName, Guid bindingUId) = LookupBindingInfo(packageRef.UId, options.BindingName);
 		DataBindingDbSchema schema = FetchSchema(entitySchemaName);
 		Dictionary<string, JsonNode?> values = ParseValues(options.ValuesJson);
+		ValidateRequestedBindingColumnsSupported(schema, [values]);
 
 		string rowId = EnsureRowId(values);
-		List<string> existingIds = FetchExistingBoundRecordIds(bindingUId);
+		List<Dictionary<string, JsonNode?>> existingBoundRows = FetchBoundRows(bindingUId);
+		List<string> existingIds = ExtractBoundRecordIds(existingBoundRows);
 		bool rowAlreadyBound = existingIds.Contains(rowId, StringComparer.OrdinalIgnoreCase);
 
 		if (rowAlreadyBound) {
@@ -589,9 +594,10 @@ internal sealed class DataBindingDbService(
 			InsertEntityRow(entitySchemaName, values, schema.SchemaColumns);
 			existingIds.Add(rowId);
 		}
+			DataBindingDbSchema bindingSchema = BuildBindingSchemaProjection(schema, existingBoundRows, SingleRowSet(values));
 
 		string requestBody = BuildSaveSchemaDataRequest(
-			packageRef, options.BindingName, schema.SchemaName, schema,
+			packageRef, options.BindingName, schema.SchemaName, bindingSchema,
 			existingIds,
 			bindingUId != Guid.Empty ? bindingUId : null);
 		string response = applicationClient.ExecutePostRequest(
@@ -606,7 +612,8 @@ internal sealed class DataBindingDbService(
 
 		PackageRef packageRef = ResolvePackageRef(options.PackageName);
 		(string entitySchemaName, Guid bindingUId) = LookupBindingInfo(packageRef.UId, options.BindingName);
-		List<string> boundIds = FetchExistingBoundRecordIds(bindingUId);
+		List<Dictionary<string, JsonNode?>> boundRows = FetchBoundRows(bindingUId);
+		List<string> boundIds = ExtractBoundRecordIds(boundRows);
 
 		if (!boundIds.Contains(options.KeyValue, StringComparer.OrdinalIgnoreCase)) {
 			throw new InvalidOperationException(
@@ -615,14 +622,18 @@ internal sealed class DataBindingDbService(
 
 		DeleteEntityRow(entitySchemaName, options.KeyValue);
 		boundIds.RemoveAll(id => string.Equals(id, options.KeyValue, StringComparison.OrdinalIgnoreCase));
+		boundRows.RemoveAll(row =>
+			row.TryGetValue("Id", out JsonNode? idNode) &&
+			string.Equals(idNode?.ToString(), options.KeyValue, StringComparison.OrdinalIgnoreCase));
 
 		if (boundIds.Count == 0) {
 			DeletePackageSchemaData(packageRef.UId, options.BindingName);
 		}
 		else {
 			DataBindingDbSchema schema = FetchSchema(entitySchemaName);
+			DataBindingDbSchema bindingSchema = BuildBindingSchemaProjection(schema, boundRows);
 			string requestBody = BuildSaveSchemaDataRequest(
-				packageRef, options.BindingName, entitySchemaName, schema,
+				packageRef, options.BindingName, entitySchemaName, bindingSchema,
 				boundIds,
 				bindingUId != Guid.Empty ? bindingUId : null);
 			string response = applicationClient.ExecutePostRequest(
@@ -674,7 +685,7 @@ internal sealed class DataBindingDbService(
 			isKey = string.Equals(col.Name, "Id", StringComparison.OrdinalIgnoreCase),
 			name = col.Name,
 			caption = col.Name,
-			dataValueTypeUId = DataValueTypeMap.FromRuntimeValueType(col.DataValueType).ToString()
+			dataValueTypeUId = ResolveBindingDataTypeValueUId(col).ToString()
 		}).ToArray();
 
 		var payload = new {
@@ -1038,12 +1049,92 @@ internal sealed class DataBindingDbService(
 		return newId;
 	}
 
-	private List<string> FetchExistingBoundRecordIds(Guid bindingUId) =>
-		FetchBoundRows(bindingUId)
+	private static List<string> ExtractBoundRecordIds(IEnumerable<Dictionary<string, JsonNode?>> rows) =>
+		rows
 			.Where(row => row.TryGetValue("Id", out JsonNode? idNode) && idNode is not null)
 			.Select(row => row["Id"]!.GetValue<string>())
 			.Where(id => !string.IsNullOrWhiteSpace(id))
 			.ToList();
+
+	private static void ValidateRequestedBindingColumnsSupported(
+		DataBindingDbSchema schema,
+		IEnumerable<Dictionary<string, JsonNode?>>? rows) {
+		if (rows is null) {
+			return;
+		}
+
+		HashSet<string> requestedColumnNames = rows
+			.SelectMany(row => row.Keys)
+			.Where(name => !string.IsNullOrWhiteSpace(name))
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		foreach (string requestedColumnName in requestedColumnNames) {
+			DataBindingSchemaColumn? column = schema.SchemaColumns
+				.FirstOrDefault(col => string.Equals(col.Name, requestedColumnName, StringComparison.OrdinalIgnoreCase));
+			if (column is null) {
+				continue;
+			}
+
+			ResolveBindingDataTypeValueUId(column);
+		}
+	}
+
+	private static DataBindingDbSchema BuildBindingSchemaProjection(
+		DataBindingDbSchema runtimeSchema,
+		params IEnumerable<Dictionary<string, JsonNode?>>?[] rowSets) {
+		HashSet<string> referencedColumns = CollectReferencedColumnNames(rowSets);
+		List<DataBindingSchemaColumn> projectedColumns = SelectBindingSchemaColumns(runtimeSchema.SchemaColumns, referencedColumns);
+		ValidateBindingSchemaColumnsSupported(projectedColumns);
+		return new DataBindingDbSchema(
+			runtimeSchema.EntitySchemaUId,
+			runtimeSchema.SchemaName,
+			projectedColumns.Select(col => col.Name).ToList(),
+			projectedColumns);
+	}
+
+	private static IEnumerable<Dictionary<string, JsonNode?>> SingleRowSet(Dictionary<string, JsonNode?> row) {
+		yield return row;
+	}
+
+	private static HashSet<string> CollectReferencedColumnNames(IEnumerable<Dictionary<string, JsonNode?>>?[] rowSets) {
+		HashSet<string> referencedColumns = new(StringComparer.OrdinalIgnoreCase) { "Id" };
+		foreach (IEnumerable<Dictionary<string, JsonNode?>>? rowSet in rowSets) {
+			if (rowSet is null) {
+				continue;
+			}
+
+			foreach (Dictionary<string, JsonNode?> row in rowSet) {
+				foreach (string columnName in row.Keys.Where(name => !string.IsNullOrWhiteSpace(name))) {
+					referencedColumns.Add(columnName);
+				}
+			}
+		}
+
+		return referencedColumns;
+	}
+
+	private static List<DataBindingSchemaColumn> SelectBindingSchemaColumns(
+		IReadOnlyList<DataBindingSchemaColumn> runtimeSchemaColumns,
+		HashSet<string> referencedColumns) =>
+		runtimeSchemaColumns
+			.Where(column => referencedColumns.Contains(column.Name))
+			.ToList();
+
+	private static void ValidateBindingSchemaColumnsSupported(IEnumerable<DataBindingSchemaColumn> schemaColumns) {
+		foreach (DataBindingSchemaColumn schemaColumn in schemaColumns) {
+			ResolveBindingDataTypeValueUId(schemaColumn);
+		}
+	}
+
+	private static Guid ResolveBindingDataTypeValueUId(DataBindingSchemaColumn column) {
+		try {
+			return DataValueTypeMap.FromRuntimeValueType(column.DataValueType);
+		}
+		catch (InvalidOperationException exception) {
+			throw new InvalidOperationException(
+				$"Column '{column.Name}' uses unsupported runtime dataValueType '{column.DataValueType}' for DB-first binding generation.",
+				exception);
+		}
+	}
 
 	private Dictionary<string, string> FetchExistingEntityNameToId(string schemaName) {
 		EntityNameSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<EntityNameSelectResponse>(

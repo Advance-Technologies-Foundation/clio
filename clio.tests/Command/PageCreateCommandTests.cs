@@ -159,7 +159,11 @@ public sealed class PageCreateCommandTests {
 		response.TemplateName.Should().Be(TemplateName);
 		response.PackageUId.Should().Be(PackageUId);
 		response.Caption.Should().Be("Demo page");
-		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl, Arg.Is<string>(s => s.Contains(TemplateUId)));
+		response.SchemaType.Should().Be(9);
+		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
+			Arg.Is<string>(s => s.Contains(TemplateUId)
+				&& s.Contains("\"extendParent\":false")
+				&& s.Contains("\"group\":\"Page\"")));
 	}
 
 	[Test]

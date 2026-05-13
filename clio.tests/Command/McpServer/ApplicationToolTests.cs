@@ -272,7 +272,8 @@ public sealed class ApplicationToolTests {
 				ApplicationId: "app-id",
 				ApplicationName: "Vehicle App",
 				ApplicationCode: "UsrVehicleApp",
-				ApplicationVersion: "8.3.0"));
+				ApplicationVersion: "8.3.0",
+				SchemaNamePrefix: "Usr"));
 		ApplicationGetInfoTool tool = new(applicationInfoService);
 
 		// Act
@@ -309,6 +310,8 @@ public sealed class ApplicationToolTests {
 			because: "get-app-info should now return the primary-package page summaries");
 		result.Pages![0].SchemaName.Should().Be("UsrVehicle_FormPage",
 			because: "get-app-info should expose page identities through schema-name");
+		result.SchemaNamePrefix.Should().Be("Usr",
+			because: "get-app-info should surface the active SchemaNamePrefix so the agent knows the correct prefix for subsequent schema names");
 	}
 
 	[Test]
@@ -704,7 +707,7 @@ public sealed class ApplicationToolTests {
 			Description: null,
 			TemplateCode: "AppFreedomUI",
 			IconId: "auto",
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: "22222222-2222-2222-2222-222222222222",
 			OptionalTemplateDataJson: """
 				{"entitySchemaName":"UsrCodexEntity","useExistingEntitySchema":true,"useAIContentGeneration":false,"appSectionDescription":"Section description"}
@@ -719,7 +722,7 @@ public sealed class ApplicationToolTests {
 				request.Description == null &&
 				request.TemplateCode == "AppFreedomUI" &&
 				request.IconId == "auto" &&
-				request.IconBackground == "#112233" &&
+				request.IconBackground == "#0058EF" &&
 				request.ClientTypeId == "22222222-2222-2222-2222-222222222222" &&
 				request.OptionalTemplateData != null &&
 				request.OptionalTemplateData.EntitySchemaName == "UsrCodexEntity" &&
@@ -797,6 +800,7 @@ public sealed class ApplicationToolTests {
 					ParentSchemaName = "BasePage"
 				}
 			],
+			SchemaNamePrefix: "Usr",
 			DataForge: new ApplicationDataForgeResult(
 				Used: true,
 				Health: new DataForgeHealthResult(true, true, true, true, "corr-id"),
@@ -829,6 +833,8 @@ public sealed class ApplicationToolTests {
 			because: "application context responses should preserve the installed application version");
 		json.Should().Contain("\"pages\"",
 			because: "application context responses should now surface primary-package page summaries");
+		json.Should().Contain("\"schema-name-prefix\":\"Usr\"",
+			because: "application context responses should surface the active SchemaNamePrefix using the standard kebab-case field name");
 		json.Should().Contain("\"schema-name\":\"UsrEntity_FormPage\"",
 			because: "application page payloads should use schema-name instead of name");
 		json.Should().Contain("\"u-id\":\"entity-uid\"",
@@ -881,11 +887,11 @@ public sealed class ApplicationToolTests {
 		string[] requiredProperties = [
 			nameof(ApplicationCreateArgs.EnvironmentName),
 			nameof(ApplicationCreateArgs.Name),
-			nameof(ApplicationCreateArgs.Code),
-			nameof(ApplicationCreateArgs.IconBackground)
+			nameof(ApplicationCreateArgs.Code)
 		];
 		string[] optionalProperties = [
 			nameof(ApplicationCreateArgs.TemplateCode),
+			nameof(ApplicationCreateArgs.IconBackground),
 			nameof(ApplicationCreateArgs.IconId),
 			nameof(ApplicationCreateArgs.ClientTypeId),
 			nameof(ApplicationCreateArgs.Description),
@@ -928,7 +934,7 @@ public sealed class ApplicationToolTests {
 			Description: null,
 			TemplateCode: "AppFreedomUI",
 			IconId: null,
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: null,
 			OptionalTemplateDataJson: "{not-json"));
 
@@ -958,7 +964,7 @@ public sealed class ApplicationToolTests {
 			Description: null,
 			TemplateCode: "AppFreedomUI",
 			IconId: null,
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: null,
 			OptionalTemplateDataJson: null,
 			TitleLocalizations: new Dictionary<string, string> {
@@ -991,7 +997,7 @@ public sealed class ApplicationToolTests {
 			Description: null,
 			TemplateCode: "AppFreedomUI",
 			IconId: null,
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: null,
 			OptionalTemplateDataJson: JsonSerializer.Serialize(new {
 				useAIContentGeneration = true
@@ -1002,6 +1008,70 @@ public sealed class ApplicationToolTests {
 			because: "validation failures should now be returned as structured error payloads");
 		result.Error.Should().Match("*useAiContentGeneration=true*",
 			because: "the create tool should match the core behavior that rejects AI-generated template content");
+		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when entitySchemaName is supplied without useExistingEntitySchema=true, which would cause a server-side NPE.")]
+	public async Task ApplicationCreate_Should_Return_Error_When_EntitySchemaName_Provided_Without_UseExistingEntitySchema() {
+		// Arrange
+		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+
+		// Act
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+			EnvironmentName: "sandbox",
+			Name: "Customer Base",
+			Code: "UsrCustomerBase",
+			Description: null,
+			TemplateCode: "AppFreedomUI",
+			IconId: null,
+			IconBackground: "#0058EF",
+			ClientTypeId: null,
+			OptionalTemplateDataJson: JsonSerializer.Serialize(new {
+				entitySchemaName = "UsrCustomerProfile"
+			})));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "passing entitySchemaName without useExistingEntitySchema=true triggers a server-side NullReferenceException and must be blocked in clio");
+		result.Error.Should().Match("*useExistingEntitySchema=true*",
+			because: "the error message must tell the caller that entitySchemaName is only valid together with useExistingEntitySchema=true");
+		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when useExistingEntitySchema=true is supplied without entitySchemaName.")]
+	public async Task ApplicationCreate_Should_Return_Error_When_UseExistingEntitySchema_True_But_EntitySchemaName_Is_Empty() {
+		// Arrange
+		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+
+		// Act
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+			EnvironmentName: "sandbox",
+			Name: "Customer Base",
+			Code: "UsrCustomerBase",
+			Description: null,
+			TemplateCode: "AppFreedomUI",
+			IconId: null,
+			IconBackground: "#0058EF",
+			ClientTypeId: null,
+			OptionalTemplateDataJson: JsonSerializer.Serialize(new {
+				useExistingEntitySchema = true
+			})));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "useExistingEntitySchema=true without entitySchemaName is an incomplete and unusable combination");
+		result.Error.Should().Match("*entitySchemaName*required*",
+			because: "the error message must tell the caller that entitySchemaName is required when useExistingEntitySchema=true");
 		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
 		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
 	}
@@ -1033,7 +1103,7 @@ public sealed class ApplicationToolTests {
 			Description: null,
 			TemplateCode: "AppFreedomUI",
 			IconId: null,
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: null,
 			OptionalTemplateDataJson: null));
 
@@ -1386,7 +1456,7 @@ public sealed class ApplicationToolTests {
 			name: "Codex App",
 			code: "UsrCodexApp",
 			templateCode: "AppFreedomUI",
-			iconBackground: "#112233",
+			iconBackground: "#0058EF",
 			description: null,
 			iconId: "11111111-1111-1111-1111-111111111111",
 			clientTypeId: "22222222-2222-2222-2222-222222222222",
@@ -1418,8 +1488,10 @@ public sealed class ApplicationToolTests {
 			because: "the list prompt should guide callers toward registering an environment before normal MCP work");
 		listPrompt.Should().Contain("emergency recovery flow",
 			because: "the list prompt should keep direct connection args in an emergency-only role");
-		listPrompt.Should().Contain("do not wrap `environment-name` inside an `args` object",
-			because: "the list prompt should explicitly reject the request shape that caused the analyzed session failure");
+		listPrompt.Should().Contain("Wrap tool arguments under the top-level `args` JSON object",
+			because: "the list prompt should explicitly publish the wrapped request shape required by the clio MCP tool schema");
+		listPrompt.Should().Contain("places `environment-name` inside the required `args` object",
+			because: "the list prompt should call out that environment-name must live inside the wrapped args object");
 		listPrompt.Should().NotContain("`app-id`",
 			because: "the list prompt should no longer advertise application filters");
 		listPrompt.Should().NotContain("`app-code`",
@@ -1446,10 +1518,10 @@ public sealed class ApplicationToolTests {
 			because: "the create prompt should reference the exact production tool name");
 		createPrompt.Should().Contain(ToolContractGetTool.ToolName,
 			because: "the create prompt should bootstrap app-modeling workflows from the authoritative MCP contract");
-		createPrompt.Should().Contain("Provide `name`, `code`, `template-code`, and `icon-background`",
-			because: "the create prompt should explain the new required input contract");
-		createPrompt.Should().Contain("do not nest them under `args`",
-			because: "the create prompt should explicitly reject the wrapper shape that caused the analyzed session failure");
+		createPrompt.Should().Contain("Provide `name`, `code`, and `template-code`",
+			because: "the create prompt should explain the required input contract");
+		createPrompt.Should().Contain("Wrap those fields inside the top-level `args` JSON object",
+			because: "the create prompt should explicitly publish the wrapped request shape required by the clio MCP tool schema");
 		createPrompt.Should().Contain("`optional-template-data-json`",
 			because: "the create prompt should mention the JSON string template-data field");
 		createPrompt.Should().Contain(GuidanceGetTool.ToolName,
@@ -1537,7 +1609,7 @@ public sealed class ApplicationToolTests {
 			Description: null,
 			TemplateCode: string.Empty,
 			IconId: null,
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: null,
 			OptionalTemplateDataJson: null));
 
@@ -1551,11 +1623,16 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a structured error envelope when icon-background is missing from the minimal create-app shell.")]
-	public async Task ApplicationCreate_Should_Return_Error_When_IconBackground_Is_Missing() {
+	[Description("Accepts a missing icon-background and forwards the request to the service, which assigns a random palette color.")]
+	public async Task ApplicationCreate_Should_Accept_Missing_IconBackground_And_Forward_To_Service() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		applicationCreateService.CreateApplication(Arg.Any<string>(), Arg.Any<ApplicationCreateRequest>())
+			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
+		enrichmentService.EnrichAsync(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
+			.Returns(new ApplicationDataForgeResult(Used: false, Health: null, Status: null, Coverage: null,
+				Warnings: Array.Empty<string>(), ContextSummary: null));
 		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
@@ -1563,22 +1640,12 @@ public sealed class ApplicationToolTests {
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
-			Description: null,
-			TemplateCode: "AppFreedomUI",
-			IconId: null,
-			IconBackground: string.Empty,
-			ClientTypeId: null,
-			OptionalTemplateDataJson: null));
+			IconBackground: null));
 
 		// Assert
-		result.Success.Should().BeFalse(
-			because: "missing required shell fields should fail before the backend create flow starts");
-		result.Error.Should().Contain("icon-background is required",
-			because: "the validation message should identify the missing contract field");
-		result.Error.Should().Contain("#1F5F8B",
-			because: "the validation message should point callers to a valid color example");
-		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
-		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
+		result.Success.Should().BeTrue(
+			because: "omitting icon-background is valid — the service assigns a random Freedom UI palette color");
+		applicationCreateService.ReceivedWithAnyArgs().CreateApplication(default!, default!);
 	}
 
 	[Test]

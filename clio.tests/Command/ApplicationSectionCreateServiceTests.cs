@@ -254,6 +254,58 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
+	[Description("When EntitySchemaName is provided, Creatio stores Code = EntitySchemaName on the section " +
+		"instead of the caption-derived code sent in the INSERT. The readback must match by EntitySchemaName " +
+		"so that the polling loop finds the section and returns success.")]
+	public void CreateSection_WithPlatformEntity_Should_Match_Section_By_EntitySchemaName_As_Code() {
+		// Arrange
+		ApplicationEntityInfoResult entity = new("entity-uid", "Case", "Cases", []);
+		ApplicationInfoResult appInfo = new(
+			"pkg-uid", "UsrTaskApp", [entity], [], "app-id", "Task App", "UsrTaskApp", "8.3.0");
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrTaskApp")
+			.Returns(appInfo);
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysAppIcons\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"11111111-1111-1111-1111-111111111111"}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+				body.Contains("\"Code\"", StringComparison.Ordinal) &&
+				!body.Contains("\"filters\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal) &&
+				body.Contains("\"filters\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"My Case Section","Code":"Case","Description":null,"EntitySchemaName":"Case","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+				body.Contains("\"filters\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrTaskApp",
+				Caption: "My Case Section",
+				EntitySchemaName: "Case"));
+
+		// Assert
+		result.Section.Code.Should().Be("Case",
+			because: "Creatio stores Code = EntitySchemaName for platform entity sections; " +
+				"the readback must match this server-assigned code, not the caption-derived code sent in the INSERT");
+		result.Section.EntitySchemaName.Should().Be("Case",
+			because: "the entity schema name from the request should be reflected in the section result");
+	}
+
+	[Test]
 	[Description("Rejects requests that omit application-code before any remote calls are made.")]
 	public void CreateSection_Should_Reject_Missing_ApplicationCode() {
 		// Arrange

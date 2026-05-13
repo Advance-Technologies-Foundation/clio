@@ -34,6 +34,8 @@ public sealed class CreateEntitySchemaTool(
 				 
 				 Use this when the schema should be created directly on the target environment instead of generating
 				 local source files. The package must already exist on the target environment.
+				 
+				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.
 				 """)]
 	public async Task<CommandExecutionResult> CreateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to BaseEntity unless extend-parent is true), extend-parent (optional, requires parent-schema-name when true)")] [Required] CreateEntitySchemaArgs args
@@ -231,7 +233,8 @@ public sealed class UpdateEntitySchemaTool(
 	/// </summary>
 	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema.")]
+	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema. " +
+		"Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.")]
 	public async Task<CommandExecutionResult> UpdateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, operations (all required)")] [Required] UpdateEntitySchemaArgs args) {
 		ApplicationDataForgeResult? dataForge = null;
@@ -510,7 +513,11 @@ public abstract record EntitySchemaCreateArgsBase(
 	string PackageName,
 
 	[property: JsonPropertyName("schema-name")]
-	[property: Description("Entity schema name. Maximum length is 22 characters.")]
+	[property: Description("Entity schema name. Maximum length is 22 characters. " +
+		"Must use the active SchemaNamePrefix as prefix (e.g. 'UsrAlpha' when prefix is 'Usr', 'MyPrefixAlpha' when prefix is 'MyPrefix'). " +
+		"When `schema-name-prefix` is empty, use no prefix (plain PascalCase, e.g. 'Alpha'). " +
+		"Read the prefix from the `schema-name-prefix` field returned by `get-app-info`, " +
+		"or call `get-schema-name-prefix` if you have not called `get-app-info` yet.")]
 	[property: Required]
 	string SchemaName,
 
@@ -525,7 +532,10 @@ public abstract record EntitySchemaCreateArgsBase(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("columns")]
-	[property: Description("Optional initial columns to add to the schema.")]
+	[property: Description("Optional initial columns to add to the schema. " +
+		"Column codes must also use the active SchemaNamePrefix (e.g. 'UsrEmail' when prefix is 'Usr'). " +
+		"When `schema-name-prefix` is empty, use plain column names with no prefix. " +
+		"Use the same prefix value from `schema-name-prefix`.")]
 	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null
 ) {
 	[property: JsonPropertyName("title")]
@@ -604,7 +614,10 @@ public sealed record UpdateEntitySchemaArgs(
 /// </summary>
 public sealed record CreateEntitySchemaColumnArgs(
 	[property: JsonPropertyName("name")]
-	[property: Description("Column name")]
+	[property: Description("Column code. Must use the active SchemaNamePrefix as prefix " +
+		"(e.g. 'UsrStatus' when prefix is 'Usr', 'MyStatus' when prefix is 'My'). " +
+		"When `schema-name-prefix` is empty, use plain PascalCase with no prefix (e.g. 'Status'). " +
+		"Use the same prefix value from `schema-name-prefix`.")]
 	[property: Required]
 	string Name,
 

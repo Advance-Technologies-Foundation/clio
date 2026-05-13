@@ -8,7 +8,9 @@ using System.Runtime.InteropServices;
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Command;
+using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.ApplicationCommand;
+using Clio.Command.BusinessRules;
 using Clio.Command.ChainItems;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Command.EntitySchemaDesigner;
@@ -201,10 +203,31 @@ public class BindingsModule {
 		services.AddTransient<CreateAppSectionCommand>();
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
 		services.AddTransient<UpdateAppSectionCommand>();
+		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
+		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
+		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();
+		services.AddTransient<IBusinessRuleFormulaValidationService, BusinessRuleFormulaValidationService>();
+		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
+		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
+		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
+		services.AddTransient<CreateEntityBusinessRuleCommand>();
+		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();
+		services.AddTransient<IPageBusinessRuleAttributeProvider, PageBusinessRuleAttributeProvider>();
+		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
+		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
+		services.AddTransient<CreatePageBusinessRuleCommand>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
+		services.AddTransient<IdentityProviderListCommand>();
+		services.AddTransient<IdentityProviderUpsertCommand>();
+		services.AddTransient<IdentityProviderSetSecretCommand>();
+		services.AddTransient<IdentityProviderDeleteCommand>();
+		services.AddTransient<IdentityProviderSetDefaultCommand>();
+		services.AddTransient<IdentityProviderBindCommand>();
+		services.AddTransient<IdentityProviderUnbindCommand>();
+		services.AddTransient<IdentityProviderServicesCommand>();
 		services.AddTransient<CreateAppCommand>();
 		services.AddTransient<GetAppInfoCommand>();
 		services.AddTransient<CreateLookupCommand>();
@@ -238,6 +261,8 @@ public class BindingsModule {
 		services.AddTransient<ApplicationCreateTool>();
 		services.AddTransient<ApplicationSectionCreateTool>();
 		services.AddTransient<ApplicationSectionUpdateTool>();
+		services.AddTransient<CreateEntityBusinessRuleTool>();
+		services.AddTransient<CreatePageBusinessRuleTool>();
 		services.AddTransient<ApplicationSectionDeleteTool>();
 		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();
@@ -260,6 +285,7 @@ public class BindingsModule {
 		services.AddTransient<PageSyncTool>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
@@ -273,7 +299,7 @@ public class BindingsModule {
 		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
 		services.AddTransient<OpenCfgCommand>();
-		services.AddTransient<InstallGatePkgCommand>();
+		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<PingAppCommand>();
 		services.AddTransient<SqlScriptCommand>();
 		services.AddTransient<CompressPackageCommand>();
@@ -286,6 +312,7 @@ public class BindingsModule {
 		services.AddTransient<CheckNugetUpdateCommand>();
 		services.AddHttpClient<INugetPackagesProvider, NugetPackagesProvider>();
 		services.AddTransient<UpdateCliCommand>();
+		services.AddTransient<SetAutoupdateCommand>();
 		services.AddTransient<RegisterCommand>();
 		services.AddTransient<UnregisterCommand>();
 		
@@ -431,7 +458,6 @@ public class BindingsModule {
 		services.AddTransient<PullPkgCommand>();
 		services.AddTransient<AssemblyCommand>();
 		services.AddTransient<UninstallCreatioCommand>();
-		services.AddTransient<InstallTideCommand>();
 		services.AddTransient<AddSchemaCommand>();
 		services.AddTransient<CreateEntitySchemaCommand>();
 		services.AddTransient<UpdateEntitySchemaCommand>();
@@ -477,6 +503,7 @@ public class BindingsModule {
 		services.AddTransient<ClioGateway>();
 		services.AddTransient<CompileConfigurationCommand>();
 		services.AddTransient<CompileWorkspaceCommand>();
+		services.AddTransient<GenerateSourceCodeCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();
@@ -496,6 +523,16 @@ public class BindingsModule {
 				.WithToolsFromAssembly(Assembly.GetExecutingAssembly())
 				.WithPromptsFromAssembly(Assembly.GetExecutingAssembly());
 		
+		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
+			envSettings => {
+				IDataProvider dataProvider = string.IsNullOrEmpty(envSettings.ClientId)
+					? new RemoteDataProvider(envSettings.Uri, envSettings.Login, envSettings.Password,
+						envSettings.IsNetCore)
+					: new RemoteDataProvider(envSettings.Uri, envSettings.AuthAppUri, envSettings.ClientId,
+						envSettings.ClientSecret, envSettings.IsNetCore);
+				return new SysSettingsManager(dataProvider);
+			});
+
 		RegisterFluentValidators(services);
 		additionalRegistrations?.Invoke(services);
 		return services.BuildServiceProvider(new ServiceProviderOptions {

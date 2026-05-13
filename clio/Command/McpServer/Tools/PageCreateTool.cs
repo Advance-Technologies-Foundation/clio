@@ -17,7 +17,8 @@ public sealed class PageCreateTool(
 	internal const string ToolName = "create-page";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Create a new Freedom UI page schema from a supported template. Use `list-page-templates` first to discover valid template values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	[Description("Create a new Freedom UI page schema from a supported template. Use `list-page-templates` first to discover valid template values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
+		"Page business rules (conditional visibility/editability/required) are separate artifacts — call get-guidance with name business-rules to learn more.")]
 	public PageCreateResponse CreatePage(
 		[Description("Parameters: schema-name, template, package-name (required); caption, description, entity-schema-name (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageCreateArgs args) {
@@ -49,7 +50,11 @@ public sealed class PageCreateTool(
 
 public sealed record PageCreateArgs(
 	[property: JsonPropertyName("schema-name")]
-	[property: Description("New page schema name, e.g. 'UsrMyApp_BlankPage'. Must start with a letter; letters, digits and underscores only.")]
+	[property: Description("New page schema name, e.g. 'UsrMyApp_BlankPage'. Must start with a letter; letters, digits and underscores only. " +
+		"Must use the active SchemaNamePrefix as prefix (e.g. 'UsrAlpha_FormPage' when prefix is 'Usr', 'MyPrefixAlpha_FormPage' when prefix is 'MyPrefix'). " +
+		"When `schema-name-prefix` is empty, use plain PascalCase with no prefix (e.g. 'Alpha_FormPage'). " +
+		"Read the prefix from the `schema-name-prefix` field returned by `get-app-info`, " +
+		"or call `get-schema-name-prefix` if you have not called `get-app-info` yet.")]
 	[property: Required]
 	string SchemaName,
 

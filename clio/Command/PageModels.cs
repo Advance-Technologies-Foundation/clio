@@ -674,55 +674,6 @@ public sealed class PageUpdateResponse {
 	public PageMetadataInfo? Page { get; set; }
 }
 
-public sealed record FormFieldSpec(
-	[property: JsonPropertyName("path")] string Path,
-	[property: JsonPropertyName("type")] string Type,
-	[property: JsonPropertyName("name")] string? Name = null,
-	[property: JsonPropertyName("attr-key")] string? AttrKey = null,
-	[property: JsonPropertyName("label")] string? Label = null,
-	[property: JsonPropertyName("parent-name")] string? ParentName = null,
-	[property: JsonPropertyName("picker-type")] string? PickerType = null,
-	[property: JsonPropertyName("multiline")] bool? Multiline = null,
-	[property: JsonPropertyName("decimal-precision")] int? DecimalPrecision = null
-);
-
-public sealed record ListColumnSpec(
-	[property: JsonPropertyName("code")] string Code,
-	[property: JsonPropertyName("data-value-type")] int DataValueType,
-	[property: JsonPropertyName("caption")] string? Caption = null,
-	[property: JsonPropertyName("width")] int? Width = null,
-	[property: JsonPropertyName("id")] string? Id = null
-);
-
-public sealed class PageAddFieldsResponse {
-	[JsonPropertyName("success")]
-	public bool Success { get; init; }
-
-	[JsonPropertyName("schema-name")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string SchemaName { get; init; }
-
-	[JsonPropertyName("body-length")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-	public int BodyLength { get; init; }
-
-	[JsonPropertyName("fields-added")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-	public int FieldsAdded { get; init; }
-
-	[JsonPropertyName("resources-registered")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-	public int ResourcesRegistered { get; init; }
-
-	[JsonPropertyName("error")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string Error { get; init; }
-
-	[JsonPropertyName("sampling-review")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public PageSamplingReview SamplingReview { get; init; }
-}
-
 /// <summary>
 /// Represents a single Freedom UI template entry from <c>list-page-templates</c> / <c>create-page</c>.
 /// </summary>
@@ -838,37 +789,19 @@ public sealed class PageCreateResponse {
 	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string EntitySchemaUId { get; set; }
 
+	/// <summary>
+	/// Schema type of the template used to create this page.
+	/// 9 = Freedom UI web page (use the Freedom UI page designer).
+	/// 10 = mobile page (use the mobile page designer).
+	/// Note: <c>BaseHomePage</c>-based pages have schemaType=9 but require the Homepage designer, not the standard page designer.
+	/// </summary>
+	[DataMember(Name = "schemaType")]
+	[JsonProperty("schemaType")]
+	[JsonPropertyName("schemaType")]
+	public int SchemaType { get; set; }
+
 	[DataMember(Name = "error")]
 	[JsonProperty("error")]
 	[JsonPropertyName("error")]
 	public string Error { get; set; }
-}
-
-public sealed class PageAddColumnsResponse {
-	[JsonPropertyName("success")]
-	public bool Success { get; init; }
-
-	[JsonPropertyName("schema-name")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string SchemaName { get; init; }
-
-	[JsonPropertyName("body-length")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-	public int BodyLength { get; init; }
-
-	[JsonPropertyName("columns-added")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-	public int ColumnsAdded { get; init; }
-
-	[JsonPropertyName("resources-registered")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-	public int ResourcesRegistered { get; init; }
-
-	[JsonPropertyName("error")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string Error { get; init; }
-
-	[JsonPropertyName("sampling-review")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public PageSamplingReview SamplingReview { get; init; }
 }

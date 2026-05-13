@@ -29,6 +29,7 @@ Available MCP tool categories:
 
 Available MCP guidance resources:
 - docs://mcp/guides/app-modeling
+- docs://mcp/guides/data-bindings
 - docs://mcp/guides/existing-app-maintenance
 - docs://mcp/guides/page-schema-handlers
 - docs://mcp/guides/page-schema-sdk-common
@@ -36,6 +37,7 @@ Available MCP guidance resources:
 
 Preferred guidance access:
 - get-guidance {"name":"app-modeling"}
+- get-guidance {"name":"data-bindings"}
 - get-guidance {"name":"existing-app-maintenance"}
 - get-guidance {"name":"page-schema-handlers"}
 - get-guidance {"name":"page-schema-sdk-common"}
@@ -71,6 +73,9 @@ Read the canonical handler authoring guide through a tool call before editing SC
 
 Use your MCP client to call get-guidance {"name":"page-schema-sdk-common"}.
 Read the canonical page-schema SDK guide through a tool call before adding or editing @creatio-devkit/common usage in raw page bodies.
+
+Use your MCP client to call get-guidance {"name":"data-bindings"}.
+Read the canonical lookup seeding and binding verification guide before choosing between sync-schemas, DB-first bindings, and local binding artifacts.
 ```
 
 ## Prerequisites
@@ -87,6 +92,7 @@ Read the canonical page-schema SDK guide through a tool call before adding or ed
 - Start each MCP workflow with "get-tool-contract" so the client reads the authoritative clio MCP contract before the first discovery, inspection, or mutation call
 - Preferred existing-app flow starts with get-tool-contract, then list-apps -> get-app-info, then page or schema inspection, then sync-pages / modify-entity-schema-column / sync-schemas as needed
 - For Freedom UI page-body handler, validator, or `@creatio-devkit/common` page-schema work, prefer get-guidance instead of relying on client-specific docs:// resource routing
+- For lookup seeding or binding artifact work, prefer get-guidance {"name":"data-bindings"} for workflow selection and keep get-tool-contract authoritative for exact field names
 - This repository documents the MCP server surface; it does not ship a generic stdio helper client
 - If you use an external MCP client wrapper, follow that wrapper's own parsing and transport guarantees
 - Boolean parameters must be JSON booleans (true/false), not strings

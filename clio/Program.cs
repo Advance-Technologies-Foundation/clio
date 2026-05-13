@@ -72,6 +72,7 @@ internal class Program {
 		typeof(GetPackageVersionOptions),
 		typeof(CheckNugetUpdateOptions),
 		typeof(UpdateCliOptions),
+		typeof(SetAutoupdateOptions),
 		typeof(CreateWorkspaceCommandOptions),
 		typeof(RestoreWorkspaceOptions),
 		typeof(PushWorkspaceCommandOptions),
@@ -112,6 +113,14 @@ internal class Program {
 		typeof(UpdateAppSectionOptions),
 		typeof(DeleteAppSectionOptions),
 		typeof(ApplicationSectionGetListOptions),
+		typeof(IdentityProviderListOptions),
+		typeof(IdentityProviderUpsertOptions),
+		typeof(IdentityProviderSetSecretOptions),
+		typeof(IdentityProviderDeleteOptions),
+		typeof(IdentityProviderSetDefaultOptions),
+		typeof(IdentityProviderBindOptions),
+		typeof(IdentityProviderUnbindOptions),
+		typeof(IdentityProviderServicesOptions),
 		typeof(CreateAppOptions),
 		typeof(GetAppInfoOptions),
 		typeof(CreateLookupOptions),
@@ -186,7 +195,6 @@ internal class Program {
 		typeof(UploadLicenseCommandOptions),
 		typeof(RegisterOptions),
 		typeof(UnregisterOptions),
-		typeof(InstallTideCommandOptions),
 		typeof(LinkWorkspaceWithTideRepositoryOptions),
 		typeof(CheckWebFarmNodeConfigurationsOptions),
 		typeof(CustomizeDataProtectionCommandOptions),
@@ -197,8 +205,9 @@ internal class Program {
 		typeof(AssertOptions),
 		typeof(McpServerCommandOptions),
 		typeof(QuizCommandOptions),
-		
-		
+		typeof(GenerateSourceCodeOptions),
+
+
 	];
 	private static readonly Lazy<IReadOnlyList<CommandSuggestionEntry>> CommandSuggestionsCatalog =
 		new(CreateCommandSuggestionsCatalog);
@@ -231,182 +240,179 @@ internal class Program {
 
 	public static Func<object, int> ExecuteCommandWithOption = instance => {
 		return instance switch {
-					ExecuteAssemblyOptions opts => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
-					RestartOptions opts => Resolve<RestartCommand>(opts).Execute(opts),
-					StartOptions opts => Resolve<StartCommand>(opts).Execute(opts),
-					ClearRedisOptions opts => Resolve<RedisCommand>(opts).Execute(opts),
-					UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
-					RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
-					AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
-					UnregAppOptions opts => CreateCommand<UnregAppCommand>(Resolve<ISettingsRepository>(), ConsoleLogger.Instance).Execute(opts),
-					GeneratePkgZipOptions opts => Resolve<CompressPackageCommand>().Execute(opts),
-					PushPkgOptions opts => Resolve<PushPackageCommand>(opts).Execute(opts),
-					InstallApplicationOptions opts => Resolve<InstallApplicationCommand>(opts).Execute(opts),
-					CreateAppSectionOptions opts => Resolve<CreateAppSectionCommand>(opts).Execute(opts),
-					UpdateAppSectionOptions opts => Resolve<UpdateAppSectionCommand>(opts).Execute(opts),
-					DeleteAppSectionOptions opts => Resolve<DeleteAppSectionCommand>(opts).Execute(opts),
-					ApplicationSectionGetListOptions opts => Resolve<GetAppSectionsCommand>(opts).Execute(opts),
-					CreateAppOptions opts => Resolve<CreateAppCommand>(opts).Execute(opts),
-					GetAppInfoOptions opts => Resolve<GetAppInfoCommand>(opts).Execute(opts),
-					CreateLookupOptions opts => Resolve<CreateLookupCommand>(opts).Execute(opts),
-					DeletePkgOptions opts => Resolve<DeletePackageCommand>(opts).Execute(opts),
-					ReferenceOptions opts => CreateCommand<ReferenceCommand>(Resolve<ICreatioPkgProjectCreator>())
-						.Execute(opts),
-					NewPkgOptions opts => CreateCommand<NewPkgCommand>(Resolve<ISettingsRepository>(),
-							CreateCommand<ReferenceCommand>(Resolve<ICreatioPkgProjectCreator>()), ConsoleLogger.Instance)
-						.Execute(opts),
-					ConvertOptions opts => ConvertPackage(opts),
-					RegisterOptions opts => Resolve<RegisterCommand>().Execute(opts),
-					UnregisterOptions opts => Resolve<UnregisterCommand>().Execute(opts),
-					PullPkgOptions opts => DownloadZipPackages(opts),
-					ExecuteSqlScriptOptions opts => Resolve<SqlScriptCommand>(opts).Execute(opts),
-					InstallGateOptions opts => Resolve<InstallGatePkgCommand>(CreateClioGatePkgOptions(opts))
-						.Execute(CreateClioGatePkgOptions(opts)),
-					AddItemOptions opts => Resolve<AddItemCommand>(opts).Execute(opts),
-					DeveloperModeOptions opts => SetDeveloperMode(opts),
-					SysSettingsOptions opts => Resolve<SysSettingsCommand>(opts).Execute(opts),
-					FeatureOptions opts => Resolve<FeatureCommand>(opts).Execute(opts),
-					UnzipPkgOptions opts => Resolve<ExtractPackageCommand>().Execute(opts),
-					PingAppOptions opts => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
-					OpenAppOptions opts => Resolve<OpenAppCommand>(opts).Execute(opts),
-					PkgListOptions opts => Resolve<GetPkgListCommand>(opts).Execute(opts),
-					ShowLocalEnvironmentsOptions opts => Resolve<ShowLocalEnvironmentsCommand>().Execute(opts),
-					EnvManageUiOptions opts => Resolve<EnvManageUiCommand>().Execute(opts),
-					ClearLocalEnvironmentOptions opts => Resolve<ClearLocalEnvironmentCommand>().Execute(opts),
-					CompileOptions opts => Resolve<CompileWorkspaceCommand>(opts).Execute(opts),
-					PushNuGetPkgsOptions opts => Resolve<PushNuGetPackagesCommand>(opts).Execute(opts),
-					PackNuGetPkgOptions opts => Resolve<PackNuGetPackageCommand>(opts).Execute(opts),
-					RestoreNugetPkgOptions opts => Resolve<RestoreNugetPackageCommand>(opts).Execute(opts),
-					InstallNugetPkgOptions opts => Resolve<InstallNugetPackageCommand>(opts).Execute(opts),
-					SetPackageVersionOptions opts => Resolve<SetPackageVersionCommand>().Execute(opts),
-					GetPackageVersionOptions opts => Resolve<GetPackageVersionCommand>().Execute(opts),
-					CheckNugetUpdateOptions opts => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
-					UpdateCliOptions opts => Resolve<UpdateCliCommand>(opts).Execute(opts),
-					RestoreWorkspaceOptions opts => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
-					CreateWorkspaceCommandOptions opts => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
-					PushWorkspaceCommandOptions opts => Resolve<PushWorkspaceCommand>(opts).Execute(opts),
-					LoadPackagesToFileSystemOptions opts => Resolve<LoadPackagesToFileSystemCommand>(opts)
-						.Execute(opts),
-					LoadPackagesToDbOptions opts => Resolve<LoadPackagesToDbCommand>(opts).Execute(opts),
-					UploadLicensesOptions opts => Resolve<UploadLicensesCommand>(opts).Execute(opts),
-					HealthCheckOptions opts => Resolve<HealthCheckCommand>(opts).Execute(opts),
-					AddPackageOptions opts => Resolve<AddPackageCommand>(opts).Execute(opts),
-					CreateDataBindingOptions opts => Resolve<CreateDataBindingCommand>(opts).Execute(opts),
-					AddDataBindingRowOptions opts => Resolve<AddDataBindingRowCommand>().Execute(opts),
-					RemoveDataBindingRowOptions opts => Resolve<RemoveDataBindingRowCommand>().Execute(opts),				CreateDataBindingDbOptions opts => Resolve<CreateDataBindingDbCommand>(opts).Execute(opts),
-				UpsertDataBindingRowDbOptions opts => Resolve<UpsertDataBindingRowDbCommand>(opts).Execute(opts),
-				RemoveDataBindingRowDbOptions opts => Resolve<RemoveDataBindingRowDbCommand>(opts).Execute(opts),					UnlockPackageOptions opts => Resolve<UnlockPackageCommand>(opts).Execute(opts),
-					LockPackageOptions opts => Resolve<LockPackageCommand>(opts).Execute(opts),
-					DataServiceQueryOptions opts => Resolve<DataServiceQuery>(opts).Execute(opts),
-					CallServiceCommandOptions opts => Resolve<CallServiceCommand>(opts).Execute(opts),
-					RestoreFromPackageBackupOptions opts =>
-						Resolve<RestoreFromPackageBackupCommand>(opts).Execute(opts),
-					CreateUiProjectOptions opts => Resolve<CreateUiProjectCommand>(opts).Execute(opts),
-					DownloadConfigurationCommandOptions opts => Resolve<DownloadConfigurationCommand>(opts)
-						.Execute(opts),
-					DeployCommandOptions opts => Resolve<DeployCommand>(opts).Execute(opts),
-					InfoCommandOptions opts => Resolve<InfoCommand>(opts).Execute(opts),
-					ExternalLinkOptions opts => Resolve<ExternalLinkCommand>(opts).Execute(opts),
-					OpenCfgOptions opts => Resolve<OpenCfgCommand>().Execute(opts),
-					CompileConfigurationOptions opts => Resolve<CompileConfigurationCommand>(opts)
-						.Execute(opts),
-					Link2RepoOptions opts => Resolve<Link2RepoCommand>().Execute(opts),
-					Link4RepoOptions opts => Resolve<Link4RepoCommand>(opts).Execute(opts),
-					TurnFsmCommandOptions opts => Resolve<TurnFsmCommand>(opts).Execute(opts),
-					TurnFarmModeOptions opts => Resolve<TurnFarmModeCommand>(opts).Execute(opts),
-					SetFsmConfigOptions opts => Resolve<SetFsmConfigCommand>(opts).Execute(opts),
-					CompressAppOptions opts => Resolve<CompressAppCommand>().Execute(opts),
-					ScenarioRunnerOptions opts => Resolve<ScenarioRunnerCommand>(opts).Execute(opts),
-					ConfigureWorkspaceOptions opts => Resolve<ConfigureWorkspaceCommand>(opts).Execute(opts),
-					GitSyncOptions opts => Resolve<GitSyncCommand>(opts).Execute(opts),
-					BuildInfoOptions opts => Resolve<BuildInfoCommand>(opts).Execute(opts),
-					BuildDockerImageOptions opts => Resolve<BuildDockerImageCommand>().Execute(opts),
-					InstallSkillsOptions opts => Resolve<InstallSkillsCommand>().Execute(opts),
-					UpdateSkillOptions opts => Resolve<UpdateSkillCommand>().Execute(opts),
-					DeleteSkillOptions opts => Resolve<DeleteSkillCommand>().Execute(opts),
-					PfInstallerOptions opts => Resolve<InstallerCommand>(opts).Execute(opts),
-					CreateInfrastructureOptions opts => Resolve<CreateInfrastructureCommand>().Execute(opts),
-					DeployInfrastructureOptions opts => Resolve<DeployInfrastructureCommand>().Execute(opts),
-					DeleteInfrastructureOptions opts => Resolve<DeleteInfrastructureCommand>().Execute(opts),
-					OpenInfrastructureOptions opts => Resolve<OpenInfrastructureCommand>().Execute(opts),
-					CheckWindowsFeaturesOptions opts => Resolve<CheckWindowsFeaturesCommand>().Execute(opts),
-					ManageWindowsFeaturesOptions opts => Resolve<ManageWindowsFeaturesCommand>().Execute(opts),
-					CreateTestProjectOptions opts => Resolve<CreateTestProjectCommand>(opts).Execute(opts),
-					DeactivatePkgOptions opts => Resolve<DeactivatePackageCommand>(opts).Execute(opts),
-					ListenOptions opts => Resolve<ListenCommand>(opts).Execute(opts),
-					ShowPackageFileContentOptions opts => Resolve<ShowPackageFileContentCommand>(opts).Execute(opts),
-					SwitchNugetToDllOptions opts => Resolve<SwitchNugetToDllCommand>(opts).Execute(opts),
-					CompilePackageOptions opts => Resolve<CompilePackageCommand>(opts).Execute(opts),
-					UninstallAppOptions opts => Resolve<UninstallAppCommand>(opts).Execute(opts),
-					DownloadAppOptions opts => Resolve<DownloadAppCommand>(opts).Execute(opts),
-					DeployAppOptions opts => Resolve<DeployAppCommand>(opts).Execute(opts),
-					ListInstalledAppsOptions opts => Resolve<ListInstalledAppsCommand>(opts).Execute(opts),
-					RestoreDbCommandOptions opts => Resolve<RestoreDbCommand>(opts).Execute(opts),
-					SetWebServiceUrlOptions opts => Resolve<SetWebServiceUrlCommand>(opts).Execute(opts),
-					PublishWorkspaceCommandOptions opts => Resolve<PublishWorkspaceCommand>(opts).Execute(opts),
-					GetCreatioInfoCommandOptions opts => Resolve<GetCreatioInfoCommand>(opts).Execute(opts),
-					ActivatePkgOptions opts => Resolve<ActivatePackageCommand>(opts).Execute(opts),
-					PackageHotFixCommandOptions opts => Resolve<PackageHotFixCommand>(opts).Execute(opts),
-					SetApplicationVersionOption opts => Resolve<SetApplicationVersionCommand>(opts).Execute(opts),
-					ApplyEnvironmentManifestOptions opts => ResolveEnvSettings<ApplyEnvironmentManifestCommand>(opts)
-						.Execute(opts),
-					GetWebServiceUrlOptions opts => Resolve<GetWebServiceUrlCommand>(opts).Execute(opts),
-					SaveSettingsToManifestOptions opts => Resolve<SaveSettingsToManifestCommand>(opts).Execute(opts),
-					CloneEnvironmentOptions opts => Resolve<CloneEnvironmentCommand>(opts).Execute(opts),
-					ShowDiffEnvironmentsOptions opts => Resolve<ShowDiffEnvironmentsCommand>(opts).Execute(opts),
-					MockDataCommandOptions opts => Resolve<MockDataCommand>(opts).Execute(opts),
-					UninstallCreatioCommandOptions opts => Resolve<UninstallCreatioCommand>(opts).Execute(opts),
-					AddSchemaOptions opts => Resolve<AddSchemaCommand>(opts).Execute(opts),
-					CreateEntitySchemaOptions opts => Resolve<CreateEntitySchemaCommand>(opts).Execute(opts),
-					UpdateEntitySchemaOptions opts => Resolve<UpdateEntitySchemaCommand>(opts).Execute(opts),
-					ModifyEntitySchemaColumnOptions opts => Resolve<ModifyEntitySchemaColumnCommand>(opts).Execute(opts),
-					GetEntitySchemaColumnPropertiesOptions opts =>
-						Resolve<GetEntitySchemaColumnPropertiesCommand>(opts).Execute(opts),
-					GetEntitySchemaPropertiesOptions opts =>
-						Resolve<GetEntitySchemaPropertiesCommand>(opts).Execute(opts),
-					FindEntitySchemaOptions opts =>
-						Resolve<FindEntitySchemaCommand>(opts).Execute(opts),
-					CreateUserTaskOptions opts => Resolve<CreateUserTaskCommand>(opts).Execute(opts),
-					ModifyUserTaskParametersOptions opts => Resolve<ModifyUserTaskParametersCommand>(opts).Execute(opts),
-					DeleteSchemaOptions opts => Resolve<DeleteSchemaCommand>(opts).Execute(opts),
-					SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
-					LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
-					InstallTideCommandOptions opts => Resolve<InstallTideCommand>(opts).Execute(opts),
-					CustomizeDataProtectionCommandOptions opts => Resolve<CustomizeDataProtectionCommand>(opts).Execute(opts),
-					LinkWorkspaceWithTideRepositoryOptions opts => Resolve<LinkWorkspaceWithTideRepositoryCommand>(opts)
-						.Execute(opts),
-					CheckWebFarmNodeConfigurationsOptions opts => Resolve<CheckWebFarmNodeConfigurationsCommand>(opts)
-						.Execute(opts),
-					GetAppHashCommandOptions opts => Resolve<GetAppHashCommand>(opts)
-						.Execute(opts),
-					MergeWorkspacesCommandOptions opts => Resolve<MergeWorkspacesCommand>(opts)
-						.Execute(opts),
-					GenerateProcessModelCommandOptions opts => Resolve<GenerateProcessModelCommand>(opts)
-						.Execute(opts),
-					StopOptions opts => Resolve<StopCommand>(opts).Execute(opts),
-					HostsOptions opts => Resolve<HostsCommand>(opts).Execute(opts),
-					LinkCoreSrcOptions opts => Resolve<LinkCoreSrcCommand>(opts).Execute(opts),
-					AssertOptions opts => Resolve<AssertCommand>(opts).Execute(opts),
-					LinkPackageStoreOptions opts => Resolve<LinkPackageStoreCommand>(opts).Execute(opts),
-					McpServerCommandOptions opts => Resolve<McpServerCommand>(opts).Execute(opts),
-					PageCreateOptions opts => Resolve<PageCreateCommand>(opts).Execute(opts),
-					SourceCodeSchemaCreateOptions opts => Resolve<SourceCodeSchemaCreateCommand>(opts).Execute(opts),
-					SourceCodeSchemaUpdateOptions opts => Resolve<SourceCodeSchemaUpdateCommand>(opts).Execute(opts),
-					GetSourceCodeSchemaOptions opts => Resolve<GetSourceCodeSchemaCommand>(opts).Execute(opts),
-					ClientUnitSchemaCreateOptions opts => Resolve<ClientUnitSchemaCreateCommand>(opts).Execute(opts),
-					ClientUnitSchemaUpdateOptions opts => Resolve<ClientUnitSchemaUpdateCommand>(opts).Execute(opts),
-					GetClientUnitSchemaOptions opts => Resolve<GetClientUnitSchemaCommand>(opts).Execute(opts),
-					SqlSchemaCreateOptions opts => Resolve<SqlSchemaCreateCommand>(opts).Execute(opts),
-					SqlSchemaGetOptions opts => Resolve<SqlSchemaGetCommand>(opts).Execute(opts),
-					SqlSchemaUpdateOptions opts => Resolve<SqlSchemaUpdateCommand>(opts).Execute(opts),
-					SqlSchemaInstallOptions opts => Resolve<SqlSchemaInstallCommand>(opts).Execute(opts),
-					PageTemplatesListOptions opts => Resolve<PageTemplatesListCommand>(opts).Execute(opts),
-					PageGetOptions opts => Resolve<PageGetCommand>(opts).Execute(opts),
-					PageUpdateOptions opts => Resolve<PageUpdateCommand>(opts).Execute(opts),
-					PageListOptions opts => Resolve<PageListCommand>(opts).Execute(opts),
-					QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
-					var _ => 1
-				};
+			ExecuteAssemblyOptions opts => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
+			RestartOptions opts => Resolve<RestartCommand>(opts).Execute(opts),
+			StartOptions opts => Resolve<StartCommand>(opts).Execute(opts),
+			ClearRedisOptions opts => Resolve<RedisCommand>(opts).Execute(opts),
+			UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
+			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
+			AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
+			UnregAppOptions opts => CreateCommand<UnregAppCommand>(Resolve<ISettingsRepository>(), ConsoleLogger.Instance).Execute(opts),
+			GeneratePkgZipOptions opts => Resolve<CompressPackageCommand>().Execute(opts),
+			PushPkgOptions opts => Resolve<PushPackageCommand>(opts).Execute(opts),
+			InstallApplicationOptions opts => Resolve<InstallApplicationCommand>(opts).Execute(opts),
+			CreateAppSectionOptions opts => Resolve<CreateAppSectionCommand>(opts).Execute(opts),
+			UpdateAppSectionOptions opts => Resolve<UpdateAppSectionCommand>(opts).Execute(opts),
+			DeleteAppSectionOptions opts => Resolve<DeleteAppSectionCommand>(opts).Execute(opts),
+			ApplicationSectionGetListOptions opts => Resolve<GetAppSectionsCommand>(opts).Execute(opts),
+			IdentityProviderListOptions opts => Resolve<IdentityProviderListCommand>(opts).Execute(opts),
+			IdentityProviderUpsertOptions opts => Resolve<IdentityProviderUpsertCommand>(opts).Execute(opts),
+			IdentityProviderSetSecretOptions opts => Resolve<IdentityProviderSetSecretCommand>(opts).Execute(opts),
+			IdentityProviderDeleteOptions opts => Resolve<IdentityProviderDeleteCommand>(opts).Execute(opts),
+			IdentityProviderSetDefaultOptions opts => Resolve<IdentityProviderSetDefaultCommand>(opts).Execute(opts),
+			IdentityProviderBindOptions opts => Resolve<IdentityProviderBindCommand>(opts).Execute(opts),
+			IdentityProviderUnbindOptions opts => Resolve<IdentityProviderUnbindCommand>(opts).Execute(opts),
+			IdentityProviderServicesOptions opts => Resolve<IdentityProviderServicesCommand>(opts).Execute(opts),
+			CreateAppOptions opts => Resolve<CreateAppCommand>(opts).Execute(opts),
+			GetAppInfoOptions opts => Resolve<GetAppInfoCommand>(opts).Execute(opts),
+			CreateLookupOptions opts => Resolve<CreateLookupCommand>(opts).Execute(opts),
+			DeletePkgOptions opts => Resolve<DeletePackageCommand>(opts).Execute(opts),
+			ReferenceOptions opts => CreateCommand<ReferenceCommand>(Resolve<ICreatioPkgProjectCreator>())
+				.Execute(opts),
+			NewPkgOptions opts => CreateCommand<NewPkgCommand>(Resolve<ISettingsRepository>(),
+					CreateCommand<ReferenceCommand>(Resolve<ICreatioPkgProjectCreator>()), ConsoleLogger.Instance)
+				.Execute(opts),
+			ConvertOptions opts => ConvertPackage(opts),
+			RegisterOptions opts => Resolve<RegisterCommand>().Execute(opts),
+			UnregisterOptions opts => Resolve<UnregisterCommand>().Execute(opts),
+			PullPkgOptions opts => DownloadZipPackages(opts),
+			ExecuteSqlScriptOptions opts => Resolve<SqlScriptCommand>(opts).Execute(opts),
+			InstallGateOptions opts => Resolve<InstallGateCommand>(opts).Execute(opts),
+			AddItemOptions opts => Resolve<AddItemCommand>(opts).Execute(opts),
+			DeveloperModeOptions opts => SetDeveloperMode(opts),
+			SysSettingsOptions opts => Resolve<SysSettingsCommand>(opts).Execute(opts),
+			FeatureOptions opts => Resolve<FeatureCommand>(opts).Execute(opts),
+			UnzipPkgOptions opts => Resolve<ExtractPackageCommand>().Execute(opts),
+			PingAppOptions opts => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
+			OpenAppOptions opts => Resolve<OpenAppCommand>(opts).Execute(opts),
+			PkgListOptions opts => Resolve<GetPkgListCommand>(opts).Execute(opts),
+			ShowLocalEnvironmentsOptions opts => Resolve<ShowLocalEnvironmentsCommand>().Execute(opts),
+			EnvManageUiOptions opts => Resolve<EnvManageUiCommand>().Execute(opts),
+			ClearLocalEnvironmentOptions opts => Resolve<ClearLocalEnvironmentCommand>().Execute(opts),
+			CompileOptions opts => Resolve<CompileWorkspaceCommand>(opts).Execute(opts),
+			PushNuGetPkgsOptions opts => Resolve<PushNuGetPackagesCommand>(opts).Execute(opts),
+			PackNuGetPkgOptions opts => Resolve<PackNuGetPackageCommand>(opts).Execute(opts),
+			RestoreNugetPkgOptions opts => Resolve<RestoreNugetPackageCommand>(opts).Execute(opts),
+			InstallNugetPkgOptions opts => Resolve<InstallNugetPackageCommand>(opts).Execute(opts),
+			SetPackageVersionOptions opts => Resolve<SetPackageVersionCommand>().Execute(opts),
+			GetPackageVersionOptions opts => Resolve<GetPackageVersionCommand>().Execute(opts),
+			CheckNugetUpdateOptions opts => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
+			UpdateCliOptions opts => Resolve<UpdateCliCommand>(opts).Execute(opts),
+			SetAutoupdateOptions opts => Resolve<SetAutoupdateCommand>().Execute(opts),
+			RestoreWorkspaceOptions opts => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
+			CreateWorkspaceCommandOptions opts => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
+			PushWorkspaceCommandOptions opts => Resolve<PushWorkspaceCommand>(opts).Execute(opts),
+			LoadPackagesToFileSystemOptions opts => Resolve<LoadPackagesToFileSystemCommand>(opts).Execute(opts),
+			LoadPackagesToDbOptions opts => Resolve<LoadPackagesToDbCommand>(opts).Execute(opts),
+			UploadLicensesOptions opts => Resolve<UploadLicensesCommand>(opts).Execute(opts),
+			HealthCheckOptions opts => Resolve<HealthCheckCommand>(opts).Execute(opts),
+			AddPackageOptions opts => Resolve<AddPackageCommand>(opts).Execute(opts),
+			CreateDataBindingOptions opts => Resolve<CreateDataBindingCommand>(opts).Execute(opts),
+			AddDataBindingRowOptions opts => Resolve<AddDataBindingRowCommand>().Execute(opts),
+			RemoveDataBindingRowOptions opts => Resolve<RemoveDataBindingRowCommand>().Execute(opts),
+			CreateDataBindingDbOptions opts => Resolve<CreateDataBindingDbCommand>(opts).Execute(opts),
+			UpsertDataBindingRowDbOptions opts => Resolve<UpsertDataBindingRowDbCommand>(opts).Execute(opts),
+			RemoveDataBindingRowDbOptions opts => Resolve<RemoveDataBindingRowDbCommand>(opts).Execute(opts),
+			UnlockPackageOptions opts => Resolve<UnlockPackageCommand>(opts).Execute(opts),
+			LockPackageOptions opts => Resolve<LockPackageCommand>(opts).Execute(opts),
+			DataServiceQueryOptions opts => Resolve<DataServiceQuery>(opts).Execute(opts),
+			CallServiceCommandOptions opts => Resolve<CallServiceCommand>(opts).Execute(opts),
+			RestoreFromPackageBackupOptions opts => Resolve<RestoreFromPackageBackupCommand>(opts).Execute(opts),
+			CreateUiProjectOptions opts => Resolve<CreateUiProjectCommand>(opts).Execute(opts),
+			DownloadConfigurationCommandOptions opts => Resolve<DownloadConfigurationCommand>(opts).Execute(opts),
+			DeployCommandOptions opts => Resolve<DeployCommand>(opts).Execute(opts),
+			InfoCommandOptions opts => Resolve<InfoCommand>(opts).Execute(opts),
+			ExternalLinkOptions opts => Resolve<ExternalLinkCommand>(opts).Execute(opts),
+			OpenCfgOptions opts => Resolve<OpenCfgCommand>().Execute(opts),
+			CompileConfigurationOptions opts => Resolve<CompileConfigurationCommand>(opts).Execute(opts),
+			Link2RepoOptions opts => Resolve<Link2RepoCommand>().Execute(opts),
+			Link4RepoOptions opts => Resolve<Link4RepoCommand>(opts).Execute(opts),
+			TurnFsmCommandOptions opts => Resolve<TurnFsmCommand>(opts).Execute(opts),
+			TurnFarmModeOptions opts => Resolve<TurnFarmModeCommand>(opts).Execute(opts),
+			SetFsmConfigOptions opts => Resolve<SetFsmConfigCommand>(opts).Execute(opts),
+			CompressAppOptions opts => Resolve<CompressAppCommand>().Execute(opts),
+			ScenarioRunnerOptions opts => Resolve<ScenarioRunnerCommand>(opts).Execute(opts),
+			ConfigureWorkspaceOptions opts => Resolve<ConfigureWorkspaceCommand>(opts).Execute(opts),
+			GitSyncOptions opts => Resolve<GitSyncCommand>(opts).Execute(opts),
+			BuildInfoOptions opts => Resolve<BuildInfoCommand>(opts).Execute(opts),
+			BuildDockerImageOptions opts => Resolve<BuildDockerImageCommand>().Execute(opts),
+			InstallSkillsOptions opts => Resolve<InstallSkillsCommand>().Execute(opts),
+			UpdateSkillOptions opts => Resolve<UpdateSkillCommand>().Execute(opts),
+			DeleteSkillOptions opts => Resolve<DeleteSkillCommand>().Execute(opts),
+			PfInstallerOptions opts => Resolve<InstallerCommand>(opts).Execute(opts),
+			CreateInfrastructureOptions opts => Resolve<CreateInfrastructureCommand>().Execute(opts),
+			DeployInfrastructureOptions opts => Resolve<DeployInfrastructureCommand>().Execute(opts),
+			DeleteInfrastructureOptions opts => Resolve<DeleteInfrastructureCommand>().Execute(opts),
+			OpenInfrastructureOptions opts => Resolve<OpenInfrastructureCommand>().Execute(opts),
+			CheckWindowsFeaturesOptions opts => Resolve<CheckWindowsFeaturesCommand>().Execute(opts),
+			ManageWindowsFeaturesOptions opts => Resolve<ManageWindowsFeaturesCommand>().Execute(opts),
+			CreateTestProjectOptions opts => Resolve<CreateTestProjectCommand>(opts).Execute(opts),
+			DeactivatePkgOptions opts => Resolve<DeactivatePackageCommand>(opts).Execute(opts),
+			ListenOptions opts => Resolve<ListenCommand>(opts).Execute(opts),
+			ShowPackageFileContentOptions opts => Resolve<ShowPackageFileContentCommand>(opts).Execute(opts),
+			SwitchNugetToDllOptions opts => Resolve<SwitchNugetToDllCommand>(opts).Execute(opts),
+			CompilePackageOptions opts => Resolve<CompilePackageCommand>(opts).Execute(opts),
+			UninstallAppOptions opts => Resolve<UninstallAppCommand>(opts).Execute(opts),
+			DownloadAppOptions opts => Resolve<DownloadAppCommand>(opts).Execute(opts),
+			DeployAppOptions opts => Resolve<DeployAppCommand>(opts).Execute(opts),
+			ListInstalledAppsOptions opts => Resolve<ListInstalledAppsCommand>(opts).Execute(opts),
+			RestoreDbCommandOptions opts => Resolve<RestoreDbCommand>(opts).Execute(opts),
+			SetWebServiceUrlOptions opts => Resolve<SetWebServiceUrlCommand>(opts).Execute(opts),
+			PublishWorkspaceCommandOptions opts => Resolve<PublishWorkspaceCommand>(opts).Execute(opts),
+			GetCreatioInfoCommandOptions opts => Resolve<GetCreatioInfoCommand>(opts).Execute(opts),
+			ActivatePkgOptions opts => Resolve<ActivatePackageCommand>(opts).Execute(opts),
+			PackageHotFixCommandOptions opts => Resolve<PackageHotFixCommand>(opts).Execute(opts),
+			SetApplicationVersionOption opts => Resolve<SetApplicationVersionCommand>(opts).Execute(opts),
+			ApplyEnvironmentManifestOptions opts => ResolveEnvSettings<ApplyEnvironmentManifestCommand>(opts).Execute(opts),
+			GetWebServiceUrlOptions opts => Resolve<GetWebServiceUrlCommand>(opts).Execute(opts),
+			SaveSettingsToManifestOptions opts => Resolve<SaveSettingsToManifestCommand>(opts).Execute(opts),
+			CloneEnvironmentOptions opts => Resolve<CloneEnvironmentCommand>(opts).Execute(opts),
+			ShowDiffEnvironmentsOptions opts => Resolve<ShowDiffEnvironmentsCommand>(opts).Execute(opts),
+			MockDataCommandOptions opts => Resolve<MockDataCommand>(opts).Execute(opts),
+			UninstallCreatioCommandOptions opts => Resolve<UninstallCreatioCommand>(opts).Execute(opts),
+			AddSchemaOptions opts => Resolve<AddSchemaCommand>(opts).Execute(opts),
+			CreateEntitySchemaOptions opts => Resolve<CreateEntitySchemaCommand>(opts).Execute(opts),
+			UpdateEntitySchemaOptions opts => Resolve<UpdateEntitySchemaCommand>(opts).Execute(opts),
+			ModifyEntitySchemaColumnOptions opts => Resolve<ModifyEntitySchemaColumnCommand>(opts).Execute(opts),
+			GetEntitySchemaColumnPropertiesOptions opts => Resolve<GetEntitySchemaColumnPropertiesCommand>(opts).Execute(opts),
+			GetEntitySchemaPropertiesOptions opts => Resolve<GetEntitySchemaPropertiesCommand>(opts).Execute(opts),
+			FindEntitySchemaOptions opts => Resolve<FindEntitySchemaCommand>(opts).Execute(opts),
+			CreateUserTaskOptions opts => Resolve<CreateUserTaskCommand>(opts).Execute(opts),
+			ModifyUserTaskParametersOptions opts => Resolve<ModifyUserTaskParametersCommand>(opts).Execute(opts),
+			DeleteSchemaOptions opts => Resolve<DeleteSchemaCommand>(opts).Execute(opts),
+			SetApplicationIconOption opts => Resolve<SetApplicationIconCommand>(opts).Execute(opts),
+			LastCompilationLogOptions opts => Resolve<LastCompilationLogCommand>(opts).Execute(opts),
+			CustomizeDataProtectionCommandOptions opts => Resolve<CustomizeDataProtectionCommand>(opts).Execute(opts),
+			LinkWorkspaceWithTideRepositoryOptions opts => Resolve<LinkWorkspaceWithTideRepositoryCommand>(opts).Execute(opts),
+			CheckWebFarmNodeConfigurationsOptions opts => Resolve<CheckWebFarmNodeConfigurationsCommand>(opts).Execute(opts),
+			GetAppHashCommandOptions opts => Resolve<GetAppHashCommand>(opts).Execute(opts),
+			MergeWorkspacesCommandOptions opts => Resolve<MergeWorkspacesCommand>(opts).Execute(opts),
+			GenerateProcessModelCommandOptions opts => Resolve<GenerateProcessModelCommand>(opts).Execute(opts),
+			StopOptions opts => Resolve<StopCommand>(opts).Execute(opts),
+			HostsOptions opts => Resolve<HostsCommand>(opts).Execute(opts),
+			LinkCoreSrcOptions opts => Resolve<LinkCoreSrcCommand>(opts).Execute(opts),
+			AssertOptions opts => Resolve<AssertCommand>(opts).Execute(opts),
+			LinkPackageStoreOptions opts => Resolve<LinkPackageStoreCommand>(opts).Execute(opts),
+			McpServerCommandOptions opts => Resolve<McpServerCommand>(opts).Execute(opts),
+			PageCreateOptions opts => Resolve<PageCreateCommand>(opts).Execute(opts),
+			SourceCodeSchemaCreateOptions opts => Resolve<SourceCodeSchemaCreateCommand>(opts).Execute(opts),
+			SourceCodeSchemaUpdateOptions opts => Resolve<SourceCodeSchemaUpdateCommand>(opts).Execute(opts),
+			GetSourceCodeSchemaOptions opts => Resolve<GetSourceCodeSchemaCommand>(opts).Execute(opts),
+			ClientUnitSchemaCreateOptions opts => Resolve<ClientUnitSchemaCreateCommand>(opts).Execute(opts),
+			ClientUnitSchemaUpdateOptions opts => Resolve<ClientUnitSchemaUpdateCommand>(opts).Execute(opts),
+			GetClientUnitSchemaOptions opts => Resolve<GetClientUnitSchemaCommand>(opts).Execute(opts),
+			SqlSchemaCreateOptions opts => Resolve<SqlSchemaCreateCommand>(opts).Execute(opts),
+			SqlSchemaGetOptions opts => Resolve<SqlSchemaGetCommand>(opts).Execute(opts),
+			SqlSchemaUpdateOptions opts => Resolve<SqlSchemaUpdateCommand>(opts).Execute(opts),
+			SqlSchemaInstallOptions opts => Resolve<SqlSchemaInstallCommand>(opts).Execute(opts),
+			PageTemplatesListOptions opts => Resolve<PageTemplatesListCommand>(opts).Execute(opts),
+			PageGetOptions opts => Resolve<PageGetCommand>(opts).Execute(opts),
+			PageUpdateOptions opts => Resolve<PageUpdateCommand>(opts).Execute(opts),
+			PageListOptions opts => Resolve<PageListCommand>(opts).Execute(opts),
+			QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
+			GenerateSourceCodeOptions opts => Resolve<GenerateSourceCodeCommand>(opts).Execute(opts),
+			var _ => 1
+		};
 	};
 
 	private static string[] OriginalArgs;
@@ -529,18 +535,6 @@ internal class Program {
 	}
 
 	/// <summary>
-	/// Creates package options specifically for Clio Gate installation.
-	/// </summary>
-	/// <param name="opts">Gate installation options</param>
-	/// <returns>Configured package options</returns>
-	internal static PushPkgOptions CreateClioGatePkgOptions(InstallGateOptions opts){
-		PushPkgOptions pushPackageOptions = CreatePushPkgOptions(opts);
-		pushPackageOptions.DeveloperModeEnabled = false;
-		pushPackageOptions.RestartEnvironment = true;
-		return pushPackageOptions;
-	}
-
-	/// <summary>
 	/// Creates a command of the specified type with the provided constructor arguments.
 	/// </summary>
 	/// <typeparam name="TCommand">Type of command to create</typeparam>
@@ -549,33 +543,7 @@ internal class Program {
 	private static TCommand CreateCommand<TCommand>(params object[] additionalConstructorArgs){
 		return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
 	}
-
-	/// <summary>
-	/// Creates package options based on installation options.
-	/// </summary>
-	/// <param name="options">Gate installation options</param>
-	/// <returns>Configured package options</returns>
-	private static PushPkgOptions CreatePushPkgOptions(InstallGateOptions options){
-	ISettingsRepository settingsRepository = Resolve<ISettingsRepository>();
-	EnvironmentSettings settings = settingsRepository.GetEnvironment(options);
-	IWorkingDirectoriesProvider workingDirectoriesProvider = Resolve<IWorkingDirectoriesProvider>(options);
-	string packageName = settings.IsNetCore ? "cliogate_netcore" : "cliogate";
-	string packagePath = Path.Combine(workingDirectoriesProvider.ExecutingDirectory, "cliogate",
-		$"{packageName}.gz");
-	return new PushPkgOptions {
-		Environment = options.Environment,
-		Name = packagePath,
-		Login = options.Login,
-		Uri = options.Uri,
-		Password = options.Password,
-		Maintainer = options.Maintainer,
-		IsNetCore = options.IsNetCore,
-		AuthAppUri = options.AuthAppUri,
-		ClientSecret = options.ClientSecret,
-		ClientId = options.ClientId
-	};
-}
-
+	
 	/// <summary>
 	/// Creates a remote command with a client connection to the Creatio environment.
 	/// </summary>
@@ -1121,12 +1089,54 @@ internal class Program {
 			Parser.Default.Settings.CustomHelpViewer = bm.GetRequiredService<LocalHelpViewer>();
 		}
 		
+		RunStartupUpdateCheck(args, bm);
 		string[] normalizedArgs = NormalizeCommandLineArgs(args);
 		ParserResult<object> parserResult = Parser.Default.ParseArguments(normalizedArgs, CommandOption);
 		if (parserResult is Parsed<object> parsed) {
 			return ExecuteCommandWithOption(parsed.Value);
 		}
 		return HandleParseError(((NotParsed<object>)parserResult).Errors);
+	}
+
+	private static bool ShouldSkipUpdateCheck(string[] args) {
+		if (IsMcpServerMode) return true;
+		if (args == null || args.Length == 0) return true;
+		string first = args[0];
+		if (string.Equals(first, "update-cli", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "update", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)) {
+			return true;
+		}
+		return args.Any(arg =>
+			string.Equals(arg, "--help", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(arg, "-h", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(arg, "--version", StringComparison.OrdinalIgnoreCase));
+	}
+
+	private static void RunStartupUpdateCheck(string[] args, IServiceProvider serviceProvider) {
+		if (ShouldSkipUpdateCheck(args)) return;
+		try {
+			IAppUpdater appUpdater = serviceProvider.GetRequiredService<IAppUpdater>();
+			ISettingsRepository settingsRepository = serviceProvider.GetRequiredService<ISettingsRepository>();
+			string cacheFolder = SettingsRepository.AppSettingsFolderPath;
+			(bool available, string latestVersion) = appUpdater
+				.CheckForUpdateWithCacheAsync(cacheFolder)
+				.GetAwaiter().GetResult();
+
+			if (!available || string.IsNullOrEmpty(latestVersion)) return;
+
+			string currentVersion = appUpdater.GetCurrentVersion();
+			if (settingsRepository.GetAutoupdate()) {
+				ConsoleLogger.Instance.WriteInfo(
+					$"Updating clio {currentVersion} -> {latestVersion} in background...");
+				appUpdater.UpdateInBackgroundAsync().GetAwaiter().GetResult();
+			} else {
+				ConsoleLogger.Instance.WriteWarning(
+					$"clio {latestVersion} is available. Run 'clio update' to update.");
+			}
+		} catch {
+			// startup update check must never crash the tool
+		}
 	}
 
 	private static bool TryHandleBuiltInHelp(string[] args, IServiceProvider serviceProvider, out int exitCode) {

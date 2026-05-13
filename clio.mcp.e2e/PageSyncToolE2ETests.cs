@@ -382,6 +382,253 @@ public sealed class PageSyncToolE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects a SCHEMA_CONVERTERS entry whose key is missing the required dot separator before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects converter key without dot during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body with a converter key that has no dot, and verifies that client-side validation blocks the save with a structured response naming the key and the VendorPrefix requirement.")]
+	public async Task PageSyncTool_Should_Reject_Converter_Key_Without_Dot_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithBadConverter = ValidPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"UsrBadConverter\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrConverterKeyValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithBadConverter
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "converter key validation failures should be reported as structured tool results, not protocol errors");
+		response.Success.Should().BeFalse(
+			because: "a converter key without a dot causes a Creatio runtime error and must be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail client-side converter key validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "converter key format failure is a content-level error");
+		response.Pages[0].Error.Should().Contain("UsrBadConverter")
+			.And.Contain("VendorPrefix",
+				because: "the error must name the offending key and reference the VendorPrefix.Name format requirement");
+	}
+
+	[Test]
+	[Description("Rejects a SCHEMA_VALIDATORS entry that uses 'validate' alias instead of the canonical 'validator' factory key before any remote save.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects validator with 'validate' key alias during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body where SCHEMA_VALIDATORS uses the misleading 'validate' key alias, and verifies that client-side validation blocks the save with a factory-shape error.")]
+	public async Task PageSyncTool_Should_Reject_Validator_With_Validate_Key_Alias_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithValidateAlias = ValidPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"usr.PhoneFormatValidator\": { params: [{ \"name\": \"message\" }], async: false, " +
+			"validate: function(value, config) { return null; } } }/**SCHEMA_VALIDATORS*/");
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrValidatorFactoryShape_{Guid.NewGuid():N}",
+							["body"] = bodyWithValidateAlias
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "validator factory-shape failures should be reported as structured tool results, not protocol errors");
+		response.Success.Should().BeFalse(
+			because: "the runtime ignores any key other than 'validator', so the validator never executes and must be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail client-side validator factory-shape validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "validator factory shape failure is a content-level error");
+		response.Pages[0].Error.Should().Contain("usr.PhoneFormatValidator")
+			.And.Contain("'validate'")
+			.And.Contain("'validator'")
+			.And.Contain("page-schema-validators",
+				because: "the error must name the offending validator and the wrong key, and direct the agent at the validator guidance");
+	}
+
+	[Test]
+	[Description("Rejects a SCHEMA_CONVERTERS entry whose value is an object literal instead of a callable function expression before any remote save.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects converter with object literal value during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body where a SCHEMA_CONVERTERS entry has an object literal in place of a function value, and verifies that client-side validation blocks the save with a function-shape error.")]
+	public async Task PageSyncTool_Should_Reject_Converter_With_Object_Literal_Value_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithObjectConverter = ValidPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.WrongShape\": { transform: \"upper\" } }/**SCHEMA_CONVERTERS*/");
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrConverterFunctionShape_{Guid.NewGuid():N}",
+							["body"] = bodyWithObjectConverter
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "converter function-shape failures should be reported as structured tool results, not protocol errors");
+		response.Success.Should().BeFalse(
+			because: "an object-literal converter silently fails to apply at the binding site and must be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail client-side converter function-shape validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "converter function shape failure is a content-level error");
+		response.Pages[0].Error.Should().Contain("usr.WrongShape")
+			.And.Contain("not callable")
+			.And.Contain("page-schema-converters",
+				because: "the error must name the offending converter and direct the agent at the converter guidance");
+	}
+
+	[Test]
+	[Description("Rejects a SCHEMA_HANDLERS entry whose request value is missing the required dot separator before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects handler request value without dot during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body with a SCHEMA_HANDLERS array entry whose request value has no dot, and verifies that client-side validation blocks the save with a structured response naming the value and the VendorPrefix requirement.")]
+	public async Task PageSyncTool_Should_Reject_Handler_Request_Without_Dot_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithBadHandler = ValidPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"BadHandlerRequest\", " +
+			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrHandlerRequestValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithBadHandler
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "handler request validation failures should be reported as structured tool results, not protocol errors");
+		response.Success.Should().BeFalse(
+			because: "a handler request value without a dot causes a Creatio runtime error and must be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail client-side handler request validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "handler request format failure is a content-level error");
+		response.Pages[0].Error.Should().Contain("BadHandlerRequest")
+			.And.Contain("VendorPrefix")
+			.And.Contain("page-schema-handlers",
+				because: "the error must name the offending request value and direct the agent at the handler guidance");
+	}
+
+	[Test]
+	[Description("Rejects a SCHEMA_VALIDATORS entry whose key is missing the required dot separator before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects validator key without dot during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body with a validator key that has no dot, and verifies that client-side validation blocks the save with a structured response naming the key and the VendorPrefix requirement.")]
+	public async Task PageSyncTool_Should_Reject_Validator_Key_Without_Dot_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithBadValidator = ValidPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"BadValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrValidatorKeyValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithBadValidator
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "validator key validation failures should be reported as structured tool results, not protocol errors");
+		response.Success.Should().BeFalse(
+			because: "a validator key without a dot causes a Creatio runtime error and must be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail client-side validator key validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "validator key format failure is a content-level error");
+		response.Pages[0].Error.Should().Contain("BadValidator")
+			.And.Contain("VendorPrefix")
+			.And.Contain("page-schema-validators",
+				because: "the error must name the offending key and direct the agent at the validator guidance");
+	}
+
+	[Test]
 	[Description("Rejects obvious custom max-length validators through the real MCP server before any remote save is attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages rejects obvious custom max-length validators during semantic validation")]

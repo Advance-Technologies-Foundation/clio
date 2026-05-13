@@ -3,6 +3,7 @@ using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using NUnit.Framework;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Clio.Tests.Command.McpServer;
 
@@ -49,6 +50,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should publish the preferred page inspection and write sequence as MCP-owned guidance");
 		article.Text.Should().Contain("get-guidance",
 			because: "the creation-oriented guide should point callers to the dedicated existing-app maintenance guide through the guidance tool");
+		article.Text.Should().Contain("data-bindings",
+			because: "the creation-oriented guide should point callers to the dedicated binding guide when workflow selection depends on data bindings");
 		article.Text.Should().Contain("scalar-only for app shell fields",
 			because: "the guide should state that create-app keeps shell fields as plain strings");
 		article.Text.Should().Contain("Do not send localization-map fields",
@@ -79,6 +82,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should explicitly document the canonical sync-schemas request field");
 		article.Text.Should().Contain("do not invent or send `operations[*].operation`",
 			because: "the guide should explicitly reject the legacy request field name");
+		article.Text.Should().Contain("{code}_FormPage",
+			because: "the guide should name the derived page schemas so agents can reference them without re-discovery");
+		article.Text.Should().Contain("`create-app` already creates the default section for the canonical main entity",
+			because: "the guide should state the positive fact before explaining when create-app-section is appropriate");
 	}
 
 	[Test]
@@ -148,14 +155,16 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should spell out the canonical existing-section selector for updates");
 		article.Text.Should().Contain("with-mobile-pages",
 			because: "the guide should explain the explicit top-level mobile-page toggle for section creation");
-		article.Text.Should().Contain("do not wrap MCP arguments inside `args`",
-			because: "the guide should explicitly reject the synthetic args wrapper that caused real session failures");
+		article.Text.Should().Contain("Wrap MCP tool arguments under the top-level `args` JSON object",
+			because: "the guide should explicitly publish the wrapped request shape required by the clio MCP tool schema");
 		article.Text.Should().Contain("do not send `bundle` or `bundle.viewConfig` as the body payload",
 			because: "the guide should explain the concrete page payload shape expected by the page tools");
 		article.Text.Should().Contain("JSON object string",
 			because: "the guide should explain the concrete resources payload shape expected by page tools");
 		article.Text.Should().Contain("create-data-binding-db",
 			because: "the guide should steer standalone lookup seeding back to MCP-native data-binding tools");
+		article.Text.Should().Contain("data-bindings",
+			because: "the guide should point callers to the dedicated binding guide for workflow selection and section registration");
 		article.Text.Should().Contain("Read before write, and read back after mutations",
 			because: "the guide should set the canonical verification discipline for existing-app edits");
 		article.Text.Should().Contain("Absence of a tab, detail, or grid on the page does not prove the backing entity is missing",
@@ -166,6 +175,46 @@ public sealed class McpGuidanceResourceTests {
 			because: "the maintenance guide should explicitly document the canonical sync-schemas request field");
 		article.Text.Should().Contain("operations[*].operation",
 			because: "the maintenance guide should explicitly warn callers away from the legacy request field");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for generic lookup seeding and local binding workflows.")]
+	public void DataBindingsGuidanceResource_Should_Return_Canonical_Data_Bindings_Guide() {
+		// Arrange
+		DataBindingsGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = (TextResourceContents)result;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/data-bindings",
+			because: "the binding guide should expose a stable MCP URI for generic cross-tool binding guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the binding guide should be discoverable as plain text");
+		article.Text.Should().Contain("get-tool-contract",
+			because: "the guide should route exact field-level questions to the executable contract tool");
+		article.Text.Should().Contain("sync-schemas",
+			because: "the guide should identify inline seed rows as a canonical batched path");
+		article.Text.Should().Contain("create-data-binding-db",
+			because: "the guide should advertise the standalone DB-first binding path");
+		article.Text.Should().Contain("create-data-binding",
+			because: "the guide should advertise the local binding artifact path");
+		article.Text.Should().NotContain(".agents/skills/clio-data-bindings",
+			because: "the guide should stay valid after install-skills copies the bundle outside the source repo layout");
+		article.Text.Should().NotContain("CardSchemaUId",
+			because: "section page linkage invariants do not belong in the generic binding guide");
+		article.Text.Should().NotContain("assets/bindings-lookup.json",
+			because: "section-specific stable ID sourcing does not belong in the generic binding guide");
+		article.Text.Should().Contain("runtime-only columns are not blockers",
+			because: "the guide should explain the DB-first subset-column projection rule for Account-like schemas");
+		article.Text.Should().Contain("install logs or planned payloads",
+			because: "the guide should reject install-log-only verification for remote binding mutations");
+		article.Text.Should().Contain("Seed rows do not implement defaults",
+			because: "the guide should keep lookup seeding separate from default semantics");
+		article.Text.Should().Contain("DisplayValue",
+			because: "the guide should make lookup and image-reference display semantics explicit");
 	}
 
 	[Test]
@@ -185,9 +234,9 @@ public sealed class McpGuidanceResourceTests {
 			because: "the handler guide should expose a stable MCP URI for handler authoring guidance");
 		article.Text.Should().Contain("SCHEMA_HANDLERS",
 			because: "handler guidance should point callers to the marker-delimited handler section");
-		article.Text.Should().Contain("you MUST read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
+		article.Text.Should().Contain("you MUST read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
 			because: "handler guidance should route sdk-backed and service-backed handler edits to the dedicated sdk common guide");
-		article.Text.Should().Contain("you MUST read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
+		article.Text.Should().Contain("you MUST read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls",
 			because: "handler guidance should make sdk and service routing to the sdk common guide mandatory");
 		article.Text.Should().Contain("Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call",
 			because: "handler guidance should force ai callers through the sdk common guide before choosing a data or service implementation pattern");
@@ -209,9 +258,9 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should explain the page-body request-dispatch choice explicitly");
 		article.Text.Should().Contain("| deployed page-body handler in `SCHEMA_HANDLERS` | `await request.$context.executeRequest(...)` |",
 			because: "handler guidance should prefer executeRequest for deployed page-body handlers");
-		article.Text.Should().Contain("Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-sdk-common`.",
+		article.Text.Should().Contain("Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-creatio-devkit-common`.",
 			because: "handler guidance should keep HandlerChainService out of the default page-body authoring path");
-		article.Text.Should().Contain("Else if the handler must read or write data, syssettings, processes, or backend services, stop and read `page-schema-sdk-common` before authoring the handler body.",
+		article.Text.Should().Contain("Else if the handler must read or write data, syssettings, processes, or backend services, stop and read `page-schema-creatio-devkit-common` before authoring the handler body.",
 			because: "the handler decision tree should have an explicit sdk common branch for data and service work");
 		article.Text.Should().Contain("| open a related page or mini page | `crt.OpenPageRequest` | button/menu `clicked.request` | no |",
 			because: "handler guidance should keep simple navigation on direct request wiring instead of custom handlers");
@@ -261,7 +310,7 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should explicitly reject invented and legacy sender/get/set access patterns");
 		article.Text.Should().Contain("Canonical rule for `crt.HandleViewModelAttributeChangeRequest`: use `request.value` for the triggering attribute, not `request.viewModel.get(...)`.",
 			because: "handler guidance should spell out the exact attribute-change API that prevents invented request.viewModel reads");
-		article.Text.Should().Contain("Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-sdk-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.",
+		article.Text.Should().Contain("Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-creatio-devkit-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.",
 			because: "the handler anti-pattern list should stop callers from defaulting to raw platform fetches");
 		article.Text.Should().Contain("A field control MUST bind to the same declared view-model attribute that handlers read or write through `$context.set(\"<AttributeName>\", ...)`.",
 			because: "the handler guide should make handler-driven control binding explicit without relying on datasource naming conventions");
@@ -450,9 +499,9 @@ public sealed class McpGuidanceResourceTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns sdk common guidance that teaches AI callers how to use @creatio-devkit/common in page schemas.")]
-	public void PageSchemaSdkCommonGuidanceResource_Should_Return_Canonical_Sdk_Common_Guide() {
+	public void PageSchemaCreatioDevkitCommonGuidanceResource_Should_Return_Canonical_Sdk_Common_Guide() {
 		// Arrange
-		PageSchemaSdkCommonGuidanceResource resource = new();
+		PageSchemaCreatioDevkitCommonGuidanceResource resource = new();
 
 		// Act
 		ResourceContents result = resource.GetGuide();
@@ -460,7 +509,7 @@ public sealed class McpGuidanceResourceTests {
 			because: "the sdk common guide should be returned as a plain-text MCP resource").Subject;
 
 		// Assert
-		article.Uri.Should().Be("docs://mcp/guides/page-schema-sdk-common",
+		article.Uri.Should().Be("docs://mcp/guides/page-schema-creatio-devkit-common",
 			because: "the sdk common guide should expose a stable MCP URI for page-schema SDK guidance");
 		article.Text.Should().Contain("clio MCP page-schema sdk common guide",
 			because: "the resource should identify itself as the dedicated sdk common guide");
@@ -677,7 +726,7 @@ public sealed class McpGuidanceResourceTests {
 			because: "the validator guide should expose a stable MCP URI for validator authoring guidance");
 		article.Text.Should().Contain("SCHEMA_VALIDATORS",
 			because: "validator guidance should point callers to the marker-delimited validator section");
-		article.Text.Should().Contain("also read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service calls",
+		article.Text.Should().Contain("also read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service calls",
 			because: "validator guidance should route SDK-backed validator edits to the dedicated sdk common guide");
 		article.Text.Should().Contain("must contain an object section, not an array section",
 			because: "validator guidance should state the SCHEMA_VALIDATORS container shape directly instead of using ambiguous preserve wording");
@@ -771,7 +820,7 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should explicitly warn that the async keyword alone does not mean async:true is required");
 		article.Text.Should().Contain("Async validator template",
 			because: "the async validator section should use a direct AI-readable title instead of an ambiguous delta label");
-		article.Text.Should().Contain("Before editing `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service usage here, read `page-schema-sdk-common`.",
+		article.Text.Should().Contain("Before editing `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service usage here, read `page-schema-creatio-devkit-common`.",
 			because: "the async validator section should route SDK-backed validator work through the dedicated sdk common guide");
 		article.Text.Should().Contain("Use `Minimal canonical template` for the base binding structure",
 			because: "the async validator variant should tell AI callers to reuse the canonical binding template instead of treating the section as a standalone shape");
@@ -787,7 +836,7 @@ public sealed class McpGuidanceResourceTests {
 			because: "the async validator template must instruct adding devkit AMD dependency");
 		article.Text.Should().Contain("minimal coupled sections required for validator correctness",
 			because: "the safe editing rules should no longer tell AI callers to touch only SCHEMA_VALIDATORS when coupled binding edits are required");
-		article.Text.Should().Contain("When validator code needs `@creatio-devkit/common`, read `page-schema-sdk-common` first and then follow its AMD dependency and public-API rules.",
+		article.Text.Should().Contain("When validator code needs `@creatio-devkit/common`, read `page-schema-creatio-devkit-common` first and then follow its AMD dependency and public-API rules.",
 			because: "safe editing rules should route SDK-backed validator edits through the dedicated sdk common guide");
 		article.Text.Should().Contain("Verify the edited body is syntactically valid JavaScript before calling `sync-pages`.",
 			because: "safe editing should describe an operational verification step rather than the vague instruction to re-parse");
@@ -844,5 +893,477 @@ public sealed class McpGuidanceResourceTests {
 			because: "the extracted contract map should include built-in max-length validation");
 		contracts["crt.MaxLength"].Should().Equal(new[] { "maxLength" },
 			because: "the parser should preserve the canonical max-length param name from the decision table");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns converter guidance that covers OOTB converters, custom usr.* converters, and pipe-binding syntax for Freedom UI pages.")]
+	public void PageSchemaConvertersGuidanceResource_Should_Return_Canonical_Converter_Guide() {
+		// Arrange
+		PageSchemaConvertersGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the converter guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert — URI
+		article.Uri.Should().Be("docs://mcp/guides/page-schema-converters",
+			because: "the converter guide should expose a stable MCP URI for converter authoring guidance");
+
+		// Assert — scope and marker name
+		article.Text.Should().Contain("SCHEMA_CONVERTERS",
+			because: "converter guidance should point callers to the marker-delimited converter section");
+		article.Text.Should().Contain("must contain an object section, not an array section",
+			because: "converter guidance should state the SCHEMA_CONVERTERS container shape directly");
+
+		// Assert — decision tree
+		article.Text.Should().Contain("Decision tree",
+			because: "converter guidance should front-load the main branching decisions for AI consumers");
+		article.Text.Should().Contain("DISPLAY-ONLY value transformation",
+			because: "the decision tree should distinguish display transformation from validation and business logic");
+		article.Text.Should().Contain("stop and read `page-schema-validators`",
+			because: "the decision tree should route validation requirements to the validators guide");
+		article.Text.Should().Contain("stop and read `page-schema-handlers`",
+			because: "the decision tree should route business logic requirements to the handlers guide");
+
+		// Assert — OOTB converter decision table
+		article.Text.Should().Contain("OOTB converter decision table",
+			because: "converter guidance should provide a decision table of built-in converters before allowing custom ones");
+		article.Text.Should().Contain("| Requirement pattern | Use | Parameters | Custom converter needed |",
+			because: "the OOTB table should be structured for direct AI consumption");
+		article.Text.Should().Contain("crt.ToBoolean",
+			because: "guidance should document the built-in boolean converter");
+		article.Text.Should().Contain("crt.InvertBooleanValue",
+			because: "guidance should document the built-in boolean inversion converter");
+		article.Text.Should().Contain("crt.ToEmailLink",
+			because: "guidance should document the built-in email-to-link converter");
+		article.Text.Should().Contain("crt.ToPhoneLink",
+			because: "guidance should document the built-in phone-to-link converter");
+		article.Text.Should().Contain("crt.ToObjectProp",
+			because: "guidance should document the built-in object-property extractor converter");
+		article.Text.Should().Contain("| requirement is not covered by rows above | custom `usr.*` converter | custom | yes |",
+			because: "the table should tell AI when a custom converter is justified");
+
+		// Assert — binding syntax
+		article.Text.Should().Contain("Converter binding syntax",
+			because: "guidance should explain where and how converters are bound");
+		article.Text.Should().Contain("\"$AttributeName | converterName\"",
+			because: "guidance should show the canonical pipe-binding syntax");
+		article.Text.Should().Contain("NOT in `viewModelConfigDiff`",
+			because: "guidance should prevent the common mistake of binding converters in the view-model section");
+
+		// Assert — custom converter naming
+		article.Text.Should().Contain("usr.` prefix",
+			because: "custom converters must use the usr. namespace prefix");
+		article.Text.Should().Contain("do NOT declare them in `SCHEMA_CONVERTERS`",
+			because: "guidance should prevent declaring built-in crt.* converters in the schema section");
+
+		// Assert — NON-NEGOTIABLES
+		article.Text.Should().Contain("NON-NEGOTIABLES",
+			because: "converter guidance should expose a compact high-priority rules block");
+		article.Text.Should().Contain("Converters affect DISPLAY only",
+			because: "the non-negotiables should enforce that converters do not write back to the model");
+		article.Text.Should().Contain("Never put side effects inside a converter function",
+			because: "the non-negotiables should prohibit side effects (but not async) inside converters");
+		article.Text.Should().Contain("Async converters are allowed",
+			because: "the non-negotiables must explicitly permit async converters after the async section was introduced");
+		article.Text.Should().Contain("Do NOT call non-cached HTTP endpoints",
+			because: "the non-negotiables should restrict uncached HTTP inside converters");
+
+		// Assert — async converters section
+		article.Text.Should().Contain("Async converters",
+			because: "the guide must include a dedicated section on async converter authoring");
+		article.Text.Should().Contain("instanceof Promise",
+			because: "the async section should explain the runtime's Promise detection mechanism");
+		article.Text.Should().Contain("SysSettingsService",
+			because: "the async section must name SysSettingsService as a safe example of a cached service");
+		article.Text.Should().Contain("pre-loaded at startup into a two-layer cache",
+			because: "the guide should explain that OOTB settings are cached at startup");
+		article.Text.Should().Contain("Custom `usr.*` settings are NOT pre-loaded",
+			because: "the guide must clarify that custom settings are not in the startup preload set");
+		article.Text.Should().Contain("usr.FormatPhoneNumber",
+			because: "the async section should include a complete named example");
+		article.Text.Should().Contain("async (value) =>",
+			because: "the guide should show the async arrow function syntax that AI will copy");
+		article.Text.Should().Contain("prefer async converter when the async call is cheap/cached",
+			because: "the guide should give an explicit decision rule for choosing async converter vs handler");
+		article.Text.Should().Contain("If the converter is async, ensure the SDK service used is cached",
+			because: "the before-save checklist should require verifying caching for async converters");
+
+		// Assert — templates and examples
+		article.Text.Should().Contain("Minimal canonical template",
+			because: "converter guidance should provide a reusable template before detailed variants");
+		article.Text.Should().Contain("usr.ToUpperCase",
+			because: "guidance should include a concrete custom converter example");
+		article.Text.Should().Contain("value?.toUpperCase() ?? ''",
+			because: "the example converter body should show a realistic implementation");
+		article.Text.Should().Contain("\"caption\": \"$UsrName | usr.ToUpperCase\"",
+			because: "the example should show the converter wired to a real viewConfigDiff property");
+
+		// Assert — OOTB binding examples
+		article.Text.Should().Contain("crt.InvertBooleanValue",
+			because: "guidance should include an OOTB boolean inversion binding example");
+		article.Text.Should().Contain("crt.ToEmailLink",
+			because: "guidance should include an OOTB email link binding example");
+		article.Text.Should().Contain("crt.ToPhoneLink",
+			because: "guidance should include an OOTB phone link binding example");
+		article.Text.Should().Contain("crt.ToObjectProp:'displayValue'",
+			because: "guidance should show that ToObjectProp params must be quoted strings, not bare identifiers");
+
+		// Assert — BEFORE SAVE CHECKLIST
+		article.Text.Should().Contain("BEFORE SAVE CHECKLIST",
+			because: "converter guidance should give AI callers a compact verification gate before sync-pages");
+		article.Text.Should().Contain("$Attr | converterName` format, not `$Attr.converterName`",
+			because: "the checklist should guard against using dot notation instead of pipe syntax");
+		article.Text.Should().Contain("`SCHEMA_CONVERTERS` is an object literal, not an array",
+			because: "the checklist should reinforce the object-not-array shape constraint");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for executing approved plans through clio MCP transport, ordering, branching, and recovery rules.")]
+	public void AgentExecutionGuidanceResource_Should_Return_Canonical_Execution_Guide() {
+		// Arrange
+		AgentExecutionGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the agent execution guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/agent-execution",
+			because: "the resource should expose a stable MCP URI for agent execution guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the agent execution guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP agent execution guide",
+			because: "the article should open with the canonical title for downstream contains-checks");
+		article.Text.Should().Contain("get-tool-contract",
+			because: "the guide should require contract discovery before invocation");
+		article.Text.Should().Contain("Pass boolean MCP parameters as booleans",
+			because: "the guide should publish the canonical boolean transport rule");
+		article.Text.Should().Contain("Execution order",
+			because: "the guide should publish a numbered execution order section");
+		article.Text.Should().Contain("Branching rules",
+			because: "the guide should publish branching rules between new-app and existing-app flows");
+		article.Text.Should().Contain("Schema sync recovery patterns",
+			because: "the guide should cover schema-sync recovery patterns owned by clio");
+		article.Text.Should().Contain("InsertQuery failed",
+			because: "the guide should describe the wiring-failure recovery rule for reuse decisions");
+		article.Text.Should().Contain("metadata readback timeout",
+			because: "the guide should describe the section readback timeout recovery path");
+		article.Text.Should().Contain("delete the orphaned entity using `delete-schema`",
+			because: "the guide should encode the orphan-cleanup step for the section recovery path");
+		article.Text.Should().Contain("Database update required",
+			because: "the guide should require materialized metadata before treating schema work as successful");
+		article.Text.Should().Contain("validate-page",
+			because: "the guide should require client-side validation before persisting page bodies");
+		article.Text.Should().Contain("docs://mcp/guides/support-mode",
+			because: "the guide should redirect support-run readers to the dedicated support-mode guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes page-schema-converters so AI callers can retrieve converter authoring guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Page_Schema_Converters_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("page-schema-converters", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose page-schema-converters so get-guidance can return it by name");
+		entry.Name.Should().Be("page-schema-converters",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("converters",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/page-schema-converters",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns configuration web-service guidance and references as stable MCP resources.")]
+	public void ConfigurationWebServiceGuidanceResource_Should_Return_Guide_And_References() {
+		// Arrange
+		ConfigurationWebServiceGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents guide = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "configuration web-service guidance should be returned as a plain-text MCP resource").Subject;
+		TextResourceContents dtoPatterns = resource.GetDtoPatterns().Should().BeOfType<TextResourceContents>(
+			because: "DTO patterns should be returned as a plain-text MCP reference").Subject;
+		TextResourceContents statusCodePatterns = resource.GetStatusCodePatterns().Should().BeOfType<TextResourceContents>(
+			because: "status-code patterns should be returned as a plain-text MCP reference").Subject;
+		TextResourceContents compositionRootPattern = resource.GetCompositionRootPattern().Should().BeOfType<TextResourceContents>(
+			because: "composition-root patterns should be returned as a plain-text MCP reference").Subject;
+		TextResourceContents manualRuntimeChecklist = resource.GetManualRuntimeChecklist().Should().BeOfType<TextResourceContents>(
+			because: "manual runtime verification should be returned as a plain-text MCP reference").Subject;
+
+		// Assert
+		guide.Uri.Should().Be("docs://mcp/guides/configuration-webservice",
+			because: "the guide should expose the stable URI requested for configuration web-service guidance");
+		guide.MimeType.Should().Be("text/plain",
+			because: "the guide should be discoverable as plain text");
+		guide.Text.Should().Contain("Inherit BaseService, IReadOnlySessionState",
+			because: "the guide should preserve the web-service shape rule from the source skill");
+		guide.Text.Should().Contain("docs://mcp/references/configuration-webservice/dto-patterns",
+			because: "the guide should point callers to its detailed DTO reference resource");
+
+		dtoPatterns.Uri.Should().Be("docs://mcp/references/configuration-webservice/dto-patterns",
+			because: "the DTO reference URI should be stable for direct MCP resource reads");
+		dtoPatterns.MimeType.Should().Be("text/plain",
+			because: "references should be exposed as plain text");
+		dtoPatterns.Text.Should().Contain("Return a concrete DTO type",
+			because: "the DTO reference should preserve the concrete return-type rule");
+
+		statusCodePatterns.Uri.Should().Be("docs://mcp/references/configuration-webservice/status-code-patterns",
+			because: "the status-code reference URI should be stable for direct MCP resource reads");
+		statusCodePatterns.Text.Should().Contain("NET472: /0/rest/<ServiceName>/<MethodName>",
+			because: "the status-code reference should preserve framework-specific route guidance");
+
+		compositionRootPattern.Uri.Should().Be("docs://mcp/references/configuration-webservice/composition-root-pattern",
+			because: "the composition-root reference URI should be stable for direct MCP resource reads");
+		compositionRootPattern.Text.Should().Contain("Keep the service thin",
+			because: "the composition-root reference should preserve the thin-service guidance");
+
+		manualRuntimeChecklist.Uri.Should().Be("docs://mcp/references/configuration-webservice/manual-runtime-checklist",
+			because: "the manual runtime checklist URI should be stable for direct MCP resource reads");
+		manualRuntimeChecklist.Text.Should().Contain("Send a representative success request",
+			because: "the runtime checklist should preserve the manual verification workflow");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns configuration web-service test guidance and references as stable MCP resources.")]
+	public void ConfigurationWebServiceTestsGuidanceResource_Should_Return_Guide_And_References() {
+		// Arrange
+		ConfigurationWebServiceTestsGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents guide = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "configuration web-service test guidance should be returned as a plain-text MCP resource").Subject;
+		TextResourceContents testFixturePattern = resource.GetTestFixturePattern().Should().BeOfType<TextResourceContents>(
+			because: "test fixture patterns should be returned as a plain-text MCP reference").Subject;
+		TextResourceContents assertionStyle = resource.GetAssertionStyle().Should().BeOfType<TextResourceContents>(
+			because: "assertion style should be returned as a plain-text MCP reference").Subject;
+		TextResourceContents endpointTestPatterns = resource.GetEndpointTestPatterns().Should().BeOfType<TextResourceContents>(
+			because: "endpoint test patterns should be returned as a plain-text MCP reference").Subject;
+
+		// Assert
+		guide.Uri.Should().Be("docs://mcp/guides/configuration-webservice-tests",
+			because: "the guide should expose the stable URI requested for configuration web-service test guidance");
+		guide.MimeType.Should().Be("text/plain",
+			because: "the guide should be discoverable as plain text");
+		guide.Text.Should().Contain("Add or update tests for production web-service changes",
+			because: "the guide should preserve the primary test-coverage rule from the source skill");
+		guide.Text.Should().Contain("docs://mcp/references/configuration-webservice-tests/test-fixture-pattern",
+			because: "the guide should point callers to its detailed fixture reference resource");
+
+		testFixturePattern.Uri.Should().Be("docs://mcp/references/configuration-webservice-tests/test-fixture-pattern",
+			because: "the fixture reference URI should be stable for direct MCP resource reads");
+		testFixturePattern.Text.Should().Contain("Register test doubles through InjectedServices",
+			because: "the fixture reference should preserve dependency-injection mocking guidance");
+
+		assertionStyle.Uri.Should().Be("docs://mcp/references/configuration-webservice-tests/assertion-style",
+			because: "the assertion-style reference URI should be stable for direct MCP resource reads");
+		assertionStyle.Text.Should().Contain("Add because:",
+			because: "the assertion-style reference should preserve the assertion reason rule");
+
+		endpointTestPatterns.Uri.Should().Be("docs://mcp/references/configuration-webservice-tests/endpoint-test-patterns",
+			because: "the endpoint-test reference URI should be stable for direct MCP resource reads");
+		endpointTestPatterns.Text.Should().Contain("DTO-returning method",
+			because: "the endpoint-test reference should preserve coverage guidance by endpoint response style");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes configuration web-service guides so AI callers can retrieve them by name.")]
+	public void GuidanceCatalog_Should_Include_Configuration_WebService_Entries() {
+		// Act
+		bool webServiceFound = GuidanceCatalog.TryGet("configuration-webservice", out GuidanceCatalogEntry webServiceEntry);
+		bool testsFound = GuidanceCatalog.TryGet("configuration-webservice-tests", out GuidanceCatalogEntry testsEntry);
+
+		// Assert
+		webServiceFound.Should().BeTrue(
+			because: "the catalog must expose configuration-webservice so get-guidance can return the implementation guide by name");
+		webServiceEntry.Article.Uri.Should().Be("docs://mcp/guides/configuration-webservice",
+			because: "the catalog entry should point at the stable configuration web-service guide URI");
+		webServiceEntry.Description.Should().Contain("configuration web services",
+			because: "the catalog description should identify the guide subject");
+
+		testsFound.Should().BeTrue(
+			because: "the catalog must expose configuration-webservice-tests so get-guidance can return the test guide by name");
+		testsEntry.Article.Uri.Should().Be("docs://mcp/guides/configuration-webservice-tests",
+			because: "the catalog entry should point at the stable configuration web-service test guide URI");
+		testsEntry.Description.Should().Contain("testing",
+			because: "the catalog description should identify that the guide is test-focused");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Generated composable-app skill resources expose all remaining skill guides and references as plain-text MCP articles.")]
+	public void ComposableAppSkillResourceCatalog_Should_Expose_All_Generated_Skill_Resources() {
+		// Arrange
+		IReadOnlyList<ComposableAppSkillResourceEntry> entries = ComposableAppSkillResourceCatalog.GetEntries();
+
+		// Act
+		ComposableAppSkillResourceEntry atfGuide = entries.Single(entry =>
+			entry.Article.Uri == "docs://mcp/guides/atf-repository-dev");
+		ComposableAppSkillResourceEntry featureReference = entries.Single(entry =>
+			entry.Article.Uri == "docs://mcp/references/feature-toggle/implementation-patterns");
+		ComposableAppSkillResourceEntry sysSettingTestsReference = entries.Single(entry =>
+			entry.Article.Uri == "docs://mcp/references/sys-setting-tests/setup-sys-settings-pattern");
+
+		// Assert
+		entries.Should().HaveCount(49,
+			because: "the generated catalog should include 13 remaining skill guides plus their 36 reference files");
+		entries.Should().OnlyContain(entry => entry.Article.MimeType == "text/markdown",
+			because: "generated skill resources come from Markdown skill and reference files");
+		entries.Should().OnlyContain(entry =>
+				entry.Article.Uri.StartsWith("docs://mcp/guides/") ||
+				entry.Article.Uri.StartsWith("docs://mcp/references/"),
+			because: "generated resources should use the agreed MCP docs URI namespace");
+
+		atfGuide.IsGuide.Should().BeTrue(
+			because: "top-level SKILL.md documents should be guide resources");
+		atfGuide.Article.Text.Should().Contain("ATF.Repository",
+			because: "the generated guide should preserve the source skill content");
+
+		featureReference.IsGuide.Should().BeFalse(
+			because: "reference markdown files should remain direct reference resources instead of get-guidance entries");
+		featureReference.Article.Text.Should().Contain("Feature",
+			because: "the generated reference should preserve the source reference content");
+
+		sysSettingTestsReference.Article.Text.Should().Contain("SetupSysSettings",
+			because: "the generated sys-setting test reference should preserve its fixture setup guidance");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes generated composable-app skill guides while keeping generated references resource-only.")]
+	public void GuidanceCatalog_Should_Include_Generated_Composable_App_Skill_Guides() {
+		// Arrange
+		IReadOnlyList<ComposableAppSkillResourceEntry> generatedGuides = ComposableAppSkillResourceCatalog.GetGuides();
+		IReadOnlyList<ComposableAppSkillResourceEntry> generatedReferences = ComposableAppSkillResourceCatalog.GetEntries()
+			.Where(entry => !entry.IsGuide)
+			.ToArray();
+
+		// Act
+		bool allGuidesFound = generatedGuides.All(guide => GuidanceCatalog.TryGet(guide.Skill, out _));
+		bool anyReferenceFound = generatedReferences.Any(reference =>
+			GuidanceCatalog.TryGet($"{reference.Skill}/{reference.Reference}", out _));
+
+		// Assert
+		generatedGuides.Should().HaveCount(13,
+			because: "only the remaining top-level composable-app skill documents should be registered for get-guidance");
+		allGuidesFound.Should().BeTrue(
+			because: "get-guidance should resolve every generated top-level skill guide by skill name");
+		anyReferenceFound.Should().BeFalse(
+			because: "generated references should be read through MCP resources directly, not through get-guidance names");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for diagnostic-first behavior under support mode.")]
+	public void SupportModeGuidanceResource_Should_Return_Canonical_Support_Mode_Guide() {
+		// Arrange
+		SupportModeGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the support-mode guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/support-mode",
+			because: "the resource should expose a stable MCP URI for support-mode guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the support-mode guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP support-mode guide",
+			because: "the article should open with the canonical title for downstream contains-checks");
+		article.Text.Should().Contain("Diagnostic-first execution",
+			because: "the guide should publish the diagnostic-first execution policy");
+		article.Text.Should().Contain("clio_mcp_issue",
+			because: "the guide should declare the primary critical defect category");
+		article.Text.Should().Contain("instruction_issue",
+			because: "the guide should classify guidance and pattern defects");
+		article.Text.Should().Contain("environment_issue",
+			because: "the guide should classify auth/network/runtime defects");
+		article.Text.Should().Contain("orchestration_tool_failure",
+			because: "the guide should classify caller/wrapper invocation defects");
+		article.Text.Should().Contain("one confirmation probe",
+			because: "the guide should publish the single confirmation-probe rule");
+		article.Text.Should().Contain("exit_decision=fail_fast",
+			because: "the guide should encode the fail-fast evidence triple emitted before stopping");
+		article.Text.Should().Contain("blocked_stage=",
+			because: "the guide should require blocked-stage evidence in fail-fast output");
+		article.Text.Should().Contain("why_continue_is_unsafe=",
+			because: "the guide should require why-continue-is-unsafe evidence in fail-fast output");
+		article.Text.Should().Contain("error_signature",
+			because: "the canonical failure record contract must include the normalized error signature");
+		article.Text.Should().Contain("Confirmed failures",
+			because: "the final reporting section list must include Confirmed failures");
+		article.Text.Should().Contain("Non-target friction",
+			because: "the final reporting section list must include Non-target friction");
+		article.Text.Should().Contain("Support mode is on. Please share this session with support for analysis.",
+			because: "the guide should encode the canonical handoff line appended to support-mode final responses");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for Freedom UI business rules so AI callers use declarative rules instead of handlers.")]
+	public void BusinessRulesGuidanceResource_Should_Return_Canonical_Business_Rules_Guide() {
+		// Arrange
+		BusinessRulesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the business-rules guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/business-rules",
+			because: "the resource should expose a stable MCP URI for business-rules guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the business-rules guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP business rules guide",
+			because: "the article should identify itself as the dedicated business-rules guide");
+		article.Text.Should().Contain("create-entity-business-rule",
+			because: "the guide should advertise the entity-level business rule tool");
+		article.Text.Should().Contain("create-page-business-rule",
+			because: "the guide should advertise the page-level business rule tool");
+		article.Text.Should().Contain("SEPARATE first-class artifacts",
+			because: "the guide should make clear that business rules are not page-body code");
+		article.Text.Should().Contain("Do NOT write JavaScript handler or validator code",
+			because: "the guide should explicitly forbid implementing business-rule logic as handlers");
+		article.Text.Should().Contain("condition group",
+			because: "the guide should explain the condition-action structure of business rules");
+		article.Text.Should().Contain("Entity-level business rules",
+			because: "the guide should distinguish entity-level from page-level rules");
+		article.Text.Should().Contain("Page-level business rules",
+			because: "the guide should distinguish page-level from entity-level rules");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes business-rules so AI callers can retrieve business-rule authoring guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Business_Rules_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("business-rules", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose business-rules so get-guidance can return it by name");
+		entry.Name.Should().Be("business-rules",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("business rules",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/business-rules",
+			because: "the article URI in the catalog must match the resource URI");
 	}
 }

@@ -105,18 +105,145 @@ public sealed class GuidanceGetToolE2ETests {
 			context.Session,
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
-				["name"] = "page-schema-sdk-common"
+				["name"] = "page-schema-creatio-devkit-common"
 			});
 
 		// Assert
 		response.Success.Should().BeTrue(
-			because: "page-schema-sdk-common is a registered guidance name");
+			because: "page-schema-creatio-devkit-common is a registered guidance name");
 		response.Article.Should().NotBeNull(
 			because: "successful guidance lookups should return the resolved article payload");
-		response.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-sdk-common",
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-creatio-devkit-common",
 			because: "the canonical resource URI should still be visible in the tool response");
 		response.Article.Text.Should().Contain("clio MCP page-schema sdk common guide",
 			because: "the guidance tool should return the canonical sdk common guide text");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical converter guidance article")]
+	public async Task GuidanceGet_Should_Return_Page_Schema_Converters_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-schema-converters"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-schema-converters is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-converters",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("clio MCP page-schema converters guide",
+			because: "the guidance tool should return the canonical converter guide text");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical configuration web-service guide")]
+	public async Task GuidanceGet_Should_Return_Configuration_WebService_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "configuration-webservice"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "configuration-webservice is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/configuration-webservice",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("creatio-config-webservice",
+			because: "the guidance tool should return the canonical configuration web-service guide text");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical configuration web-service test guide")]
+	public async Task GuidanceGet_Should_Return_Configuration_WebService_Tests_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "configuration-webservice-tests"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "configuration-webservice-tests is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/configuration-webservice-tests",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("configuration-webservice-tests",
+			because: "the guidance tool should return the canonical configuration web-service test guide text");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns generated composable-app skill guides")]
+	public async Task GuidanceGet_Should_Return_Generated_Composable_App_Skill_Guides() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse atfResponse = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "atf-repository-dev"
+			});
+		GuidanceGetResponse sysSettingTestsResponse = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "sys-setting-tests"
+			});
+
+		// Assert
+		atfResponse.Success.Should().BeTrue(
+			because: "atf-repository-dev is a generated guidance name");
+		atfResponse.Article.Should().NotBeNull(
+			because: "successful generated guidance lookups should return the resolved article payload");
+		atfResponse.Article!.Uri.Should().Be("docs://mcp/guides/atf-repository-dev",
+			because: "the canonical generated resource URI should still be visible in the tool response");
+		atfResponse.Article.Text.Should().Contain("ATF.Repository",
+			because: "the guidance tool should return the generated source skill text");
+
+		sysSettingTestsResponse.Success.Should().BeTrue(
+			because: "sys-setting-tests is a generated guidance name");
+		sysSettingTestsResponse.Article.Should().NotBeNull(
+			because: "successful generated test guidance lookups should return the resolved article payload");
+		sysSettingTestsResponse.Article!.Uri.Should().Be("docs://mcp/guides/sys-setting-tests",
+			because: "the canonical generated test resource URI should still be visible in the tool response");
+		sysSettingTestsResponse.Article.Text.Should().Contain("SetupSysSettings",
+			because: "the guidance tool should return the generated test skill text");
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {

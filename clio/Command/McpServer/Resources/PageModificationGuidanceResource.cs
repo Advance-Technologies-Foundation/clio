@@ -22,6 +22,19 @@ public sealed class PageModificationGuidanceResource {
 		Text = """
 		       clio MCP page modification guide
 
+		       PRE-EDIT GUIDANCE CHECKLIST — read before writing any body
+		       Before touching raw.body, determine which section you are modifying and call the corresponding guidance first:
+
+		       | Requirement pattern | Call get-guidance with name | Why |
+		       | --- | --- | --- |
+		       | conditional visibility, editability, or required state based on field values (e.g. "when Status=Closed hide field X") | `business-rules` | Business rules are SEPARATE artifacts — do NOT implement them as JavaScript handlers or validators. Use `create-page-business-rule` or `create-entity-business-rule`. |
+		       | email as mailto link, phone as tel link, text uppercase/lowercase, boolean inversion, number/currency formatting, any display-only transformation | `page-schema-converters` | Determines whether a converter is the right tool BEFORE you choose a component type. Skipping this causes AI to use crt.EmailInput instead of crt.ToEmailLink, or crt.Label instead of a converter binding. |
+		       | business logic, cross-field orchestration, async data loading, side effects | `page-schema-handlers` | Handlers are NOT the same as converters. |
+		       | required field, max length, format enforcement with error message | `page-schema-validators` | Validators write to viewModelConfigDiff, not viewConfigDiff. |
+		       | SDK service calls (SysSettingsService, HttpClientService, etc.) | `page-schema-creatio-devkit-common` | Correct import syntax and async patterns. |
+
+		       STOP. Do NOT call get-component-info and pick a component type to solve a display transformation requirement until you have read `page-schema-converters` and confirmed the OOTB decision table does not cover your case. The most common mistake is treating a display transformation as a component selection problem.
+
 		       Replacing-schema concept
 		       - When a Freedom UI designer saves changes to a page, Creatio creates a replacing schema in a "design package".
 		       - The replacing schema inherits from the original and contains only the diff applied by the designer.
@@ -41,14 +54,34 @@ public sealed class PageModificationGuidanceResource {
 		       - `page` — metadata of the editable replacing schema: `schemaName`, `schemaUId`, `packageName`, `packageUId`, `parentSchemaName`.
 		       - `raw.body` — full JavaScript body of the replacing schema (with markers). Read-only reference; see the CRITICAL warning below before reusing it as the write payload.
 		       - `bundle` — read-only merged view across the full hierarchy. Do not send `bundle` or `bundle.viewConfig` as the body payload.
-		       - `bundle.containers` — flat list of usable `parentName` values.
 
-		       CRITICAL — multi-app replacements and target-package-uid
-		       - Many platform pages are replaced by MULTIPLE apps (for example `Opportunities_ListPage` is replaced by both `CrtLeadOppMgmt` and `CrtWaterfallPipelineInLeadOppMgmt`). Each replacement lives in a different design package.
-		       - `get-page` returns the most-derived replacement plus `page.designPackageUId` — the package where `update-page` will save by default. If `page.willCreateReplacingInDesignPackage` is `true`, a NEW replacing schema will be materialized in the design package.
-		       - The auto-picked design package comes from the user's currently active app. If the wrong app wins the resolution, the saved button never shows up in the workspace the user is actually viewing.
-		       - When in doubt, pass `target-package-uid` explicitly to `update-page`. Discover the candidate packages via `list-pages` (shows every schema named `Opportunities_ListPage` with its package) and pick the one owned by the workplace where the user expects the change.
-		       - Symptom if the wrong package is picked: `update-page` returns `success: true` but the button is absent at runtime, the designer URL hangs or loads an empty page, and Workspace Explorer shows the page in an unexpected package.
+		       bundle.json shape (top-level keys)
+		       - `name` — string, the page schema name.
+		       - `viewConfig` — ARRAY container that wraps the merged root tree as its single element. By design: in `body.js`, `viewConfigDiff` is an array of operations; in `bundle.json`, `viewConfig` holds the result of applying those diffs, wrapped as `[ rootObject ]`. Walk it as `.viewConfig[0]` for the merged root, or `.viewConfig | .. | objects | ...` for recursive search.
+		       - `containers` — ARRAY of objects `{ name, type, childCount, path }`, NOT a keyed object. Use `.containers[]`, never `.containers | keys[]` or `.containers | to_entries[]`.
+		       - `resources` — nested object (localizable strings); not flat — `to_entries` plus `@tsv` will fail on nested values.
+		       - `handlers`, `converters`, `validators` — plain JavaScript SOURCE STRINGS, not parsed JSON. Read with `jq -r '.handlers'`.
+		       - `viewModelConfig`, `modelConfig`, `optionalProperties`, `parameters` — structured (object/array) merged metadata.
+
+		       jq recipes for bundle.json
+		       - Find a tab or container by name pattern (use `containers`, the index):
+		         `jq '.containers[] | select(.name | test("Sales"; "i"))' .clio-pages/<schema>/bundle.json`
+		       - List all tab containers:
+		         `jq '.containers[] | select(.type == "crt.TabContainer") | {name, path, childCount}' .clio-pages/<schema>/bundle.json`
+		       - Read the merged root object:
+		         `jq '.viewConfig[0]' .clio-pages/<schema>/bundle.json`
+		       - Find a node deep in viewConfig by name (recursive):
+		         `jq '.viewConfig | .. | objects | select(.name? == "SalesTab")' .clio-pages/<schema>/bundle.json`
+		       - Resolve a parent path for a known node:
+		         `jq '.containers[] | select(.name == "SalesTab") | .path' .clio-pages/<schema>/bundle.json`
+		       - Inspect handler source code:
+		         `jq -r '.handlers' .clio-pages/<schema>/bundle.json`
+		       Always use `.containers[]` (array iteration) and `.viewConfig[0]` for the merged root. Casting through `keys`, `to_entries`, or `@csv`/`@tsv` on these structures produces the errors `"object is not valid in a csv row"` or `"number cannot be matched, as it is not a string"`.
+
+		       Design-package resolution (trust the backend)
+		       - `get-page` returns `page.designPackageUId` — the package where `update-page` will save. `page.willCreateReplacingInDesignPackage: true` means a NEW replacing schema will be materialized on save (the package itself is virtual until then; the backend creates it from the cached `AppVirtualPackageInfo` at SaveSchema time).
+		       - The backend resolves the design package deterministically from the locked schema's owning app via `SysPackageInInstalledApp` — there is no per-user "active app" to manage and no ambiguity between installed apps.
+		       - Do NOT pass `target-package-uid` in normal flows. The override exists for niche scenarios where you have already discovered a specific replacing schema (for example via `list-pages` filtered by name) and want to bypass hierarchy resolution; otherwise, omit it and let the backend pick.
 
 		       update-page write modes
 		       - `mode: "replace"` (default): the body you pass replaces the schema body verbatim. Use only when composing the full schema body from scratch. All six marker pairs must be present.
@@ -56,6 +89,7 @@ public sealed class PageModificationGuidanceResource {
 		       - Merge rules (append mode):
 		         * `viewConfigDiff` — concat + dedupe by `name` (incoming wins)
 		         * `handlers` — concat + dedupe by `request` string (incoming wins)
+		         * `converters` — merge object by key (incoming wins)
 		         * `viewModelConfigDiff` / `modelConfigDiff` — plain concat (no dedupe)
 		       - Append mode is permissive about the incoming body: pass only the sections you want to merge (for example, just `SCHEMA_VIEW_CONFIG_DIFF` + `SCHEMA_HANDLERS`). Missing sections are skipped; the current body's values stay intact for those sections. No need to pad with empty `[]` / `{}` markers.
 		       - Never invent custom markers (for example `SCHEMA_WRAPPERS` is not a valid marker). Stick to: `SCHEMA_DEPS`, `SCHEMA_ARGS`, `SCHEMA_VIEW_CONFIG_DIFF`, `SCHEMA_VIEW_MODEL_CONFIG_DIFF`, `SCHEMA_MODEL_CONFIG_DIFF`, `SCHEMA_HANDLERS`, `SCHEMA_CONVERTERS`, `SCHEMA_VALIDATORS`.
@@ -140,10 +174,11 @@ public sealed class PageModificationGuidanceResource {
 
 		       Rules for viewConfigDiff
 		       - `operation` must be one of: `insert`, `remove`, `merge`, `move`.
-		       - `name` is the unique component id inside the hierarchy. Prefix custom components with `Usr` or project-specific prefix to avoid collisions.
+		       - `name` is the unique component id inside the hierarchy. Prefix custom components with `Usr` or project-specific prefix to avoid collisions. For entity-bound FormPage fields, the `control` binding uses the `$PDS_<ColumnName>` attribute key — use `get-component-info` for ready-to-use examples.
 		       - `parentName` must match an existing container name from `bundle.viewConfig`.
 		       - `propertyName` is usually `items` for containers.
 		       - `index` is the insertion position within `parentName.items[]`.
+		       - For entity-bound FormPage data-entry fields, match the column DataValueType to the control: `ShortText`/`MediumText`/`LongText` → `crt.Input`; `Lookup` → `crt.ComboBox`; `Boolean` → `crt.Checkbox`; `DateTime`/`Date`/`Time` → `crt.DateTimePicker`; `Integer`/`Float`/`Money` → `crt.NumberInput`; `Email` → `crt.EmailInput`; `PhoneNumber` → `crt.PhoneInput`; `WebLink` → `crt.WebInput`. Use `get-component-info` for full insert examples. For display-only transformations (email as mailto link, phone as tel link) read `page-schema-converters` first — do not select a component type for display tasks.
 
 		       Canonical flow to add a Test button to Accounts_ListPage
 		       1. `list-pages filter=Accounts_List` → resolve schema name.
@@ -159,6 +194,7 @@ public sealed class PageModificationGuidanceResource {
 		       - Replacing schemas outside the design package (for example, manually created overrides in other packages) are not visible through `GetDesignPackageUId`. Use `list-pages` to find the correct schema name.
 		       - `update-page` does NOT support handler JSON — handlers must be written as raw JavaScript inside `SCHEMA_HANDLERS` markers.
 		       - The handler block is not JS-syntax-validated beyond Acorn parsing; semantic errors (wrong argument names, missing `await`) surface only when the page is loaded in the browser.
+		       - ListPage DataGrid sorting: use `viewModelConfigDiff` via `Items.modelConfig.sortingConfig.attributeName` pointing to a sibling attribute (e.g. `ItemsSorting`) with sort options that use entity column names and `direction: asc/desc/none`. Do not insert `viewConfig.sorting` or `viewConfig.sortingChange` manually — the frontend preprocessor auto-injects them from `sortingConfig`.
 		       """
 	};
 

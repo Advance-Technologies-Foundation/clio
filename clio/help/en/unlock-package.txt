@@ -1,23 +1,29 @@
-﻿﻿unlock-package - Unlock packages in Creatio environment
+unlock-package - Unlock packages in Creatio environment
 
 SYNOPSIS
     clio unlock-package [package-names] [options]
     clio up [package-names] [options]
 
 DESCRIPTION
-    Unlocks one or more packages in a Creatio environment to enable editing 
-    and modifications. Use this command when you need to make changes to 
-    packages that are currently locked in the system.
+    Unlocks one or more packages in a Creatio environment to enable editing
+    and modifications. Uses ClioGate direct database queries to update
+    InstallType = 0 on the SysPackage record, bypassing the DataService ESQ
+    permission layer that can deny access even for privileged users.
+
+    When unlocking, the package Maintainer field is set to the environment's
+    current Maintainer system setting value. The original maintainer is stored
+    in the package Description field and restored automatically when the package
+    is locked again.
 
 ARGUMENTS
     package-names
-        Comma-separated list of package names to unlock. If omitted, unlocks 
-        all packages in the environment.
+        Comma-separated list of package names to unlock. If omitted, unlocks
+        all packages in the environment whose Maintainer matches the sys setting.
         Example: MyPackage,AnotherPackage,ThirdPackage
 
 OPTIONS
     -m, --maintainer <NAME>
-        Maintainer value used to set Maintainer system setting and clear 
+        Maintainer value used to set Maintainer system setting and clear
         SchemaNamePrefix before unlocking all packages.
         Required when unlocking all packages (without package-names).
 
@@ -52,7 +58,7 @@ EXAMPLES
 
     Unlock all packages:
         clio unlock-package -m Creatio -e dev
-        
+
         Output:
         Setting Maintainer sys setting to 'Creatio'.
         Setting SchemaNamePrefix sys setting to an empty value.
@@ -63,20 +69,25 @@ EXAMPLES
         clio unlock-package MyPackage --uri https://myapp.com -l admin -p pass
 
 REQUIREMENTS
-    This command requires cliogate package version 2.0.0.0 or higher installed 
+    This command requires cliogate package version 2.0.0.42 or higher installed
     on the target Creatio environment.
 
-    To install cliogate:
+    To install or update cliogate:
         clio install-gate -e <ENVIRONMENT_NAME>
 
-    To check cliogate version:
+    To check the installed cliogate version:
         clio get-info -e <ENVIRONMENT_NAME>
+
+    The authenticated user must have the CanManageSolution system operation
+    permission in Creatio.
 
 NOTES
     - Package names are case-sensitive and must match exactly
+    - After unlock, the package Maintainer is set to the environment's Maintainer
+      sys setting; the original maintainer is preserved in the Description field
     - Use environment configuration for easier command usage
     - Remember to lock packages after completing changes
-    - Administrator permissions required on target environment
+    - ClioGate must be installed on the target environment (version >= 2.0.0.42)
 
 SEE ALSO
     lock-package      Lock packages to prevent modifications

@@ -27,17 +27,21 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - For deleting a section from an existing app, prefer `list-apps -> get-app-info -> list-app-sections -> delete-app-section`.
 			       - Prefer `list-pages -> get-page -> sync-pages -> get-page` as the canonical page workflow, including single-page saves when the caller wants the clio-advertised path.
 			       - Read before write, and read back after mutations when the tool or workflow allows it.
+			       - For canonical data-binding workflow selection, call `get-guidance` with `name` set to `data-bindings`.
 			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
 
 			       Discover the target app
 			       - Use `list-apps` when you do not yet know the installed application code or need to confirm candidates.
-			       - Pass MCP tool arguments at the top level; do not wrap MCP arguments inside `args`.
+			       - Wrap MCP tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema (for example `{"args": {"environment-name": "...", "code": "..."}}`); do not flatten or rename canonical fields.
 			       - Use `get-app-info` after `list-apps` to confirm the primary package and entity context for the target app.
+			       - The `get-app-info` response includes `schema-name-prefix` — the active SchemaNamePrefix for the environment. Capture this value and use it as the prefix for ALL new schema codes in the session (entity codes, column codes, page schema names, lookup codes, binding names). An empty `schema-name-prefix` means no prefix. Do not assume `Usr`.
+			       - If no `get-app-info` has been called yet and you need to create a named schema artifact (entity, lookup, page, column), call `get-schema-name-prefix` first to obtain the active prefix before naming anything.
 			       - Use `create-app-section` when the requested mutation is "add a new section to this existing app".
 			       - Use `update-app-section` when the requested mutation is "change metadata of this existing section", including fixing a broken JSON-style heading by supplying a new plain-text caption.
 			       - If `create-app` fails because the app or configuration already exists, switch to the existing-app discovery flow: call `list-apps` to find the existing app, then `get-app-info` with the matched identifier, and continue with the inspect → mutate → verify flow.
 			       - `create-app-section` accepts `application-code` as the target-app selector.
 			       - `create-app-section` is scalar-only. Pass `caption`, `description`, and `entity-schema-name` as top-level strings, and pass `with-mobile-pages` as a top-level boolean.
+			       - When entity-schema-name is omitted, Creatio derives both the section code and the new entity code from the caption (e.g. caption "Customer Profile" → section code and entity code "{prefix}CustomerProfile"). Choose the caption that produces the desired {prefix}<PascalCase> entity name — where {prefix} is the active SchemaNamePrefix; read it from the `schema-name-prefix` field returned by `get-app-info`, or call `get-schema-name-prefix` before `get-app-info` when the prefix is needed earlier.
 			       - Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `create-app-section`.
 			       - When reusing an existing entity schema, provide `entity-schema-name`. Otherwise omit that field and let Creatio create a new object for the section.
 			       - `update-app-section` accepts `application-code` and `section-code` as the existing-section selector pair.
@@ -69,7 +73,8 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Use `sync-schemas` when the work spans multiple ordered schema steps, mixes create/update/seed operations, or must stay batched.
 			       - `sync-schemas` requests use `operations[*].type`. Responses also use `type`; do not send `operations[*].operation` in requests.
 			       - Treat `create-lookup`, `create-entity-schema`, `update-entity-schema`, `create-data-binding-db`, and `update-page` as fallback-oriented tools when the preferred batched workflow is not the right fit for the requested scope.
-			       - For standalone lookup seeding in an MCP workflow, prefer `create-data-binding-db` or `upsert-data-binding-row-db` over direct SQL commands.
+			       - For standalone lookup seeding or local binding artifacts in an MCP workflow, follow `get-guidance` with `name` set to `data-bindings`.
+			       - When that guide resolves to a DB-first binding path, prefer `create-data-binding-db` or `upsert-data-binding-row-db` over direct SQL commands.
 
 			       Verification
 			       - `sync-pages` keeps client-side validation enabled by default.

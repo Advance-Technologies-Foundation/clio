@@ -102,7 +102,7 @@ public sealed class ApplicationCreateTool(
 		OpenWorld = false)]
 	[Description("Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context.")]
 	public async Task<ApplicationContextResponse> ApplicationCreate(
-		[Description("Parameters: environment-name, name, code, icon-background (required); template-code (optional, defaults to AppFreedomUI — the stable recommended template); description, icon-id, client-type-id (optional)")]
+		[Description("Parameters: environment-name, name, code (required); template-code (optional, defaults to AppFreedomUI — the stable recommended template); description, icon-background, icon-id, client-type-id (optional)")]
 		[Required]
 		ApplicationCreateArgs args) {
 		try {
@@ -154,10 +154,8 @@ public sealed class ApplicationCreateTool(
 				$"Known templates: {available}. Omit template-code to use the default AppFreedomUI.");
 		}
 
-		if (string.IsNullOrWhiteSpace(args.IconBackground)) {
-			throw new ArgumentException(
-				"icon-background is required. " +
-				"Provide a top-level #RRGGBB value such as #1F5F8B.");
+		if (!string.IsNullOrWhiteSpace(args.IconBackground)) {
+			ApplicationSectionColorPalette.ValidateOrThrow(args.IconBackground.Trim());
 		}
 
 		if (args.TitleLocalizations is not null ||

@@ -14,6 +14,7 @@ public static class SchemaValidationService
 	private const string SchemaViewModelConfig = "SCHEMA_VIEW_MODEL_CONFIG";
 	private const string SchemaDiffMarker = "SCHEMA_DIFF";
 	private const string SchemaValidatorsMarker = "SCHEMA_VALIDATORS";
+	private const string SchemaConvertersMarker = "SCHEMA_CONVERTERS";
 	internal const string SchemaHandlersMarker = "SCHEMA_HANDLERS";
 	private const string ValuesPropertyName = "values";
 	private const string AttributesPropertyName = "attributes";
@@ -26,7 +27,7 @@ public static class SchemaValidationService
 		"SCHEMA_ARGS",
 		SchemaViewConfigDiff,
 		SchemaHandlersMarker,
-		"SCHEMA_CONVERTERS",
+		SchemaConvertersMarker,
 		SchemaValidatorsMarker
 	};
 
@@ -36,6 +37,7 @@ public static class SchemaValidationService
 	};
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
+
 	private static readonly Regex ResourceStringPattern = new(
 		@"^#ResourceString\(([^)]+)\)#$",
 		RegexOptions.Compiled,
@@ -521,15 +523,19 @@ public static class SchemaValidationService
 		string bindingAttribute,
 		out string preferredCaptionBinding) {
 		preferredCaptionBinding = string.Empty;
-		if (!string.IsNullOrWhiteSpace(bindingAttribute) && bindingAttribute.StartsWith("PDS_", StringComparison.OrdinalIgnoreCase)) {
-			preferredCaptionBinding = $"$Resources.Strings.{bindingAttribute}";
-			return true;
-		}
 		if (!string.IsNullOrWhiteSpace(bindingAttribute) &&
 		    modelPaths.TryGetValue(bindingAttribute, out string modelPath) &&
-		    modelPath.StartsWith("PDS.", StringComparison.OrdinalIgnoreCase)) {
-			preferredCaptionBinding = $"$Resources.Strings.{modelPath.Replace(".", "_", StringComparison.Ordinal)}";
+		    modelPath.Contains('.')) {
+			string expectedBinding = BuildExpectedBinding(modelPath);
+			preferredCaptionBinding = $"$Resources.Strings.{expectedBinding[1..]}";
 			return true;
+		}
+		foreach (var (_, path) in modelPaths) {
+			string expected = BuildExpectedBinding(path);
+			if (string.Equals("$" + bindingAttribute, expected, StringComparison.OrdinalIgnoreCase)) {
+				preferredCaptionBinding = $"$Resources.Strings.{bindingAttribute}";
+				return true;
+			}
 		}
 		return false;
 	}
@@ -556,13 +562,9 @@ public static class SchemaValidationService
 		return true;
 	}
 
-	internal static bool IsAllowedDirectFieldBinding(string bindingAttribute) {
-		return string.Equals(bindingAttribute, "Name", StringComparison.OrdinalIgnoreCase)
-			|| bindingAttribute.StartsWith("PDS_", StringComparison.OrdinalIgnoreCase);
-	}
-
 	internal static string BuildExpectedBinding(string modelPath) {
-		if (string.Equals(modelPath, "PDS.Name", StringComparison.OrdinalIgnoreCase)) {
+		int dot = modelPath.IndexOf('.', StringComparison.Ordinal);
+		if (dot >= 0 && string.Equals(modelPath[(dot + 1)..], "Name", StringComparison.OrdinalIgnoreCase)) {
 			return "$Name";
 		}
 		return "$" + modelPath.Replace(".", "_", StringComparison.Ordinal);
@@ -781,6 +783,274 @@ public static class SchemaValidationService
 			result.IsValid = false;
 		}
 		return result;
+	}
+
+	private const string ValidatorFactoryShapeGuidanceHint =
+		"Call get-guidance with name 'page-schema-validators' for the canonical factory shape.";
+
+	private static readonly HashSet<string> MisleadingValidatorAliases = new(StringComparer.Ordinal) {
+		"validate", "validateFn", "validation", "validatorFn",
+		"fn", "check", "rule", "test", "isValid"
+	};
+
+	private static readonly Regex ReturnFunctionPattern = new(
+		@"return\s+(?:async\s+)?function\b|return\s+(?:async\s+)?\([^)]*\)\s*=>|return\s+(?:async\s+)?[A-Za-z_$][\w$]*\s*=>",
+		RegexOptions.Compiled,
+		RegexTimeout);
+
+	/// <summary>
+	/// Validates that each custom validator entry in <c>SCHEMA_VALIDATORS</c> declares the
+	/// canonical factory shape: a top-level <c>validator</c> key whose value is a function
+	/// that returns another function (the inner validator). Catches two common Creatio runtime
+	/// traps the prior checks miss: (a) the wrong outer key (<c>validate</c>, <c>fn</c>,
+	/// <c>check</c>) — the runtime ignores any key other than <c>validator</c>, so the body
+	/// never executes; (b) a flat <c>function(value, config)</c> instead of a factory —
+	/// the runtime calls the outer function expecting a returned validator function and silently
+	/// fails when none is returned.
+	/// </summary>
+	public static SchemaValidationResult ValidateCustomValidatorFactoryShape(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string validatorsContent, SchemaValidatorsMarker)) {
+			return result;
+		}
+		string trimmed = validatorsContent.Trim();
+		if (string.IsNullOrWhiteSpace(trimmed) || trimmed == "{}" || !trimmed.StartsWith("{", StringComparison.Ordinal)) {
+			return result;
+		}
+		foreach (string validatorType in EnumerateTopLevelDeclarationKeys(trimmed)) {
+			if (!validatorType.Contains('.', StringComparison.Ordinal)) {
+				continue; // malformed names handled by ValidateValidatorDeclarations
+			}
+			if (validatorType.StartsWith("crt.", StringComparison.OrdinalIgnoreCase)) {
+				continue; // OOTB validators are referenced, not declared in SCHEMA_VALIDATORS
+			}
+			ValidateSingleCustomValidatorShape(trimmed, validatorType, result);
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Validates that each custom converter entry in <c>SCHEMA_CONVERTERS</c> declares
+	/// a callable function value. Models occasionally write an object literal, an array,
+	/// or a string literal in place of a function; the runtime then silently fails to apply
+	/// the converter at the binding site.
+	/// </summary>
+	public static SchemaValidationResult ValidateConverterFunctionShape(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string convertersContent, SchemaConvertersMarker)) {
+			return result;
+		}
+		string trimmed = convertersContent.Trim();
+		if (string.IsNullOrWhiteSpace(trimmed) || trimmed == "{}" || !trimmed.StartsWith("{", StringComparison.Ordinal)) {
+			return result;
+		}
+		foreach ((string converterType, string expression) in EnumerateTopLevelObjectEntries(trimmed)) {
+			if (!converterType.Contains('.', StringComparison.Ordinal)) {
+				continue; // malformed names handled by ValidateConverterDeclarations
+			}
+			if (converterType.StartsWith("crt.", StringComparison.OrdinalIgnoreCase)) {
+				continue; // OOTB converters are referenced, not declared in SCHEMA_CONVERTERS
+			}
+			if (!IsCallableFunctionExpression(expression)) {
+				result.Errors.Add(
+					$"Converter '{converterType}' must be a function value but the assigned expression is not callable. " +
+					$"Each entry in {SchemaConvertersMarker} must be a function expression that takes the bound attribute value and returns the transformed display value. " +
+					"Call get-guidance with name 'page-schema-converters' for the canonical converter shape.");
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static void ValidateSingleCustomValidatorShape(
+		string validatorsContent, string validatorType, SchemaValidationResult result) {
+		string entryBody = ExtractValidatorBody(validatorsContent, validatorType);
+		if (string.IsNullOrEmpty(entryBody)) {
+			return;
+		}
+		int braceStart = entryBody.IndexOf('{');
+		if (braceStart < 0) {
+			return;
+		}
+		string innerObject = entryBody.Substring(braceStart);
+
+		HashSet<string> topLevelKeys = new(StringComparer.Ordinal);
+		foreach ((string key, _) in EnumerateTopLevelObjectEntries(innerObject)) {
+			topLevelKeys.Add(key);
+		}
+		if (!topLevelKeys.Contains("validator")) {
+			string? alias = topLevelKeys.FirstOrDefault(k => MisleadingValidatorAliases.Contains(k));
+			if (alias != null) {
+				result.Errors.Add(
+					$"Validator '{validatorType}' uses key '{alias}' instead of 'validator'. " +
+					$"The Creatio runtime looks up the 'validator' key on each entry in {SchemaValidatorsMarker} and ignores any other key, so this validator never executes. " +
+					$"Rename '{alias}' to 'validator' and structure its value as a factory: an outer function that returns the inner validator function. " +
+					ValidatorFactoryShapeGuidanceHint);
+				return;
+			}
+			result.Errors.Add(
+				$"Validator '{validatorType}' is missing the required 'validator' key. " +
+				$"Each entry in {SchemaValidatorsMarker} must declare 'validator' as a factory function that returns the inner validator. " +
+				ValidatorFactoryShapeGuidanceHint);
+			return;
+		}
+
+		if (!TryGetTopLevelObjectPropertyValue(innerObject, "validator", out string validatorExpression)) {
+			result.Errors.Add(
+				$"Validator '{validatorType}' has a 'validator' key, but its value could not be parsed as a JavaScript expression. " +
+				ValidatorFactoryShapeGuidanceHint);
+			return;
+		}
+
+		if (!IsCallableFunctionExpression(validatorExpression)) {
+			result.Errors.Add(
+				$"Validator '{validatorType}' has a 'validator' key whose value is not a function. " +
+				"It must be a factory function — an outer function that returns an inner validator function. " +
+				ValidatorFactoryShapeGuidanceHint);
+			return;
+		}
+
+		if (!LooksLikeFactoryShape(validatorExpression)) {
+			result.Errors.Add(
+				$"Validator '{validatorType}' uses a flat 'validator' function instead of the required factory shape. " +
+				"The outer function must return another function (the actual validator that receives a control). " +
+				"Wrap the existing logic so the outer function takes only the config parameter and returns an inner function that performs the check via control.value. " +
+				ValidatorFactoryShapeGuidanceHint);
+		}
+	}
+
+	private static bool TryGetTopLevelObjectPropertyValue(string objectContent, string propertyName, out string expression) {
+		foreach ((string key, string valueExpression) in EnumerateTopLevelObjectEntries(objectContent)) {
+			if (string.Equals(key, propertyName, StringComparison.Ordinal)) {
+				expression = valueExpression;
+				return !string.IsNullOrWhiteSpace(expression);
+			}
+		}
+		expression = string.Empty;
+		return false;
+	}
+
+	private static IEnumerable<(string Key, string ValueExpression)> EnumerateTopLevelObjectEntries(string objectContent) {
+		if (string.IsNullOrEmpty(objectContent) || objectContent[0] != '{') {
+			yield break;
+		}
+		int depth = 0;
+		bool inString = false;
+		char stringChar = '"';
+		int index = 0;
+		while (index < objectContent.Length) {
+			if (JsParserHelper.TryConsumeStringLiteralCharacter(objectContent, ref index, ref inString, stringChar)) {
+				continue;
+			}
+			if (JsParserHelper.TrySkipComment(objectContent, index, out int afterComment)) {
+				index = afterComment;
+				continue;
+			}
+			char current = objectContent[index];
+			if (depth == 1 &&
+				TryReadDeclarationEntry(objectContent, index, current, out string key, out int valueStart, out int afterEntry)) {
+				string raw = objectContent.Substring(valueStart, afterEntry - valueStart);
+				yield return (key, raw.TrimEnd(',').Trim());
+				index = afterEntry;
+				continue;
+			}
+			if (JsParserHelper.TryHandleStructuralCharacter(current, ref index, ref depth, ref inString, ref stringChar)) {
+				continue;
+			}
+			index++;
+		}
+	}
+
+	private static bool IsCallableFunctionExpression(string expression) {
+		string trimmed = TrimAndStripAsync(expression);
+		if (string.IsNullOrEmpty(trimmed)) {
+			return false;
+		}
+		return trimmed.StartsWith("function", StringComparison.Ordinal)
+			|| LooksLikeMethodShorthandValue(trimmed)
+			|| JsParserHelper.FindFirstTopLevelArrow(trimmed) >= 0;
+	}
+
+	private static bool LooksLikeFactoryShape(string expression) {
+		string trimmed = TrimAndStripAsync(expression);
+		if (string.IsNullOrEmpty(trimmed)) {
+			return false;
+		}
+		if (trimmed.StartsWith("function", StringComparison.Ordinal) || LooksLikeMethodShorthandValue(trimmed)) {
+			return ReturnFunctionPattern.IsMatch(JsParserHelper.StripStringsAndComments(trimmed));
+		}
+		int arrowIndex = JsParserHelper.FindFirstTopLevelArrow(trimmed);
+		if (arrowIndex < 0) {
+			return false;
+		}
+		string afterArrow = trimmed.Substring(arrowIndex + 2).TrimStart();
+		if (string.IsNullOrEmpty(afterArrow)) {
+			return false;
+		}
+		if (afterArrow[0] == '{') {
+			return ReturnFunctionPattern.IsMatch(JsParserHelper.StripStringsAndComments(afterArrow));
+		}
+		string body = TrimAndStripAsync(afterArrow);
+		return body.StartsWith("function", StringComparison.Ordinal)
+			|| JsParserHelper.FindFirstTopLevelArrow(body) >= 0;
+	}
+
+	private static string TrimAndStripAsync(string expression) {
+		string trimmed = expression.Trim().TrimEnd(',').Trim();
+		if (trimmed.StartsWith("async ", StringComparison.Ordinal)) {
+			trimmed = trimmed["async ".Length..].TrimStart();
+		}
+		return trimmed;
+	}
+
+	/// <summary>
+	/// Returns <see langword="true"/> when the expression begins with a method-shorthand
+	/// value: a balanced parameter list directly followed by a brace-delimited body
+	/// (e.g. <c>(config) { return ...; }</c>). Used to recognise <c>{ validator(config){...} }</c>
+	/// shorthand entries that omit the explicit <c>function</c> keyword.
+	/// </summary>
+	private static bool LooksLikeMethodShorthandValue(string expression) {
+		if (string.IsNullOrEmpty(expression) || expression[0] != '(') {
+			return false;
+		}
+		int parenDepth = 0;
+		bool inString = false;
+		char stringChar = '"';
+		int index = 0;
+		while (index < expression.Length) {
+			if (JsParserHelper.TryConsumeStringLiteralCharacter(expression, ref index, ref inString, stringChar)) {
+				continue;
+			}
+			char current = expression[index];
+			if (current is '"' or '\'' or '`') {
+				inString = true;
+				stringChar = current;
+				index++;
+				continue;
+			}
+			if (current == '(') {
+				parenDepth++;
+			} else if (current == ')') {
+				parenDepth--;
+				if (parenDepth == 0) {
+					int afterParen = JsParserHelper.SkipWhitespace(expression, index + 1);
+					return afterParen < expression.Length && expression[afterParen] == '{';
+				}
+			}
+			index++;
+		}
+		return false;
 	}
 
 	/// <summary>
@@ -1403,25 +1673,48 @@ public static class SchemaValidationService
 			$"Control '{fieldDisplayName}' declares 'validators' inside viewConfigDiff. Validators must be declared on the view-model attribute in viewModelConfig/viewModelConfigDiff, not on the UI element. {bindingHint}");
 	}
 
+	private static string? FindViewModelAttributeForDirectBinding(
+		string directBindingAttr,
+		IReadOnlyDictionary<string, string> modelPaths) {
+		foreach (var (attrName, path) in modelPaths) {
+			if (string.Equals("$" + directBindingAttr, BuildExpectedBinding(path), StringComparison.OrdinalIgnoreCase)) {
+				return attrName;
+			}
+		}
+		return null;
+	}
+
 	private static void AddValidatorControlBindingErrorIfNeeded(
 		JsonElement element,
 		JsonElement target,
 		HashSet<string> attributesWithValidators,
 		IReadOnlyDictionary<string, string> modelPaths,
 		SchemaValidationResult result) {
-		if (!TryGetBindingAttribute(target, out _, out _, out string bindingAttribute) ||
-		    !TryFindAlternativeAttributesForSamePath(bindingAttribute, modelPaths, attributesWithValidators, out string validatorAttribute)) {
+		if (!TryGetBindingAttribute(target, out _, out _, out string bindingAttribute)) {
 			return;
 		}
-
 		string fieldName = element.TryGetProperty("name", out JsonElement nameEl) &&
 		                   nameEl.ValueKind == JsonValueKind.String &&
 		                   !string.IsNullOrWhiteSpace(nameEl.GetString())
 			? nameEl.GetString() ?? bindingAttribute
 			: bindingAttribute;
+		if (modelPaths.ContainsKey(bindingAttribute)) {
+			if (!TryFindAlternativeAttributesForSamePath(bindingAttribute, modelPaths, attributesWithValidators, out string validatorAttribute)) {
+				return;
+			}
+			result.Errors.Add(
+				$"Control '{fieldName}' binds to '${bindingAttribute}' but validators are declared on attribute '{validatorAttribute}'. " +
+				$"Bind the control to '${validatorAttribute}' or move the validators to '{bindingAttribute}' so the control and validators use the same declared view-model attribute.");
+			return;
+		}
+		string? vmAttribute = FindViewModelAttributeForDirectBinding(bindingAttribute, modelPaths);
+		if (vmAttribute == null || !attributesWithValidators.Contains(vmAttribute)) {
+			return;
+		}
 		result.Errors.Add(
-			$"Control '{fieldName}' binds to '${bindingAttribute}' but validators are declared on attribute '{validatorAttribute}'. " +
-			$"Bind the control to '${validatorAttribute}' or move the validators to '{bindingAttribute}' so the control and validators use the same declared view-model attribute.");
+			$"Control '{fieldName}' binds to '${bindingAttribute}' but attribute " +
+			$"'{vmAttribute}' has validators. Validators only fire on view-model attribute " +
+			$"bindings — use '${vmAttribute}' instead of '${bindingAttribute}'.");
 	}
 
 	private static bool TryGetDataTableColumns(JsonElement item, out JsonElement columns) {
@@ -1447,7 +1740,7 @@ public static class SchemaValidationService
 			return false;
 		}
 		string? candidate = codeElement.GetString();
-		if (string.IsNullOrEmpty(candidate) || !candidate.StartsWith("PDS_", StringComparison.Ordinal)) {
+		if (string.IsNullOrEmpty(candidate) || !candidate.Contains('_')) {
 			return false;
 		}
 		code = candidate;
@@ -1485,6 +1778,167 @@ public static class SchemaValidationService
 				CollectPathsFromElement(item, paths);
 			}
 		}
+	}
+
+	internal static readonly Regex VendorPrefixedNamePattern = new(
+		@"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$",
+		RegexOptions.Compiled,
+		RegexTimeout);
+
+	/// <summary>
+	/// Validates that all keys in <c>SCHEMA_CONVERTERS</c> follow the required
+	/// <c>VendorPrefix.ConverterName</c> format. A malformed key causes a Creatio runtime error:
+	/// "Error when register X. Type property should have format VendorPrefix.ConverterTypeName".
+	/// </summary>
+	public static SchemaValidationResult ValidateConverterDeclarations(string jsBody) =>
+		ValidatePrefixedDeclarations(jsBody, SchemaConvertersMarker, "Converter", "page-schema-converters");
+
+	/// <summary>
+	/// Validates that all keys in <c>SCHEMA_VALIDATORS</c> follow the required
+	/// <c>VendorPrefix.ValidatorName</c> format. A malformed key causes a Creatio runtime error:
+	/// "Error when register X. Type property should have format VendorPrefix.ValidatorTypeName".
+	/// </summary>
+	public static SchemaValidationResult ValidateValidatorDeclarations(string jsBody) =>
+		ValidatePrefixedDeclarations(jsBody, SchemaValidatorsMarker, "Validator", "page-schema-validators");
+
+	private static SchemaValidationResult ValidatePrefixedDeclarations(
+		string jsBody, string markerName, string elementType, string guidanceName) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string sectionContent, markerName)) {
+			return result;
+		}
+		string trimmed = sectionContent.Trim();
+		if (string.IsNullOrWhiteSpace(trimmed) || trimmed == "{}" || !trimmed.StartsWith("{", StringComparison.Ordinal)) {
+			return result;
+		}
+		foreach (string key in EnumerateTopLevelDeclarationKeys(trimmed)) {
+			if (VendorPrefixedNamePattern.IsMatch(key)) {
+				continue;
+			}
+			result.IsValid = false;
+			result.Errors.Add(
+				$"{elementType} '{key}' in {markerName} does not follow the required 'VendorPrefix.{elementType}Name' format. " +
+				$"Rename it to '<vendor>.{key}' (for example 'usr.{key}') — a malformed key causes a Creatio runtime error: " +
+				$"\"Error when register {key}. Type property should have format \\\"VendorPrefix.{elementType}TypeName\\\"\". " +
+				$"Call get-guidance with name '{guidanceName}' for the correct format.");
+		}
+		return result;
+	}
+
+	private static List<string> EnumerateTopLevelDeclarationKeys(string objectContent) =>
+		EnumerateTopLevelObjectEntries(objectContent).Select(entry => entry.Key).ToList();
+
+	private static bool TryReadDeclarationEntry(
+		string content, int startIndex, char current,
+		out string keyName, out int valueStartIndex, out int afterEntryIndex) {
+		keyName = string.Empty;
+		valueStartIndex = startIndex;
+		afterEntryIndex = startIndex;
+		int afterName;
+		string name;
+		if (current == '"' || current == '\'') {
+			if (!TryReadQuotedDeclarationKey(content, startIndex, current, out name, out afterName)) {
+				return false;
+			}
+		} else if (JsParserHelper.IsIdentifierStart(current)) {
+			ReadIdentifierDeclarationKey(content, startIndex, out name, out afterName);
+		} else {
+			return false;
+		}
+		int afterWhitespace = JsParserHelper.SkipWhitespace(content, afterName);
+		if (afterWhitespace >= content.Length) {
+			return false;
+		}
+		char delimiter = content[afterWhitespace];
+		if (delimiter != ':' && delimiter != '(') {
+			return false;
+		}
+		int valueStart = delimiter == ':'
+			? JsParserHelper.SkipWhitespace(content, afterWhitespace + 1)
+			: afterWhitespace;
+		SkipBalancedDeclarationValue(content, valueStart, out int afterValue);
+		keyName = name;
+		valueStartIndex = valueStart;
+		afterEntryIndex = afterValue;
+		return true;
+	}
+
+	private static bool TryReadQuotedDeclarationKey(
+		string content, int startIndex, char quote,
+		out string keyName, out int afterNameIndex) {
+		keyName = string.Empty;
+		afterNameIndex = startIndex;
+		int endQuoteIndex = startIndex + 1;
+		while (endQuoteIndex < content.Length) {
+			if (content[endQuoteIndex] == '\\') {
+				endQuoteIndex += endQuoteIndex + 1 < content.Length ? 2 : 1;
+				continue;
+			}
+			if (content[endQuoteIndex] == quote) {
+				break;
+			}
+			endQuoteIndex++;
+		}
+		if (endQuoteIndex >= content.Length || content[endQuoteIndex] != quote) {
+			return false;
+		}
+		keyName = content.Substring(startIndex + 1, endQuoteIndex - startIndex - 1);
+		afterNameIndex = endQuoteIndex + 1;
+		return true;
+	}
+
+	private static void ReadIdentifierDeclarationKey(
+		string content, int startIndex,
+		out string keyName, out int afterNameIndex) {
+		int index = startIndex + 1;
+		while (index < content.Length && JsParserHelper.IsIdentifierPart(content[index])) {
+			index++;
+		}
+		keyName = content.Substring(startIndex, index - startIndex);
+		afterNameIndex = index;
+	}
+
+	private static void SkipBalancedDeclarationValue(string content, int valueStart, out int afterValueIndex) {
+		int braceDepth = 0;
+		int bracketDepth = 0;
+		int parenDepth = 0;
+		bool inString = false;
+		char stringChar = '"';
+		int index = valueStart;
+		while (index < content.Length) {
+			if (JsParserHelper.TryConsumeStringLiteralCharacter(content, ref index, ref inString, stringChar)) {
+				continue;
+			}
+			if (JsParserHelper.TrySkipComment(content, index, out int afterComment)) {
+				index = afterComment;
+				continue;
+			}
+			char current = content[index];
+			bool atTopLevel = braceDepth == 0 && bracketDepth == 0 && parenDepth == 0;
+			if (atTopLevel && (current == ',' || current == '}')) {
+				afterValueIndex = index;
+				return;
+			}
+			if (current is '"' or '\'' or '`') {
+				inString = true;
+				stringChar = current;
+				index++;
+				continue;
+			}
+			switch (current) {
+				case '{': braceDepth++; break;
+				case '}': braceDepth--; break;
+				case '[': bracketDepth++; break;
+				case ']': bracketDepth--; break;
+				case '(': parenDepth++; break;
+				case ')': parenDepth--; break;
+			}
+			index++;
+		}
+		afterValueIndex = index;
 	}
 
 	public static SchemaValidationResult ValidateJsSyntax(string jsBody) {

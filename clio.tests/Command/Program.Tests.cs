@@ -148,6 +148,7 @@ public class ProgramTestCase : BaseClioModuleTests
 		act.Should().NotThrow(
 			because: "CreatioClient must be registered lazily so OAuth token fetch happens only when the client is first used, not at container build time");
 	}
+	
 
 	[Test]
 	[Category("Unit")]
@@ -192,6 +193,13 @@ public class ProgramTestCase : BaseClioModuleTests
 		string filePath = Path.Combine(Environment.CurrentDirectory, SettingsRepository.AppSettingsFile);
 		FileSystem.AddFile(filePath, new MockFileData(File
 			.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"))));
+		SettingsRepository.FileSystem = FileSystem;
+	}
+
+	private void AddNetCoreActiveEnvironmentFixture() {
+		string filePath = Path.Combine(Environment.CurrentDirectory, SettingsRepository.AppSettingsFile);
+		FileSystem.AddFile(filePath, new MockFileData(File
+			.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-netcore-active-env.json"))));
 		SettingsRepository.FileSystem = FileSystem;
 	}
 

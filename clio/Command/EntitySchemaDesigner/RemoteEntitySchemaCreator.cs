@@ -22,7 +22,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	#region Fields: Private
 
 	private const string TitleLocalizationsArgumentName = "title-localizations";
-	private const string SchemaNamePrefixSettingCode = "SchemaNamePrefix";
+
 	private const string DefaultMaskingPattern = ".*";
 	private const string DefaultMaskingReplacement = "********";
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
@@ -305,7 +305,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	private string ResolvePrimaryColumnName() {
 		try {
 			string schemaNamePrefix = NormalizeTextSysSettingValue(
-				_sysSettingsManager.GetSysSettingValueByCode(SchemaNamePrefixSettingCode));
+				_sysSettingsManager.GetSysSettingValueByCode(SysSettingCodes.SchemaNamePrefix));
 			return string.IsNullOrWhiteSpace(schemaNamePrefix)
 				? "Id"
 				: $"{schemaNamePrefix}Id";

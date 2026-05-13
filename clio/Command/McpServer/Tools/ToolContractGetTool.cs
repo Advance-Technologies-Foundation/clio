@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json.Serialization;
+using Clio.Command.BusinessRules;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -100,7 +101,8 @@ public sealed record ToolContractDefinition(
 	[property: JsonPropertyName("examples")] IReadOnlyList<ToolContractExample> Examples,
 	[property: JsonPropertyName("preferred-flow")] ToolFlowHint PreferredFlow,
 	[property: JsonPropertyName("fallback-flow")] IReadOnlyList<ToolFlowHint> FallbackFlow,
-	[property: JsonPropertyName("deprecations")] IReadOnlyList<ToolDeprecation> Deprecations
+	[property: JsonPropertyName("deprecations")] IReadOnlyList<ToolDeprecation> Deprecations,
+	[property: JsonPropertyName("anti-patterns")] IReadOnlyList<ToolAntiPattern>? AntiPatterns = null
 );
 
 public sealed record ToolInputSchemaContract(
@@ -161,6 +163,11 @@ public sealed record ToolDeprecation(
 	[property: JsonPropertyName("replacement-tools")] IReadOnlyList<string> ReplacementTools
 );
 
+public sealed record ToolAntiPattern(
+	[property: JsonPropertyName("pattern")] string Pattern,
+	[property: JsonPropertyName("why")] string Why
+);
+
 public sealed record ToolContractValidator(
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("code")] string Code,
@@ -199,6 +206,7 @@ internal static class ToolContractCatalog {
 	private const string EnvironmentNameFieldName = "environment-name";
 	private const string ErrorFieldName = "error";
 	private const string ExampleEnvironmentName = "local";
+	private const string ExampleLookupValueId = "00000000-0000-0000-0000-000000000001";
 	private const string ExamplePackageName = "UsrTaskApp";
 	private const string ExampleTaskStatusSchemaName = "UsrTaskStatus";
 	private const string FailureMessageDescription = "Human-readable failure message.";
@@ -240,19 +248,34 @@ internal static class ToolContractCatalog {
 	private const string InstalledApplicationIdentifierDescription = "Installed application identifier.";
 	private const string InstalledApplicationVersionDescription = "Installed application version.";
 	private const string InvalidWorkflowShapeCode = "invalid-workflow-shape";
+	private const string MissingRequiredParameterCode = "missing-required-parameter";
 	private const string PackageUIdFieldName = "package-u-id";
+	private const string PackageNameDescription = "Target package name.";
 	private const string PrimaryPackageIdentifierDescription = "Primary package identifier.";
 	private const string PrimaryPackageNameDescription = "Primary package name.";
+	private const string RuleFieldName = "rule";
 	private const string SectionCodeFieldName = "section-code";
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
+	private const string EnvironmentNameCamelFieldName = "environmentName";
+	private const string PackageNameCamelFieldName = "packageName";
+	private const string EntitySchemaNameCamelFieldName = "entitySchemaName";
+	private const string PageSchemaNameCamelFieldName = "pageSchemaName";
+	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
+	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
+	private const string MakeReadOnlyActionTypeName = "make-read-only";
+	private const string MakeRequiredActionTypeName = "make-required";
+	private const string ValuesFieldName = "values";
+	private const string BindingNameDescription = "Binding name.";
+	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
+	private const string WorkspacePathFieldName = "workspace-path";
 
-	private static readonly ToolErrorContract CommonErrorContract = new([
-		new ToolErrorCodeContract("tool-not-found", "Requested tool name is not registered by clio MCP."),
-		new ToolErrorCodeContract("missing-required-parameter", "A required parameter is missing."),
-		new ToolErrorCodeContract("invalid-parameter-alias", "A legacy or unsupported parameter alias was used."),
-		new ToolErrorCodeContract("invalid-parameter-type", "A parameter value type does not match the tool contract."),
-		new ToolErrorCodeContract(InvalidLocalizationMapCode, "A localization map is malformed or missing en-US."),
+		private static readonly ToolErrorContract CommonErrorContract = new([
+			new ToolErrorCodeContract("tool-not-found", "Requested tool name is not registered by clio MCP."),
+			new ToolErrorCodeContract(MissingRequiredParameterCode, "A required parameter is missing."),
+			new ToolErrorCodeContract("invalid-parameter-alias", "A legacy or unsupported parameter alias was used."),
+			new ToolErrorCodeContract("invalid-parameter-type", "A parameter value type does not match the tool contract."),
+			new ToolErrorCodeContract(InvalidLocalizationMapCode, "A localization map is malformed or missing en-US."),
 		new ToolErrorCodeContract(InvalidWorkflowShapeCode, "The request shape is structurally invalid for the target tool.")
 	]);
 
@@ -284,6 +307,9 @@ internal static class ToolContractCatalog {
 			[CreateLookupTool.CreateLookupToolName] = BuildCreateLookup(),
 			[CreateEntitySchemaTool.CreateEntitySchemaToolName] = BuildCreateEntity(),
 			[UpdateEntitySchemaTool.UpdateEntitySchemaToolName] = BuildUpdateEntity(),
+			[CreateDataBindingTool.CreateDataBindingToolName] = BuildCreateDataBinding(),
+			[AddDataBindingRowTool.AddDataBindingRowToolName] = BuildAddDataBindingRow(),
+			[RemoveDataBindingRowTool.RemoveDataBindingRowToolName] = BuildRemoveDataBindingRow(),
 			[CreateDataBindingDbTool.CreateDataBindingDbToolName] = BuildCreateDataBindingDb(),
 			[UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName] = BuildUpsertDataBindingRowDb(),
 			[RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName] = BuildRemoveDataBindingRowDb(),
@@ -293,7 +319,10 @@ internal static class ToolContractCatalog {
 			[ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName] = BuildModifyEntitySchemaColumn(),
 			[ComponentInfoTool.ToolName] = BuildComponentInfo(),
 			[PageUpdateTool.ToolName] = BuildPageUpdate(),
-			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete()
+			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete(),
+			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate(),
+			[CreatePageBusinessRuleTool.BusinessRuleCreateToolName] = BuildPageBusinessRuleCreate(),
+			[SchemaNamePrefixTool.GetSchemaNamePrefixToolName] = BuildGetSchemaNamePrefix()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
@@ -302,6 +331,8 @@ internal static class ToolContractCatalog {
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+		CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
+		CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
 		ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
 		ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
 		ApplicationGetInfoTool.ApplicationGetInfoToolName,
@@ -329,7 +360,8 @@ internal static class ToolContractCatalog {
 		ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
 		ComponentInfoTool.ToolName,
 		PageUpdateTool.ToolName,
-		ApplicationDeleteTool.ToolName
+		ApplicationDeleteTool.ToolName,
+		SchemaNamePrefixTool.GetSchemaNamePrefixToolName
 	];
 
 	internal static ToolContractGetResponse GetContracts(IReadOnlyList<string>? toolNames) {
@@ -345,10 +377,10 @@ internal static class ToolContractCatalog {
 				return new ToolContractGetResponse(
 					false,
 					Error: new ToolContractError(
-						"missing-required-parameter",
+						MissingRequiredParameterCode,
 						"tool-names must contain non-empty tool names.",
 						FieldErrors: [
-							new ToolContractFieldError($"tool-names[{index}]", "missing-required-parameter",
+							new ToolContractFieldError($"tool-names[{index}]", MissingRequiredParameterCode,
 								"Provide a non-empty tool name.")
 						]));
 			}
@@ -486,7 +518,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				["name"],
 				[
-					Field("name", StringType, "Stable guidance name. Known values include app-modeling, existing-app-maintenance, dataforge-orchestration, page-schema-handlers, page-schema-sdk-common, and page-schema-validators.")
+					Field("name", StringType, "Stable guidance name. Known values include app-modeling, data-bindings, existing-app-maintenance, dataforge-orchestration, page-schema-handlers, page-schema-creatio-devkit-common, and page-schema-validators.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -508,7 +540,7 @@ internal static class ToolContractCatalog {
 					["name"] = "page-schema-validators"
 				}),
 				Example("Read SDK common page-schema guidance", new Dictionary<string, object?> {
-					["name"] = "page-schema-sdk-common"
+					["name"] = "page-schema-creatio-devkit-common"
 				}),
 				Example("Read canonical existing-app maintenance guidance", new Dictionary<string, object?> {
 					["name"] = "existing-app-maintenance"
@@ -532,7 +564,7 @@ internal static class ToolContractCatalog {
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field("name", StringType, "Application display name."),
-					Field("code", StringType, "Application code starting with Usr."),
+					Field("code", StringType, "Application code (business-meaningful part; SchemaNamePrefix is auto-applied by clio)."),
 					Field(TemplateCodeFieldName, StringType, "Technical template code such as AppFreedomUI."),
 					Field(IconBackgroundFieldName, StringType, "Hex color string in #RRGGBB format."),
 					Field(DescriptionFieldName, StringType, "Optional application description."),
@@ -564,13 +596,14 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field(PackageUIdFieldName, StringType, PrimaryPackageIdentifierDescription),
 				Field(PackageNameFieldName, StringType, PrimaryPackageNameDescription),
-				Field("canonical-main-entity-name", StringType, "Canonical main entity name."),
+				Field("canonical-main-entity-name", StringType, "Canonical main entity name created by the app template. Pass directly to sync-schemas as the mutation target. Do not create a new entity via create-app-section unless a second independent section is required."),
 				Field(ApplicationIdFieldName, StringType, InstalledApplicationIdentifierDescription),
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
 				Field("entities", ArrayType, "Application entities."),
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
+				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix resolved from the environment. Use as the prefix for all subsequent custom schema codes (lookups, columns, supporting entities). Empty string means no prefix is configured."),
 				Field("dataforge", ObjectType, "Optional Data Forge enrichment diagnostics including health/status/coverage, warnings, and a compact context-summary."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
@@ -599,7 +632,7 @@ internal static class ToolContractCatalog {
 					SchemaSyncTool.ToolName,
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				],
-				"Use this direct create flow for simple greenfield app shells. create-app performs built-in Data Forge enrichment, then sync-schemas handles entity mutations, and get-app-info refreshes the resulting app context."),
+				"Use this direct create flow for simple greenfield app shells. create-app performs built-in Data Forge enrichment, then sync-schemas handles entity mutations, and get-app-info refreshes the resulting app context. Do NOT call create-app-section directly after create-app for a single-section app — use canonical-main-entity-name from the response as the sync-schemas target instead."),
 			[
 				Flow(
 					[
@@ -608,7 +641,12 @@ internal static class ToolContractCatalog {
 					],
 					"Fallback when the app already exists and the flow must switch to existing-app discovery.")
 			],
-			[]);
+			[],
+			[
+				new ToolAntiPattern(
+					"create-app → create-app-section → delete-app-section",
+					"create-app always creates a starter section with canonical-main-entity-name. Calling create-app-section immediately after wastes two round-trips and requires a cleanup delete. Use sync-schemas on canonical-main-entity-name instead.")
+			]);
 	}
 
 	private static ToolContractDefinition BuildApplicationSectionCreate() {
@@ -690,7 +728,7 @@ internal static class ToolContractCatalog {
 					ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 					ApplicationGetInfoTool.ApplicationGetInfoToolName
 				],
-				"Use application discovery and inspection first, then create the section, then refresh app context once for verification."),
+				"Use application discovery and inspection first, then create the section, then refresh app context once for verification. Do NOT use immediately after create-app for the primary section — that entity already exists under canonical-main-entity-name. Use only when adding a second or subsequent section to an existing app."),
 			[
 				Flow(
 					[
@@ -1214,6 +1252,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
 				Field("entities", ArrayType, "Application entities."),
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
+				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix system setting for the environment. Use as the prefix for all subsequent custom schema codes. Empty string means no prefix is configured."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -1280,6 +1319,372 @@ internal static class ToolContractCatalog {
 					"Extend the existing-app discovery flow with section creation when the task is to add a section to an installed app.")
 			],
 			[]);
+	}
+
+	private static ToolContractDefinition BuildEntityBusinessRuleCreate() {
+		return new ToolContractDefinition(
+			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
+			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, and Set values actions from constants, formulas, or attributes.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, EntitySchemaNameCamelFieldName, RuleFieldName],
+				[
+					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameCamelFieldName, StringType, "Target package name."),
+					Field(EntitySchemaNameCamelFieldName, StringType, "Target entity schema name."),
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets, Formula assignments with simple direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age.")
+				],
+				Validators: [
+					.. BusinessRuleConditionValidators(),
+					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
+						Context: $"Supported values: {BusinessRuleConstants.SupportedActionTypesDescription}."),
+					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rule.actions[*].items[*]",
+						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }, { type: Formula, expression }, or { type: AttributeValue, path }. Formula expression must be a string using a simple direct-field arithmetic expression, for example Field1 + Field2. AttributeValue source paths may be direct columns or forward reference paths like LookupColumn.SourceColumn; the final source attribute and target attribute must have the same data value type. Formula functions, comparison operators, and string literals are not supported in formula scope."),
+					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rule.actions[*].items[*].value.value",
+						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, and ISO 8601 time strings with timezone suffix for Time targets."),
+					new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rule.actions[*].items[*].value.expression",
+						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against an arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column.")
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[
+			],
+			[],
+			[
+				BusinessRuleExample("Create a required-field rule when owner equals a lookup constant",
+					"UsrTask", "Require status for a specific owner", "Owner", "equal",
+					MakeRequiredActionTypeName, ["Status"], ExampleLookupValueId),
+				BusinessRuleExample("Create a readonly rule when a text field is filled in",
+					"UsrTask", "Lock planned date when name is filled", "Name", "is-filled-in",
+					MakeReadOnlyActionTypeName, ["PlannedDate"]),
+				BusinessRuleExample("Create a readonly rule when completed is true",
+					"UsrTask", "Lock name and description when completed", "Completed", "equal",
+					MakeReadOnlyActionTypeName, ["Name", "Description"], true),
+				BusinessRuleExample("Create a required-field rule when annual revenue reaches a numeric threshold",
+					"Account", "Require owner for high-revenue accounts", "AnnualRevenue", "greater-than-or-equal",
+					MakeRequiredActionTypeName, ["Owner"], 1000000),
+				BusinessRuleExample("Create a required-field rule when created date is before a cutoff",
+					"UsrTask", "Require owner before the 2025 cutoff", "CreatedOn", "less-than-or-equal",
+					MakeRequiredActionTypeName, ["Owner"], "2025-01-01T00:00:00Z"),
+				BusinessRuleExample("Create a readonly rule when reminder time is after a timezone-aware cutoff",
+					"UsrTask", "Lock reminder note after local noon", "ReminderTime", "greater-than",
+					MakeReadOnlyActionTypeName, ["ReminderNote"], "12:00:00+02:00"),
+				BusinessRuleExample("Create a Set values rule with text number boolean Date DateTime and Time constants",
+					"UsrTask", "Populate defaults when name is filled", "Name", "is-filled-in",
+					"set-values", [
+						BusinessRuleSetValueItem("UsrTextResult", "Ready"),
+						BusinessRuleSetValueItem("UsrScore", 42),
+						BusinessRuleSetValueItem("UsrCompleted", true),
+						BusinessRuleSetValueItem("UsrStartDate", "2025-01-01"),
+						BusinessRuleSetValueItem("UsrPlannedOn", "2025-01-01T00:00:00Z"),
+						BusinessRuleSetValueItem("UsrReminderTime", "12:00:00+02:00")
+					]),
+				BusinessRuleExample("Create a Set values rule with a formula that sums two number fields",
+					"UsrTask", "Calculate total effort when name is filled", "Name", "is-filled-in",
+					"set-values", [
+						BusinessRuleFormulaSetValueItem("UsrTotalEffort", "UsrEstimatedEffort + UsrExtraEffort")
+					]),
+				BusinessRuleExample("Create a Set values rule from a forward reference attribute",
+					"UsrTask", "Copy creator age when name changes", "Name", "is-filled-in",
+					"set-values", [
+						BusinessRuleAttributeSetValueItem("UsrCreatorAge", "CreatedBy.Age")
+					])
+			],
+			Flow(
+				[
+					ApplicationGetListTool.ApplicationGetListToolName,
+					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
+				],
+				"When the application exists and the entity is a part of it. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
+			[
+				Flow(
+					[
+						ApplicationGetListTool.ApplicationGetListToolName,
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						FindEntitySchemaTool.FindEntitySchemaToolName,
+						DataForgeTool.DataForgeFindTablesToolName,
+						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+						CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
+					],
+					"When the application exists but the entity is not a part of it. Find entity using find-entity or dataforge-find-tables tool and create business rule for this entity in the application."),
+				Flow(
+					[
+						ApplicationCreateTool.ApplicationCreateToolName,
+						FindEntitySchemaTool.FindEntitySchemaToolName,
+						DataForgeTool.DataForgeFindTablesToolName,
+						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+						CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
+					],
+					"When application does not exist yet. Suggest user to create new empty application and create business rule there."),
+
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildPageBusinessRuleCreate() {
+		return new ToolContractDefinition(
+			CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
+			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements using datasource-bound page attributes and constants.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, PageSchemaNameCamelFieldName, RuleFieldName],
+				[
+					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameCamelFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
+					Field(PageSchemaNameCamelFieldName, StringType, "Target Freedom UI page schema name."),
+					Field(RuleFieldName, ObjectType, "Structured page business-rule definition with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
+				],
+				Validators: [
+					.. BusinessRuleConditionValidators(),
+					new ToolContractValidator("page-attribute", "unsupported-condition-attribute", "rule.condition.conditions[*].leftExpression.path",
+						Context: "Use declared datasource-bound page attribute names from bundle.viewModelConfig.attributes, for example PDS_Priority. Do not use datasource paths like PDS.Priority."),
+					new ToolContractValidator("page-attribute", "unsupported-right-attribute", "rule.condition.conditions[*].rightExpression.path",
+						Context: "Right-side AttributeValue is supported only when it is also a declared datasource-bound page attribute and resolves to the same data value type as the left attribute."),
+					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
+						Context: $"Supported values: {BusinessRuleConstants.SupportedPageActionTypesDescription}."),
+					new ToolContractValidator("page-element", "unknown-page-element", "rule.actions[*].items",
+						Context: "Use any named element from recursive get-page bundle.viewConfig.")
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				PageBusinessRuleExample(
+					"Make priority editable when page status is filled",
+					"Case_FormPage",
+					"Make priority editable when status is filled",
+					"PDS_Status",
+					"is-filled-in",
+					"make-editable",
+					["PriorityInput"]),
+				PageBusinessRuleExample(
+					"Make amount read-only when amount exceeds threshold",
+					ExampleOrderPageSchemaName,
+					"Make amount read-only over threshold",
+					"PDS_UsrAmount",
+					"greater-than",
+					MakeReadOnlyActionTypeName,
+					["AmountInput"],
+					100000),
+				PageBusinessRuleExample(
+					"Make close date required when stage is closed",
+					ExampleOrderPageSchemaName,
+					"Require close date for closed stage",
+					"PDS_UsrStage",
+					"equal",
+					MakeRequiredActionTypeName,
+					["CloseDateInput"],
+					"Closed"),
+				PageBusinessRuleExample(
+					"Make comment optional when page flag is false",
+					ExampleOrderPageSchemaName,
+					"Make comment optional when flag is false",
+					"PDS_UsrFlag",
+					"equal",
+					"make-optional",
+					["CommentInput"],
+					false),
+				PageBusinessRuleExample(
+					"Hide Escalate when priority matches a lookup constant",
+					"Case_FormPage",
+					"Hide Escalate when priority matches",
+					"PDS_Priority",
+					"equal",
+					"hide-element",
+					["EscalateButton"],
+					ExampleLookupValueId),
+				PageBusinessRuleExample(
+					"Show a warning label when amount exceeds threshold",
+					ExampleOrderPageSchemaName,
+					"Show warning for high amount",
+					"PDS_UsrAmount",
+					"greater-than",
+					"show-element",
+					["HighAmountWarningLabel"],
+					100000),
+				PageBusinessRuleAttributeComparisonExample()
+			],
+			Flow(
+				[
+					PageListTool.ToolName,
+					PageGetTool.ToolName,
+					CreatePageBusinessRuleTool.BusinessRuleCreateToolName
+				],
+				"Use list-pages or application discovery to choose the page, call get-page to inspect bundle.viewConfig and bundle.viewModelConfig.attributes, then create the page rule. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
+			[
+				Flow(
+					[
+						ApplicationGetListTool.ApplicationGetListToolName,
+						ApplicationGetInfoTool.ApplicationGetInfoToolName,
+						PageGetTool.ToolName,
+						CreatePageBusinessRuleTool.BusinessRuleCreateToolName
+					],
+					"When the target page belongs to a known application, inspect the application first and then fetch the page bundle before creating the rule.")
+			],
+			[],
+			[
+				new ToolAntiPattern(
+					"Using datasource paths like PDS.Priority in rule.condition.conditions[*].leftExpression.path.",
+					"Page business rules use declared view-model attribute names from bundle.viewModelConfig.attributes so the generated metadata and triggers match the page runtime.")
+			]);
+	}
+
+	private static ToolContractValidator[] BusinessRuleConditionValidators() =>
+		[
+			new ToolContractValidator("enum", "unsupported-operator", "rule.condition.logicalOperation",
+				Context: "Supported values: AND, OR."),
+			new ToolContractValidator("enum", "unsupported-comparison", "rule.condition.conditions[*].comparisonType",
+				Context: $"Supported values: {BusinessRuleConstants.SupportedComparisonTypesDescription}."),
+			new ToolContractValidator("conditional-field", "invalid-right-expression-shape", "rule.condition.conditions[*].rightExpression",
+				Context: "Required for equal, not-equal, greater-than, greater-than-or-equal, less-than, and less-than-or-equal. Omit or null for is-filled-in and is-not-filled-in."),
+			new ToolContractValidator("comparison-family", "unsupported-relational-operands", "rule.condition.conditions[*]",
+				Context: "greater-than, greater-than-or-equal, less-than, and less-than-or-equal only support numeric and date/time left attributes (Date, DateTime, Time). Attribute-to-attribute relational comparisons must use matching data value types."),
+			new ToolContractValidator("comparison-family", "unsupported-equality-operands", "rule.condition.conditions[*]",
+				Context: "equal and not-equal are not supported when the left attribute data value type is RichText or Image. Use is-filled-in or is-not-filled-in for those attributes."),
+			new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
+				Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm').")
+		];
+
+	private static ToolContractExample BusinessRuleExample(
+		string summary,
+		string entitySchemaName,
+		string caption,
+		string leftPath,
+		string comparisonType,
+		string actionType,
+		object[] actionItems,
+		object? constantValue = null) =>
+		BusinessRuleExample(summary, EntitySchemaNameCamelFieldName, entitySchemaName, caption, leftPath,
+			comparisonType, actionType, actionItems, constantValue);
+
+	private static Dictionary<string, object?> BusinessRuleSetValueItem(string path, object value) {
+		return new Dictionary<string, object?> {
+			["expression"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = path
+			},
+			["value"] = new Dictionary<string, object?> {
+				["type"] = "Const",
+				["value"] = value
+			}
+		};
+	}
+
+	private static Dictionary<string, object?> BusinessRuleFormulaSetValueItem(string path, string formula) {
+		return new Dictionary<string, object?> {
+			["expression"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = path
+			},
+			["value"] = new Dictionary<string, object?> {
+				["type"] = "Formula",
+				["expression"] = formula
+			}
+		};
+	}
+
+	private static Dictionary<string, object?> BusinessRuleAttributeSetValueItem(string path, string sourcePath) {
+		return new Dictionary<string, object?> {
+			["expression"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = path
+			},
+			["value"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = sourcePath
+			}
+		};
+	}
+
+	private static ToolContractExample PageBusinessRuleExample(
+		string summary,
+		string pageSchemaName,
+		string caption,
+		string leftPath,
+		string comparisonType,
+		string actionType,
+		object[] actionItems,
+		object? constantValue = null) =>
+		BusinessRuleExample(summary, PageSchemaNameCamelFieldName, pageSchemaName, caption, leftPath,
+			comparisonType, actionType, actionItems, constantValue);
+
+	private static ToolContractExample BusinessRuleExample(
+		string summary,
+		string schemaFieldName,
+		string schemaName,
+		string caption,
+		string leftPath,
+		string comparisonType,
+		string actionType,
+		object[] actionItems,
+		object? constantValue = null) {
+		Dictionary<string, object?> condition = new() {
+			["leftExpression"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = leftPath
+			},
+			["comparisonType"] = comparisonType
+		};
+		if (constantValue is not null) {
+			condition["rightExpression"] = new Dictionary<string, object?> {
+				["type"] = "Const",
+				["value"] = constantValue
+			};
+		}
+
+		return Example(summary, new Dictionary<string, object?> {
+			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+			[PackageNameCamelFieldName] = ExamplePackageName,
+			[schemaFieldName] = schemaName,
+			[RuleFieldName] = new Dictionary<string, object?> {
+				["caption"] = caption,
+				["condition"] = new Dictionary<string, object?> {
+					["logicalOperation"] = "AND",
+					["conditions"] = new object[] {
+						condition
+					}
+				},
+				["actions"] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = actionType,
+						["items"] = actionItems
+					}
+				}
+			}
+		});
+	}
+
+	private static ToolContractExample PageBusinessRuleAttributeComparisonExample() {
+		return Example("Hide a warning when two datasource-bound page attributes match", new Dictionary<string, object?> {
+			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+			[PackageNameCamelFieldName] = ExamplePackageName,
+			[PageSchemaNameCamelFieldName] = ExampleOrderPageSchemaName,
+			[RuleFieldName] = new Dictionary<string, object?> {
+				["caption"] = "Hide warning when planned and actual dates match",
+				["condition"] = new Dictionary<string, object?> {
+					["logicalOperation"] = "AND",
+					["conditions"] = new object[] {
+						new Dictionary<string, object?> {
+							["leftExpression"] = new Dictionary<string, object?> {
+								["type"] = "AttributeValue",
+								["path"] = "PDS_UsrPlannedDate"
+							},
+							["comparisonType"] = "equal",
+							["rightExpression"] = new Dictionary<string, object?> {
+								["type"] = "AttributeValue",
+								["path"] = "PDS_UsrActualDate"
+							}
+						}
+					}
+				},
+				["actions"] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = "hide-element",
+						["items"] = new object[] { "DateMismatchWarningLabel" }
+					}
+				}
+			}
+		});
 	}
 
 	private static ToolContractDefinition BuildSchemaSync() {
@@ -1668,14 +2073,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCreateDataBindingDb() {
 		return new ToolContractDefinition(
 			CreateDataBindingDbTool.CreateDataBindingDbToolName,
-			"Creates or updates a DB-first package data binding and optionally applies rows immediately as an explicit fallback or standalone path outside a batched sync-schemas flow, including standalone lookup seeding when direct SQL is not the right MCP path.",
+			"Creates or updates a DB-first package data binding and optionally applies rows immediately as an explicit fallback or standalone path outside a batched sync-schemas flow. SaveSchema metadata is projected from the primary key plus columns referenced by currently bound or requested rows, so unrelated runtime-only columns are not blockers, while explicitly requested unsupported runtime columns still fail. For workflow selection, call get-guidance with name `data-bindings`.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName],
 				EnvironmentPackageSchemaFields(
 					"Entity schema name for the binding.",
 					Field(BindingNameFieldName, StringType, "Optional binding name; defaults to the schema name."),
 					Field("rows", StringType,
-						"Optional JSON array of row objects. Each row must contain a values object keyed by column name."))),
+						"Optional JSON array of row objects. Each row must contain a values object keyed by column name. Binding metadata is projected from the primary key plus referenced row columns."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(),
@@ -1692,7 +2097,7 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				new ToolDeprecation(
-					"Prefer sync-schemas with inline seed-rows as the canonical batched path. Keep create-data-binding-db for explicit fallback or standalone binding work, and prefer it over direct SQL when MCP callers still need lookup seed rows.",
+					"Prefer sync-schemas with inline seed-rows as the canonical batched path. Keep create-data-binding-db for explicit fallback or standalone binding work, and prefer it over direct SQL when MCP callers still need lookup seed rows. For broader behavior-level guidance, call get-guidance with name `data-bindings`.",
 					[
 						SchemaSyncTool.ToolName
 					])
@@ -1703,12 +2108,14 @@ internal static class ToolContractCatalog {
 		return new ToolContractDefinition(
 			UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName,
 			"Upserts a single row in an existing DB-first binding. " +
-			"The binding must already exist; call create-data-binding-db first if it does not.",
+			"The binding must already exist; call create-data-binding-db first if it does not. " +
+			"SaveSchema metadata is rebuilt from the primary key plus columns present in the bound rows and the requested upsert payload. " +
+			"For workflow selection and verification discipline, call get-guidance with name `data-bindings`.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, BindingNameFieldName, "values"],
-				EnvironmentPackageFields(
-					Field(BindingNameFieldName, StringType, "Binding name."),
-					Field("values", StringType, "JSON object keyed by column name."))),
+					[EnvironmentNameFieldName, PackageNameFieldName, BindingNameFieldName, ValuesFieldName],
+					EnvironmentPackageFields(
+						Field(BindingNameFieldName, StringType, BindingNameDescription),
+						Field(ValuesFieldName, StringType, "JSON object keyed by column name. Referenced columns become part of the projected binding metadata."))),
 			CommandExecutionOutput(),
 			new ToolErrorContract([
 				..CommonErrorContract.Codes,
@@ -1724,7 +2131,7 @@ internal static class ToolContractCatalog {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName,
 					[BindingNameFieldName] = ExampleTaskStatusSchemaName,
-					["values"] = "{\"Name\":\"New\"}"
+						[ValuesFieldName] = "{\"Name\":\"New\"}"
 				})
 			],
 			Flow(["create-data-binding-db", UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName],
@@ -1736,12 +2143,12 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildRemoveDataBindingRowDb() {
 		return new ToolContractDefinition(
 			RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName,
-			"Removes a single row from an existing DB-first binding by key value, and deletes the package schema data record when the removed row was the last bound row.",
+			"Removes a single row from an existing DB-first binding by key value, and deletes the package schema data record when the removed row was the last bound row. When rows remain, SaveSchema metadata is rebuilt from the primary key plus the columns present in the remaining bound rows. For workflow selection and verification discipline, call get-guidance with name `data-bindings`.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, BindingNameFieldName, KeyValueFieldName],
 				EnvironmentPackageFields(
-					Field(BindingNameFieldName, StringType, "Binding name."),
-					Field(KeyValueFieldName, StringType, "Primary-key value of the row to remove."))),
+						Field(BindingNameFieldName, StringType, BindingNameDescription),
+						Field(KeyValueFieldName, StringType, "Primary-key value of the row to remove."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			[
@@ -1755,10 +2162,158 @@ internal static class ToolContractCatalog {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName,
 					[BindingNameFieldName] = ExampleTaskStatusSchemaName,
-					[KeyValueFieldName] = "00000000-0000-0000-0000-000000000001"
+					[KeyValueFieldName] = ExampleLookupValueId
 				})
 			],
 			Flow([RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName], "Standalone DB-first binding maintenance."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildCreateDataBinding() {
+		return new ToolContractDefinition(
+			CreateDataBindingTool.CreateDataBindingToolName,
+			"Creates or regenerates a local package data binding from a built-in template or a runtime entity schema. For workflow selection, call get-guidance with name `data-bindings`.",
+			new ToolInputSchemaContract(
+				[PackageNameFieldName, SchemaNameFieldName, WorkspacePathFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings because the MCP tool does not expose a uri fallback."),
+						Field(PackageNameFieldName, StringType, PackageNameDescription),
+						Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings."),
+						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(BindingNameFieldName, StringType, "Optional binding name; defaults to the schema name."),
+						Field("install-type", NumberType, "Optional descriptor install type; defaults to 0."),
+						Field(ValuesFieldName, StringType, "Optional JSON object keyed by column name for the initial row."),
+						Field("localizations", StringType, "Optional JSON object keyed by culture then column name.")
+					],
+					Validators: [
+						new ToolContractValidator(
+							"require-environment-name-for-runtime-schema",
+							MissingRequiredParameterCode,
+						Fields: [
+							SchemaNameFieldName,
+							EnvironmentNameFieldName
+						],
+						Context: "`environment-name` is required when `schema-name` is not `SysSettings` because this MCP tool only supports offline generation for built-in templates and does not expose `--uri`.",
+						Required: true)
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[
+				EnvironmentNameParameterAlias(),
+				PackageNameParameterAlias(),
+				SchemaNameParameterAlias(),
+				BindingNameParameterAlias(),
+				WorkspacePathParameterAlias(),
+				Alias(ParameterScope, "install-type", "installType", RejectedStatus, "Use 'install-type' instead of 'installType'.")
+			],
+			[
+				Default("install-type", "0", "Use descriptor install type 0 unless the workflow requires a different value.")
+			],
+			[
+				Example("Create a local SysSettings binding artifact", new Dictionary<string, object?> {
+					[PackageNameFieldName] = ExamplePackageName,
+					[SchemaNameFieldName] = "SysSettings",
+						[WorkspacePathFieldName] = ExampleWorkspacePath,
+						[ValuesFieldName] = "{\"Code\":\"UsrTaskSetting\",\"Name\":\"Task setting\"}"
+					}),
+					Example("Create a local binding for a non-templated schema", new Dictionary<string, object?> {
+						[EnvironmentNameFieldName] = ExampleEnvironmentName,
+						[PackageNameFieldName] = ExamplePackageName,
+						[SchemaNameFieldName] = ExampleTaskStatusSchemaName,
+						[WorkspacePathFieldName] = ExampleWorkspacePath
+					})
+				],
+			Flow(
+				[
+					CreateDataBindingTool.CreateDataBindingToolName,
+					AddDataBindingRowTool.AddDataBindingRowToolName
+				],
+				"Use when the workflow explicitly needs a local binding artifact under the workspace."),
+			[
+				Flow(
+					[
+						SchemaSyncTool.ToolName
+					],
+					"Fallback to sync-schemas when lookup seeding can stay inside the current schema batch."),
+				Flow(
+					[
+						CreateDataBindingDbTool.CreateDataBindingDbToolName
+					],
+					"Fallback to create-data-binding-db when the desired outcome is a remote DB-first binding rather than a local artifact.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildAddDataBindingRow() {
+		return new ToolContractDefinition(
+			AddDataBindingRowTool.AddDataBindingRowToolName,
+			"Adds or replaces one row in an existing local package data binding. For workflow selection and verification discipline, call get-guidance with name `data-bindings`.",
+			new ToolInputSchemaContract(
+					[PackageNameFieldName, BindingNameFieldName, WorkspacePathFieldName, ValuesFieldName],
+					[
+						Field(PackageNameFieldName, StringType, PackageNameDescription),
+						Field(BindingNameFieldName, StringType, BindingNameDescription),
+						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(ValuesFieldName, StringType, "JSON object keyed by column name for the row to add or replace."),
+						Field("localizations", StringType, "Optional JSON object keyed by culture then column name.")
+					]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[
+				PackageNameParameterAlias(),
+				BindingNameParameterAlias(),
+				WorkspacePathParameterAlias()
+			],
+			[],
+			[
+				Example("Add one row to an existing local binding", new Dictionary<string, object?> {
+					[PackageNameFieldName] = ExamplePackageName,
+					[BindingNameFieldName] = ExampleTaskStatusSchemaName,
+					[WorkspacePathFieldName] = ExampleWorkspacePath,
+					[ValuesFieldName] = "{\"Name\":\"In Progress\"}"
+				})
+			],
+			Flow(
+				[
+					CreateDataBindingTool.CreateDataBindingToolName,
+					AddDataBindingRowTool.AddDataBindingRowToolName
+				],
+				"Local artifact flow: create the binding first, then add or replace rows."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildRemoveDataBindingRow() {
+		return new ToolContractDefinition(
+			RemoveDataBindingRowTool.RemoveDataBindingRowToolName,
+			"Removes one row from an existing local package data binding by key value. For workflow selection and verification discipline, call get-guidance with name `data-bindings`.",
+			new ToolInputSchemaContract(
+				[PackageNameFieldName, BindingNameFieldName, WorkspacePathFieldName, KeyValueFieldName],
+				[
+						Field(PackageNameFieldName, StringType, PackageNameDescription),
+						Field(BindingNameFieldName, StringType, BindingNameDescription),
+						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(KeyValueFieldName, StringType, "Primary-key value of the row to remove.")
+					]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[
+				PackageNameParameterAlias(),
+				BindingNameParameterAlias(),
+				WorkspacePathParameterAlias(),
+				Alias(ParameterScope, KeyValueFieldName, "keyValue", RejectedStatus, $"Use '{KeyValueFieldName}' instead of 'keyValue'.")
+			],
+			[],
+			[
+				Example("Remove one row from a local binding", new Dictionary<string, object?> {
+					[PackageNameFieldName] = ExamplePackageName,
+					[BindingNameFieldName] = ExampleTaskStatusSchemaName,
+					[WorkspacePathFieldName] = ExampleWorkspacePath,
+					[KeyValueFieldName] = ExampleLookupValueId
+				})
+			],
+			Flow([RemoveDataBindingRowTool.RemoveDataBindingRowToolName], "Standalone local binding maintenance."),
 			[],
 			[]);
 	}
@@ -2088,6 +2643,14 @@ internal static class ToolContractCatalog {
 		];
 	}
 
+	private static IReadOnlyList<ToolContractField> WorkspacePackageFields(params ToolContractField[] extraFields) {
+		return [
+			Field(PackageNameFieldName, StringType, "Target package name."),
+			Field(WorkspacePathFieldName, StringType, "Absolute local workspace path. Network-share paths are not supported."),
+			..extraFields
+		];
+	}
+
 	private static IReadOnlyList<ToolContractField> EnvironmentOrExplicitConnectionFields(params ToolContractField[] leadingFields) {
 		return [
 			..leadingFields,
@@ -2150,6 +2713,11 @@ internal static class ToolContractCatalog {
 	private static ToolContractAlias BindingNameParameterAlias() {
 		return Alias(ParameterScope, BindingNameFieldName, "bindingName", RejectedStatus,
 			$"Use '{BindingNameFieldName}' instead of 'bindingName'.");
+	}
+
+	private static ToolContractAlias WorkspacePathParameterAlias() {
+		return Alias(ParameterScope, WorkspacePathFieldName, "workspacePath", RejectedStatus,
+			$"Use '{WorkspacePathFieldName}' instead of 'workspacePath'.");
 	}
 
 	private static ToolContractAlias ReferenceSchemaNameParameterAlias() {
@@ -2336,6 +2904,46 @@ internal static class ToolContractCatalog {
 					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName
 				],
 				"Use to discover the package that owns a schema before calling get-entity-schema-properties or modify-entity-schema-column."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildGetSchemaNamePrefix() {
+		return new ToolContractDefinition(
+			SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+			"Returns the active SchemaNamePrefix system setting for the environment. " +
+			"Returns empty string when no prefix is configured (use no prefix in that case). " +
+			"Default Creatio environments return 'Usr'. " +
+			"Note: create-app and get-app-info both read this setting automatically and return schema-name-prefix " +
+			"in their responses — you only need this tool when you require the prefix before calling either of those.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix system setting. Empty string means no prefix is configured."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read the active schema name prefix for the configured environment", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				})
+			],
+			Flow(
+				[
+					SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+					CreateEntitySchemaTool.CreateEntitySchemaToolName
+				],
+				"Use before create-entity-schema, create-lookup, create-page, or sync-schemas when neither create-app nor get-app-info has been called yet in the session."),
 			[],
 			[]);
 	}

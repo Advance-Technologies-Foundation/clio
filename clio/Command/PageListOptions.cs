@@ -20,6 +20,9 @@ namespace Clio.Command {
 
 		[Option("limit", Required = false, Default = 50, HelpText = "Maximum number of results")]
 		public int Limit { get; set; }
+
+		[Option("uid", Required = false, HelpText = "Filter by schema UId (exact match)")]
+		public string UId { get; set; }
 	}
 
 	public class PageListCommand : Command<PageListOptions> {
@@ -28,7 +31,7 @@ namespace Clio.Command {
 		private const string FilterTypeKey = "filterType";
 		private const string ItemsKey = "items";
 		private const string ExpressionKey = "expression";
-		private const int ContainsComparisonType = 10;
+		private const int ContainsComparisonType = 11;
 
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -70,6 +73,9 @@ namespace Clio.Command {
 				string nameFilter = options.SearchPattern?.Trim('*', ' ') ?? string.Empty;
 				if (!string.IsNullOrWhiteSpace(nameFilter)) {
 					filters[ItemsKey]["Name"] = BuildComparisonFilter("Name", nameFilter, 1, ContainsComparisonType);
+				}
+				if (!string.IsNullOrWhiteSpace(options.UId)) {
+					filters[ItemsKey]["UId"] = BuildComparisonFilter("UId", options.UId, 0, 3);
 				}
 				var selectQuery = new JObject {
 					["rootSchemaName"] = "SysSchema",

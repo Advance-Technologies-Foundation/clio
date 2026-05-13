@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
 using Newtonsoft.Json.Linq;
@@ -33,15 +34,16 @@ public class AppUpdater(ILogger logger, IProcessExecutor processExecutor) : IApp
 
 	#region Methods: Private
 
-	private async Task<string> GetLatestPackageVersionAsync(string packageName){
+	private async Task<string> GetLatestPackageVersionAsync(string packageName,
+		CancellationToken cancellationToken = default){
 		string searchUrl = $"https://api.nuget.org/v3-flatcontainer/{packageName.ToLower()}/index.json";
 
 		try {
 			using HttpClient client = new();
-			HttpResponseMessage response = await client.GetAsync(searchUrl);
+			HttpResponseMessage response = await client.GetAsync(searchUrl, cancellationToken);
 			response.EnsureSuccessStatusCode();
 
-			string responseBody = await response.Content.ReadAsStringAsync();
+			string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 			JObject data = JObject.Parse(responseBody);
 
 			string latestVersion = data["versions"].Last.ToString();
@@ -213,6 +215,42 @@ public class AppUpdater(ILogger logger, IProcessExecutor processExecutor) : IApp
 		}
 	}
 
+	/// <inheritdoc/>
+	public async Task<(bool Available, string LatestVersion)> CheckForUpdateWithCacheAsync(string cacheFolder) {
+		try {
+			UpdateCheckCache cache = UpdateCheckCache.Load(cacheFolder);
+			string currentVersion = GetCurrentVersion();
+
+			if (!cache.IsCheckDue() && !string.IsNullOrEmpty(cache.LatestVersion)) {
+				bool available = CompareVersions(currentVersion, cache.LatestVersion) < 0;
+				return (available, cache.LatestVersion);
+			}
+
+			using CancellationTokenSource cts = new(TimeSpan.FromSeconds(3));
+			string latestVersion = await GetLatestPackageVersionAsync("clio", cts.Token)
+				.ConfigureAwait(false);
+
+			if (string.IsNullOrEmpty(latestVersion)) {
+				return (false, null);
+			}
+
+			UpdateCheckCache.Save(cacheFolder, new UpdateCheckCache {
+				LastCheckedUtc = DateTime.UtcNow,
+				LatestVersion = latestVersion
+			});
+
+			return (CompareVersions(currentVersion, latestVersion) < 0, latestVersion);
+		} catch {
+			return (false, null);
+		}
+	}
+
+	/// <inheritdoc/>
+	public async Task UpdateInBackgroundAsync() {
+		ProcessExecutionOptions options = new("dotnet", "tool update clio -g");
+		await processExecutor.FireAndForgetAsync(options).ConfigureAwait(false);
+	}
+
 	/// <summary>
 	/// Compares two version strings.
 	/// </summary>
@@ -324,6 +362,18 @@ public interface IAppUpdater {
 	/// </summary>
 	/// <returns>Release notes body or null if not available</returns>
 	Task<string> GetReleaseNotesAsync(string version);
+
+	/// <summary>
+	/// Checks whether an update is available, using a local cache to avoid hitting NuGet more
+	/// than once every 8 hours.
+	/// </summary>
+	Task<(bool Available, string LatestVersion)> CheckForUpdateWithCacheAsync(string cacheFolder);
+
+	/// <summary>
+	/// Launches <c>dotnet tool update clio -g</c> as a detached background process and returns
+	/// immediately.  The update takes effect on the next invocation of clio.
+	/// </summary>
+	Task UpdateInBackgroundAsync();
 
 	#endregion
 

@@ -7,6 +7,7 @@ add-user-task:add-user-task
 alm-deploy:alm-deploy,deploy
 apply-manifest:apply-manifest,apply-environment-manifest,applym
 assert:assert
+autoupdate:autoupdate
 build-docker-image:build-docker-image
 build-workspace:build-workspace,build,compile,compile-all,rebuild
 call-service:call-service,cs,callservice
@@ -50,6 +51,7 @@ externalLink:externalLink,link
 extract-pkg-zip:extract-pkg-zip,extract,unzip,extract-package
 generate-pkg-zip:generate-pkg-zip,comp-pkg,compress
 generate-process-model:generate-process-model,gpm
+generate-source-code:generate-source-code,gsc
 get-app-hash:get-app-hash
 get-app-info:get-app-info
 list-apps:list-apps,get-app-list,app-list,apps,apps-list,lia
@@ -67,13 +69,20 @@ get-webservice-url:get-webservice-url,gwu
 git-sync:git-sync,sync
 healthcheck:healthcheck,hc
 hosts:hosts,list-hosts
+idp-bind:idp-bind
+idp-delete:idp-delete
+idp-list:idp-list
+idp-services:idp-services
+idp-set-default:idp-set-default
+idp-set-secret:idp-set-secret
+idp-unbind:idp-unbind
+idp-upsert:idp-upsert
 info:info,get-version,i,ver
 install-application:install-application,install-app,push-app
 install-gate:install-gate,gate,installgate,update-gate
 install-nuget-pkg:install-nuget-pkg,installng
 install-skills:install-skills
 install-sql-schema:install-sql-schema,sql-schema-install,execute-sql-schema
-install-tide:install-tide,itide,tide
 last-compilation-log:last-compilation-log,lcl
 link-core-src:link-core-src,lcs
 link-from-repository:link-from-repository,l4r,link4repo

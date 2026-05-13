@@ -22,7 +22,7 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 			       Scope
 			       - Use this guide when the task changes the `validators` section of a Freedom UI page body returned by `get-page`.
 			       - Resolve exact MCP tool contracts through `get-tool-contract` before any write workflow.
-			       - If the validator body adds or edits `@creatio-devkit/common`, also read `page-schema-sdk-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service calls.
+			       - If the validator body adds or edits `@creatio-devkit/common`, also read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service calls.
 			       - Keep validator work inside clio-owned page-body guidance instead of depending on an external repository.
 
 			       Canonical runtime flow
@@ -252,7 +252,7 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 
 			       Async validator template (SysSettingsService example)
 			       - Use `Minimal canonical template` for the base binding structure, then apply this async variant only when the validator must call an external service or SDK method with `await`.
-			       - Before editing `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service usage here, read `page-schema-sdk-common`.
+			       - Before editing `SCHEMA_DEPS`, `SCHEMA_ARGS`, or SDK service usage here, read `page-schema-creatio-devkit-common`.
 			       - `devkit` MUST be declared as an AMD dependency: add `"@creatio-devkit/common"` to `SCHEMA_DEPS` and `devkit` to the function args.
 			       - The `viewConfigDiff` control binding still MUST target the same declared attribute that owns the validators.
 			         SCHEMA_DEPS / function args:
@@ -295,7 +295,7 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 
 			       Safe editing rules
 			       - Edit only the minimal coupled sections required for validator correctness: `SCHEMA_VALIDATORS`, the attribute binding section (`viewModelConfig` or `viewModelConfigDiff`), the matching `viewConfigDiff` control binding, and `SCHEMA_DEPS` / `SCHEMA_ARGS` only when imports are required.
-			       - When validator code needs `@creatio-devkit/common`, read `page-schema-sdk-common` first and then follow its AMD dependency and public-API rules.
+			       - When validator code needs `@creatio-devkit/common`, read `page-schema-creatio-devkit-common` first and then follow its AMD dependency and public-API rules.
 			       - For page-body work, reuse the live SDK alias already present in the schema body when imports are required.
 			       - Verify the edited body is syntactically valid JavaScript before calling `sync-pages`.
 			       - Keep validators free of navigation, data loading, save orchestration, or HTTP side effects.

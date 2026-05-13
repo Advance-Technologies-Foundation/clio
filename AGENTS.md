@@ -1,3 +1,101 @@
+# ClioGate integration
+
+ClioGate is a Creatio package (in `cliogate/`) that acts as a privileged backend service.
+It exposes WCF/REST endpoints that bypass DataService ESQ permission checks by using
+`Terrasoft.Core.DB.Select` / `Update` directly against the database engine.
+
+## When to use ClioGate instead of DataService
+
+Use ClioGate endpoints whenever:
+- The operation touches schema objects with restricted NUI security (`SysPackage`, `SysSchema`, etc.).
+- The existing DataService ESQ path fails with `SecurityException: Current user does not have permissions for the "X" object`.
+- The operation needs to run with elevated permissions that can't be granted at the schema level.
+
+## ClioGate URL pattern
+
+All ClioGate methods are served at:
+```
+/rest/CreatioApiGateway/<MethodName>
+```
+**Never** use `/rest/CreatioApiGatewayService/…` — that path does not exist and will return an HTML error page.
+
+Existing examples in `ServiceUrlBuilder.KnownRoutes`:
+```csharp
+{KnownRoute.DownloadPackageDllFile, "/rest/CreatioApiGateway/DownloadFile"},
+{KnownRoute.SendEventToUi,          "/rest/CreatioApiGateway/SendEventToUI"},
+{KnownRoute.UnlockPackages,         "/rest/CreatioApiGateway/UnlockPackages"},
+{KnownRoute.LockPackages,           "/rest/CreatioApiGateway/LockPackages"},
+```
+
+`ServiceUrlBuilder.Build(KnownRoute)` automatically prepends `0/` for `.NET Framework` environments
+(`IsNetCore = false`), so always register the raw `/rest/…` path in `KnownRoutes`.
+
+## Adding a new ClioGate endpoint
+
+1. Add a method to `cliogate/Files/cs/CreatioApiGateway.cs` with `[WebInvoke]` and `CheckCanManageSolution()` as the first call.
+2. Add a new enum value to `ServiceUrlBuilder.KnownRoute` (continue the numeric sequence — do not reuse gaps or existing IDs).
+3. Add the route to `ServiceUrlBuilder.KnownRoutes` using the `/rest/CreatioApiGateway/<MethodName>` pattern.
+4. Call via `IApplicationClient.ExecutePostRequest(url, jsonBody)` — check the returned bool/string for success.
+
+## Security: CheckCanManageSolution
+
+Every public endpoint in `CreatioApiGateway.cs` must call `CheckCanManageSolution()` as its first line.
+Before implementing a new security check, grep for `CheckCanManageSolution()` near the target method — it may already be present.
+
+## Building ClioGate on macOS (without PowerShell)
+
+`build.ps1` is the canonical build script but requires `pwsh`. On macOS without `pwsh`:
+
+```bash
+# 1. Build net472 assembly (for .NET Framework / IsNetCore=false environments)
+dotnet build cliogate/cliogate.csproj -c Release -f net472 \
+  -p:TargetFrameworks=net472 --no-incremental -p:AssemblyName=cliogate \
+  --source ~/.nuget/packages
+# Output: cliogate/Files/Bin/cliogate.dll
+
+# 2. Copy ATF.Repository.dll (check version in cliogate/obj/project.assets.json)
+cp ~/.nuget/packages/atf.repository/<version>/lib/netstandard2.0/ATF.Repository.dll \
+  cliogate/Files/Bin/
+
+# 3. Bump version
+dotnet clio/bin/Release/net10.0/clio.dll set-pkg-version ./cliogate --PackageVersion X.Y.Z.W
+
+# 4. Compress
+dotnet clio/bin/Release/net10.0/clio.dll compress ./cliogate -d ./clio/cliogate/cliogate.gz
+
+# 5. Clean up build artifacts from Files/Bin (build.ps1 does this too)
+rm -f cliogate/Files/Bin/cliogate.dll cliogate/Files/Bin/cliogate.pdb \
+      cliogate/Files/Bin/ATF.Repository.dll
+```
+
+Note: The netstandard2.0 target requires the private Nexus feed (may fail with 403 on macOS without VPN).
+For `.NET Framework` environments this is not needed — only the net472 assembly is loaded.
+
+## Deploying and verifying ClioGate on an environment
+
+```bash
+# Deploy
+dotnet run --project clio/clio.csproj --framework net8.0 -- push-pkg ./clio/cliogate/cliogate.gz -e <env>
+
+# Verify version installed
+dotnet run --project clio/clio.csproj --framework net8.0 -- list-packages -e <env> | grep cliogate
+
+# Quick connectivity check
+dotnet run --project clio/clio.csproj --framework net8.0 -- get-info -e <env>
+```
+
+The install command is `push-pkg`, **not** `push-package` (that verb does not exist).
+
+## Common clio command names (easily confused)
+
+| Intent | Correct verb |
+|---|---|
+| Push a package .gz to environment | `push-pkg` |
+| List registered environments | `list-environments` |
+| Show system info / test connection | `get-info` |
+| Lock a package | `lock-package` |
+| Unlock a package | `unlock-package` |
+
 # Documentation structure for commands
 
 - `clio\Commands.md` - Overview of all commands (displayed when user types `clio help`)
@@ -84,32 +182,6 @@ For every touched command, verify and update all relevant files:
 - Resolve aliases to canonical command name from `[Verb("command-name", Aliases = ...)]`; use canonical name in filenames.
 - Keep argument lists, defaults, required flags, examples, and notes aligned with current source behavior.
 - If docs are still accurate after review, explicitly state "docs reviewed, no update required" in the change summary/PR description.
-
-# Skill maintenance policy
-
-When changing any command behavior or command-related files, always review the clio skill and update it if needed.
-
-## Trigger conditions for mandatory skill review
-
-Review skill artifacts whenever any of the following is changed:
-- Command options classes (for example classes with `[Verb]`, `[Option]`, `[Value]` attributes)
-- Command handlers/execution logic (for example `*Command`, validators, mapping in `Program.cs`)
-- `clio\docs\commands\*.md` (detailed command docs)
-- `clio\help\en\*.txt` (CLI help)
-- `clio\Commands.md` (command index)
-
-## Required skill targets
-
-For every touched command, verify and update all relevant files:
-- `.github\skills\clio\references\commands-reference.md` — command section for each touched command
-- `.github\skills\clio\SKILL.md` — when-to-use triggers, workflow examples, troubleshooting table, and important notes
-
-## Update rules
-
-- New command → add a section to `commands-reference.md` under the appropriate category. If the command introduces a new capability area (for example entity schema management or Freedom UI pages), also add a numbered workflow section to `SKILL.md`.
-- Changed command options or behavior → update the matching section in `commands-reference.md` to reflect current option names, defaults, examples, and requirements.
-- Renamed canonical command or alias → update both files.
-- If skill artifacts are still accurate after review, explicitly state "Skill reviewed, no update required" in the change summary/PR description.
 
 # C# inline documentation policy
 

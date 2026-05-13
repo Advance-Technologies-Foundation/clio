@@ -41,7 +41,8 @@ internal static class ApplicationToolResultMapper {
 					PackageName = page.PackageName,
 					ParentSchemaName = page.ParentSchemaName
 				})
-				.ToList());
+				.ToList(),
+			result.SchemaNamePrefix);
 	}
 
 	public static ApplicationSectionContextResponse Map(ApplicationSectionCreateResult result) {
@@ -208,6 +209,20 @@ internal static class ApplicationToolHelper {
 		if (optionalTemplateData?.UseAiContentGeneration == true) {
 			throw new ArgumentException(
 				"useAiContentGeneration=true is not supported in application tools.");
+		}
+
+		if (!string.IsNullOrWhiteSpace(optionalTemplateData?.EntitySchemaName)
+				&& optionalTemplateData.UseExistingEntitySchema != true) {
+			throw new ArgumentException(
+				"entitySchemaName is only valid together with useExistingEntitySchema=true. " +
+				"The entity must already exist in Creatio before create-app is called. " +
+				"To create a new app with an auto-generated entity, omit optional-template-data-json entirely.");
+		}
+
+		if (optionalTemplateData?.UseExistingEntitySchema == true
+				&& string.IsNullOrWhiteSpace(optionalTemplateData.EntitySchemaName)) {
+			throw new ArgumentException(
+				"entitySchemaName is required when useExistingEntitySchema=true.");
 		}
 
 		return optionalTemplateData is null

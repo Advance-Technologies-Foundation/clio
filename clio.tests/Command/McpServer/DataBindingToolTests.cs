@@ -224,10 +224,12 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Encodes a local image file when the MCP create-data-binding payload targets an image-content column so callers can pass a file path instead of pre-encoded base64.")]
-	public void CreateDataBinding_Should_Encode_Image_File_For_ImageContent_Column() {
+	[Description("Encodes a local image file when the MCP create-data-binding payload targets a generic runtime image-content column so callers can pass a file path instead of pre-encoded base64.")]
+	public void CreateDataBinding_Should_Encode_Image_File_For_Runtime_Image_Content_Column() {
 		// Arrange
+		CreateDataBindingCommand resolvedCommand = Container.GetRequiredService<CreateDataBindingCommand>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateDataBindingCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
 		CreateDataBindingTool tool = new(
 			Container.GetRequiredService<CreateDataBindingCommand>(),
 			Container.GetRequiredService<ILogger>(),
@@ -236,28 +238,30 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingArgs(
-			null,
+			"dev",
 			_packageName,
-			"SysModule",
+			"UsrImageBinding",
 			_workspaceRoot,
 			ValuesJson: JsonSerializer.Serialize(new Dictionary<string, string> {
-				["Code"] = "UsrImageModule",
-				["Image16"] = Path.Combine("assets", "icon.png")
+				["Name"] = "UsrImageBinding row",
+				["UsrImage"] = Path.Combine("assets", "icon.png")
 			})));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
-			because: "the MCP create-data-binding wrapper should accept a local image file path for image-content columns");
-		string dataJson = _mockFileSystem.File.ReadAllText(Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "SysModule", "data.json"));
+			because: "the MCP create-data-binding wrapper should accept a local image file path for runtime image-content columns");
+		string dataJson = _mockFileSystem.File.ReadAllText(Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "UsrImageBinding", "data.json"));
 		dataJson.Should().Contain("\"Value\": \"AQID\"",
 			because: "the create-data-binding MCP flow should base64-encode the referenced image file");
 	}
 
 	[Test]
-	[Description("Preserves explicit displayValue objects for lookup and image-reference columns when the MCP create-data-binding wrapper targets an offline template.")]
-	public void CreateDataBinding_Should_Write_DisplayValue_For_Lookup_And_ImageReference_Columns() {
+	[Description("Preserves explicit displayValue objects for generic lookup columns when the MCP create-data-binding wrapper targets a runtime schema.")]
+	public void CreateDataBinding_Should_Write_DisplayValue_For_Runtime_Lookup_Columns() {
 		// Arrange
+		CreateDataBindingCommand resolvedCommand = Container.GetRequiredService<CreateDataBindingCommand>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateDataBindingCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
 		CreateDataBindingTool tool = new(
 			Container.GetRequiredService<CreateDataBindingCommand>(),
 			Container.GetRequiredService<ILogger>(),
@@ -266,21 +270,19 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingArgs(
-			null,
+			"dev",
 			_packageName,
-			"SysModule",
+			"UsrLookupBinding",
 			_workspaceRoot,
 			ValuesJson:
-				"""{"Code":"UsrModule","FolderMode":{"value":"b659d704-3955-e011-981f-00155d043204","displayValue":"Prompt folder"},"Logo":{"value":"1171d0f0-63eb-4bd1-a50b-001ecbaf0001","displayValue":"Prompt logo"}}"""));
+				"""{"Name":"Lookup row","StatusId":{"value":"b659d704-3955-e011-981f-00155d043204","displayValue":"Prompt status"}}"""));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
-			because: "the MCP wrapper should pass the structured display-value payload through to the command unchanged");
-		string dataJson = _mockFileSystem.File.ReadAllText(Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "SysModule", "data.json"));
-		dataJson.Should().Contain("\"DisplayValue\": \"Prompt folder\"",
+			because: "the MCP wrapper should pass structured lookup display-value payloads through to the command unchanged");
+		string dataJson = _mockFileSystem.File.ReadAllText(Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "UsrLookupBinding", "data.json"));
+		dataJson.Should().Contain("\"DisplayValue\": \"Prompt status\"",
 			because: "lookup display values should round-trip through the MCP wrapper");
-		dataJson.Should().Contain("\"DisplayValue\": \"Prompt logo\"",
-			because: "image-reference display values should round-trip through the MCP wrapper");
 	}
 
 	[Test]
@@ -339,17 +341,17 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 	[Description("Returns a normal command failure envelope when the MCP add-data-binding-row payload omits DisplayValue for a non-null local lookup column.")]
 	public void AddDataBindingRow_Should_Fail_When_Lookup_DisplayValue_Is_Missing() {
 		// Arrange
-		string sysModuleBindingPath = Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "SysModule");
-		_mockFileSystem.AddDirectory(sysModuleBindingPath);
-		_mockFileSystem.AddFile(Path.Combine(sysModuleBindingPath, "descriptor.json"), new MockFileData("""
+		string lookupBindingPath = Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "UsrLookupBinding");
+		_mockFileSystem.AddDirectory(lookupBindingPath);
+		_mockFileSystem.AddFile(Path.Combine(lookupBindingPath, "descriptor.json"), new MockFileData("""
 		{
 		  "Descriptor": {
 		    "UId": "0c75996c-164e-af1b-81c9-c0fa2c3ab0ab",
-		    "Name": "SysModule",
+		    "Name": "UsrLookupBinding",
 		    "InstallType": 0,
 		    "Schema": {
-		      "UId": "2b2ed767-0b4b-4a7b-9de2-d48e14a2c0c5",
-		      "Name": "SysModule"
+		      "UId": "22222222-2222-2222-2222-222222222222",
+		      "Name": "UsrLookupBinding"
 		    },
 		    "Columns": [
 		      {
@@ -360,24 +362,24 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 		        "DataTypeValueUId": "23018567-a13c-4320-8687-fd6f9e3699bd"
 		      },
 		      {
-		        "ColumnUId": "e0c474a3-e4bc-457e-bb67-c1ec1b399f60",
+		        "ColumnUId": "736c30a7-c0ec-4fa9-b034-2552b319b633",
 		        "IsForceUpdate": false,
 		        "IsKey": false,
-		        "ColumnName": "Code",
+		        "ColumnName": "Name",
 		        "DataTypeValueUId": "ddb3a1ee-07e8-4d62-b7a9-d0e618b00fbd"
 		      },
 		      {
-		        "ColumnUId": "d3afc924-2d21-4c0e-b2f3-9f8c180221f9",
+		        "ColumnUId": "11111111-1111-1111-1111-111111111111",
 		        "IsForceUpdate": false,
 		        "IsKey": false,
-		        "ColumnName": "FolderMode",
+		        "ColumnName": "StatusId",
 		        "DataTypeValueUId": "b295071f-7ea9-4e62-8d1a-919bf3732ff2"
 		      }
 		    ]
 		  }
 		}
 		"""));
-		_mockFileSystem.AddFile(Path.Combine(sysModuleBindingPath, "data.json"), new MockFileData("""
+		_mockFileSystem.AddFile(Path.Combine(lookupBindingPath, "data.json"), new MockFileData("""
 		{
 		  "PackageData": []
 		}
@@ -389,9 +391,9 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 		// Act
 		CommandExecutionResult result = tool.AddDataBindingRow(new AddDataBindingRowArgs(
 			_packageName,
-			"SysModule",
+			"UsrLookupBinding",
 			_workspaceRoot,
-			"""{"Code":"UsrModule","FolderMode":"b659d704-3955-e011-981f-00155d043204"}"""));
+			"""{"Name":"Lookup row","StatusId":"b659d704-3955-e011-981f-00155d043204"}"""));
 
 		// Assert
 		result.ExitCode.Should().Be(1,
@@ -419,18 +421,26 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 			because: "the create prompt should explain that image-content columns can accept local file paths");
 		createPrompt.Should().Contain("displayValue",
 			because: "the create prompt should explain the structured lookup and image-reference payload shape");
-		createPrompt.Should().Contain("16-color palette",
-			because: "the create prompt should mention the SysModule.IconBackground palette restriction");
+		createPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the create prompt should route callers to the canonical binding guide for workflow selection");
+		createPrompt.Should().Contain("data-bindings",
+			because: "the create prompt should name the canonical binding guide explicitly");
 		addPrompt.Should().Contain(AddDataBindingRowTool.AddDataBindingRowToolName,
 			because: "the add-row prompt should reference the exact production MCP tool name");
 		addPrompt.Should().Contain("image-content",
 			because: "the add-row prompt should explain that image-content columns can accept local file paths");
 		addPrompt.Should().Contain("displayValue",
 			because: "the add-row prompt should explain that non-null lookup and image-reference values need display text");
-		addPrompt.Should().Contain("16-color palette",
-			because: "the add-row prompt should mention the SysModule.IconBackground palette restriction");
+		addPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the add-row prompt should route callers to the canonical binding guide for workflow selection");
+		addPrompt.Should().Contain("data-bindings",
+			because: "the add-row prompt should name the canonical binding guide explicitly");
 		removePrompt.Should().Contain(RemoveDataBindingRowTool.RemoveDataBindingRowToolName,
 			because: "the remove-row prompt should reference the exact production MCP tool name");
+		removePrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the remove-row prompt should route callers to the canonical binding guide for workflow selection");
+		removePrompt.Should().Contain("data-bindings",
+			because: "the remove-row prompt should name the canonical binding guide explicitly");
 	}
 
 	private const string CreateDataBindingCommandTests_SchemaResponseJson = """
@@ -489,6 +499,36 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 	}
 	""";
 
+	private const string ImageBindingSchemaResponseJson = """
+	{
+	  "schema": {
+	    "columns": {
+	      "Items": {
+	        "ae0e45ca-c495-4fe7-a39d-3ab7278e1617": {
+	          "uId": "ae0e45ca-c495-4fe7-a39d-3ab7278e1617",
+	          "name": "Id",
+	          "dataValueType": 0
+	        },
+	        "736c30a7-c0ec-4fa9-b034-2552b319b633": {
+	          "uId": "736c30a7-c0ec-4fa9-b034-2552b319b633",
+	          "name": "Name",
+	          "dataValueType": 28
+	        },
+	        "66666666-6666-6666-6666-666666666666": {
+	          "uId": "66666666-6666-6666-6666-666666666666",
+	          "name": "UsrImage",
+	          "dataValueType": 13
+	        }
+	      }
+	    },
+	    "primaryColumnUId": "ae0e45ca-c495-4fe7-a39d-3ab7278e1617",
+	    "uId": "77777777-7777-7777-7777-777777777777",
+	    "name": "UsrImageBinding"
+	  },
+	  "success": true
+	}
+	""";
+
 	private const string StatusSchemaResponseJson = """
 	{
 	  "schema": {
@@ -533,6 +573,10 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 
 		if (requestBody.Contains("\"Name\":\"UsrLookupBinding\"", StringComparison.Ordinal)) {
 			return LookupBindingSchemaResponseJson;
+		}
+
+		if (requestBody.Contains("\"Name\":\"UsrImageBinding\"", StringComparison.Ordinal)) {
+			return ImageBindingSchemaResponseJson;
 		}
 
 		if (requestBody.Contains("\"Name\":\"UsrStatus\"", StringComparison.Ordinal)) {

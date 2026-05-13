@@ -24,20 +24,25 @@ public class UnlockPackageOptions : EnvironmentOptions{
 #region Class: UnlockPackageCommand
 
 public class UnlockPackageCommand : Command<UnlockPackageOptions>{
+
+	private const string ClioGateMinVersion = "2.0.0.42";
+
 	#region Fields: Private
 
 	private readonly ILogger _logger;
 	private readonly IPackageLockManager _packageLockManager;
 	private readonly ISysSettingsManager _sysSettingsManager;
+	private readonly IClioGateway _clioGateway;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public UnlockPackageCommand(IPackageLockManager packageLockManager,
-		ISysSettingsManager sysSettingsManager, ILogger logger) {
+		ISysSettingsManager sysSettingsManager, IClioGateway clioGateway, ILogger logger) {
 		_packageLockManager = packageLockManager;
 		_sysSettingsManager = sysSettingsManager;
+		_clioGateway = clioGateway;
 		_logger = logger;
 	}
 
@@ -57,6 +62,7 @@ public class UnlockPackageCommand : Command<UnlockPackageOptions>{
 
 	public override int Execute(UnlockPackageOptions options) {
 		try {
+			_clioGateway.CheckCompatibleVersion(ClioGateMinVersion);
 			List<string> packageNames = GetPackagesNames(options).ToList();
 			if (!packageNames.Any()) {
 				if (string.IsNullOrWhiteSpace(options.Maintainer)) {

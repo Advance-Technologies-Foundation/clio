@@ -25,10 +25,13 @@ public sealed class PageUpdateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
+		"For conditional visibility, editability, or required state based on field values (e.g. \"when Status=Closed, hide Description\"), use business rules instead of writing handlers or validators in page body \u2014 call get-guidance with name `business-rules` to learn more. " +
 		"Section authoring rules for the body payload: " +
+		"if the requirement involves display-only value transformation (email as mailto link, phone as tel link, text to uppercase, boolean inversion, number formatting, any value that should look different on screen without changing the underlying model) call get-guidance with name `page-schema-converters` first — this determines whether a converter is the right tool before choosing a component type; " +
 		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
-		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-sdk-common` before editing SCHEMA_DEPS or SDK calls.")]
+		"if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
+		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("Parameters: schema-name, body (required); resources, dry-run, skip-sampling (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageUpdateArgs args,
@@ -91,6 +94,11 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateValidatorBindingPlacement(body), errors);
 		Collect(SchemaValidationService.ValidateStandardValidatorUsage(body), errors);
 		Collect(SchemaValidationService.ValidateCustomValidatorParamCompleteness(body), errors);
+		Collect(SchemaValidationService.ValidateCustomValidatorFactoryShape(body), errors);
+		Collect(SchemaValidationService.ValidateConverterDeclarations(body), errors);
+		Collect(SchemaValidationService.ValidateConverterFunctionShape(body), errors);
+		Collect(SchemaValidationService.ValidateHandlerStructure(body), errors);
+		Collect(SchemaValidationService.ValidateValidatorDeclarations(body), errors);
 		return errors.Count > 0 ? "Validation failed: " + string.Join("; ", errors) : null;
 	}
 

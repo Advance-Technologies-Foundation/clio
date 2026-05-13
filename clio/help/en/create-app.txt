@@ -10,13 +10,19 @@ DESCRIPTION
     and its primary package.
 
     Provide the display name with --name and a unique application code
-    starting with the Usr prefix with --code.
+    with --code. The code should be the business-meaningful part without the
+    prefix (e.g. "OrdersApp"). clio reads the SchemaNamePrefix system setting
+    from the target environment and prepends it automatically; the default
+    prefix is "Usr". Passing the full prefixed code (e.g. "UsrOrdersApp") also
+    works — the prefix is not duplicated.
 
     Choose the application template with --template-code. Known values are:
     AppFreedomUIv2, AppFreedomUI, AppWithHomePage, EmptyApp.
 
-    Optionally supply --icon-background in #RRGGBB format and --icon-id as
-    a GUID or the special value 'auto' to let Creatio choose a random icon.
+    Optionally supply --icon-background as one of the Freedom UI palette colors
+    and --icon-id as a GUID or the special value 'auto' to let Creatio choose
+    a random icon. When --icon-background is omitted a random palette color is
+    assigned automatically.
 
 SYNOPSIS
     clio create-app [options]
@@ -24,14 +30,18 @@ SYNOPSIS
 OPTIONS
     --name                           Application display name. Required.
 
-    --code                           Application code starting with Usr prefix.
-                                     Required.
+    --code                           Application code. clio reads SchemaNamePrefix
+                                     from the environment and applies it
+                                     automatically; pass the business-meaningful
+                                     part only (e.g. "OrdersApp"). Required.
 
     --template-code                  Technical template name. Required.
                                      Known values: AppFreedomUIv2, AppFreedomUI,
                                      AppWithHomePage, EmptyApp
 
-    --icon-background                Icon background color in #RRGGBB format
+    --icon-background                Freedom UI palette color in #RRGGBB format.
+                                     Optional; a random palette color is used
+                                     when omitted.
 
     --description                    Application description
 
@@ -41,11 +51,11 @@ OPTIONS
     --Environment            -e      Environment name. Required.
 
 EXAMPLE
-    clio create-app --name "My Orders App" --code UsrOrdersApp --template-code AppFreedomUIv2 -e dev
-        create a Freedom UI v2 application in the dev environment
+    clio create-app --name "My Orders App" --code OrdersApp --template-code AppFreedomUIv2 -e dev
+        create a Freedom UI v2 application; clio prepends the active SchemaNamePrefix automatically
 
-    clio create-app --name "Sales" --code UsrSalesApp --template-code EmptyApp --icon-background "#1F5F8B" -e dev
-        create an empty application with a custom icon background color
+    clio create-app --name "Sales" --code SalesApp --template-code EmptyApp --icon-background "#0058EF" -e dev
+        create an empty application with a specific Freedom UI palette color
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
