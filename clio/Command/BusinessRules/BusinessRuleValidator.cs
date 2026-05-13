@@ -15,13 +15,16 @@ internal static class BusinessRuleValidator {
 
 	internal static void Validate(
 		BusinessRule rule,
-		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) =>
-		Validate(rule, BuildAttributeDescriptorMap(columnMap));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		IFilterSchemaProvider? filterSchemaProvider = null) =>
+		Validate(rule, BuildAttributeDescriptorMap(columnMap), filterSchemaProvider);
 
 	internal static void Validate(
 		BusinessRule rule,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) =>
-		Validate(rule, attributeMap, ValidateEntityAction);
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IFilterSchemaProvider? filterSchemaProvider = null) =>
+		Validate(rule, attributeMap,
+			(action, map) => ValidateEntityAction(action, map, filterSchemaProvider));
 
 	internal static void Validate(
 		BusinessRule rule,
@@ -109,9 +112,15 @@ internal static class BusinessRuleValidator {
 
 	private static void ValidateEntityAction(
 		BusinessRuleAction action,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) =>
+		ValidateEntityAction(action, attributeMap, filterSchemaProvider: null);
+
+	private static void ValidateEntityAction(
+		BusinessRuleAction action,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IFilterSchemaProvider? filterSchemaProvider) {
 		if (action is ApplyStaticFilterBusinessRuleAction setFilter) {
-			ValidateSetFilterAction(setFilter, attributeMap);
+			ValidateSetFilterAction(setFilter, attributeMap, filterSchemaProvider);
 			return;
 		}
 
@@ -146,7 +155,8 @@ internal static class BusinessRuleValidator {
 
 	private static void ValidateSetFilterAction(
 		ApplyStaticFilterBusinessRuleAction action,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IFilterSchemaProvider? filterSchemaProvider) {
 
 		if (action.ExtensionData is not null && action.ExtensionData.ContainsKey("items")) {
 			throw new ArgumentException(
@@ -187,6 +197,19 @@ internal static class BusinessRuleValidator {
 
 		try {
 			StaticFilterStructuralValidator.Validate(friendly);
+		} catch (BusinessRuleFilterException ex) {
+			throw new ArgumentException($"{ex.ErrorCode}: {ex.Message} (path={ex.FieldPath})", ex);
+		}
+
+		if (filterSchemaProvider is null) {
+			return;
+		}
+
+		try {
+			new SchemaAwareFilterValidator(filterSchemaProvider).Validate(
+				friendly,
+				targetDescriptor.ReferenceSchemaName!,
+				StaticFilterStructuralValidator.DefaultFieldPathPrefix);
 		} catch (BusinessRuleFilterException ex) {
 			throw new ArgumentException($"{ex.ErrorCode}: {ex.Message} (path={ex.FieldPath})", ex);
 		}

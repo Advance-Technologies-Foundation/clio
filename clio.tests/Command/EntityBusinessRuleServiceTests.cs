@@ -52,7 +52,8 @@ public sealed class EntityBusinessRuleServiceTests {
 			new EntityBusinessRuleAttributeProvider(new EntityBusinessRuleSchemaProvider(_entitySchemaDesignerClient)),
 			new BusinessRuleAddonService(_addonSchemaDesignerClient),
 			Substitute.For<IEsqFilterConverterClient>(),
-			_formulaValidationService);
+			_formulaValidationService,
+			Substitute.For<IFilterSchemaProvider>());
 	}
 
 	[TestCase("", "UsrOrder", true, "package-name is required.")]
