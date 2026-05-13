@@ -3,6 +3,8 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using NUnit.Framework;
@@ -170,12 +172,12 @@ public sealed class ComponentInfoToolTests {
 
 	[Test]
 	[Description("Returns grouped component summaries when component-type is omitted.")]
-	public void ComponentInfoTool_Should_Return_Grouped_List_When_Component_Type_Is_Omitted() {
+	public async Task ComponentInfoTool_Should_Return_Grouped_List_When_Component_Type_Is_Omitted() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs());
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -190,16 +192,20 @@ public sealed class ComponentInfoToolTests {
 			because: "container entries should appear before other groups");
 		response.Groups[0].Items[0].ComponentType.Should().Be("crt.TabContainer",
 			because: "group items should preserve the component type");
+		response.ResolvedTargetVersion.Should().NotBeNullOrEmpty(
+			because: "the AI must know which catalog version produced the response");
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "until the platform version resolver lands the tool always reports latest-fallback");
 	}
 
 	[Test]
 	[Description("Returns full component details when component-type matches a curated entry.")]
-	public void ComponentInfoTool_Should_Return_Detail_When_Component_Type_Matches() {
+	public async Task ComponentInfoTool_Should_Return_Detail_When_Component_Type_Matches() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -214,16 +220,18 @@ public sealed class ComponentInfoToolTests {
 			because: "detail mode should expose the curated property catalog");
 		response.TypicalChildren.Should().Contain("crt.GridContainer",
 			because: "detail mode should expose common child component hints");
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "detail responses should also expose the resolver tier marker");
 	}
 
 	[Test]
 	[Description("Filters grouped list results by keyword search across the curated registry.")]
-	public void ComponentInfoTool_Should_Filter_List_By_Search() {
+	public async Task ComponentInfoTool_Should_Filter_List_By_Search() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs(Search: "tab"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "tab"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -240,12 +248,12 @@ public sealed class ComponentInfoToolTests {
 
 	[Test]
 	[Description("Finds components by frontend-derived property metadata such as bulkActions.")]
-	public void ComponentInfoTool_Should_Search_Across_Property_Metadata() {
+	public async Task ComponentInfoTool_Should_Search_Across_Property_Metadata() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs(Search: "bulkActions"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "bulkActions"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -262,12 +270,12 @@ public sealed class ComponentInfoToolTests {
 
 	[Test]
 	[Description("Returns nested menu component details so action collections can be expanded safely.")]
-	public void ComponentInfoTool_Should_Return_Detail_For_Nested_Menu_Component() {
+	public async Task ComponentInfoTool_Should_Return_Detail_For_Nested_Menu_Component() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs("crt.MenuItem"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.MenuItem"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -286,12 +294,12 @@ public sealed class ComponentInfoToolTests {
 
 	[Test]
 	[Description("Returns a readable error and available types when component-type does not exist.")]
-	public void ComponentInfoTool_Should_Return_Readable_Error_When_Component_Type_Is_Unknown() {
+	public async Task ComponentInfoTool_Should_Return_Readable_Error_When_Component_Type_Is_Unknown() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs("crt.Unknown"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Unknown"));
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -302,16 +310,18 @@ public sealed class ComponentInfoToolTests {
 			because: "the tool should still return available types for discovery");
 		response.Count.Should().Be(6,
 			because: "the fallback list should expose the full catalog when no search filter is applied");
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "the resolver tier marker should still ship with error responses to help diagnosis");
 	}
 
 	[Test]
-	[Description("Production constructor wires the embedded registry resource that ships with clio.dll.")]
-	public void ComponentInfoCatalog_Should_Load_From_Embedded_Resource() {
+	[Description("Catalog loaded through the embedded fallback exposes the full curated Freedom UI surface.")]
+	public async Task ComponentInfoCatalog_Should_Load_From_Embedded_Resource() {
 		// Arrange
-		ComponentInfoCatalog catalog = new(new EmbeddedRegistryReader());
+		ComponentInfoCatalog catalog = new(new EmbeddedFallbackRegistryClient());
 
 		// Act
-		IReadOnlyList<ComponentRegistryEntry> entries = catalog.GetAll();
+		IReadOnlyList<ComponentRegistryEntry> entries = await catalog.GetAllAsync("latest");
 
 		// Assert
 		entries.Should().NotBeEmpty(
@@ -322,16 +332,16 @@ public sealed class ComponentInfoToolTests {
 
 	[Test]
 	[Description("Embedded registry exposes canonical Freedom UI components that AI flows depend on.")]
-	public void ComponentInfoCatalog_Embedded_Resource_Should_Expose_Canonical_Components() {
+	public async Task ComponentInfoCatalog_Embedded_Resource_Should_Expose_Canonical_Components() {
 		// Arrange
-		ComponentInfoCatalog catalog = new(new EmbeddedRegistryReader());
+		ComponentInfoCatalog catalog = new(new EmbeddedFallbackRegistryClient());
 
 		// Act / Assert
-		catalog.Find("crt.TabContainer").Should().NotBeNull(
+		(await catalog.FindAsync("latest", "crt.TabContainer")).Should().NotBeNull(
 			because: "TabContainer is part of the canonical container surface");
-		catalog.Find("crt.Button").Should().NotBeNull(
+		(await catalog.FindAsync("latest", "crt.Button")).Should().NotBeNull(
 			because: "Button is part of the canonical interactive surface");
-		catalog.Find("crt.MenuItem").Should().NotBeNull(
+		(await catalog.FindAsync("latest", "crt.MenuItem")).Should().NotBeNull(
 			because: "MenuItem is part of the canonical interactive surface");
 	}
 
@@ -352,17 +362,39 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	private static ComponentInfoTool CreateTool() {
-		ComponentInfoCatalog catalog = CreateCatalog(TestRegistryJson);
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
 		return new ComponentInfoTool(catalog);
 	}
 
-	private static ComponentInfoCatalog CreateCatalog(string registryJson) {
-		ComponentCatalogState state = LoadStateFromJson(registryJson);
-		return new ComponentInfoCatalog(() => state);
+	/// <summary>Test double that serves the same in-memory JSON for every version request.</summary>
+	private sealed class InMemoryRegistryClient(string registryJson) : IComponentRegistryClient {
+		private readonly byte[] _payload = Encoding.UTF8.GetBytes(registryJson);
+
+		public Task<ComponentRegistryFetchResult> GetAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+			return Task.FromResult(new ComponentRegistryFetchResult(
+				new MemoryStream(_payload, writable: false),
+				requestedVersion,
+				ComponentRegistrySource.Embedded));
+		}
+
+		public Task<bool> RefreshAsync(string version, CancellationToken cancellationToken = default) {
+			return Task.FromResult(false);
+		}
 	}
 
-	private static ComponentCatalogState LoadStateFromJson(string registryJson) {
-		using MemoryStream stream = new(Encoding.UTF8.GetBytes(registryJson));
-		return ComponentInfoCatalog.LoadFromStream(stream);
+	/// <summary>Test double that exercises the real embedded resource in clio.dll.</summary>
+	private sealed class EmbeddedFallbackRegistryClient : IComponentRegistryClient {
+		private readonly IEmbeddedRegistryReader _reader = new EmbeddedRegistryReader();
+
+		public Task<ComponentRegistryFetchResult> GetAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+			return Task.FromResult(new ComponentRegistryFetchResult(
+				_reader.OpenRegistryStream(),
+				_reader.EmbeddedVersion,
+				ComponentRegistrySource.Embedded));
+		}
+
+		public Task<bool> RefreshAsync(string version, CancellationToken cancellationToken = default) {
+			return Task.FromResult(false);
+		}
 	}
 }

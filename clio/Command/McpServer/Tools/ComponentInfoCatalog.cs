@@ -1,94 +1,94 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// Provides the curated Freedom UI component catalog used by MCP tools.
+/// Provides the curated Freedom UI component catalog used by MCP tools. All callers
+/// pass <c>"latest"</c> in v1; per-version selection lands once the platform version
+/// resolver (Commit 4) wires <c>GetSysInfo</c> into the call path.
 /// </summary>
 public interface IComponentInfoCatalog {
 	/// <summary>
-	/// Returns every curated component definition.
+	/// Returns the parsed catalog state for the requested version, including the source
+	/// tier that produced the bytes (CDN, cache, or embedded fallback).
 	/// </summary>
-	/// <returns>The full curated component catalog.</returns>
-	IReadOnlyList<ComponentRegistryEntry> GetAll();
+	Task<ComponentCatalogState> LoadAsync(string requestedVersion, CancellationToken cancellationToken = default);
 
-	/// <summary>
-	/// Returns component definitions matching the provided search text.
-	/// </summary>
-	/// <param name="search">Optional free-text search.</param>
-	/// <returns>The filtered component catalog.</returns>
-	IReadOnlyList<ComponentRegistryEntry> Search(string? search);
+	/// <summary>Returns every curated component definition for the requested version.</summary>
+	Task<IReadOnlyList<ComponentRegistryEntry>> GetAllAsync(string requestedVersion, CancellationToken cancellationToken = default);
 
-	/// <summary>
-	/// Finds a curated component definition by its type name.
-	/// </summary>
-	/// <param name="componentType">The Freedom UI component type to resolve.</param>
-	/// <returns>The component definition when it exists; otherwise <see langword="null"/>.</returns>
-	ComponentRegistryEntry? Find(string componentType);
+	/// <summary>Returns component definitions matching <paramref name="search"/>.</summary>
+	Task<IReadOnlyList<ComponentRegistryEntry>> SearchAsync(string requestedVersion, string? search, CancellationToken cancellationToken = default);
+
+	/// <summary>Finds a curated component by its type name.</summary>
+	Task<ComponentRegistryEntry?> FindAsync(string requestedVersion, string componentType, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
-/// Loads the curated Freedom UI component catalog from the embedded registry resource
-/// shipped with the clio assembly.
+/// Loads the curated Freedom UI component catalog through
+/// <see cref="IComponentRegistryClient"/>. Caches the parsed state per resolved version
+/// so the parse, ordering, and duplicate-detection work happens once per process per version.
 /// </summary>
-/// <remarks>
-/// In a later step of the CDN migration a CDN-backed client will provide the stream,
-/// falling back to this embedded resource. For Part 1 / Commit 2 the embedded resource
-/// is the only source: drop-in compatible with the previous in-repo JSON.
-/// </remarks>
 public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	private static readonly string[] CategoryOrder = ["containers", "fields", "interactive", "display"];
-	private readonly Lazy<ComponentCatalogState> _catalogState;
 
-	/// <summary>
-	/// Production constructor used by the DI container.
-	/// </summary>
-	public ComponentInfoCatalog(IEmbeddedRegistryReader embeddedRegistryReader)
-		: this(() => LoadStateFromEmbeddedReader(embeddedRegistryReader)) {
-	}
+	private readonly IComponentRegistryClient _registryClient;
+	private readonly ConcurrentDictionary<string, Task<ComponentCatalogState>> _stateByVersion;
 
-	/// <summary>
-	/// Internal constructor for hermetic tests.
-	/// </summary>
-	internal ComponentInfoCatalog(Func<ComponentCatalogState> loader) {
-		_catalogState = new Lazy<ComponentCatalogState>(loader, isThreadSafe: true);
+	public ComponentInfoCatalog(IComponentRegistryClient registryClient) {
+		_registryClient = registryClient ?? throw new ArgumentNullException(nameof(registryClient));
+		_stateByVersion = new ConcurrentDictionary<string, Task<ComponentCatalogState>>(StringComparer.OrdinalIgnoreCase);
 	}
 
 	/// <inheritdoc />
-	public IReadOnlyList<ComponentRegistryEntry> GetAll() {
-		return _catalogState.Value.Entries;
+	public Task<ComponentCatalogState> LoadAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+		string key = NormaliseVersion(requestedVersion);
+		return _stateByVersion.GetOrAdd(
+			key,
+			static (versionKey, args) => args.Self.LoadCatalogStateAsync(versionKey, args.CancellationToken),
+			(Self: this, CancellationToken: cancellationToken));
 	}
 
 	/// <inheritdoc />
-	public IReadOnlyList<ComponentRegistryEntry> Search(string? search) {
+	public async Task<IReadOnlyList<ComponentRegistryEntry>> GetAllAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+		ComponentCatalogState state = await LoadAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
+		return state.Entries;
+	}
+
+	/// <inheritdoc />
+	public async Task<IReadOnlyList<ComponentRegistryEntry>> SearchAsync(string requestedVersion, string? search, CancellationToken cancellationToken = default) {
+		ComponentCatalogState state = await LoadAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
 		if (string.IsNullOrWhiteSpace(search)) {
-			return GetAll();
+			return state.Entries;
 		}
 		string query = search.Trim();
-		return _catalogState.Value.Entries
-			.Where(entry => Matches(entry, query))
-			.ToArray();
+		return state.Entries.Where(entry => Matches(entry, query)).ToArray();
 	}
 
 	/// <inheritdoc />
-	public ComponentRegistryEntry? Find(string componentType) {
+	public async Task<ComponentRegistryEntry?> FindAsync(string requestedVersion, string componentType, CancellationToken cancellationToken = default) {
 		if (string.IsNullOrWhiteSpace(componentType)) {
 			return null;
 		}
-		return _catalogState.Value.Lookup.TryGetValue(componentType.Trim(), out ComponentRegistryEntry? entry)
-			? entry
-			: null;
+		ComponentCatalogState state = await LoadAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
+		return state.Lookup.TryGetValue(componentType.Trim(), out ComponentRegistryEntry? entry) ? entry : null;
 	}
 
 	/// <summary>
-	/// Builds a catalog state from a raw registry JSON stream. Public so that future
-	/// CDN-aware loaders can reuse the same parse, ordering, and duplicate-detection logic.
+	/// Parses a registry stream into the in-memory catalog state. Exposed for hermetic
+	/// tests and for callers that want to bypass the CDN/cache/embedded chain entirely.
 	/// </summary>
-	public static ComponentCatalogState LoadFromStream(Stream stream) {
+	public static ComponentCatalogState LoadFromStream(
+		Stream stream,
+		string resolvedVersion = "latest",
+		ComponentRegistrySource source = ComponentRegistrySource.Embedded) {
 		if (stream is null) {
 			throw new ArgumentNullException(nameof(stream));
 		}
@@ -123,12 +123,20 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 
 		Dictionary<string, ComponentRegistryEntry> lookup = orderedEntries
 			.ToDictionary(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase);
-		return new ComponentCatalogState(orderedEntries, lookup);
+		return new ComponentCatalogState(orderedEntries, lookup, resolvedVersion, source);
 	}
 
-	private static ComponentCatalogState LoadStateFromEmbeddedReader(IEmbeddedRegistryReader reader) {
-		using Stream stream = reader.OpenRegistryStream();
-		return LoadFromStream(stream);
+	private async Task<ComponentCatalogState> LoadCatalogStateAsync(string requestedVersion, CancellationToken cancellationToken) {
+		ComponentRegistryFetchResult fetch = await _registryClient.GetAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
+		using (fetch.Content) {
+			return LoadFromStream(fetch.Content, fetch.ResolvedVersion, fetch.Source);
+		}
+	}
+
+	private static string NormaliseVersion(string? requestedVersion) {
+		return string.IsNullOrWhiteSpace(requestedVersion)
+			? ComponentRegistryClient.LatestVersion
+			: requestedVersion.Trim();
 	}
 
 	private static bool Matches(ComponentRegistryEntry entry, string query) {
@@ -160,6 +168,12 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 /// <summary>
 /// Parsed snapshot of the component registry ready for catalog operations.
 /// </summary>
+/// <param name="Entries">Ordered list of catalog entries.</param>
+/// <param name="Lookup">Case-insensitive map of componentType → entry.</param>
+/// <param name="ResolvedVersion">The version actually loaded; may differ from the requested version on fallback.</param>
+/// <param name="Source">Which tier of the fallback chain produced the bytes.</param>
 public sealed record ComponentCatalogState(
 	IReadOnlyList<ComponentRegistryEntry> Entries,
-	IReadOnlyDictionary<string, ComponentRegistryEntry> Lookup);
+	IReadOnlyDictionary<string, ComponentRegistryEntry> Lookup,
+	string ResolvedVersion,
+	ComponentRegistrySource Source);

@@ -5,6 +5,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -17,32 +19,47 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog) {
 	private static readonly string[] CategoryOrder = ["containers", "fields", "interactive", "display"];
 
 	internal const string ToolName = "get-component-info";
+	private const string LatestFallbackMarker = "latest-fallback";
 
 	/// <summary>
 	/// Returns grouped component summaries or full metadata for a specific component type.
 	/// </summary>
 	/// <param name="args">Tool arguments that select either list or detail mode.</param>
+	/// <param name="cancellationToken">Cancellation token propagated by the MCP host.</param>
 	/// <returns>A structured response with grouped summaries or a full component definition.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Get curated Freedom UI component metadata by component type or list all known types")]
-	public ComponentInfoResponse GetComponentInfo(
+	public async Task<ComponentInfoResponse> GetComponentInfo(
 		[Description("Parameters: component-type (optional; omit or use 'list' to list all), search (optional keyword filter)")]
 		[Required]
-		ComponentInfoArgs args) {
+		ComponentInfoArgs args,
+		CancellationToken cancellationToken = default) {
 		try {
+			// TODO: once IPlatformVersionResolver lands (Commit 4) read the active environment
+			// and pass its resolved CoreVersion here. Until then the catalog is loaded against
+			// the CDN "latest" alias and the AI is told so via resolvedFrom = "latest-fallback".
+			ComponentCatalogState state = await catalog.LoadAsync(ComponentRegistryClient.LatestVersion, cancellationToken)
+				.ConfigureAwait(false);
+
 			if (string.IsNullOrWhiteSpace(args.ComponentType)
 				|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
-				return CreateListResponse(catalog.Search(args.Search));
+				IReadOnlyList<ComponentRegistryEntry> filtered = FilterEntries(state, args.Search);
+				return CreateListResponse(filtered, state);
 			}
 
-			ComponentRegistryEntry? entry = catalog.Find(args.ComponentType);
+			ComponentRegistryEntry? entry = state.Lookup.TryGetValue(args.ComponentType.Trim(), out ComponentRegistryEntry? found)
+				? found
+				: null;
 			if (entry is null) {
+				IReadOnlyList<ComponentRegistryEntry> filtered = FilterEntries(state, args.Search);
 				return new ComponentInfoResponse {
 					Success = false,
 					Mode = "list",
 					Error = $"Component type '{args.ComponentType}' was not found.",
-					Count = catalog.Search(args.Search).Count,
-					Groups = CreateGroups(catalog.Search(args.Search))
+					Count = filtered.Count,
+					Groups = CreateGroups(filtered),
+					ResolvedTargetVersion = state.ResolvedVersion,
+					ResolvedFrom = LatestFallbackMarker
 				};
 			}
 
@@ -57,7 +74,9 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog) {
 				ParentTypes = entry.ParentTypes,
 				Properties = entry.Properties,
 				TypicalChildren = entry.TypicalChildren,
-				Example = entry.Example
+				Example = entry.Example,
+				ResolvedTargetVersion = state.ResolvedVersion,
+				ResolvedFrom = LatestFallbackMarker
 			};
 		}
 		catch (Exception ex) {
@@ -71,12 +90,40 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog) {
 		}
 	}
 
-	private static ComponentInfoResponse CreateListResponse(IReadOnlyList<ComponentRegistryEntry> entries) {
+	private static IReadOnlyList<ComponentRegistryEntry> FilterEntries(ComponentCatalogState state, string? search) {
+		if (string.IsNullOrWhiteSpace(search)) {
+			return state.Entries;
+		}
+		string query = search.Trim();
+		return state.Entries.Where(entry => Matches(entry, query)).ToArray();
+	}
+
+	private static bool Matches(ComponentRegistryEntry entry, string query) {
+		return ContainsCi(entry.ComponentType, query)
+			|| ContainsCi(entry.Category, query)
+			|| ContainsCi(entry.Description, query)
+			|| entry.ParentTypes.Any(parentType => ContainsCi(parentType, query))
+			|| entry.TypicalChildren.Any(childType => ContainsCi(childType, query))
+			|| entry.Properties.Any(property =>
+				ContainsCi(property.Key, query)
+				|| ContainsCi(property.Value.Type, query)
+				|| ContainsCi(property.Value.Description, query)
+				|| property.Value.Values?.Any(value => ContainsCi(value, query)) == true);
+	}
+
+	private static bool ContainsCi(string? value, string query) {
+		return !string.IsNullOrWhiteSpace(value)
+			&& value.Contains(query, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static ComponentInfoResponse CreateListResponse(IReadOnlyList<ComponentRegistryEntry> entries, ComponentCatalogState state) {
 		return new ComponentInfoResponse {
 			Success = true,
 			Mode = "list",
 			Count = entries.Count,
-			Groups = CreateGroups(entries)
+			Groups = CreateGroups(entries),
+			ResolvedTargetVersion = state.ResolvedVersion,
+			ResolvedFrom = LatestFallbackMarker
 		};
 	}
 
@@ -210,6 +257,26 @@ public sealed class ComponentInfoResponse {
 	[JsonPropertyName("groups")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<ComponentInfoGroup>? Groups { get; init; }
+
+	/// <summary>
+	/// Gets or sets the platform version the catalog was filtered against. In v1 this is
+	/// always <c>"latest"</c> (the catalog is loaded from CDN <c>latest.json</c> / cache / embedded);
+	/// once <c>IPlatformVersionResolver</c> lands this will carry the GA-tag-shaped semver
+	/// resolved from the active environment's cliogate <c>GetSysInfo</c> probe.
+	/// </summary>
+	[JsonPropertyName("resolvedTargetVersion")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? ResolvedTargetVersion { get; init; }
+
+	/// <summary>
+	/// Gets or sets the resolver tier that produced <see cref="ResolvedTargetVersion"/>.
+	/// Permitted values: <c>"environment"</c> (resolved from cliogate GetSysInfo),
+	/// <c>"latest-fallback"</c> (env unknown, probe failed, or version unparseable). AI should
+	/// treat <c>"latest-fallback"</c> as a superset of the true target environment.
+	/// </summary>
+	[JsonPropertyName("resolvedFrom")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? ResolvedFrom { get; init; }
 }
 
 /// <summary>
