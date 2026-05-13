@@ -14,22 +14,19 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class DataForgeEnrichmentBuilderTests {
 	[Test]
 	[Category("Unit")]
-	[Description("Builds Data Forge context with default auth settings and returns a compact summary for MCP mutation tools.")]
-	public async Task BuildAsync_Should_Build_Context_And_Compact_Summary() {
+	[Description("Builds Data Forge context and returns a compact summary for MCP mutation tools.")]
+	public void Build_Should_Build_Context_And_Compact_Summary() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		IDataForgeContextService contextService = Substitute.For<IDataForgeContextService>();
 		DataForgeContextRequest? capturedRequest = null;
-		DataForgeConfigRequest? capturedConfig = null;
 		commandResolver.Resolve<IDataForgeContextService>(Arg.Any<EnvironmentOptions>())
 			.Returns(contextService);
-		contextService.GetContextAsync(
+		contextService.GetContext(
 				Arg.Any<DataForgeContextRequest>(),
-				Arg.Any<DataForgeConfigRequest>(),
 				default)
 			.Returns(callInfo => {
 				capturedRequest = callInfo.Arg<DataForgeContextRequest>();
-				capturedConfig = callInfo.ArgAt<DataForgeConfigRequest>(1);
 				return new DataForgeContextAggregationResult(
 					"corr-id",
 					[],
@@ -51,7 +48,7 @@ public sealed class DataForgeEnrichmentBuilderTests {
 		DataForgeEnrichmentBuilder sut = new(commandResolver);
 
 		// Act
-		ApplicationDataForgeResult result = await sut.BuildAsync(
+		ApplicationDataForgeResult result = sut.Build(
 			new DataForgeEnrichmentRequest(
 				EnvironmentName: "sandbox",
 				RequirementSummary: "Track customer tasks",
@@ -60,9 +57,7 @@ public sealed class DataForgeEnrichmentBuilderTests {
 
 		// Assert
 		commandResolver.Received(1).Resolve<IDataForgeContextService>(Arg.Is<DataForgeTargetOptions>(options =>
-			options.Environment == "sandbox" &&
-			options.AllowSysSettingsAuthFallback &&
-			options.Scope == "use_enrichment"));
+			options.Environment == "sandbox"));
 		capturedRequest.Should().NotBeNull(
 			because: "the builder should call the Data Forge context service with one normalized aggregation request");
 		capturedRequest!.RequirementSummary.Should().Be("Track customer tasks",
@@ -73,12 +68,6 @@ public sealed class DataForgeEnrichmentBuilderTests {
 		capturedRequest.LookupHints.Should().BeEquivalentTo(
 			new[] { "UsrTask", "Task registry", "Task App" },
 			because: "lookup hints should be forwarded verbatim to the Data Forge context service");
-		capturedConfig.Should().NotBeNull(
-			because: "the builder should forward explicit Data Forge auth defaults to the context layer");
-		capturedConfig!.AllowSysSettingsAuthFallback.Should().BeTrue(
-			because: "MCP enrichment should keep the Data Forge syssettings auth fallback enabled by default");
-		capturedConfig.Scope.Should().Be("use_enrichment",
-			because: "MCP enrichment should use the standard Data Forge OAuth scope");
 		result.Used.Should().BeTrue(
 			because: "the shared builder should always report that the Data Forge enrichment stage ran");
 		result.Coverage!.Columns.Should().BeTrue(
@@ -96,7 +85,7 @@ public sealed class DataForgeEnrichmentBuilderTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns degraded Data Forge diagnostics instead of throwing when the shared context aggregation fails.")]
-	public async Task BuildAsync_Should_Return_Degraded_Result_When_DataForge_Context_Fails() {
+	public void Build_Should_Return_Degraded_Result_When_DataForge_Context_Fails() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IDataForgeContextService>(Arg.Any<EnvironmentOptions>())
@@ -104,7 +93,7 @@ public sealed class DataForgeEnrichmentBuilderTests {
 		DataForgeEnrichmentBuilder sut = new(commandResolver);
 
 		// Act
-		ApplicationDataForgeResult result = await sut.BuildAsync(
+		ApplicationDataForgeResult result = sut.Build(
 			new DataForgeEnrichmentRequest(
 				EnvironmentName: "sandbox",
 				RequirementSummary: "Track customer tasks",

@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
-using Clio.Common.EntitySchema;
 
 namespace Clio.Common.DataForge;
 
@@ -15,90 +13,34 @@ public interface IDataForgeContextService {
 	/// Builds an aggregated Data Forge context payload for the requested search terms and relation pairs.
 	/// </summary>
 	/// <param name="request">Context aggregation request.</param>
-	/// <param name="configRequest">Resolved Data Forge configuration request.</param>
 	/// <param name="cancellationToken">Cancellation token.</param>
 	/// <returns>An aggregated Data Forge context payload prior to MCP envelope mapping.</returns>
-	Task<DataForgeContextAggregationResult> GetContextAsync(
+	DataForgeContextAggregationResult GetContext(
 		DataForgeContextRequest request,
-		DataForgeConfigRequest configRequest,
 		CancellationToken cancellationToken = default);
 }
 
-internal static class DataForgeRuntimeSchemaMapper {
-	private static readonly IReadOnlyDictionary<int, string> DataValueTypeNames = new Dictionary<int, string> {
-		[0] = "Guid",
-		[1] = "Text",
-		[4] = "Integer",
-		[5] = "Float",
-		[6] = "Money",
-		[7] = "DateTime",
-		[8] = "Date",
-		[9] = "Time",
-		[10] = "Lookup",
-		[11] = "Enum",
-		[12] = "Boolean",
-		[13] = "Blob",
-		[18] = "Color",
-		[23] = "HASH_TEXT",
-		[24] = "SECURE_TEXT",
-		[27] = "SHORT_TEXT",
-		[28] = "MEDIUM_TEXT",
-		[29] = "MAXSIZE_TEXT",
-		[30] = "LONG_TEXT",
-		[42] = "PHONE_TEXT",
-		[43] = "RICH_TEXT",
-		[44] = "WEB_TEXT",
-		[45] = "EMAIL_TEXT"
-	};
-
-	internal static IReadOnlyList<DataForgeColumnResult> MapColumns(RuntimeEntitySchemaResult schema) {
-		return schema.Columns
-			.Where(column => !column.IsInherited)
-			.Select(column => new DataForgeColumnResult(
-				column.Name,
-				column.Caption,
-				column.Description,
-				ResolveDataType(column.DataValueType),
-				column.IsRequired,
-				column.ReferenceSchemaName))
-			.OrderBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
-			.ToList();
-	}
-
-	private static string ResolveDataType(int dataValueType) {
-		return DataValueTypeNames.TryGetValue(dataValueType, out string? dataTypeName)
-			? dataTypeName
-			: "Text";
-	}
-}
-
 internal sealed class DataForgeContextService(
-	IDataForgeClient dataForgeClient,
-	IDataForgeMaintenanceClient maintenanceClient,
-	IRuntimeEntitySchemaReader runtimeEntitySchemaReader)
+	IDataForgeReadClient readClient,
+	IDataForgeMaintenanceClient maintenanceClient)
 	: IDataForgeContextService {
-	public async Task<DataForgeContextAggregationResult> GetContextAsync(
+	public DataForgeContextAggregationResult GetContext(
 		DataForgeContextRequest request,
-		DataForgeConfigRequest configRequest,
 		CancellationToken cancellationToken = default) {
 		ArgumentNullException.ThrowIfNull(request);
-		ArgumentNullException.ThrowIfNull(configRequest);
 
 		List<string> warnings = [];
-		DataForgeHealthResult health = await dataForgeClient.CheckHealthAsync(configRequest, cancellationToken);
-		DataForgeMaintenanceStatusResult status = maintenanceClient.GetStatus();
+		(DataForgeHealthResult health, DataForgeMaintenanceStatusResult status) = maintenanceClient.GetFullStatus();
 
 		List<string> tableTerms = NormalizeTerms(request.CandidateTerms, request.RequirementSummary);
-		List<SimilarTableResult> similarTables = await FindSimilarTablesAsync(tableTerms, configRequest, warnings, cancellationToken);
+		List<SimilarTableResult> similarTables = FindSimilarTables(tableTerms, warnings);
 
 		List<string> lookupTerms = NormalizeTerms(request.LookupHints, null);
-		List<SimilarLookupResult> similarLookups = await FindSimilarLookupsAsync(lookupTerms, configRequest, warnings, cancellationToken);
+		List<SimilarLookupResult> similarLookups = FindSimilarLookups(lookupTerms, warnings);
 
-		Dictionary<string, IReadOnlyList<string>> relations = await GetRelationsAsync(
+		Dictionary<string, IReadOnlyList<string>> relations = GetRelations(
 			request.RelationPairs,
-			configRequest,
-			warnings,
-			cancellationToken);
+			warnings);
 
 		List<SimilarTableResult> distinctTables = GetDistinctTables(similarTables);
 
@@ -164,15 +106,13 @@ internal sealed class DataForgeContextService(
 		return values;
 	}
 
-	private async Task<List<SimilarTableResult>> FindSimilarTablesAsync(
+	private List<SimilarTableResult> FindSimilarTables(
 		IReadOnlyList<string> tableTerms,
-		DataForgeConfigRequest configRequest,
-		List<string> warnings,
-		CancellationToken cancellationToken) {
+		List<string> warnings) {
 		List<SimilarTableResult> similarTables = [];
 		foreach (string term in tableTerms) {
 			try {
-				similarTables.AddRange(await dataForgeClient.FindSimilarTablesAsync(term, null, configRequest, cancellationToken));
+				similarTables.AddRange(readClient.FindSimilarTables(term));
 			}
 			catch (Exception ex) {
 				warnings.Add($"tables:{term}:{ex.Message}");
@@ -182,15 +122,13 @@ internal sealed class DataForgeContextService(
 		return similarTables;
 	}
 
-	private async Task<List<SimilarLookupResult>> FindSimilarLookupsAsync(
+	private List<SimilarLookupResult> FindSimilarLookups(
 		IReadOnlyList<string> lookupTerms,
-		DataForgeConfigRequest configRequest,
-		List<string> warnings,
-		CancellationToken cancellationToken) {
+		List<string> warnings) {
 		List<SimilarLookupResult> similarLookups = [];
 		foreach (string hint in lookupTerms) {
 			try {
-				similarLookups.AddRange(await dataForgeClient.FindSimilarLookupsAsync(hint, null, null, configRequest, cancellationToken));
+				similarLookups.AddRange(readClient.FindSimilarLookups(hint));
 			}
 			catch (Exception ex) {
 				warnings.Add($"lookups:{hint}:{ex.Message}");
@@ -200,21 +138,14 @@ internal sealed class DataForgeContextService(
 		return similarLookups;
 	}
 
-	private async Task<Dictionary<string, IReadOnlyList<string>>> GetRelationsAsync(
+	private Dictionary<string, IReadOnlyList<string>> GetRelations(
 		IReadOnlyList<DataForgeRelationPair>? relationPairs,
-		DataForgeConfigRequest configRequest,
-		List<string> warnings,
-		CancellationToken cancellationToken) {
+		List<string> warnings) {
 		Dictionary<string, IReadOnlyList<string>> relations = new(StringComparer.OrdinalIgnoreCase);
 		foreach (DataForgeRelationPair pair in relationPairs?.Where(HasRelationTables) ?? []) {
 			string key = $"{pair.SourceTable}->{pair.TargetTable}";
 			try {
-				relations[key] = await dataForgeClient.GetTableRelationshipsAsync(
-					pair.SourceTable,
-					pair.TargetTable,
-					null,
-					configRequest,
-					cancellationToken);
+				relations[key] = readClient.GetTableRelationships(pair.SourceTable, pair.TargetTable);
 			}
 			catch (Exception ex) {
 				warnings.Add($"relations:{key}:{ex.Message}");
@@ -230,8 +161,7 @@ internal sealed class DataForgeContextService(
 		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = new(StringComparer.OrdinalIgnoreCase);
 		foreach (string tableName in distinctTables.Select(table => table.Name)) {
 			try {
-				RuntimeEntitySchemaResult runtimeSchema = runtimeEntitySchemaReader.GetByName(tableName);
-				columns[tableName] = DataForgeRuntimeSchemaMapper.MapColumns(runtimeSchema);
+				columns[tableName] = readClient.GetTableColumnsDetails(tableName);
 			}
 			catch (Exception ex) {
 				warnings.Add($"columns:{tableName}:{ex.Message}");

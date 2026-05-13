@@ -41,7 +41,7 @@ public sealed class SchemaSyncTool(
 		[Description("Parameters: environment-name, package-name (required); operations array (required)")]
 		[Required] SchemaSyncArgs args) {
 		ApplicationDataForgeResult? dataForge = enrichmentService is not null
-			? await enrichmentService.EnrichAsync(
+			? enrichmentService.Enrich(
 				args.EnvironmentName,
 				CollectCandidateTerms(args),
 				CollectLookupHints(args))

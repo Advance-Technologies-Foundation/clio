@@ -19,6 +19,11 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 			Text = """
 			       clio MCP DataForge orchestration guide
 
+			       Prerequisites
+			       - CrtDataForge 7.8.0+ must be installed on the target Creatio instance.
+			       - The Creatio user must have the CanReadDataStructureColumnDetails operation permission.
+			       - All DataForge calls are proxied through Creatio REST endpoints (DataForgeSchemaReadService, DataForgeMaintenanceService). No direct microservice access or OAuth credentials are needed.
+
 			       Architecture split
 			       - clio (passive): DataForge enrichment is built into selected write tools. It runs automatically before the mutation, returns a `dataforge` section alongside the result, and degrades gracefully when DataForge is unavailable. The mutation is never blocked.
 			       - ADAC / AI consumer (active): explicit orchestration — the AI agent calls DataForge tools at the right points in a workflow to gather context it cannot derive from the requirement alone.
@@ -26,7 +31,7 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 
 			       Layer 0 — Health preflight
 			       When: once, at the start of a workflow that will span multiple write operations.
-			       Call: `dataforge-health` or `dataforge-status`.
+			       Call: `dataforge-status`.
 			       - `health.liveness = true` and `health.readiness = true` → full enrichment available, proceed normally.
 			       - `health.data-structure-readiness = false` or `health.lookups-readiness = false` → proceed with caution; discovery may return partial context.
 			       - `status.status != "Ready"` → DataForge not initialized or not ready; skip all DataForge calls for this session; optionally warn the user.
@@ -36,7 +41,7 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 			       When: once per planning phase, before calling any write tool, when the task involves creating new schemas or entities.
 			       Not required for: existing-app maintenance without new schema creation; single-column modifications with an already-known schema name.
 			       - DataForge is not the primary mechanism for exact package-local reuse checks in existing-app page/detail workflows. First inspect `get-app-info`, `get-page`, and `get-entity-schema-properties`; use DataForge only when runtime context still cannot identify the relevant schema or relation.
-			       Call: `dataforge-context` with `environment-name` (preferred; use `uri`+`login`+`password` only as emergency fallback when no environment is registered), `requirement-summary`, `candidate-terms`, `lookup-hints`, and optional `relation-pairs`.
+			       Call: `dataforge-context` with `environment-name`, `requirement-summary`, `candidate-terms`, `lookup-hints`, and optional `relation-pairs`.
 			       Response fields: `similar-tables[].name` / `.caption` / `.description`; `similar-lookups[].schema-name` (not `"name"`) / `.value` (not `"caption"`) / `.score`.
 			       What to inspect:
 			       - multiple close entries in `similar-tables` with matching names/captions/descriptions → treat as a strong duplicate candidate; surface to user before proceeding.

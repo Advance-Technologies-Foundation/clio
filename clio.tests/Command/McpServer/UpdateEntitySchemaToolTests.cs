@@ -46,7 +46,7 @@ public class UpdateEntitySchemaToolTests {
 			Warnings: [],
 			ContextSummary: null);
 		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
-		enrichmentService.EnrichAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
+		enrichmentService.Enrich(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
 				Arg.Any<IReadOnlyList<string>>())
 			.Returns(expectedDataForge);
 		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, enrichmentService);
@@ -100,9 +100,9 @@ public class UpdateEntitySchemaToolTests {
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<EnvironmentOptions>())
 			.Returns(command);
 		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
-		enrichmentService.EnrichAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
+		enrichmentService.Enrich(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
 				Arg.Any<IReadOnlyList<string>>())
-			.ThrowsAsync(new System.Exception("DataForge unavailable"));
+			.Throws(new System.Exception("DataForge unavailable"));
 		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, enrichmentService);
 		UpdateEntitySchemaArgs args = BuildArgs("UsrVehicle", new[] {
 			new UpdateEntitySchemaOperationArgs("add", "UsrPlate", Type: "ShortText",
@@ -129,7 +129,7 @@ public class UpdateEntitySchemaToolTests {
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<EnvironmentOptions>())
 			.Returns(command);
 		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
-		enrichmentService.EnrichAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
+		enrichmentService.Enrich(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
 				Arg.Any<IReadOnlyList<string>>())
 			.Returns(new ApplicationDataForgeResult(Used: true, Health: null, Status: null, Coverage: null, Warnings: [], ContextSummary: null));
 		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, enrichmentService);
@@ -144,7 +144,7 @@ public class UpdateEntitySchemaToolTests {
 		await tool.UpdateEntitySchema(args);
 
 		// Assert
-		await enrichmentService.Received(1).EnrichAsync(
+		enrichmentService.Received(1).Enrich(
 			Arg.Any<string>(),
 			Arg.Is<IReadOnlyList<string>>(terms =>
 				terms.Contains("UsrFleet")
@@ -164,7 +164,7 @@ public class UpdateEntitySchemaToolTests {
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<EnvironmentOptions>())
 			.Returns(command);
 		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
-		enrichmentService.EnrichAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
+		enrichmentService.Enrich(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
 				Arg.Any<IReadOnlyList<string>>())
 			.Returns(new ApplicationDataForgeResult(Used: true, Health: null, Status: null, Coverage: null, Warnings: [], ContextSummary: null));
 		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, enrichmentService);
@@ -180,7 +180,7 @@ public class UpdateEntitySchemaToolTests {
 		await tool.UpdateEntitySchema(args);
 
 		// Assert
-		await enrichmentService.Received(1).EnrichAsync(
+		enrichmentService.Received(1).Enrich(
 			Arg.Any<string>(),
 			Arg.Any<IReadOnlyList<string>>(),
 			Arg.Is<IReadOnlyList<string>>(hints =>

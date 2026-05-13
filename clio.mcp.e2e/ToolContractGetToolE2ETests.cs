@@ -164,7 +164,6 @@ public sealed class ToolContractGetToolE2ETests {
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
 				["tool-names"] = new[] {
-					DataForgeTool.DataForgeHealthToolName,
 					DataForgeTool.DataForgeStatusToolName,
 					DataForgeTool.DataForgeFindTablesToolName,
 					DataForgeTool.DataForgeFindLookupsToolName,
@@ -191,10 +190,6 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "explicit lookup should still return Data Forge initialize for remediation workflows");
 		explicitResponse.Tools!.Select(tool => tool.Name).Should().Contain(DataForgeTool.DataForgeUpdateToolName,
 			because: "explicit lookup should still return Data Forge update for remediation workflows");
-		explicitResponse.Tools!.Single(tool => tool.Name == DataForgeTool.DataForgeHealthToolName)
-			.Defaults.Should().Contain(definition =>
-				definition.Name == "scope" && definition.Value == "use_enrichment",
-				because: "the explicit Data Forge contract should advertise the default OAuth scope");
 	}
 
 	[Test]

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -21,7 +20,7 @@ public interface ISchemaEnrichmentService {
 	/// <param name="lookupHints">Optional terms used for lookup-value search.</param>
 	/// <param name="cancellationToken">Cancellation token.</param>
 	/// <returns>Structured Data Forge enrichment diagnostics and compact context summary.</returns>
-	Task<ApplicationDataForgeResult> EnrichAsync(
+	ApplicationDataForgeResult Enrich(
 		string? environmentName,
 		IReadOnlyList<string> candidateTerms,
 		IReadOnlyList<string>? lookupHints = null,
@@ -33,14 +32,14 @@ public interface ISchemaEnrichmentService {
 /// </summary>
 public sealed class SchemaEnrichmentService(IDataForgeEnrichmentBuilder enrichmentBuilder) : ISchemaEnrichmentService {
 	/// <inheritdoc />
-	public async Task<ApplicationDataForgeResult> EnrichAsync(
+	public ApplicationDataForgeResult Enrich(
 		string? environmentName,
 		IReadOnlyList<string> candidateTerms,
 		IReadOnlyList<string>? lookupHints = null,
 		CancellationToken cancellationToken = default) {
 		ArgumentNullException.ThrowIfNull(candidateTerms);
 
-		return await enrichmentBuilder.BuildAsync(
+		return enrichmentBuilder.Build(
 			new DataForgeEnrichmentRequest(
 				EnvironmentName: environmentName,
 				RequirementSummary: candidateTerms.FirstOrDefault(),

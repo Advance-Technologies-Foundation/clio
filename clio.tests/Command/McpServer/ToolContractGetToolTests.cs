@@ -53,7 +53,6 @@ public sealed class ToolContractGetToolTests {
 				ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 				CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
 				CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
-				DataForgeTool.DataForgeHealthToolName,
 				DataForgeTool.DataForgeContextToolName,
 				PageSyncTool.ToolName,
 				PageUpdateTool.ToolName,
@@ -1072,7 +1071,6 @@ public sealed class ToolContractGetToolTests {
 		// Arrange
 		ToolContractGetTool tool = new();
 		string[] requestedTools = [
-			DataForgeTool.DataForgeHealthToolName,
 			DataForgeTool.DataForgeStatusToolName,
 			DataForgeTool.DataForgeFindTablesToolName,
 			DataForgeTool.DataForgeFindLookupsToolName,
@@ -1101,10 +1099,6 @@ public sealed class ToolContractGetToolTests {
 				contract.Name == DataForgeTool.DataForgeUpdateToolName &&
 				contract.OutputContract.Fields.Any(field => field.Name == "status"),
 			because: "the maintenance update contract should remain available through explicit lookup");
-		result.Tools.Should().Contain(contract =>
-				contract.Name == DataForgeTool.DataForgeHealthToolName &&
-				contract.Defaults.Any(definition => definition.Name == "scope" && definition.Value == "use_enrichment"),
-			because: "Data Forge contracts should advertise the default OAuth scope through the canonical contract catalog");
 	}
 
 	[Test]
