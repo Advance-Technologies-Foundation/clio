@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
@@ -10,6 +11,8 @@ namespace Clio.Command.McpServer.Tools;
 /// component registry. Keeping this as a dedicated type avoids accidentally rebinding
 /// the resource lookup when other types in the assembly are refactored.
 /// </summary>
+[SuppressMessage("Minor Code Smell", "S2094:Classes should not be empty",
+	Justification = "Intentional empty type-marker used only as the typeof() anchor for Assembly.GetManifestResourceStream. An interface would not work — interfaces do not surface as a member of a specific assembly the same way a closed type does.")]
 internal static class EmbeddedRegistryMarker { }
 
 /// <summary>
@@ -41,6 +44,11 @@ public sealed class EmbeddedRegistryReader : IEmbeddedRegistryReader {
 	internal const string RegistryResourceName = "Clio.ComponentRegistry.ComponentRegistry.json";
 	internal const string MetadataResourceName = "Clio.ComponentRegistry.embedded-metadata.json";
 
+	// Default version label written by the ResolveCdnSnapshot MSBuild target when the
+	// CDN response does not expose its own semver; also the fallback when the embedded
+	// metadata resource is missing or malformed.
+	private const string DefaultEmbeddedVersionLabel = "latest";
+
 	private readonly Assembly _assembly = typeof(EmbeddedRegistryMarker).Assembly;
 	private readonly Lazy<string> _embeddedVersion;
 
@@ -68,17 +76,17 @@ public sealed class EmbeddedRegistryReader : IEmbeddedRegistryReader {
 	private string ReadEmbeddedVersion() {
 		using Stream? stream = _assembly.GetManifestResourceStream(MetadataResourceName);
 		if (stream is null) {
-			return "latest";
+			return DefaultEmbeddedVersionLabel;
 		}
 
 		try {
 			JsonElement metadata = JsonSerializer.Deserialize<JsonElement>(stream);
 			return metadata.TryGetProperty("embeddedVersion", out JsonElement version)
 				&& version.ValueKind == JsonValueKind.String
-				? version.GetString() ?? "latest"
-				: "latest";
+				? version.GetString() ?? DefaultEmbeddedVersionLabel
+				: DefaultEmbeddedVersionLabel;
 		} catch (JsonException) {
-			return "latest";
+			return DefaultEmbeddedVersionLabel;
 		}
 	}
 }

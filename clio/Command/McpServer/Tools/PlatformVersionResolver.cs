@@ -171,14 +171,15 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 			return false;
 		}
 
-		if (!Version.TryParse(coreVersion.Trim(), out Version? parsed) || parsed is null) {
+		if (!Version.TryParse(coreVersion.Trim(), out Version? parsed)) {
 			return false;
 		}
 
-		int major = Math.Max(0, parsed.Major);
-		int minor = Math.Max(0, parsed.Minor);
+		// System.Version reports Build/Revision as -1 when the input string omits them
+		// (e.g. "8.1" yields Build=-1). Clamp to 0 to keep the CDN filename well-formed
+		// (Major.Minor are always >= 0 per System.Version's parser).
 		int build = Math.Max(0, parsed.Build);
-		threePartVersion = $"{major}.{minor}.{build}";
+		threePartVersion = $"{parsed.Major}.{parsed.Minor}.{build}";
 		return true;
 	}
 

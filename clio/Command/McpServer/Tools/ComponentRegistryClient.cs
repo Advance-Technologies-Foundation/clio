@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -56,7 +57,14 @@ public enum ComponentRegistrySource {
 /// </summary>
 public sealed class ComponentRegistryClient : IComponentRegistryClient {
 	internal const string HttpClientName = "component-registry";
+
+	// The default CDN base URL is a deliberate product constant — it identifies the
+	// public academy.creatio.com endpoint that ships the curated catalog. It is
+	// overridable at runtime via CdnBaseUrlEnvironmentVariable for dev/staging.
+	[SuppressMessage("Major Code Smell", "S1075:URIs should not be hardcoded",
+		Justification = "This is the product's well-known CDN endpoint, not a configurable resource path. Overridable at runtime via " + CdnBaseUrlEnvironmentVariable + ".")]
 	internal const string DefaultCdnBaseUrl = "https://academy.creatio.com/api/component-registry/";
+
 	internal const string CdnBaseUrlEnvironmentVariable = "CLIO_COMPONENT_REGISTRY_CDN_BASE_URL";
 	internal const string LatestVersion = "latest";
 	internal const int CdnFetchAttempts = 3;
@@ -170,7 +178,7 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 			return false;
 		}
 
-		fetched.Dispose();
+		await fetched.DisposeAsync().ConfigureAwait(false);
 		return true;
 	}
 
@@ -180,57 +188,86 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 		string url = _cdnBaseUrl + version + ".json";
 
 		for (int attempt = 1; attempt <= CdnFetchAttempts; attempt++) {
-			try {
-				using HttpResponseMessage response = await http
-					.GetAsync(url, HttpCompletionOption.ResponseContentRead, cancellationToken)
-					.ConfigureAwait(false);
-				if ((int)response.StatusCode is >= 200 and < 300) {
-					byte[] payload = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
-					await _cacheStore.WriteAsync(
-						version,
-						payload,
-						response.Headers.ETag,
-						response.Content.Headers.LastModified,
-						cancellationToken).ConfigureAwait(false);
-					_logger.LogInformation(
-						"component-registry source=cdn version={Version} status={Status} attempt={Attempt} bytes={Bytes}",
-						version, (int)response.StatusCode, attempt, payload.Length);
-					return new MemoryStream(payload, writable: false);
-				}
-
-				// 4xx is a permanent failure — version missing on CDN, malformed URL, etc.
-				// Do not retry; fall through to the next tier.
-				if (response.StatusCode is >= HttpStatusCode.BadRequest and < HttpStatusCode.InternalServerError) {
-					_logger.LogInformation(
-						"component-registry cdn-skip version={Version} status={Status}",
-						version, (int)response.StatusCode);
-					return null;
-				}
-
-				_logger.LogInformation(
-					"component-registry cdn-retry version={Version} status={Status} attempt={Attempt}",
-					version, (int)response.StatusCode, attempt);
-			} catch (HttpRequestException ex) {
-				_logger.LogInformation(ex,
-					"component-registry cdn-retry version={Version} attempt={Attempt} error={Error}",
-					version, attempt, ex.Message);
-			} catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested) {
-				_logger.LogInformation(
-					"component-registry cdn-retry version={Version} attempt={Attempt} reason=timeout",
-					version, attempt);
+			FetchAttemptResult result = await TryFetchOnceAsync(http, url, version, attempt, cancellationToken).ConfigureAwait(false);
+			if (result.Stream is not null) {
+				return result.Stream;
 			}
-
-			if (attempt < CdnFetchAttempts) {
-				TimeSpan backoff = TimeSpan.FromSeconds(Math.Pow(2, attempt - 1));
-				try {
-					await Task.Delay(backoff, cancellationToken).ConfigureAwait(false);
-				} catch (TaskCanceledException) {
-					return null;
-				}
+			if (!result.ShouldRetry) {
+				return null;
+			}
+			if (attempt < CdnFetchAttempts && !await DelayBackoffAsync(attempt, cancellationToken).ConfigureAwait(false)) {
+				return null;
 			}
 		}
 
 		return null;
+	}
+
+	private async Task<FetchAttemptResult> TryFetchOnceAsync(HttpClient http, string url, string version, int attempt, CancellationToken cancellationToken) {
+		try {
+			using HttpResponseMessage response = await http
+				.GetAsync(url, HttpCompletionOption.ResponseContentRead, cancellationToken)
+				.ConfigureAwait(false);
+
+			if ((int)response.StatusCode is >= 200 and < 300) {
+				Stream payloadStream = await CacheAndReturnStreamAsync(response, version, attempt, cancellationToken).ConfigureAwait(false);
+				return FetchAttemptResult.Success(payloadStream);
+			}
+
+			// 4xx is a permanent failure — version missing on CDN, malformed URL, etc.
+			// Do not retry; the caller will fall through to the next fallback tier.
+			if (response.StatusCode is >= HttpStatusCode.BadRequest and < HttpStatusCode.InternalServerError) {
+				_logger.LogInformation(
+					"component-registry cdn-skip version={Version} status={Status}",
+					version, (int)response.StatusCode);
+				return FetchAttemptResult.PermanentFailure;
+			}
+
+			_logger.LogInformation(
+				"component-registry cdn-retry version={Version} status={Status} attempt={Attempt}",
+				version, (int)response.StatusCode, attempt);
+			return FetchAttemptResult.TransientFailure;
+		} catch (HttpRequestException ex) {
+			_logger.LogInformation(ex,
+				"component-registry cdn-retry version={Version} attempt={Attempt} error={Error}",
+				version, attempt, ex.Message);
+			return FetchAttemptResult.TransientFailure;
+		} catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested) {
+			_logger.LogInformation(ex,
+				"component-registry cdn-retry version={Version} attempt={Attempt} reason=timeout",
+				version, attempt);
+			return FetchAttemptResult.TransientFailure;
+		}
+	}
+
+	private async Task<Stream> CacheAndReturnStreamAsync(HttpResponseMessage response, string version, int attempt, CancellationToken cancellationToken) {
+		byte[] payload = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+		await _cacheStore.WriteAsync(
+			version,
+			payload,
+			response.Headers.ETag,
+			response.Content.Headers.LastModified,
+			cancellationToken).ConfigureAwait(false);
+		_logger.LogInformation(
+			"component-registry source=cdn version={Version} status={Status} attempt={Attempt} bytes={Bytes}",
+			version, (int)response.StatusCode, attempt, payload.Length);
+		return new MemoryStream(payload, writable: false);
+	}
+
+	private static async Task<bool> DelayBackoffAsync(int attempt, CancellationToken cancellationToken) {
+		TimeSpan backoff = TimeSpan.FromSeconds(Math.Pow(2, attempt - 1));
+		try {
+			await Task.Delay(backoff, cancellationToken).ConfigureAwait(false);
+			return true;
+		} catch (TaskCanceledException) {
+			return false;
+		}
+	}
+
+	private readonly record struct FetchAttemptResult(Stream? Stream, bool ShouldRetry) {
+		public static FetchAttemptResult Success(Stream stream) => new(stream, ShouldRetry: false);
+		public static FetchAttemptResult PermanentFailure { get; } = new(Stream: null, ShouldRetry: false);
+		public static FetchAttemptResult TransientFailure { get; } = new(Stream: null, ShouldRetry: true);
 	}
 
 	private void ScheduleBackgroundRefresh(string version) {
