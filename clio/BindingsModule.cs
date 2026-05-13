@@ -258,6 +258,7 @@ public class BindingsModule {
 		services.AddSingleton<IComponentRegistryClient, ComponentRegistryClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		services.AddSingleton<IPlatformVersionResolver, PlatformVersionResolver>();
+		services.AddTransient<ComponentRegistryRefreshCommand>();
 		
 		// MCP Tools
 		services.AddTransient<PageListTool>();

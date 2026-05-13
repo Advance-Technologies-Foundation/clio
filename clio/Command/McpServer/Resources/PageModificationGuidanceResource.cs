@@ -188,6 +188,12 @@ public sealed class PageModificationGuidanceResource {
 		       5. `update-page schema-name=Accounts_ListPage body=<composed body> verify:true`.
 		       6. Response includes `page.schemaUId` — the newly-materialized replacing schema in the design package.
 
+		       Interpreting get-component-info response metadata
+		       - Every response carries `resolvedTargetVersion` (the catalog version actually loaded) and `resolvedFrom` (the resolver tier that selected it).
+		       - `resolvedFrom: "environment"` means clio probed cliogate `GetSysInfo` on the active environment and matched the catalog to its `CoreVersion`. Components and properties you receive are the ones the platform on that environment actually ships — treat the catalog as authoritative for `update-page`.
+		       - `resolvedFrom: "latest-fallback"` means no usable platform version was resolved (no active environment, cliogate < `2.0.0.32`, probe failed, or `CoreVersion` did not parse). The response carries the most recent platform catalog clio knows of, which may be a superset of the target environment. Use it for discovery, but be prepared for `update-page` to reject a component or property that does not exist on the target stand — that is a legitimate signal that the AI catalog was wider than the platform.
+		       - Do not paper over a `latest-fallback` by pinning a target version yourself. Fix the upstream signal (active environment, cliogate version) so the next call resolves to `"environment"`.
+
 		       Known limitations
 		       - `update-page` fail-closed on design-package resolution: if `GetDesignPackageUId` fails for a write, the call returns an error instead of silently falling back to the original package.
 		       - `get-page` uses a best-effort fallback to the original package if design-package resolution fails, because reads are non-destructive.
