@@ -13,7 +13,9 @@ internal sealed record StaticFilterGroup(
 	[property: JsonPropertyName("logicalOperation")] string LogicalOperation,
 	[property: JsonPropertyName("filters")] IReadOnlyList<StaticFilterLeaf>? Filters,
 	[property: JsonPropertyName("backwardReferenceFilters")]
-		IReadOnlyList<StaticFilterBackwardReference>? BackwardReferenceFilters);
+		IReadOnlyList<StaticFilterBackwardReference>? BackwardReferenceFilters,
+	[property: JsonPropertyName("groups")]
+		IReadOnlyList<StaticFilterGroup>? Groups = null);
 
 internal sealed record StaticFilterLeaf(
 	[property: JsonPropertyName("columnPath")] string ColumnPath,

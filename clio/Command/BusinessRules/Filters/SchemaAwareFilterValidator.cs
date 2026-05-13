@@ -63,6 +63,12 @@ internal sealed class SchemaAwareFilterValidator(IFilterSchemaProvider schemaPro
 					$"{fieldPath}.backwardReferenceFilters[{i}]");
 			}
 		}
+		if (group.Groups is not null) {
+			for (int i = 0; i < group.Groups.Count; i++) {
+				// Nested groups operate on the same schema as their parent.
+				ValidateGroup(group.Groups[i], schemaName, columns, $"{fieldPath}.groups[{i}]");
+			}
+		}
 	}
 
 	private void ValidateLeaf(
@@ -78,6 +84,25 @@ internal sealed class SchemaAwareFilterValidator(IFilterSchemaProvider schemaPro
 		if (UnaryFilterComparisons.Contains(leaf.ComparisonType)) {
 			// Structural validator already enforced no value for unary; nothing left to check.
 			return;
+		}
+		// Multi-value (JSON array) is only meaningful for IN-style equality on Lookup columns.
+		// The platform's InFilter treats EQUAL with multiple parameters as IN and NOT_EQUAL as NOT IN;
+		// other tokens (GREATER, LESS, CONTAIN, etc.) have no IN semantics.
+		if (leaf.Value.HasValue && leaf.Value.Value.ValueKind == JsonValueKind.Array) {
+			string typeName = BusinessRuleHelpers.MapDataValueTypeName(column.DataValueType);
+			if (!string.Equals(typeName, "Lookup", StringComparison.Ordinal)) {
+				throw new BusinessRuleFilterException(
+					BusinessRuleFilterErrorCodes.ValueShape,
+					$"{fieldPath}.value",
+					$"Array values are only supported for Lookup columns (IN / NOT IN semantics); column '{column.Name}' is {typeName}.");
+			}
+			if (!string.Equals(leaf.ComparisonType, "EQUAL", StringComparison.Ordinal)
+				&& !string.Equals(leaf.ComparisonType, "NOT_EQUAL", StringComparison.Ordinal)) {
+				throw new BusinessRuleFilterException(
+					BusinessRuleFilterErrorCodes.ComparisonNotSupportedForDatatype,
+					$"{fieldPath}.comparisonType",
+					$"Array values on Lookup columns are only supported with EQUAL (IN) or NOT_EQUAL (NOT IN); got '{leaf.ComparisonType}'.");
+			}
 		}
 		ValidateComparisonForDatatype(leaf.ComparisonType, column, $"{fieldPath}.comparisonType");
 		ValidateValueDatatype(leaf.Value, column, $"{fieldPath}.value");
@@ -258,10 +283,33 @@ internal sealed class SchemaAwareFilterValidator(IFilterSchemaProvider schemaPro
 		if (kind == JsonValueKind.String && Guid.TryParse(element.GetString(), out _)) {
 			return;
 		}
+		// JSON array form: each element must be a GUID string. Used to compose multi-value
+		// IN / NOT_IN on a Lookup column (e.g. Source IN [GoogleId, FacebookId]).
+		if (kind == JsonValueKind.Array) {
+			int index = 0;
+			int length = element.GetArrayLength();
+			if (length == 0) {
+				throw new BusinessRuleFilterException(
+					BusinessRuleFilterErrorCodes.LookupValueNotGuid,
+					fieldPath,
+					$"Lookup column '{column.Name}' expects a non-empty array of GUID strings.");
+			}
+			foreach (JsonElement entry in element.EnumerateArray()) {
+				if (entry.ValueKind != JsonValueKind.String
+					|| !Guid.TryParse(entry.GetString(), out _)) {
+					throw new BusinessRuleFilterException(
+						BusinessRuleFilterErrorCodes.LookupValueNotGuid,
+						$"{fieldPath}[{index}]",
+						$"Lookup column '{column.Name}' array element at index {index} must be a JSON string GUID.");
+				}
+				index++;
+			}
+			return;
+		}
 		throw new BusinessRuleFilterException(
 			BusinessRuleFilterErrorCodes.LookupValueNotGuid,
 			fieldPath,
-			$"Lookup column '{column.Name}' expects a JSON string GUID value; got JSON {kind} '{element}'. " +
+			$"Lookup column '{column.Name}' expects a JSON string GUID value (or a JSON array of GUID strings); got JSON {kind} '{element}'. " +
 			"Resolve the lookup display name to its record Id (GUID) before passing it as a filter value.");
 	}
 

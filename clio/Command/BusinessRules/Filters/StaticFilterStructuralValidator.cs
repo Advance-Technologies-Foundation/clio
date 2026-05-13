@@ -62,6 +62,17 @@ internal static class StaticFilterStructuralValidator {
 					$"{fieldPath}.backwardReferenceFilters[{i}]");
 			}
 		}
+		if (group.Groups is not null) {
+			for (int i = 0; i < group.Groups.Count; i++) {
+				if (group.Groups[i] is null) {
+					throw new BusinessRuleFilterException(
+						BusinessRuleFilterErrorCodes.FilterRequired,
+						$"{fieldPath}.groups[{i}]",
+						"nested filter group is required.");
+				}
+				ValidateGroup(group.Groups[i], $"{fieldPath}.groups[{i}]");
+			}
+		}
 	}
 
 	private static void ValidateLeaf(StaticFilterLeaf leaf, string fieldPath) {

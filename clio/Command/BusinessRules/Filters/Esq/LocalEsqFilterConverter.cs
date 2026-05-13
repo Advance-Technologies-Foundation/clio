@@ -48,6 +48,12 @@ internal sealed class LocalEsqFilterConverter(IFilterSchemaProvider schemaProvid
 				$"BackwardReferenceFilter_{i}",
 				BuildBackwardReference(backwardRefs[i], i));
 		}
+		IReadOnlyList<StaticFilterGroup> nestedGroups = group.Groups ?? [];
+		for (int i = 0; i < nestedGroups.Count; i++) {
+			envelope.Items.Add(
+				$"Group_{i}",
+				BuildNestedGroup(nestedGroups[i], rootSchemaName, (i + 1) * 1000));
+		}
 		return envelope;
 	}
 
@@ -65,6 +71,12 @@ internal sealed class LocalEsqFilterConverter(IFilterSchemaProvider schemaProvid
 			items.Add(
 				$"BackwardReferenceFilter_{parentIndex}_{i}",
 				BuildBackwardReference(backwardRefs[i], i));
+		}
+		IReadOnlyList<StaticFilterGroup> nestedGroups = group.Groups ?? [];
+		for (int i = 0; i < nestedGroups.Count; i++) {
+			items.Add(
+				$"Group_{parentIndex}_{i}",
+				BuildNestedGroup(nestedGroups[i], schemaName, parentIndex + (i + 1) * 1000));
 		}
 		return new SerializableFilters {
 			FilterType = EsqFilterType.FilterGroup,
@@ -236,18 +248,21 @@ internal sealed class LocalEsqFilterConverter(IFilterSchemaProvider schemaProvid
 	}
 
 	private static SerializableFilter BuildLookupFilter(StaticFilterLeaf leaf, EntitySchemaColumnDto lookupColumn) {
-		Guid id = ParseLookupGuid(leaf.Value, leaf.ColumnPath);
+		Guid[] ids = ParseLookupGuids(leaf.Value, leaf.ColumnPath);
 		string referenceSchemaName = lookupColumn.ReferenceSchema!.Name!;
 		string caption = ExtractCaption(lookupColumn);
-		SerializableExpression parameterExpression = new() {
-			ExpressionType = EsqEntitySchemaQueryExpressionType.Parameter,
-			ClassName = EsqFilterClassNames.ParameterExpression,
-			Parameter = new SerializableParameter {
-				DataValueType = EsqDataValueType.Lookup,
-				Value = new LookupValueDto { Value = id, DisplayValue = null },
-				ClassName = EsqFilterClassNames.Parameter
-			}
-		};
+		SerializableExpression[] parameterExpressions = new SerializableExpression[ids.Length];
+		for (int i = 0; i < ids.Length; i++) {
+			parameterExpressions[i] = new SerializableExpression {
+				ExpressionType = EsqEntitySchemaQueryExpressionType.Parameter,
+				ClassName = EsqFilterClassNames.ParameterExpression,
+				Parameter = new SerializableParameter {
+					DataValueType = EsqDataValueType.Lookup,
+					Value = new LookupValueDto { Value = ids[i], DisplayValue = null },
+					ClassName = EsqFilterClassNames.Parameter
+				}
+			};
+		}
 		return new SerializableFilter {
 			ComparisonType = MapComparisonType(leaf.ComparisonType),
 			FilterType = EsqFilterType.InFilter,
@@ -262,7 +277,7 @@ internal sealed class LocalEsqFilterConverter(IFilterSchemaProvider schemaProvid
 			DataValueType = EsqDataValueType.Lookup,
 			LeftExpressionCaption = caption,
 			ReferenceSchemaName = referenceSchemaName,
-			RightExpressions = [parameterExpression],
+			RightExpressions = parameterExpressions,
 			ClassName = EsqFilterClassNames.InFilter
 		};
 	}
@@ -319,16 +334,43 @@ internal sealed class LocalEsqFilterConverter(IFilterSchemaProvider schemaProvid
 		};
 	}
 
-	private static Guid ParseLookupGuid(JsonElement? value, string columnPath) {
-		if (value is null
-			|| value.Value.ValueKind != JsonValueKind.String
-			|| !Guid.TryParse(value.Value.GetString(), out Guid parsed)) {
+	private static Guid[] ParseLookupGuids(JsonElement? value, string columnPath) {
+		if (value is null) {
 			throw new BusinessRuleFilterException(
 				BusinessRuleFilterErrorCodes.LookupValueNotGuid,
 				$"rule.actions[*].filter.filters[*].value",
-				$"Lookup filter on '{columnPath}' requires a JSON string GUID value.");
+				$"Lookup filter on '{columnPath}' requires a JSON string GUID value (or a JSON array of GUID strings).");
 		}
-		return parsed;
+		JsonElement raw = value.Value;
+		if (raw.ValueKind == JsonValueKind.Array) {
+			int length = raw.GetArrayLength();
+			if (length == 0) {
+				throw new BusinessRuleFilterException(
+					BusinessRuleFilterErrorCodes.LookupValueNotGuid,
+					$"rule.actions[*].filter.filters[*].value",
+					$"Lookup filter on '{columnPath}' requires a non-empty array of GUID strings.");
+			}
+			Guid[] result = new Guid[length];
+			int i = 0;
+			foreach (JsonElement element in raw.EnumerateArray()) {
+				if (element.ValueKind != JsonValueKind.String
+					|| !Guid.TryParse(element.GetString(), out Guid parsedElement)) {
+					throw new BusinessRuleFilterException(
+						BusinessRuleFilterErrorCodes.LookupValueNotGuid,
+						$"rule.actions[*].filter.filters[*].value[{i}]",
+						$"Lookup filter on '{columnPath}' array element at index {i} must be a JSON string GUID.");
+				}
+				result[i++] = parsedElement;
+			}
+			return result;
+		}
+		if (raw.ValueKind != JsonValueKind.String || !Guid.TryParse(raw.GetString(), out Guid parsed)) {
+			throw new BusinessRuleFilterException(
+				BusinessRuleFilterErrorCodes.LookupValueNotGuid,
+				$"rule.actions[*].filter.filters[*].value",
+				$"Lookup filter on '{columnPath}' requires a JSON string GUID value (or a JSON array of GUID strings).");
+		}
+		return [parsed];
 	}
 
 	private static EsqLogicalOperationStrict ParseLogicalOperation(string logicalOperation) =>
