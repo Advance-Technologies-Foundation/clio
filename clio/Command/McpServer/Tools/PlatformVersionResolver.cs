@@ -54,6 +54,7 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly EnvironmentSettings _environmentSettings;
+	private readonly IServiceUrlBuilderFactory _serviceUrlBuilderFactory;
 	private readonly TimeProvider _timeProvider;
 	private readonly ILogger<PlatformVersionResolver> _logger;
 	private readonly ConcurrentDictionary<string, CacheEntry> _cache;
@@ -61,10 +62,12 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 	public PlatformVersionResolver(
 		IApplicationClient applicationClient,
 		EnvironmentSettings environmentSettings,
+		IServiceUrlBuilderFactory serviceUrlBuilderFactory,
 		TimeProvider timeProvider,
 		ILogger<PlatformVersionResolver> logger) {
 		_applicationClient = applicationClient ?? throw new ArgumentNullException(nameof(applicationClient));
 		_environmentSettings = environmentSettings ?? throw new ArgumentNullException(nameof(environmentSettings));
+		_serviceUrlBuilderFactory = serviceUrlBuilderFactory ?? throw new ArgumentNullException(nameof(serviceUrlBuilderFactory));
 		_timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_cache = new ConcurrentDictionary<string, CacheEntry>(StringComparer.OrdinalIgnoreCase);
@@ -89,7 +92,11 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 	}
 
 	private async Task<PlatformVersionResolution> ProbeAsync(string environmentKey, CancellationToken cancellationToken) {
-		string url = BuildGetSysInfoUrl(environmentKey);
+		// Route through IServiceUrlBuilder so .NET Framework deployments (IsNetCore=false)
+		// receive the /0/rest/... alias they need. Hand-rolling the URL here would always
+		// hit 404 on those environments and force a silent latest-fallback.
+		IServiceUrlBuilder serviceUrlBuilder = _serviceUrlBuilderFactory.Create(_environmentSettings);
+		string url = serviceUrlBuilder.Build(GetSysInfoServicePath);
 
 		string? rawResponse;
 		try {
@@ -133,14 +140,6 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 			"platform-version source=environment env={Env} coreVersion={CoreVersion} resolvedVersion={Resolved}",
 			environmentKey, coreVersion, threePart);
 		return new PlatformVersionResolution(threePart!, VersionResolutionSource.Environment);
-	}
-
-	private static string BuildGetSysInfoUrl(string environmentUri) {
-		// IApplicationClient.ExecuteGetRequest accepts both absolute and relative URLs;
-		// rendering an absolute URL keeps the log line useful regardless of how downstream
-		// adapters resolve the host.
-		string trimmed = environmentUri.TrimEnd('/');
-		return trimmed + GetSysInfoServicePath;
 	}
 
 	private static string? TryExtractCoreVersion(string rawJson) {

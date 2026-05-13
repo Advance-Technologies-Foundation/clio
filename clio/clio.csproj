@@ -120,11 +120,27 @@
 		<SeedSnapshotPath>$(MSBuildProjectDirectory)/Command/McpServer/Data/ComponentRegistry.seed.json</SeedSnapshotPath>
 	</PropertyGroup>
 
+	<!--
+		ResolveCdnSnapshot intentionally runs on every build (no Inputs/Outputs).
+		The seed file is the only "input" we own, so Inputs/Outputs-based
+		incremental skipping would freeze the embedded snapshot at the first
+		seed-fallback value and never retry the CDN once it becomes available.
+		Each build:
+		  1. Deletes any stale snapshot from a previous build (so DownloadFile
+		     gets a clean target).
+		  2. Tries DownloadFile against the academy CDN.
+		  3. Falls back to the committed seed file when DownloadFile fails
+		     (CDN not yet hosted, offline build, transient network failure).
+		MSBuild's own EmbeddedResource processing keeps the compile step
+		incremental: if the resulting bytes did not change, the assembly is
+		not rebuilt. So the cost of running this target every build is one
+		HTTP GET + (optionally) one file copy.
+	-->
 	<Target Name="ResolveCdnSnapshot"
-			BeforeTargets="PrepareResources;CoreCompile"
-			Inputs="$(SeedSnapshotPath)"
-			Outputs="$(CdnSnapshotPath);$(CdnSnapshotMetadataPath)">
+			BeforeTargets="PrepareResources;CoreCompile">
 		<MakeDir Directories="$(CdnSnapshotStaging)" />
+
+		<Delete Files="$(CdnSnapshotPath)" Condition="Exists('$(CdnSnapshotPath)')" />
 
 		<DownloadFile SourceUrl="$(CdnSnapshotUrl)"
 					  DestinationFolder="$(CdnSnapshotStaging)"

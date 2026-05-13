@@ -148,6 +148,42 @@ public sealed class PlatformVersionResolverTests {
 	}
 
 	[Test]
+	[Description("On a .NET Framework (IsNetCore=false) environment the resolver hits /0/rest/CreatioApiGateway/GetSysInfo so cliogate actually responds.")]
+	public async Task ResolveAsync_Builds_NetFramework_Url_With_WebAppAlias_Prefix() {
+		// Arrange
+		IApplicationClient client = SubstituteClient("""{ "SysInfo": { "CoreVersion": "8.1.5.123" } }""");
+		PlatformVersionResolver resolver = CreateResolver(client, isNetCore: false);
+
+		// Act
+		PlatformVersionResolution resolution = await resolver.ResolveAsync();
+
+		// Assert
+		resolution.Source.Should().Be(VersionResolutionSource.Environment,
+			because: "the probe must succeed via the WebAppAlias-prefixed cliogate path");
+		client.Received().ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains("/0/rest/CreatioApiGateway/GetSysInfo")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("On a .NET Core / Freedom UI environment (IsNetCore=true) the resolver hits /rest/CreatioApiGateway/GetSysInfo directly.")]
+	public async Task ResolveAsync_Builds_NetCore_Url_Without_WebAppAlias() {
+		// Arrange
+		IApplicationClient client = SubstituteClient("""{ "SysInfo": { "CoreVersion": "8.1.5.123" } }""");
+		PlatformVersionResolver resolver = CreateResolver(client, isNetCore: true);
+
+		// Act
+		PlatformVersionResolution resolution = await resolver.ResolveAsync();
+
+		// Assert
+		resolution.Source.Should().Be(VersionResolutionSource.Environment);
+		client.Received().ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains("/rest/CreatioApiGateway/GetSysInfo")
+				&& !url.Contains("/0/rest/CreatioApiGateway/GetSysInfo")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("After 5 minutes the cache expires and the next call probes again.")]
 	public async Task ResolveAsync_Refreshes_After_Cache_Expiry() {
 		// Arrange
@@ -174,11 +210,13 @@ public sealed class PlatformVersionResolverTests {
 	private static PlatformVersionResolver CreateResolver(
 		IApplicationClient client,
 		string environmentUri = EnvironmentUri,
-		TimeProvider? clock = null) {
-		EnvironmentSettings env = new() { Uri = environmentUri };
+		TimeProvider? clock = null,
+		bool isNetCore = true) {
+		EnvironmentSettings env = new() { Uri = environmentUri, IsNetCore = isNetCore };
 		return new PlatformVersionResolver(
 			client,
 			env,
+			new ServiceUrlBuilderFactory(),
 			clock ?? new FakeTimeProvider(),
 			NullLogger<PlatformVersionResolver>.Instance);
 	}
