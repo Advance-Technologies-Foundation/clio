@@ -97,6 +97,20 @@ internal static class StaticFilterStructuralValidator {
 		}
 	}
 
+	internal static readonly IReadOnlySet<string> SupportedAggregationTypes =
+		new HashSet<string>(StringComparer.Ordinal) {
+			"EXISTS", "NOT_EXISTS", "COUNT", "SUM", "AVG", "MIN", "MAX"
+		};
+
+	private static readonly IReadOnlySet<string> ExistsAggregationTypes =
+		new HashSet<string>(StringComparer.Ordinal) { "EXISTS", "NOT_EXISTS" };
+
+	private static readonly IReadOnlySet<string> ValueAggregationTypes =
+		new HashSet<string>(StringComparer.Ordinal) { "COUNT", "SUM", "AVG", "MIN", "MAX" };
+
+	private static readonly IReadOnlySet<string> ColumnPathRequiredAggregationTypes =
+		new HashSet<string>(StringComparer.Ordinal) { "SUM", "AVG", "MIN", "MAX" };
+
 	private static void ValidateBackwardReference(StaticFilterBackwardReference brf, string fieldPath) {
 		if (brf is null) {
 			throw new BusinessRuleFilterException(
@@ -111,6 +125,80 @@ internal static class StaticFilterStructuralValidator {
 				"referenceColumnPath is required for a backward-reference filter.");
 		}
 		ValidateGroup(brf.Filter, fieldPath + ".filter");
+		ValidateAggregationFields(brf, fieldPath);
+	}
+
+	private static void ValidateAggregationFields(StaticFilterBackwardReference brf, string fieldPath) {
+		// EXISTS (implicit when aggregationType is omitted): all aggregation fields must be absent.
+		if (string.IsNullOrWhiteSpace(brf.AggregationType)) {
+			RejectFieldWhenAggregationTypeIsExists(brf.ComparisonType, fieldPath + ".comparisonType", "comparisonType");
+			RejectFieldWhenAggregationTypeIsExists(brf.AggregationColumnPath, fieldPath + ".aggregationColumnPath", "aggregationColumnPath");
+			RejectValueWhenAggregationTypeIsExists(brf.AggregationValue, fieldPath + ".aggregationValue");
+			return;
+		}
+		string aggregationType = brf.AggregationType;
+		if (!SupportedAggregationTypes.Contains(aggregationType)) {
+			throw new BusinessRuleFilterException(
+				BusinessRuleFilterErrorCodes.ComparisonUnknown,
+				fieldPath + ".aggregationType",
+				$"Unsupported aggregationType '{aggregationType}'. Supported: EXISTS, NOT_EXISTS, COUNT, SUM, AVG, MIN, MAX.");
+		}
+		if (ExistsAggregationTypes.Contains(aggregationType)) {
+			RejectFieldWhenAggregationTypeIsExists(brf.ComparisonType, fieldPath + ".comparisonType", "comparisonType");
+			RejectFieldWhenAggregationTypeIsExists(brf.AggregationColumnPath, fieldPath + ".aggregationColumnPath", "aggregationColumnPath");
+			RejectValueWhenAggregationTypeIsExists(brf.AggregationValue, fieldPath + ".aggregationValue");
+			return;
+		}
+		// COUNT/SUM/AVG/MIN/MAX: comparisonType + aggregationValue are mandatory; aggregationColumnPath
+		// is mandatory for SUM/AVG/MIN/MAX (the column being aggregated) and ignored for COUNT.
+		if (string.IsNullOrWhiteSpace(brf.ComparisonType)
+			|| !SupportedComparisonTokens.Contains(brf.ComparisonType)) {
+			throw new BusinessRuleFilterException(
+				BusinessRuleFilterErrorCodes.ComparisonUnknown,
+				fieldPath + ".comparisonType",
+				$"comparisonType is required for aggregation '{aggregationType}' and must be one of the 14 supported tokens.");
+		}
+		if (UnaryComparisons.Contains(brf.ComparisonType)) {
+			throw new BusinessRuleFilterException(
+				BusinessRuleFilterErrorCodes.ComparisonUnknown,
+				fieldPath + ".comparisonType",
+				$"Unary comparison '{brf.ComparisonType}' is not allowed on aggregation '{aggregationType}'; use a binary token (EQUAL, GREATER, ...).");
+		}
+		if (!brf.AggregationValue.HasValue
+			|| brf.AggregationValue.Value.ValueKind == JsonValueKind.Null
+			|| brf.AggregationValue.Value.ValueKind == JsonValueKind.Undefined) {
+			throw new BusinessRuleFilterException(
+				BusinessRuleFilterErrorCodes.ValueRequired,
+				fieldPath + ".aggregationValue",
+				$"aggregationValue is required for aggregation '{aggregationType}'.");
+		}
+		if (ColumnPathRequiredAggregationTypes.Contains(aggregationType)
+			&& string.IsNullOrWhiteSpace(brf.AggregationColumnPath)) {
+			throw new BusinessRuleFilterException(
+				BusinessRuleFilterErrorCodes.PathUnknown,
+				fieldPath + ".aggregationColumnPath",
+				$"aggregationColumnPath is required for aggregation '{aggregationType}' (column being aggregated on the child schema).");
+		}
+	}
+
+	private static void RejectFieldWhenAggregationTypeIsExists(string? value, string fieldPath, string fieldName) {
+		if (!string.IsNullOrWhiteSpace(value)) {
+			throw new BusinessRuleFilterException(
+				BusinessRuleFilterErrorCodes.ComparisonUnknown,
+				fieldPath,
+				$"{fieldName} must not be provided when aggregationType is EXISTS/NOT_EXISTS (or omitted).");
+		}
+	}
+
+	private static void RejectValueWhenAggregationTypeIsExists(JsonElement? value, string fieldPath) {
+		if (value.HasValue
+			&& value.Value.ValueKind != JsonValueKind.Null
+			&& value.Value.ValueKind != JsonValueKind.Undefined) {
+			throw new BusinessRuleFilterException(
+				BusinessRuleFilterErrorCodes.ValueShape,
+				fieldPath,
+				"aggregationValue must not be provided when aggregationType is EXISTS/NOT_EXISTS (or omitted).");
+		}
 	}
 
 	private static void ValidateLogicalOperation(string logicalOperation, string fieldPath) {

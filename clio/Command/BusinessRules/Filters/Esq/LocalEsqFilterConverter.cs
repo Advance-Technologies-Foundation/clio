@@ -111,21 +111,93 @@ internal sealed class LocalEsqFilterConverter(IFilterSchemaProvider schemaProvid
 			brf.Filter,
 			childSchemaName,
 			parentIndex * 100);
+		string? aggregationType = string.IsNullOrWhiteSpace(brf.AggregationType)
+			? null
+			: brf.AggregationType.ToUpperInvariant();
+		// EXISTS / NOT_EXISTS (default when aggregationType is omitted) — emit a Terrasoft.ExistsFilter
+		// wrapping the child group. Functionally "at least one (or no) matching child record".
+		if (aggregationType is null
+			or "EXISTS"
+			or "NOT_EXISTS") {
+			return new SerializableFilter {
+				FilterType = EsqFilterType.Exists,
+				ComparisonType = aggregationType == "NOT_EXISTS"
+					? EsqFilterComparisonType.NotExists
+					: EsqFilterComparisonType.Exists,
+				IsEnabled = true,
+				IsAggregative = true,
+				Key = string.Empty,
+				ClassName = EsqFilterClassNames.ExistsFilter,
+				SubFilters = subFilters,
+				LeftExpression = new SerializableExpression {
+					ExpressionType = EsqEntitySchemaQueryExpressionType.SchemaColumn,
+					ColumnPath = NormalizeColumnPath(brf.ReferenceColumnPath),
+					ClassName = EsqFilterClassNames.ColumnExpression
+				}
+			};
+		}
+		// COUNT / SUM / AVG / MIN / MAX — emit a CompareFilter whose leftExpression is an
+		// aggregation SubQuery and whose rightExpression is the threshold. Ported from
+		// CrtCopilot.LlmEsqFiltersConverter.ConvertBackwardReferenceFitler aggregation branch.
+		return BuildAggregationBackwardReference(brf, aggregationType, subFilters);
+	}
+
+	private static SerializableFilter BuildAggregationBackwardReference(
+		StaticFilterBackwardReference brf,
+		string aggregationType,
+		SerializableFilters subFilters) {
+		EsqAggregationType esqAggregation = MapAggregationType(aggregationType);
+		// COUNT aggregates over the relationship column itself; SUM/AVG/MIN/MAX use the explicit
+		// aggregationColumnPath provided by the caller.
+		string aggregationColumnPath = esqAggregation == EsqAggregationType.Count
+			? NormalizeColumnPath(brf.ReferenceColumnPath)
+			: brf.AggregationColumnPath!;
+		// Result is numeric: use Integer for COUNT (record count) and Float for SUM/AVG/MIN/MAX.
+		EsqDataValueType valueType = esqAggregation == EsqAggregationType.Count
+			? EsqDataValueType.Integer
+			: EsqDataValueType.Float;
+		SerializableExpression rightExpression = new() {
+			ExpressionType = EsqEntitySchemaQueryExpressionType.Parameter,
+			ClassName = EsqFilterClassNames.ParameterExpression,
+			Parameter = new SerializableParameter {
+				DataValueType = valueType,
+				Value = MaterializeAggregationValue(brf.AggregationValue!.Value, valueType),
+				ClassName = EsqFilterClassNames.Parameter
+			}
+		};
 		return new SerializableFilter {
-			FilterType = EsqFilterType.Exists,
-			ComparisonType = EsqFilterComparisonType.Exists,
+			FilterType = EsqFilterType.CompareFilter,
+			ComparisonType = MapComparisonType(brf.ComparisonType!),
 			IsEnabled = true,
 			IsAggregative = true,
 			Key = string.Empty,
-			ClassName = EsqFilterClassNames.ExistsFilter,
-			SubFilters = subFilters,
+			ClassName = EsqFilterClassNames.CompareFilter,
 			LeftExpression = new SerializableExpression {
-				ExpressionType = EsqEntitySchemaQueryExpressionType.SchemaColumn,
-				ColumnPath = NormalizeColumnPath(brf.ReferenceColumnPath),
-				ClassName = EsqFilterClassNames.ColumnExpression
-			}
+				ColumnPath = aggregationColumnPath,
+				ExpressionType = EsqEntitySchemaQueryExpressionType.SubQuery,
+				FunctionType = EsqFunctionType.Aggregation,
+				AggregationType = esqAggregation,
+				SubFilters = subFilters,
+				ClassName = EsqFilterClassNames.AggregationQueryExpression
+			},
+			RightExpression = rightExpression
 		};
 	}
+
+	private static EsqAggregationType MapAggregationType(string token) =>
+		token switch {
+			"COUNT" => EsqAggregationType.Count,
+			"SUM" => EsqAggregationType.Sum,
+			"AVG" => EsqAggregationType.Avg,
+			"MIN" => EsqAggregationType.Min,
+			"MAX" => EsqAggregationType.Max,
+			_ => throw new InvalidOperationException($"Unsupported aggregation token '{token}'.")
+		};
+
+	private static object MaterializeAggregationValue(JsonElement value, EsqDataValueType dataValueType) =>
+		dataValueType == EsqDataValueType.Integer
+			? value.GetInt64()
+			: value.GetDouble();
 
 	private static SerializableFilter BuildNullFilter(string columnPath, bool isNull) =>
 		new() {

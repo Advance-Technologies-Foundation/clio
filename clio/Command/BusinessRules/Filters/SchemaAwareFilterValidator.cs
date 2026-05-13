@@ -154,6 +154,51 @@ internal sealed class SchemaAwareFilterValidator(IFilterSchemaProvider schemaPro
 				"Backward reference requires a 1:N relationship where the child column points to the parent schema.");
 		}
 		ValidateGroup(brf.Filter, childSchemaName, childColumns, fieldPath + ".filter");
+		ValidateAggregation(brf, childSchemaName, childColumns, fieldPath);
+	}
+
+	private static void ValidateAggregation(
+		StaticFilterBackwardReference brf,
+		string childSchemaName,
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> childColumns,
+		string fieldPath) {
+		// Structural validator already enforced presence/absence cross-rules; here only schema-aware
+		// checks: aggregationColumnPath exists on child + numeric for SUM/AVG/MIN/MAX, aggregationValue
+		// type matches the aggregated column (or Integer for COUNT).
+		if (string.IsNullOrWhiteSpace(brf.AggregationType)
+			|| string.Equals(brf.AggregationType, "EXISTS", StringComparison.Ordinal)
+			|| string.Equals(brf.AggregationType, "NOT_EXISTS", StringComparison.Ordinal)) {
+			return;
+		}
+		if (string.Equals(brf.AggregationType, "COUNT", StringComparison.Ordinal)) {
+			RequireNumericAggregationValue(brf.AggregationValue, "COUNT", fieldPath + ".aggregationValue");
+			return;
+		}
+		// SUM / AVG / MIN / MAX — validate aggregationColumnPath against child schema.
+		string aggregationColumnPath = brf.AggregationColumnPath!;
+		if (!childColumns.TryGetValue(aggregationColumnPath, out EntitySchemaColumnDto? aggColumn)) {
+			throw new BusinessRuleFilterException(
+				BusinessRuleFilterErrorCodes.PathUnknown,
+				fieldPath + ".aggregationColumnPath",
+				$"aggregationColumnPath '{aggregationColumnPath}' not found on child schema '{childSchemaName}'.");
+		}
+		string aggColumnTypeName = BusinessRuleHelpers.MapDataValueTypeName(aggColumn.DataValueType);
+		if (!SupportedNumericDataValueTypeNames.Contains(aggColumnTypeName)) {
+			throw new BusinessRuleFilterException(
+				BusinessRuleFilterErrorCodes.ComparisonNotSupportedForDatatype,
+				fieldPath + ".aggregationColumnPath",
+				$"aggregation '{brf.AggregationType}' requires a numeric column on '{childSchemaName}'; '{aggregationColumnPath}' is {aggColumnTypeName}.");
+		}
+		RequireNumericAggregationValue(brf.AggregationValue, brf.AggregationType!, fieldPath + ".aggregationValue");
+	}
+
+	private static void RequireNumericAggregationValue(JsonElement? value, string aggregationType, string fieldPath) {
+		if (!value.HasValue || value.Value.ValueKind != JsonValueKind.Number) {
+			throw new BusinessRuleFilterException(
+				BusinessRuleFilterErrorCodes.ValueShape,
+				fieldPath,
+				$"aggregationValue for '{aggregationType}' must be a JSON number.");
+		}
 	}
 
 	private static void ValidateComparisonForDatatype(

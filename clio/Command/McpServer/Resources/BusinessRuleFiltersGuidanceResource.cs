@@ -24,7 +24,7 @@ public sealed class BusinessRuleFiltersGuidanceResource {
 		       - Use this guide when authoring the `apply-static-filter` action of `create-entity-business-rule`.
 		       - This action restricts a Lookup column on the target entity by a static filter against the lookup's reference schema.
 		       - Resolve exact MCP tool contracts through `get-tool-contract` before any write workflow.
-		       - Out of scope: page-level rules, multi-id `InFilter` lookup values, datetime macros (PREVIOUS_HOUR, etc.), aggregation filters (SUM/AVG/MIN/MAX/COUNT), backward-reference EXISTS/NOT_EXISTS, column-to-column right operands.
+		       - Out of scope: page-level rules, multi-id `InFilter` lookup values, datetime macros (PREVIOUS_HOUR, etc.), column-to-column right operands.
 
 		       When to choose apply-static-filter
 		       - The user wants the lookup picker on a column to show only matching reference-schema rows.
@@ -96,10 +96,16 @@ public sealed class BusinessRuleFiltersGuidanceResource {
 
 		       Backward-reference filters
 		       - Use `backwardReferenceFilters[]` when the friendly filter has to traverse a 1:N relationship from the inferred root schema to a child schema.
-		       - Each entry is `{ "referenceColumnPath": "[ChildSchema:ColumnOnChild]", "filter": <StaticFilterGroup> }`. The bracketed segment is the only place backward references are accepted.
+		       - Each entry is `{ "referenceColumnPath": "[ChildSchema:ColumnOnChild]", "filter": <StaticFilterGroup>, "aggregationType"?: ..., ... }`. The bracketed segment is the only place backward references are accepted.
 		       - The nested `filter` is validated against the child schema, not the root.
 		       - A backward reference whose path is absent or does not point to a 1:N lookup of the root raises `filter.backward-reference-not-1n`.
 		       - Putting a `[ChildSchema:Column]` segment inside a regular `filters[*].columnPath` raises `filter.path-resolves-to-collection`. Move it to `backwardReferenceFilters[]` instead.
+		       - Optional aggregation fields on a backward reference:
+		         - `aggregationType` -- one of `EXISTS` (default when omitted), `NOT_EXISTS`, `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`.
+		         - `EXISTS` / `NOT_EXISTS` -- no other aggregation fields allowed; semantics: at least one (or no) child record matches the nested `filter`.
+		         - `COUNT` -- requires `comparisonType` + numeric `aggregationValue`; aggregates record count.
+		         - `SUM` / `AVG` / `MIN` / `MAX` -- additionally require `aggregationColumnPath` (a numeric column on the child schema). Both `comparisonType` (any of the 14 binary tokens) and numeric `aggregationValue` are required.
+		       - Aggregation errors: `filter.comparison-unknown` (bad `aggregationType` or missing `comparisonType` for non-EXISTS), `filter.value-required` (missing `aggregationValue`), `filter.path-unknown` (missing or non-existent `aggregationColumnPath`), `filter.comparison-not-supported-for-datatype` (aggregationColumnPath is not numeric for SUM/AVG/MIN/MAX), `filter.value-shape` (aggregationValue not a JSON number).
 
 		       Column path rules
 		       - `columnPath` is a dotted path through Lookup hops, rooted at the inferred reference schema (NOT the original entity schema).
