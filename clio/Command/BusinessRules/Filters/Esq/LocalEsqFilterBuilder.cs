@@ -18,7 +18,10 @@ internal interface ILocalEsqFilterBuilder {
 	string ConvertToEsqFilter(string rootSchemaName, StaticFilterGroup filter);
 }
 
-internal sealed class LocalEsqFilterBuilder(IFilterSchemaProvider schemaProvider) : ILocalEsqFilterBuilder {
+internal sealed class LocalEsqFilterBuilder(
+	IFilterSchemaProvider schemaProvider,
+	ILookupValueResolver? lookupValueResolver = null)
+	: ILocalEsqFilterBuilder {
 
 	// Enums serialized as integers (default System.Text.Json behavior without
 	// JsonStringEnumConverter) to match the platform's BVE1 envelope shape. WriteIndented
@@ -32,7 +35,7 @@ internal sealed class LocalEsqFilterBuilder(IFilterSchemaProvider schemaProvider
 	public string ConvertToEsqFilter(string rootSchemaName, StaticFilterGroup filter) {
 		ArgumentException.ThrowIfNullOrWhiteSpace(rootSchemaName);
 		ArgumentNullException.ThrowIfNull(filter);
-		LocalEsqFilterConverter converter = new(schemaProvider);
+		LocalEsqFilterConverter converter = new(schemaProvider, lookupValueResolver);
 		SerializableFilters envelope = converter.BuildTopLevelGroup(filter, rootSchemaName);
 		return JsonSerializer.Serialize(envelope, SerializerOptions);
 	}

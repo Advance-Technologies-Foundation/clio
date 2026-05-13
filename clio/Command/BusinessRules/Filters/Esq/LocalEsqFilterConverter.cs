@@ -19,7 +19,9 @@ namespace Clio.Command.BusinessRules.Filters.Esq;
 /// out of scope because the clio MCP friendly contract exposes only constant comparisons
 /// (14 tokens) and a structural backward-reference (implicit EXISTS).
 /// </summary>
-internal sealed class LocalEsqFilterConverter(IFilterSchemaProvider schemaProvider) {
+internal sealed class LocalEsqFilterConverter(
+	IFilterSchemaProvider schemaProvider,
+	ILookupValueResolver? lookupValueResolver = null) {
 
 	private static readonly Regex BackwardReferenceSyntax =
 		new(@"^\[(?<schema>[A-Za-z_][A-Za-z0-9_]*):(?<column>[A-Za-z_][A-Za-z0-9_]*)\]$",
@@ -247,9 +249,9 @@ internal sealed class LocalEsqFilterConverter(IFilterSchemaProvider schemaProvid
 		return compare;
 	}
 
-	private static SerializableFilter BuildLookupFilter(StaticFilterLeaf leaf, EntitySchemaColumnDto lookupColumn) {
-		Guid[] ids = ParseLookupGuids(leaf.Value, leaf.ColumnPath);
+	private SerializableFilter BuildLookupFilter(StaticFilterLeaf leaf, EntitySchemaColumnDto lookupColumn) {
 		string referenceSchemaName = lookupColumn.ReferenceSchema!.Name!;
+		Guid[] ids = ParseLookupGuids(leaf.Value, leaf.ColumnPath, referenceSchemaName);
 		string caption = ExtractCaption(lookupColumn);
 		SerializableExpression[] parameterExpressions = new SerializableExpression[ids.Length];
 		for (int i = 0; i < ids.Length; i++) {
@@ -334,11 +336,12 @@ internal sealed class LocalEsqFilterConverter(IFilterSchemaProvider schemaProvid
 		};
 	}
 
-	private static Guid[] ParseLookupGuids(JsonElement? value, string columnPath) {
+	private Guid[] ParseLookupGuids(JsonElement? value, string columnPath, string referenceSchemaName) {
+		string fieldPath = "rule.actions[*].filter.filters[*].value";
 		if (value is null) {
 			throw new BusinessRuleFilterException(
 				BusinessRuleFilterErrorCodes.LookupValueNotGuid,
-				$"rule.actions[*].filter.filters[*].value",
+				fieldPath,
 				$"Lookup filter on '{columnPath}' requires a JSON string GUID value (or a JSON array of GUID strings).");
 		}
 		JsonElement raw = value.Value;
@@ -347,30 +350,45 @@ internal sealed class LocalEsqFilterConverter(IFilterSchemaProvider schemaProvid
 			if (length == 0) {
 				throw new BusinessRuleFilterException(
 					BusinessRuleFilterErrorCodes.LookupValueNotGuid,
-					$"rule.actions[*].filter.filters[*].value",
+					fieldPath,
 					$"Lookup filter on '{columnPath}' requires a non-empty array of GUID strings.");
 			}
 			Guid[] result = new Guid[length];
 			int i = 0;
 			foreach (JsonElement element in raw.EnumerateArray()) {
-				if (element.ValueKind != JsonValueKind.String
-					|| !Guid.TryParse(element.GetString(), out Guid parsedElement)) {
-					throw new BusinessRuleFilterException(
-						BusinessRuleFilterErrorCodes.LookupValueNotGuid,
-						$"rule.actions[*].filter.filters[*].value[{i}]",
-						$"Lookup filter on '{columnPath}' array element at index {i} must be a JSON string GUID.");
-				}
-				result[i++] = parsedElement;
+				result[i] = ResolveSingleLookupValue(element, columnPath, referenceSchemaName,
+					$"{fieldPath}[{i}]");
+				i++;
 			}
 			return result;
 		}
-		if (raw.ValueKind != JsonValueKind.String || !Guid.TryParse(raw.GetString(), out Guid parsed)) {
+		return [ResolveSingleLookupValue(raw, columnPath, referenceSchemaName, fieldPath)];
+	}
+
+	private Guid ResolveSingleLookupValue(
+		JsonElement element,
+		string columnPath,
+		string referenceSchemaName,
+		string fieldPath) {
+		if (element.ValueKind != JsonValueKind.String) {
 			throw new BusinessRuleFilterException(
 				BusinessRuleFilterErrorCodes.LookupValueNotGuid,
-				$"rule.actions[*].filter.filters[*].value",
-				$"Lookup filter on '{columnPath}' requires a JSON string GUID value (or a JSON array of GUID strings).");
+				fieldPath,
+				$"Lookup filter on '{columnPath}' requires a JSON string GUID value (or a display name when display-name resolution is enabled); got JSON {element.ValueKind}.");
 		}
-		return [parsed];
+		string text = element.GetString() ?? string.Empty;
+		if (Guid.TryParse(text, out Guid parsed)) {
+			return parsed;
+		}
+		// Non-GUID string -> try display-name resolution when a resolver is wired; otherwise reject.
+		if (lookupValueResolver is null) {
+			throw new BusinessRuleFilterException(
+				BusinessRuleFilterErrorCodes.LookupValueNotGuid,
+				fieldPath,
+				$"Lookup filter on '{columnPath}' requires a JSON string GUID value. " +
+				$"To pass the display name '{text}', wire ILookupValueResolver on the converter so the value is resolved against the lookup's primary display column.");
+		}
+		return lookupValueResolver.Resolve(referenceSchemaName, text, fieldPath);
 	}
 
 	private static EsqLogicalOperationStrict ParseLogicalOperation(string logicalOperation) =>

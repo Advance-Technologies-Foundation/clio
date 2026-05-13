@@ -92,14 +92,14 @@ public sealed class LocalEsqFilterBuilderMultiValueTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Schema-aware validator rejects an array element that is not a GUID string (catches partial-bad lists before converter runs).")]
-	public void SchemaAware_Should_Reject_Array_With_Non_Guid_Element() {
+	[Description("Schema-aware validator rejects an array element that is not a JSON string at all (number/boolean/object). Non-GUID strings are accepted because they may be display names resolved by ILookupValueResolver at conversion time.")]
+	public void SchemaAware_Should_Reject_Array_With_Non_String_Element() {
 		IFilterSchemaProvider provider = StubProvider("Lead", new[] {
 			LookupColumn("Source", "LeadSource")
 		});
 		Guid validId = Guid.NewGuid();
 		StaticFilterGroup filter = new("AND",
-			[new StaticFilterLeaf("Source", "EQUAL", JsonElement($"[\"{validId}\",\"NotAGuid\"]"))],
+			[new StaticFilterLeaf("Source", "EQUAL", JsonElement($"[\"{validId}\",42]"))],
 			[]);
 
 		Action act = () => new SchemaAwareFilterValidator(provider)

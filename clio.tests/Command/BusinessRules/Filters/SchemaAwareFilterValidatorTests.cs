@@ -155,8 +155,8 @@ public sealed class SchemaAwareFilterValidatorTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects a non-GUID string value for a Lookup column (must be resolved record Id).")]
-	public void Validate_Should_Reject_Non_Guid_Value_On_Lookup_Column() {
+	[Description("Accepts a non-GUID string on a Lookup column: schema-aware does not enforce GUID shape; the converter resolves display names through ILookupValueResolver (or rejects them when no resolver is wired).")]
+	public void Validate_Should_Accept_String_On_Lookup_Column() {
 		IFilterSchemaProvider provider = StubProvider("Order", new[] {
 			LookupColumn("Customer", referenceSchemaName: "Contact")
 		});
@@ -166,9 +166,24 @@ public sealed class SchemaAwareFilterValidatorTests {
 		System.Action act = () => new SchemaAwareFilterValidator(provider)
 			.Validate(filter, "Order", "rule.actions[*].filter");
 
+		act.Should().NotThrow();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a non-string value (number/boolean/object) on a Lookup column.")]
+	public void Validate_Should_Reject_Non_String_Value_On_Lookup_Column() {
+		IFilterSchemaProvider provider = StubProvider("Order", new[] {
+			LookupColumn("Customer", referenceSchemaName: "Contact")
+		});
+		StaticFilterGroup filter = Group("AND",
+			leaves: [Leaf("Customer", "EQUAL", "42")]);
+
+		System.Action act = () => new SchemaAwareFilterValidator(provider)
+			.Validate(filter, "Order", "rule.actions[*].filter");
+
 		act.Should().Throw<BusinessRuleFilterException>()
-			.Where(ex => ex.ErrorCode == BusinessRuleFilterErrorCodes.LookupValueNotGuid)
-			.WithMessage("*expects a JSON string GUID value*");
+			.Where(ex => ex.ErrorCode == BusinessRuleFilterErrorCodes.LookupValueNotGuid);
 	}
 
 	[Test]

@@ -15,4 +15,12 @@ internal interface IFilterSchemaProvider {
 	/// when the schema cannot be resolved on the target environment.
 	/// </summary>
 	IReadOnlyDictionary<string, EntitySchemaColumnDto> GetSchemaColumns(string schemaName);
+
+	/// <summary>
+	/// Returns the Name of the schema's primary display column, used to resolve Lookup filter
+	/// values supplied as display names (e.g. "Customer" -> primary display column on the
+	/// ContactType schema). Returns null when the schema has no explicitly configured primary
+	/// display column.
+	/// </summary>
+	string? GetPrimaryDisplayColumnName(string schemaName);
 }

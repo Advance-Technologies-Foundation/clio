@@ -280,27 +280,29 @@ internal sealed class SchemaAwareFilterValidator(IFilterSchemaProvider schemaPro
 		JsonValueKind kind,
 		EntitySchemaColumnDto column,
 		string fieldPath) {
-		if (kind == JsonValueKind.String && Guid.TryParse(element.GetString(), out _)) {
+		// Schema-aware validator accepts any JSON string on a Lookup column: GUID strings pass
+		// through unchanged; non-GUID strings are treated as display names and resolved at
+		// conversion time by ILookupValueResolver. JSON arrays of strings are accepted with the
+		// same semantics (multi-value IN / NOT_IN). Other JSON kinds (number/boolean/object) are
+		// always invalid.
+		if (kind == JsonValueKind.String) {
 			return;
 		}
-		// JSON array form: each element must be a GUID string. Used to compose multi-value
-		// IN / NOT_IN on a Lookup column (e.g. Source IN [GoogleId, FacebookId]).
 		if (kind == JsonValueKind.Array) {
-			int index = 0;
 			int length = element.GetArrayLength();
 			if (length == 0) {
 				throw new BusinessRuleFilterException(
 					BusinessRuleFilterErrorCodes.LookupValueNotGuid,
 					fieldPath,
-					$"Lookup column '{column.Name}' expects a non-empty array of GUID strings.");
+					$"Lookup column '{column.Name}' expects a non-empty array of string values.");
 			}
+			int index = 0;
 			foreach (JsonElement entry in element.EnumerateArray()) {
-				if (entry.ValueKind != JsonValueKind.String
-					|| !Guid.TryParse(entry.GetString(), out _)) {
+				if (entry.ValueKind != JsonValueKind.String) {
 					throw new BusinessRuleFilterException(
 						BusinessRuleFilterErrorCodes.LookupValueNotGuid,
 						$"{fieldPath}[{index}]",
-						$"Lookup column '{column.Name}' array element at index {index} must be a JSON string GUID.");
+						$"Lookup column '{column.Name}' array element at index {index} must be a JSON string.");
 				}
 				index++;
 			}
@@ -309,8 +311,7 @@ internal sealed class SchemaAwareFilterValidator(IFilterSchemaProvider schemaPro
 		throw new BusinessRuleFilterException(
 			BusinessRuleFilterErrorCodes.LookupValueNotGuid,
 			fieldPath,
-			$"Lookup column '{column.Name}' expects a JSON string GUID value (or a JSON array of GUID strings); got JSON {kind} '{element}'. " +
-			"Resolve the lookup display name to its record Id (GUID) before passing it as a filter value.");
+			$"Lookup column '{column.Name}' expects a JSON string value (GUID record Id or display name) or an array of strings; got JSON {kind} '{element}'.");
 	}
 
 	private static void RequireKind(

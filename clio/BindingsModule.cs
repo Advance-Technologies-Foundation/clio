@@ -588,6 +588,7 @@ public class BindingsModule {
 	private static void RegisterBusinessRuleServices(IServiceCollection services) {
 		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
 		services.AddTransient<Clio.Command.BusinessRules.Filters.IFilterSchemaProvider, Clio.Command.BusinessRules.Filters.FilterSchemaProvider>();
+		services.AddTransient<Clio.Command.BusinessRules.Filters.Esq.ILookupValueResolver, Clio.Command.BusinessRules.Filters.Esq.LookupValueResolver>();
 		services.AddTransient<Clio.Command.BusinessRules.Filters.Esq.ILocalEsqFilterBuilder, Clio.Command.BusinessRules.Filters.Esq.LocalEsqFilterBuilder>();
 		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();
 		services.AddTransient<IBusinessRuleFormulaValidationService, BusinessRuleFormulaValidationService>();
