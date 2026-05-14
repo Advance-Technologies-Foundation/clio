@@ -26,10 +26,6 @@ public interface IDataForgeReadClient {
 	/// </summary>
 	IReadOnlyList<string> GetTableRelationships(string sourceTable, string targetTable, int? limit = null);
 
-	/// <summary>
-	/// Retrieves column details for the specified table.
-	/// </summary>
-	IReadOnlyList<DataForgeColumnResult> GetTableColumnsDetails(string tableName);
 }
 
 /// <summary>
@@ -97,28 +93,6 @@ public sealed class DataForgeReadClient(
 		return payload.Paths ?? [];
 	}
 
-	/// <inheritdoc />
-	public IReadOnlyList<DataForgeColumnResult> GetTableColumnsDetails(string tableName) {
-		var request = new { request = new { tableName } };
-		string response = ExecuteProxyPost("GetTableColumnsDetails", request);
-		CreatioColumnsEnvelope? envelope = Deserialize<CreatioColumnsEnvelope>(response);
-		CreatioColumnsPayload? payload = envelope?.GetTableColumnsDetailsResult;
-		if (payload is null || !payload.Success) {
-			string error = payload?.ErrorInfo?.Message ?? "Empty response from DataForgeSchemaReadService/GetTableColumnsDetails";
-			throw new InvalidOperationException(error);
-		}
-
-		return payload.Data?.Columns?
-			.Select(c => new DataForgeColumnResult(
-				c.ColumnName ?? string.Empty,
-				c.ColumnCaption,
-				c.ColumnDescription,
-				c.ColumnType ?? "Text",
-				c.ColumnRequired,
-				c.ColumnRefersToTable))
-			.ToList() ?? [];
-	}
-
 	private string BuildMethodUrl(string methodName) => serviceUrlBuilder.Build($"{ServiceBasePath}/{methodName}");
 
 	private string ExecuteProxyPost(string methodName, object request) {
@@ -180,27 +154,6 @@ public sealed class DataForgeReadClient(
 
 	private sealed record CreatioRelationsEnvelope(
 		[property: JsonPropertyName("GetTableRelationshipsResult")] CreatioRelationsPayload? GetTableRelationshipsResult);
-
-	// --- Columns ---
-	private sealed record CreatioColumnItem(
-		[property: JsonPropertyName("columnName")] string? ColumnName,
-		[property: JsonPropertyName("columnCaption")] string? ColumnCaption,
-		[property: JsonPropertyName("columnDescription")] string? ColumnDescription,
-		[property: JsonPropertyName("columnType")] string? ColumnType,
-		[property: JsonPropertyName("columnRefersToTable")] string? ColumnRefersToTable,
-		[property: JsonPropertyName("columnRequired")] bool ColumnRequired);
-
-	private sealed record CreatioColumnsData(
-		[property: JsonPropertyName("tableName")] string? TableName,
-		[property: JsonPropertyName("columns")] List<CreatioColumnItem>? Columns);
-
-	private sealed record CreatioColumnsPayload(
-		[property: JsonPropertyName("Success")] bool Success,
-		[property: JsonPropertyName("ErrorInfo")] CreatioErrorInfo? ErrorInfo,
-		[property: JsonPropertyName("Data")] CreatioColumnsData? Data);
-
-	private sealed record CreatioColumnsEnvelope(
-		[property: JsonPropertyName("GetTableColumnsDetailsResult")] CreatioColumnsPayload? GetTableColumnsDetailsResult);
 
 	#endregion
 }

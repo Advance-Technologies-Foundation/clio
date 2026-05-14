@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using Clio.Common.DataForge;
+using Clio.Common.EntitySchema;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -27,14 +28,15 @@ public sealed class DataForgeContextServiceTests {
 			new SimilarLookupResult("lookup-2", "Industry", "Manufacturing", 0.88m)
 		]);
 		readClient.GetTableRelationships("Contact", "Account").Returns(["(Contact)-[:Account]->(Account)"]);
-		readClient.GetTableColumnsDetails("Contact").Returns([
-			new DataForgeColumnResult("Name", "Full name", null, "Text", true, null)
-		]);
-		readClient.GetTableColumnsDetails("Account").Returns([
-			new DataForgeColumnResult("Name", "Account name", null, "Text", true, null)
-		]);
+		IRuntimeEntitySchemaReader runtimeReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		runtimeReader.GetByName("Contact").Returns(new RuntimeEntitySchemaResult(
+			Guid.NewGuid(), "Contact", Guid.NewGuid(), null, null,
+			[new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "Name", "Full name", null, 1, true, false, null)]));
+		runtimeReader.GetByName("Account").Returns(new RuntimeEntitySchemaResult(
+			Guid.NewGuid(), "Account", Guid.NewGuid(), null, null,
+			[new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "Name", "Account name", null, 1, true, false, null)]));
 		IDataForgeMaintenanceClient maintenanceClient = CreateReadyMaintenanceClient();
-		DataForgeContextService service = new(readClient, maintenanceClient);
+		DataForgeContextService service = new(readClient, maintenanceClient, runtimeReader);
 
 		// Act
 		DataForgeContextAggregationResult result = service.GetContext(
@@ -68,12 +70,13 @@ public sealed class DataForgeContextServiceTests {
 			new SimilarTableResult("Contact", "Contact", "Primary contact"),
 			new SimilarTableResult("Account", "Account", "Primary account")
 		]);
-		readClient.GetTableColumnsDetails("Contact").Returns([
-			new DataForgeColumnResult("Name", "Full name", null, "Text", true, null)
-		]);
-		readClient.GetTableColumnsDetails("Account").Returns(_ => throw new System.InvalidOperationException("proxy column read failed"));
+		IRuntimeEntitySchemaReader runtimeReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		runtimeReader.GetByName("Contact").Returns(new RuntimeEntitySchemaResult(
+			Guid.NewGuid(), "Contact", Guid.NewGuid(), null, null,
+			[new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "Name", "Full name", null, 1, true, false, null)]));
+		runtimeReader.GetByName("Account").Returns(_ => throw new System.InvalidOperationException("proxy column read failed"));
 		IDataForgeMaintenanceClient maintenanceClient = CreateReadyMaintenanceClient();
-		DataForgeContextService service = new(readClient, maintenanceClient);
+		DataForgeContextService service = new(readClient, maintenanceClient, runtimeReader);
 
 		// Act
 		DataForgeContextAggregationResult result = service.GetContext(
@@ -106,7 +109,7 @@ public sealed class DataForgeContextServiceTests {
 		readClient.GetTableRelationships("Contact", "Account")
 			.Returns(_ => throw new System.InvalidOperationException("relations failed"));
 		IDataForgeMaintenanceClient maintenanceClient = CreateReadyMaintenanceClient();
-		DataForgeContextService service = new(readClient, maintenanceClient);
+		DataForgeContextService service = new(readClient, maintenanceClient, Substitute.For<IRuntimeEntitySchemaReader>());
 
 		// Act
 		DataForgeContextAggregationResult result = service.GetContext(
@@ -132,7 +135,7 @@ public sealed class DataForgeContextServiceTests {
 		// Arrange
 		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
 		IDataForgeMaintenanceClient maintenanceClient = Substitute.For<IDataForgeMaintenanceClient>();
-		DataForgeContextService service = new(readClient, maintenanceClient);
+		DataForgeContextService service = new(readClient, maintenanceClient, Substitute.For<IRuntimeEntitySchemaReader>());
 		using CancellationTokenSource cancellation = new();
 		cancellation.Cancel();
 
@@ -152,7 +155,7 @@ public sealed class DataForgeContextServiceTests {
 		// Arrange
 		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
 		IDataForgeMaintenanceClient maintenanceClient = CreateReadyMaintenanceClient();
-		DataForgeContextService service = new(readClient, maintenanceClient);
+		DataForgeContextService service = new(readClient, maintenanceClient, Substitute.For<IRuntimeEntitySchemaReader>());
 
 		// Act
 		DataForgeContextAggregationResult result = service.GetContext(

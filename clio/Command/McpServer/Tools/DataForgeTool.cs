@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json.Serialization;
 using Clio.Common.DataForge;
+using Clio.Common.EntitySchema;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -14,6 +15,7 @@ public sealed class DataForgeTool(
 	IDataForgeReadClient readClient,
 	IDataForgeMaintenanceClient maintenanceClient,
 	IDataForgeContextService contextService,
+	IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
 	IToolCommandResolver commandResolver) {
 	internal const string DataForgeStatusToolName = "dataforge-status";
 	internal const string DataForgeFindTablesToolName = "dataforge-find-tables";
@@ -139,8 +141,9 @@ public sealed class DataForgeTool(
 		try {
 			EnsureRequired(args.TableName, "table-name");
 			IReadOnlyList<DataForgeColumnResult> results = Execute(args, options => {
-				IDataForgeReadClient client = ResolveService(options, readClient);
-				return client.GetTableColumnsDetails(args.TableName!);
+				IRuntimeEntitySchemaReader reader = ResolveService(options, runtimeEntitySchemaReader);
+				RuntimeEntitySchemaResult schema = reader.GetByName(args.TableName!);
+				return DataForgeRuntimeSchemaMapper.MapColumns(schema);
 			});
 			return new DataForgeColumnsResponse(true, SourceName, string.Empty, [], null, results);
 		} catch (Exception ex) {

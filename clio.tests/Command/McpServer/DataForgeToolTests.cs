@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common.DataForge;
+using Clio.Common.EntitySchema;
 using FluentAssertions;
 using ModelContextProtocol.Server;
 using NSubstitute;
@@ -48,15 +49,17 @@ public sealed class DataForgeToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("GetTableColumns delegates to the read client and returns columns unchanged.")]
-	public void GetTableColumns_Should_Delegate_To_ReadClient() {
+	[Description("GetTableColumns delegates to the runtime schema reader and returns columns mapped to logical names.")]
+	public void GetTableColumns_Should_Delegate_To_RuntimeSchemaReader() {
 		// Arrange
-		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
-		readClient.GetTableColumnsDetails("Contact").Returns([
-			new DataForgeColumnResult("Name", "Full name", null, "Text", true, null),
-			new DataForgeColumnResult("Account", "Account", null, "Lookup", false, "Account")
-		]);
-		DataForgeTool tool = CreateTool(readClient);
+		IRuntimeEntitySchemaReader runtimeReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		runtimeReader.GetByName("Contact").Returns(new RuntimeEntitySchemaResult(
+			Guid.NewGuid(), "Contact", Guid.NewGuid(), null, null,
+			[
+				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "Name", "Full name", null, 1, true, false, null),
+				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "Account", "Account", null, 10, false, false, "Account")
+			]));
+		DataForgeTool tool = CreateTool(runtimeEntitySchemaReader: runtimeReader);
 
 		// Act
 		DataForgeColumnsResponse result = tool.GetTableColumns(new DataForgeGetTableColumnsArgs(TableName: "Contact") {
@@ -65,10 +68,10 @@ public sealed class DataForgeToolTests {
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "valid read client results should produce a successful response");
+			because: "valid runtime schema results should produce a successful response");
 		result.Columns.Should().HaveCount(2,
-			because: "all columns from the read client should be returned");
-		readClient.Received(1).GetTableColumnsDetails("Contact");
+			because: "all non-inherited columns from the runtime schema should be returned");
+		runtimeReader.Received(1).GetByName("Contact");
 	}
 
 	[Test]
@@ -129,7 +132,6 @@ public sealed class DataForgeToolTests {
 		result.Error!.Message.Should().Contain("environment-name is required",
 			because: "callers need a clear contract error for missing environment-name");
 		commandResolver.DidNotReceiveWithAnyArgs().Resolve<IDataForgeReadClient>(default!);
-		readClient.DidNotReceiveWithAnyArgs().GetTableColumnsDetails(default!);
 	}
 
 	[Test]
@@ -217,18 +219,22 @@ public sealed class DataForgeToolTests {
 		IDataForgeReadClient? readClient = null,
 		IDataForgeMaintenanceClient? maintenanceClient = null,
 		IDataForgeContextService? contextService = null,
+		IRuntimeEntitySchemaReader? runtimeEntitySchemaReader = null,
 		IToolCommandResolver? commandResolver = null) {
 		readClient ??= Substitute.For<IDataForgeReadClient>();
 		maintenanceClient ??= Substitute.For<IDataForgeMaintenanceClient>();
 		contextService ??= Substitute.For<IDataForgeContextService>();
+		runtimeEntitySchemaReader ??= Substitute.For<IRuntimeEntitySchemaReader>();
 		commandResolver ??= Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IDataForgeReadClient>(Arg.Any<DataForgeTargetOptions>()).Returns(readClient);
 		commandResolver.Resolve<IDataForgeMaintenanceClient>(Arg.Any<DataForgeTargetOptions>()).Returns(maintenanceClient);
 		commandResolver.Resolve<IDataForgeContextService>(Arg.Any<DataForgeTargetOptions>()).Returns(contextService);
+		commandResolver.Resolve<IRuntimeEntitySchemaReader>(Arg.Any<DataForgeTargetOptions>()).Returns(runtimeEntitySchemaReader);
 		return new(
 			readClient,
 			maintenanceClient,
 			contextService,
+			runtimeEntitySchemaReader,
 			commandResolver);
 	}
 }

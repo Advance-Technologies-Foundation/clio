@@ -95,32 +95,6 @@ public sealed class DataForgeReadClientTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("GetTableColumnsDetails should call the Creatio proxy route with a bounded timeout and map column details.")]
-	public void GetTableColumnsDetails_Should_Call_Proxy_Route_With_Timeout_And_Map_Result() {
-		// Arrange
-		(IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder, IDataForgePlatformVersionGuard versionGuard) =
-			CreateDependencies("rest/DataForgeSchemaReadService/GetTableColumnsDetails", "http://localhost/0/rest/DataForgeSchemaReadService/GetTableColumnsDetails");
-		applicationClient.ExecutePostRequest(
-				"http://localhost/0/rest/DataForgeSchemaReadService/GetTableColumnsDetails",
-				Arg.Is<string>(body => body.Contains("\"tableName\":\"Contact\"")),
-				DataForgeReadClient.RequestTimeoutMs,
-				1,
-				1)
-			.Returns("""{"GetTableColumnsDetailsResult":{"Success":true,"Data":{"tableName":"Contact","columns":[{"columnName":"Name","columnCaption":"Full name","columnType":"Text","columnRequired":true}]}}}""");
-		DataForgeReadClient client = new(applicationClient, serviceUrlBuilder, versionGuard);
-
-		// Act
-		IReadOnlyList<DataForgeColumnResult> result = client.GetTableColumnsDetails("Contact");
-
-		// Assert
-		result.Should().ContainSingle(because: "one proxy column result should map to one DataForge column result");
-		result[0].Name.Should().Be("Name", because: "column names should be preserved from the proxy payload");
-		result[0].Required.Should().BeTrue(because: "required flags should be preserved from the proxy payload");
-		versionGuard.Received(1).EnsureSupported();
-	}
-
-	[Test]
-	[Category("Unit")]
 	[Description("Proxy error responses should be surfaced as InvalidOperationException messages.")]
 	public void FindSimilarTables_Should_Throw_When_Proxy_Returns_Error() {
 		// Arrange
