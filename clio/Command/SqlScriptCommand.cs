@@ -24,8 +24,14 @@ namespace Clio.Command.SqlScriptCommand
 		[Option('v', "View", Required = false, HelpText = "View type.", Default = "table")]
 		public string ViewType { get; set; }
 
-		[Option('d', "DestinationPath", Required = false, HelpText = "Path to results file.", Default = null)]
+		[Option('d', "destination-path", Required = false, HelpText = "Path to results file.", Default = null)]
 		public string DestPath { get; set; }
+
+		[Option("DestinationPath", Required = false, Hidden = true, HelpText = "Alias for --destination-path")]
+		public string DestPathAlias {
+			get => DestPath;
+			set { if (!string.IsNullOrEmpty(value)) DestPath = value; }
+		}
 
 		[Option("silent", Required = false, HelpText = "Use default behavior without user interaction")]
 		public bool IsSilent

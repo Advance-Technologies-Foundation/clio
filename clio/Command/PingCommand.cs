@@ -7,8 +7,14 @@ namespace Clio.Command
 	[Verb("ping-app", Aliases = new string[] { "ping" }, HelpText = "Check current credentional for selected environments")]
 	public class PingAppOptions : RemoteCommandOptions
 	{
-		[Option('x', "Endpoint", Required = false, HelpText = "Relative path for checked endpoint (by default ise Ping service)")]
+		[Option('x', "endpoint", Required = false, HelpText = "Relative path for checked endpoint (by default ise Ping service)")]
 		public string Endpoint { get; set; } = "/ping";
+
+		[Option("Endpoint", Required = false, Hidden = true, HelpText = "Alias for --endpoint")]
+		public string EndpointAlias {
+			get => Endpoint;
+			set { if (!string.IsNullOrEmpty(value)) Endpoint = value; }
+		}
 	}
 
 	public class PingAppCommand : RemoteCommand<PingAppOptions>

@@ -10,22 +10,40 @@
 			get; set;
 		}
 
-		[Option('d', "DestinationPath", Required = false,
+		[Option('d', "destination-path", Required = false,
 			HelpText = "Path to the directory where Zip created.", Default = null)]
 		public string DestPath {
 			get; set;
 		}
 
-		[Option('r', "UnZip", Required = false,
+		[Option("DestinationPath", Required = false, Hidden = true, HelpText = "Alias for --destination-path")]
+		public string DestPathAlias {
+			get => DestPath;
+			set { if (!string.IsNullOrEmpty(value)) DestPath = value; }
+		}
+
+		[Option('r', "unzip", Required = false,
 			HelpText = "Unzip archive file.", Default = null)]
 		public bool Unzip {
 			get; set;
 		}
 
-		[Option('a', "Async", Required = false,
+		[Option("UnZip", Required = false, Hidden = true, HelpText = "Alias for --unzip")]
+		public bool UnzipAlias {
+			get => Unzip;
+			set { if (value) Unzip = value; }
+		}
+
+		[Option('a', "async", Required = false,
 			HelpText = "Async download file.", Default = false)]
 		public bool Async {
 			get; set;
+		}
+
+		[Option("Async", Required = false, Hidden = true, HelpText = "Alias for --async")]
+		public bool AsyncAlias {
+			get => Async;
+			set { if (value) Async = value; }
 		}
 
 	}

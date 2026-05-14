@@ -16,11 +16,23 @@ public class RegAppOptions : EnvironmentNameOptions {
 
 	#region Properties: Public
 
-	[Option('a', "ActiveEnvironment", Required = false, HelpText = "Set as default web application")]
+	[Option('a', "active-environment", Required = false, HelpText = "Set as default web application")]
 	public string ActiveEnvironment { get; set; }
 
-	[Option("checkLogin", Required = false, HelpText = "Try login after registration")]
+	[Option("ActiveEnvironment", Required = false, Hidden = true, HelpText = "Alias for --active-environment")]
+	public string ActiveEnvironmentAlias {
+		get => ActiveEnvironment;
+		set { if (!string.IsNullOrEmpty(value)) ActiveEnvironment = value; }
+	}
+
+	[Option("check-login", Required = false, HelpText = "Try login after registration")]
 	public bool CheckLogin { get; set; }
+
+	[Option("checkLogin", Required = false, Hidden = true, HelpText = "Alias for --check-login")]
+	public bool CheckLoginAlias {
+		get => CheckLogin;
+		set { if (value) CheckLogin = value; }
+	}
 
 	[Option("add-from-iis", Required = false, HelpText = "Register all Creatios from IIS")]
 	public bool FromIis { get; set; }

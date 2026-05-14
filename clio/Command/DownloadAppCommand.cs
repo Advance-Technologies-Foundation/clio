@@ -13,8 +13,14 @@ namespace Clio.Command;
 public class DownloadAppOptions: BaseAppCommandOptions
 {
 
-	[Option('f', "FilePath", Required = false, HelpText = "File path to save application")]
+	[Option('f', "file-path", Required = false, HelpText = "File path to save application")]
 	public string FilePath { get; set; }
+
+	[Option("FilePath", Required = false, Hidden = true, HelpText = "Alias for --file-path")]
+	public string FilePathAlias {
+		get => FilePath;
+		set { if (!string.IsNullOrEmpty(value)) FilePath = value; }
+	}
 
 }
 
