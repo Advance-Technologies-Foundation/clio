@@ -11,6 +11,8 @@ internal static class ExceptionReadableMessageExtension
 		if (debug) return exception.ToString();
 		return exception switch
 		{
+			AggregateException ex when ex.InnerException != null
+				=> ex.InnerException.GetReadableMessageException(debug),
 			WebException ex when ex.Status == WebExceptionStatus.ConnectFailure
 				=> $"Cannot connect to the application: {ex.Message}. Make sure the site is running and accessible.",
 			FileNotFoundException ex => $"{ex.Message}{ex.FileName}",

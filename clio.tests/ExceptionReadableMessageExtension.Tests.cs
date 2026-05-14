@@ -64,6 +64,24 @@ public class ExceptionReadableMessageExtensionTestCase
 	}
 
 	[Test]
+	public void GetReadableMessageException_UnwrapsInnerException_WhenAggregateException() {
+		var inner = new WebException("Connection refused (localhost:1616)", WebExceptionStatus.ConnectFailure);
+		var exception = new AggregateException(inner);
+		var result = exception.GetReadableMessageException();
+		result.Should().StartWith("Cannot connect to the application:");
+		result.Should().Contain("Make sure the site is running and accessible");
+	}
+
+	[Test]
+	public void GetReadableMessageException_PrintsFullStackTrace_WhenAggregateExceptionAndDebugMode() {
+		AggregateException exception;
+		try { throw new AggregateException(new WebException("Connection refused", WebExceptionStatus.ConnectFailure)); }
+		catch (AggregateException e) { exception = e; }
+		var result = exception.GetReadableMessageException(debug: true);
+		result.Should().Be(exception.ToString());
+	}
+
+	[Test]
 	public void GetReadableMessageException_PrintsFriendlyMessage_WhenWebExceptionConnectFailure() {
 		var exception = new WebException("Connection refused (localhost:1616)", WebExceptionStatus.ConnectFailure);
 		var result = exception.GetReadableMessageException();
