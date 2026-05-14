@@ -1,4 +1,5 @@
 using System;
+using Clio;
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
@@ -43,7 +44,7 @@ public class LoadPackagesToFileSystemCommand : Command<EnvironmentOptions>{
 			return 0;
 		}
 		catch (Exception e) {
-			_logger.WriteError(e.ToString());
+			_logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
 			return 1;
 		}
 	}
