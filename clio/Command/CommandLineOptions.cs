@@ -97,8 +97,14 @@ namespace Clio
 				}
 			}
 
-			[Option("restartEnvironment", Required = false, HelpText = "Restart environment after execute command")]
+			[Option("restart-environment", Required = false, HelpText = "Restart environment after execute command")]
 			public bool RestartEnvironment { get; set; }
+
+			[Option("restartEnvironment", Required = false, Hidden = true, HelpText = "Alias for --restart-environment")]
+			public bool RestartEnvironmentAlias {
+				get => RestartEnvironment;
+				set { if (value) RestartEnvironment = value; }
+			}
 
 			public static bool IsNullOrEmpty(EnvironmentOptions options) {
 				if (options == null) {
