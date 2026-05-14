@@ -19,12 +19,6 @@ namespace Clio.Command;
 /// </summary>
 [Verb("create-data-binding", HelpText = "Create or regenerate a package data binding")]
 public class CreateDataBindingOptions : EnvironmentOptions {
-	[Option("environment", Required = false, HelpText = "Environment name")]
-	public string? EnvironmentAlias {
-		get => Environment;
-		set => Environment = value;
-	}
-
 	[Option("package", Required = true, HelpText = "Target package name")]
 	public string PackageName { get; set; } = string.Empty;
 
