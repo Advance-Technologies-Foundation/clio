@@ -13,34 +13,37 @@ namespace Clio.Tests.Command;
 public sealed class SettingsBootstrapServiceTests {
 	[Test]
 	[Category("Unit")]
-	[Description("Repairs an invalid ActiveEnvironmentKey by selecting the first configured environment and persisting the repaired settings file.")]
-	public void GetResult_Should_Repair_Invalid_Active_Environment_Key() {
+	[Description("Detects an invalid ActiveEnvironmentKey as a configuration issue without auto-repairing it. Only the user may set the active environment.")]
+	public void GetResult_Should_Detect_Invalid_Active_Environment_Key_Without_Repairing() {
 		// Arrange
+		string originalContent = File.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"));
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
-		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(
-			File.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"))));
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(originalContent));
 		SettingsBootstrapService service = new(fileSystem);
 
 		// Act
 		SettingsBootstrapResult result = service.GetResult();
-		Settings persistedSettings = JsonConvert.DeserializeObject<Settings>(
-			fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile));
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
 
 		// Assert
-		result.Report.Status.Should().Be("repaired",
-			because: "an invalid ActiveEnvironmentKey is a parseable structural problem that should be repaired automatically");
-		result.Report.ResolvedActiveEnvironmentKey.Should().Be("dev",
-			because: "the first configured environment should become the deterministic bootstrap fallback");
-		result.Report.RepairsApplied.Should().ContainSingle(repair => repair.Code == "set-active-environment",
-			because: "the repair report should explain how bootstrap recovered the active environment");
-		persistedSettings.ActiveEnvironmentKey.Should().Be("dev",
-			because: "the repaired ActiveEnvironmentKey should be persisted back to appsettings.json");
+		result.Report.Status.Should().Be("issues-detected",
+			because: "an invalid ActiveEnvironmentKey is a user configuration problem that must be reported, not silently fixed by clio");
+		result.Report.ActiveEnvironmentKey.Should().Be("wrong-dev",
+			because: "the original configured key must be preserved so the user sees which key is wrong");
+		result.Report.ResolvedActiveEnvironmentKey.Should().BeNull(
+			because: "bootstrap must not auto-select a fallback environment — only the user may set the active environment");
+		result.Report.Issues.Should().ContainSingle(issue => issue.Code == "invalid-active-environment",
+			because: "the issue must be reported so diagnostics tools and error messages can surface it");
+		result.Report.RepairsApplied.Should().BeEmpty(
+			because: "no automatic repair should be applied — the user must explicitly call set-active-environment");
+		persistedContent.Should().Be(originalContent,
+			because: "appsettings.json must not be modified when bootstrap only detects issues without applying repairs");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Resolves a stale ActiveEnvironmentKey without overwriting appsettings.json when repairs are disabled for pre-parse bootstrap flows.")]
-	public void GetResult_Should_Not_Persist_Repairs_When_Auto_Repair_Is_Disabled() {
+	[Description("applyRepairs:false has no effect on ActiveEnvironmentKey detection — bootstrap never auto-repairs this regardless of the flag.")]
+	public void GetResult_Should_Detect_Invalid_Active_Environment_Key_Regardless_Of_ApplyRepairs_Flag() {
 		// Arrange
 		string originalContent = File.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"));
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
@@ -52,14 +55,14 @@ public sealed class SettingsBootstrapServiceTests {
 		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
 
 		// Assert
-		result.Report.Status.Should().Be("repaired",
-			because: "bootstrap should still resolve a deterministic active environment even when persistence is deferred");
-		result.Report.ActiveEnvironmentKey.Should().Be("wrong-dev",
-			because: "the report should preserve the original stale active environment key before repair");
-		result.Report.ResolvedActiveEnvironmentKey.Should().Be("dev",
-			because: "the in-memory bootstrap result should still expose the deterministic repaired environment");
+		result.Report.Status.Should().Be("issues-detected",
+			because: "the applyRepairs flag must not change how an invalid ActiveEnvironmentKey is reported");
+		result.Report.ResolvedActiveEnvironmentKey.Should().BeNull(
+			because: "bootstrap must not resolve a fallback environment in memory either, regardless of the applyRepairs flag");
+		result.Report.RepairsApplied.Should().BeEmpty(
+			because: "no repair was applied so the list must be empty");
 		persistedContent.Should().Be(originalContent,
-			because: "pre-parse bootstrap should not mutate appsettings.json before the real command startup runs");
+			because: "appsettings.json must remain unchanged when applyRepairs is false");
 	}
 
 	[Test]
