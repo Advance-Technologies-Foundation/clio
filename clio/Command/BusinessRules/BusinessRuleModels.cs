@@ -123,7 +123,7 @@ public sealed record BusinessRuleExpression
     /// Formula text when <see cref="Type"/> is <c>Formula</c>.
     /// </summary>
     [JsonPropertyName("expression")]
-    [Description("Simple direct-field expression when type is Formula, for example 'Field1 + Field2'. Formula functions are not supported in this scope.")]
+    [Description("Simple numeric direct-field expression when type is Formula, for example 'Field1 + Field2'. Formula functions and date/time arithmetic are not supported in this scope.")]
     public string? Expression { get; init; }
 }
 
