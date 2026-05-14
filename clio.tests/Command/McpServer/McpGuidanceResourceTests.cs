@@ -3,6 +3,7 @@ using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using NUnit.Framework;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Clio.Tests.Command.McpServer;
 
@@ -1084,6 +1085,188 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns configuration web-service guidance and references as stable MCP resources.")]
+	public void ConfigurationWebServiceGuidanceResource_Should_Return_Guide_And_References() {
+		// Arrange
+		ConfigurationWebServiceGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents guide = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "configuration web-service guidance should be returned as a plain-text MCP resource").Subject;
+		TextResourceContents dtoPatterns = resource.GetDtoPatterns().Should().BeOfType<TextResourceContents>(
+			because: "DTO patterns should be returned as a plain-text MCP reference").Subject;
+		TextResourceContents statusCodePatterns = resource.GetStatusCodePatterns().Should().BeOfType<TextResourceContents>(
+			because: "status-code patterns should be returned as a plain-text MCP reference").Subject;
+		TextResourceContents compositionRootPattern = resource.GetCompositionRootPattern().Should().BeOfType<TextResourceContents>(
+			because: "composition-root patterns should be returned as a plain-text MCP reference").Subject;
+		TextResourceContents manualRuntimeChecklist = resource.GetManualRuntimeChecklist().Should().BeOfType<TextResourceContents>(
+			because: "manual runtime verification should be returned as a plain-text MCP reference").Subject;
+
+		// Assert
+		guide.Uri.Should().Be("docs://mcp/guides/configuration-webservice",
+			because: "the guide should expose the stable URI requested for configuration web-service guidance");
+		guide.MimeType.Should().Be("text/plain",
+			because: "the guide should be discoverable as plain text");
+		guide.Text.Should().Contain("Inherit BaseService, IReadOnlySessionState",
+			because: "the guide should preserve the web-service shape rule from the source skill");
+		guide.Text.Should().Contain("docs://mcp/references/configuration-webservice/dto-patterns",
+			because: "the guide should point callers to its detailed DTO reference resource");
+
+		dtoPatterns.Uri.Should().Be("docs://mcp/references/configuration-webservice/dto-patterns",
+			because: "the DTO reference URI should be stable for direct MCP resource reads");
+		dtoPatterns.MimeType.Should().Be("text/plain",
+			because: "references should be exposed as plain text");
+		dtoPatterns.Text.Should().Contain("Return a concrete DTO type",
+			because: "the DTO reference should preserve the concrete return-type rule");
+
+		statusCodePatterns.Uri.Should().Be("docs://mcp/references/configuration-webservice/status-code-patterns",
+			because: "the status-code reference URI should be stable for direct MCP resource reads");
+		statusCodePatterns.Text.Should().Contain("NET472: /0/rest/<ServiceName>/<MethodName>",
+			because: "the status-code reference should preserve framework-specific route guidance");
+
+		compositionRootPattern.Uri.Should().Be("docs://mcp/references/configuration-webservice/composition-root-pattern",
+			because: "the composition-root reference URI should be stable for direct MCP resource reads");
+		compositionRootPattern.Text.Should().Contain("Keep the service thin",
+			because: "the composition-root reference should preserve the thin-service guidance");
+
+		manualRuntimeChecklist.Uri.Should().Be("docs://mcp/references/configuration-webservice/manual-runtime-checklist",
+			because: "the manual runtime checklist URI should be stable for direct MCP resource reads");
+		manualRuntimeChecklist.Text.Should().Contain("Send a representative success request",
+			because: "the runtime checklist should preserve the manual verification workflow");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns configuration web-service test guidance and references as stable MCP resources.")]
+	public void ConfigurationWebServiceTestsGuidanceResource_Should_Return_Guide_And_References() {
+		// Arrange
+		ConfigurationWebServiceTestsGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents guide = resource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "configuration web-service test guidance should be returned as a plain-text MCP resource").Subject;
+		TextResourceContents testFixturePattern = resource.GetTestFixturePattern().Should().BeOfType<TextResourceContents>(
+			because: "test fixture patterns should be returned as a plain-text MCP reference").Subject;
+		TextResourceContents assertionStyle = resource.GetAssertionStyle().Should().BeOfType<TextResourceContents>(
+			because: "assertion style should be returned as a plain-text MCP reference").Subject;
+		TextResourceContents endpointTestPatterns = resource.GetEndpointTestPatterns().Should().BeOfType<TextResourceContents>(
+			because: "endpoint test patterns should be returned as a plain-text MCP reference").Subject;
+
+		// Assert
+		guide.Uri.Should().Be("docs://mcp/guides/configuration-webservice-tests",
+			because: "the guide should expose the stable URI requested for configuration web-service test guidance");
+		guide.MimeType.Should().Be("text/plain",
+			because: "the guide should be discoverable as plain text");
+		guide.Text.Should().Contain("Add or update tests for production web-service changes",
+			because: "the guide should preserve the primary test-coverage rule from the source skill");
+		guide.Text.Should().Contain("docs://mcp/references/configuration-webservice-tests/test-fixture-pattern",
+			because: "the guide should point callers to its detailed fixture reference resource");
+
+		testFixturePattern.Uri.Should().Be("docs://mcp/references/configuration-webservice-tests/test-fixture-pattern",
+			because: "the fixture reference URI should be stable for direct MCP resource reads");
+		testFixturePattern.Text.Should().Contain("Register test doubles through InjectedServices",
+			because: "the fixture reference should preserve dependency-injection mocking guidance");
+
+		assertionStyle.Uri.Should().Be("docs://mcp/references/configuration-webservice-tests/assertion-style",
+			because: "the assertion-style reference URI should be stable for direct MCP resource reads");
+		assertionStyle.Text.Should().Contain("Add because:",
+			because: "the assertion-style reference should preserve the assertion reason rule");
+
+		endpointTestPatterns.Uri.Should().Be("docs://mcp/references/configuration-webservice-tests/endpoint-test-patterns",
+			because: "the endpoint-test reference URI should be stable for direct MCP resource reads");
+		endpointTestPatterns.Text.Should().Contain("DTO-returning method",
+			because: "the endpoint-test reference should preserve coverage guidance by endpoint response style");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes configuration web-service guides so AI callers can retrieve them by name.")]
+	public void GuidanceCatalog_Should_Include_Configuration_WebService_Entries() {
+		// Act
+		bool webServiceFound = GuidanceCatalog.TryGet("configuration-webservice", out GuidanceCatalogEntry webServiceEntry);
+		bool testsFound = GuidanceCatalog.TryGet("configuration-webservice-tests", out GuidanceCatalogEntry testsEntry);
+
+		// Assert
+		webServiceFound.Should().BeTrue(
+			because: "the catalog must expose configuration-webservice so get-guidance can return the implementation guide by name");
+		webServiceEntry.Article.Uri.Should().Be("docs://mcp/guides/configuration-webservice",
+			because: "the catalog entry should point at the stable configuration web-service guide URI");
+		webServiceEntry.Description.Should().Contain("configuration web services",
+			because: "the catalog description should identify the guide subject");
+
+		testsFound.Should().BeTrue(
+			because: "the catalog must expose configuration-webservice-tests so get-guidance can return the test guide by name");
+		testsEntry.Article.Uri.Should().Be("docs://mcp/guides/configuration-webservice-tests",
+			because: "the catalog entry should point at the stable configuration web-service test guide URI");
+		testsEntry.Description.Should().Contain("testing",
+			because: "the catalog description should identify that the guide is test-focused");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Generated composable-app skill resources expose all remaining skill guides and references as plain-text MCP articles.")]
+	public void ComposableAppSkillResourceCatalog_Should_Expose_All_Generated_Skill_Resources() {
+		// Arrange
+		IReadOnlyList<ComposableAppSkillResourceEntry> entries = ComposableAppSkillResourceCatalog.GetEntries();
+
+		// Act
+		ComposableAppSkillResourceEntry atfGuide = entries.Single(entry =>
+			entry.Article.Uri == "docs://mcp/guides/atf-repository-dev");
+		ComposableAppSkillResourceEntry featureReference = entries.Single(entry =>
+			entry.Article.Uri == "docs://mcp/references/feature-toggle/implementation-patterns");
+		ComposableAppSkillResourceEntry sysSettingTestsReference = entries.Single(entry =>
+			entry.Article.Uri == "docs://mcp/references/sys-setting-tests/setup-sys-settings-pattern");
+
+		// Assert
+		entries.Should().HaveCount(49,
+			because: "the generated catalog should include 13 remaining skill guides plus their 36 reference files");
+		entries.Should().OnlyContain(entry => entry.Article.MimeType == "text/markdown",
+			because: "generated skill resources come from Markdown skill and reference files");
+		entries.Should().OnlyContain(entry =>
+				entry.Article.Uri.StartsWith("docs://mcp/guides/") ||
+				entry.Article.Uri.StartsWith("docs://mcp/references/"),
+			because: "generated resources should use the agreed MCP docs URI namespace");
+
+		atfGuide.IsGuide.Should().BeTrue(
+			because: "top-level SKILL.md documents should be guide resources");
+		atfGuide.Article.Text.Should().Contain("ATF.Repository",
+			because: "the generated guide should preserve the source skill content");
+
+		featureReference.IsGuide.Should().BeFalse(
+			because: "reference markdown files should remain direct reference resources instead of get-guidance entries");
+		featureReference.Article.Text.Should().Contain("Feature",
+			because: "the generated reference should preserve the source reference content");
+
+		sysSettingTestsReference.Article.Text.Should().Contain("SetupSysSettings",
+			because: "the generated sys-setting test reference should preserve its fixture setup guidance");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes generated composable-app skill guides while keeping generated references resource-only.")]
+	public void GuidanceCatalog_Should_Include_Generated_Composable_App_Skill_Guides() {
+		// Arrange
+		IReadOnlyList<ComposableAppSkillResourceEntry> generatedGuides = ComposableAppSkillResourceCatalog.GetGuides();
+		IReadOnlyList<ComposableAppSkillResourceEntry> generatedReferences = ComposableAppSkillResourceCatalog.GetEntries()
+			.Where(entry => !entry.IsGuide)
+			.ToArray();
+
+		// Act
+		bool allGuidesFound = generatedGuides.All(guide => GuidanceCatalog.TryGet(guide.Skill, out _));
+		bool anyReferenceFound = generatedReferences.Any(reference =>
+			GuidanceCatalog.TryGet($"{reference.Skill}/{reference.Reference}", out _));
+
+		// Assert
+		generatedGuides.Should().HaveCount(13,
+			because: "only the remaining top-level composable-app skill documents should be registered for get-guidance");
+		allGuidesFound.Should().BeTrue(
+			because: "get-guidance should resolve every generated top-level skill guide by skill name");
+		anyReferenceFound.Should().BeFalse(
+			because: "generated references should be read through MCP resources directly, not through get-guidance names");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns a canonical MCP guidance article for diagnostic-first behavior under support mode.")]
 	public void SupportModeGuidanceResource_Should_Return_Canonical_Support_Mode_Guide() {
 		// Arrange
@@ -1127,5 +1310,60 @@ public sealed class McpGuidanceResourceTests {
 			because: "the final reporting section list must include Non-target friction");
 		article.Text.Should().Contain("Support mode is on. Please share this session with support for analysis.",
 			because: "the guide should encode the canonical handoff line appended to support-mode final responses");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for Freedom UI business rules so AI callers use declarative rules instead of handlers.")]
+	public void BusinessRulesGuidanceResource_Should_Return_Canonical_Business_Rules_Guide() {
+		// Arrange
+		BusinessRulesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the business-rules guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/business-rules",
+			because: "the resource should expose a stable MCP URI for business-rules guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the business-rules guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP business rules guide",
+			because: "the article should identify itself as the dedicated business-rules guide");
+		article.Text.Should().Contain("create-entity-business-rule",
+			because: "the guide should advertise the entity-level business rule tool");
+		article.Text.Should().Contain("create-page-business-rule",
+			because: "the guide should advertise the page-level business rule tool");
+		article.Text.Should().Contain("SEPARATE first-class artifacts",
+			because: "the guide should make clear that business rules are not page-body code");
+		article.Text.Should().Contain("Do NOT write JavaScript handler or validator code",
+			because: "the guide should explicitly forbid implementing business-rule logic as handlers");
+		article.Text.Should().Contain("condition group",
+			because: "the guide should explain the condition-action structure of business rules");
+		article.Text.Should().Contain("Entity-level business rules",
+			because: "the guide should distinguish entity-level from page-level rules");
+		article.Text.Should().Contain("Page-level business rules",
+			because: "the guide should distinguish page-level from entity-level rules");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes business-rules so AI callers can retrieve business-rule authoring guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Business_Rules_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("business-rules", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose business-rules so get-guidance can return it by name");
+		entry.Name.Should().Be("business-rules",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("business rules",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/business-rules",
+			because: "the article URI in the catalog must match the resource URI");
 	}
 }

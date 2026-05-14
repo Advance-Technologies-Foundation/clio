@@ -34,6 +34,8 @@ public sealed class CreateEntitySchemaTool(
 				 
 				 Use this when the schema should be created directly on the target environment instead of generating
 				 local source files. The package must already exist on the target environment.
+				 
+				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.
 				 """)]
 	public async Task<CommandExecutionResult> CreateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to BaseEntity unless extend-parent is true), extend-parent (optional, requires parent-schema-name when true)")] [Required] CreateEntitySchemaArgs args
@@ -231,7 +233,8 @@ public sealed class UpdateEntitySchemaTool(
 	/// </summary>
 	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema.")]
+	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema. " +
+		"Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.")]
 	public async Task<CommandExecutionResult> UpdateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, operations (all required)")] [Required] UpdateEntitySchemaArgs args) {
 		ApplicationDataForgeResult? dataForge = null;

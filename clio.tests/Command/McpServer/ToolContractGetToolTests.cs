@@ -71,6 +71,37 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the canonical compile-creatio contract with explicit preconditions and anti-patterns so callers can decide when compilation is required.")]
+	public void ToolContractGet_Should_Return_CompileCreatio_Contract_With_Preconditions_And_AntiPatterns() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			CompileCreatioTool.CompileCreatioToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "compile-creatio is part of the canonical executable contract surface");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(CompileCreatioTool.CompileCreatioToolName);
+		contract.Preconditions.Should().NotBeNullOrEmpty(
+			because: "the contract must spell out when compilation is actually required");
+		contract.Preconditions!.Should().Contain(precondition => precondition.Contains("set-fsm-mode", StringComparison.Ordinal),
+			because: "FSM-mode toggles are a canonical trigger for full compilation");
+		contract.Preconditions!.Should().Contain(precondition => precondition.Contains("C# schemas", StringComparison.Ordinal),
+			because: "C# schema changes are the primary precondition for package compilation");
+		contract.AntiPatterns.Should().NotBeNullOrEmpty(
+			because: "the contract must call out flows where compilation is never required");
+		contract.AntiPatterns!.Should().Contain(pattern => pattern.Pattern.Contains(PageUpdateTool.ToolName, StringComparison.Ordinal),
+			because: "page-body edits applied through update-page must never be followed by compile-creatio");
+		contract.AntiPatterns!.Should().Contain(pattern => pattern.Pattern.Contains(ApplicationCreateTool.ApplicationCreateToolName, StringComparison.Ordinal),
+			because: "create-app never requires a follow-up compilation");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical get-guidance contract so callers can retrieve guidance through a tool instead of docs URI routing.")]
 	public void ToolContractGet_Should_Return_Guidance_Get_Contract() {
 		// Arrange

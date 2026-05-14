@@ -106,6 +106,10 @@ public sealed class PageSchemaConvertersGuidanceResource {
 			             };
 			           });
 
+			       Server-side compilation
+			       - Converters live in the Freedom UI page body, which is an AMD module served at runtime. After `update-page` or `sync-pages` your changes are live.
+			       - Do NOT call `compile-creatio` — it is for C# schema changes, not page-body JavaScript. Compilation forces a runtime reload, breaks the active session, and is never required as a follow-up to a page-body edit.
+
 			       NON-NEGOTIABLES
 			       - `SCHEMA_CONVERTERS` is an OBJECT, not an array.
 			       - Converters affect DISPLAY only. They do not write back to the model. Never put side effects inside a converter function.

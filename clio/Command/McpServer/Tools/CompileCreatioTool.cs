@@ -28,8 +28,8 @@ public sealed class CompileCreatioTool(
 	/// <summary>
 	/// Compiles Creatio fully or rebuilds a single package for a registered environment.
 	/// </summary>
-	[McpServerTool(Name = CompileCreatioToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-	[Description("Compiles a registered Creatio environment. Omit `package-name` to run a full compilation (`clio cc -e ENV_NAME --all`). Provide `package-name` to compile only one package. This tool is recommended after `set-fsm-mode`.")]
+	[McpServerTool(Name = CompileCreatioToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	[Description("Long-running, may take several minutes; recompiles a registered Creatio environment and forces a runtime reload. Omit `package-name` to run a full compilation (`clio cc -e ENV_NAME --all`). Provide `package-name` to compile only one package. Call only when: (1) C# schemas were added or modified, (2) `set-fsm-mode` has just been toggled, or (3) the runtime reports a missing-in-runtime/schema-not-found error. Do NOT call after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, or any Freedom UI page-body edit — those changes are AMD modules applied at runtime and DDL is handled by `update-entity-schema`.")]
 	public CommandExecutionResult CompileCreatio(
 		[Description("Compilation parameters")] [Required] CompileCreatioArgs args)
 	{

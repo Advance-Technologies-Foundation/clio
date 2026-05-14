@@ -31,7 +31,7 @@ namespace Clio.Command {
 		private const string FilterTypeKey = "filterType";
 		private const string ItemsKey = "items";
 		private const string ExpressionKey = "expression";
-		private const int ContainsComparisonType = 10;
+		private const int ContainsComparisonType = 11;
 
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;

@@ -14,9 +14,15 @@ namespace Clio.Command.PackageCommand
 			get; set;
 		}
 
-		[Option('d', "DestinationResult", Required = false, HelpText = "Destination path for result validation")]
+		[Option('d', "destination-result", Required = false, HelpText = "Destination path for result validation")]
 		public string DestinationResult {
 			get; set;
+		}
+
+		[Option("DestinationResult", Required = false, Hidden = true, HelpText = "Alias for --destination-result")]
+		public string DestinationResultAlias {
+			get => DestinationResult;
+			set { if (!string.IsNullOrEmpty(value)) DestinationResult = value; }
 		}
 	}
 

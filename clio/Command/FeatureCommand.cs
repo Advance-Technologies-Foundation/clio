@@ -23,12 +23,24 @@ public class FeatureOptions : RemoteCommandOptions {
 	[Value(1, MetaName = "State", Required = true, HelpText = "Feature state")]
 	public int State { get; set; }
 
-	[Option("SysAdminUnitName", Required = false, HelpText = "Name of the user for whom to set feature state for")]
+	[Option("sys-admin-unit-name", Required = false, HelpText = "Name of the user for whom to set feature state for")]
 	public string SysAdminUnitName { get; set; }
 
-	[Option("UseFeatureWebService", Required = false,
+	[Option("SysAdminUnitName", Required = false, Hidden = true, HelpText = "Alias for --sys-admin-unit-name")]
+	public string SysAdminUnitNameAlias {
+		get => SysAdminUnitName;
+		set { if (!string.IsNullOrEmpty(value)) SysAdminUnitName = value; }
+	}
+
+	[Option("use-feature-web-service", Required = false,
 		HelpText = "Use obsolete method to set feature state via feature webservice")]
 	public bool UseFeatureWebService { get; set; }
+
+	[Option("UseFeatureWebService", Required = false, Hidden = true, HelpText = "Alias for --use-feature-web-service")]
+	public bool UseFeatureWebServiceAlias {
+		get => UseFeatureWebService;
+		set { if (value) UseFeatureWebService = value; }
+	}
 
 	#endregion
 

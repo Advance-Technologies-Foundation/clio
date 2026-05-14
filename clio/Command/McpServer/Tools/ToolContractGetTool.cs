@@ -102,7 +102,8 @@ public sealed record ToolContractDefinition(
 	[property: JsonPropertyName("preferred-flow")] ToolFlowHint PreferredFlow,
 	[property: JsonPropertyName("fallback-flow")] IReadOnlyList<ToolFlowHint> FallbackFlow,
 	[property: JsonPropertyName("deprecations")] IReadOnlyList<ToolDeprecation> Deprecations,
-	[property: JsonPropertyName("anti-patterns")] IReadOnlyList<ToolAntiPattern>? AntiPatterns = null
+	[property: JsonPropertyName("anti-patterns")] IReadOnlyList<ToolAntiPattern>? AntiPatterns = null,
+	[property: JsonPropertyName("preconditions")] IReadOnlyList<string>? Preconditions = null
 );
 
 public sealed record ToolInputSchemaContract(
@@ -323,7 +324,8 @@ internal static class ToolContractCatalog {
 			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete(),
 			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate(),
 			[CreatePageBusinessRuleTool.BusinessRuleCreateToolName] = BuildPageBusinessRuleCreate(),
-			[SchemaNamePrefixTool.GetSchemaNamePrefixToolName] = BuildGetSchemaNamePrefix()
+			[SchemaNamePrefixTool.GetSchemaNamePrefixToolName] = BuildGetSchemaNamePrefix(),
+			[CompileCreatioTool.CompileCreatioToolName] = BuildCompileCreatio()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
@@ -361,7 +363,8 @@ internal static class ToolContractCatalog {
 		ComponentInfoTool.ToolName,
 		PageUpdateTool.ToolName,
 		ApplicationDeleteTool.ToolName,
-		SchemaNamePrefixTool.GetSchemaNamePrefixToolName
+		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+		CompileCreatioTool.CompileCreatioToolName
 	];
 
 	internal static ToolContractGetResponse GetContracts(IReadOnlyList<string>? toolNames) {
@@ -2881,6 +2884,62 @@ internal static class ToolContractCatalog {
 				"Use before create-entity-schema, create-lookup, create-page, or sync-schemas when neither create-app nor get-app-info has been called yet in the session."),
 			[],
 			[]);
+	}
+
+	private static ToolContractDefinition BuildCompileCreatio() {
+		return new ToolContractDefinition(
+			CompileCreatioTool.CompileCreatioToolName,
+			"Recompiles a registered Creatio environment and forces a runtime reload. Long-running (often several minutes). Reserved for C# schema changes, FSM-mode transitions, and schema-missing runtime errors. Freedom UI page-body edits (validators, handlers, converters) do NOT require compilation — those changes are AMD modules served at runtime.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType, "Optional package name. When omitted, runs a full compilation (`clio cc -e ENV_NAME --all`). When provided, recompiles only that single package. Comma-separated lists are not supported.")
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Run a full compilation after toggling FSM mode", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				}),
+				Example("Recompile a single package after a C# schema change", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName
+				})
+			],
+			Flow(
+				[
+					FsmModeTool.SetFsmModeToolName,
+					CompileCreatioTool.CompileCreatioToolName
+				],
+				"Call only after C# schema work, after `set-fsm-mode`, or in response to a runtime schema-missing error. Skip this tool entirely when the work touches only Freedom UI page bodies or DDL changes routed through `update-entity-schema`."),
+			[],
+			[],
+			AntiPatterns: [
+				new ToolAntiPattern(
+					$"{PageUpdateTool.ToolName} → {CompileCreatioTool.CompileCreatioToolName}",
+					"Freedom UI page bodies are AMD modules served at runtime. `update-page` and `sync-pages` make changes live; running `compile-creatio` afterward forces an unnecessary runtime reload and breaks the active session."),
+				new ToolAntiPattern(
+					$"{UpdateEntitySchemaTool.UpdateEntitySchemaToolName} → {CompileCreatioTool.CompileCreatioToolName}",
+					"`update-entity-schema` applies DDL changes directly. No compilation is required as a follow-up."),
+				new ToolAntiPattern(
+					$"{ApplicationCreateTool.ApplicationCreateToolName} → {CompileCreatioTool.CompileCreatioToolName}",
+					"`create-app` provisions a starter section, entity, and pages without any compilation step. Calling `compile-creatio` afterward serves no purpose and forces a runtime reload."),
+				new ToolAntiPattern(
+					$"{PageCreateTool.ToolName} → {CompileCreatioTool.CompileCreatioToolName}",
+					"`create-page` writes a page schema into the runtime catalog directly. The new page becomes available without compilation."),
+				new ToolAntiPattern(
+					$"{CreateEntityBusinessRuleTool.BusinessRuleCreateToolName} → {CompileCreatioTool.CompileCreatioToolName}",
+					"Business-rule creation writes add-on metadata directly. Successful rule creation does not need compilation as a routine post-step.")
+			],
+			Preconditions: [
+				"`set-fsm-mode` was just toggled (full compilation only).",
+				"C# schemas were added or modified in the targeted package.",
+				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
+				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rule`, or `create-page-business-rule`."
+			]);
 	}
 
 	private static ToolOutputContract CommandExecutionOutput() {

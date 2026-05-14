@@ -19,8 +19,14 @@ namespace Clio.Command {
 		/// <summary>
 		/// Gets or sets the optional report log path.
 		/// </summary>
-		[Option('r', "ReportPath", Required = false, HelpText = "Log file path")]
+		[Option('r', "report-path", Required = false, HelpText = "Log file path")]
 		public string ReportPath { get; set; }
+
+		[Option("ReportPath", Required = false, Hidden = true, HelpText = "Alias for --report-path")]
+		public string ReportPathAlias {
+			get => ReportPath;
+			set { if (!string.IsNullOrEmpty(value)) ReportPath = value; }
+		}
 	}
 
 	#endregion

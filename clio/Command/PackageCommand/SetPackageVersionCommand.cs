@@ -16,8 +16,14 @@ namespace Clio.Command.PackageCommand
 		[Value(0, MetaName = "PackagePath", Required = true, HelpText = "Package path")]
 		public string PackagePath { get; set; }
 
-		[Option('v', "PackageVersion", Required = true, HelpText = "Package version")]
+		[Option('v', "package-version", Required = false, HelpText = "Package version")]
 		public string PackageVersion { get; set; }
+
+		[Option("PackageVersion", Required = false, Hidden = true, HelpText = "Alias for --package-version")]
+		public string PackageVersionAlias {
+			get => PackageVersion;
+			set { if (!string.IsNullOrEmpty(value)) PackageVersion = value; }
+		}
 	}
 
 	#endregion
