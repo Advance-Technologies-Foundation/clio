@@ -34,6 +34,8 @@ public sealed partial class DataForgePlatformVersionGuard(
 
 	private bool _isSupported;
 
+	private static readonly Version DevBuildVersion = new(0, 0, 0, 0);
+
 	/// <inheritdoc />
 	public void EnsureSupported() {
 		if (_isSupported) {
@@ -48,6 +50,10 @@ public sealed partial class DataForgePlatformVersionGuard(
 			1);
 		string versionText = ExtractVersion(response);
 		Version currentVersion = ParseVersion(versionText);
+		if (currentVersion == DevBuildVersion) {
+			_isSupported = true;
+			return;
+		}
 		if (currentVersion < MinimumVersion) {
 			throw new InvalidOperationException(
 				$"DataForge MCP tools require Creatio platform version {MinimumCreatioPlatformVersion} or later. " +

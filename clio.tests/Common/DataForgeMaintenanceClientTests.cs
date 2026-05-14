@@ -132,4 +132,28 @@ public sealed class DataForgeMaintenanceClientTests {
 		versionGuard.Received(1).EnsureSupported();
 		applicationClient.Received(1).ExecutePostRequest(url, "{}", DataForgeMaintenanceClient.RequestTimeoutMs, 1, 1);
 	}
-}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GetFullStatus should return Unavailable status rather than throw when the proxy returns an HTML error page (e.g. CrtDataForge is not installed).")]
+	public void GetFullStatus_Should_Return_Unavailable_When_Proxy_Returns_Html() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IDataForgePlatformVersionGuard versionGuard = Substitute.For<IDataForgePlatformVersionGuard>();
+		serviceUrlBuilder.Build(StatusRoute).Returns(StatusUrl);
+		applicationClient.ExecutePostRequest(StatusUrl, "{}", DataForgeMaintenanceClient.RequestTimeoutMs, 1, 1)
+			.Returns("<!DOCTYPE html><html><body>404 Not Found</body></html>");
+		DataForgeMaintenanceClient client = new(applicationClient, serviceUrlBuilder, versionGuard);
+
+		// Act
+		(DataForgeHealthResult health, DataForgeMaintenanceStatusResult status) = client.GetFullStatus();
+
+		// Assert
+		health.Liveness.Should().BeFalse(
+			because: "an HTML error response means the proxy endpoint does not exist and the service is not reachable");
+		status.Success.Should().BeFalse(
+			because: "an HTML error response should produce a failed status rather than a JSON parse exception");
+		status.Status.Should().Be("Unavailable",
+			because: "callers should receive a meaningful status when CrtDataForge is not installed on the target environment");
+	}

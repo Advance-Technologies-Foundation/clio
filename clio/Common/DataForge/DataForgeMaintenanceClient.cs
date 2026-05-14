@@ -139,8 +139,11 @@ public sealed class DataForgeMaintenanceClient(
 		if (string.IsNullOrWhiteSpace(response)) {
 			return null;
 		}
-
-		return JsonSerializer.Deserialize<T>(response, _jsonOptions);
+		try {
+			return JsonSerializer.Deserialize<T>(response, _jsonOptions);
+		} catch (JsonException) {
+			return null;
+		}
 	}
 
 	private sealed record ProbePayload(int HttpStatusCode, string? Message);

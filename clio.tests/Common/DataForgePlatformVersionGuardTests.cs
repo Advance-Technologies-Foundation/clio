@@ -68,6 +68,23 @@ public sealed class DataForgePlatformVersionGuardTests {
 				because: "the tool should fail closed when platform compatibility cannot be verified");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("EnsureSupported should pass through version 0.0.0.0 as a development build without enforcing the minimum version requirement.")]
+	public void EnsureSupported_Should_Accept_Dev_Build_Version_Zero() {
+		// Arrange
+		(IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder) = CreateDependencies(
+			"""{"GetApplicationInfoResult":{"ProductVersion":"0.0.0.0"}}""");
+		DataForgePlatformVersionGuard guard = new(applicationClient, serviceUrlBuilder);
+
+		// Act
+		Action action = guard.EnsureSupported;
+
+		// Assert
+		action.Should().NotThrow(
+			because: "version 0.0.0.0 identifies a development build where DataForge is expected to be available");
+	}
+
 	private static (IApplicationClient ApplicationClient, IServiceUrlBuilder ServiceUrlBuilder) CreateDependencies(
 		string response) {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();

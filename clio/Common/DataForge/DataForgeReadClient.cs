@@ -106,7 +106,14 @@ public sealed class DataForgeReadClient(
 	}
 
 	private static T? Deserialize<T>(string response) where T : class {
-		return string.IsNullOrWhiteSpace(response) ? null : JsonSerializer.Deserialize<T>(response, JsonOptions);
+		if (string.IsNullOrWhiteSpace(response)) {
+			return null;
+		}
+		try {
+			return JsonSerializer.Deserialize<T>(response, JsonOptions);
+		} catch (JsonException) {
+			return null;
+		}
 	}
 
 	#region Creatio response envelope DTOs
