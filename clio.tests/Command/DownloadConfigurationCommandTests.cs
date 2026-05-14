@@ -58,6 +58,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 	public void Teardown() {
 		_applicationDownloaderMock.ClearReceivedCalls();
 		_zipBasedApplicationDownloaderMock.ClearReceivedCalls();
+		Program.IsDebugMode = false;
 	}
 	
 	
