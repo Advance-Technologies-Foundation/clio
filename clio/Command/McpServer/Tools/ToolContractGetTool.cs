@@ -262,6 +262,10 @@ internal static class ToolContractCatalog {
 	private const string PackageNameCamelFieldName = "packageName";
 	private const string EntitySchemaNameCamelFieldName = "entitySchemaName";
 	private const string PageSchemaNameCamelFieldName = "pageSchemaName";
+	private const string ScopeTypeCamelFieldName = "scopeType";
+	private const string SchemaNameCamelFieldName = "schemaName";
+	private const string RuleUIdCamelFieldName = "ruleUId";
+	private const string RuleNameCamelFieldName = "ruleName";
 	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
@@ -323,6 +327,8 @@ internal static class ToolContractCatalog {
 			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete(),
 			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate(),
 			[CreatePageBusinessRuleTool.BusinessRuleCreateToolName] = BuildPageBusinessRuleCreate(),
+			[BusinessRuleReadTool.BusinessRuleListToolName] = BuildBusinessRuleList(),
+			[BusinessRuleReadTool.BusinessRuleGetToolName] = BuildBusinessRuleGet(),
 			[SchemaNamePrefixTool.GetSchemaNamePrefixToolName] = BuildGetSchemaNamePrefix(),
 			[CompileCreatioTool.CompileCreatioToolName] = BuildCompileCreatio()
 		};
@@ -363,6 +369,8 @@ internal static class ToolContractCatalog {
 		ComponentInfoTool.ToolName,
 		PageUpdateTool.ToolName,
 		ApplicationDeleteTool.ToolName,
+		BusinessRuleReadTool.BusinessRuleListToolName,
+		BusinessRuleReadTool.BusinessRuleGetToolName,
 		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
 		CompileCreatioTool.CompileCreatioToolName
 	];
@@ -1530,6 +1538,124 @@ internal static class ToolContractCatalog {
 					"Using datasource paths like PDS.Priority in rule.condition.conditions[*].leftExpression.path.",
 					"Page business rules use declared view-model attribute names from bundle.viewModelConfig.attributes so the generated metadata and triggers match the page runtime.")
 			]);
+	}
+
+	private static ToolContractDefinition BuildBusinessRuleList() {
+		return new ToolContractDefinition(
+			BusinessRuleReadTool.BusinessRuleListToolName,
+			"Lists existing entity/object or Freedom UI page business rules from a Creatio environment as normalized MCP business-rule payloads.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameCamelFieldName, ScopeTypeCamelFieldName, SchemaNameCamelFieldName],
+				[
+					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(ScopeTypeCamelFieldName, StringType, "Business-rule scope type. Supported values: entity, page."),
+					Field(SchemaNameCamelFieldName, StringType, "Entity schema name when scopeType is entity; Freedom UI page schema name when scopeType is page.")
+				],
+				Validators: [
+					new ToolContractValidator("enum", "unsupported-scope-type", ScopeTypeCamelFieldName,
+						Context: "Supported values: entity, page.")
+				]),
+			BusinessRuleReadOutput(includeRuleField: false),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("List Contact entity business rules", new Dictionary<string, object?> {
+					[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+					[ScopeTypeCamelFieldName] = BusinessRuleScopeTypes.Entity,
+					[SchemaNameCamelFieldName] = "Contact"
+				}),
+				Example("List Contact page business rules", new Dictionary<string, object?> {
+					[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+					[ScopeTypeCamelFieldName] = BusinessRuleScopeTypes.Page,
+					[SchemaNameCamelFieldName] = "Contact_FormPage"
+				})
+			],
+			Flow([BusinessRuleReadTool.BusinessRuleListToolName], "Use before editing or deleting business rules to inspect available rule identities and captions."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildBusinessRuleGet() {
+		return new ToolContractDefinition(
+			BusinessRuleReadTool.BusinessRuleGetToolName,
+			"Gets one existing entity/object or Freedom UI page business rule from a Creatio environment by UID, platform name, or caption.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameCamelFieldName, ScopeTypeCamelFieldName, SchemaNameCamelFieldName],
+				[
+					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(ScopeTypeCamelFieldName, StringType, "Business-rule scope type. Supported values: entity, page."),
+					Field(SchemaNameCamelFieldName, StringType, "Entity schema name when scopeType is entity; Freedom UI page schema name when scopeType is page."),
+					Field(RuleUIdCamelFieldName, StringType, "Business-rule UID. Preferred selector. Provide exactly one of ruleUId, ruleName, or caption."),
+					Field(RuleNameCamelFieldName, StringType, "Business-rule platform name, for example BusinessRule_1234567. Provide exactly one of ruleUId, ruleName, or caption."),
+					Field(CaptionFieldName, StringType, "Business-rule caption. Provide exactly one of ruleUId, ruleName, or caption.")
+				],
+				[
+					[RuleUIdCamelFieldName],
+					[RuleNameCamelFieldName],
+					[CaptionFieldName]
+				],
+				Validators: [
+					new ToolContractValidator("enum", "unsupported-scope-type", ScopeTypeCamelFieldName,
+						Context: "Supported values: entity, page."),
+					new ToolContractValidator("exactly-one", "invalid-rule-selector", Fields: [RuleUIdCamelFieldName, RuleNameCamelFieldName, CaptionFieldName],
+						Context: "Provide exactly one selector. ruleUId is preferred because captions can duplicate.")
+				]),
+			BusinessRuleReadOutput(includeRuleField: true),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Get a Contact entity business rule by UID", new Dictionary<string, object?> {
+					[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+					[ScopeTypeCamelFieldName] = BusinessRuleScopeTypes.Entity,
+					[SchemaNameCamelFieldName] = "Contact",
+					[RuleUIdCamelFieldName] = "00000000-0000-0000-0000-000000000001"
+				}),
+				Example("Get a Contact page business rule by caption", new Dictionary<string, object?> {
+					[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+					[ScopeTypeCamelFieldName] = BusinessRuleScopeTypes.Page,
+					[SchemaNameCamelFieldName] = "Contact_FormPage",
+					[CaptionFieldName] = "Hide owner when status is closed"
+				})
+			],
+			Flow(
+				[
+					BusinessRuleReadTool.BusinessRuleListToolName,
+					BusinessRuleReadTool.BusinessRuleGetToolName
+				],
+				"List rules first when the caller only knows a caption or natural-language description, then get by ruleUId for deterministic follow-up work."),
+			[],
+			[],
+			[
+				new ToolAntiPattern(
+					"Calling get-business-rule with only a caption when multiple rules can share the same caption.",
+					"The tool returns an ambiguity result instead of choosing silently; use list-business-rules to pick a ruleUId.")
+			]);
+	}
+
+	private static ToolOutputContract BusinessRuleReadOutput(bool includeRuleField) {
+		List<ToolContractField> fields = [
+			Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+			Field(ErrorFieldName, StringType, FailureMessageDescription),
+			Field(ScopeTypeCamelFieldName, StringType, "Normalized scope type: entity or page."),
+			Field(SchemaNameCamelFieldName, StringType, "Requested entity or page schema name.")
+		];
+		if (includeRuleField) {
+			fields.Add(Field(RuleFieldName, ObjectType, "One normalized business rule with uId, name, caption, enabled, condition, and actions."));
+			fields.Add(Field("matches", ArrayType, "Ambiguous selector matches with uId, name, caption, and enabled."));
+		} else {
+			fields.Add(Field("count", NumberType, "Number of returned rules."));
+			fields.Add(Field("rules", ArrayType, "Normalized business rules with uId, name, caption, enabled, condition, and actions."));
+		}
+
+		return new ToolOutputContract(
+			"structured-envelope",
+			SuccessFieldName,
+			[
+				SuccessFalseSignal
+			],
+			fields);
 	}
 
 	private static ToolContractValidator[] BusinessRuleConditionValidators() =>

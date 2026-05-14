@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using System;
 using Clio.Command.BusinessRules;
 using Clio.Common;
 using ModelContextProtocol.Server;
@@ -457,5 +458,102 @@ public sealed class CreatePageBusinessRuleTool(
 			Rule = rule?.ToBusinessRule()!
 		};
 		return InternalExecute<CreatePageBusinessRuleCommand>(options);
+	}
+}
+
+[McpServerToolType]
+public sealed class BusinessRuleReadTool(
+	BusinessRuleReadCommand command,
+	ILogger logger,
+	IToolCommandResolver commandResolver)
+	: BaseTool<BusinessRuleReadOptions>(command, logger, commandResolver) {
+
+	internal const string BusinessRuleListToolName = "list-business-rules";
+	internal const string BusinessRuleGetToolName = "get-business-rule";
+
+	[McpServerTool(Name = BusinessRuleListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
+		OpenWorld = false)]
+	[Description("Lists normalized entity or Freedom UI page business rules from a Creatio environment.")]
+	public BusinessRuleListResponse BusinessRuleList(
+		[Description("Creatio environment name.")]
+		[Required]
+		string environmentName,
+		[Description("Business-rule scope type. Supported values: entity, page.")]
+		[Required]
+		string scopeType,
+		[Description("Entity schema name when scopeType is entity; Freedom UI page schema name when scopeType is page.")]
+		[Required]
+		string schemaName) {
+		BusinessRuleReadOptions options = new() {
+			EnvironmentName = environmentName,
+			ScopeType = scopeType,
+			SchemaName = schemaName
+		};
+		return ExecuteRead(options, resolvedCommand => resolvedCommand.List(options));
+	}
+
+	[McpServerTool(Name = BusinessRuleGetToolName, ReadOnly = true, Destructive = false, Idempotent = true,
+		OpenWorld = false)]
+	[Description("Gets one normalized entity or Freedom UI page business rule from a Creatio environment.")]
+	public BusinessRuleGetResponse BusinessRuleGet(
+		[Description("Creatio environment name.")]
+		[Required]
+		string environmentName,
+		[Description("Business-rule scope type. Supported values: entity, page.")]
+		[Required]
+		string scopeType,
+		[Description("Entity schema name when scopeType is entity; Freedom UI page schema name when scopeType is page.")]
+		[Required]
+		string schemaName,
+		[Description("Business-rule UID. Preferred selector. Provide exactly one of ruleUId, ruleName, or caption.")]
+		string? ruleUId = null,
+		[Description("Business-rule platform name, for example BusinessRule_1234567. Provide exactly one of ruleUId, ruleName, or caption.")]
+		string? ruleName = null,
+		[Description("Business-rule caption. Provide exactly one of ruleUId, ruleName, or caption.")]
+		string? caption = null) {
+		BusinessRuleReadOptions options = new() {
+			EnvironmentName = environmentName,
+			ScopeType = scopeType,
+			SchemaName = schemaName,
+			RuleUId = ruleUId,
+			RuleName = ruleName,
+			Caption = caption
+		};
+		return ExecuteRead(options, resolvedCommand => resolvedCommand.Get(options));
+	}
+
+	private TResponse ExecuteRead<TResponse>(
+		BusinessRuleReadOptions options,
+		Func<BusinessRuleReadCommand, TResponse> execute)
+		where TResponse : class {
+		lock (CommandExecutionSyncRoot) {
+			try {
+				BusinessRuleReadCommand resolvedCommand = ResolveCommand<BusinessRuleReadCommand>(options);
+				return execute(resolvedCommand);
+			} catch (Exception ex) {
+				return CreateErrorResponse<TResponse>(options, ex.Message);
+			}
+		}
+	}
+
+	private static TResponse CreateErrorResponse<TResponse>(
+		BusinessRuleReadOptions options,
+		string error)
+		where TResponse : class {
+		if (typeof(TResponse) == typeof(BusinessRuleListResponse)) {
+			return (TResponse)(object)new BusinessRuleListResponse {
+				Success = false,
+				ScopeType = options.ScopeType,
+				SchemaName = options.SchemaName,
+				Error = error
+			};
+		}
+
+		return (TResponse)(object)new BusinessRuleGetResponse {
+			Success = false,
+			ScopeType = options.ScopeType,
+			SchemaName = options.SchemaName,
+			Error = error
+		};
 	}
 }
