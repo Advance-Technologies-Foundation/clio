@@ -20,7 +20,7 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 			       clio MCP DataForge orchestration guide
 
 			       Prerequisites
-			       - CrtDataForge 7.8.0+ must be installed on the target Creatio instance.
+			       - Creatio platform version 10.0.0 or later is required; CrtDataForge is included in supported platform versions.
 			       - The Creatio user must have the CanReadDataStructureColumnDetails operation permission.
 			       - All DataForge calls are proxied through Creatio REST endpoints (DataForgeSchemaReadService, DataForgeMaintenanceService). No direct microservice access or OAuth credentials are needed.
 

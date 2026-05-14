@@ -1099,6 +1099,9 @@ public sealed class ToolContractGetToolTests {
 				contract.Name == DataForgeTool.DataForgeUpdateToolName &&
 				contract.OutputContract.Fields.Any(field => field.Name == "status"),
 			because: "the maintenance update contract should remain available through explicit lookup");
+		result.Tools.Should().OnlyContain(contract =>
+				contract.Description.Contains("Creatio platform version 10.0.0 or later"),
+			because: "DataForge contracts should advertise the Creatio platform requirement");
 	}
 
 	[Test]

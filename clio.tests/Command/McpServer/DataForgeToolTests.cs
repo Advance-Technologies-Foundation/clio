@@ -59,13 +59,16 @@ public sealed class DataForgeToolTests {
 		DataForgeTool tool = CreateTool(readClient);
 
 		// Act
-		DataForgeColumnsResponse result = tool.GetTableColumns(new DataForgeGetTableColumnsArgs(TableName: "Contact"));
+		DataForgeColumnsResponse result = tool.GetTableColumns(new DataForgeGetTableColumnsArgs(TableName: "Contact") {
+			EnvironmentName = "sandbox"
+		});
 
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "valid read client results should produce a successful response");
 		result.Columns.Should().HaveCount(2,
 			because: "all columns from the read client should be returned");
+		readClient.Received(1).GetTableColumnsDetails("Contact");
 	}
 
 	[Test]
@@ -96,7 +99,9 @@ public sealed class DataForgeToolTests {
 			RequirementSummary: "customer request",
 			CandidateTerms: ["customer request"],
 			LookupHints: ["industry"],
-			RelationPairs: [new DataForgeRelationPairArgs("Contact", "Account")]));
+			RelationPairs: [new DataForgeRelationPairArgs("Contact", "Account")]) {
+			EnvironmentName = "sandbox"
+		});
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -105,6 +110,42 @@ public sealed class DataForgeToolTests {
 			because: "warnings from the context service should be preserved");
 		result.Coverage.Columns.Should().BeFalse(
 			because: "coverage from the context service should be preserved");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every DataForge tool call should reject missing environment-name before resolving target-scoped services.")]
+	public void GetTableColumns_Should_Reject_Missing_Environment_Name() {
+		// Arrange
+		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		DataForgeTool tool = CreateTool(readClient, commandResolver: commandResolver);
+
+		// Act
+		DataForgeColumnsResponse result = tool.GetTableColumns(new DataForgeGetTableColumnsArgs(TableName: "Contact"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "environment-name is required by the DataForge tool contract");
+		result.Error!.Message.Should().Contain("environment-name is required",
+			because: "callers need a clear contract error for missing environment-name");
+		commandResolver.DidNotReceiveWithAnyArgs().Resolve<IDataForgeReadClient>(default!);
+		readClient.DidNotReceiveWithAnyArgs().GetTableColumnsDetails(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("DataForge tool descriptions should advertise the Creatio platform version requirement rather than an external CrtDataForge package version.")]
+	public void DataForgeTools_Should_Advertise_Creatio_Platform_Version_Requirement() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(DataForgeTool).GetMethod(nameof(DataForgeTool.GetStatus))!;
+		System.ComponentModel.DescriptionAttribute attribute = method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single();
+
+		// Assert
+		attribute.Description.Should().Contain("Creatio platform version 10.0.0 or later",
+			because: "CrtDataForge is bundled into supported Creatio platform versions");
 	}
 
 	[Test]
@@ -177,10 +218,17 @@ public sealed class DataForgeToolTests {
 		IDataForgeMaintenanceClient? maintenanceClient = null,
 		IDataForgeContextService? contextService = null,
 		IToolCommandResolver? commandResolver = null) {
+		readClient ??= Substitute.For<IDataForgeReadClient>();
+		maintenanceClient ??= Substitute.For<IDataForgeMaintenanceClient>();
+		contextService ??= Substitute.For<IDataForgeContextService>();
+		commandResolver ??= Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IDataForgeReadClient>(Arg.Any<DataForgeTargetOptions>()).Returns(readClient);
+		commandResolver.Resolve<IDataForgeMaintenanceClient>(Arg.Any<DataForgeTargetOptions>()).Returns(maintenanceClient);
+		commandResolver.Resolve<IDataForgeContextService>(Arg.Any<DataForgeTargetOptions>()).Returns(contextService);
 		return new(
-			readClient ?? Substitute.For<IDataForgeReadClient>(),
-			maintenanceClient ?? Substitute.For<IDataForgeMaintenanceClient>(),
-			contextService ?? Substitute.For<IDataForgeContextService>(),
-			commandResolver ?? Substitute.For<IToolCommandResolver>());
+			readClient,
+			maintenanceClient,
+			contextService,
+			commandResolver);
 	}
 }

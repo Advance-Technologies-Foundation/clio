@@ -28,23 +28,29 @@ internal sealed class DataForgeContextService(
 		DataForgeContextRequest request,
 		CancellationToken cancellationToken = default) {
 		ArgumentNullException.ThrowIfNull(request);
+		cancellationToken.ThrowIfCancellationRequested();
 
 		List<string> warnings = [];
 		(DataForgeHealthResult health, DataForgeMaintenanceStatusResult status) = maintenanceClient.GetFullStatus();
+		cancellationToken.ThrowIfCancellationRequested();
 
 		List<string> tableTerms = NormalizeTerms(request.CandidateTerms, request.RequirementSummary);
-		List<SimilarTableResult> similarTables = FindSimilarTables(tableTerms, warnings);
+		List<SimilarTableResult> similarTables = FindSimilarTables(tableTerms, warnings, cancellationToken);
 
 		List<string> lookupTerms = NormalizeTerms(request.LookupHints, null);
-		List<SimilarLookupResult> similarLookups = FindSimilarLookups(lookupTerms, warnings);
+		List<SimilarLookupResult> similarLookups = FindSimilarLookups(lookupTerms, warnings, cancellationToken);
 
 		Dictionary<string, IReadOnlyList<string>> relations = GetRelations(
 			request.RelationPairs,
-			warnings);
+			warnings,
+			cancellationToken);
 
 		List<SimilarTableResult> distinctTables = GetDistinctTables(similarTables);
 
-		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = GetColumns(distinctTables, warnings);
+		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = GetColumns(
+			distinctTables,
+			warnings,
+			cancellationToken);
 
 		List<SimilarLookupResult> distinctLookups = GetDistinctLookups(similarLookups);
 
@@ -108,9 +114,11 @@ internal sealed class DataForgeContextService(
 
 	private List<SimilarTableResult> FindSimilarTables(
 		IReadOnlyList<string> tableTerms,
-		List<string> warnings) {
+		List<string> warnings,
+		CancellationToken cancellationToken) {
 		List<SimilarTableResult> similarTables = [];
 		foreach (string term in tableTerms) {
+			cancellationToken.ThrowIfCancellationRequested();
 			try {
 				similarTables.AddRange(readClient.FindSimilarTables(term));
 			}
@@ -124,9 +132,11 @@ internal sealed class DataForgeContextService(
 
 	private List<SimilarLookupResult> FindSimilarLookups(
 		IReadOnlyList<string> lookupTerms,
-		List<string> warnings) {
+		List<string> warnings,
+		CancellationToken cancellationToken) {
 		List<SimilarLookupResult> similarLookups = [];
 		foreach (string hint in lookupTerms) {
+			cancellationToken.ThrowIfCancellationRequested();
 			try {
 				similarLookups.AddRange(readClient.FindSimilarLookups(hint));
 			}
@@ -140,9 +150,11 @@ internal sealed class DataForgeContextService(
 
 	private Dictionary<string, IReadOnlyList<string>> GetRelations(
 		IReadOnlyList<DataForgeRelationPair>? relationPairs,
-		List<string> warnings) {
+		List<string> warnings,
+		CancellationToken cancellationToken) {
 		Dictionary<string, IReadOnlyList<string>> relations = new(StringComparer.OrdinalIgnoreCase);
 		foreach (DataForgeRelationPair pair in relationPairs?.Where(HasRelationTables) ?? []) {
+			cancellationToken.ThrowIfCancellationRequested();
 			string key = $"{pair.SourceTable}->{pair.TargetTable}";
 			try {
 				relations[key] = readClient.GetTableRelationships(pair.SourceTable, pair.TargetTable);
@@ -157,9 +169,11 @@ internal sealed class DataForgeContextService(
 
 	private Dictionary<string, IReadOnlyList<DataForgeColumnResult>> GetColumns(
 		IReadOnlyList<SimilarTableResult> distinctTables,
-		List<string> warnings) {
+		List<string> warnings,
+		CancellationToken cancellationToken) {
 		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = new(StringComparer.OrdinalIgnoreCase);
 		foreach (string tableName in distinctTables.Select(table => table.Name)) {
+			cancellationToken.ThrowIfCancellationRequested();
 			try {
 				columns[tableName] = readClient.GetTableColumnsDetails(tableName);
 			}

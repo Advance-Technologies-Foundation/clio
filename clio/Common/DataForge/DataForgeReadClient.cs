@@ -38,8 +38,10 @@ public interface IDataForgeReadClient {
 /// </summary>
 public sealed class DataForgeReadClient(
 	IApplicationClient applicationClient,
-	IServiceUrlBuilder serviceUrlBuilder) : IDataForgeReadClient {
+	IServiceUrlBuilder serviceUrlBuilder,
+	IDataForgePlatformVersionGuard versionGuard) : IDataForgeReadClient {
 	private const string ServiceBasePath = "rest/DataForgeSchemaReadService";
+	internal const int RequestTimeoutMs = 60_000;
 
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		PropertyNameCaseInsensitive = true
@@ -48,9 +50,7 @@ public sealed class DataForgeReadClient(
 	/// <inheritdoc />
 	public IReadOnlyList<SimilarTableResult> FindSimilarTables(string query, int? limit = null) {
 		var request = new { request = new { query, limit } };
-		string response = applicationClient.ExecutePostRequest(
-			BuildMethodUrl("GetSimilarTableNames"),
-			JsonSerializer.Serialize(request, JsonOptions));
+		string response = ExecuteProxyPost("GetSimilarTableNames", request);
 		CreatioTablesEnvelope? envelope = Deserialize<CreatioTablesEnvelope>(response);
 		CreatioTablesPayload? payload = envelope?.GetSimilarTableNamesResult;
 		if (payload is null || !payload.Success) {
@@ -66,9 +66,7 @@ public sealed class DataForgeReadClient(
 	/// <inheritdoc />
 	public IReadOnlyList<SimilarLookupResult> FindSimilarLookups(string query, string? schemaName = null, int? limit = null) {
 		var request = new { request = new { query, schemaName, limit } };
-		string response = applicationClient.ExecutePostRequest(
-			BuildMethodUrl("GetLookupValues"),
-			JsonSerializer.Serialize(request, JsonOptions));
+		string response = ExecuteProxyPost("GetLookupValues", request);
 		CreatioLookupsEnvelope? envelope = Deserialize<CreatioLookupsEnvelope>(response);
 		CreatioLookupsPayload? payload = envelope?.GetLookupValuesResult;
 		if (payload is null || !payload.Success) {
@@ -88,9 +86,7 @@ public sealed class DataForgeReadClient(
 	/// <inheritdoc />
 	public IReadOnlyList<string> GetTableRelationships(string sourceTable, string targetTable, int? limit = null) {
 		var request = new { request = new { sourceTable, targetTable, limit } };
-		string response = applicationClient.ExecutePostRequest(
-			BuildMethodUrl("GetTableRelationships"),
-			JsonSerializer.Serialize(request, JsonOptions));
+		string response = ExecuteProxyPost("GetTableRelationships", request);
 		CreatioRelationsEnvelope? envelope = Deserialize<CreatioRelationsEnvelope>(response);
 		CreatioRelationsPayload? payload = envelope?.GetTableRelationshipsResult;
 		if (payload is null || !payload.Success) {
@@ -104,9 +100,7 @@ public sealed class DataForgeReadClient(
 	/// <inheritdoc />
 	public IReadOnlyList<DataForgeColumnResult> GetTableColumnsDetails(string tableName) {
 		var request = new { request = new { tableName } };
-		string response = applicationClient.ExecutePostRequest(
-			BuildMethodUrl("GetTableColumnsDetails"),
-			JsonSerializer.Serialize(request, JsonOptions));
+		string response = ExecuteProxyPost("GetTableColumnsDetails", request);
 		CreatioColumnsEnvelope? envelope = Deserialize<CreatioColumnsEnvelope>(response);
 		CreatioColumnsPayload? payload = envelope?.GetTableColumnsDetailsResult;
 		if (payload is null || !payload.Success) {
@@ -126,6 +120,16 @@ public sealed class DataForgeReadClient(
 	}
 
 	private string BuildMethodUrl(string methodName) => serviceUrlBuilder.Build($"{ServiceBasePath}/{methodName}");
+
+	private string ExecuteProxyPost(string methodName, object request) {
+		versionGuard.EnsureSupported();
+		return applicationClient.ExecutePostRequest(
+			BuildMethodUrl(methodName),
+			JsonSerializer.Serialize(request, JsonOptions),
+			RequestTimeoutMs,
+			1,
+			1);
+	}
 
 	private static T? Deserialize<T>(string response) where T : class {
 		return string.IsNullOrWhiteSpace(response) ? null : JsonSerializer.Deserialize<T>(response, JsonOptions);

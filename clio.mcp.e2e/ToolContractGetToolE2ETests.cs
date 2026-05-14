@@ -190,6 +190,9 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "explicit lookup should still return Data Forge initialize for remediation workflows");
 		explicitResponse.Tools!.Select(tool => tool.Name).Should().Contain(DataForgeTool.DataForgeUpdateToolName,
 			because: "explicit lookup should still return Data Forge update for remediation workflows");
+		explicitResponse.Tools.Should().OnlyContain(tool =>
+				tool.Description.Contains("Creatio platform version 10.0.0 or later"),
+			because: "Data Forge contracts should advertise the platform version requirement through the real MCP server");
 	}
 
 	[Test]

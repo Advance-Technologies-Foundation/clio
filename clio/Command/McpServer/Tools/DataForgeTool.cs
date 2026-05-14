@@ -25,10 +25,12 @@ public sealed class DataForgeTool(
 	internal const string DataForgeUpdateToolName = "dataforge-update";
 
 	private const string SourceName = "clio+dataforge-service";
+	private const string PlatformRequirementDescription =
+		"Requires Creatio platform version 10.0.0 or later; CrtDataForge is included in supported platform versions.";
 
 	[McpServerTool(Name = DataForgeStatusToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Returns DataForge service health (liveness, readiness, data-structure and lookups readiness) and Creatio maintenance status in a single call via the Creatio DataForgeMaintenanceService proxy. Requires CrtDataForge 7.8.0+. The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Returns DataForge service health (liveness, readiness, data-structure and lookups readiness) and Creatio maintenance status in a single call via the Creatio DataForgeMaintenanceService proxy. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
 	public DataForgeStatusResponse GetStatus(
 		[Description("Parameters: environment-name (required).")]
 		[Required]
@@ -53,7 +55,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeFindTablesToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Finds similar tables via the Creatio DataForgeSchemaReadService proxy. Requires CrtDataForge 7.8.0+. The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Finds similar tables via the Creatio DataForgeSchemaReadService proxy. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
 	public DataForgeFindTablesResponse FindTables(
 		[Description("Parameters: query (required), optional limit, environment-name (required).")]
 		[Required]
@@ -78,7 +80,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeFindLookupsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Finds similar lookups via the Creatio DataForgeSchemaReadService proxy. Requires CrtDataForge 7.8.0+. The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Finds similar lookups via the Creatio DataForgeSchemaReadService proxy. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
 	public DataForgeFindLookupsResponse FindLookups(
 		[Description("Parameters: query (required), optional schema-name, optional limit, environment-name (required).")]
 		[Required]
@@ -103,7 +105,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeGetRelationsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Retrieves relationship paths between two tables via the Creatio DataForgeSchemaReadService proxy. Requires CrtDataForge 7.8.0+. The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Retrieves relationship paths between two tables via the Creatio DataForgeSchemaReadService proxy. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
 	public DataForgeRelationsResponse GetRelations(
 		[Description("Parameters: source-table, target-table (required), optional limit, environment-name (required).")]
 		[Required]
@@ -129,7 +131,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeGetTableColumnsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Reads table column details via the Creatio DataForgeSchemaReadService proxy. Requires CrtDataForge 7.8.0+. The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Reads table column details via the Creatio DataForgeSchemaReadService proxy. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
 	public DataForgeColumnsResponse GetTableColumns(
 		[Description("Parameters: table-name (required), environment-name (required).")]
 		[Required]
@@ -154,7 +156,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeContextToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Aggregates tables, lookups, relations, columns, and service status via the Creatio DataForge proxy endpoints. Requires CrtDataForge 7.8.0+. The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Aggregates tables, lookups, relations, columns, and service status via the Creatio DataForge proxy endpoints. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
 	public DataForgeContextResponse GetContext(
 		[Description("Parameters: requirement-summary/candidate-terms/lookup-hints/relation-pairs, environment-name (required).")]
 		[Required]
@@ -201,7 +203,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeInitializeToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Schedules DataForge initialize jobs via the Creatio DataForgeMaintenanceService proxy. Requires CrtDataForge 7.8.0+. The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Schedules DataForge initialize jobs via the Creatio DataForgeMaintenanceService proxy. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
 	public DataForgeMaintenanceResponse Initialize(
 		[Description("Parameters: environment-name (required).")]
 		[Required]
@@ -225,7 +227,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeUpdateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Schedules DataForge update jobs via the Creatio DataForgeMaintenanceService proxy. Requires CrtDataForge 7.8.0+. The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Schedules DataForge update jobs via the Creatio DataForgeMaintenanceService proxy. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
 	public DataForgeMaintenanceResponse Update(
 		[Description("Parameters: environment-name (required).")]
 		[Required]
@@ -248,6 +250,7 @@ public sealed class DataForgeTool(
 	}
 
 	private T Execute<T>(DataForgeConnectionArgsBase args, Func<DataForgeTargetOptions, T> action) {
+		EnsureRequired(args.EnvironmentName, "environment-name");
 		DataForgeTargetOptions options = CreateTargetOptions(args);
 		return action(options);
 	}
@@ -259,15 +262,7 @@ public sealed class DataForgeTool(
 	}
 
 	private TService ResolveService<TService>(DataForgeTargetOptions options, TService fallback) where TService : class {
-		if (HasExplicitTarget(options)) {
-			return commandResolver.Resolve<TService>(options);
-		}
-
-		return fallback;
-	}
-
-	private static bool HasExplicitTarget(DataForgeTargetOptions options) {
-		return !string.IsNullOrWhiteSpace(options.Environment);
+		return commandResolver.Resolve<TService>(options);
 	}
 
 	private static DataForgeTargetOptions CreateTargetOptions(DataForgeConnectionArgsBase args) {
