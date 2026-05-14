@@ -558,6 +558,11 @@ public sealed class ToolContractGetToolE2ETests {
 				validator.Context!.Contains("forward reference paths like LookupColumn.SourceColumn", StringComparison.Ordinal),
 			because: "the contract should advertise AttributeValue source support for Set values");
 		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "set-values-shape" &&
+				validator.Field == "rule.actions[*].items[*]" &&
+				validator.Context!.Contains("direct-field arithmetic expression", StringComparison.Ordinal),
+			because: "the real MCP server contract should advertise the simple direct-field formula scope");
+		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-constant" &&
 				validator.Field == "rule.actions[*].items[*].value.value" &&
 				validator.Context!.Contains("JSON number", StringComparison.Ordinal),
