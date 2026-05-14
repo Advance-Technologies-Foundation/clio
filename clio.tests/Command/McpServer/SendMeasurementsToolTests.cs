@@ -196,6 +196,28 @@ public sealed class SendMeasurementsToolTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("Preserves a denied consent decision when a later measurement includes stale granted consent.")]
+	public void MeasurementService_Should_Not_Overwrite_Denied_Consent_With_Later_Granted_Value()
+	{
+		// Arrange
+		MeasurementService service = CreateService();
+		service.Send(CreateRequest() with { TelemetryConsent = "denied" });
+
+		// Act
+		MeasurementResult result = service.Send(CreateRequest("business_plan_generated") with { TelemetryConsent = "granted" });
+		MeasurementConsentResult consent = service.GetConsentStatus();
+
+		// Assert
+		result.Status.Should().Be("consent-denied",
+			because: "send-measurements must not act as a consent update endpoint after an opt-out");
+		consent.TelemetryConsent.Should().Be("denied",
+			because: "a stale granted payload must not override the persisted denied decision");
+		EventFiles().Should().BeEmpty(
+			because: "no event should be stored after denied consent even when a later payload includes granted");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Persists granted-consent events as OpenTelemetry-shaped JSON files.")]
 	public void MeasurementService_Should_Write_Otel_Event_To_Events_Directory()
 	{

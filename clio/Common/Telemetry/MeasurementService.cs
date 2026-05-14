@@ -157,7 +157,8 @@ public sealed class MeasurementService : IMeasurementService
 	private ConsentState ResolveConsent(string explicitConsent)
 	{
 		ConsentState current = ReadConsent();
-		if (string.IsNullOrWhiteSpace(explicitConsent)) {
+		if (string.IsNullOrWhiteSpace(explicitConsent)
+			|| current.TelemetryConsent is ConsentGranted or ConsentDenied) {
 			return current;
 		}
 		ConsentState updated = new(explicitConsent, DateTimeOffset.UtcNow);
