@@ -1133,6 +1133,12 @@ public sealed class ToolContractGetToolTests {
 		result.Tools.Should().OnlyContain(contract =>
 				contract.Description.Contains("Creatio platform version 10.0.0 or later"),
 			because: "DataForge contracts should advertise the Creatio platform requirement");
+		result.Tools.Should().Contain(contract =>
+				contract.Name == DataForgeTool.DataForgeStatusToolName &&
+				contract.PreferredFlow != null &&
+				contract.PreferredFlow.Notes.Contains("DataForgeMaintenanceService proxy") &&
+				!contract.PreferredFlow.Notes.Contains("direct service"),
+			because: "the dataforge-status preferred-flow description must reference the proxy not direct service calls");
 	}
 
 	[Test]

@@ -963,7 +963,7 @@ internal static class ToolContractCatalog {
 						[EnvironmentNameFieldName] = ExampleEnvironmentName
 					})
 				],
-				PreferredFlow = Flow([DataForgeTool.DataForgeStatusToolName], "Use when callers need both direct service probes and maintenance readiness before Data Forge discovery.")
+				PreferredFlow = Flow([DataForgeTool.DataForgeStatusToolName], "Use when callers need to verify DataForgeMaintenanceService proxy health and maintenance readiness before Data Forge discovery.")
 			});
 	}
 
