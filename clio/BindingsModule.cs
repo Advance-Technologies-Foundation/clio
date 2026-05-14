@@ -26,6 +26,7 @@ using Clio.Common.Assertions;
 using Clio.Common.db;
 using Clio.Common.DeploymentStrategies;
 using Clio.Common.SystemServices;
+using Clio.Common.Telemetry;
 using Clio.Common.K8;
 using Clio.Common.Kubernetes;
 using Clio.Common.Database;
@@ -267,6 +268,9 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();
 		services.AddTransient<ToolContractGetTool>();
+		services.AddTransient<IMeasurementService, MeasurementService>();
+		services.AddTransient<GetMeasurementsConsentTool>();
+		services.AddTransient<SendMeasurementsTool>();
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
 		services.AddTransient<PageCreateTool>();

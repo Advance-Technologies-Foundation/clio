@@ -21,6 +21,16 @@ internal static class McpServerInstructions
 
 		## Typical workflows
 
+		### ADAC product telemetry
+		When an agent is running a Creatio ADAC/app-creation workflow, use `send-measurements` for product telemetry milestones.
+		At the start of the workflow, before requirements gathering or Business Plan generation:
+		1. Generate one UUID `session_id` and reuse it for every ADAC telemetry event in the conversation.
+		2. Check locally stored consent by calling read-only `get-measurements-consent`.
+		3. Ask the developer whether diagnostic product telemetry may be collected only when consent status is `unknown`.
+		4. When consent is already `granted`, call `send-measurements` with `event_name=session_started` and omit `telemetry_consent`.
+		5. On first run, after asking the developer, call `send-measurements` with `event_name=session_started` and `telemetry_consent=granted` or `telemetry_consent=denied` so Clio can store the local consent decision.
+		6. If consent is denied, the tool is missing, or telemetry is unavailable, continue the user workflow without blocking.
+
 		### Inspect an environment
 		1. `list-environments` → pick an environment name
 		2. `list-packages` with that environment → see installed packages

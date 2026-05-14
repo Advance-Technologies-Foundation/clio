@@ -284,6 +284,8 @@ internal static class ToolContractCatalog {
 			[ToolContractGetTool.ToolName] = BuildToolContractGet(),
 			[GuidanceGetTool.ToolName] = BuildGuidanceGet(),
 			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
+			[GetMeasurementsConsentTool.ToolName] = BuildGetMeasurementsConsent(),
+			[SendMeasurementsTool.ToolName] = BuildSendMeasurements(),
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
 			[ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName] = BuildApplicationSectionUpdate(),
@@ -328,6 +330,8 @@ internal static class ToolContractCatalog {
 	private static readonly string[] CanonicalToolNames = [
 		GuidanceGetTool.ToolName,
 		SettingsHealthTool.ToolName,
+		GetMeasurementsConsentTool.ToolName,
+		SendMeasurementsTool.ToolName,
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
@@ -509,6 +513,94 @@ internal static class ToolContractCatalog {
 					"Follow with get-tool-contract when the caller must choose a bootstrap-safe recovery or inspection tool.")
 			],
 			[]);
+	}
+
+	private static ToolContractDefinition BuildSendMeasurements() {
+		return BuildSendMeasurementsContract(SendMeasurementsTool.ToolName, "Use at ADAC workflow milestones after the user has granted product telemetry consent.");
+	}
+
+	private static ToolContractDefinition BuildGetMeasurementsConsent() {
+		return BuildGetMeasurementsConsentContract(GetMeasurementsConsentTool.ToolName,
+			"Use before sending the first ADAC measurement event to check whether telemetry consent is already stored locally.");
+	}
+
+	private static ToolContractDefinition BuildGetMeasurementsConsentContract(string toolName, string flowNotes) {
+		return new ToolContractDefinition(
+			toolName,
+			"Reads locally persisted ADAC product telemetry consent without storing any measurement event.",
+			new ToolInputSchemaContract([], []),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(StatusFieldName, StringType, "Consent lookup status: known or unknown."),
+				Field("telemetry_consent", StringType, "Local consent value: granted, denied, or unknown.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read local telemetry consent", new Dictionary<string, object?>())
+			],
+			Flow([toolName], flowNotes),
+			[],
+			[],
+			[
+				new ToolAntiPattern("Sending session_started to check consent", "Use this read-only consent tool before any measurement event. Do not call send-measurements until consent is granted or the first-run answer must be persisted.")
+			]);
+	}
+
+	private static ToolContractDefinition BuildSendMeasurementsContract(string toolName, string flowNotes) {
+		return new ToolContractDefinition(
+			toolName,
+			"Stores an ADAC product telemetry measurement as a local OpenTelemetry-shaped JSON file after user consent.",
+			new ToolInputSchemaContract(
+				["session_id", "event_name", "coding_agent", "skill_version", "plugin_version"],
+				[
+					Field("session_id", StringType, "Stable ADAC workflow session identifier reused across all events in one app-creation conversation."),
+					Field("event_name", StringType, "ADAC product event name. Allowed values: session_started, pre_plan_clarification_requested, pre_plan_user_input_received, business_plan_generated, business_plan_generation_skipped, business_plan_feedback_received, business_plan_regenerated, business_plan_approved, implementation_started, implementation_completed, implementation_failed, implementation_user_input_received, implementation_changes_requested, implementation_changes_applied."),
+					Field("coding_agent", StringType, "Agent or host name, for example Codex, Claude Code, Cursor, Copilot, or VS Code."),
+					Field("skill_version", StringType, "ADAC skill version."),
+					Field("plugin_version", StringType, "ADAC plugin version."),
+					Field("duration_ms", NumberType, "Optional step duration for meaningful workflow transitions in milliseconds."),
+					Field("telemetry_consent", StringType, "Optional first-use consent value after asking the user: granted or denied.")
+				],
+				Validators: [
+					new ToolContractValidator("enum", "unknown-event-name", "event_name",
+						Context: "event_name must be one of the documented ADAC product event names.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal,
+					"status == rejected"
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(StatusFieldName, StringType, "Measurement status: stored, consent-denied, or rejected."),
+				Field("event_id", StringType, "Generated event identifier when an event is stored."),
+				Field(ErrorFieldName, ObjectType, "Structured validation or persistence error when rejected.")),
+			CommonErrorContract,
+			[],
+			[
+				new ToolContractDefaultValue("telemetry_consent", "omitted after first run", "Consent is persisted locally after the first granted or denied value.")
+			],
+			[
+				Example("Store a Business Plan generated event after consent", new Dictionary<string, object?> {
+					["session_id"] = "018f6e4a-0000-7000-9000-000000000001",
+					["event_name"] = "business_plan_generated",
+					["coding_agent"] = "Codex",
+					["skill_version"] = "0.1.0",
+					["plugin_version"] = "0.1.0",
+					["duration_ms"] = 82000
+				})
+			],
+			Flow([toolName], flowNotes),
+			[],
+			[],
+			[
+				new ToolAntiPattern("Adding custom measurement fields", "The measurement tool accepts only the documented product telemetry fields.")
+			]);
 	}
 
 	private static ToolContractDefinition BuildGuidanceGet() {
