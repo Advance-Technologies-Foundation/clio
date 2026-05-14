@@ -3133,3 +3133,17 @@ Decision: Generated one static resource catalog/class for the 13 remaining skill
 Discovery: E2E MCP server processes can keep `clio/bin/Debug/net10.0/clio.dll` locked after tests; stopping only the matching `dotnet ... clio.dll mcp-server` processes clears the build lock.
 Files: clio/Command/McpServer/Resources/ComposableAppSkillGuidanceResources.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.tests/Command/McpServer/GuidanceGetToolTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
 Impact: MCP clients can now list/read all composable-app skill guides and references, and `get-guidance` resolves every top-level composable-app skill name.
+
+## 2026-05-14 23:08 – Diagnosed create-data-binding environment alias parser regression
+Context: User asked who broke `Parse_Should_Map_Lowercase_Environment_Alias`.
+Decision: Identified commit `a536a4df` (`fix(cli): rename camelCase/PascalCase options to kebab-case with backward-compat aliases`) by Vladimir as the regression source.
+Discovery: `CreateDataBindingOptions` already declared `[Option("environment")]` as a lowercase shim over inherited `EnvironmentOptions.Environment`; `a536a4df` renamed the inherited option from `[Option('e', "Environment")]` to `[Option('e', "environment")]`, creating duplicate `--environment` descriptors and causing CommandLineParser to throw `Sequence contains more than one matching element`.
+Files: clio/Command/CommandLineOptions.cs, clio/Command/DataBindingCommand.cs, clio.tests/Command/DataBindingCommandTests.cs
+Impact: Fix should remove or rename the command-specific `CreateDataBindingOptions.EnvironmentAlias` shim now that the shared inherited option is canonical lowercase, while preserving the inherited hidden `--Environment` alias.
+
+## 2026-05-14 23:11 – Fixed data-binding duplicate environment options
+Context: User asked to fix `Parse_Should_Map_Lowercase_Environment_Alias`.
+Decision: Removed command-local `[Option("environment")]` alias properties from file-first and DB-first data-binding option classes; the inherited `EnvironmentOptions.Environment` is now the only canonical lowercase descriptor, with inherited hidden `--Environment` still available for compatibility.
+Discovery: The same duplicate descriptor pattern existed in `create-data-binding-db`, `upsert-data-binding-row-db`, and `remove-data-binding-row-db`, so the fix covered those commands too.
+Files: clio/Command/DataBindingCommand.cs, clio/Command/DataBindingDbCommand.cs
+Impact: CommandLineParser no longer throws on `--environment` for data-binding commands, and the documented command/MCP contracts remain unchanged.

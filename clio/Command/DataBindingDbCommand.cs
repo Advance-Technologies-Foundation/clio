@@ -16,12 +16,6 @@ namespace Clio.Command;
 /// </summary>
 [Verb("create-data-binding-db", HelpText = "Create a DB-first package data binding by saving data directly to the remote Creatio database")]
 public class CreateDataBindingDbOptions : EnvironmentOptions {
-	[Option("environment", Required = false, HelpText = "Environment name")]
-	public string? EnvironmentAlias {
-		get => Environment;
-		set => Environment = value;
-	}
-
 	[Option("package", Required = true, HelpText = "Target package name")]
 	public string PackageName { get; set; } = string.Empty;
 
@@ -40,12 +34,6 @@ public class CreateDataBindingDbOptions : EnvironmentOptions {
 /// </summary>
 [Verb("upsert-data-binding-row-db", HelpText = "Upsert a single row in a remote DB-first data binding")]
 public class UpsertDataBindingRowDbOptions : EnvironmentOptions {
-	[Option("environment", Required = false, HelpText = "Environment name")]
-	public string? EnvironmentAlias {
-		get => Environment;
-		set => Environment = value;
-	}
-
 	[Option("package", Required = true, HelpText = "Target package name")]
 	public string PackageName { get; set; } = string.Empty;
 
@@ -61,12 +49,6 @@ public class UpsertDataBindingRowDbOptions : EnvironmentOptions {
 /// </summary>
 [Verb("remove-data-binding-row-db", HelpText = "Remove a row from a remote DB-first data binding and delete the package schema data record when no bound rows remain")]
 public class RemoveDataBindingRowDbOptions : EnvironmentOptions {
-	[Option("environment", Required = false, HelpText = "Environment name")]
-	public string? EnvironmentAlias {
-		get => Environment;
-		set => Environment = value;
-	}
-
 	[Option("package", Required = true, HelpText = "Target package name")]
 	public string PackageName { get; set; } = string.Empty;
 
