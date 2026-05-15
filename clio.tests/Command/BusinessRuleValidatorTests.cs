@@ -999,6 +999,56 @@ public sealed class BusinessRuleValidatorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects set-values Formula sources that use DateTime attributes in arithmetic expressions.")]
+	public void Validate_Should_Reject_SetValues_Formula_With_DateTime_Source() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction(
+					"NumberOfDays",
+					new BusinessRuleExpression("Formula", expression: "EndDate - StartDate + 1"))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("NumberOfDays", 4),
+			CreateColumn("StartDate", 7),
+			CreateColumn("EndDate", 7));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Formula source attribute 'EndDate' has type DateTime. Formula set-values supports only numeric source attributes.",
+				because: "current formula support is limited to numeric arithmetic and must not accept DateTime subtraction");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects set-values Formula assignments to non-numeric target attributes.")]
+	public void Validate_Should_Reject_SetValues_Formula_With_Non_Numeric_Target() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			actions: [
+				CreateSetValuesAction("TextResult", new BusinessRuleExpression("Formula", expression: "BaseScore + BonusScore"))
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("TextResult", 1),
+			CreateColumn("BaseScore", 4),
+			CreateColumn("BonusScore", 4));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Formula target attribute 'TextResult' has type Text. Formula set-values supports only numeric target attributes.",
+				because: "arithmetic formula results should only be assigned to numeric targets");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Accepts set-values actions that assign from another same-typed attribute.")]
 	public void Validate_Should_Accept_SetValues_Action_With_Attribute_Value_Source() {
 		// Arrange

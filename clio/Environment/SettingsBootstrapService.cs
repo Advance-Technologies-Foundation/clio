@@ -94,7 +94,6 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 		string? originalActiveEnvironmentKey = settingsModel.ActiveEnvironmentKey;
 		List<SettingsIssue> issues = [];
 		List<SettingsRepair> repairs = [];
-		bool changed = false;
 		if (settingsModel.Environments is null) {
 			settingsModel.Environments = [];
 		}
@@ -102,19 +101,12 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 			&& (string.IsNullOrWhiteSpace(settingsModel.ActiveEnvironmentKey)
 				|| !settingsModel.Environments.ContainsKey(settingsModel.ActiveEnvironmentKey))) {
 			issues.Add(new SettingsIssue("invalid-active-environment",
-				"ActiveEnvironmentKey is missing or does not point to a configured environment."));
-			string resolvedEnvironmentKey = settingsModel.Environments.First().Key;
-			repairs.Add(new SettingsRepair("set-active-environment",
-				$"Selected '{resolvedEnvironmentKey}' as the active environment."));
-			settingsModel.ActiveEnvironmentKey = resolvedEnvironmentKey;
-			changed = true;
+				"ActiveEnvironmentKey is missing or does not point to a configured environment. " +
+				"Use 'clio set-active-environment <name>' to fix this."));
 		}
 		SettingsRepository.AttachDbServers(settingsModel);
-		if (changed && _applyRepairs) {
-			SettingsRepository.SaveSettings(_fileSystem, settingsModel);
-		}
 		return BuildResult(
-			changed ? "repaired" : "healthy",
+			issues.Count > 0 ? "issues-detected" : "healthy",
 			settingsFilePath,
 			originalActiveEnvironmentKey,
 			settingsModel,

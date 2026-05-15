@@ -184,7 +184,7 @@ public sealed class CompileCreatioToolTests
 				Substitute.For<IApplicationClient>(),
 				new EnvironmentSettings(),
 				Substitute.For<IServiceUrlBuilder>(),
-				Substitute.For<ATF.Repository.Providers.IDataProvider>(),
+				Substitute.For<ICompilationHistoryPoller>(),
 				Substitute.For<ILogger>())
 		{
 		}

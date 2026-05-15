@@ -2,6 +2,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
+using Clio;
 using Clio.Common;
 using CommandLine;
 using DocumentFormat.OpenXml.Spreadsheet;
@@ -187,7 +188,7 @@ namespace Clio.Command
             }
             catch (Exception e)
             {
-                Logger.WriteError(e.Message);
+                Logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
                 return 1;
             }
         }

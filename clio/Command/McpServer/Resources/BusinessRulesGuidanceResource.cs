@@ -36,6 +36,11 @@ public sealed class BusinessRulesGuidanceResource {
 		       - It consists of a CONDITION GROUP (AND/OR of field-value comparisons) and one or more ACTIONS that fire when the condition is met.
 		       - Business rules are created via dedicated MCP tools, not by editing page schema bodies or writing JavaScript.
 
+		       State-changing actions are one-way
+		       - Actions that change field or element state (visibility, editability, or required state) apply only when their condition is met.
+		       - A business rule does not automatically roll back state or apply the inverse action when its condition stops matching.
+		       - When a requirement describes state that must switch in both directions, create an explicit inverse business rule for the opposite condition and corresponding opposite action.
+
 		       Two levels of business rules
 
 		       1. Entity-level business rules
@@ -67,15 +72,17 @@ public sealed class BusinessRulesGuidanceResource {
 		       Workflow
 		       1. Read entity schema columns with `get-entity-schema-column-properties` or page structure with `get-page`.
 		       2. Determine whether the rule is entity-level or page-level.
-		       3. Build the condition group and actions.
-		       4. Call `create-entity-business-rule` or `create-page-business-rule`.
-		       5. Verify by checking the entity or page on the environment.
+		       3. For state-changing requirements, decide whether the state must also return through an explicit inverse rule.
+		       4. Build the condition group and actions.
+		       5. Call `create-entity-business-rule` or `create-page-business-rule`.
+		       6. Verify by checking the entity or page on the environment.
 
 		       Common mistakes to avoid
 		       - Do NOT add visibility/editability/required toggling logic in SCHEMA_HANDLERS — use business rules.
 		       - Do NOT confuse business rules with business logic. Business rules are declarative condition→action pairs, not imperative code.
 		       - Do NOT write `$context.enableAttribute()`/`$context.disableAttribute()` handlers when a business rule suffices.
 		       - Do NOT duplicate entity-level rules on every page. If the rule applies to the entity globally, create it at the entity level.
+		       - Do NOT assume a state-changing business rule automatically reverses itself. Use an explicit inverse rule when both directions are required.
 		       """
 	};
 }

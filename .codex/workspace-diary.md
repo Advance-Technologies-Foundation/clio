@@ -3147,3 +3147,17 @@ Decision: Removed `includeRawMetadata` from `list-business-rules` and `get-busin
 Discovery: Production code no longer contains `includeRawMetadata`, `unsupportedDetails`, `RawMetadata`, `IncludeRawMetadata`, or `BusinessRuleUnsupportedDetail`; remaining string references are test assertions that the schema excludes these fields.
 Files: clio/Command/BusinessRules/BusinessRuleReadModels.cs, clio/Command/BusinessRules/BusinessRuleMetadataReadConverter.cs, clio/Command/BusinessRules/BusinessRuleReadService.cs, clio/Command/BusinessRuleReadCommand.cs, clio/Command/McpServer/Tools/BusinessRuleTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/BusinessRuleReadServiceTests.cs, clio.tests/Command/McpServer/BusinessRuleToolTests.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.mcp.e2e/BusinessRuleReadToolE2ETests.cs
 Impact: Business-rule read MCP schema is smaller and strictly normalized. Consumers no longer need to account for raw metadata or unsupported diagnostic fields.
+
+## 2026-05-14 23:08 – Diagnosed create-data-binding environment alias parser regression
+Context: User asked who broke `Parse_Should_Map_Lowercase_Environment_Alias`.
+Decision: Identified commit `a536a4df` (`fix(cli): rename camelCase/PascalCase options to kebab-case with backward-compat aliases`) by Vladimir as the regression source.
+Discovery: `CreateDataBindingOptions` already declared `[Option("environment")]` as a lowercase shim over inherited `EnvironmentOptions.Environment`; `a536a4df` renamed the inherited option from `[Option('e', "Environment")]` to `[Option('e', "environment")]`, creating duplicate `--environment` descriptors and causing CommandLineParser to throw `Sequence contains more than one matching element`.
+Files: clio/Command/CommandLineOptions.cs, clio/Command/DataBindingCommand.cs, clio.tests/Command/DataBindingCommandTests.cs
+Impact: Fix should remove or rename the command-specific `CreateDataBindingOptions.EnvironmentAlias` shim now that the shared inherited option is canonical lowercase, while preserving the inherited hidden `--Environment` alias.
+
+## 2026-05-14 23:11 – Fixed data-binding duplicate environment options
+Context: User asked to fix `Parse_Should_Map_Lowercase_Environment_Alias`.
+Decision: Removed command-local `[Option("environment")]` alias properties from file-first and DB-first data-binding option classes; the inherited `EnvironmentOptions.Environment` is now the only canonical lowercase descriptor, with inherited hidden `--Environment` still available for compatibility.
+Discovery: The same duplicate descriptor pattern existed in `create-data-binding-db`, `upsert-data-binding-row-db`, and `remove-data-binding-row-db`, so the fix covered those commands too.
+Files: clio/Command/DataBindingCommand.cs, clio/Command/DataBindingDbCommand.cs
+Impact: CommandLineParser no longer throws on `--environment` for data-binding commands, and the documented command/MCP contracts remain unchanged.

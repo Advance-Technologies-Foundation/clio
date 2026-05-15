@@ -229,6 +229,45 @@ public class OpenAppCommandTests : BaseCommandTests<OpenAppOptions>{
 	}
 
 	[Test]
+	[Description("Execute should log only the exception message without stack trace in normal mode")]
+	public void Execute_ShouldLogMessageOnly_WhenExceptionOccurs_InNormalMode() {
+		bool originalDebugMode = Program.IsDebugMode;
+		Program.IsDebugMode = false;
+		ILogger mockLogger = Substitute.For<ILogger>();
+		_command.Logger = mockLogger;
+		OpenAppOptions options = new() { Environment = "test-env" };
+		try {
+			_settingsRepository.GetEnvironment(options).Returns(_ => throw new Exception("Site unavailable"));
+
+			_command.Execute(options);
+
+			mockLogger.Received(1).WriteError("Site unavailable");
+			mockLogger.DidNotReceive().WriteError(Arg.Is<string>(s => s.Contains("   at ")));
+		} finally {
+			Program.IsDebugMode = originalDebugMode;
+		}
+	}
+
+	[Test]
+	[Description("Execute should log full stack trace when exception occurs in debug mode")]
+	public void Execute_ShouldLogFullStackTrace_WhenExceptionOccurs_InDebugMode() {
+		bool originalDebugMode = Program.IsDebugMode;
+		Program.IsDebugMode = true;
+		ILogger mockLogger = Substitute.For<ILogger>();
+		_command.Logger = mockLogger;
+		OpenAppOptions options = new() { Environment = "test-env" };
+		try {
+			_settingsRepository.GetEnvironment(options).Returns(_ => throw new Exception("Site unavailable"));
+
+			_command.Execute(options);
+
+			mockLogger.Received(1).WriteError(Arg.Is<string>(s => s.Contains("   at ")));
+		} finally {
+			Program.IsDebugMode = originalDebugMode;
+		}
+	}
+
+	[Test]
 	[Description("Execute should return success when environment has valid URI and opens browser on macOS")]
 	public void Execute_ShouldReturnSuccess_WhenEnvironmentHasValidUri_OnMacOS() {
 		// Arrange
