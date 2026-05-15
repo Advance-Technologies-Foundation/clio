@@ -182,7 +182,7 @@ internal static class BusinessRuleValidator {
 		}
 
 		if (string.Equals(item.Value.Type, FormulaExpressionType, StringComparison.OrdinalIgnoreCase)) {
-			ValidateSetValueFormula(item.Value, attributeMap, item.Expression.Path);
+			ValidateSetValueFormula(item.Value, attributeMap, item.Expression.Path, targetDataValueTypeName);
 			return;
 		}
 
@@ -201,9 +201,10 @@ internal static class BusinessRuleValidator {
 	private static void ValidateSetValueFormula(
 		BusinessRuleExpression value,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		string targetPath) {
+		string targetPath,
+		string targetDataValueTypeName) {
 		string formula = BusinessRuleFormulaBuilder.GetRequiredFormulaText(value);
-		BusinessRuleFormulaBuilder.ValidateFormulaScope(formula, attributeMap, targetPath);
+		BusinessRuleFormulaBuilder.ValidateFormulaScope(formula, attributeMap, targetPath, targetDataValueTypeName);
 	}
 
 	private static void ValidateSetValueAttributeSource(

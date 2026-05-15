@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Clio;
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
@@ -118,7 +119,7 @@ namespace Clio.Command
 			if (options.Json.HasValue && options.Json.Value) {
 				_logger.WriteInfo(_jsonResponseFormater.Format(e));
 			} else {
-				_logger.WriteInfo(e.ToString());
+				_logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
 			}
 		}
 

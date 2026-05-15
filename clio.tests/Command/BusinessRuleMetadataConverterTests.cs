@@ -532,6 +532,27 @@ public sealed class BusinessRuleMetadataConverterTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects formula assignments that use DateTime source attributes before metadata is persisted.")]
+	public void ToMetadata_Should_Reject_SetValues_Formula_With_DateTime_Source_Attribute() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("StartDate", 7),
+			CreateColumn("EndDate", 7),
+			CreateColumn("NumberOfDays", 4));
+		BusinessRule rule = CreateFormulaRule("NumberOfDays", "EndDate - StartDate + 1");
+
+		// Act
+		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrLeaveRequest");
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Formula source attribute 'EndDate' has type DateTime. Formula set-values supports only numeric source attributes.",
+				because: "metadata generation should not allow DateTime arithmetic that local formula validation rejects");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects formula assignments that do not contain source fields for trigger generation.")]
 	public void ToMetadata_Should_Reject_SetValues_Formula_Without_Source_Attributes() {
 		// Arrange

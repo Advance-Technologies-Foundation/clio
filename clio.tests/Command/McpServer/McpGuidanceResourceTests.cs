@@ -1345,6 +1345,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should distinguish entity-level from page-level rules");
 		article.Text.Should().Contain("Page-level business rules",
 			because: "the guide should distinguish page-level from entity-level rules");
+		article.Text.Should().Contain("State-changing actions are one-way",
+			because: "the guide should warn that state-changing business-rule actions are directional");
+		article.Text.Should().Contain("explicit inverse business rule",
+			because: "the guide should instruct AI callers to model reversible state with an inverse rule");
 	}
 
 	[Test]

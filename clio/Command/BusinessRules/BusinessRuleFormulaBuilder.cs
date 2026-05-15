@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using static Clio.Command.BusinessRules.BusinessRuleHelpers;
 
 namespace Clio.Command.BusinessRules;
 
@@ -130,8 +131,11 @@ internal static class BusinessRuleFormulaBuilder {
 	internal static void ValidateFormulaScope(
 		string formula,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		string targetPath) =>
+		string targetPath,
+		string targetDataValueTypeName) {
+		ValidateFormulaTargetDataValueType(targetPath, targetDataValueTypeName);
 		TranslateAndValidateFormula(formula, "Record", attributeMap, targetPath);
+	}
 
 	internal static string GetRequiredFormulaText(BusinessRuleExpression? expression) {
 		if (string.IsNullOrWhiteSpace(expression?.Expression)) {
@@ -160,6 +164,7 @@ internal static class BusinessRuleFormulaBuilder {
 		var recordVariableName = $"{entitySchemaName}Record";
 		var idParameterName = $"{entitySchemaName}IdParameter";
 		var fieldValuesParameterName = $"{entitySchemaName}fieldValuesParameter";
+		ValidateFormulaTargetDataValueType(targetPath, targetDataValueTypeName);
 		var translation = TranslateAndValidateFormula(formula, recordVariableName, attributeMap, targetPath);
 		var expressionSchema = new BusinessRuleExpressionSchemaDto {
 			Expression = translation.Expression,
@@ -291,9 +296,26 @@ internal static class BusinessRuleFormulaBuilder {
 		if (!attributesByName.TryGetValue(identifier, out var descriptor)) {
 			return false;
 		}
+		ValidateFormulaSourceDataValueType(descriptor);
 		result.Append('#').Append(recordVariableName).Append('.').Append(descriptor.Path).Append('#');
 		sourcePaths.Add(descriptor.Path);
 		return true;
+	}
+
+	private static void ValidateFormulaTargetDataValueType(string targetPath, string targetDataValueTypeName) {
+		if (IsNumericDataValueType(targetDataValueTypeName)) {
+			return;
+		}
+		throw new ArgumentException(
+			$"Formula target attribute '{targetPath}' has type {targetDataValueTypeName}. Formula set-values supports only numeric target attributes.");
+	}
+
+	private static void ValidateFormulaSourceDataValueType(BusinessRuleAttributeDescriptor descriptor) {
+		if (IsNumericDataValueType(descriptor.DataValueTypeName)) {
+			return;
+		}
+		throw new ArgumentException(
+			$"Formula source attribute '{descriptor.Path}' has type {descriptor.DataValueTypeName}. Formula set-values supports only numeric source attributes.");
 	}
 
 	private static void ThrowUnsupportedIdentifier(string formula, int index, string identifier) {

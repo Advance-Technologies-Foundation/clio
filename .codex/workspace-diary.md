@@ -3141,9 +3141,23 @@ Discovery: (1) update-page and sync-pages both reject mobile JSON bodies -- Sche
 Files: spec/mobile-pages/mobile-pages-reference.md
 Impact: AI agents have a single accurate reference for mobile page schema identity, body format, tool limitations, and the correct clio MCP read/write workflow.
 
-## 2026-06-10 00:00 - Mobile Freedom UI page support implementation (Phases 1-6)
+## 2026-05-15 11:00 - Mobile Freedom UI page support implementation (Phases 1-6)
 Context: Implement spec/mobile-pages/mobile-pages-plan.md — make existing MCP page tools transparently handle mobile pages (schemaType=10, plain JSON bodies) without adding new tools.
 Decision: Used body.AsSpan().TrimStart().StartsWith(""{".AsSpan()) as the mobile detection strategy in IsLikelyMobileBody.
 Discovery: (1) PageUpdateCommand.TryUpdatePage's ValidateInput independently validates AMD markers — must also add IsLikelyMobileBody check there (returning null to bypass AMD checks). (2) PageSyncTool mobile rejection path does not populate ValidationResult — tests must check .Error string instead of .Validation properties. (3) SchemaValidationServiceTests.cs and PageSchemaBodyParserTests.cs had missing class closing braces after mobile tests were added. (4) Pre-existing Parse_Should_Map_Lowercase_Environment_Alias test failure (CommandLine ambiguous double-registration) is not caused by our changes.
 Files: clio/Command/PageSchemaBodyParser.cs, clio/Command/SchemaValidationService.cs, clio/Command/PageUpdateOptions.cs, clio/Command/PageModels.cs, clio/Command/PageListOptions.cs, clio/Command/PageGetOptions.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/PageValidateTool.cs, clio/Command/McpServer/Tools/ComponentInfoCatalog.cs, clio/Command/McpServer/Tools/ComponentInfoTool.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Data/MobileComponentRegistry.json, clio/Command/McpServer/Resources/MobilePageGuidanceResource.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio/Command/McpServer/Resources/PageCreationGuidanceResource.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.tests/Command/PageSchemaBodyParserTests.cs, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/McpServer/ValidatePageToolTests.cs, clio.mcp.e2e/PageValidateToolE2ETests.cs, clio.mcp.e2e/PageUpdateToolE2ETests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs
 Impact: update-page, sync-pages, validate-page, get-page, list-pages, get-component-info, and mobile-page-modification guidance now all support mobile pages transparently. 1846 unit tests pass.
+
+## 2026-05-14 23:08 – Diagnosed create-data-binding environment alias parser regression
+Context: User asked who broke `Parse_Should_Map_Lowercase_Environment_Alias`.
+Decision: Identified commit `a536a4df` (`fix(cli): rename camelCase/PascalCase options to kebab-case with backward-compat aliases`) by Vladimir as the regression source.
+Discovery: `CreateDataBindingOptions` already declared `[Option("environment")]` as a lowercase shim over inherited `EnvironmentOptions.Environment`; `a536a4df` renamed the inherited option from `[Option('e', "Environment")]` to `[Option('e', "environment")]`, creating duplicate `--environment` descriptors and causing CommandLineParser to throw `Sequence contains more than one matching element`.
+Files: clio/Command/CommandLineOptions.cs, clio/Command/DataBindingCommand.cs, clio.tests/Command/DataBindingCommandTests.cs
+Impact: Fix should remove or rename the command-specific `CreateDataBindingOptions.EnvironmentAlias` shim now that the shared inherited option is canonical lowercase, while preserving the inherited hidden `--Environment` alias.
+
+## 2026-05-14 23:11 – Fixed data-binding duplicate environment options
+Context: User asked to fix `Parse_Should_Map_Lowercase_Environment_Alias`.
+Decision: Removed command-local `[Option("environment")]` alias properties from file-first and DB-first data-binding option classes; the inherited `EnvironmentOptions.Environment` is now the only canonical lowercase descriptor, with inherited hidden `--Environment` still available for compatibility.
+Discovery: The same duplicate descriptor pattern existed in `create-data-binding-db`, `upsert-data-binding-row-db`, and `remove-data-binding-row-db`, so the fix covered those commands too.
+Files: clio/Command/DataBindingCommand.cs, clio/Command/DataBindingDbCommand.cs
+Impact: CommandLineParser no longer throws on `--environment` for data-binding commands, and the documented command/MCP contracts remain unchanged.
