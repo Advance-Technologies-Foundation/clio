@@ -952,7 +952,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeStatusToolName,
-				Description = "Returns DataForge service health and Creatio maintenance status in a single call via the Creatio DataForgeMaintenanceService proxy. " + DataForgePlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.",
+				Description = "Checks whether Data Forge is ready to provide schema, lookup, relation, and maintenance context for a Creatio environment. " + DataForgePlatformRequirementDescription,
 				InputFields = DataForgeConnectionFields(),
 				OutputFields = DataForgeEnvelopeFields(
 					"Health probe correlation identifier.",
@@ -963,7 +963,7 @@ internal static class ToolContractCatalog {
 						[EnvironmentNameFieldName] = ExampleEnvironmentName
 					})
 				],
-				PreferredFlow = Flow([DataForgeTool.DataForgeStatusToolName], "Use when callers need to verify DataForgeMaintenanceService proxy health and maintenance readiness before Data Forge discovery.")
+				PreferredFlow = Flow([DataForgeTool.DataForgeStatusToolName], "Use before longer schema-planning workflows when callers need to know whether Data Forge discovery is available.")
 			});
 	}
 
@@ -971,7 +971,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeFindTablesToolName,
-				Description = "Finds similar Creatio tables via the DataForgeSchemaReadService proxy. " + DataForgePlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.",
+				Description = "Finds existing Creatio tables that semantically match a business concept, so callers can reuse or compare schemas before creating new ones. " + DataForgePlatformRequirementDescription,
 				RequiredFields = [QueryFieldName],
 				InputFields = DataForgeConnectionFields(
 					Field(QueryFieldName, StringType, "Table search term."),
@@ -998,7 +998,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeFindLookupsToolName,
-				Description = "Finds similar Creatio lookups via the DataForgeSchemaReadService proxy. " + DataForgePlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.",
+				Description = "Finds lookup values and lookup schemas that match a requested business value, useful for resolving lookup references before writing data bindings. " + DataForgePlatformRequirementDescription,
 				RequiredFields = [QueryFieldName],
 				InputFields = DataForgeConnectionFields(
 					Field(QueryFieldName, StringType, "Lookup search term."),
@@ -1030,7 +1030,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeGetRelationsToolName,
-				Description = "Returns semantic relation paths between two Creatio tables via the DataForgeSchemaReadService proxy. " + DataForgePlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.",
+				Description = "Finds known relationship paths between two Creatio tables to help model references or understand existing entity links. " + DataForgePlatformRequirementDescription,
 				RequiredFields = ["source-table", "target-table"],
 				InputFields = DataForgeConnectionFields(
 					Field("source-table", StringType, "Source table name."),
@@ -1059,7 +1059,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeGetTableColumnsToolName,
-				Description = "Reads runtime entity columns via the Creatio DataForgeSchemaReadService proxy. " + DataForgePlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.",
+				Description = "Returns the logical columns of a Creatio table, including captions, data types, required flags, and lookup targets. " + DataForgePlatformRequirementDescription,
 				RequiredFields = ["table-name"],
 				InputFields = DataForgeConnectionFields(
 					Field("table-name", StringType, "Target runtime entity schema name.")),
@@ -1072,7 +1072,7 @@ internal static class ToolContractCatalog {
 						[EnvironmentNameFieldName] = ExampleEnvironmentName
 					})
 				],
-				PreferredFlow = Flow([DataForgeTool.DataForgeGetTableColumnsToolName], "Use after table discovery when callers need runtime column hints without package ownership context."),
+				PreferredFlow = Flow([DataForgeTool.DataForgeGetTableColumnsToolName], "Use after table discovery when callers need column hints for a selected Creatio table."),
 				FallbackFlow = [
 					Flow(
 						[DataForgeTool.DataForgeFindTablesToolName, DataForgeTool.DataForgeGetTableColumnsToolName],
@@ -1085,7 +1085,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeContextToolName,
-				Description = "Aggregates Data Forge health, maintenance readiness, similar tables, lookups, relations, and runtime columns into one context payload via the Creatio proxy endpoints. " + DataForgePlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.",
+				Description = "Builds a compact Data Forge context package for planning schema work: similar tables, lookup matches, relation paths, table columns, and readiness status. " + DataForgePlatformRequirementDescription,
 				InputFields = DataForgeConnectionFields(
 					Field("requirement-summary", StringType, "Optional free-text summary used when candidate-terms are omitted."),
 					Field("candidate-terms", ArrayType, "Optional table-search terms."),
@@ -1124,7 +1124,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeInitializeToolName,
-				Description = "Schedules Data Forge initialize jobs via the Creatio DataForgeMaintenanceService proxy. " + DataForgePlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.",
+				Description = "Schedules a full Data Forge initialization when the index is missing, stale, or not ready. " + DataForgePlatformRequirementDescription,
 				InputFields = DataForgeConnectionFields(),
 				OutputFields = DataForgeEnvelopeFields(
 					"Mutation correlation identifier when available.",
@@ -1142,7 +1142,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeUpdateToolName,
-				Description = "Schedules Data Forge update jobs via the Creatio DataForgeMaintenanceService proxy. " + DataForgePlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.",
+				Description = "Schedules a Data Forge index refresh after schema changes or when discovery results appear stale. " + DataForgePlatformRequirementDescription,
 				InputFields = DataForgeConnectionFields(),
 				OutputFields = DataForgeEnvelopeFields(
 					"Mutation correlation identifier when available.",

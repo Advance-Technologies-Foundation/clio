@@ -21,8 +21,7 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 
 			       Prerequisites
 			       - Creatio platform version 10.0.0 or later is required; CrtDataForge is included in supported platform versions.
-			       - The Creatio user must have the CanReadDataStructureColumnDetails operation permission.
-			       - All DataForge calls are proxied through Creatio REST endpoints (DataForgeSchemaReadService, DataForgeMaintenanceService). No direct microservice access or OAuth credentials are needed.
+			       - Data Forge discovery requires a Creatio user that can read Data Forge schema and lookup context. If permissions are insufficient, tools return structured errors and workflows should continue without Data Forge where possible.
 
 			       Architecture split
 			       - clio (passive): DataForge enrichment is built into selected write tools. It runs automatically before the mutation, returns a `dataforge` section alongside the result, and degrades gracefully when DataForge is unavailable. The mutation is never blocked.

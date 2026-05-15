@@ -32,7 +32,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeStatusToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Returns DataForge service health (liveness, readiness, data-structure and lookups readiness) and Creatio maintenance status in a single call via the Creatio DataForgeMaintenanceService proxy. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Checks whether Data Forge is ready to provide schema, lookup, relation, and maintenance context for a Creatio environment. " + PlatformRequirementDescription)]
 	public DataForgeStatusResponse GetStatus(
 		[Description("Parameters: environment-name (required).")]
 		[Required]
@@ -57,7 +57,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeFindTablesToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Finds similar tables via the Creatio DataForgeSchemaReadService proxy. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Finds existing Creatio tables that semantically match a business concept, so callers can reuse or compare schemas before creating new ones. " + PlatformRequirementDescription)]
 	public DataForgeFindTablesResponse FindTables(
 		[Description("Parameters: query (required), optional limit, environment-name (required).")]
 		[Required]
@@ -82,7 +82,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeFindLookupsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Finds similar lookups via the Creatio DataForgeSchemaReadService proxy. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Finds lookup values and lookup schemas that match a requested business value, useful for resolving lookup references before writing data bindings. " + PlatformRequirementDescription)]
 	public DataForgeFindLookupsResponse FindLookups(
 		[Description("Parameters: query (required), optional schema-name, optional limit, environment-name (required).")]
 		[Required]
@@ -107,7 +107,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeGetRelationsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Retrieves relationship paths between two tables via the Creatio DataForgeSchemaReadService proxy. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Finds known relationship paths between two Creatio tables to help model references or understand existing entity links. " + PlatformRequirementDescription)]
 	public DataForgeRelationsResponse GetRelations(
 		[Description("Parameters: source-table, target-table (required), optional limit, environment-name (required).")]
 		[Required]
@@ -133,7 +133,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeGetTableColumnsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Reads table column details via the Creatio DataForgeSchemaReadService proxy. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Returns the logical columns of a Creatio table, including captions, data types, required flags, and lookup targets. " + PlatformRequirementDescription)]
 	public DataForgeColumnsResponse GetTableColumns(
 		[Description("Parameters: table-name (required), environment-name (required).")]
 		[Required]
@@ -159,7 +159,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeContextToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Aggregates tables, lookups, relations, columns, and service status via the Creatio DataForge proxy endpoints. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Builds a compact Data Forge context package for planning schema work: similar tables, lookup matches, relation paths, table columns, and readiness status. " + PlatformRequirementDescription)]
 	public DataForgeContextResponse GetContext(
 		[Description("Parameters: requirement-summary/candidate-terms/lookup-hints/relation-pairs, environment-name (required).")]
 		[Required]
@@ -206,7 +206,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeInitializeToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Schedules DataForge initialize jobs via the Creatio DataForgeMaintenanceService proxy. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Schedules a full Data Forge initialization when the index is missing, stale, or not ready. " + PlatformRequirementDescription)]
 	public DataForgeMaintenanceResponse Initialize(
 		[Description("Parameters: environment-name (required).")]
 		[Required]
@@ -230,7 +230,7 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeUpdateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Schedules DataForge update jobs via the Creatio DataForgeMaintenanceService proxy. " + PlatformRequirementDescription + " The Creatio user must have the CanReadDataStructureColumnDetails operation permission.")]
+	[Description("Schedules a Data Forge index refresh after schema changes or when discovery results appear stale. " + PlatformRequirementDescription)]
 	public DataForgeMaintenanceResponse Update(
 		[Description("Parameters: environment-name (required).")]
 		[Required]
@@ -282,7 +282,7 @@ public sealed record DataForgeRelationPairArgs(
 
 /// <summary>
 /// Provides the shared Data Forge connection payload used by all Data Forge MCP tools.
-/// All DataForge calls are proxied through Creatio; only a registered environment name is needed.
+/// DataForge MCP calls use a registered Creatio environment; direct DataForge microservice credentials are not accepted.
 /// </summary>
 public abstract record DataForgeConnectionArgsBase {
 	[JsonPropertyName("environment-name")]

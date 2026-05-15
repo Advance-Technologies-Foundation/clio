@@ -1136,9 +1136,20 @@ public sealed class ToolContractGetToolTests {
 		result.Tools.Should().Contain(contract =>
 				contract.Name == DataForgeTool.DataForgeStatusToolName &&
 				contract.PreferredFlow != null &&
-				contract.PreferredFlow.Notes.Contains("DataForgeMaintenanceService proxy") &&
-				!contract.PreferredFlow.Notes.Contains("direct service"),
-			because: "the dataforge-status preferred-flow description must reference the proxy not direct service calls");
+				contract.PreferredFlow.Notes.Contains("whether Data Forge discovery is available"),
+			because: "the dataforge-status preferred flow should explain when to call it");
+		ToolContractDefinition columnsContract = result.Tools.Single(contract =>
+			contract.Name == DataForgeTool.DataForgeGetTableColumnsToolName);
+		columnsContract.Description.Should().Contain("logical columns of a Creatio table",
+			because: "dataforge-get-table-columns should advertise the caller-facing result");
+		columnsContract.Description.Should().Contain("lookup targets",
+			because: "column metadata includes reference-schema hints that callers use during modeling");
+		ToolContractDefinition contextContract = result.Tools.Single(contract =>
+			contract.Name == DataForgeTool.DataForgeContextToolName);
+		contextContract.Description.Should().Contain("compact Data Forge context package",
+			because: "dataforge-context should be framed as an aggregated planning result");
+		contextContract.Description.Should().Contain("similar tables, lookup matches, relation paths, table columns, and readiness status",
+			because: "the contract should list the planning artifacts the caller receives");
 	}
 
 	[Test]

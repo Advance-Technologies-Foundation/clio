@@ -152,6 +152,27 @@ public sealed class DataForgeToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("GetTableColumns description should describe the caller-facing result.")]
+	public void GetTableColumns_Should_Advertise_Outcome() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(DataForgeTool).GetMethod(nameof(DataForgeTool.GetTableColumns))!;
+		System.ComponentModel.DescriptionAttribute attribute = method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single();
+
+		// Act
+		string description = attribute.Description;
+
+		// Assert
+		description.Should().Contain("logical columns of a Creatio table",
+			because: "tool discovery should describe the user-facing result");
+		description.Should().Contain("lookup targets",
+			because: "callers need to know the returned columns include reference metadata");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Serializes the DataForge context response using stable kebab-case payload field names and a coverage object.")]
 	public void DataForgeContextResponse_Should_Serialize_Using_Stable_Field_Names() {
 		// Arrange

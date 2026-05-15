@@ -157,3 +157,4 @@ public sealed class DataForgeMaintenanceClientTests {
 		status.Status.Should().Be("Unavailable",
 			because: "callers should receive a meaningful status when CrtDataForge is not installed on the target environment");
 	}
+}
