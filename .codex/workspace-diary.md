@@ -3071,6 +3071,13 @@ Discovery: Manual `CreatioClient` login with `dev` settings succeeds, while the 
 Files: C:\Projects\clio\clio\Program.cs, C:\Projects\clio\clio\BindingsModule.cs, C:\Projects\clio\clio\Command\PushPackageCommand.cs
 Impact: Future fix should keep `CreateClioGatePkgOptions` from initializing the global bootstrap container before resolving `InstallGatePkgCommand`, or make `Resolve<T>` rebuild/scope the container when environment settings are later supplied.
 
+## 2026-05-15 19:08 - Documented push-workspace application installer option
+Context: User reported that `push-workspace` documentation was missing the `use-application-installer` option.
+Decision: Updated both command documentation surfaces to include `--use-application-installer`, and also synchronized the documented `--unlock` option and lowercase inherited `--environment` spelling with source.
+Discovery: `PushWorkspaceCommandOptions` already exposed `[Option("use-application-installer")]`; `clio/Commands.md` only links the command page and did not need an option-level update.
+Files: clio/help/en/push-workspace.txt, clio/docs/commands/push-workspace.md
+Impact: Users can now discover the ApplicationInstaller path from CLI help and GitHub command docs.
+
 ## 2026-04-30 18:35 - Fixed install-gate target environment resolution
 Context: Follow-up implementation for the `install-gate` failure introduced after the 8.1.0.2 DI cleanup.
 Decision: Restored `CreatePushPkgOptions` to read `SettingsRepository` directly instead of resolving it through `Program.Resolve`, so the first DI resolution in the flow is environment-scoped through `IWorkingDirectoriesProvider`.
