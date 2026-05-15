@@ -53,6 +53,8 @@ public sealed class ToolContractGetToolTests {
 				ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 				CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
 				CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
+				BusinessRuleReadTool.BusinessRuleListToolName,
+				BusinessRuleReadTool.BusinessRuleGetToolName,
 				DataForgeTool.DataForgeHealthToolName,
 				DataForgeTool.DataForgeContextToolName,
 				PageSyncTool.ToolName,
@@ -68,6 +70,55 @@ public sealed class ToolContractGetToolTests {
 			because: "destructive Data Forge maintenance tools should stay available only through explicit contract lookup rather than the default bootstrap set");
 		result.Tools!.Select(contract => contract.Name).Should().NotContain(ToolContractGetTool.ToolName,
 			because: "get-tool-contract should not include itself in the default returned contract set");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical business-rule read contracts with entity/page scope and deterministic selector guidance.")]
+	public void ToolContractGet_Should_Return_BusinessRuleRead_Contracts() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			BusinessRuleReadTool.BusinessRuleListToolName,
+			BusinessRuleReadTool.BusinessRuleGetToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "business-rule read tools should be part of the executable clio MCP contract surface");
+		result.Tools.Should().HaveCount(2,
+			because: "both list and get read contracts were requested explicitly");
+		ToolContractDefinition listContract = result.Tools!.Single(contract =>
+			contract.Name == BusinessRuleReadTool.BusinessRuleListToolName);
+		listContract.InputSchema.Required.Should().Contain(["environmentName", "scopeType", "schemaName"],
+			because: "listing rules requires a target environment and one entity or page scope");
+		listContract.InputSchema.Properties.Should().NotContain(field => field.Name == "includeRawMetadata",
+			because: "business-rule read tools should expose only normalized MCP schema fields");
+		listContract.OutputContract.FailureSignals.Should().NotContain(signal => signal.Contains("unsupportedDetails", StringComparison.Ordinal),
+			because: "unsupportedDetails is intentionally not part of the MCP contract");
+		listContract.OutputContract.Fields.Should().Contain(field => field.Name == "rules",
+			because: "list-business-rules returns normalized rule collection payloads");
+		ToolContractDefinition getContract = result.Tools!.Single(contract =>
+			contract.Name == BusinessRuleReadTool.BusinessRuleGetToolName);
+		getContract.InputSchema.Properties.Should().NotContain(field => field.Name == "includeRawMetadata",
+			because: "raw Creatio metadata is not exposed through the business-rule read MCP schema");
+		getContract.InputSchema.AnyOf.Should().Contain(selector =>
+				selector.SequenceEqual(new[] { "ruleUId" }),
+			because: "ruleUId should be advertised as a deterministic selector");
+		getContract.InputSchema.AnyOf.Should().Contain(selector =>
+				selector.SequenceEqual(new[] { "ruleName" }),
+			because: "ruleName should be an alternative exact selector");
+		getContract.InputSchema.AnyOf.Should().Contain(selector =>
+				selector.SequenceEqual(new[] { "caption" }),
+			because: "caption should be advertised as an allowed but potentially ambiguous selector");
+		getContract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Code == "invalid-rule-selector" &&
+				validator.Fields!.SequenceEqual(new[] { "ruleUId", "ruleName", "caption" }),
+			because: "get-business-rule must require exactly one selector");
+		getContract.OutputContract.Fields.Should().Contain(field => field.Name == "matches",
+			because: "ambiguous selector failures should return matching rule identities");
 	}
 
 	[Test]

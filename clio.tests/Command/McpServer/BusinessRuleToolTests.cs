@@ -18,6 +18,123 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class BusinessRuleToolTests {
 	[Test]
 	[Category("Unit")]
+	[Description("Advertises stable read-only MCP tool names for business-rule retrieval.")]
+	public void BusinessRuleRead_Should_Advertise_Stable_Tool_Names() {
+		// Arrange
+
+		// Act
+		McpServerToolAttribute listAttribute = (McpServerToolAttribute)typeof(BusinessRuleReadTool)
+			.GetMethod(nameof(BusinessRuleReadTool.BusinessRuleList))!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+		McpServerToolAttribute getAttribute = (McpServerToolAttribute)typeof(BusinessRuleReadTool)
+			.GetMethod(nameof(BusinessRuleReadTool.BusinessRuleGet))!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+
+		// Assert
+		listAttribute.Name.Should().Be(BusinessRuleReadTool.BusinessRuleListToolName,
+			because: "the list tool name must stay stable for MCP callers and tests");
+		getAttribute.Name.Should().Be(BusinessRuleReadTool.BusinessRuleGetToolName,
+			because: "the get tool name must stay stable for MCP callers and tests");
+		listAttribute.ReadOnly.Should().BeTrue(
+			because: "listing business rules must not mutate Creatio metadata");
+		getAttribute.ReadOnly.Should().BeTrue(
+			because: "getting a business rule must not mutate Creatio metadata");
+		listAttribute.Destructive.Should().BeFalse(
+			because: "business-rule read operations are non-destructive");
+		getAttribute.Destructive.Should().BeFalse(
+			because: "business-rule read operations are non-destructive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps list-business-rules arguments into environment-scoped read options.")]
+	public void BusinessRuleList_Should_Map_Arguments_And_Return_Normalized_Response() {
+		// Arrange
+		IBusinessRuleReadService service = Substitute.For<IBusinessRuleReadService>();
+		BusinessRuleReadCommand command = new(service, ConsoleLogger.Instance);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<BusinessRuleReadCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		service.List(Arg.Any<BusinessRuleReadRequest>())
+			.Returns(new BusinessRuleListResponse {
+				Success = true,
+				ScopeType = BusinessRuleScopeTypes.Entity,
+				SchemaName = "Contact",
+				Count = 1,
+				Rules = [
+					new BusinessRuleReadItem {
+						UId = "RuleUId",
+						Name = "BusinessRule_1",
+						Caption = "Require owner",
+						Enabled = true
+					}
+				]
+			});
+		BusinessRuleReadTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		BusinessRuleListResponse result = tool.BusinessRuleList("dev", "entity", "Contact");
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the tool should return the structured service response");
+		result.Rules.Should().ContainSingle(rule => rule.UId == "RuleUId",
+			because: "normalized rule identities should pass through the MCP tool");
+		commandResolver.Received(1).Resolve<BusinessRuleReadCommand>(Arg.Is<EnvironmentOptions>(options =>
+			options.Environment == "dev"));
+		service.Received(1).List(Arg.Is<BusinessRuleReadRequest>(request =>
+			request.ScopeType == "entity"
+			&& request.SchemaName == "Contact"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps get-business-rule selector arguments into environment-scoped read options.")]
+	public void BusinessRuleGet_Should_Map_Selector_Arguments() {
+		// Arrange
+		IBusinessRuleReadService service = Substitute.For<IBusinessRuleReadService>();
+		BusinessRuleReadCommand command = new(service, ConsoleLogger.Instance);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<BusinessRuleReadCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		service.Get(Arg.Any<BusinessRuleGetRequest>())
+			.Returns(new BusinessRuleGetResponse {
+				Success = true,
+				ScopeType = BusinessRuleScopeTypes.Page,
+				SchemaName = "Contact_FormPage",
+				Rule = new BusinessRuleReadItem {
+					UId = "RuleUId",
+					Name = "BusinessRule_1",
+					Caption = "Hide button",
+					Enabled = true
+				}
+			});
+		BusinessRuleReadTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		BusinessRuleGetResponse result = tool.BusinessRuleGet(
+			"dev",
+			"page",
+			"Contact_FormPage",
+			ruleUId: "RuleUId");
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the tool should return the structured get response");
+		result.Rule!.UId.Should().Be("RuleUId",
+			because: "the selected rule should be returned from the service");
+		commandResolver.Received(1).Resolve<BusinessRuleReadCommand>(Arg.Is<EnvironmentOptions>(options =>
+			options.Environment == "dev"));
+		service.Received(1).Get(Arg.Is<BusinessRuleGetRequest>(request =>
+			request.ScopeType == "page"
+			&& request.SchemaName == "Contact_FormPage"
+			&& request.RuleUId == "RuleUId"
+			&& request.RuleName == null
+			&& request.Caption == null));
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Advertises a stable MCP tool name for create-entity-business-rule.")]
 	public void BusinessRuleCreate_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
