@@ -53,7 +53,6 @@ public sealed class ToolContractGetToolTests {
 				ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 				CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
 				CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
-				DataForgeTool.DataForgeHealthToolName,
 				DataForgeTool.DataForgeContextToolName,
 				PageSyncTool.ToolName,
 				PageUpdateTool.ToolName,
@@ -1103,7 +1102,6 @@ public sealed class ToolContractGetToolTests {
 		// Arrange
 		ToolContractGetTool tool = new();
 		string[] requestedTools = [
-			DataForgeTool.DataForgeHealthToolName,
 			DataForgeTool.DataForgeStatusToolName,
 			DataForgeTool.DataForgeFindTablesToolName,
 			DataForgeTool.DataForgeFindLookupsToolName,
@@ -1132,10 +1130,26 @@ public sealed class ToolContractGetToolTests {
 				contract.Name == DataForgeTool.DataForgeUpdateToolName &&
 				contract.OutputContract.Fields.Any(field => field.Name == "status"),
 			because: "the maintenance update contract should remain available through explicit lookup");
+		result.Tools.Should().OnlyContain(contract =>
+				contract.Description.Contains("Creatio platform version 10.0.0 or later"),
+			because: "DataForge contracts should advertise the Creatio platform requirement");
 		result.Tools.Should().Contain(contract =>
-				contract.Name == DataForgeTool.DataForgeHealthToolName &&
-				contract.Defaults.Any(definition => definition.Name == "scope" && definition.Value == "use_enrichment"),
-			because: "Data Forge contracts should advertise the default OAuth scope through the canonical contract catalog");
+				contract.Name == DataForgeTool.DataForgeStatusToolName &&
+				contract.PreferredFlow != null &&
+				contract.PreferredFlow.Notes.Contains("whether Data Forge discovery is available"),
+			because: "the dataforge-status preferred flow should explain when to call it");
+		ToolContractDefinition columnsContract = result.Tools.Single(contract =>
+			contract.Name == DataForgeTool.DataForgeGetTableColumnsToolName);
+		columnsContract.Description.Should().Contain("logical columns of a Creatio table",
+			because: "dataforge-get-table-columns should advertise the caller-facing result");
+		columnsContract.Description.Should().Contain("lookup targets",
+			because: "column metadata includes reference-schema hints that callers use during modeling");
+		ToolContractDefinition contextContract = result.Tools.Single(contract =>
+			contract.Name == DataForgeTool.DataForgeContextToolName);
+		contextContract.Description.Should().Contain("compact Data Forge context package",
+			because: "dataforge-context should be framed as an aggregated planning result");
+		contextContract.Description.Should().Contain("similar tables, lookup matches, relation paths, table columns, and readiness status",
+			because: "the contract should list the planning artifacts the caller receives");
 	}
 
 	[Test]

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 using Clio.Common.DataForge;
 
 namespace Clio.Command.McpServer.Tools;
@@ -31,7 +30,7 @@ public interface IDataForgeEnrichmentBuilder {
 	/// <param name="request">Normalized Data Forge enrichment request.</param>
 	/// <param name="cancellationToken">Cancellation token.</param>
 	/// <returns>Structured Data Forge diagnostics and compact context summary.</returns>
-	Task<ApplicationDataForgeResult> BuildAsync(
+	ApplicationDataForgeResult Build(
 		DataForgeEnrichmentRequest request,
 		CancellationToken cancellationToken = default);
 }
@@ -40,10 +39,8 @@ public interface IDataForgeEnrichmentBuilder {
 /// Default builder for compact Data Forge enrichment diagnostics shared by MCP mutation tools.
 /// </summary>
 public sealed class DataForgeEnrichmentBuilder(IToolCommandResolver commandResolver) : IDataForgeEnrichmentBuilder {
-	private const string DefaultScope = "use_enrichment";
-
 	/// <inheritdoc />
-	public async Task<ApplicationDataForgeResult> BuildAsync(
+	public ApplicationDataForgeResult Build(
 		DataForgeEnrichmentRequest request,
 		CancellationToken cancellationToken = default) {
 		ArgumentNullException.ThrowIfNull(request);
@@ -51,21 +48,15 @@ public sealed class DataForgeEnrichmentBuilder(IToolCommandResolver commandResol
 
 		try {
 			DataForgeTargetOptions options = new() {
-				Environment = request.EnvironmentName,
-				AllowSysSettingsAuthFallback = true,
-				Scope = DefaultScope
+				Environment = request.EnvironmentName
 			};
 			IDataForgeContextService contextService = commandResolver.Resolve<IDataForgeContextService>(options);
-			DataForgeContextAggregationResult context = await contextService.GetContextAsync(
+			DataForgeContextAggregationResult context = contextService.GetContext(
 				new DataForgeContextRequest(
 					request.RequirementSummary,
 					request.CandidateTerms,
 					request.LookupHints ?? [],
 					[]),
-				new DataForgeConfigRequest {
-					AllowSysSettingsAuthFallback = true,
-					Scope = DefaultScope
-				},
 				cancellationToken);
 
 			return new ApplicationDataForgeResult(
