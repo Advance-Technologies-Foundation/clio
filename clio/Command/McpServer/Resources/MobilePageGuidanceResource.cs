@@ -59,24 +59,6 @@ public sealed class MobilePageGuidanceResource {
 		       Handlers — not supported:
 		         Do not add a "handlers" section to mobile pages.
 
-		       ─────────────────────────────────────────────────────
-		       UNIFIED WORKFLOW — same tools as web pages
-		       ─────────────────────────────────────────────────────
-		       The standard get-page → update-page workflow applies to both web AND mobile pages.
-
-		       1. get-page  — reads body.js (editable own body) and bundle.json (merged view).
-		       2. Edit the body.js content (plain JSON).
-		       3. update-page — saves the modified body.
-		       4. Optionally use verify: true to confirm the save.
-
-		       bundle.json IS reliable for mobile pages after this fix.
-		       Read bundle.json to understand what is already inherited from the parent template
-		       before composing new diff operations.
-
-		       DO NOT use update-client-unit-schema for mobile pages — use update-page.
-		       DO NOT use sync-pages with validate: false to bypass validation — mobile detection
-		       is automatic; disallowed constructs are rejected actively with clear error messages.
-
 		       ────────────────────────────────────────────────────────
 		       crt.Scaffold — do NOT re-insert
 		       ────────────────────────────────────────────────────────
@@ -128,24 +110,25 @@ public sealed class MobilePageGuidanceResource {
 		       Breakpoints: "small" (phone portrait), "medium" (landscape/tablet portrait), "large" (tablet landscape).
 
 		       ─────────────────────────────────────────────────────────────
-		       MOBILE-SAFE REQUESTS
+		       REQUESTS AVAILABLE ON MOBILE
 		       ─────────────────────────────────────────────────────────────
 		       Use these built-in requests in button clicked attributes or viewModelConfigDiff.
-		       Do NOT invent request types not on this list:
+		       Do NOT invent request types not on this list.
 
+		       Common requests (also available on web):
 		         crt.OpenPageRequest, crt.ClosePageRequest
 		         crt.SaveRecordRequest, crt.CancelRecordChangesRequest
 		         crt.CreateRecordRequest, crt.UpdateRecordRequest, crt.DeleteRecordRequest
-		         crt.LoadDataRequest, crt.RunBusinessProcessRequest, crt.UploadFileRequest
+		         crt.LoadDataRequest, crt.RunBusinessProcessRequest
+		         crt.UploadFileRequest, crt.DeleteFileRequest
 
-		       Specialized requests (barcode, NFC, communication options, quick-filter updates):
-		         Reference only when explicitly requested by the user.
-
-		       ─────────────────────────────────────────────────────────────
-		       RESOURCE STRINGS
-		       ─────────────────────────────────────────────────────────────
-		       Use "$Resources.Strings.ElementName_label" or "#ResourceString(Key)#" for
-		       user-visible text, consistent with what the templates use.
+		       Mobile-only requests (native device capabilities):
+		         crt.SetAttributeFromBarcodeRequest  — trigger barcode/QR scanner, write result to an attribute
+		         crt.OpenAddressOnMapRequest          — open native maps app with an address
+		         crt.OpenCustomWebViewPageRequest     — open an in-app web view (mobile-only)
+		         crt.ShowDialogRequest                — show a native dialog
+		         crt.AddCommunicationOptionsRequest, crt.CreateCommunicationOptionRequest,
+		         crt.RemoveCommunicationOptionRequest — manage communication options
 
 		       ─────────────────────────────────────────────────────────────
 		       MOBILE PAGE NAMING CONVENTIONS (Creatio standard)
@@ -169,6 +152,6 @@ public sealed class MobilePageGuidanceResource {
 	/// Returns the canonical guidance article for mobile page creation and modification.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "mobile-page-modification-guidance")]
-	[Description("Returns canonical MCP guidance for mobile Freedom UI page editing: plain JSON body format, unified get-page/update-page workflow, validator and converter constraints, component registry differences, and Scaffold merge patterns.")]
+	[Description("Returns canonical MCP guidance for mobile Freedom UI page editing: plain JSON body format, validator and converter constraints, Scaffold merge patterns, component registry differences, and requests available on mobile.")]
 	public ResourceContents GetGuide() => Guide;
 }

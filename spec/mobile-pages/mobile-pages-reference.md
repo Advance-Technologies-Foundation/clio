@@ -83,17 +83,6 @@ Mobile page bodies are **plain JSON** — not AMD `define(...)` JavaScript modul
 | `viewModelConfigDiff` | View-model patches: attributes, bindings, resource strings |
 | `modelConfigDiff` | Data-source patches: `primaryDataSourceName`, `dataSources`, dependencies |
 
-### Diff operations
-
-Each array entry has an `"operation"` field:
-
-| Operation | Meaning |
-|---|---|
-| `"insert"` | Add a new element. Requires `name`, `values`, `parentName`, `propertyName`, `index`. |
-| `"merge"` | Patch an existing element by name (viewConfigDiff) or by path (viewModelConfigDiff / modelConfigDiff). |
-| `"move"` | Move an existing element to a different position. |
-| `"remove"` | Remove an element by name. |
-
 ---
 
 ## 4. `crt.Scaffold` — Mandatory Root Element
@@ -132,13 +121,8 @@ Verified from creatio-ui mobile page designer features service:
 
 | Feature | Web | Mobile |
 |---|---|---|
-| Preview button | Shown | **Hidden** |
-| Appearance settings panel | Shown | **Hidden** |
-| Advanced panel | Shown | **Hidden** |
-| Page parameters in data-source tools | Visible | **Hidden** |
 | Multi-data-source | Enabled | **Disabled** — one data source per page |
 | Masked fields | Supported | **Not supported** (`isMaskedPropertyVisible = false`) |
-| Source code button | Available | Available (not hidden) |
 | Unsupported data types | — | `SECURE_TEXT`, `Color`, `FILE` |
 | Body format | AMD JS module | **Plain JSON** |
 | Runtime | Browser | Native mobile app |
@@ -207,73 +191,15 @@ Mobile components are registered through mobile-specific decorators (`@CrtMobile
 
 ## 8. clio MCP Workflow
 
-### List available mobile templates
+The standard page workflow applies — see `page-creation` and `page-modification` guidance for mechanics. Mobile-specific differences:
 
-```
-Tool: list-page-templates
-Parameters:
-  schema-type: "mobile"          ← also accepts "10" or "mobilepage"
-  environment-name: <env>
-```
+**`list-page-templates`**: filter by `schema-type: "mobile"` (also accepts `"10"` or `"mobilepage"`) to list only mobile templates.
 
-Returns the 4 templates from Section 2 (names and UIds). Use a returned name as the `template` parameter for `create-page`.
+**`create-page`**: mobile vs web is determined by the chosen template; response includes `schemaType: 10`. Preferred path: use `create-app-section --with-mobile-pages true` — mobile pages are only visible in the mobile app when linked through an app section.
 
-### Create a mobile page
+**`update-page` / `sync-pages`**: both auto-detect mobile JSON bodies and actively reject disallowed sections (`handlers`, `validators`, `converters`) with a clear error message.
 
-```
-Tool: create-page
-Parameters:
-  schema-name:      "UsrMyApp_MobileFormPage"   (use env SchemaNamePrefix)
-  template:         "BaseMobilePageTemplate"     (name from list-page-templates)
-  package-name:     "UsrMyApp"
-  environment-name: <env>
-  caption:          "My Mobile Page"            (optional)
-  entity-schema-name: "UsrMyEntity"             (optional)
-```
-
-Same tool as web pages — mobile vs web is determined by the chosen template. The response includes `schemaType: 10` confirming the page is mobile.
-
-> **Note**: Standalone mobile page creation via `create-page` is not the primary intended workflow. Mobile pages are automatically generated when creating an app section with `--with-mobile-pages true` (see Section 9). Use `create-page` for standalone mobile pages only when adding a mobile page outside the standard app creation flow.
-
-### Read a mobile page body
-
-**Preferred** — writes `body.js` (plain JSON) and `bundle.json` to `.clio-pages/{schema-name}/`:
-
-```
-Tool: get-page
-Parameters:
-  schema-name:      "UsrMyApp_MobileFormPage"
-  environment-name: <env>
-```
-
-`bundle.json` shows all elements inherited from parent templates — read it before inserting new components to avoid duplicating inherited nodes (see Rule #5). Both files are reliable for mobile pages.
-
-**Alternative** — returns only the raw body without `bundle.json`:
-
-```
-Tool: get-client-unit-schema
-Parameters:
-  schema-name:      "UsrMyApp_MobileFormPage"
-  environment-name: <env>
-```
-
-Use `get-client-unit-schema` only when you need the raw body quickly and do not need bundle context.
-
-### Update a mobile page body
-
-```
-Tool: update-page
-Parameters:
-  schema-name:      "UsrMyApp_MobileFormPage"
-  body:             "<plain JSON string>"
-  environment-name: <env>
-```
-
-Use `update-page` (or `sync-pages` for batches) — both tools detect mobile JSON bodies automatically, skip AMD marker validation, and actively reject disallowed sections (`handlers`, `validators`, `converters`). The standard `get-page → update-page` workflow applies identically to web and mobile pages.
-
-### Identify mobile pages in list-pages output
-
-`list-pages` returns a `schema-type` field alongside `SchemaName`, `UId`, `PackageName`, and `ParentSchemaName`. The value is `"mobile"` for schemaType=10 pages, `"web"` for schemaType=9, and `"unknown"` otherwise. Use this field directly — no parent name inference is needed.
+**`list-pages`**: the `schema-type` field returns `"mobile"` for schemaType=10 pages, `"web"` for schemaType=9, and `"unknown"` otherwise.
 
 ---
 
@@ -308,9 +234,7 @@ Since Creatio 8.3.2, creating a new app or section automatically generates a mob
 2. **Body is plain JSON** — no `define(...)` wrapper, no `handlers`, `converters`, or `validators` sections.
 3. **`crt.Scaffold` is always the root** — insert it first in `viewConfigDiff`.
 4. **One data source per page** — multi-data-source is disabled in the mobile designer.
-5. **Diff operations are additive** — many nodes come from parent templates via `bundle.json`. Read the bundle before adding elements; do not duplicate what's already inherited.
-6. **Use `get-page` to read and `update-page` (or `sync-pages` for batches) to write** mobile page bodies. Both detect mobile JSON bodies automatically and skip AMD marker validation. `bundle.json` from `get-page` is reliable for mobile pages.
-7. **Mobile component registry is separate** — verify a component exists on mobile before using it. Do not assume all `crt.*` web components are available on mobile.
-8. **`Boolean` → `Toggle`** — the mobile designer maps Boolean data type to `crt.Toggle`, not `crt.Checkbox`.
-9. **Resources for labels** — use `"$Resources.Strings.ElementName_label"` or `"#ResourceString(Key)#"` for user-visible text, consistent with what the templates use.
+5. **Read `bundle.json` before adding elements** — mobile page templates add many nodes (Scaffold, buttons, containers). Read the bundle first to avoid duplicating inherited nodes.
+6. **Mobile component registry is separate** — verify a component exists on mobile before using it. Do not assume all `crt.*` web components are available on mobile.
+7. **`Boolean` → `Toggle`** — the mobile designer maps Boolean data type to `crt.Toggle`, not `crt.Checkbox`.
 

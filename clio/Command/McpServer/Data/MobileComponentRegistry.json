@@ -4,7 +4,6 @@
     "category": "containers",
     "description": "Mandatory root element for every mobile page. Provides the top navigation bar (title, leading, actions) and the page body (items). All other content goes inside it. Templates already insert one Scaffold — do NOT insert a second one; use merge to patch it.",
     "container": true,
-    "parentTypes": [],
     "properties": {
       "type": {
         "type": "string",
@@ -30,15 +29,32 @@
       "items": {
         "type": "array",
         "description": "Page body — array of container/component references."
+      },
+      "header": {
+        "type": "array",
+        "description": "Header child components."
+      },
+      "fullScreen": {
+        "type": "boolean",
+        "description": "Full-screen mode."
+      },
+      "useSurface": {
+        "type": "boolean",
+        "description": "Use surface background color."
+      },
+      "leadingWidth": {
+        "type": "number",
+        "description": "Leading area width."
       }
     },
-    "typicalChildren": ["crt.GridContainer", "crt.FlexContainer", "crt.TabPanel"],
     "example": {
       "operation": "merge",
       "name": "Scaffold",
       "values": {
         "items": [
-          { "name": "MainContainer" }
+          {
+            "name": "MainContainer"
+          }
         ]
       }
     }
@@ -48,7 +64,6 @@
     "category": "containers",
     "description": "CSS-grid layout container. Supports the 'adaptive' property for per-breakpoint column overrides (small/medium/large).",
     "container": true,
-    "parentTypes": ["crt.Scaffold", "crt.TabContainer", "crt.ExpansionPanel", "crt.FlexContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -58,11 +73,31 @@
       "columns": {
         "type": "string",
         "default": "1fr",
-        "description": "CSS grid-template-columns value, e.g. '1fr 1fr'."
+        "description": "CSS grid-template-columns. Single string '1fr 1fr' or array ['1fr','1fr']. Runtime accepts both formats."
       },
       "adaptive": {
         "type": "object",
         "description": "Per-breakpoint column overrides. Keys: 'small' (phone portrait), 'medium' (landscape/tablet portrait), 'large' (tablet landscape). Example: {\"small\":{\"columns\":\"1fr\"},\"medium\":{\"columns\":\"1fr 1fr\"}}."
+      },
+      "gap": {
+        "type": "object",
+        "description": "Row and column gap config."
+      },
+      "padding": {
+        "type": "object",
+        "description": "Padding config: { top, right, bottom, left }."
+      },
+      "borderRadius": {
+        "type": "object",
+        "description": "Border radius config."
+      },
+      "justifyItems": {
+        "type": "string",
+        "description": "CSS-like justify-items."
+      },
+      "alignItems": {
+        "type": "string",
+        "description": "CSS-like align-items."
       },
       "items": {
         "type": "array",
@@ -70,11 +105,13 @@
       },
       "color": {
         "type": "string",
-        "values": ["default", "primary"],
+        "values": [
+          "default",
+          "primary"
+        ],
         "description": "Background color. Use 'primary' for profile/area highlight."
       }
     },
-    "typicalChildren": ["crt.Input", "crt.Toggle", "crt.ComboBox", "crt.DateTimePicker"],
     "example": {
       "operation": "insert",
       "name": "DetailsGrid",
@@ -82,8 +119,12 @@
         "type": "crt.GridContainer",
         "columns": "1fr",
         "adaptive": {
-          "small": { "columns": "1fr" },
-          "medium": { "columns": "1fr 1fr" }
+          "small": {
+            "columns": "1fr"
+          },
+          "medium": {
+            "columns": "1fr 1fr"
+          }
         },
         "items": []
       },
@@ -97,7 +138,6 @@
     "category": "containers",
     "description": "Flexbox layout container for linear horizontal or vertical arrangement of items.",
     "container": true,
-    "parentTypes": ["crt.Scaffold", "crt.GridContainer", "crt.TabContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -106,16 +146,72 @@
       },
       "direction": {
         "type": "string",
-        "values": ["row", "column"],
-        "default": "row",
+        "values": [
+          "row",
+          "column"
+        ],
+        "default": "column",
         "description": "Flex direction."
+      },
+      "justifyContent": {
+        "type": "string",
+        "values": [
+          "start",
+          "end",
+          "center",
+          "spaceBetween",
+          "spaceAround",
+          "spaceEvenly"
+        ],
+        "default": "start",
+        "description": "Main axis alignment."
+      },
+      "alignItems": {
+        "type": "string",
+        "values": [
+          "start",
+          "end",
+          "center",
+          "stretch"
+        ],
+        "default": "stretch",
+        "description": "Cross axis alignment."
+      },
+      "wrap": {
+        "type": "string",
+        "values": [
+          "noWrap",
+          "wrap"
+        ],
+        "default": "noWrap",
+        "description": "Flex wrapping behavior."
+      },
+      "gap": {
+        "type": "number",
+        "description": "Gap between items in pixels."
+      },
+      "padding": {
+        "type": "object",
+        "description": "Padding config: { top, right, bottom, left }."
+      },
+      "color": {
+        "type": "string",
+        "description": "Background color."
+      },
+      "borderRadius": {
+        "type": "object",
+        "description": "Border radius config."
+      },
+      "scrollable": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable scrolling."
       },
       "items": {
         "type": "array",
         "description": "Child components."
       }
     },
-    "typicalChildren": ["crt.Button", "crt.Label"],
     "example": {
       "operation": "insert",
       "name": "ActionsRow",
@@ -134,7 +230,6 @@
     "category": "containers",
     "description": "Top-level tab strip container. Holds crt.TabContainer items.",
     "container": true,
-    "parentTypes": ["crt.Scaffold", "crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -144,9 +239,20 @@
       "items": {
         "type": "array",
         "description": "Child crt.TabContainer entries."
+      },
+      "isScrollable": {
+        "type": "boolean",
+        "default": true,
+        "description": "Whether tabs are scrollable."
+      },
+      "selectedTabName": {
+        "type": "string",
+        "description": "Currently selected tab name binding."
       }
     },
-    "typicalChildren": ["crt.TabContainer"],
+    "typicalChildren": [
+      "crt.TabContainer"
+    ],
     "example": {
       "operation": "insert",
       "name": "Tabs",
@@ -164,7 +270,9 @@
     "category": "containers",
     "description": "Individual tab body inside crt.TabPanel.",
     "container": true,
-    "parentTypes": ["crt.TabPanel"],
+    "parentTypes": [
+      "crt.TabPanel"
+    ],
     "properties": {
       "type": {
         "type": "string",
@@ -180,7 +288,6 @@
         "description": "Tab body content."
       }
     },
-    "typicalChildren": ["crt.GridContainer"],
     "example": {
       "operation": "insert",
       "name": "InfoTab",
@@ -199,16 +306,19 @@
     "category": "containers",
     "description": "Collapsible panel that can expand to show its content.",
     "container": true,
-    "parentTypes": ["crt.GridContainer", "crt.Scaffold"],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.ExpansionPanel."
       },
-      "caption": {
+      "title": {
         "type": "string",
-        "description": "Panel header caption."
+        "description": "Panel title."
+      },
+      "tools": {
+        "type": "array",
+        "description": "Tool/action components in the panel header."
       },
       "expanded": {
         "type": "boolean",
@@ -219,13 +329,12 @@
         "description": "Panel body content."
       }
     },
-    "typicalChildren": ["crt.GridContainer"],
     "example": {
       "operation": "insert",
       "name": "DetailsPanel",
       "values": {
         "type": "crt.ExpansionPanel",
-        "caption": "Details",
+        "title": "Details",
         "expanded": true,
         "items": []
       },
@@ -236,10 +345,9 @@
   },
   {
     "componentType": "crt.Label",
-    "category": "containers",
-    "description": "Static text label.",
+    "category": "display",
+    "description": "Static text label for headings, captions, and inline explanatory copy.",
     "container": false,
-    "parentTypes": ["crt.FlexContainer", "crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -249,9 +357,24 @@
       "caption": {
         "type": "string",
         "description": "Visible text."
+      },
+      "labelType": {
+        "type": "string",
+        "description": "Semantic type / heading level."
+      },
+      "labelThickness": {
+        "type": "string",
+        "description": "Font weight."
+      },
+      "labelColor": {
+        "type": "string",
+        "description": "Text color."
+      },
+      "labelEllipsis": {
+        "type": "boolean",
+        "description": "Enable text overflow ellipsis."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "TitleLabel",
@@ -266,10 +389,9 @@
   },
   {
     "componentType": "crt.Button",
-    "category": "containers",
-    "description": "Tappable button for triggering actions.",
+    "category": "interactive",
+    "description": "Tappable button for triggering actions, navigation, and menus.",
     "container": false,
-    "parentTypes": ["crt.Scaffold", "crt.FlexContainer", "crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -284,19 +406,44 @@
         "type": "object",
         "description": "Request descriptor fired on tap."
       },
+      "icon": {
+        "type": "string",
+        "description": "Icon identifier."
+      },
+      "iconPosition": {
+        "type": "string",
+        "description": "Icon position relative to caption."
+      },
+      "color": {
+        "type": "string",
+        "description": "Color scheme."
+      },
+      "size": {
+        "type": "string",
+        "description": "Size variant."
+      },
+      "menuItems": {
+        "type": "array",
+        "description": "Child crt.MenuItem entries for dropdown/modal menu."
+      },
+      "menuTitle": {
+        "type": "string",
+        "description": "Title shown on the menu picker."
+      },
       "visible": {
         "type": "string",
         "description": "Visibility binding, e.g. '$CardState | crt.IsEqual : \\'edit\\''."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "SaveButton",
       "values": {
         "type": "crt.Button",
         "caption": "Save",
-        "clicked": { "request": "crt.SaveRecordRequest" }
+        "clicked": {
+          "request": "crt.SaveRecordRequest"
+        }
       },
       "parentName": "Scaffold",
       "propertyName": "actions",
@@ -305,30 +452,35 @@
   },
   {
     "componentType": "crt.FloatingActionButton",
-    "category": "containers",
+    "category": "interactive",
     "description": "Single floating action button attached to crt.Scaffold.floatAction. Mobile-specific.",
     "container": false,
-    "parentTypes": ["crt.Scaffold"],
+    "parentTypes": [
+      "crt.Scaffold"
+    ],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.FloatingActionButton."
       },
-      "caption": {
-        "type": "string",
-        "description": "Tooltip or accessibility label."
+      "clicked": {
+        "type": "object",
+        "description": "Request descriptor fired on tap."
       },
       "icon": {
         "type": "string",
-        "description": "Icon name."
+        "description": "Icon identifier."
       },
       "menuItems": {
         "type": "array",
-        "description": "Sub-actions displayed when the FAB is pressed."
+        "description": "Child crt.MenuItem entries for menu."
+      },
+      "menuTitle": {
+        "type": "string",
+        "description": "Title shown on the menu picker."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "merge",
       "name": "Scaffold",
@@ -337,74 +489,11 @@
           "name": "CreateFab",
           "type": "crt.FloatingActionButton",
           "icon": "plus-button",
-          "clicked": { "request": "crt.CreateRecordRequest" }
+          "clicked": {
+            "request": "crt.CreateRecordRequest"
+          }
         }
       }
-    }
-  },
-  {
-    "componentType": "crt.Menu",
-    "category": "containers",
-    "description": "Drop-down menu container with child menu items.",
-    "container": true,
-    "parentTypes": ["crt.Scaffold", "crt.FlexContainer"],
-    "properties": {
-      "type": {
-        "type": "string",
-        "required": true,
-        "description": "Must be crt.Menu."
-      },
-      "items": {
-        "type": "array",
-        "description": "Menu item entries."
-      }
-    },
-    "typicalChildren": [],
-    "example": {
-      "operation": "insert",
-      "name": "ActionsMenu",
-      "values": {
-        "type": "crt.Menu",
-        "items": []
-      },
-      "parentName": "Scaffold",
-      "propertyName": "actions",
-      "index": 0
-    }
-  },
-  {
-    "componentType": "crt.ButtonToggleGroup",
-    "category": "containers",
-    "description": "Group of toggle buttons where one option can be selected at a time.",
-    "container": false,
-    "parentTypes": ["crt.GridContainer", "crt.FlexContainer"],
-    "properties": {
-      "type": {
-        "type": "string",
-        "required": true,
-        "description": "Must be crt.ButtonToggleGroup."
-      },
-      "control": {
-        "type": "string",
-        "description": "Bound view-model attribute."
-      },
-      "items": {
-        "type": "array",
-        "description": "Toggle button options."
-      }
-    },
-    "typicalChildren": [],
-    "example": {
-      "operation": "insert",
-      "name": "StatusToggle",
-      "values": {
-        "type": "crt.ButtonToggleGroup",
-        "control": "$PDS_Status",
-        "items": []
-      },
-      "parentName": "DetailsGrid",
-      "propertyName": "items",
-      "index": 0
     }
   },
   {
@@ -412,7 +501,6 @@
     "category": "fields",
     "description": "Single-line text input field.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -438,9 +526,23 @@
       "visible": {
         "type": "string",
         "description": "Visibility binding."
+      },
+      "labelPosition": {
+        "type": "string",
+        "values": [
+          "above",
+          "auto",
+          "hidden"
+        ],
+        "default": "above",
+        "description": "Label position."
+      },
+      "multiline": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable multiline mode."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "NameInput",
@@ -459,7 +561,6 @@
     "category": "fields",
     "description": "Numeric text input.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -473,9 +574,30 @@
       "label": {
         "type": "string",
         "description": "Field label."
+      },
+      "format": {
+        "type": "object",
+        "description": "Number format config: { decimalPrecision: N }. Use 0 for integers."
+      },
+      "labelPosition": {
+        "type": "string",
+        "values": [
+          "above",
+          "auto",
+          "hidden"
+        ],
+        "default": "above",
+        "description": "Label position."
+      },
+      "readonly": {
+        "type": "string",
+        "description": "Readonly binding."
+      },
+      "visible": {
+        "type": "string",
+        "description": "Visibility binding."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "AmountInput",
@@ -494,7 +616,6 @@
     "category": "fields",
     "description": "Email-type text input with validation.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -508,9 +629,30 @@
       "label": {
         "type": "string",
         "description": "Field label."
+      },
+      "labelPosition": {
+        "type": "string",
+        "values": [
+          "above",
+          "auto",
+          "hidden"
+        ],
+        "default": "above",
+        "description": "Label position."
+      },
+      "readonly": {
+        "type": "string",
+        "description": "Readonly binding."
+      },
+      "visible": {
+        "type": "string",
+        "description": "Visibility binding."
+      },
+      "placeholder": {
+        "type": "string",
+        "description": "Placeholder text."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "EmailInput",
@@ -529,7 +671,6 @@
     "category": "fields",
     "description": "URL/web address text input.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -543,9 +684,30 @@
       "label": {
         "type": "string",
         "description": "Field label."
+      },
+      "labelPosition": {
+        "type": "string",
+        "values": [
+          "above",
+          "auto",
+          "hidden"
+        ],
+        "default": "above",
+        "description": "Label position."
+      },
+      "readonly": {
+        "type": "string",
+        "description": "Readonly binding."
+      },
+      "visible": {
+        "type": "string",
+        "description": "Visibility binding."
+      },
+      "placeholder": {
+        "type": "string",
+        "description": "Placeholder text."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "WebsiteInput",
@@ -564,7 +726,6 @@
     "category": "fields",
     "description": "Phone number input with call intent support.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -578,9 +739,30 @@
       "label": {
         "type": "string",
         "description": "Field label."
+      },
+      "labelPosition": {
+        "type": "string",
+        "values": [
+          "above",
+          "auto",
+          "hidden"
+        ],
+        "default": "above",
+        "description": "Label position."
+      },
+      "readonly": {
+        "type": "string",
+        "description": "Readonly binding."
+      },
+      "visible": {
+        "type": "string",
+        "description": "Visibility binding."
+      },
+      "placeholder": {
+        "type": "string",
+        "description": "Placeholder text."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "PhoneInput",
@@ -599,7 +781,6 @@
     "category": "fields",
     "description": "Checkbox for Boolean fields. NOTE: In mobile pages use crt.Toggle for Boolean data-type fields — the mobile designer maps Boolean to crt.Toggle by default. Reserve crt.Checkbox for explicit tristate or custom scenarios.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -613,9 +794,26 @@
       "label": {
         "type": "string",
         "description": "Field label."
+      },
+      "labelPosition": {
+        "type": "string",
+        "values": [
+          "above",
+          "auto",
+          "hidden"
+        ],
+        "default": "above",
+        "description": "Label position."
+      },
+      "readonly": {
+        "type": "string",
+        "description": "Readonly binding."
+      },
+      "visible": {
+        "type": "string",
+        "description": "Visibility binding."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "ActiveCheckbox",
@@ -634,7 +832,6 @@
     "category": "fields",
     "description": "Lookup dropdown selector. Use for lookup and enumeration fields.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -648,9 +845,42 @@
       "label": {
         "type": "string",
         "description": "Field label."
+      },
+      "labelPosition": {
+        "type": "string",
+        "values": [
+          "above",
+          "auto",
+          "hidden"
+        ],
+        "default": "above",
+        "description": "Label position."
+      },
+      "readonly": {
+        "type": "string",
+        "description": "Readonly binding."
+      },
+      "visible": {
+        "type": "string",
+        "description": "Visibility binding."
+      },
+      "placeholder": {
+        "type": "string",
+        "description": "Placeholder text."
+      },
+      "items": {
+        "type": "string",
+        "description": "Data property attribute for lookup items."
+      },
+      "showValueAsLink": {
+        "type": "boolean",
+        "description": "Show selected value as a navigable link."
+      },
+      "isAddAllowed": {
+        "type": "boolean",
+        "description": "Allow creating new lookup records."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "StatusCombo",
@@ -669,7 +899,6 @@
     "category": "fields",
     "description": "Date and/or time picker.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -684,13 +913,34 @@
         "type": "string",
         "description": "Field label."
       },
-      "format": {
+      "pickerType": {
         "type": "string",
-        "values": ["date", "time", "datetime"],
-        "description": "Picker format. Default: 'datetime'."
+        "values": [
+          "date",
+          "time",
+          "datetime"
+        ],
+        "description": "Picker type. Default: 'datetime'."
+      },
+      "labelPosition": {
+        "type": "string",
+        "values": [
+          "above",
+          "auto",
+          "hidden"
+        ],
+        "default": "above",
+        "description": "Label position."
+      },
+      "readonly": {
+        "type": "string",
+        "description": "Readonly binding."
+      },
+      "visible": {
+        "type": "string",
+        "description": "Visibility binding."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "DueDatePicker",
@@ -698,7 +948,7 @@
         "type": "crt.DateTimePicker",
         "control": "$PDS_DueDate",
         "label": "$Resources.Strings.DueDatePicker_label",
-        "format": "date"
+        "pickerType": "date"
       },
       "parentName": "DetailsGrid",
       "propertyName": "items",
@@ -710,7 +960,6 @@
     "category": "fields",
     "description": "Image upload / preview field.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -724,9 +973,48 @@
       "label": {
         "type": "string",
         "description": "Field label."
+      },
+      "size": {
+        "type": "string",
+        "values": [
+          "small",
+          "medium",
+          "large"
+        ],
+        "default": "large",
+        "description": "Image preview size."
+      },
+      "borderRadius": {
+        "type": "string",
+        "description": "Border radius preset (e.g. 'medium')."
+      },
+      "positioning": {
+        "type": "string",
+        "description": "Image fill/fit mode (e.g. 'fill', 'cover')."
+      },
+      "maxFileSize": {
+        "type": "number",
+        "description": "Max upload file size."
+      },
+      "labelPosition": {
+        "type": "string",
+        "values": [
+          "above",
+          "auto",
+          "hidden"
+        ],
+        "default": "above",
+        "description": "Label position."
+      },
+      "readonly": {
+        "type": "string",
+        "description": "Readonly binding."
+      },
+      "visible": {
+        "type": "string",
+        "description": "Visibility binding."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "PhotoInput",
@@ -745,7 +1033,6 @@
     "category": "fields",
     "description": "Multi-line rich text editor.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -759,9 +1046,26 @@
       "label": {
         "type": "string",
         "description": "Field label."
+      },
+      "labelPosition": {
+        "type": "string",
+        "values": [
+          "above",
+          "auto",
+          "hidden"
+        ],
+        "default": "above",
+        "description": "Label position."
+      },
+      "readonly": {
+        "type": "string",
+        "description": "Readonly binding."
+      },
+      "visible": {
+        "type": "string",
+        "description": "Visibility binding."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "NotesEditor",
@@ -780,7 +1084,6 @@
     "category": "fields",
     "description": "Numeric range slider.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -791,28 +1094,54 @@
         "type": "string",
         "description": "Bound view-model attribute."
       },
-      "min": {
+      "minValue": {
         "type": "number",
         "description": "Minimum value."
       },
-      "max": {
+      "maxValue": {
         "type": "number",
         "description": "Maximum value."
+      },
+      "step": {
+        "type": "number",
+        "description": "Step increment."
+      },
+      "color": {
+        "type": "string",
+        "description": "Color scheme."
       },
       "label": {
         "type": "string",
         "description": "Field label."
+      },
+      "labelPosition": {
+        "type": "string",
+        "values": [
+          "above",
+          "auto",
+          "hidden"
+        ],
+        "default": "above",
+        "description": "Label position."
+      },
+      "readonly": {
+        "type": "string",
+        "description": "Readonly binding."
+      },
+      "visible": {
+        "type": "string",
+        "description": "Visibility binding."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "PrioritySlider",
       "values": {
         "type": "crt.Slider",
         "control": "$PDS_Priority",
-        "min": 0,
-        "max": 10,
+        "minValue": 0,
+        "maxValue": 10,
+        "step": 1,
         "label": "$Resources.Strings.PrioritySlider_label"
       },
       "parentName": "DetailsGrid",
@@ -825,7 +1154,6 @@
     "category": "fields",
     "description": "Boolean toggle switch. Mobile-specific — the mobile designer maps Boolean data types to crt.Toggle (not crt.Checkbox). Always prefer crt.Toggle for Boolean fields in mobile pages.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -839,9 +1167,30 @@
       "label": {
         "type": "string",
         "description": "Field label."
+      },
+      "labelPosition": {
+        "type": "string",
+        "values": [
+          "above",
+          "auto",
+          "hidden"
+        ],
+        "default": "above",
+        "description": "Label position."
+      },
+      "readonly": {
+        "type": "string",
+        "description": "Readonly binding."
+      },
+      "visible": {
+        "type": "string",
+        "description": "Visibility binding."
+      },
+      "valueChange": {
+        "type": "object",
+        "description": "Request descriptor fired when value changes."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "ActiveToggle",
@@ -860,30 +1209,51 @@
     "category": "fields",
     "description": "Barcode/QR code scanner field. Mobile-only — not available in web pages.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.BarcodeScanner."
       },
-      "control": {
-        "type": "string",
-        "description": "Bound view-model attribute for the scanned value."
+      "scanned": {
+        "type": "object",
+        "description": "Request descriptor fired when a barcode is scanned."
       },
-      "label": {
+      "scanTimeout": {
+        "type": "number",
+        "default": 2000,
+        "description": "Timeout between scans in milliseconds."
+      },
+      "enabled": {
+        "type": "boolean",
+        "description": "Whether the scanner is enabled."
+      },
+      "size": {
         "type": "string",
-        "description": "Field label."
+        "values": [
+          "small",
+          "medium",
+          "large",
+          "max"
+        ],
+        "description": "Scanner viewport size."
+      },
+      "features": {
+        "type": "object",
+        "description": "Feature toggles: { flashToggle (bool), beepOnScan (bool) }."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "BarcodeField",
       "values": {
         "type": "crt.BarcodeScanner",
-        "control": "$PDS_Barcode",
-        "label": "$Resources.Strings.BarcodeField_label"
+        "scanned": {
+          "request": "crt.MyBarcodeScanButtonRequest"
+        },
+        "scanTimeout": 2000,
+        "size": "medium",
+        "enabled": true
       },
       "parentName": "DetailsGrid",
       "propertyName": "items",
@@ -893,27 +1263,54 @@
   {
     "componentType": "crt.List",
     "category": "interactive",
-    "description": "Scrollable record list. Used in list/section pages bound to '$Items'.",
+    "description": "Scrollable record list. Used in list/section pages.",
     "container": false,
-    "parentTypes": ["crt.GridContainer", "crt.Scaffold"],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.List."
       },
-      "control": {
+      "items": {
         "type": "string",
-        "description": "Bound collection attribute, typically '$Items'."
+        "description": "Data property attribute for the record collection, typically '$Items'."
+      },
+      "itemLayout": {
+        "type": "object",
+        "description": "Item layout template (crt.ListItem config)."
+      },
+      "itemSelected": {
+        "type": "object",
+        "description": "Request descriptor fired when an item is selected."
+      },
+      "scrollable": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable scrolling."
+      },
+      "useSeparator": {
+        "type": "boolean",
+        "description": "Show separators between items."
+      },
+      "enablePullToRefresh": {
+        "type": "boolean",
+        "description": "Enable pull-to-refresh."
+      },
+      "visible": {
+        "type": "string",
+        "description": "Visibility binding."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "RecordList",
       "values": {
         "type": "crt.List",
-        "control": "$Items"
+        "items": "$Items",
+        "itemSelected": {
+          "request": "crt.OpenPageRequest"
+        },
+        "scrollable": true
       },
       "parentName": "Scaffold",
       "propertyName": "items",
@@ -925,25 +1322,49 @@
     "category": "interactive",
     "description": "File attachment list.",
     "container": false,
-    "parentTypes": ["crt.GridContainer", "crt.TabContainer"],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.FileList."
       },
-      "control": {
+      "items": {
         "type": "string",
-        "description": "Bound collection attribute."
+        "description": "Data property attribute for the file collection."
+      },
+      "entityName": {
+        "type": "string",
+        "description": "File entity schema name."
+      },
+      "primaryColumnName": {
+        "type": "string",
+        "description": "Primary column name."
+      },
+      "recordColumnName": {
+        "type": "string",
+        "description": "Record column name."
+      },
+      "masterRecordColumnValue": {
+        "type": "string",
+        "description": "Master record column value binding."
+      },
+      "columns": {
+        "type": "array",
+        "description": "Column definitions for the file list."
+      },
+      "scrollable": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable scrolling."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "Attachments",
       "values": {
         "type": "crt.FileList",
-        "control": "$Attachments"
+        "items": "$Attachments",
+        "masterRecordColumnValue": "$Id"
       },
       "parentName": "AttachmentsTab",
       "propertyName": "items",
@@ -955,25 +1376,32 @@
     "category": "interactive",
     "description": "Activity/message feed panel.",
     "container": false,
-    "parentTypes": ["crt.GridContainer", "crt.TabContainer"],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.Feed."
       },
-      "control": {
+      "primaryColumnValue": {
         "type": "string",
-        "description": "Bound feed data attribute."
+        "description": "Record ID binding for ESN messages."
+      },
+      "entitySchemaName": {
+        "type": "string",
+        "description": "Entity schema name for the feed."
+      },
+      "dataSourceName": {
+        "type": "string",
+        "description": "Data source name."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "FeedPanel",
       "values": {
         "type": "crt.Feed",
-        "control": "$Feed"
+        "primaryColumnValue": "$Id",
+        "entitySchemaName": "Contact"
       },
       "parentName": "FeedTab",
       "propertyName": "items",
@@ -985,25 +1413,35 @@
     "category": "interactive",
     "description": "Card gallery with image thumbnails.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.Gallery."
       },
-      "control": {
+      "items": {
         "type": "string",
-        "description": "Bound collection attribute."
+        "description": "Data property attribute for the gallery collection."
+      },
+      "itemConfig": {
+        "type": "object",
+        "description": "Gallery item configuration."
+      },
+      "useSpecificPage": {
+        "type": "boolean",
+        "description": "Open a specific page on item click."
+      },
+      "specificPage": {
+        "type": "string",
+        "description": "Page schema name to open."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "ProductGallery",
       "values": {
         "type": "crt.Gallery",
-        "control": "$Items"
+        "items": "$Items"
       },
       "parentName": "Scaffold",
       "propertyName": "items",
@@ -1015,57 +1453,33 @@
     "category": "interactive",
     "description": "Chronological timeline view for records.",
     "container": false,
-    "parentTypes": ["crt.GridContainer", "crt.TabContainer"],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.Timeline."
       },
-      "control": {
+      "items": {
+        "type": "array",
+        "description": "Timeline tile configurations."
+      },
+      "masterSchemaId": {
         "type": "string",
-        "description": "Bound collection attribute."
+        "description": "Master schema ID binding."
+      },
+      "masterEntity": {
+        "type": "string",
+        "description": "Master entity name binding."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "ActivityTimeline",
       "values": {
         "type": "crt.Timeline",
-        "control": "$Activities"
+        "masterEntity": "$PDS_Contact"
       },
       "parentName": "Scaffold",
-      "propertyName": "items",
-      "index": 0
-    }
-  },
-  {
-    "componentType": "crt.CompactProfile",
-    "category": "interactive",
-    "description": "Compact contact profile card showing avatar and key fields.",
-    "container": false,
-    "parentTypes": ["crt.GridContainer"],
-    "properties": {
-      "type": {
-        "type": "string",
-        "required": true,
-        "description": "Must be crt.CompactProfile."
-      },
-      "control": {
-        "type": "string",
-        "description": "Bound entity attribute."
-      }
-    },
-    "typicalChildren": [],
-    "example": {
-      "operation": "insert",
-      "name": "ContactProfile",
-      "values": {
-        "type": "crt.CompactProfile",
-        "control": "$PDS_Contact"
-      },
-      "parentName": "DetailsGrid",
       "propertyName": "items",
       "index": 0
     }
@@ -1075,25 +1489,52 @@
     "category": "interactive",
     "description": "Communication options widget (call, email, SMS links).",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.CommunicationOptions."
       },
-      "control": {
+      "items": {
         "type": "string",
-        "description": "Bound entity attribute."
+        "description": "Data property attribute for communication options collection."
+      },
+      "typeColumnName": {
+        "type": "string",
+        "description": "Communication type column name."
+      },
+      "numberColumnName": {
+        "type": "string",
+        "description": "Number/value column name."
+      },
+      "masterRecordColumnName": {
+        "type": "string",
+        "description": "Master record column name."
+      },
+      "masterRecordColumnValue": {
+        "type": "string",
+        "description": "Master record column value binding."
+      },
+      "primaryColumnName": {
+        "type": "string",
+        "description": "Primary column name."
+      },
+      "readonly": {
+        "type": "boolean",
+        "description": "Read-only mode."
+      },
+      "visible": {
+        "type": "string",
+        "description": "Visibility binding."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "CommOptions",
       "values": {
         "type": "crt.CommunicationOptions",
-        "control": "$PDS_Contact"
+        "masterRecordColumnValue": "$Id",
+        "masterRecordColumnName": "Contact"
       },
       "parentName": "DetailsGrid",
       "propertyName": "items",
@@ -1105,25 +1546,31 @@
     "category": "interactive",
     "description": "Horizontal stage progress bar for pipeline/status tracking.",
     "container": false,
-    "parentTypes": ["crt.GridContainer", "crt.Scaffold"],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.EntityStageProgressBar."
       },
-      "control": {
+      "entityName": {
         "type": "string",
-        "description": "Bound stage attribute."
+        "description": "Entity name for DCM stages."
+      },
+      "recordId": {
+        "type": "string",
+        "description": "Record ID binding for DCM runtime."
+      },
+      "value": {
+        "type": "string",
+        "description": "Current stage value binding."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "StageBar",
       "values": {
         "type": "crt.EntityStageProgressBar",
-        "control": "$PDS_Stage"
+        "entityName": "Opportunity"
       },
       "parentName": "Scaffold",
       "propertyName": "items",
@@ -1135,15 +1582,17 @@
     "category": "interactive",
     "description": "KPI / indicator metric widget.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.IndicatorWidget."
+      },
+      "config": {
+        "type": "object",
+        "description": "Full indicator configuration: { title, data: { providing, formatting }, text: { template, metricMacros, fontSizeMode }, layout: { color, border, icon }, theme, hideTitle }."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "TotalIndicator",
@@ -1160,15 +1609,17 @@
     "category": "interactive",
     "description": "Chart/graph widget for data visualization.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.ChartWidget."
+      },
+      "config": {
+        "type": "object",
+        "description": "Full chart configuration: { title, theme, color, layout: { showLegend, showDataLabels }, series: [{ data, type, color, label }], seriesOrder, scales }."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "SalesChart",
@@ -1181,44 +1632,46 @@
     }
   },
   {
-    "componentType": "crt.FolderTree",
-    "category": "filtering",
-    "description": "Folder tree navigation panel for hierarchical record filtering.",
-    "container": false,
-    "parentTypes": ["crt.GridContainer"],
-    "properties": {
-      "type": {
-        "type": "string",
-        "required": true,
-        "description": "Must be crt.FolderTree."
-      }
-    },
-    "typicalChildren": [],
-    "example": {
-      "operation": "insert",
-      "name": "FolderTree",
-      "values": {
-        "type": "crt.FolderTree"
-      },
-      "parentName": "HeaderContainer",
-      "propertyName": "items",
-      "index": 0
-    }
-  },
-  {
     "componentType": "crt.FolderTreeActions",
     "category": "filtering",
     "description": "Action toolbar for the folder tree (add/edit/delete folders).",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.FolderTreeActions."
+      },
+      "caption": {
+        "type": "string",
+        "description": "Button caption text."
+      },
+      "activeFolderName": {
+        "type": "string",
+        "description": "Active folder name binding."
+      },
+      "sourceSchemaName": {
+        "type": "string",
+        "description": "Source entity schema name."
+      },
+      "rootSchemaName": {
+        "type": "string",
+        "description": "Root schema name for folder hierarchy."
+      },
+      "color": {
+        "type": "string",
+        "description": "Color scheme."
+      },
+      "size": {
+        "type": "string",
+        "values": [
+          "small",
+          "medium",
+          "large"
+        ],
+        "description": "Button size."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "FolderActions",
@@ -1235,15 +1688,32 @@
     "category": "filtering",
     "description": "Quick filter chip for applying a named data filter.",
     "container": false,
-    "parentTypes": ["crt.QuickFilterGroup", "crt.GridContainer"],
+    "parentTypes": [
+      "crt.QuickFilterGroup"
+    ],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.QuickFilter."
+      },
+      "filterType": {
+        "type": "string",
+        "description": "Filter type identifier."
+      },
+      "value": {
+        "type": "string",
+        "description": "Current filter value binding."
+      },
+      "config": {
+        "type": "object",
+        "description": "Filter configuration object."
+      },
+      "valueChange": {
+        "type": "object",
+        "description": "Request descriptor fired when filter changes."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "ActiveFilter",
@@ -1260,7 +1730,6 @@
     "category": "filtering",
     "description": "Group of quick filter chips. Mobile-specific grouping component.",
     "container": true,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
@@ -1272,7 +1741,9 @@
         "description": "Child crt.QuickFilter entries."
       }
     },
-    "typicalChildren": ["crt.QuickFilter"],
+    "typicalChildren": [
+      "crt.QuickFilter"
+    ],
     "example": {
       "operation": "insert",
       "name": "FiltersGroup",
@@ -1290,15 +1761,50 @@
     "category": "filtering",
     "description": "Sort control for record lists. Mobile-specific.",
     "container": false,
-    "parentTypes": ["crt.GridContainer"],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
         "description": "Must be crt.Sort."
+      },
+      "items": {
+        "type": "array",
+        "description": "Sort option items."
+      },
+      "value": {
+        "type": "string",
+        "description": "Current sort value binding."
+      },
+      "valueChange": {
+        "type": "object",
+        "description": "Request descriptor fired when sort changes."
+      },
+      "defaultValue": {
+        "type": "string",
+        "description": "Default sort value."
+      },
+      "iconPosition": {
+        "type": "string",
+        "values": [
+          "left",
+          "right"
+        ],
+        "description": "Icon position."
+      },
+      "color": {
+        "type": "string",
+        "description": "Color scheme."
+      },
+      "size": {
+        "type": "string",
+        "values": [
+          "small",
+          "medium",
+          "large"
+        ],
+        "description": "Button size."
       }
     },
-    "typicalChildren": [],
     "example": {
       "operation": "insert",
       "name": "SortControl",

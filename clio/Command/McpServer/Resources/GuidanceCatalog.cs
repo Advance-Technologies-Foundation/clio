@@ -72,7 +72,7 @@ internal static class GuidanceCatalog {
 				BusinessRulesGuidanceResource.Guide),
 			["mobile-page-modification"] = Create(
 				"mobile-page-modification",
-				"Canonical MCP guidance for mobile Freedom UI page editing: plain JSON body format, unified get-page/update-page workflow, validator and converter constraints, component registry differences, and Scaffold merge patterns.",
+				"Mobile-specific differences from the base page-modification guidance: plain JSON body format (no AMD), Scaffold root element rules, mobile component registry, naming conventions, and template hierarchy.",
 				MobilePageGuidanceResource.Guide)
 		};
 

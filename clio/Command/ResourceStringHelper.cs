@@ -8,8 +8,12 @@ using Newtonsoft.Json.Linq;
 
 internal static class ResourceStringHelper {
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
-	private static readonly Regex ResourceStringPattern = new(
+	private static readonly Regex MacroResourceStringPattern = new(
 		@"#ResourceString\(([^)]+)\)#",
+		RegexOptions.Compiled,
+		RegexTimeout);
+	private static readonly Regex DollarResourceStringPattern = new(
+		@"\$Resources\.Strings\.([A-Za-z0-9_]+)",
 		RegexOptions.Compiled,
 		RegexTimeout);
 	private static readonly Regex CaptionBoundaryPattern = new(
@@ -22,7 +26,10 @@ internal static class ResourceStringHelper {
 		if (string.IsNullOrEmpty(body)) {
 			return keys;
 		}
-		foreach (Match match in ResourceStringPattern.Matches(body)) {
+		foreach (Match match in MacroResourceStringPattern.Matches(body)) {
+			keys.Add(match.Groups[1].Value);
+		}
+		foreach (Match match in DollarResourceStringPattern.Matches(body)) {
 			keys.Add(match.Groups[1].Value);
 		}
 		return keys;

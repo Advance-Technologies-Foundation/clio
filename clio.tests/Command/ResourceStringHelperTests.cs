@@ -62,4 +62,27 @@ public sealed class ResourceStringHelperTests {
 		caption.Should().Be("Account Primary Contact",
 			because: "generated resource captions should stay human-readable for automatically registered Usr keys");
 	}
+
+	[Test]
+	[Description("ExtractKeys returns keys from both #ResourceString(Key)# macros and $Resources.Strings.Key runtime-binding syntax.")]
+	public void ExtractKeys_WhenBodyContainsBothSyntaxForms_ReturnsAllKeys() {
+		// Arrange
+		const string body = """
+			{
+			  "items": [
+			    { "label": "#ResourceString(UsrNameInput_label)#" },
+			    { "caption": "$Resources.Strings.UsrInfoTab_caption" }
+			  ]
+			}
+			""";
+
+		// Act
+		HashSet<string> keys = ResourceStringHelper.ExtractKeys(body);
+
+		// Assert
+		keys.Should().Contain("UsrNameInput_label",
+			because: "#ResourceString(UsrNameInput_label)# is the macro form and must be extracted");
+		keys.Should().Contain("UsrInfoTab_caption",
+			because: "$Resources.Strings.UsrInfoTab_caption is the runtime-binding form and must also be extracted");
+	}
 }
