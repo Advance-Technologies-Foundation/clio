@@ -4,7 +4,6 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 using Clio.Common.DataForge;
 using Clio.Common.EntitySchema;
 using ModelContextProtocol.Server;
@@ -13,13 +12,11 @@ namespace Clio.Command.McpServer.Tools;
 
 [McpServerToolType]
 public sealed class DataForgeTool(
-	IDataForgeClient dataForgeClient,
+	IDataForgeReadClient readClient,
 	IDataForgeMaintenanceClient maintenanceClient,
-	IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
 	IDataForgeContextService contextService,
-	IToolCommandResolver commandResolver,
-	IDataForgeProxySafeExecutor proxySafeExecutor) {
-	internal const string DataForgeHealthToolName = "dataforge-health";
+	IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
+	IToolCommandResolver commandResolver) {
 	internal const string DataForgeStatusToolName = "dataforge-status";
 	internal const string DataForgeFindTablesToolName = "dataforge-find-tables";
 	internal const string DataForgeFindLookupsToolName = "dataforge-find-lookups";
@@ -29,49 +26,23 @@ public sealed class DataForgeTool(
 	internal const string DataForgeInitializeToolName = "dataforge-initialize";
 	internal const string DataForgeUpdateToolName = "dataforge-update";
 
-	private const string DefaultDataForgeScope = "use_enrichment";
 	private const string SourceName = "clio+dataforge-service";
-
-	[McpServerTool(Name = DataForgeHealthToolName, ReadOnly = true, Destructive = false, Idempotent = true,
-		OpenWorld = false)]
-	[Description("Checks direct health endpoints of dataforge-service. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
-	public async Task<DataForgeHealthResponse> GetHealth(
-		[Description("Parameters: environment-name preferred; uri/login/password and OAuth direct connection args emergency fallback only.")]
-		[Required]
-		DataForgeHealthArgs args) {
-		try {
-			DataForgeHealthResult health = await ExecuteAsync(args, async options => {
-				IDataForgeClient client = ResolveService(options, dataForgeClient);
-				return await client.CheckHealthAsync(BuildConfigRequest(options));
-			});
-			return new DataForgeHealthResponse(true, SourceName, health.CorrelationId, [], null, health);
-		} catch (Exception ex) {
-			return new DataForgeHealthResponse(
-				false,
-				SourceName,
-				string.Empty,
-				[],
-				new DataForgeErrorResult("health_error", ex.Message),
-				null);
-		}
-	}
+	private const string PlatformRequirementDescription =
+		"Requires Creatio platform version 10.0.0 or later; CrtDataForge is included in supported platform versions.";
 
 	[McpServerTool(Name = DataForgeStatusToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Combines direct dataforge-service health with Creatio DataForge maintenance status. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
-	public async Task<DataForgeStatusResponse> GetStatus(
-		[Description("Parameters: environment-name preferred; uri/login/password and OAuth direct connection args emergency fallback only.")]
+	[Description("Checks whether Data Forge is ready to provide schema, lookup, relation, and maintenance context for a Creatio environment. " + PlatformRequirementDescription)]
+	public DataForgeStatusResponse GetStatus(
+		[Description("Parameters: environment-name (required).")]
 		[Required]
 		DataForgeStatusArgs args) {
 		try {
-			(DataForgeHealthResult health, DataForgeMaintenanceStatusResult status) = await ExecuteAsync(args, async options => {
-				IDataForgeClient client = ResolveService(options, dataForgeClient);
+			(DataForgeHealthResult health, DataForgeMaintenanceStatusResult status) = Execute(args, options => {
 				IDataForgeMaintenanceClient maintenance = ResolveService(options, maintenanceClient);
-				DataForgeHealthResult resolvedHealth = await client.CheckHealthAsync(BuildConfigRequest(options));
-				DataForgeMaintenanceStatusResult resolvedStatus = maintenance.GetStatus();
-				return (resolvedHealth, resolvedStatus);
+				return maintenance.GetFullStatus();
 			});
-			return new DataForgeStatusResponse(true, SourceName, health.CorrelationId, [], null, health, status);
+			return new DataForgeStatusResponse(true, SourceName, string.Empty, [], null, health, status);
 		} catch (Exception ex) {
 			return new DataForgeStatusResponse(
 				false,
@@ -86,19 +57,16 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeFindTablesToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Finds similar tables through dataforge-service similarDetails endpoint.")]
-	public async Task<DataForgeFindTablesResponse> FindTables(
-		[Description("Parameters: query (required), optional limit, plus target connection args. Prefer environment-name; direct connection args are emergency fallback only.")]
+	[Description("Finds existing Creatio tables that semantically match a business concept, so callers can reuse or compare schemas before creating new ones. " + PlatformRequirementDescription)]
+	public DataForgeFindTablesResponse FindTables(
+		[Description("Parameters: query (required), optional limit, environment-name (required).")]
 		[Required]
 		DataForgeFindTablesArgs args) {
 		try {
 			EnsureRequired(args.Query, "query");
-			IReadOnlyList<SimilarTableResult> results = await ExecuteAsync(args, async options => {
-				IDataForgeClient client = ResolveService(options, dataForgeClient);
-				return await client.FindSimilarTablesAsync(
-					args.Query!,
-					args.Limit,
-					BuildConfigRequest(options));
+			IReadOnlyList<SimilarTableResult> results = Execute(args, options => {
+				IDataForgeReadClient client = ResolveService(options, readClient);
+				return client.FindSimilarTables(args.Query!, args.Limit);
 			});
 			return new DataForgeFindTablesResponse(true, SourceName, string.Empty, [], null, results);
 		} catch (Exception ex) {
@@ -114,20 +82,16 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeFindLookupsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Finds similar lookups through dataforge-service.")]
-	public async Task<DataForgeFindLookupsResponse> FindLookups(
-		[Description("Parameters: query (required), optional schema-name, optional limit, plus target connection args. Prefer environment-name; direct connection args are emergency fallback only.")]
+	[Description("Finds lookup values and lookup schemas that match a requested business value, useful for resolving lookup references before writing data bindings. " + PlatformRequirementDescription)]
+	public DataForgeFindLookupsResponse FindLookups(
+		[Description("Parameters: query (required), optional schema-name, optional limit, environment-name (required).")]
 		[Required]
 		DataForgeFindLookupsArgs args) {
 		try {
 			EnsureRequired(args.Query, "query");
-			IReadOnlyList<SimilarLookupResult> results = await ExecuteAsync(args, async options => {
-				IDataForgeClient client = ResolveService(options, dataForgeClient);
-				return await client.FindSimilarLookupsAsync(
-					args.Query!,
-					args.SchemaName,
-					args.Limit,
-					BuildConfigRequest(options));
+			IReadOnlyList<SimilarLookupResult> results = Execute(args, options => {
+				IDataForgeReadClient client = ResolveService(options, readClient);
+				return client.FindSimilarLookups(args.Query!, args.SchemaName, args.Limit);
 			});
 			return new DataForgeFindLookupsResponse(true, SourceName, string.Empty, [], null, results);
 		} catch (Exception ex) {
@@ -143,21 +107,17 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeGetRelationsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Retrieves cypher relation paths between two tables through dataforge-service.")]
-	public async Task<DataForgeRelationsResponse> GetRelations(
-		[Description("Parameters: source-table, target-table (required), optional limit, plus target connection args. Prefer environment-name; direct connection args are emergency fallback only.")]
+	[Description("Finds known relationship paths between two Creatio tables to help model references or understand existing entity links. " + PlatformRequirementDescription)]
+	public DataForgeRelationsResponse GetRelations(
+		[Description("Parameters: source-table, target-table (required), optional limit, environment-name (required).")]
 		[Required]
 		DataForgeGetRelationsArgs args) {
 		try {
 			EnsureRequired(args.SourceTable, "source-table");
 			EnsureRequired(args.TargetTable, "target-table");
-			IReadOnlyList<string> results = await ExecuteAsync(args, async options => {
-				IDataForgeClient client = ResolveService(options, dataForgeClient);
-				return await client.GetTableRelationshipsAsync(
-					args.SourceTable!,
-					args.TargetTable!,
-					args.Limit,
-					BuildConfigRequest(options));
+			IReadOnlyList<string> results = Execute(args, options => {
+				IDataForgeReadClient client = ResolveService(options, readClient);
+				return client.GetTableRelationships(args.SourceTable!, args.TargetTable!, args.Limit);
 			});
 			return new DataForgeRelationsResponse(true, SourceName, string.Empty, [], null, results);
 		} catch (Exception ex) {
@@ -173,18 +133,18 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeGetTableColumnsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Reads runtime entity columns from Creatio without requiring package context.")]
+	[Description("Returns the logical columns of a Creatio table, including captions, data types, required flags, and lookup targets. " + PlatformRequirementDescription)]
 	public DataForgeColumnsResponse GetTableColumns(
-		[Description("Parameters: table-name (required), plus target connection args. Prefer environment-name; direct connection args are emergency fallback only.")]
+		[Description("Parameters: table-name (required), environment-name (required).")]
 		[Required]
 		DataForgeGetTableColumnsArgs args) {
 		try {
 			EnsureRequired(args.TableName, "table-name");
-			RuntimeEntitySchemaResult runtimeSchema = Execute(args, options => {
+			IReadOnlyList<DataForgeColumnResult> results = Execute(args, options => {
 				IRuntimeEntitySchemaReader reader = ResolveService(options, runtimeEntitySchemaReader);
-				return reader.GetByName(args.TableName!);
+				RuntimeEntitySchemaResult schema = reader.GetByName(args.TableName!);
+				return DataForgeRuntimeSchemaMapper.MapColumns(schema);
 			});
-			IReadOnlyList<DataForgeColumnResult> results = DataForgeRuntimeSchemaMapper.MapColumns(runtimeSchema);
 			return new DataForgeColumnsResponse(true, SourceName, string.Empty, [], null, results);
 		} catch (Exception ex) {
 			return new DataForgeColumnsResponse(
@@ -199,21 +159,20 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeContextToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Aggregates tables, lookups, relations, columns, and service status for DataForge-assisted context reads.")]
-	public async Task<DataForgeContextResponse> GetContext(
-		[Description("Parameters: requirement-summary/candidate-terms/lookup-hints/relation-pairs plus target connection args. Prefer environment-name; direct connection args are emergency fallback only.")]
+	[Description("Builds a compact Data Forge context package for planning schema work: similar tables, lookup matches, relation paths, table columns, and readiness status. " + PlatformRequirementDescription)]
+	public DataForgeContextResponse GetContext(
+		[Description("Parameters: requirement-summary/candidate-terms/lookup-hints/relation-pairs, environment-name (required).")]
 		[Required]
 		DataForgeContextArgs args) {
 		try {
-			DataForgeContextAggregationResult contextResult = await ExecuteAsync(args, async options => {
+			DataForgeContextAggregationResult contextResult = Execute(args, options => {
 				IDataForgeContextService resolvedContextService = ResolveService(options, contextService);
-				return await resolvedContextService.GetContextAsync(
+				return resolvedContextService.GetContext(
 					new DataForgeContextRequest(
 						args.RequirementSummary,
 						args.CandidateTerms,
 						args.LookupHints,
-						args.RelationPairs?.Select(pair => new DataForgeRelationPair(pair.SourceTable, pair.TargetTable)).ToList()),
-					BuildConfigRequest(options));
+						args.RelationPairs?.Select(pair => new DataForgeRelationPair(pair.SourceTable, pair.TargetTable)).ToList()));
 			});
 			return new DataForgeContextResponse(
 				true,
@@ -247,9 +206,9 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeInitializeToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Schedules DataForge initialize jobs through Creatio maintenance service. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	[Description("Schedules a full Data Forge initialization when the index is missing, stale, or not ready. " + PlatformRequirementDescription)]
 	public DataForgeMaintenanceResponse Initialize(
-		[Description("Parameters: environment-name preferred; uri/login/password and OAuth direct connection args emergency fallback only.")]
+		[Description("Parameters: environment-name (required).")]
 		[Required]
 		DataForgeMaintenanceArgs args) {
 		try {
@@ -271,9 +230,9 @@ public sealed class DataForgeTool(
 
 	[McpServerTool(Name = DataForgeUpdateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Schedules DataForge update jobs through Creatio maintenance service. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	[Description("Schedules a Data Forge index refresh after schema changes or when discovery results appear stale. " + PlatformRequirementDescription)]
 	public DataForgeMaintenanceResponse Update(
-		[Description("Parameters: environment-name preferred; uri/login/password and OAuth direct connection args emergency fallback only.")]
+		[Description("Parameters: environment-name (required).")]
 		[Required]
 		DataForgeMaintenanceArgs args) {
 		try {
@@ -294,15 +253,9 @@ public sealed class DataForgeTool(
 	}
 
 	private T Execute<T>(DataForgeConnectionArgsBase args, Func<DataForgeTargetOptions, T> action) {
+		EnsureRequired(args.EnvironmentName, "environment-name");
 		DataForgeTargetOptions options = CreateTargetOptions(args);
-		string? targetHost = GetTargetHost(options);
-		return proxySafeExecutor.Execute(() => action(options), targetHost);
-	}
-
-	private Task<T> ExecuteAsync<T>(DataForgeConnectionArgsBase args, Func<DataForgeTargetOptions, Task<T>> action) {
-		DataForgeTargetOptions options = CreateTargetOptions(args);
-		string? targetHost = GetTargetHost(options);
-		return proxySafeExecutor.ExecuteAsync(() => action(options), targetHost);
+		return action(options);
 	}
 
 	private static void EnsureRequired(string? value, string parameterName) {
@@ -312,54 +265,13 @@ public sealed class DataForgeTool(
 	}
 
 	private TService ResolveService<TService>(DataForgeTargetOptions options, TService fallback) where TService : class {
-		if (HasExplicitTarget(options)) {
-			return commandResolver.Resolve<TService>(options);
-		}
-
-		return fallback;
-	}
-
-	private static bool HasExplicitTarget(DataForgeTargetOptions options) {
-		return !string.IsNullOrWhiteSpace(options.Environment)
-			|| !string.IsNullOrWhiteSpace(options.Uri)
-			|| !string.IsNullOrWhiteSpace(options.Login)
-			|| !string.IsNullOrWhiteSpace(options.Password)
-			|| !string.IsNullOrWhiteSpace(options.ClientId)
-			|| !string.IsNullOrWhiteSpace(options.ClientSecret)
-			|| !string.IsNullOrWhiteSpace(options.AuthAppUri);
-	}
-
-	private static DataForgeConfigRequest BuildConfigRequest(DataForgeTargetOptions options) {
-		return new DataForgeConfigRequest {
-			ServiceUrl = null,
-			AuthAppUri = options.AuthAppUri,
-			ClientId = options.ClientId,
-			ClientSecret = options.ClientSecret,
-			AllowSysSettingsAuthFallback = options.AllowSysSettingsAuthFallback,
-			Scope = options.Scope
-		};
+		return commandResolver.Resolve<TService>(options);
 	}
 
 	private static DataForgeTargetOptions CreateTargetOptions(DataForgeConnectionArgsBase args) {
 		return new DataForgeTargetOptions {
-			Environment = args.EnvironmentName,
-			Uri = args.Uri,
-			Login = args.Login,
-			Password = args.Password,
-			ClientId = args.ClientId,
-			ClientSecret = args.ClientSecret,
-			AuthAppUri = args.AuthAppUri,
-			AllowSysSettingsAuthFallback = args.AllowSysSettingsAuthFallback,
-			Scope = string.IsNullOrWhiteSpace(args.Scope) ? DefaultDataForgeScope : args.Scope.Trim()
+			Environment = args.EnvironmentName
 		};
-	}
-
-	private static string? GetTargetHost(DataForgeTargetOptions options) {
-		if (string.IsNullOrWhiteSpace(options.Uri)) {
-			return null;
-		}
-
-		return Uri.TryCreate(options.Uri, UriKind.Absolute, out Uri? uri) ? uri.Host : null;
 	}
 }
 
@@ -370,44 +282,13 @@ public sealed record DataForgeRelationPairArgs(
 
 /// <summary>
 /// Provides the shared Data Forge connection payload used by all Data Forge MCP tools.
+/// DataForge MCP calls use a registered Creatio environment; direct DataForge microservice credentials are not accepted.
 /// </summary>
 public abstract record DataForgeConnectionArgsBase {
 	[JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name. Preferred for normal MCP work.")]
+	[Description("Registered clio environment name.")]
 	public string? EnvironmentName { get; init; }
-
-	[JsonPropertyName("uri")]
-	[Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
-	public string? Uri { get; init; }
-
-	[JsonPropertyName("login")]
-	[Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
-	public string? Login { get; init; }
-
-	[JsonPropertyName("password")]
-	[Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	public string? Password { get; init; }
-
-	[JsonPropertyName("client-id")]
-	[Description("OAuth client id for direct connection mode. Emergency fallback only.")]
-	public string? ClientId { get; init; }
-
-	[JsonPropertyName("client-secret")]
-	[Description("OAuth client secret for direct connection mode. Emergency fallback only.")]
-	public string? ClientSecret { get; init; }
-
-	[JsonPropertyName("auth-app-uri")]
-	[Description("OAuth application URI for direct connection mode. Emergency fallback only.")]
-	public string? AuthAppUri { get; init; }
-
-	[JsonPropertyName("allow-syssettings-auth-fallback")]
-	public bool AllowSysSettingsAuthFallback { get; init; } = true;
-
-	[JsonPropertyName("scope")]
-	public string? Scope { get; init; }
 }
-
-public sealed record DataForgeHealthArgs : DataForgeConnectionArgsBase;
 
 public sealed record DataForgeStatusArgs : DataForgeConnectionArgsBase;
 

@@ -164,7 +164,6 @@ public sealed class ToolContractGetToolE2ETests {
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
 				["tool-names"] = new[] {
-					DataForgeTool.DataForgeHealthToolName,
 					DataForgeTool.DataForgeStatusToolName,
 					DataForgeTool.DataForgeFindTablesToolName,
 					DataForgeTool.DataForgeFindLookupsToolName,
@@ -191,10 +190,9 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "explicit lookup should still return Data Forge initialize for remediation workflows");
 		explicitResponse.Tools!.Select(tool => tool.Name).Should().Contain(DataForgeTool.DataForgeUpdateToolName,
 			because: "explicit lookup should still return Data Forge update for remediation workflows");
-		explicitResponse.Tools!.Single(tool => tool.Name == DataForgeTool.DataForgeHealthToolName)
-			.Defaults.Should().Contain(definition =>
-				definition.Name == "scope" && definition.Value == "use_enrichment",
-				because: "the explicit Data Forge contract should advertise the default OAuth scope");
+		explicitResponse.Tools.Should().OnlyContain(tool =>
+				tool.Description.Contains("Creatio platform version 10.0.0 or later"),
+			because: "Data Forge contracts should advertise the platform version requirement through the real MCP server");
 	}
 
 	[Test]
