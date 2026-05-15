@@ -121,7 +121,7 @@ Verified from creatio-ui mobile page designer features service:
 
 | Feature | Web | Mobile |
 |---|---|---|
-| Multi-data-source | Enabled | **Disabled** — one data source per page |
+| Multi-data-source | Enabled | **Disabled in designer** (`disableMultiDataSource: true`) |
 | Masked fields | Supported | **Not supported** (`isMaskedPropertyVisible = false`) |
 | Unsupported data types | — | `SECURE_TEXT`, `Color`, `FILE` |
 | Body format | AMD JS module | **Plain JSON** |
@@ -233,7 +233,7 @@ Since Creatio 8.3.2, creating a new app or section automatically generates a mob
 1. **Always use a mobile template** from `list-page-templates --schema-type mobile`. Never create a mobile page from a web template.
 2. **Body is plain JSON** — no `define(...)` wrapper, no `handlers`, `converters`, or `validators` sections.
 3. **`crt.Scaffold` is always the root** — insert it first in `viewConfigDiff`.
-4. **One data source per page** — multi-data-source is disabled in the mobile designer.
+4. **One data source per page (designer constraint)** — the mobile designer disables multi-data-source; define only one data source in `modelConfigDiff`.
 5. **Read `bundle.json` before adding elements** — mobile page templates add many nodes (Scaffold, buttons, containers). Read the bundle first to avoid duplicating inherited nodes.
 6. **Mobile component registry is separate** — verify a component exists on mobile before using it. Do not assume all `crt.*` web components are available on mobile.
 7. **`Boolean` → `Toggle`** — the mobile designer maps Boolean data type to `crt.Toggle`, not `crt.Checkbox`.

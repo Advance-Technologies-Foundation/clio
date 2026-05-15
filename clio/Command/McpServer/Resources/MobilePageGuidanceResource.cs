@@ -71,10 +71,10 @@ public sealed class MobilePageGuidanceResource {
 		       - Add child: { "operation": "insert", ..., "parentName": "Scaffold", "propertyName": "items" }
 
 		       ─────────────────────────────────────────────────────────────
-		       ONE DATA SOURCE PER PAGE
+		       ONE DATA SOURCE PER PAGE (designer constraint)
 		       ─────────────────────────────────────────────────────────────
-		       Mobile pages support only one data source. Do not define multiple data sources
-		       in modelConfigDiff.
+		       The mobile designer disables multi-data-source (disableMultiDataSource: true).
+		       Define only one data source in modelConfigDiff.
 
 		       ─────────────────────────────────────────────────────────────
 		       COMPONENT REGISTRY — mobile components are separate
@@ -119,16 +119,18 @@ public sealed class MobilePageGuidanceResource {
 		         crt.OpenPageRequest, crt.ClosePageRequest
 		         crt.SaveRecordRequest, crt.CancelRecordChangesRequest
 		         crt.CreateRecordRequest, crt.UpdateRecordRequest, crt.DeleteRecordRequest
+		         crt.CopyRecordRequest
 		         crt.LoadDataRequest, crt.RunBusinessProcessRequest
 		         crt.UploadFileRequest, crt.DeleteFileRequest
+		         crt.ShowDialogRequest
+		         crt.OpenLookupPageRequest
+		         crt.AddCommunicationOptionsRequest, crt.CreateCommunicationOptionRequest,
+		         crt.RemoveCommunicationOptionRequest
 
 		       Mobile-only requests (native device capabilities):
 		         crt.SetAttributeFromBarcodeRequest  — trigger barcode/QR scanner, write result to an attribute
 		         crt.OpenAddressOnMapRequest          — open native maps app with an address
-		         crt.OpenCustomWebViewPageRequest     — open an in-app web view (mobile-only)
-		         crt.ShowDialogRequest                — show a native dialog
-		         crt.AddCommunicationOptionsRequest, crt.CreateCommunicationOptionRequest,
-		         crt.RemoveCommunicationOptionRequest — manage communication options
+		         crt.OpenCustomWebViewPageRequest     — open an in-app web view
 
 		       ─────────────────────────────────────────────────────────────
 		       MOBILE PAGE NAMING CONVENTIONS (Creatio standard)
