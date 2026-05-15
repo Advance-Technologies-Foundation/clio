@@ -2727,5 +2727,178 @@ public sealed class SchemaValidationServiceTests {
 
 	#endregion
 
+        #region IsLikelyMobileBody
+
+        [Test]
+        [Description("Returns true when the body starts with a JSON object opening brace after whitespace.")]
+        public void IsLikelyMobileBody_WhenBodyStartsWithBrace_ReturnsTrue() {
+                // Arrange
+                string body = "{ \"viewConfigDiff\": [] }";
+
+                // Act
+                bool result = SchemaValidationService.IsLikelyMobileBody(body);
+
+                // Assert
+                result.Should().BeTrue("because a body starting with '{' is a mobile JSON body, not AMD");
+        }
+
+        [Test]
+        [Description("Returns true when the body has leading whitespace before the opening brace.")]
+        public void IsLikelyMobileBody_WhenBodyHasLeadingWhitespace_ReturnsTrue() {
+                // Arrange
+                string body = "  \n  { \"viewConfigDiff\": [] }";
+
+                // Act
+                bool result = SchemaValidationService.IsLikelyMobileBody(body);
+
+                // Assert
+                result.Should().BeTrue("because leading whitespace before '{' should not prevent mobile detection");
+        }
+
+        [Test]
+        [Description("Returns false when the body is an AMD define(...) module.")]
+        public void IsLikelyMobileBody_WhenBodyIsAmd_ReturnsFalse() {
+                // Arrange
+                string body = ValidListPageBody;
+
+                // Act
+                bool result = SchemaValidationService.IsLikelyMobileBody(body);
+
+                // Assert
+                result.Should().BeFalse("because AMD bodies start with 'define(' not '{'");
+        }
+
+        [Test]
+        [Description("Returns false when the body is null or empty.")]
+        [TestCase(null)]
+        [TestCase("")]
+        public void IsLikelyMobileBody_WhenBodyIsNullOrEmpty_ReturnsFalse(string body) {
+                // Act
+                bool result = SchemaValidationService.IsLikelyMobileBody(body);
+
+                // Assert
+                result.Should().BeFalse("because null/empty bodies cannot be mobile JSON bodies");
+        }
+
+        #endregion
+
+        #region ValidateMobileBody
+
+        [Test]
+        [Description("Returns valid result when the mobile body contains only allowed top-level keys.")]
+        public void ValidateMobileBody_WhenBodyIsValidMobileJson_ReturnsValid() {
+                // Arrange
+                string body = """
+                        {
+                          "viewConfigDiff": [],
+                          "viewModelConfigDiff": [],
+                          "modelConfigDiff": []
+                        }
+                        """;
+
+                // Act
+                SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+                // Assert
+                result.IsValid.Should().BeTrue("because a well-formed mobile JSON body should pass validation");
+                result.Errors.Should().BeEmpty("because no disallowed keys are present");
+        }
+
+        [Test]
+        [Description("Rejects a mobile body that contains a 'validators' section.")]
+        public void ValidateMobileBody_WhenBodyContainsValidators_ReturnsError() {
+                // Arrange
+                string body = """
+                        {
+                          "viewConfigDiff": [],
+                          "validators": {}
+                        }
+                        """;
+
+                // Act
+                SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+                // Assert
+                result.IsValid.Should().BeFalse("because mobile pages do not support validators");
+                result.Errors.Should().ContainSingle(e => e.Contains("validators"),
+                        because: "the error must identify the disallowed 'validators' key");
+        }
+
+        [Test]
+        [Description("Rejects a mobile body that contains a 'handlers' section.")]
+        public void ValidateMobileBody_WhenBodyContainsHandlers_ReturnsError() {
+                // Arrange
+                string body = """
+                        {
+                          "viewConfigDiff": [],
+                          "handlers": []
+                        }
+                        """;
+
+                // Act
+                SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+                // Assert
+                result.IsValid.Should().BeFalse("because mobile pages do not support handlers");
+                result.Errors.Should().ContainSingle(e => e.Contains("handlers"),
+                        because: "the error must identify the disallowed 'handlers' key");
+        }
+
+        [Test]
+        [Description("Rejects a mobile body that contains a 'converters' section.")]
+        public void ValidateMobileBody_WhenBodyContainsConverters_ReturnsError() {
+                // Arrange
+                string body = """
+                        {
+                          "viewConfigDiff": [],
+                          "converters": {}
+                        }
+                        """;
+
+                // Act
+                SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+                // Assert
+                result.IsValid.Should().BeFalse("because mobile pages do not support custom converters");
+                result.Errors.Should().ContainSingle(e => e.Contains("converters"),
+                        because: "the error must identify the disallowed 'converters' key");
+        }
+
+        [Test]
+        [Description("Reports multiple errors when the mobile body contains more than one disallowed key.")]
+        public void ValidateMobileBody_WhenBodyContainsMultipleDisallowedKeys_ReportsAllErrors() {
+                // Arrange
+                string body = """
+                        {
+                          "viewConfigDiff": [],
+                          "validators": {},
+                          "handlers": []
+                        }
+                        """;
+
+                // Act
+                SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+                // Assert
+                result.IsValid.Should().BeFalse("because both 'validators' and 'handlers' are disallowed in mobile pages");
+                result.Errors.Should().HaveCount(2,
+                        because: "each disallowed key should produce a distinct error");
+        }
+
+        [Test]
+        [Description("Returns an error when the body is not valid JSON.")]
+        public void ValidateMobileBody_WhenBodyIsNotValidJson_ReturnsError() {
+                // Arrange
+                string body = "this is not json";
+
+                // Act
+                SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+                // Assert
+                result.IsValid.Should().BeFalse("because invalid JSON should fail mobile body validation");
+                result.Errors.Should().NotBeEmpty("because the JSON parse error should be reported");
+        }
+
+        #endregion
 }
 

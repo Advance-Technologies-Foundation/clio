@@ -118,6 +118,15 @@ namespace Clio.Command {
 								["orderDirection"] = 0,
 								["orderPosition"] = -1,
 								["isVisible"] = true
+							},
+							["SchemaType"] = new JObject {
+								[ExpressionKey] = new JObject {
+									[ExpressionTypeKey] = 0,
+									[ColumnPathKey] = "SchemaType"
+								},
+								["orderDirection"] = 0,
+								["orderPosition"] = -1,
+								["isVisible"] = true
 							}
 						}
 					},
@@ -134,11 +143,17 @@ namespace Clio.Command {
 				var rows = rawResponse["rows"] as JArray ?? new JArray();
 				var pages = new List<PageListItem>();
 				foreach (var row in rows) {
+					int schemaTypeValue = row["SchemaType"]?.Value<int>() ?? -1;
 					pages.Add(new PageListItem {
 						SchemaName = row["Name"]?.ToString(),
 						UId = row["UId"]?.ToString(),
 						PackageName = row["PackageName"]?.ToString(),
-						ParentSchemaName = row["ParentSchemaName"]?.ToString()
+						ParentSchemaName = row["ParentSchemaName"]?.ToString(),
+						SchemaType = schemaTypeValue switch {
+							9 => "web",
+							10 => "mobile",
+							_ => "unknown"
+						}
 					});
 				}
 				response = new PageListResponse {

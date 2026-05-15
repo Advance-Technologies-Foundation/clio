@@ -246,6 +246,39 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the guidance tool should return the generated test skill text");
 	}
 
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the mobile page modification guide")]
+	[Description("Verifies that get-guidance returns the mobile-page-modification article with correct URI and constraint text about validators and handlers.")]
+	public async Task GuidanceGet_Should_Return_Mobile_Page_Modification_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "mobile-page-modification"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "mobile-page-modification is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/mobile-page-modification",
+			because: "the canonical resource URI for the mobile page guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP mobile page modification guide",
+			because: "the guidance tool should return the canonical mobile page guide text");
+		response.Article.Text.Should().Contain("validators",
+			because: "the mobile guide must document that validators are not supported in mobile pages");
+		response.Article.Text.Should().Contain("handlers",
+			because: "the mobile guide must document that handlers are not supported in mobile pages");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);

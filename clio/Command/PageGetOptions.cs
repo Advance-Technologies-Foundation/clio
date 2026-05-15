@@ -76,7 +76,8 @@ public class PageGetCommand : Command<PageGetOptions> {
 				("UId", "UId"),
 				("PackageName", "SysPackage.Name"),
 				("PackageUId", "SysPackage.UId"),
-				("ParentSchemaName", "[SysSchema:Id:Parent].Name"));
+				("ParentSchemaName", "[SysSchema:Id:Parent].Name"),
+				("SchemaType", "SchemaType"));
 			if (metadata is null) {
 				response = new PageGetResponse {
 					Success = false,
@@ -162,7 +163,12 @@ public class PageGetCommand : Command<PageGetOptions> {
 					DesignPackageUId = designPackageUId,
 					DesignPackageName = designPackageName,
 					RootSchemaUId = rootSchemaUId,
-					WillCreateReplacingInDesignPackage = willCreateReplacing
+					WillCreateReplacingInDesignPackage = willCreateReplacing,
+					SchemaType = metadata.Value<int?>("SchemaType") switch {
+						9 => "web",
+						10 => "mobile",
+						_ => "unknown"
+					}
 				},
 				Bundle = new PageBundleInfo {
 					Name = bundle.Name,

@@ -36,16 +36,48 @@ public interface IComponentInfoCatalog {
 /// Loads the curated Freedom UI component catalog from the shipped JSON registry.
 /// </summary>
 public sealed class ComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirectoriesProvider workingDirectoriesProvider)
-	: IComponentInfoCatalog {
-	private static readonly string[] CategoryOrder = ["containers", "fields", "interactive", "display"];
-	private readonly Lazy<ComponentCatalogState> _catalogState = new(() =>
-		LoadCatalogState(fileSystem, workingDirectoriesProvider),
-		true);
+	: ComponentInfoCatalogBase(fileSystem, workingDirectoriesProvider, "ComponentRegistry.json", "Component"), IComponentInfoCatalog { }
+
+/// <summary>
+/// Marker interface for the mobile Freedom UI component catalog.
+/// Allows a distinct DI registration without duplicating method signatures.
+/// </summary>
+public interface IMobileComponentInfoCatalog : IComponentInfoCatalog { }
+
+/// <summary>
+/// Loads the curated mobile Freedom UI component catalog from the shipped JSON registry.
+/// </summary>
+public sealed class MobileComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirectoriesProvider workingDirectoriesProvider)
+	: ComponentInfoCatalogBase(fileSystem, workingDirectoriesProvider, "MobileComponentRegistry.json", "Mobile component"),
+		IComponentInfoCatalog, IMobileComponentInfoCatalog { }
+
+/// <summary>
+/// Base implementation for Freedom UI component catalogs loaded from a JSON registry file.
+/// Subclasses supply the registry file name and the error message prefix.
+/// </summary>
+public abstract class ComponentInfoCatalogBase : IComponentInfoCatalog {
+	private static readonly string[] DefaultCategoryOrder = ["containers", "fields", "interactive", "display", "filtering"];
+	private readonly Lazy<ComponentCatalogState> _catalogState;
+
+	/// <summary>
+	/// Initializes the catalog base with the given file system, directories provider, registry file name, and label.
+	/// </summary>
+	/// <param name="fileSystem">The file system abstraction used to read the registry.</param>
+	/// <param name="workingDirectoriesProvider">Provides the executing directory where the registry lives.</param>
+	/// <param name="registryFileName">File name of the JSON registry (e.g. <c>ComponentRegistry.json</c>).</param>
+	/// <param name="registryLabel">Human-readable label used in error messages (e.g. <c>"Component"</c>).</param>
+	protected ComponentInfoCatalogBase(
+		IFileSystem fileSystem,
+		IWorkingDirectoriesProvider workingDirectoriesProvider,
+		string registryFileName,
+		string registryLabel) {
+		_catalogState = new Lazy<ComponentCatalogState>(
+			() => LoadCatalogState(fileSystem, workingDirectoriesProvider, registryFileName, registryLabel),
+			isThreadSafe: true);
+	}
 
 	/// <inheritdoc />
-	public IReadOnlyList<ComponentRegistryEntry> GetAll() {
-		return _catalogState.Value.Entries;
-	}
+	public IReadOnlyList<ComponentRegistryEntry> GetAll() => _catalogState.Value.Entries;
 
 	/// <inheritdoc />
 	public IReadOnlyList<ComponentRegistryEntry> Search(string? search) {
@@ -70,16 +102,18 @@ public sealed class ComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirecto
 
 	private static ComponentCatalogState LoadCatalogState(
 		IFileSystem fileSystem,
-		IWorkingDirectoriesProvider workingDirectoriesProvider) {
+		IWorkingDirectoriesProvider workingDirectoriesProvider,
+		string registryFileName,
+		string registryLabel) {
 		string registryPath = fileSystem.Path.Combine(
 			workingDirectoriesProvider.ExecutingDirectory,
 			"Command",
 			"McpServer",
 			"Data",
-			"ComponentRegistry.json");
+			registryFileName);
 		if (!fileSystem.File.Exists(registryPath)) {
 			throw new InvalidOperationException(
-				$"Component registry file was not found at '{registryPath}'.");
+				$"{registryLabel} registry file was not found at '{registryPath}'.");
 		}
 
 		string json = fileSystem.File.ReadAllText(registryPath);
@@ -88,7 +122,7 @@ public sealed class ComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirecto
 			new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 		if (rawEntries is null || rawEntries.Length == 0) {
 			throw new InvalidOperationException(
-				$"Component registry file '{registryPath}' is empty or invalid.");
+				$"{registryLabel} registry file '{registryPath}' is empty or invalid.");
 		}
 
 		string[] duplicateTypes = rawEntries
@@ -100,7 +134,7 @@ public sealed class ComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirecto
 			.ToArray();
 		if (duplicateTypes.Length > 0) {
 			throw new InvalidOperationException(
-				$"Component registry contains duplicate component types: {string.Join(", ", duplicateTypes)}.");
+				$"{registryLabel} registry contains duplicate component types: {string.Join(", ", duplicateTypes)}.");
 		}
 
 		ComponentRegistryEntry[] orderedEntries = rawEntries
@@ -110,7 +144,7 @@ public sealed class ComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirecto
 			.ToArray();
 		if (orderedEntries.Length == 0) {
 			throw new InvalidOperationException(
-				$"Component registry file '{registryPath}' does not contain valid component types.");
+				$"{registryLabel} registry file '{registryPath}' does not contain valid component types.");
 		}
 
 		Dictionary<string, ComponentRegistryEntry> lookup = orderedEntries
@@ -138,9 +172,9 @@ public sealed class ComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirecto
 
 	private static int GetCategorySortKey(string? category) {
 		int index = Array.FindIndex(
-			CategoryOrder,
+			DefaultCategoryOrder,
 			item => string.Equals(item, category, StringComparison.OrdinalIgnoreCase));
-		return index >= 0 ? index : CategoryOrder.Length;
+		return index >= 0 ? index : DefaultCategoryOrder.Length;
 	}
 
 	private sealed record ComponentCatalogState(

@@ -65,6 +65,7 @@ public sealed class PageCreationGuidanceResource {
 			       - Duplicate schema-name: `create-page` refuses to overwrite an existing ClientUnit schema. Pick a new name or delete the existing schema first.
 			       - Missing entity: if `entity-schema-name` is supplied but the entity schema does not exist, the call is rejected before the page is created.
 			       - Post-create verification: `create-page` does not run AI sampling. Use `get-page` after success to confirm the schema loads.
+			         For mobile pages (schemaType=10): call get-guidance with name `mobile-page-modification` BEFORE editing the body — mobile bodies use plain JSON (not AMD), with different component types and no handlers/validators.
 
 			       create-page response fields
 			       - `schemaType` — integer schema type from the template used: 9 = Freedom UI web page, 10 = mobile page.

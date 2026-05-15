@@ -454,9 +454,27 @@ namespace Clio.Command {
 					Error = "body is required and must not be empty. Reuse get-page raw.body instead of bundle or viewConfig fragments."
 				};
 			}
-			bool isAppendModeValidation = string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase);
-			if (!isAppendModeValidation) {
-				var integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
+			return SchemaValidationService.IsLikelyMobileBody(options.Body)
+				? ValidateMobileInput(options.Body)
+				: ValidateWebInput(options, out explicitResources);
+		}
+
+		private static PageUpdateResponse ValidateMobileInput(string body) {
+			SchemaValidationResult mobileResult = SchemaValidationService.ValidateMobileBody(body);
+			if (!mobileResult.IsValid) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = "Mobile page validation failed: " + string.Join("; ", mobileResult.Errors)
+				};
+			}
+			return null;
+		}
+
+		private static PageUpdateResponse ValidateWebInput(PageUpdateOptions options, out Dictionary<string, string> explicitResources) {
+			explicitResources = null;
+			bool isAppendMode = string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase);
+			if (!isAppendMode) {
+				SchemaValidationResult integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
 				if (!integrityResult.IsValid) {
 					return new PageUpdateResponse {
 						Success = false,
@@ -464,14 +482,14 @@ namespace Clio.Command {
 					};
 				}
 			}
-			var syntaxResult = SchemaValidationService.ValidateJsSyntax(options.Body);
+			SchemaValidationResult syntaxResult = SchemaValidationService.ValidateJsSyntax(options.Body);
 			if (!syntaxResult.IsValid) {
 				return new PageUpdateResponse {
 					Success = false,
 					Error = $"Body contains invalid JavaScript syntax: {string.Join("; ", syntaxResult.Errors)}"
 				};
 			}
-			var handlerResult = SchemaValidationService.ValidateHandlerStructure(options.Body);
+			SchemaValidationResult handlerResult = SchemaValidationService.ValidateHandlerStructure(options.Body);
 			if (!handlerResult.IsValid) {
 				return new PageUpdateResponse {
 					Success = false,
@@ -494,14 +512,14 @@ namespace Clio.Command {
 					};
 				}
 			}
-			var semanticResult = SchemaValidationService.ValidateStandardFieldBindings(options.Body, explicitResources);
+			SchemaValidationResult semanticResult = SchemaValidationService.ValidateStandardFieldBindings(options.Body, explicitResources);
 			if (!semanticResult.IsValid) {
 				return new PageUpdateResponse {
 					Success = false,
 					Error = $"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}"
 				};
 			}
-			var validatorPlacementResult = SchemaValidationService.ValidateValidatorBindingPlacement(options.Body);
+			SchemaValidationResult validatorPlacementResult = SchemaValidationService.ValidateValidatorBindingPlacement(options.Body);
 			if (!validatorPlacementResult.IsValid) {
 				return new PageUpdateResponse {
 					Success = false,

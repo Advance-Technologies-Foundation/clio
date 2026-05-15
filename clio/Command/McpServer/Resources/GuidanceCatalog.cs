@@ -69,7 +69,11 @@ internal static class GuidanceCatalog {
 			["business-rules"] = Create(
 				"business-rules",
 				"Canonical MCP guidance for Freedom UI business rules: entity-level and page-level declarative condition-action rules for field/element visibility, editability, required state, and value assignment.",
-				BusinessRulesGuidanceResource.Guide)
+				BusinessRulesGuidanceResource.Guide),
+			["mobile-page-modification"] = Create(
+				"mobile-page-modification",
+				"Canonical MCP guidance for mobile Freedom UI page editing: plain JSON body format, unified get-page/update-page workflow, validator and converter constraints, component registry differences, and Scaffold merge patterns.",
+				MobilePageGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

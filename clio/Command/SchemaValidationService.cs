@@ -64,6 +64,61 @@ public static class SchemaValidationService
 		"crt.Slider"
 	};
 
+	/// <summary>
+	/// Returns <c>true</c> when <paramref name="body"/> is a mobile page body (plain JSON object).
+	/// AMD bodies always start with <c>define(</c> after optional whitespace.
+	/// </summary>
+	/// <param name="body">Raw schema body to test.</param>
+	/// <returns><c>true</c> when the body is a plain JSON object; otherwise <c>false</c>.</returns>
+	public static bool IsLikelyMobileBody(string body) =>
+		!string.IsNullOrEmpty(body) && body.AsSpan().TrimStart().StartsWith("{");
+
+	/// <summary>
+	/// Validates a mobile page body and reports errors for any AMD-only constructs
+	/// (<c>validators</c>, <c>handlers</c>, custom <c>converters</c> sections) that are
+	/// not supported in mobile JSON bodies.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body to validate.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is invalid when disallowed top-level keys are found.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileBody(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			result.IsValid = false;
+			result.Errors.Add("Mobile page body is null or empty.");
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch (JsonException ex) {
+			result.IsValid = false;
+			result.Errors.Add($"Mobile page body is not valid JSON: {ex.Message}");
+			return result;
+		}
+		using (document) {
+			if (document.RootElement.ValueKind != JsonValueKind.Object) {
+				result.IsValid = false;
+				result.Errors.Add("Mobile page body must be a JSON object.");
+				return result;
+			}
+			if (document.RootElement.TryGetProperty("validators", out _)) {
+				result.IsValid = false;
+				result.Errors.Add("Mobile pages do not support validators. Remove the 'validators' section.");
+			}
+			if (document.RootElement.TryGetProperty("converters", out _)) {
+				result.IsValid = false;
+				result.Errors.Add("Mobile pages do not support custom converters. Use only OOTB converter references in binding expressions.");
+			}
+			if (document.RootElement.TryGetProperty("handlers", out _)) {
+				result.IsValid = false;
+				result.Errors.Add("Mobile pages do not support handlers. Remove the 'handlers' section.");
+			}
+		}
+		return result;
+	}
+
 	public static string BuildMarkerPattern(string markerName) {
 		return @"/\*\*" + Regex.Escape(markerName) + @"\*/(.*?)/\*\*" + Regex.Escape(markerName) + @"\*/";
 	}

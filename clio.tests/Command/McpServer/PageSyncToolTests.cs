@@ -643,4 +643,69 @@ public sealed class PageSyncToolTests {
 			new PageSchemaBodyParser(),
 			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()));
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("SyncPages succeeds for a mobile page body (plain JSON) and skips AMD marker validation.")]
+	public async Task SyncPages_Should_Succeed_For_Valid_Mobile_Json_Body() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem());
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrMobile_FormPage", mobileBody)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages[0].Error.Should().NotContain("SCHEMA_VIEW_CONFIG_DIFF",
+			because: "AMD marker validation errors must not appear for mobile JSON bodies");
+		response.Pages[0].Error.Should().NotContain("Mobile page validation failed",
+			because: "a valid mobile body should not produce mobile validation errors");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("SyncPages with validate:true rejects a mobile body that contains 'converters' section.")]
+	public async Task SyncPages_Should_Reject_Mobile_Body_With_Converters_When_Validate_Is_True() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem());
+		string mobileBodyWithConverters = """
+			{
+			  "viewConfigDiff": [],
+			  "converters": {}
+			}
+			""";
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrMobile_FormPage", mobileBodyWithConverters)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages[0].Success.Should().BeFalse(
+			because: "a mobile body containing 'converters' must be rejected during validation");
+		response.Pages[0].Error.Should().Contain("converters",
+			because: "the error should describe the disallowed key that caused validation to fail");
+	}
 }

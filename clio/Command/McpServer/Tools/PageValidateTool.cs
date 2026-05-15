@@ -15,13 +15,27 @@ public sealed class PageValidateTool {
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
 	[Description("Validates a Freedom UI page body client-side without saving to Creatio. " +
-		"Checks marker integrity, JS syntax, JSON content, field bindings, column bindings, " +
+		"For web pages: checks marker integrity, JS syntax, JSON content, field bindings, column bindings, " +
 		"handler structure (SCHEMA_HANDLERS must be an array of {request, handler} entries), " +
 		"and VendorPrefix.Name format for SCHEMA_CONVERTERS / SCHEMA_VALIDATORS keys and SCHEMA_HANDLERS entry `request` values — " +
-		"read get-guidance `page-schema-converters`, `page-schema-handlers`, or `page-schema-validators` before adding them.")]
+		"read get-guidance `page-schema-converters`, `page-schema-handlers`, or `page-schema-validators` before adding them. " +
+		"For mobile pages (plain JSON body starting with '{'): validates that disallowed constructs " +
+		"(validators, handlers, custom converters sections) are absent.")]
 	public PageValidateResponse ValidatePage(
 		[Description("Parameters: body (required); resources (optional)")]
 		[Required] PageValidateArgs args) {
+		if (SchemaValidationService.IsLikelyMobileBody(args.Body)) {
+			SchemaValidationResult mobileResult = SchemaValidationService.ValidateMobileBody(args.Body);
+			return new PageValidateResponse {
+				Valid = mobileResult.IsValid,
+				Validation = new PageSyncValidationResult {
+					MarkersOk = true,
+					JsSyntaxOk = true,
+					ContentOk = mobileResult.IsValid,
+					Errors = mobileResult.IsValid ? null : mobileResult.Errors
+				}
+			};
+		}
 		PageSyncValidationResult result = Validate(args.Body, args.Resources);
 		return new PageValidateResponse {
 			Valid = result.MarkersOk && result.JsSyntaxOk && result.ContentOk,

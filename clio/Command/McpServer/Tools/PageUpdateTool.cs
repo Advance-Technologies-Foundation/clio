@@ -39,9 +39,20 @@ public sealed class PageUpdateTool(
 		CancellationToken cancellationToken = default) {
 		PageUpdateOptions options = BuildOptions(args);
 		if (!string.IsNullOrWhiteSpace(options.Body)) {
-			string validationError = CollectValidatorErrors(options.Body);
-			if (validationError != null)
-				return new PageUpdateResponse { Success = false, Error = validationError };
+			if (SchemaValidationService.IsLikelyMobileBody(options.Body)) {
+				// Mobile page body: skip AMD validation, actively reject disallowed sections.
+				SchemaValidationResult mobileErrors = SchemaValidationService.ValidateMobileBody(options.Body);
+				if (!mobileErrors.IsValid) {
+					return new PageUpdateResponse {
+						Success = false,
+						Error = "Mobile page validation failed: " + string.Join("; ", mobileErrors.Errors)
+					};
+				}
+			} else {
+				string validationError = CollectValidatorErrors(options.Body);
+				if (validationError != null)
+					return new PageUpdateResponse { Success = false, Error = validationError };
+			}
 		}
 		PageSamplingReview samplingReview = null;
 		if (!options.DryRun && args.SkipSampling != true) {

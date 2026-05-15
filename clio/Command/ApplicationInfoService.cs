@@ -265,7 +265,12 @@ public sealed class ApplicationInfoService(
 				SchemaName = page.SchemaName!,
 				UId = page.UId ?? string.Empty,
 				PackageName = page.PackageName ?? string.Empty,
-				ParentSchemaName = page.ParentSchemaName ?? string.Empty
+				ParentSchemaName = page.ParentSchemaName ?? string.Empty,
+				SchemaType = page.SchemaType switch {
+					9 => "web",
+					10 => "mobile",
+					_ => "unknown"
+				}
 			})
 			.OrderBy(page => page.SchemaName, StringComparer.OrdinalIgnoreCase)
 			.ToList();
@@ -621,7 +626,8 @@ public sealed class ApplicationInfoService(
 				new SelectQueryColumnDefinition("Name", "Name"),
 				new SelectQueryColumnDefinition("UId", "UId"),
 				new SelectQueryColumnDefinition("SysPackage.Name", "PackageName"),
-				new SelectQueryColumnDefinition("[SysSchema:Id:Parent].Name", "ParentSchemaName")
+				new SelectQueryColumnDefinition("[SysSchema:Id:Parent].Name", "ParentSchemaName"),
+				new SelectQueryColumnDefinition("SchemaType", "SchemaType")
 			],
 			[
 				new SelectQueryFilterDefinition("ManagerName", "ClientUnitSchemaManager", TextDataValueType),
@@ -773,6 +779,9 @@ public sealed class ApplicationInfoService(
 
 		[JsonPropertyName("ParentSchemaName")]
 		public string? ParentSchemaName { get; set; }
+
+		[JsonPropertyName("SchemaType")]
+		public int? SchemaType { get; set; }
 	}
 
 	private sealed class RuntimeSchemaDto

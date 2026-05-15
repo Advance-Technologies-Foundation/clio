@@ -262,6 +262,57 @@ public sealed class PageValidateToolE2ETests {
 		return EntitySchemaStructuredResultParser.Extract<PageValidateResponse>(callResult);
 	}
 
+	[Test]
+	[Description("Returns valid=true for a well-formed mobile JSON body with allowed sections only.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts a valid mobile JSON body")]
+	[AllureDescription("Verifies that validate-page returns valid=true for a plain-JSON mobile body with no disallowed keys.")]
+	public async Task PageValidateTool_Should_Return_Valid_For_Well_Formed_Mobile_Body() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBody);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "a well-formed mobile JSON body with no disallowed keys should pass validation");
+		response.Validation.ContentOk.Should().BeTrue(
+			because: "mobile body with allowed sections only should pass content validation");
+	}
+
+	[Test]
+	[Description("Returns valid=false for a mobile JSON body that contains a 'validators' section.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects mobile body with 'validators' key")]
+	[AllureDescription("Verifies that validate-page rejects a mobile body that contains the 'validators' key.")]
+	public async Task PageValidateTool_Should_Reject_Mobile_Body_With_Validators() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string mobileBodyWithValidators = """
+			{
+			  "viewConfigDiff": [],
+			  "validators": {}
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithValidators);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "mobile pages do not support the 'validators' key");
+		response.Validation.ContentOk.Should().BeFalse(
+			because: "the 'validators' key is disallowed in mobile page bodies");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
