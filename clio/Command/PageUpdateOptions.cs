@@ -148,7 +148,7 @@ namespace Clio.Command {
 			if (string.IsNullOrWhiteSpace(options.TargetSchemaUId)) {
 				return TryResolveEditableSchemaContext(options.SchemaName, options.TargetPackageUId, out context, out response);
 			}
-			(JToken metadata, string queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
+			(JToken metadata, string _) = PageSchemaMetadataHelper.QuerySysSchemaRow(
 				_applicationClient, _serviceUrlBuilder, options.SchemaName, ("SchemaType", "SchemaType"));
 			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(metadata?["SchemaType"]?.Value<int>());
 			context = new EditableSchemaContext {
@@ -190,7 +190,7 @@ namespace Clio.Command {
 		private bool TryResolveEditableSchemaContext(string schemaName, string targetPackageUIdOverride, out EditableSchemaContext context, out PageUpdateResponse response) {
 			TargetPackageUIdOverride = targetPackageUIdOverride;
 			context = null;
-			var (metadata, queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(_applicationClient, _serviceUrlBuilder, schemaName, ("UId", "UId"), ("SchemaType", "SchemaType"));
+			(JToken metadata, string queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(_applicationClient, _serviceUrlBuilder, schemaName, ("UId", "UId"), ("SchemaType", "SchemaType"));
 			if (metadata == null) { response = new PageUpdateResponse { Success = false, Error = queryError }; return false; }
 			string rawSchemaUId = metadata["UId"]?.ToString();
 			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(metadata["SchemaType"]?.Value<int>());

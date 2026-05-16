@@ -70,15 +70,10 @@ public sealed class PageUpdateTool(
 		return response;
 	}
 
-	private static string ValidatePageBody(string body) {
-		if (!SchemaValidationService.IsLikelyMobileBody(body)) {
-			return CollectValidatorErrors(body);
-		}
-		SchemaValidationResult mobileErrors = SchemaValidationService.ValidateMobileBody(body);
-		return mobileErrors.IsValid
+	private static string ValidatePageBody(string body) =>
+		SchemaValidationService.IsLikelyMobileBody(body)
 			? null
-			: "Mobile page validation failed: " + string.Join("; ", mobileErrors.Errors);
-	}
+			: CollectValidatorErrors(body);
 
 	private static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>
 		new() {
