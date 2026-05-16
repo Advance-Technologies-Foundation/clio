@@ -14,7 +14,7 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 [McpServerToolType]
 public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IMobileComponentInfoCatalog mobileCatalog) {
-	private static readonly string[] CategoryOrder = ["containers", "fields", "interactive", "display"];
+	private static readonly string[] CategoryOrder = ["containers", "fields", "interactive", "display", "filtering"];
 
 	internal const string ToolName = "get-component-info";
 
