@@ -39,18 +39,9 @@ public sealed class PageUpdateTool(
 		CancellationToken cancellationToken = default) {
 		PageUpdateOptions options = BuildOptions(args);
 		if (!string.IsNullOrWhiteSpace(options.Body)) {
-			if (SchemaValidationService.IsLikelyMobileBody(options.Body)) {
-				SchemaValidationResult mobileErrors = SchemaValidationService.ValidateMobileBody(options.Body);
-				if (!mobileErrors.IsValid) {
-					return new PageUpdateResponse {
-						Success = false,
-						Error = "Mobile page validation failed: " + string.Join("; ", mobileErrors.Errors)
-					};
-				}
-			} else {
-				string validationError = CollectValidatorErrors(options.Body);
-				if (validationError != null)
-					return new PageUpdateResponse { Success = false, Error = validationError };
+			string bodyError = ValidatePageBody(options.Body);
+			if (bodyError != null) {
+				return new PageUpdateResponse { Success = false, Error = bodyError };
 			}
 		}
 		PageSamplingReview samplingReview = null;
@@ -77,6 +68,16 @@ public sealed class PageUpdateTool(
 		}
 		response.SamplingReview = samplingReview;
 		return response;
+	}
+
+	private static string ValidatePageBody(string body) {
+		if (!SchemaValidationService.IsLikelyMobileBody(body)) {
+			return CollectValidatorErrors(body);
+		}
+		SchemaValidationResult mobileErrors = SchemaValidationService.ValidateMobileBody(body);
+		return mobileErrors.IsValid
+			? null
+			: "Mobile page validation failed: " + string.Join("; ", mobileErrors.Errors);
 	}
 
 	private static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>

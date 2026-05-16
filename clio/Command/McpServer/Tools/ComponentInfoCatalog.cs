@@ -36,7 +36,7 @@ public interface IComponentInfoCatalog {
 /// Loads the curated Freedom UI component catalog from the shipped JSON registry.
 /// </summary>
 public sealed class ComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirectoriesProvider workingDirectoriesProvider)
-	: ComponentInfoCatalogBase(fileSystem, workingDirectoriesProvider, "ComponentRegistry.json", "Component"), IComponentInfoCatalog { }
+	: ComponentInfoCatalogBase(fileSystem, workingDirectoriesProvider, "ComponentRegistry.json", "Component") { }
 
 /// <summary>
 /// Marker interface for the mobile Freedom UI component catalog.
@@ -49,7 +49,7 @@ public interface IMobileComponentInfoCatalog : IComponentInfoCatalog { }
 /// </summary>
 public sealed class MobileComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirectoriesProvider workingDirectoriesProvider)
 	: ComponentInfoCatalogBase(fileSystem, workingDirectoriesProvider, "MobileComponentRegistry.json", "Mobile component"),
-		IComponentInfoCatalog, IMobileComponentInfoCatalog { }
+		IMobileComponentInfoCatalog { }
 
 /// <summary>
 /// Base implementation for Freedom UI component catalogs loaded from a JSON registry file.

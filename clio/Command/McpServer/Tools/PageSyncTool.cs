@@ -85,6 +85,42 @@ public sealed class PageSyncTool(
 		};
 	}
 
+	private PageSyncPageResult TryValidatePage(
+		PageSyncPageInput page,
+		PageSamplingReview samplingReview,
+		out PageSyncValidationResult validationResult) {
+		validationResult = null;
+		if (SchemaValidationService.IsLikelyMobileBody(page.Body)) {
+			// Mobile page body: skip AMD validation, actively reject disallowed sections.
+			SchemaValidationResult mobileErrors = SchemaValidationService.ValidateMobileBody(page.Body);
+			if (!mobileErrors.IsValid)
+				return new PageSyncPageResult {
+					SchemaName = page.SchemaName,
+					Success = false,
+					Validation = new PageSyncValidationResult {
+						MarkersOk = true,
+						JsSyntaxOk = true,
+						ContentOk = false,
+						Errors = mobileErrors.Errors
+					},
+					SamplingReview = samplingReview,
+					Error = "Mobile page validation failed: " + string.Join("; ", mobileErrors.Errors)
+				};
+		} else {
+			validationResult = ValidateBody(page.Body, page.Resources);
+			if (!validationResult.MarkersOk || !validationResult.JsSyntaxOk || !validationResult.ContentOk)
+				return new PageSyncPageResult {
+					SchemaName = page.SchemaName,
+					Success = false,
+					Validation = validationResult,
+					SamplingReview = samplingReview,
+					Error = "Client-side validation failed: " +
+						string.Join("; ", validationResult.Errors ?? Array.Empty<string>())
+				};
+		}
+		return null;
+	}
+
 	private PageSyncPageResult SyncSinglePage(
 		PageSyncPageInput page,
 		PageUpdateCommand updateCommand,
@@ -95,37 +131,9 @@ public sealed class PageSyncTool(
 		try {
 			PageSyncValidationResult validationResult = null;
 			if (validate) {
-				if (SchemaValidationService.IsLikelyMobileBody(page.Body)) {
-					// Mobile page body: skip AMD validation, actively reject disallowed sections.
-					SchemaValidationResult mobileErrors = SchemaValidationService.ValidateMobileBody(page.Body);
-					if (!mobileErrors.IsValid) {
-						return new PageSyncPageResult {
-							SchemaName = page.SchemaName,
-							Success = false,
-							Validation = new PageSyncValidationResult {
-								MarkersOk = true,
-								JsSyntaxOk = true,
-								ContentOk = false,
-								Errors = mobileErrors.Errors
-							},
-							SamplingReview = samplingReview,
-							Error = "Mobile page validation failed: " +
-								string.Join("; ", mobileErrors.Errors)
-						};
-					}
-				} else {
-					validationResult = ValidateBody(page.Body, page.Resources);
-					if (!validationResult.MarkersOk || !validationResult.JsSyntaxOk || !validationResult.ContentOk) {
-						return new PageSyncPageResult {
-							SchemaName = page.SchemaName,
-							Success = false,
-							Validation = validationResult,
-							SamplingReview = samplingReview,
-							Error = "Client-side validation failed: " +
-								string.Join("; ", validationResult.Errors ?? Array.Empty<string>())
-						};
-					}
-				}
+				PageSyncPageResult validationFailure = TryValidatePage(page, samplingReview, out validationResult);
+				if (validationFailure != null)
+					return validationFailure;
 			}
 			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
 				return new PageSyncPageResult {
