@@ -2254,6 +2254,13 @@ public class PageToolsTests {
 					}.ToString()
 				};
 			});
+		const string runtimeHierarchyBody = """
+			{
+			  "viewConfigDiff": [{"operation":"insert","name":"Marker","values":{"type":"crt.Label"}}],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
 		hierarchyClient.GetDesignPackageUId("mobile-schema-uid").Returns("design-package-uid");
 		hierarchyClient.GetParentSchemas("mobile-schema-uid", "design-package-uid")
@@ -2264,13 +2271,7 @@ public class PageToolsTests {
 					PackageUId = "runtime-package-uid",
 					PackageName = "RuntimePkg",
 					SchemaVersion = 1,
-					Body = """
-						{
-						  "viewConfigDiff": [],
-						  "viewModelConfigDiff": [],
-						  "modelConfigDiff": []
-						}
-						"""
+					Body = runtimeHierarchyBody
 				}
 			]);
 		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
@@ -2289,6 +2290,11 @@ public class PageToolsTests {
 			because: "mobile fallback editable bodies must be plain JSON, not AMD define modules");
 		response.Raw.Body.Should().NotContain("define(",
 			because: "AMD wrappers are invalid for mobile page bodies");
+		response.Raw.Body.Should().NotContain("\"Marker\"",
+			because: "when no replacing schema exists in the design package, get-page must return the empty mobile fallback, not the runtime-package hierarchy body");
+		response.Raw.Body.Should().Be(
+			"{\n\t\"viewConfigDiff\": [],\n\t\"viewModelConfigDiff\": [],\n\t\"modelConfigDiff\": []\n}",
+			because: "BuildEmptyBody must return the canonical empty mobile JSON skeleton with the three required top-level arrays and no AMD/handlers/validators/converters sections");
 	}
 
 	[Test]

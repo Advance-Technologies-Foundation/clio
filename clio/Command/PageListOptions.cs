@@ -140,22 +140,16 @@ namespace Clio.Command {
 					response = new PageListResponse { Success = false, Error = "Query failed" };
 					return false;
 				}
-				var rows = rawResponse["rows"] as JArray ?? new JArray();
-				var pages = new List<PageListItem>();
-				foreach (var row in rows) {
-					int schemaTypeValue = row["SchemaType"]?.Value<int>() ?? -1;
-					pages.Add(new PageListItem {
+				JArray rows = rawResponse["rows"] as JArray ?? [];
+				List<PageListItem> pages = rows
+					.Select(row => new PageListItem {
 						SchemaName = row["Name"]?.ToString(),
 						UId = row["UId"]?.ToString(),
 						PackageName = row["PackageName"]?.ToString(),
 						ParentSchemaName = row["ParentSchemaName"]?.ToString(),
-						SchemaType = schemaTypeValue switch {
-							9 => "web",
-							10 => "mobile",
-							_ => "unknown"
-						}
-					});
-				}
+						SchemaType = PageSchemaTypeExtensions.FromNumericValue(row["SchemaType"]?.Value<int>()).ToLabel()
+					})
+					.ToList();
 				response = new PageListResponse {
 					Success = true,
 					Count = pages.Count,

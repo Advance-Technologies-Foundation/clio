@@ -153,8 +153,11 @@ namespace Clio.Command {
 				_applicationClient, _serviceUrlBuilder, options.SchemaName, (schemaTypeColumnName, schemaTypeColumnName));
 			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(metadata?[schemaTypeColumnName]?.Value<int>());
 			context = new EditableSchemaContext {
-				SchemaName = options.SchemaName, EditableSchemaUId = options.TargetSchemaUId,
-				TemplateSchemaUId = options.TargetSchemaUId, IsCreateReplacing = false, SchemaType = pageSchemaType
+				SchemaName = options.SchemaName,
+				EditableSchemaUId = options.TargetSchemaUId,
+				TemplateSchemaUId = options.TargetSchemaUId,
+				IsCreateReplacing = false,
+				SchemaType = pageSchemaType
 			};
 			response = null;
 			return true;
@@ -199,7 +202,13 @@ namespace Clio.Command {
 			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(metadata[schemaTypeColumnName]?.Value<int>());
 			if (string.IsNullOrWhiteSpace(rawSchemaUId)) { response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' metadata is missing UId" }; return false; }
 			if (_hierarchyClient == null) {
-				context = new EditableSchemaContext { SchemaName = schemaName, EditableSchemaUId = rawSchemaUId, TemplateSchemaUId = rawSchemaUId, IsCreateReplacing = false, SchemaType = pageSchemaType };
+				context = new EditableSchemaContext {
+					SchemaName = schemaName,
+					EditableSchemaUId = rawSchemaUId,
+					TemplateSchemaUId = rawSchemaUId,
+					IsCreateReplacing = false,
+					SchemaType = pageSchemaType
+				};
 				response = null;
 				return true;
 			}
