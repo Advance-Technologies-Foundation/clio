@@ -266,11 +266,7 @@ public sealed class ApplicationInfoService(
 				UId = page.UId ?? string.Empty,
 				PackageName = page.PackageName ?? string.Empty,
 				ParentSchemaName = page.ParentSchemaName ?? string.Empty,
-				SchemaType = page.SchemaType switch {
-					9 => "web",
-					10 => "mobile",
-					_ => "unknown"
-				}
+				SchemaType = PageSchemaTypeExtensions.FromNumericValue(page.SchemaType).ToLabel()
 			})
 			.OrderBy(page => page.SchemaName, StringComparer.OrdinalIgnoreCase)
 			.ToList();

@@ -1277,6 +1277,118 @@ public class PageToolsTests {
 	}
 
 	[Test]
+	[Description("TryUpdatePage rejects a plain JSON body for a web schema even though the body shape looks like a mobile body.")]
+	public void TryUpdatePage_WhenWebSchemaReceivesPlainJsonBody_ReturnsMarkerValidationError() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrWeb_FormPage", schemaType: 9);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrWeb_FormPage",
+			Body = """
+				{
+				  "viewConfigDiff": [],
+				  "viewModelConfigDiff": [],
+				  "modelConfigDiff": []
+				}
+				""",
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "target schema metadata, not body shape, must select the web validation path");
+		response.Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
+			because: "a web schema still requires AMD marker pairs even if the body starts with a JSON object");
+		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
+	}
+
+	[Test]
+	[Description("TryUpdatePage registers explicit resources for a mobile JSON body before saving the schema.")]
+	public void TryUpdatePage_WhenMobileBodyHasExplicitResources_RegistersResourcesOnSave() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		string savedPayload = null;
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrMobile_FormPage",
+				"mobile-schema-uid",
+				"mobile-package-uid",
+				"UsrMobilePackage",
+				"BaseMobilePageTemplate",
+				schemaType: 10).ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = "{}",
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Do<string>(body => savedPayload = body),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [
+			    {
+			      "operation": "insert",
+			      "name": "UsrMobileTitle",
+			      "values": {
+			        "type": "crt.Label",
+			        "caption": "$Resources.Strings.UsrMobileTitle"
+			      }
+			    }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = mobileBody,
+			Resources = "{\"UsrMobileTitle\":\"Mobile title\"}",
+			DryRun = false
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "mobile JSON bodies with explicit resources should save successfully");
+		response.ResourcesRegistered.Should().Be(1,
+			because: "the explicit resource referenced by the mobile body should be registered");
+		response.RegisteredResourceKeys.Should().Equal(["UsrMobileTitle"],
+			because: "the response should report the resource key registered during save");
+		savedPayload.Should().Contain("\"name\":\"UsrMobileTitle\"",
+			because: "the saved schema payload should include the new localizable string");
+		savedPayload.Should().Contain("\"value\":\"Mobile title\"",
+			because: "the explicit resource value should be preserved in localizableStrings");
+	}
+
+	[Test]
 	[Description("TryUpdatePage returns error when schema not found")]
 	public void TryUpdatePage_WhenSchemaNotFound_ReturnsError() {
 		var applicationClient = Substitute.For<IApplicationClient>();
@@ -1363,7 +1475,8 @@ public class PageToolsTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrProxyBinding_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrProxyBinding_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -1384,6 +1497,7 @@ public class PageToolsTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrHandlerDrivenBinding_FormPage");
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrHandlerDrivenBinding_FormPage",
@@ -1405,10 +1519,8 @@ public class PageToolsTests {
 			.And.Contain("$UsrName")
 			.And.Contain("$context.set",
 				because: "the response should guide toward the correct declared attribute written by the handler");
-		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
-			because: "validation should fail before the command builds any service URLs");
-		applicationClient.ReceivedCalls().Should().BeEmpty(
-			because: "validation should fail before the command sends any remote requests");
+		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
 	}
 
 	[Test]
@@ -1417,6 +1529,7 @@ public class PageToolsTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrValidatorPlacement_FormPage");
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrValidatorPlacement_FormPage",
@@ -1437,10 +1550,8 @@ public class PageToolsTests {
 			.And.Contain("viewConfigDiff")
 			.And.Contain("viewModelConfig/viewModelConfigDiff",
 				because: "the response should explain the correct validator binding location");
-		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
-			because: "validation should fail before the command builds any service URLs");
-		applicationClient.ReceivedCalls().Should().BeEmpty(
-			because: "validation should fail before the command sends any remote requests");
+		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
 	}
 
 	[Test]
@@ -1896,7 +2007,8 @@ public class PageToolsTests {
 		string schemaUId,
 		string packageUId,
 		string packageName,
-		string parentSchemaName) {
+		string parentSchemaName,
+		int schemaType = 9) {
 		return new JObject {
 			["success"] = true,
 			["rows"] = new JArray {
@@ -1905,10 +2017,30 @@ public class PageToolsTests {
 					["UId"] = schemaUId,
 					["PackageName"] = packageName,
 					["PackageUId"] = packageUId,
-					["ParentSchemaName"] = parentSchemaName
+					["ParentSchemaName"] = parentSchemaName,
+					["SchemaType"] = schemaType
 				}
 			}
 		};
+	}
+
+	private static void SetupSchemaMetadata(
+		IApplicationClient applicationClient,
+		IServiceUrlBuilder serviceUrlBuilder,
+		string schemaName,
+		int schemaType = 9) {
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				schemaName,
+				"test-schema-uid",
+				"test-package-uid",
+				"UsrTestPackage",
+				"BasePage",
+				schemaType).ToString());
 	}
 
 	private static JObject CreateHierarchyResponse(params JObject[] values) {
@@ -2023,6 +2155,78 @@ public class PageToolsTests {
 			because: "files must be written under .clio-pages directory");
 		response.Files.BodyFile.Should().Contain("UsrMcp_FormPage",
 			because: "files must be grouped under the schema name subdirectory");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-page returns a plain JSON editable fallback body for a mobile page when no replacing schema exists in the design package.")]
+	public void TryGetPage_WhenMobilePageHasNoEditableSchema_ReturnsPlainJsonFallbackBody() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		int selectCallIndex = 0;
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => {
+				selectCallIndex++;
+				return selectCallIndex switch {
+					1 => CreateMetadataResponse(
+						"UsrMobile_FormPage",
+						"mobile-schema-uid",
+						"runtime-package-uid",
+						"RuntimePkg",
+						"BaseMobilePageTemplate",
+						schemaType: 10).ToString(),
+					2 => new JObject {
+						["success"] = true,
+						["rows"] = new JArray {
+							new JObject { ["Name"] = "DesignPkg" }
+						}
+					}.ToString(),
+					_ => new JObject {
+						["success"] = true,
+						["rows"] = new JArray()
+					}.ToString()
+				};
+			});
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("mobile-schema-uid").Returns("design-package-uid");
+		hierarchyClient.GetParentSchemas("mobile-schema-uid", "design-package-uid")
+			.Returns([
+				new PageDesignerHierarchySchema {
+					UId = "mobile-schema-uid",
+					Name = "UsrMobile_FormPage",
+					PackageUId = "runtime-package-uid",
+					PackageName = "RuntimePkg",
+					SchemaVersion = 1,
+					Body = """
+						{
+						  "viewConfigDiff": [],
+						  "viewModelConfigDiff": [],
+						  "modelConfigDiff": []
+						}
+						"""
+				}
+			]);
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+
+		// Act
+		bool result = command.TryGetPage(
+			new PageGetOptions { SchemaName = "UsrMobile_FormPage" },
+			out PageGetResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "mobile page metadata and hierarchy are valid");
+		response.Page.SchemaType.Should().Be("mobile",
+			because: "the schema type from metadata should be surfaced to callers");
+		response.Raw.Body.TrimStart().Should().StartWith("{",
+			because: "mobile fallback editable bodies must be plain JSON, not AMD define modules");
+		response.Raw.Body.Should().NotContain("define(",
+			because: "AMD wrappers are invalid for mobile page bodies");
 	}
 
 	[Test]

@@ -526,7 +526,7 @@ public sealed class PageSyncToolTests {
 		return hierarchyClient;
 	}
 
-	private static PageUpdateCommand CreateSuccessfulPageUpdateCommand() {
+	private static PageUpdateCommand CreateSuccessfulPageUpdateCommand(int schemaType = 9) {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		serviceUrlBuilder.Build(Arg.Any<string>())
@@ -536,7 +536,12 @@ public sealed class PageSyncToolTests {
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject {
 				["success"] = true,
-				["rows"] = new JArray { new JObject { ["UId"] = "test-uid" } }
+				["rows"] = new JArray {
+					new JObject {
+						["UId"] = "test-uid",
+						["SchemaType"] = schemaType
+					}
+				}
 			}.ToString());
 		applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("GetSchema")),
@@ -600,7 +605,8 @@ public sealed class PageSyncToolTests {
 						["UId"] = "test-uid",
 						["PackageUId"] = "test-package-uid",
 						["PackageName"] = "UsrPkg",
-						["ParentSchemaName"] = "BaseModulePage"
+						["ParentSchemaName"] = "BaseModulePage",
+						["SchemaType"] = 9
 					}
 				}
 			}.ToString());
@@ -649,7 +655,7 @@ public sealed class PageSyncToolTests {
 	[Description("SyncPages succeeds for a mobile page body (plain JSON) and skips AMD marker validation.")]
 	public async Task SyncPages_Should_Succeed_For_Valid_Mobile_Json_Body() {
 		// Arrange
-		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand(schemaType: 10);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);

@@ -149,7 +149,8 @@ public class PageGetCommand : Command<PageGetOptions> {
 			bool willCreateReplacing = editableSchema is null
 				&& !string.IsNullOrWhiteSpace(designPackageUId)
 				&& !string.Equals(designPackageUId, currentSchema.PackageUId, StringComparison.OrdinalIgnoreCase);
-			string editableBody = editableSchema?.Body ?? BuildEmptyBody(options.SchemaName);
+			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(metadata.Value<int?>("SchemaType"));
+			string editableBody = editableSchema?.Body ?? BuildEmptyBody(options.SchemaName, pageSchemaType);
 			PageOwnBodySummary ownBodySummary = BuildOwnBodySummary(editableSchema ?? currentSchema, _bodyParser);
 			response = new PageGetResponse {
 				Success = true,
@@ -164,11 +165,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 					DesignPackageName = designPackageName,
 					RootSchemaUId = rootSchemaUId,
 					WillCreateReplacingInDesignPackage = willCreateReplacing,
-					SchemaType = metadata.Value<int?>("SchemaType") switch {
-						9 => "web",
-						10 => "mobile",
-						_ => "unknown"
-					}
+					SchemaType = pageSchemaType.ToLabel()
 				},
 				Bundle = new PageBundleInfo {
 					Name = bundle.Name,
@@ -234,7 +231,10 @@ public class PageGetCommand : Command<PageGetOptions> {
 		return null;
 	}
 
-	private static string BuildEmptyBody(string schemaName) {
+	private static string BuildEmptyBody(string schemaName, PageSchemaType schemaType) {
+		if (schemaType == PageSchemaType.Mobile) {
+			return "{\n\t\"viewConfigDiff\": [],\n\t\"viewModelConfigDiff\": [],\n\t\"modelConfigDiff\": []\n}";
+		}
 		return "define(\"" + schemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {\n\treturn {\n\t\tviewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/,\n\t\tviewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,\n\t\tmodelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,\n\t\thandlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,\n\t\tconverters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,\n\t\tvalidators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/\n\t};\n});";
 	}
 

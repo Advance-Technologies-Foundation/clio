@@ -40,7 +40,6 @@ public sealed class PageUpdateTool(
 		PageUpdateOptions options = BuildOptions(args);
 		if (!string.IsNullOrWhiteSpace(options.Body)) {
 			if (SchemaValidationService.IsLikelyMobileBody(options.Body)) {
-				// Mobile page body: skip AMD validation, actively reject disallowed sections.
 				SchemaValidationResult mobileErrors = SchemaValidationService.ValidateMobileBody(options.Body);
 				if (!mobileErrors.IsValid) {
 					return new PageUpdateResponse {

@@ -11,7 +11,7 @@ namespace Clio.Command {
 	/// </summary>
 	[Verb("list-page-templates", Aliases = ["page-templates", "page-templates-list"], HelpText = "List Freedom UI page templates available for create-page")]
 	public class PageTemplatesListOptions : EnvironmentOptions {
-		[Option("schema-type", Required = false, HelpText = "Filter by schema type: 'web' (FreedomUIPage=9) or 'mobile' (MobilePage=10). Defaults to all.")]
+		[Option("schema-type", Required = false, HelpText = "Filter by schema type: 'web' (9) or 'mobile' (10). Defaults to all.")]
 		public string SchemaType { get; set; }
 	}
 
@@ -97,11 +97,8 @@ namespace Clio.Command {
 
 		private static string Pad(string value, int width) => (value ?? string.Empty).PadRight(width);
 
-		private static string DescribeSchemaType(int schemaType) => schemaType switch {
-			9 => "web",
-			10 => "mobile",
-			_ => schemaType.ToString()
-		};
+		private static string DescribeSchemaType(int schemaType) =>
+			PageSchemaTypeExtensions.FromNumericValue(schemaType).ToLabel();
 
 		private static bool TryParseSchemaType(string value, out PageSchemaType schemaType, out string error) {
 			schemaType = default;
@@ -111,12 +108,12 @@ namespace Clio.Command {
 				case "freedomuipage":
 				case "page":
 				case "9":
-					schemaType = PageSchemaType.FreedomUIPage;
+					schemaType = PageSchemaType.Web;
 					return true;
 				case "mobile":
 				case "mobilepage":
 				case "10":
-					schemaType = PageSchemaType.MobilePage;
+					schemaType = PageSchemaType.Mobile;
 					return true;
 				default:
 					error = $"Unknown schema-type '{value}'. Use 'web' or 'mobile'.";

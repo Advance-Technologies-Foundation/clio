@@ -112,13 +112,16 @@ namespace Clio.Command {
 		public bool TryUpdatePage(PageUpdateOptions options, out PageUpdateResponse response) {
 			try {
 				if (!TryLoadBodyFromFile(options, out response)) return false;
-				PageUpdateResponse validationError = ValidateInput(options, out Dictionary<string, string> explicitResources);
+				PageUpdateResponse earlyError = ValidateRequiredFields(options);
+				if (earlyError != null) { response = earlyError; return false; }
+				PageUpdateResponse commonValidationError = ValidateCommonInput(
+					options, out Dictionary<string, string> explicitResources, out JArray parsedOptionalProperties);
+				if (commonValidationError != null) { response = commonValidationError; return false; }
+				if (!TryResolveContext(options, out EditableSchemaContext context, out response)) return false;
+				PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
 				if (validationError != null) { response = validationError; return false; }
 				if (options.DryRun) { response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null); return true; }
-				if (!TryResolveContext(options, out EditableSchemaContext context, out response)) return false;
 				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
-				JArray parsedOptionalProperties = string.IsNullOrWhiteSpace(options.OptionalProperties)
-					? null : JArray.Parse(options.OptionalProperties);
 				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
 				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, explicitResources, parsedOptionalProperties);
 				if (!TrySaveSchema(schemaToSave, out response)) return false;
@@ -142,12 +145,18 @@ namespace Clio.Command {
 		}
 
 		private bool TryResolveContext(PageUpdateOptions options, out EditableSchemaContext context, out PageUpdateResponse response) {
-			if (!string.IsNullOrWhiteSpace(options.TargetSchemaUId)) {
-				context = new EditableSchemaContext { SchemaName = options.SchemaName, EditableSchemaUId = options.TargetSchemaUId, TemplateSchemaUId = options.TargetSchemaUId, IsCreateReplacing = false };
-				response = null;
-				return true;
+			if (string.IsNullOrWhiteSpace(options.TargetSchemaUId)) {
+				return TryResolveEditableSchemaContext(options.SchemaName, options.TargetPackageUId, out context, out response);
 			}
-			return TryResolveEditableSchemaContext(options.SchemaName, options.TargetPackageUId, out context, out response);
+			(JToken metadata, string queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(
+				_applicationClient, _serviceUrlBuilder, options.SchemaName, ("SchemaType", "SchemaType"));
+			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(metadata?["SchemaType"]?.Value<int>());
+			context = new EditableSchemaContext {
+				SchemaName = options.SchemaName, EditableSchemaUId = options.TargetSchemaUId,
+				TemplateSchemaUId = options.TargetSchemaUId, IsCreateReplacing = false, SchemaType = pageSchemaType
+			};
+			response = null;
+			return true;
 		}
 
 		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options, out string bodyToWrite, out PageUpdateResponse response) {
@@ -181,12 +190,13 @@ namespace Clio.Command {
 		private bool TryResolveEditableSchemaContext(string schemaName, string targetPackageUIdOverride, out EditableSchemaContext context, out PageUpdateResponse response) {
 			TargetPackageUIdOverride = targetPackageUIdOverride;
 			context = null;
-			var (metadata, queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(_applicationClient, _serviceUrlBuilder, schemaName, ("UId", "UId"));
+			var (metadata, queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(_applicationClient, _serviceUrlBuilder, schemaName, ("UId", "UId"), ("SchemaType", "SchemaType"));
 			if (metadata == null) { response = new PageUpdateResponse { Success = false, Error = queryError }; return false; }
 			string rawSchemaUId = metadata["UId"]?.ToString();
+			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(metadata["SchemaType"]?.Value<int>());
 			if (string.IsNullOrWhiteSpace(rawSchemaUId)) { response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' metadata is missing UId" }; return false; }
 			if (_hierarchyClient == null) {
-				context = new EditableSchemaContext { SchemaName = schemaName, EditableSchemaUId = rawSchemaUId, TemplateSchemaUId = rawSchemaUId, IsCreateReplacing = false };
+				context = new EditableSchemaContext { SchemaName = schemaName, EditableSchemaUId = rawSchemaUId, TemplateSchemaUId = rawSchemaUId, IsCreateReplacing = false, SchemaType = pageSchemaType };
 				response = null;
 				return true;
 			}
@@ -200,7 +210,8 @@ namespace Clio.Command {
 			context = new EditableSchemaContext {
 				SchemaName = schemaName, EditableSchemaUId = editableUId, DesignPackageUId = designPackageUId,
 				IsCreateReplacing = isCreateReplacing, ParentSchemaUId = isCreateReplacing ? root.UId : null,
-				ParentSchemaName = root.Name, TemplateSchemaUId = isCreateReplacing ? root.UId : editableUId
+				ParentSchemaName = root.Name, TemplateSchemaUId = isCreateReplacing ? root.UId : editableUId,
+				SchemaType = pageSchemaType
 			};
 			response = null;
 			return true;
@@ -252,6 +263,7 @@ namespace Clio.Command {
 			public string ParentSchemaUId { get; set; }
 			public string ParentSchemaName { get; set; }
 			public string TemplateSchemaUId { get; set; }
+			public PageSchemaType SchemaType { get; set; }
 		}
 
 		private static string FindRootSchemaUId(IReadOnlyList<PageDesignerHierarchySchema> hierarchy, string schemaName) {
@@ -348,11 +360,14 @@ namespace Clio.Command {
 				["uId"] = context.ParentSchemaUId,
 				["name"] = context.ParentSchemaName ?? originalName
 			};
-			dto["body"] = BuildEmptyReplacingBody(originalName);
+			dto["body"] = BuildEmptyReplacingBody(originalName, context.SchemaType);
 			return dto;
 		}
 
-		private static string BuildEmptyReplacingBody(string schemaName) {
+		private static string BuildEmptyReplacingBody(string schemaName, PageSchemaType schemaType) {
+			if (schemaType == PageSchemaType.Mobile) {
+				return "{\n\t\"viewConfigDiff\": [],\n\t\"viewModelConfigDiff\": [],\n\t\"modelConfigDiff\": []\n}";
+			}
 			return "define(\"" + schemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {\n" +
 				"\treturn {\n" +
 				"\t\tviewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/,\n" +
@@ -443,8 +458,7 @@ namespace Clio.Command {
 			};
 		}
 
-		private static PageUpdateResponse ValidateInput(PageUpdateOptions options, out Dictionary<string, string> explicitResources) {
-			explicitResources = null;
+		private static PageUpdateResponse ValidateRequiredFields(PageUpdateOptions options) {
 			if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 				return new PageUpdateResponse { Success = false, Error = "schemaName is required" };
 			}
@@ -454,13 +468,44 @@ namespace Clio.Command {
 					Error = "body is required and must not be empty. Reuse get-page raw.body instead of bundle or viewConfig fragments."
 				};
 			}
-			return SchemaValidationService.IsLikelyMobileBody(options.Body)
-				? ValidateMobileInput(options.Body)
-				: ValidateWebInput(options, out explicitResources);
+			return null;
 		}
 
-		private static PageUpdateResponse ValidateMobileInput(string body) {
-			SchemaValidationResult mobileResult = SchemaValidationService.ValidateMobileBody(body);
+		private static PageUpdateResponse ValidateCommonInput(
+			PageUpdateOptions options,
+			out Dictionary<string, string> explicitResources,
+			out JArray parsedOptionalProperties) {
+			parsedOptionalProperties = null;
+			if (!SchemaValidationService.TryParseResources(options.Resources, out explicitResources, out _)) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = "resources must be a valid JSON object string"
+				};
+			}
+			if (!string.IsNullOrWhiteSpace(options.OptionalProperties)) {
+				try {
+					parsedOptionalProperties = JArray.Parse(options.OptionalProperties);
+				} catch {
+					return new PageUpdateResponse {
+						Success = false,
+						Error = "optional-properties must be a valid JSON array of {key, value} objects"
+					};
+				}
+			}
+			return null;
+		}
+
+		private static PageUpdateResponse ValidateInput(
+			PageUpdateOptions options,
+			PageSchemaType schemaType,
+			Dictionary<string, string> explicitResources) {
+			return schemaType == PageSchemaType.Mobile
+				? ValidateMobileInput(options)
+				: ValidateWebInput(options, explicitResources);
+		}
+
+		private static PageUpdateResponse ValidateMobileInput(PageUpdateOptions options) {
+			SchemaValidationResult mobileResult = SchemaValidationService.ValidateMobileBody(options.Body);
 			if (!mobileResult.IsValid) {
 				return new PageUpdateResponse {
 					Success = false,
@@ -470,8 +515,9 @@ namespace Clio.Command {
 			return null;
 		}
 
-		private static PageUpdateResponse ValidateWebInput(PageUpdateOptions options, out Dictionary<string, string> explicitResources) {
-			explicitResources = null;
+		private static PageUpdateResponse ValidateWebInput(
+			PageUpdateOptions options,
+			Dictionary<string, string> explicitResources) {
 			bool isAppendMode = string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase);
 			if (!isAppendMode) {
 				SchemaValidationResult integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
@@ -495,22 +541,6 @@ namespace Clio.Command {
 					Success = false,
 					Error = $"Body contains invalid handlers: {string.Join("; ", handlerResult.Errors)}"
 				};
-			}
-			if (!SchemaValidationService.TryParseResources(options.Resources, out explicitResources, out _)) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = "resources must be a valid JSON object string"
-				};
-			}
-			if (!string.IsNullOrWhiteSpace(options.OptionalProperties)) {
-				try {
-					JArray.Parse(options.OptionalProperties);
-				} catch {
-					return new PageUpdateResponse {
-						Success = false,
-						Error = "optional-properties must be a valid JSON array of {key, value} objects"
-					};
-				}
 			}
 			SchemaValidationResult semanticResult = SchemaValidationService.ValidateStandardFieldBindings(options.Body, explicitResources);
 			if (!semanticResult.IsValid) {
