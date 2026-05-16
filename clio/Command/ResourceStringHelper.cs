@@ -80,13 +80,13 @@ internal static class ResourceStringHelper {
 		Dictionary<string, string> resources,
 		HashSet<string> bodyKeys) {
 		var result = new JArray();
-		var existingCustomKeys = new HashSet<string>();
+		var existingKeys = new HashSet<string>();
 		var registered = new List<string>();
-		CopyExistingCustomEntries(localizableStrings, result, existingCustomKeys);
-		RegisterMissingBodyKeys(bodyKeys, resources, existingCustomKeys, result, registered);
+		CopyExistingEntries(localizableStrings, result, existingKeys);
+		RegisterMissingBodyKeys(bodyKeys, resources, existingKeys, result, registered);
 		if (resources != null) {
 			foreach (KeyValuePair<string, string> kvp in resources.Where(kvp =>
-				         !existingCustomKeys.Contains(kvp.Key) &&
+				         !existingKeys.Contains(kvp.Key) &&
 				         !bodyKeys.Contains(kvp.Key))) {
 				result.Add(CreateLocalizableEntry(kvp.Key, kvp.Value));
 				registered.Add(kvp.Key);
@@ -95,55 +95,30 @@ internal static class ResourceStringHelper {
 		return (result, registered);
 	}
 
-	public static (JArray merged, List<string> registered) MergeResources(
-		JArray localizableStrings,
-		Dictionary<string, string> resources,
-		HashSet<string> bodyKeys) {
-		var existing = GetExistingKeys(localizableStrings);
-		var result = localizableStrings != null
-			? new JArray(localizableStrings)
-			: new JArray();
-		var registered = new List<string>();
-		var missing = bodyKeys.Except(existing).ToList();
-		foreach (string key in missing) {
-			string value;
-			if (resources != null && resources.TryGetValue(key, out string explicitValue)) {
-				value = explicitValue;
-			} else if (key.StartsWith("Usr")) {
-				value = DeriveCaption(key);
-			} else {
-				continue;
-			}
-			result.Add(CreateLocalizableEntry(key, value));
-			registered.Add(key);
-		}
-		return (result, registered);
-	}
-
-	private static void CopyExistingCustomEntries(
+	private static void CopyExistingEntries(
 		JArray localizableStrings,
 		JArray result,
-		ISet<string> existingCustomKeys) {
+		ISet<string> existingKeys) {
 		if (localizableStrings == null) {
 			return;
 		}
 		foreach (JObject entry in localizableStrings.Children<JObject>()) {
 			string name = entry["name"]?.ToString();
-			if (name == null || !name.StartsWith("Usr")) {
+			if (string.IsNullOrEmpty(name)) {
 				continue;
 			}
 			result.Add(entry);
-			existingCustomKeys.Add(name);
+			existingKeys.Add(name);
 		}
 	}
 
 	private static void RegisterMissingBodyKeys(
 		IEnumerable<string> bodyKeys,
 		IReadOnlyDictionary<string, string> resources,
-		ISet<string> existingCustomKeys,
+		ISet<string> existingKeys,
 		JArray result,
 		ICollection<string> registered) {
-		foreach (string key in bodyKeys.Where(key => !existingCustomKeys.Contains(key))) {
+		foreach (string key in bodyKeys.Where(key => !existingKeys.Contains(key))) {
 			if (!TryResolveResourceValue(resources, key, out string value)) {
 				continue;
 			}
