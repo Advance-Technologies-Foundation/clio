@@ -148,9 +148,10 @@ namespace Clio.Command {
 			if (string.IsNullOrWhiteSpace(options.TargetSchemaUId)) {
 				return TryResolveEditableSchemaContext(options.SchemaName, options.TargetPackageUId, out context, out response);
 			}
+			const string schemaTypeColumnName = "SchemaType";
 			(JToken metadata, string _) = PageSchemaMetadataHelper.QuerySysSchemaRow(
-				_applicationClient, _serviceUrlBuilder, options.SchemaName, ("SchemaType", "SchemaType"));
-			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(metadata?["SchemaType"]?.Value<int>());
+				_applicationClient, _serviceUrlBuilder, options.SchemaName, (schemaTypeColumnName, schemaTypeColumnName));
+			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(metadata?[schemaTypeColumnName]?.Value<int>());
 			context = new EditableSchemaContext {
 				SchemaName = options.SchemaName, EditableSchemaUId = options.TargetSchemaUId,
 				TemplateSchemaUId = options.TargetSchemaUId, IsCreateReplacing = false, SchemaType = pageSchemaType
@@ -190,10 +191,12 @@ namespace Clio.Command {
 		private bool TryResolveEditableSchemaContext(string schemaName, string targetPackageUIdOverride, out EditableSchemaContext context, out PageUpdateResponse response) {
 			TargetPackageUIdOverride = targetPackageUIdOverride;
 			context = null;
-			(JToken metadata, string queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(_applicationClient, _serviceUrlBuilder, schemaName, ("UId", "UId"), ("SchemaType", "SchemaType"));
+			const string uIdColumnName = "UId";
+			const string schemaTypeColumnName = "SchemaType";
+			(JToken metadata, string queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(_applicationClient, _serviceUrlBuilder, schemaName, (uIdColumnName, uIdColumnName), (schemaTypeColumnName, schemaTypeColumnName));
 			if (metadata == null) { response = new PageUpdateResponse { Success = false, Error = queryError }; return false; }
-			string rawSchemaUId = metadata["UId"]?.ToString();
-			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(metadata["SchemaType"]?.Value<int>());
+			string rawSchemaUId = metadata[uIdColumnName]?.ToString();
+			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(metadata[schemaTypeColumnName]?.Value<int>());
 			if (string.IsNullOrWhiteSpace(rawSchemaUId)) { response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' metadata is missing UId" }; return false; }
 			if (_hierarchyClient == null) {
 				context = new EditableSchemaContext { SchemaName = schemaName, EditableSchemaUId = rawSchemaUId, TemplateSchemaUId = rawSchemaUId, IsCreateReplacing = false, SchemaType = pageSchemaType };

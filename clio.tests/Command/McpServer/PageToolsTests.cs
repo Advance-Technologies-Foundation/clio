@@ -1389,6 +1389,68 @@ public class PageToolsTests {
 	}
 
 	[Test]
+	[Description("TryUpdatePage rejects a mobile JSON body that contains a 'validators' section.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenMobileBodyHasValidators_ReturnsValidationError() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage", schemaType: 10);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = """
+				{
+				  "viewConfigDiff": [],
+				  "validators": {}
+				}
+				""",
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "mobile pages do not support validators \u2014 the command must reject the body");
+		response.Error.Should().Contain("validators",
+			because: "the error should identify the disallowed 'validators' key");
+	}
+
+	[Test]
+	[Description("TryUpdatePage rejects a mobile JSON body that contains a 'handlers' section.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenMobileBodyHasHandlers_ReturnsValidationError() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage", schemaType: 10);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = """
+				{
+				  "viewConfigDiff": [],
+				  "handlers": []
+				}
+				""",
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "mobile pages do not support handlers \u2014 the command must reject the body");
+		response.Error.Should().Contain("handlers",
+			because: "the error should identify the disallowed 'handlers' key");
+	}
+
+	[Test]
 	[Description("TryUpdatePage returns error when schema not found")]
 	public void TryUpdatePage_WhenSchemaNotFound_ReturnsError() {
 		var applicationClient = Substitute.For<IApplicationClient>();
@@ -3224,67 +3286,4 @@ public class PageToolsTests {
 			because: "AMD marker validation errors must not appear for mobile bodies");
 	}
 
-	[Test]
-	[Description("PageUpdateTool.UpdatePage rejects a mobile JSON body that contains a 'validators' section.")]
-	[Category("Unit")]
-	public void PageUpdateTool_UpdatePage_Rejects_Mobile_Body_With_Validators_Section() {
-		// Arrange
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		ILogger logger = Substitute.For<ILogger>();
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
-		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
-		string mobileBodyWithValidators = """
-			{
-			  "viewConfigDiff": [],
-			  "validators": {}
-			}
-			""";
-		PageUpdateArgs args = new("UsrMobile_FormPage", mobileBodyWithValidators, null, null, null, null, null, null);
-
-		// Act
-		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
-
-		// Assert
-		response.Success.Should().BeFalse(
-			because: "mobile pages do not support validators — update-page must reject the body");
-		response.Error.Should().Contain("validators",
-			because: "the error should identify the disallowed 'validators' key");
-		applicationClient.ReceivedCalls().Should().BeEmpty(
-			because: "validation must fail before any remote call is made to Creatio");
-	}
-
-	[Test]
-	[Description("PageUpdateTool.UpdatePage rejects a mobile JSON body that contains a 'handlers' section.")]
-	[Category("Unit")]
-	public void PageUpdateTool_UpdatePage_Rejects_Mobile_Body_With_Handlers_Section() {
-		// Arrange
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		ILogger logger = Substitute.For<ILogger>();
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
-		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
-		string mobileBodyWithHandlers = """
-			{
-			  "viewConfigDiff": [],
-			  "handlers": []
-			}
-			""";
-		PageUpdateArgs args = new("UsrMobile_FormPage", mobileBodyWithHandlers, null, null, null, null, null, null);
-
-		// Act
-		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
-
-		// Assert
-		response.Success.Should().BeFalse(
-			because: "mobile pages do not support handlers — update-page must reject the body");
-		response.Error.Should().Contain("handlers",
-			because: "the error should identify the disallowed 'handlers' key");
-		applicationClient.ReceivedCalls().Should().BeEmpty(
-			because: "validation must fail before any remote call is made to Creatio");
-	}
 }
