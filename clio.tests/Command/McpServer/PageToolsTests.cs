@@ -1283,8 +1283,30 @@ public class PageToolsTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrWeb_FormPage", schemaType: 9);
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["rows"] = new JArray {
+					new JObject { ["UId"] = "web-schema-uid" }
+				}
+			}.ToString());
+		hierarchyClient.GetDesignPackageUId("web-schema-uid").Returns("web-pkg-uid");
+		hierarchyClient.GetParentSchemas("web-schema-uid", "web-pkg-uid").Returns([
+			new PageDesignerHierarchySchema {
+				UId = "web-schema-uid",
+				Name = "UsrWeb_FormPage",
+				PackageUId = "web-pkg-uid",
+				PackageName = "UsrWebPkg",
+				SchemaVersion = 1,
+				SchemaType = 9
+			}
+		]);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrWeb_FormPage",
 			Body = """
@@ -1302,11 +1324,9 @@ public class PageToolsTests {
 
 		// Assert
 		result.Should().BeFalse(
-			because: "target schema metadata, not body shape, must select the web validation path");
+			because: "hierarchy schema type, not body shape, must select the web validation path");
 		response.Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
 			because: "a web schema still requires AMD marker pairs even if the body starts with a JSON object");
-		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
-		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
 	}
 
 	[Test]
@@ -1327,8 +1347,7 @@ public class PageToolsTests {
 				"mobile-schema-uid",
 				"mobile-package-uid",
 				"UsrMobilePackage",
-				"BaseMobilePageTemplate",
-				schemaType: 10).ToString());
+				"BaseMobilePageTemplate").ToString());
 		applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("GetSchema")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -1396,7 +1415,7 @@ public class PageToolsTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage", schemaType: 10);
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMobile_FormPage",
@@ -1427,7 +1446,7 @@ public class PageToolsTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage", schemaType: 10);
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMobile_FormPage",
@@ -2069,8 +2088,7 @@ public class PageToolsTests {
 		string schemaUId,
 		string packageUId,
 		string packageName,
-		string parentSchemaName,
-		int schemaType = 9) {
+		string parentSchemaName) {
 		return new JObject {
 			["success"] = true,
 			["rows"] = new JArray {
@@ -2079,8 +2097,7 @@ public class PageToolsTests {
 					["UId"] = schemaUId,
 					["PackageName"] = packageName,
 					["PackageUId"] = packageUId,
-					["ParentSchemaName"] = parentSchemaName,
-					["SchemaType"] = schemaType
+					["ParentSchemaName"] = parentSchemaName
 				}
 			}
 		};
@@ -2089,8 +2106,7 @@ public class PageToolsTests {
 	private static void SetupSchemaMetadata(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
-		string schemaName,
-		int schemaType = 9) {
+		string schemaName) {
 		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
 			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
 		applicationClient.ExecutePostRequest(
@@ -2101,8 +2117,7 @@ public class PageToolsTests {
 				"test-schema-uid",
 				"test-package-uid",
 				"UsrTestPackage",
-				"BasePage",
-				schemaType).ToString());
+				"BasePage").ToString());
 	}
 
 	private static JObject CreateHierarchyResponse(params JObject[] values) {
@@ -2240,8 +2255,7 @@ public class PageToolsTests {
 						"mobile-schema-uid",
 						"runtime-package-uid",
 						"RuntimePkg",
-						"BaseMobilePageTemplate",
-						schemaType: 10).ToString(),
+						"BaseMobilePageTemplate").ToString(),
 					2 => new JObject {
 						["success"] = true,
 						["rows"] = new JArray {
@@ -2271,6 +2285,7 @@ public class PageToolsTests {
 					PackageUId = "runtime-package-uid",
 					PackageName = "RuntimePkg",
 					SchemaVersion = 1,
+					SchemaType = 10,
 					Body = runtimeHierarchyBody
 				}
 			]);
@@ -2285,7 +2300,7 @@ public class PageToolsTests {
 		result.Should().BeTrue(
 			because: "mobile page metadata and hierarchy are valid");
 		response.Page.SchemaType.Should().Be("mobile",
-			because: "the schema type from metadata should be surfaced to callers");
+			because: "the schema type from the designer hierarchy should be surfaced to callers");
 		response.Raw.Body.TrimStart().Should().StartWith("{",
 			because: "mobile fallback editable bodies must be plain JSON, not AMD define modules");
 		response.Raw.Body.Should().NotContain("define(",

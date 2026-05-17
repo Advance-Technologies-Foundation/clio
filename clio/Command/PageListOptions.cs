@@ -118,15 +118,6 @@ namespace Clio.Command {
 								["orderDirection"] = 0,
 								["orderPosition"] = -1,
 								["isVisible"] = true
-							},
-							["SchemaType"] = new JObject {
-								[ExpressionKey] = new JObject {
-									[ExpressionTypeKey] = 0,
-									[ColumnPathKey] = "SchemaType"
-								},
-								["orderDirection"] = 0,
-								["orderPosition"] = -1,
-								["isVisible"] = true
 							}
 						}
 					},
@@ -146,8 +137,7 @@ namespace Clio.Command {
 						SchemaName = row["Name"]?.ToString(),
 						UId = row["UId"]?.ToString(),
 						PackageName = row["PackageName"]?.ToString(),
-						ParentSchemaName = row["ParentSchemaName"]?.ToString(),
-						SchemaType = PageSchemaTypeExtensions.FromNumericValue(row["SchemaType"]?.Value<int>()).ToLabel()
+						ParentSchemaName = row["ParentSchemaName"]?.ToString()
 					})
 					.ToList();
 				response = new PageListResponse {

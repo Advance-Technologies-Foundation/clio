@@ -71,7 +71,7 @@ public sealed class PageUpdateTool(
 	}
 
 	private static string ValidatePageBody(string body) =>
-		SchemaValidationService.IsLikelyMobileBody(body)
+		PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile
 			? null
 			: CollectValidatorErrors(body);
 

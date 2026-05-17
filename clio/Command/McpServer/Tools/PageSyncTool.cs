@@ -90,8 +90,7 @@ public sealed class PageSyncTool(
 		PageSamplingReview samplingReview,
 		out PageSyncValidationResult validationResult) {
 		validationResult = null;
-		if (SchemaValidationService.IsLikelyMobileBody(page.Body)) {
-			// Mobile page body: skip AMD validation, actively reject disallowed sections.
+		if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
 			SchemaValidationResult mobileErrors = SchemaValidationService.ValidateMobileBody(page.Body);
 			if (!mobileErrors.IsValid)
 				return new PageSyncPageResult {

@@ -65,15 +65,6 @@ public static class SchemaValidationService
 	};
 
 	/// <summary>
-	/// Returns <c>true</c> when <paramref name="body"/> is a mobile page body (plain JSON object).
-	/// AMD bodies always start with <c>define(</c> after optional whitespace.
-	/// </summary>
-	/// <param name="body">Raw schema body to test.</param>
-	/// <returns><c>true</c> when the body is a plain JSON object; otherwise <c>false</c>.</returns>
-	public static bool IsLikelyMobileBody(string body) =>
-		!string.IsNullOrEmpty(body) && body.AsSpan().TrimStart().StartsWith("{");
-
-	/// <summary>
 	/// Validates a mobile page body and reports errors for any AMD-only constructs
 	/// (<c>validators</c>, <c>handlers</c>, custom <c>converters</c> sections) that are
 	/// not supported in mobile JSON bodies.

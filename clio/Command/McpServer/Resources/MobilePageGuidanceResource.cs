@@ -147,6 +147,11 @@ public sealed class MobilePageGuidanceResource {
 		       BaseMobileListTemplate   — list/section pages (adds search, FAB, HeaderContainer, crt.List)
 
 		       All templates already insert crt.Scaffold — do NOT insert another one.
+
+		       ─────────────────────────────────────────────────────────────
+		       SAVE WORKFLOW
+		       ─────────────────────────────────────────────────────────────
+		       Identical to web pages. Use update-page and sync-pages — they auto-detect mobile JSON bodies.
 		       """
 	};
 

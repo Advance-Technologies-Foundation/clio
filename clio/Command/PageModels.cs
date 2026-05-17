@@ -43,15 +43,6 @@ public sealed class PageListItem {
 	[JsonProperty("parentSchemaName")]
 	[JsonPropertyName("parentSchemaName")]
 	public string ParentSchemaName { get; set; }
-
-	/// <summary>
-	/// Gets or sets a human-readable schema type label: <c>"mobile"</c> when the schema type is 10,
-	/// <c>"web"</c> when 9, or <c>"unknown"</c> otherwise.
-	/// </summary>
-	[DataMember(Name = "schema-type")]
-	[JsonProperty("schema-type")]
-	[JsonPropertyName("schema-type")]
-	public string SchemaType { get; set; }
 }
 
 /// <summary>

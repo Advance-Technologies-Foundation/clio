@@ -77,8 +77,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 				("UId", "UId"),
 				("PackageName", "SysPackage.Name"),
 				("PackageUId", "SysPackage.UId"),
-				("ParentSchemaName", "[SysSchema:Id:Parent].Name"),
-				("SchemaType", "SchemaType"));
+				("ParentSchemaName", "[SysSchema:Id:Parent].Name"));
 			if (metadata is null) {
 				response = new PageGetResponse {
 					Success = false,
@@ -144,7 +143,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 			bool willCreateReplacing = editableSchema is null
 				&& !string.IsNullOrWhiteSpace(designPackageUId)
 				&& !string.Equals(designPackageUId, currentSchema.PackageUId, StringComparison.OrdinalIgnoreCase);
-			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(metadata.Value<int?>("SchemaType"));
+			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(currentSchema.SchemaType);
 			string editableBody = editableSchema?.Body ?? BuildEmptyBody(options.SchemaName, pageSchemaType);
 			PageOwnBodySummary ownBodySummary = BuildOwnBodySummary(editableSchema ?? currentSchema, _bodyParser);
 			response = new PageGetResponse {

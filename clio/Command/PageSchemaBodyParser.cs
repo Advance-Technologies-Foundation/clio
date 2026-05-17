@@ -23,7 +23,7 @@ internal sealed class PageSchemaBodyParser : IPageSchemaBodyParser {
 			throw new InvalidOperationException("Page schema body is empty");
 		}
 
-		return SchemaValidationService.IsLikelyMobileBody(body)
+		return PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile
 			? ParseMobileJsonBody(body)
 			: ParseAmdBody(body);
 	}

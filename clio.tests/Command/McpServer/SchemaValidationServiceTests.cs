@@ -10,7 +10,8 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "McpServer")]
-public sealed class SchemaValidationServiceTests {
+public sealed class SchemaValidationServiceTests
+{
 
 	private const string ValidListPageBody =
 		"define(\"TestPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
@@ -1024,12 +1025,12 @@ public sealed class SchemaValidationServiceTests {
 	public void ValidateValidatorControlBindings_StaticViewModelConfig_DifferentDeclaredAttribute_WithValidators_ReturnsInvalid() {
 		// Arrange — validators live on UsrNameForValidation but the control stays on UsrName for the same field path.
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
-		                        "\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\"," +
-		                        "\"control\":\"$UsrName\"}}]";
+			"\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\"," +
+			"\"control\":\"$UsrName\"}}]";
 		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}},\"UsrNameForValidation\":{" +
-		                         "\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
-		                         "\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCaseValidator\"," +
-		                         "\"params\":{\"message\":\"Must be uppercase\"}}}}}}";
+			"\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
+			"\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCaseValidator\"," +
+			"\"params\":{\"message\":\"Must be uppercase\"}}}}}}";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		// Act
@@ -1091,12 +1092,12 @@ public sealed class SchemaValidationServiceTests {
 	public void ValidateValidatorControlBindings_StaticViewModelConfig_AttrBinding_WithValidators_ReturnsValid() {
 		// Arrange — correct shape: validator on 'UsrName' and control = "$UsrName"
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
-		                        "\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\"," +
-		                        "\"control\":\"$UsrName\"}}]";
+			"\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\"," +
+			"\"control\":\"$UsrName\"}}]";
 		string viewModelConfig = "{\"attributes\":{\"UsrName\":{" +
-		                         "\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
-		                         "\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCaseValidator\"," +
-		                         "\"params\":{\"message\":\"Must be uppercase\"}}}}}}";
+			"\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
+			"\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCaseValidator\"," +
+			"\"params\":{\"message\":\"Must be uppercase\"}}}}}}";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		// Act
@@ -1114,10 +1115,10 @@ public sealed class SchemaValidationServiceTests {
 	public void ValidateValidatorControlBindings_DiffViewModelConfig_DifferentDeclaredAttribute_WithValidators_ReturnsInvalid() {
 		// Arrange
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrEmail\",\"values\":{" +
-		                        "\"type\":\"crt.EmailInput\",\"control\":\"$UsrEmail\"}}]";
+			"\"type\":\"crt.EmailInput\",\"control\":\"$UsrEmail\"}}]";
 		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"attributes\"]," +
-		                             "\"values\":{\"UsrEmail\":{\"modelConfig\":{\"path\":\"PDS.UsrEmail\"}},\"UsrEmailForValidation\":{\"modelConfig\":{\"path\":\"PDS.UsrEmail\"}," +
-		                             "\"validators\":{\"EmailValidator\":{\"type\":\"usr.EmailValidator\"}}}}}]";
+			"\"values\":{\"UsrEmail\":{\"modelConfig\":{\"path\":\"PDS.UsrEmail\"}},\"UsrEmailForValidation\":{\"modelConfig\":{\"path\":\"PDS.UsrEmail\"}," +
+			"\"validators\":{\"EmailValidator\":{\"type\":\"usr.EmailValidator\"}}}}}]";
 		string body = BuildDiffBackedPageBody(viewConfigDiff, viewModelConfigDiff);
 
 		// Act
@@ -1136,10 +1137,10 @@ public sealed class SchemaValidationServiceTests {
 	public void ValidateValidatorControlBindings_DiffViewModelConfig_AttrBinding_WithValidators_ReturnsValid() {
 		// Arrange
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrEmail\",\"values\":{" +
-		                        "\"type\":\"crt.EmailInput\",\"control\":\"$UsrEmail\"}}]";
+			"\"type\":\"crt.EmailInput\",\"control\":\"$UsrEmail\"}}]";
 		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"attributes\"]," +
-		                             "\"values\":{\"UsrEmail\":{\"modelConfig\":{\"path\":\"PDS.UsrEmail\"}," +
-		                             "\"validators\":{\"EmailValidator\":{\"type\":\"usr.EmailValidator\"}}}}}]";
+			"\"values\":{\"UsrEmail\":{\"modelConfig\":{\"path\":\"PDS.UsrEmail\"}," +
+			"\"validators\":{\"EmailValidator\":{\"type\":\"usr.EmailValidator\"}}}}}]";
 		string body = BuildDiffBackedPageBody(viewConfigDiff, viewModelConfigDiff);
 
 		// Act
@@ -1157,7 +1158,7 @@ public sealed class SchemaValidationServiceTests {
 	public void ValidateValidatorControlBindings_DeclaredBinding_AttributeHasNoValidators_ReturnsValid() {
 		// Arrange
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
-		                        "\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+			"\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
 		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
@@ -1176,9 +1177,9 @@ public sealed class SchemaValidationServiceTests {
 	public void ValidateValidatorControlBindings_DeclaredBinding_AttributeHasEmptyValidators_ReturnsValid() {
 		// Arrange
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
-		                        "\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
+			"\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
 		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
-		                         "\"validators\":{}}}}";
+			"\"validators\":{}}}}";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		// Act
@@ -1196,8 +1197,8 @@ public sealed class SchemaValidationServiceTests {
 	public void ValidateValidatorBindingPlacement_ViewConfigDiffControlValidators_ReturnsInvalid() {
 		// Arrange
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrCode\",\"values\":{" +
-		                        "\"type\":\"crt.Input\",\"control\":\"$UsrCode\"," +
-		                        "\"validators\":[{\"id\":\"usr.MaxLengthFromSysSettingValidator\",\"params\":{\"settingCode\":\"MaxProcessLoopCount\",\"message\":\"Too long\"}}]}}]";
+			"\"type\":\"crt.Input\",\"control\":\"$UsrCode\"," +
+			"\"validators\":[{\"id\":\"usr.MaxLengthFromSysSettingValidator\",\"params\":{\"settingCode\":\"MaxProcessLoopCount\",\"message\":\"Too long\"}}]}}]";
 		string viewModelConfig = "{\"attributes\":{\"UsrCode\":{\"modelConfig\":{\"path\":\"PDS.UsrCode\"}}}}";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
@@ -1254,8 +1255,8 @@ public sealed class SchemaValidationServiceTests {
 	public void ValidateValidatorParamResourceBindings_ReactiveBinding_InValidatorParam_ReturnsInvalid() {
 		// Arrange
 		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
-		                         "\"validators\":{\"AllUpperCase\":{\"type\":\"usr.AllUpperCase\"," +
-		                         "\"params\":{\"message\":\"$Resources.Strings.UsrUpperCaseValidator_Message\"}}}}}}";
+			"\"validators\":{\"AllUpperCase\":{\"type\":\"usr.AllUpperCase\"," +
+			"\"params\":{\"message\":\"$Resources.Strings.UsrUpperCaseValidator_Message\"}}}}}}";
 		string body = BuildStaticViewModelConfigPageBody("[]", viewModelConfig);
 
 		// Act
@@ -1275,8 +1276,8 @@ public sealed class SchemaValidationServiceTests {
 	public void ValidateValidatorParamResourceBindings_ResourceStringMacro_InValidatorParam_ReturnsValid() {
 		// Arrange
 		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
-		                         "\"validators\":{\"AllUpperCase\":{\"type\":\"usr.AllUpperCase\"," +
-		                         "\"params\":{\"message\":\"#ResourceString(UsrUpperCaseValidator_Message)#\"}}}}}}";
+			"\"validators\":{\"AllUpperCase\":{\"type\":\"usr.AllUpperCase\"," +
+			"\"params\":{\"message\":\"#ResourceString(UsrUpperCaseValidator_Message)#\"}}}}}}";
 		string body = BuildStaticViewModelConfigPageBody("[]", viewModelConfig);
 
 		// Act
@@ -1294,9 +1295,9 @@ public sealed class SchemaValidationServiceTests {
 	public void ValidateValidatorParamResourceBindings_ReactiveBinding_InDiffFormat_ReturnsInvalid() {
 		// Arrange — diff-backed format (viewModelConfigDiff)
 		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"attributes\"],\"values\":{" +
-		                             "\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
-		                             "\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
-		                             "\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
+			"\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
+			"\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
+			"\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
 		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
 
 		// Act
@@ -1314,8 +1315,8 @@ public sealed class SchemaValidationServiceTests {
 	public void ValidateValidatorParamResourceBindings_NonAttributeDiffOperationWithValidatorsLikeShape_ReturnsValid() {
 		// Arrange
 		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"handlers\"],\"values\":{" +
-		                             "\"UsrPseudoHandler\":{\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
-		                             "\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
+			"\"UsrPseudoHandler\":{\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
+			"\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
 		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
 
 		// Act
@@ -1333,8 +1334,8 @@ public sealed class SchemaValidationServiceTests {
 	public void ValidateValidatorParamResourceBindings_NestedAttributesPathOperation_ReturnsValid() {
 		// Arrange
 		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"handlers\",\"attributes\"],\"values\":{" +
-		                             "\"UsrPseudoHandler\":{\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
-		                             "\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
+			"\"UsrPseudoHandler\":{\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
+			"\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
 		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
 
 		// Act
@@ -1352,8 +1353,8 @@ public sealed class SchemaValidationServiceTests {
 	public void ValidateValidatorParamResourceBindings_PathlessRootMergeWithAttributeValidators_ReturnsInvalid() {
 		// Arrange
 		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"values\":{" +
-		                             "\"UsrName\":{\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
-		                             "\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
+			"\"UsrName\":{\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
+			"\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
 		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
 
 		// Act
@@ -1371,7 +1372,7 @@ public sealed class SchemaValidationServiceTests {
 	public void ValidateValidatorParamResourceBindings_PathlessRootMergeWithoutValidators_ReturnsValid() {
 		// Arrange
 		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"values\":{" +
-		                             "\"UsrPseudoHandler\":{\"request\":\"usr.DoSomething\",\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}]";
+			"\"UsrPseudoHandler\":{\"request\":\"usr.DoSomething\",\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}]";
 		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
 
 		// Act
@@ -1832,10 +1833,10 @@ public sealed class SchemaValidationServiceTests {
 	[Description("Control bound to non-PDS datasource binding on attribute with validators is rejected")]
 	public void ValidateValidatorControlBindings_NonPdsBinding_AttributeHasValidators_ReturnsInvalid() {
 		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{" +
-		                        "\"type\":\"crt.ComboBox\",\"control\":\"$DS1_UsrStatus\"}}]";
+			"\"type\":\"crt.ComboBox\",\"control\":\"$DS1_UsrStatus\"}}]";
 		string viewModelConfig = "{\"attributes\":{\"UsrStatus\":{" +
-		                         "\"modelConfig\":{\"path\":\"DS1.UsrStatus\"}," +
-		                         "\"validators\":{\"Required\":{\"type\":\"crt.Required\"}}}}}";
+			"\"modelConfig\":{\"path\":\"DS1.UsrStatus\"}," +
+			"\"validators\":{\"Required\":{\"type\":\"crt.Required\"}}}}}";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		SchemaValidationResult result = SchemaValidationService.ValidateValidatorControlBindings(body);
@@ -2727,178 +2728,122 @@ public sealed class SchemaValidationServiceTests {
 
 	#endregion
 
-        #region IsLikelyMobileBody
-
-        [Test]
-        [Description("Returns true when the body starts with a JSON object opening brace after whitespace.")]
-        public void IsLikelyMobileBody_WhenBodyStartsWithBrace_ReturnsTrue() {
-                // Arrange
-                string body = "{ \"viewConfigDiff\": [] }";
-
-                // Act
-                bool result = SchemaValidationService.IsLikelyMobileBody(body);
-
-                // Assert
-                result.Should().BeTrue("because a body starting with '{' is a mobile JSON body, not AMD");
-        }
-
-        [Test]
-        [Description("Returns true when the body has leading whitespace before the opening brace.")]
-        public void IsLikelyMobileBody_WhenBodyHasLeadingWhitespace_ReturnsTrue() {
-                // Arrange
-                string body = "  \n  { \"viewConfigDiff\": [] }";
-
-                // Act
-                bool result = SchemaValidationService.IsLikelyMobileBody(body);
-
-                // Assert
-                result.Should().BeTrue("because leading whitespace before '{' should not prevent mobile detection");
-        }
-
-        [Test]
-        [Description("Returns false when the body is an AMD define(...) module.")]
-        public void IsLikelyMobileBody_WhenBodyIsAmd_ReturnsFalse() {
-                // Arrange
-                string body = ValidListPageBody;
-
-                // Act
-                bool result = SchemaValidationService.IsLikelyMobileBody(body);
-
-                // Assert
-                result.Should().BeFalse("because AMD bodies start with 'define(' not '{'");
-        }
-
-        [Test]
-        [Description("Returns false when the body is null or empty.")]
-        [TestCase(null)]
-        [TestCase("")]
-        public void IsLikelyMobileBody_WhenBodyIsNullOrEmpty_ReturnsFalse(string body) {
-                // Act
-                bool result = SchemaValidationService.IsLikelyMobileBody(body);
-
-                // Assert
-                result.Should().BeFalse("because null/empty bodies cannot be mobile JSON bodies");
-        }
-
-        #endregion
-
         #region ValidateMobileBody
 
-        [Test]
-        [Description("Returns valid result when the mobile body contains only allowed top-level keys.")]
-        public void ValidateMobileBody_WhenBodyIsValidMobileJson_ReturnsValid() {
-                // Arrange
-                string body = """
-                        {
-                          "viewConfigDiff": [],
-                          "viewModelConfigDiff": [],
-                          "modelConfigDiff": []
-                        }
-                        """;
+	[Test]
+	[Description("Returns valid result when the mobile body contains only allowed top-level keys.")]
+	public void ValidateMobileBody_WhenBodyIsValidMobileJson_ReturnsValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "viewModelConfigDiff": [],
+		                "modelConfigDiff": []
+		              }
+		              """;
 
-                // Act
-                SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
 
-                // Assert
-                result.IsValid.Should().BeTrue("because a well-formed mobile JSON body should pass validation");
-                result.Errors.Should().BeEmpty("because no disallowed keys are present");
-        }
+		// Assert
+		result.IsValid.Should().BeTrue("because a well-formed mobile JSON body should pass validation");
+		result.Errors.Should().BeEmpty("because no disallowed keys are present");
+	}
 
-        [Test]
-        [Description("Rejects a mobile body that contains a 'validators' section.")]
-        public void ValidateMobileBody_WhenBodyContainsValidators_ReturnsError() {
-                // Arrange
-                string body = """
-                        {
-                          "viewConfigDiff": [],
-                          "validators": {}
-                        }
-                        """;
+	[Test]
+	[Description("Rejects a mobile body that contains a 'validators' section.")]
+	public void ValidateMobileBody_WhenBodyContainsValidators_ReturnsError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "validators": {}
+		              }
+		              """;
 
-                // Act
-                SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
 
-                // Assert
-                result.IsValid.Should().BeFalse("because mobile pages do not support validators");
-                result.Errors.Should().ContainSingle(e => e.Contains("validators"),
-                        because: "the error must identify the disallowed 'validators' key");
-        }
+		// Assert
+		result.IsValid.Should().BeFalse("because mobile pages do not support validators");
+		result.Errors.Should().ContainSingle(e => e.Contains("validators"),
+			because: "the error must identify the disallowed 'validators' key");
+	}
 
-        [Test]
-        [Description("Rejects a mobile body that contains a 'handlers' section.")]
-        public void ValidateMobileBody_WhenBodyContainsHandlers_ReturnsError() {
-                // Arrange
-                string body = """
-                        {
-                          "viewConfigDiff": [],
-                          "handlers": []
-                        }
-                        """;
+	[Test]
+	[Description("Rejects a mobile body that contains a 'handlers' section.")]
+	public void ValidateMobileBody_WhenBodyContainsHandlers_ReturnsError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "handlers": []
+		              }
+		              """;
 
-                // Act
-                SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
 
-                // Assert
-                result.IsValid.Should().BeFalse("because mobile pages do not support handlers");
-                result.Errors.Should().ContainSingle(e => e.Contains("handlers"),
-                        because: "the error must identify the disallowed 'handlers' key");
-        }
+		// Assert
+		result.IsValid.Should().BeFalse("because mobile pages do not support handlers");
+		result.Errors.Should().ContainSingle(e => e.Contains("handlers"),
+			because: "the error must identify the disallowed 'handlers' key");
+	}
 
-        [Test]
-        [Description("Rejects a mobile body that contains a 'converters' section.")]
-        public void ValidateMobileBody_WhenBodyContainsConverters_ReturnsError() {
-                // Arrange
-                string body = """
-                        {
-                          "viewConfigDiff": [],
-                          "converters": {}
-                        }
-                        """;
+	[Test]
+	[Description("Rejects a mobile body that contains a 'converters' section.")]
+	public void ValidateMobileBody_WhenBodyContainsConverters_ReturnsError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "converters": {}
+		              }
+		              """;
 
-                // Act
-                SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
 
-                // Assert
-                result.IsValid.Should().BeFalse("because mobile pages do not support custom converters");
-                result.Errors.Should().ContainSingle(e => e.Contains("converters"),
-                        because: "the error must identify the disallowed 'converters' key");
-        }
+		// Assert
+		result.IsValid.Should().BeFalse("because mobile pages do not support custom converters");
+		result.Errors.Should().ContainSingle(e => e.Contains("converters"),
+			because: "the error must identify the disallowed 'converters' key");
+	}
 
-        [Test]
-        [Description("Reports multiple errors when the mobile body contains more than one disallowed key.")]
-        public void ValidateMobileBody_WhenBodyContainsMultipleDisallowedKeys_ReportsAllErrors() {
-                // Arrange
-                string body = """
-                        {
-                          "viewConfigDiff": [],
-                          "validators": {},
-                          "handlers": []
-                        }
-                        """;
+	[Test]
+	[Description("Reports multiple errors when the mobile body contains more than one disallowed key.")]
+	public void ValidateMobileBody_WhenBodyContainsMultipleDisallowedKeys_ReportsAllErrors() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "validators": {},
+		                "handlers": []
+		              }
+		              """;
 
-                // Act
-                SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
 
-                // Assert
-                result.IsValid.Should().BeFalse("because both 'validators' and 'handlers' are disallowed in mobile pages");
-                result.Errors.Should().HaveCount(2,
-                        because: "each disallowed key should produce a distinct error");
-        }
+		// Assert
+		result.IsValid.Should().BeFalse("because both 'validators' and 'handlers' are disallowed in mobile pages");
+		result.Errors.Should().HaveCount(2,
+			because: "each disallowed key should produce a distinct error");
+	}
 
-        [Test]
-        [Description("Returns an error when the body is not valid JSON.")]
-        public void ValidateMobileBody_WhenBodyIsNotValidJson_ReturnsError() {
-                // Arrange
-                string body = "this is not json";
+	[Test]
+	[Description("Returns an error when the body is not valid JSON.")]
+	public void ValidateMobileBody_WhenBodyIsNotValidJson_ReturnsError() {
+		// Arrange
+		string body = "this is not json";
 
-                // Act
-                SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
 
-                // Assert
-                result.IsValid.Should().BeFalse("because invalid JSON should fail mobile body validation");
-                result.Errors.Should().NotBeEmpty("because the JSON parse error should be reported");
-        }
+		// Assert
+		result.IsValid.Should().BeFalse("because invalid JSON should fail mobile body validation");
+		result.Errors.Should().NotBeEmpty("because the JSON parse error should be reported");
+	}
 
         #endregion
 }
-

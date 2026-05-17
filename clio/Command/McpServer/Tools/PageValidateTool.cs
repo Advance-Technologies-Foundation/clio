@@ -24,7 +24,7 @@ public sealed class PageValidateTool {
 	public PageValidateResponse ValidatePage(
 		[Description("Parameters: body (required); resources (optional)")]
 		[Required] PageValidateArgs args) {
-		if (SchemaValidationService.IsLikelyMobileBody(args.Body)) {
+		if (PageSchemaTypeExtensions.FromBody(args.Body) == PageSchemaType.Mobile) {
 			SchemaValidationResult mobileResult = SchemaValidationService.ValidateMobileBody(args.Body);
 			return new PageValidateResponse {
 				Valid = mobileResult.IsValid,
