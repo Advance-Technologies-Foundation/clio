@@ -321,6 +321,7 @@ internal static class ToolContractCatalog {
 			[ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName] = BuildModifyEntitySchemaColumn(),
 			[ComponentInfoTool.ToolName] = BuildComponentInfo(),
 			[PageUpdateTool.ToolName] = BuildPageUpdate(),
+			[PageValidateTool.ToolName] = BuildPageValidate(),
 			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete(),
 			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate(),
 			[CreatePageBusinessRuleTool.BusinessRuleCreateToolName] = BuildPageBusinessRuleCreate(),
@@ -362,6 +363,7 @@ internal static class ToolContractCatalog {
 		ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
 		ComponentInfoTool.ToolName,
 		PageUpdateTool.ToolName,
+		PageValidateTool.ToolName,
 		ApplicationDeleteTool.ToolName,
 		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
 		CompileCreatioTool.CompileCreatioToolName
@@ -2564,6 +2566,60 @@ internal static class ToolContractCatalog {
 						PageSyncTool.ToolName
 					])
 			]);
+	}
+
+	private static ToolContractDefinition BuildPageValidate() {
+		return new ToolContractDefinition(
+			PageValidateTool.ToolName,
+			"Client-side Freedom UI page body validation without saving to Creatio. " +
+			"For web pages (body starts with `define(`): checks marker integrity, JS syntax, JSON content, field bindings, column bindings, " +
+			"handler structure, and VendorPrefix.Name format for converters, validators, and handler request values. " +
+			"For mobile pages (plain JSON body starting with `{`): validates that disallowed constructs (validators, handlers, custom converters sections) are absent.",
+			new ToolInputSchemaContract(
+				["body"],
+				[
+					Field("body", StringType, "Full JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character."),
+					Field("resources", StringType, "Optional JSON object string of resource key-value pairs for #ResourceString(key)# macros. Applicable to web pages only.")
+				]),
+			EnvelopeOutput(
+				"valid",
+				[
+					"valid == false"
+				],
+				Field("valid", BooleanType, "Whether the page body passed all validations."),
+				Field("validation", ObjectType, "Structured validation result with markers-ok, js-syntax-ok, content-ok, errors, and warnings.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Validate a web page body before saving", new Dictionary<string, object?> {
+					["body"] = "define(\"MyApp/MyPage\", /** ... */)"
+				}),
+				Example("Validate a web page body with resources", new Dictionary<string, object?> {
+					["body"] = "define(\"MyApp/MyPage\", /** ... */)",
+					["resources"] = "{\"UsrDetailsTab_caption\":\"Details\"}"
+				}),
+				Example("Validate a mobile page body", new Dictionary<string, object?> {
+					["body"] = "{\"type\": \"ep.MobileViewElement\", \"items\": []}"
+				})
+			],
+			Flow(
+				[
+					PageGetTool.ToolName,
+					PageValidateTool.ToolName
+				],
+				"Validate a page body fetched via get-page before saving with sync-pages or update-page."),
+			[
+				Flow(
+					[
+						PageGetTool.ToolName,
+						PageValidateTool.ToolName,
+						PageSyncTool.ToolName
+					],
+					"Full read-validate-save cycle using sync-pages as the canonical save path.")
+			],
+			[]);
 	}
 
 	private static ToolContractDefinition BuildApplicationDelete() {
