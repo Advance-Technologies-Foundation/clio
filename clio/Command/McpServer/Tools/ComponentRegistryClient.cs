@@ -317,32 +317,25 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 			return null;
 		}
 
+		// Fail-fast: a non-empty env var means the developer explicitly opted into reading
+		// from disk. If the file is missing or unreadable, surface the problem instead of
+		// silently serving CDN data — that masks override mistakes and produces stale,
+		// confusing results in long-running `clio mcp serve` sessions.
 		if (!_fileSystem.File.Exists(path)) {
-			// Information rather than Warning: a misconfigured path would otherwise spam the
-			// MCP serve log on every component-info call.
-			_logger.LogInformation(
+			_logger.LogWarning(
 				"component-registry local-override-missing version={Version} path={Path}",
 				requestedVersion, path);
-			return null;
+			throw new FileNotFoundException(
+				$"Component registry override file does not exist: '{path}'. " +
+				$"Either fix the path or unset {LocalFileEnvironmentVariable} to fall back to the CDN/cache chain.",
+				path);
 		}
 
-		try {
-			Stream stream = _fileSystem.File.OpenRead(path);
-			_logger.LogInformation(
-				"component-registry source=local version={Version} path={Path}",
-				requestedVersion, path);
-			return stream;
-		} catch (IOException ex) {
-			_logger.LogInformation(ex,
-				"component-registry local-override-failed version={Version} path={Path}",
-				requestedVersion, path);
-			return null;
-		} catch (UnauthorizedAccessException ex) {
-			_logger.LogInformation(ex,
-				"component-registry local-override-failed version={Version} path={Path}",
-				requestedVersion, path);
-			return null;
-		}
+		Stream stream = _fileSystem.File.OpenRead(path);
+		_logger.LogInformation(
+			"component-registry source=local version={Version} path={Path}",
+			requestedVersion, path);
+		return stream;
 	}
 
 	private static string ResolveCdnBaseUrl() {

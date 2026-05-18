@@ -166,24 +166,31 @@ public sealed class ComponentRegistryClientTests {
 	}
 
 	[Test]
-	[Description("Missing override file falls through the normal CDN/cache chain.")]
-	public async Task GetAsync_Falls_Through_When_Local_Override_File_Missing() {
+	[Description("Missing override file raises a FileNotFoundException — fail-fast on misconfiguration.")]
+	public async Task GetAsync_Throws_When_Local_Override_File_Missing() {
 		// Arrange
 		const string overridePath = "/tmp/does-not-exist.json";
 		MockFileSystem fs = new();
 		FakeRegistryCacheStore cache = new();
 		FakeHttpHandler handler = new();
+		// CDN is enqueued only to prove it is NOT touched: silently falling back to it would
+		// mask the configuration error and make the AI serve stale data while the developer
+		// thinks they are testing a local payload.
 		handler.Enqueue("8.2.1/ComponentRegistry.json", HttpStatusCode.OK, SamplePayload);
 		ComponentRegistryClient client = CreateClient(cache, handler, fileSystem: fs);
 
 		using EnvironmentVariableScope envScope = new(ComponentRegistryClient.LocalFileEnvironmentVariable, overridePath);
 
 		// Act
-		ComponentRegistryFetchResult result = await client.GetAsync("8.2.1");
+		System.Func<Task> act = async () => await client.GetAsync("8.2.1");
 
 		// Assert
-		result.Source.Should().Be(ComponentRegistrySource.Cdn,
-			because: "a misconfigured override path must not stall the AI — fall through to the existing chain");
+		await act.Should().ThrowAsync<FileNotFoundException>(
+				because: "a non-empty override env var that points at nothing is a developer mistake, not a fallback signal")
+			.Where(ex => ex.FileName == overridePath,
+				"the exception must identify the bad path so the user can fix the env var");
+		handler.Requests.Should().BeEmpty(
+			because: "fail-fast must never touch the CDN — otherwise the override config error is masked");
 	}
 
 	[Test]

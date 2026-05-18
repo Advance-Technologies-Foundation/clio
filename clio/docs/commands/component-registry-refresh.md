@@ -50,9 +50,13 @@ Two payload shapes are accepted interchangeably:
 
 Either way, the inner items must be `ComponentRegistryEntry` objects (the
 `{version}.meta.json` sidecar format used inside `~/.clio/cache/` is **not**
-supported). A missing file or invalid path is logged and the normal fallback
-chain takes over. `component-registry-refresh` itself ignores the override
-and always pulls fresh bytes from the CDN.
+supported). The override is **fail-fast**: a non-empty
+`CLIO_COMPONENT_REGISTRY_LOCAL_FILE` that points at a missing or unreadable
+path raises `FileNotFoundException` rather than silently falling through to
+the CDN — otherwise a typo in the env var would let stale CDN data masquerade
+as your in-progress payload. Unset the variable to use the normal CDN/cache
+chain. `component-registry-refresh` itself ignores the override and always
+pulls fresh bytes from the CDN.
 
 ## Synopsis
 
