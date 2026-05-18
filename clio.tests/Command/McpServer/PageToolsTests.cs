@@ -316,8 +316,14 @@ public class PageToolsTests {
 			because: "update-page description should make validator guidance a mandatory precondition before validator authoring");
 		description.Should().Contain("call get-guidance with name `page-modification`",
 			because: "update-page description should route broad page edits through the general page modification guide");
-		description.Should().NotContain("page-schema-resources",
-			because: "update-page should avoid surfacing localizable-string leaf guidance directly in the broad tool description");
+		description.Should().Contain("page-schema-resources",
+			because: "update-page must surface the resources guidance trigger inline because routing through page-modification alone was empirically insufficient \u2014 agents skipped the leaf guide when adding localizable strings");
+		description.Should().Contain("$Resources.Strings.*",
+			because: "update-page description should expose the syntactic trigger ($Resources.Strings.*) so agents can detect resource-related edits without semantic classification");
+		description.Should().Contain("`#ResourceString(",
+			because: "update-page description should expose the macro syntactic trigger (#ResourceString(...)#) alongside the binding trigger");
+		description.Should().Contain("do NOT register localizable strings",
+			because: "update-page description should inline a directive forbidding speculative resource registration before the guidance has been read");
 	}
 
 	[Test]

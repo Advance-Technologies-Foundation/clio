@@ -32,9 +32,9 @@ public sealed class PageModificationGuidanceResource {
 		       | business logic, cross-field orchestration, async data loading, side effects | `page-schema-handlers` | Handlers are NOT the same as converters. |
 		       | required field, max length, format enforcement with error message | `page-schema-validators` | Validators write to viewModelConfigDiff, not viewConfigDiff. |
 		       | SDK service calls (SysSettingsService, HttpClientService, etc.) | `page-schema-creatio-devkit-common` | Correct import syntax and async patterns. |
-		       | data-bound field caption (`$Resources.Strings.<vmAttr>` for a control bound to a DS attribute), custom caption, tab title, button label, expansion panel title, validator error message, or any other localizable string (`$Resources.Strings.*` bindings or `#ResourceString()#` macros) | `page-schema-resources` | Resource key naming and pattern choice are easy to get wrong: keys must match the bound vm attribute (not the column name), and `$Resources.Strings.*` is rejected in validator params. |
+		       | body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter | `page-schema-resources` | Most resource registrations for DS-bound captions (e.g. `PDS_UsrStatus`) are unnecessary — the platform auto-provides them. Guidance specifies which keys must vs must-not be registered, and `$Resources.Strings.*` is rejected in validator params. |
 
-		       STOP. Do NOT call get-component-info and pick a component type to solve a display transformation requirement until you have read `page-schema-converters` and confirmed the OOTB decision table does not cover your case. The most common mistake is treating a display transformation as a component selection problem.
+		       STOP. Do NOT call get-component-info and pick a component type to solve a display transformation requirement until you have read `page-schema-converters` and confirmed the OOTB decision table does not cover your case. A common mistake is treating a display transformation as a component selection problem.
 
 		       Replacing-schema concept
 		       - When a Freedom UI designer saves changes to a page, Creatio creates a replacing schema in a "design package".
