@@ -43,12 +43,16 @@ When set, every `get-component-info` call reads the file directly and reports
 bypassed. The env variable is read on every call, so edits are visible to a
 long-running `clio mcp serve` without restarting it.
 
-The file must follow the same JSON shape as the CDN payload — a top-level
-array of `ComponentRegistryEntry` objects, **not** the
-`{version}.meta.json` sidecar format used inside `~/.clio/cache/`. A missing
-file or invalid path is logged and the normal fallback chain takes over.
-`component-registry-refresh` itself ignores the override and always pulls
-fresh bytes from the CDN.
+Two payload shapes are accepted interchangeably:
+
+- legacy CDN form — a top-level array `[ { "componentType": ..., ... }, ... ]`;
+- wrapped form — an object `{ "components": [ { ... }, ... ] }`.
+
+Either way, the inner items must be `ComponentRegistryEntry` objects (the
+`{version}.meta.json` sidecar format used inside `~/.clio/cache/` is **not**
+supported). A missing file or invalid path is logged and the normal fallback
+chain takes over. `component-registry-refresh` itself ignores the override
+and always pulls fresh bytes from the CDN.
 
 ## Synopsis
 

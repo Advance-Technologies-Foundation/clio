@@ -76,6 +76,9 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	/// <summary>
 	/// Parses a registry stream into the in-memory catalog state. Exposed for hermetic
 	/// tests and for callers that want to bypass the CDN/cache/embedded chain entirely.
+	/// Accepts both supported JSON shapes: a top-level array of
+	/// <see cref="ComponentRegistryEntry"/> (legacy CDN format) and an object wrapper
+	/// <c>{ "components": [...] }</c>.
 	/// </summary>
 	public static ComponentCatalogState LoadFromStream(
 		Stream stream,
@@ -85,14 +88,36 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 			throw new ArgumentNullException(nameof(stream));
 		}
 
-		ComponentRegistryEntry[]? rawEntries = JsonSerializer.Deserialize<ComponentRegistryEntry[]>(
-			stream,
+		ComponentRegistryEntry[] rawEntries = DeserializeEntries(stream, "Component registry stream");
+		return BuildState(rawEntries, "Component registry stream", resolvedVersion, source);
+	}
+
+	/// <summary>
+	/// Deserialises a component-registry payload. Supports the legacy top-level array
+	/// (<c>[{...}, {...}]</c>) and the wrapped object shape (<c>{ "components": [...] }</c>).
+	/// </summary>
+	internal static ComponentRegistryEntry[] DeserializeEntries(Stream stream, string sourceDescription) {
+		using JsonDocument document = JsonDocument.Parse(stream);
+		JsonElement entriesElement = ExtractEntriesElement(document.RootElement, sourceDescription);
+		ComponentRegistryEntry[]? rawEntries = entriesElement.Deserialize<ComponentRegistryEntry[]>(
 			new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 		if (rawEntries is null || rawEntries.Length == 0) {
-			throw new InvalidOperationException("Component registry stream is empty or invalid.");
+			throw new InvalidOperationException($"{sourceDescription} is empty or invalid.");
 		}
+		return rawEntries;
+	}
 
-		return BuildState(rawEntries, "Component registry stream", resolvedVersion, source);
+	private static JsonElement ExtractEntriesElement(JsonElement root, string sourceDescription) {
+		if (root.ValueKind == JsonValueKind.Array) {
+			return root;
+		}
+		if (root.ValueKind == JsonValueKind.Object
+			&& root.TryGetProperty("components", out JsonElement components)
+			&& components.ValueKind == JsonValueKind.Array) {
+			return components;
+		}
+		throw new InvalidOperationException(
+			$"{sourceDescription} must be either a JSON array of component entries or an object with a 'components' array.");
 	}
 
 	private async Task<ComponentCatalogState> LoadCatalogStateAsync(string requestedVersion, CancellationToken cancellationToken) {
@@ -209,18 +234,13 @@ public sealed class MobileComponentInfoCatalog : IMobileComponentInfoCatalog {
 				$"{RegistryLabel} registry file was not found at '{registryPath}'.");
 		}
 
-		string registryJson = fileSystem.File.ReadAllText(registryPath);
-		ComponentRegistryEntry[]? rawEntries = JsonSerializer.Deserialize<ComponentRegistryEntry[]>(
-			registryJson,
-			new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-		if (rawEntries is null || rawEntries.Length == 0) {
-			throw new InvalidOperationException(
-				$"{RegistryLabel} registry file '{registryPath}' is empty or invalid.");
-		}
+		string sourceDescription = $"{RegistryLabel} registry file '{registryPath}'";
+		using Stream registryStream = fileSystem.File.OpenRead(registryPath);
+		ComponentRegistryEntry[] rawEntries = ComponentInfoCatalog.DeserializeEntries(registryStream, sourceDescription);
 
 		return ComponentInfoCatalog.BuildState(
 			rawEntries,
-			$"{RegistryLabel} registry file '{registryPath}'",
+			sourceDescription,
 			resolvedVersion: "mobile",
 			source: ComponentRegistrySource.Embedded);
 	}
