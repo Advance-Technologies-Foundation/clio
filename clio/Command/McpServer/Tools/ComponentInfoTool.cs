@@ -25,11 +25,11 @@ public sealed class ComponentInfoTool(
 	internal const string SchemaTypeMobile = "mobile";
 
 	/// <summary>
-	/// Returns grouped component summaries or full metadata for a specific component type.
+	/// Returns the component catalog list or full metadata for a specific component type.
 	/// </summary>
 	/// <param name="args">Tool arguments that select either list or detail mode.</param>
 	/// <param name="cancellationToken">Cancellation token propagated by the MCP host.</param>
-	/// <returns>A structured response with grouped summaries or a full component definition.</returns>
+	/// <returns>A structured response with a component list or a full component definition.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Get curated Freedom UI component metadata by component type or list all known types. " +
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
@@ -51,7 +51,7 @@ public sealed class ComponentInfoTool(
 				Mode = "list",
 				Error = ex.Message,
 				Count = 0,
-				Groups = []
+				Items = []
 			};
 		}
 	}
@@ -78,7 +78,7 @@ public sealed class ComponentInfoTool(
 			Mode = "list",
 			Error = $"Component type '{args.ComponentType}' was not found.",
 			Count = suggestions.Count,
-			Groups = ComponentInfoGrouping.CreateGroups(suggestions),
+			Items = ComponentInfoGrouping.CreateItems(suggestions),
 			ResolvedTargetVersion = state.ResolvedVersion,
 			ResolvedFrom = resolvedFrom
 		};
@@ -107,7 +107,7 @@ public sealed class ComponentInfoTool(
 			Mode = "list",
 			Error = $"Component type '{args.ComponentType}' was not found.",
 			Count = suggestions.Count,
-			Groups = ComponentInfoGrouping.CreateGroups(suggestions)
+			Items = ComponentInfoGrouping.CreateItems(suggestions)
 		};
 	}
 
@@ -122,7 +122,7 @@ public sealed class ComponentInfoTool(
 			Success = true,
 			Mode = "list",
 			Count = entries.Count,
-			Groups = ComponentInfoGrouping.CreateGroups(entries),
+			Items = ComponentInfoGrouping.CreateItems(entries),
 			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom
 		};
@@ -137,12 +137,11 @@ public sealed class ComponentInfoTool(
 			Mode = "detail",
 			Count = 1,
 			ComponentType = entry.ComponentType,
-			Category = entry.Category,
-			Description = entry.Description,
-			Container = entry.Container,
-			ParentTypes = entry.ParentTypes,
-			Properties = entry.Properties,
-			TypicalChildren = entry.TypicalChildren,
+			Description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description,
+			Container = entry.Container ? true : null,
+			ParentTypes = entry.ParentTypes.Count == 0 ? null : entry.ParentTypes,
+			Properties = entry.Properties.Count == 0 ? null : entry.Properties,
+			TypicalChildren = entry.TypicalChildren.Count == 0 ? null : entry.TypicalChildren,
 			Example = entry.Example,
 			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom
@@ -155,7 +154,7 @@ public sealed class ComponentInfoTool(
 /// </summary>
 public sealed record ComponentInfoArgs(
 	[property: JsonPropertyName("component-type")]
-	[property: Description("Freedom UI component type, for example 'crt.TabContainer'. Omit or use 'list' to return the grouped catalog.")]
+	[property: Description("Freedom UI component type, for example 'crt.TabContainer'. Omit or use 'list' to return the catalog.")]
 	string? ComponentType = null,
 
 	[property: JsonPropertyName("search")]
@@ -204,13 +203,6 @@ public sealed class ComponentInfoResponse {
 	public string? ComponentType { get; init; }
 
 	/// <summary>
-	/// Gets or sets the component category for detail responses.
-	/// </summary>
-	[JsonPropertyName("category")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string? Category { get; init; }
-
-	/// <summary>
 	/// Gets or sets the component description for detail responses.
 	/// </summary>
 	[JsonPropertyName("description")]
@@ -253,11 +245,11 @@ public sealed class ComponentInfoResponse {
 	public JsonElement? Example { get; init; }
 
 	/// <summary>
-	/// Gets or sets grouped component summaries for list responses.
+	/// Gets or sets the component list for list responses.
 	/// </summary>
-	[JsonPropertyName("groups")]
+	[JsonPropertyName("items")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public IReadOnlyList<ComponentInfoGroup>? Groups { get; init; }
+	public IReadOnlyList<ComponentInfoListItem>? Items { get; init; }
 
 	/// <summary>
 	/// Gets or sets the platform version the catalog was filtered against. In v1 this is
@@ -281,24 +273,7 @@ public sealed class ComponentInfoResponse {
 }
 
 /// <summary>
-/// Grouped list response entry for the <c>get-component-info</c> tool.
-/// </summary>
-public sealed class ComponentInfoGroup {
-	/// <summary>
-	/// Gets or sets the component category name.
-	/// </summary>
-	[JsonPropertyName("category")]
-	public string Category { get; init; } = string.Empty;
-
-	/// <summary>
-	/// Gets or sets the component summaries that belong to the category.
-	/// </summary>
-	[JsonPropertyName("items")]
-	public IReadOnlyList<ComponentInfoListItem> Items { get; init; } = [];
-}
-
-/// <summary>
-/// Compact list item for grouped component summaries.
+/// Compact list item for the <c>get-component-info</c> list response.
 /// </summary>
 public sealed class ComponentInfoListItem {
 	/// <summary>
@@ -308,10 +283,12 @@ public sealed class ComponentInfoListItem {
 	public string ComponentType { get; init; } = string.Empty;
 
 	/// <summary>
-	/// Gets or sets the one-line component description.
+	/// Gets or sets the one-line component description. Omitted from JSON when the source
+	/// payload does not carry one (new wrapped registry shape).
 	/// </summary>
 	[JsonPropertyName("description")]
-	public string Description { get; init; } = string.Empty;
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Description { get; init; }
 }
 
 /// <summary>

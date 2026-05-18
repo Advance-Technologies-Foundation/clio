@@ -123,25 +123,13 @@ public sealed class ComponentInfoCommand {
 				Success = true,
 				Mode = "list",
 				Count = entries.Count,
-				Groups = ComponentInfoGrouping.CreateGroups(entries)
+				Items = ComponentInfoGrouping.CreateItems(entries)
 			};
 		}
 
 		ComponentRegistryEntry? entry = _mobileCatalog.Find(componentType!);
 		if (entry is not null) {
-			return new ComponentInfoResponse {
-				Success = true,
-				Mode = "detail",
-				Count = 1,
-				ComponentType = entry.ComponentType,
-				Category = entry.Category,
-				Description = entry.Description,
-				Container = entry.Container,
-				ParentTypes = entry.ParentTypes,
-				Properties = entry.Properties,
-				TypicalChildren = entry.TypicalChildren,
-				Example = entry.Example
-			};
+			return BuildDetail(entry, resolvedTargetVersion: null, resolvedFrom: null);
 		}
 
 		IReadOnlyList<ComponentRegistryEntry> suggestions = _mobileCatalog.Search(options.Search);
@@ -150,7 +138,27 @@ public sealed class ComponentInfoCommand {
 			Mode = "list",
 			Error = $"Component type '{componentType}' was not found.",
 			Count = suggestions.Count,
-			Groups = ComponentInfoGrouping.CreateGroups(suggestions)
+			Items = ComponentInfoGrouping.CreateItems(suggestions)
+		};
+	}
+
+	private static ComponentInfoResponse BuildDetail(
+		ComponentRegistryEntry entry,
+		string? resolvedTargetVersion,
+		string? resolvedFrom) {
+		return new ComponentInfoResponse {
+			Success = true,
+			Mode = "detail",
+			Count = 1,
+			ComponentType = entry.ComponentType,
+			Description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description,
+			Container = entry.Container ? true : null,
+			ParentTypes = entry.ParentTypes.Count == 0 ? null : entry.ParentTypes,
+			Properties = entry.Properties.Count == 0 ? null : entry.Properties,
+			TypicalChildren = entry.TypicalChildren.Count == 0 ? null : entry.TypicalChildren,
+			Example = entry.Example,
+			ResolvedTargetVersion = resolvedTargetVersion,
+			ResolvedFrom = resolvedFrom
 		};
 	}
 
@@ -213,28 +221,14 @@ public sealed class ComponentInfoCommand {
 				Success = true,
 				Mode = "list",
 				Count = filtered.Count,
-				Groups = ComponentInfoGrouping.CreateGroups(filtered),
+				Items = ComponentInfoGrouping.CreateItems(filtered),
 				ResolvedTargetVersion = state.ResolvedVersion,
 				ResolvedFrom = resolvedFrom
 			};
 		}
 
 		if (state.Lookup.TryGetValue(componentType!, out ComponentRegistryEntry entry)) {
-			return new ComponentInfoResponse {
-				Success = true,
-				Mode = "detail",
-				Count = 1,
-				ComponentType = entry.ComponentType,
-				Category = entry.Category,
-				Description = entry.Description,
-				Container = entry.Container,
-				ParentTypes = entry.ParentTypes,
-				Properties = entry.Properties,
-				TypicalChildren = entry.TypicalChildren,
-				Example = entry.Example,
-				ResolvedTargetVersion = state.ResolvedVersion,
-				ResolvedFrom = resolvedFrom
-			};
+			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom);
 		}
 
 		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, options.Search);
@@ -243,7 +237,7 @@ public sealed class ComponentInfoCommand {
 			Mode = "list",
 			Error = $"Component type '{componentType}' was not found.",
 			Count = suggestions.Count,
-			Groups = ComponentInfoGrouping.CreateGroups(suggestions),
+			Items = ComponentInfoGrouping.CreateItems(suggestions),
 			ResolvedTargetVersion = state.ResolvedVersion,
 			ResolvedFrom = resolvedFrom
 		};

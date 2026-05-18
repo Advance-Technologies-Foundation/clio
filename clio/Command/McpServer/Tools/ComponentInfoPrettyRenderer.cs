@@ -43,32 +43,25 @@ public static class ComponentInfoPrettyRenderer {
 	}
 
 	private static void AppendList(StringBuilder sb, ComponentInfoResponse response) {
-		if (response.Groups is null || response.Groups.Count == 0) {
+		if (response.Items is null || response.Items.Count == 0) {
 			sb.AppendLine().AppendLine("(no components)");
 			return;
 		}
 
-		foreach (ComponentInfoGroup group in response.Groups) {
-			sb.AppendLine();
-			sb.Append("# ").Append(group.Category).Append("  (").Append(group.Items.Count).AppendLine(")");
-			int width = group.Items.Count == 0
-				? 0
-				: group.Items.Max(item => item.ComponentType.Length);
-			foreach (ComponentInfoListItem item in group.Items) {
-				sb.Append("  ")
-					.Append(item.ComponentType.PadRight(width))
-					.Append("  ")
-					.AppendLine(item.Description);
+		sb.AppendLine();
+		int width = response.Items.Max(item => item.ComponentType.Length);
+		foreach (ComponentInfoListItem item in response.Items) {
+			sb.Append("  ").Append(item.ComponentType.PadRight(width));
+			if (!string.IsNullOrWhiteSpace(item.Description)) {
+				sb.Append("  ").Append(item.Description);
 			}
+			sb.AppendLine();
 		}
 	}
 
 	private static void AppendDetail(StringBuilder sb, ComponentInfoResponse response) {
 		sb.AppendLine();
 		sb.Append("componentType:    ").AppendLine(response.ComponentType);
-		if (!string.IsNullOrWhiteSpace(response.Category)) {
-			sb.Append("category:         ").AppendLine(response.Category);
-		}
 		if (!string.IsNullOrWhiteSpace(response.Description)) {
 			sb.Append("description:      ").AppendLine(response.Description);
 		}

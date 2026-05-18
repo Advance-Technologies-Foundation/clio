@@ -152,8 +152,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 
 		ComponentRegistryEntry[] orderedEntries = rawEntries
 			.Where(entry => !string.IsNullOrWhiteSpace(entry.ComponentType))
-			.OrderBy(entry => ComponentInfoGrouping.GetCategorySortKey(entry.Category))
-			.ThenBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
+			.OrderBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
 			.ToArray();
 		if (orderedEntries.Length == 0) {
 			throw new InvalidOperationException($"{sourceDescription} does not contain valid component types.");

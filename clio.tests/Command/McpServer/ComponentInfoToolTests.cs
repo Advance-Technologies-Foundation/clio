@@ -229,13 +229,11 @@ public sealed class ComponentInfoToolTests {
 		response.Mode.Should().Be("list",
 			because: "omitting component-type should switch the tool into list mode");
 		response.Count.Should().Be(6,
-			because: "all registry entries should be returned in grouped list mode");
-		response.Groups.Should().NotBeNull(
-			because: "list mode should return grouped component summaries");
-		response.Groups![0].Category.Should().Be("containers",
-			because: "container entries should appear before other groups");
-		response.Groups[0].Items[0].ComponentType.Should().Be("crt.TabContainer",
-			because: "group items should preserve the component type");
+			because: "all registry entries should be returned in list mode");
+		response.Items.Should().NotBeNull(
+			because: "list mode should return the flat item list");
+		response.Items![0].ComponentType.Should().Be("crt.Button",
+			because: "items are sorted alphabetically by component type");
 		response.ResolvedTargetVersion.Should().NotBeNullOrEmpty(
 			because: "the AI must know which catalog version produced the response");
 		response.ResolvedFrom.Should().Be("latest-fallback",
@@ -284,10 +282,9 @@ public sealed class ComponentInfoToolTests {
 			because: "search without component-type should keep the tool in list mode");
 		response.Count.Should().Be(1,
 			because: "only matching entries should be returned");
-		response.Groups.Should().ContainSingle(
-			because: "only one category should remain after filtering");
-		response.Groups![0].Items.Should().ContainSingle(
-			because: "only crt.TabContainer matches the sample registry search");
+		response.Items.Should().ContainSingle(
+			because: "only crt.TabContainer matches the sample registry search")
+			.Which.ComponentType.Should().Be("crt.TabContainer");
 	}
 
 	[Test]
@@ -306,10 +303,9 @@ public sealed class ComponentInfoToolTests {
 			because: "search-only queries should stay in list mode");
 		response.Count.Should().Be(1,
 			because: "only crt.Gallery exposes bulkActions in the sample registry");
-		response.Groups.Should().ContainSingle(
-			because: "property metadata search should keep only matching categories");
-		response.Groups![0].Items[0].ComponentType.Should().Be("crt.Gallery",
-			because: "bulkActions should surface the gallery contract");
+		response.Items.Should().ContainSingle()
+			.Which.ComponentType.Should().Be("crt.Gallery",
+				because: "bulkActions should surface the gallery contract");
 	}
 
 	[Test]
@@ -350,7 +346,7 @@ public sealed class ComponentInfoToolTests {
 			because: "unknown component types should not pretend that a detail lookup succeeded");
 		response.Error.Should().Contain("crt.Unknown",
 			because: "the failure should identify the missing component type");
-		response.Groups.Should().NotBeNull(
+		response.Items.Should().NotBeNull(
 			because: "the tool should still return available types for discovery");
 		response.Count.Should().Be(6,
 			because: "the fallback list should expose the full catalog when no search filter is applied");

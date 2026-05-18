@@ -31,7 +31,7 @@ public sealed class ComponentInfoCommandTests {
 	""";
 
 	[Test]
-	[Description("With no positional component-type the verb emits a grouped JSON list and exits 0.")]
+	[Description("With no positional component-type the verb emits a flat JSON list and exits 0.")]
 	public async Task Returns_List_When_No_Type_Specified() {
 		using CapturedLogger logger = new();
 		ComponentInfoCommand command = CreateCommand(logger);
@@ -42,7 +42,7 @@ public sealed class ComponentInfoCommandTests {
 		ComponentInfoResponse parsed = ParseJson(logger.Captured);
 		parsed.Mode.Should().Be("list");
 		parsed.Count.Should().Be(3);
-		parsed.Groups.Should().HaveCount(3, because: "every category has exactly one sample entry");
+		parsed.Items.Should().HaveCount(3, because: "all sample entries surface at the response root");
 	}
 
 	[Test]
@@ -101,8 +101,7 @@ public sealed class ComponentInfoCommandTests {
 		exit.Should().Be(0);
 		ComponentInfoResponse parsed = ParseJson(logger.Captured);
 		parsed.Count.Should().Be(1, because: "only crt.Button matches the 'menu' keyword in the sample");
-		parsed.Groups.Should().ContainSingle().Which.Items.Should().ContainSingle()
-			.Which.ComponentType.Should().Be("crt.Button");
+		parsed.Items.Should().ContainSingle().Which.ComponentType.Should().Be("crt.Button");
 	}
 
 	[Test]

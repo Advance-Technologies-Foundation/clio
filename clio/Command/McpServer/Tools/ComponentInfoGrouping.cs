@@ -5,14 +5,11 @@ using System.Linq;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// Shared grouping, ordering, and search helpers for the curated Freedom UI component catalog.
+/// Shared search and projection helpers for the curated Freedom UI component catalog.
 /// Used by both the MCP <c>get-component-info</c> tool and the <c>clio get-component-info</c>
-/// CLI verb so both surfaces produce identical group layouts and identical search semantics.
+/// CLI verb so both surfaces produce identical list ordering and identical search semantics.
 /// </summary>
 public static class ComponentInfoGrouping {
-	public static readonly IReadOnlyList<string> CategoryOrder =
-		new[] { "containers", "fields", "interactive", "display", "filtering" };
-
 	public static IReadOnlyList<ComponentRegistryEntry> FilterEntries(
 		IReadOnlyList<ComponentRegistryEntry> entries, string? search) {
 		if (string.IsNullOrWhiteSpace(search)) {
@@ -22,36 +19,23 @@ public static class ComponentInfoGrouping {
 		return entries.Where(entry => Matches(entry, query)).ToArray();
 	}
 
-	public static IReadOnlyList<ComponentInfoGroup> CreateGroups(IReadOnlyList<ComponentRegistryEntry> entries) {
+	/// <summary>
+	/// Projects entries to compact list items ordered alphabetically by component type.
+	/// Description is null-coalesced so the response omits empty strings from the new
+	/// payload shape (which does not carry per-component descriptions).
+	/// </summary>
+	public static IReadOnlyList<ComponentInfoListItem> CreateItems(IReadOnlyList<ComponentRegistryEntry> entries) {
 		return entries
-			.GroupBy(entry => entry.Category, StringComparer.OrdinalIgnoreCase)
-			.OrderBy(group => GetCategorySortKey(group.Key))
-			.ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
-			.Select(group => new ComponentInfoGroup {
-				Category = group.Key,
-				Items = group
-					.OrderBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
-					.Select(entry => new ComponentInfoListItem {
-						ComponentType = entry.ComponentType,
-						Description = entry.Description
-					})
-					.ToArray()
+			.OrderBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
+			.Select(entry => new ComponentInfoListItem {
+				ComponentType = entry.ComponentType,
+				Description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description
 			})
 			.ToArray();
 	}
 
-	public static int GetCategorySortKey(string? category) {
-		for (int i = 0; i < CategoryOrder.Count; i++) {
-			if (string.Equals(CategoryOrder[i], category, StringComparison.OrdinalIgnoreCase)) {
-				return i;
-			}
-		}
-		return CategoryOrder.Count;
-	}
-
 	private static bool Matches(ComponentRegistryEntry entry, string query) {
 		return ContainsCi(entry.ComponentType, query)
-			|| ContainsCi(entry.Category, query)
 			|| ContainsCi(entry.Description, query)
 			|| entry.ParentTypes.Any(parentType => ContainsCi(parentType, query))
 			|| entry.TypicalChildren.Any(childType => ContainsCi(childType, query))
