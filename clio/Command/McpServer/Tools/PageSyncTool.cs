@@ -386,7 +386,7 @@ public sealed record PageSyncPageInput(
 	string Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of explicit localizable string key-value pairs for page labels, captions, titles, validator messages, and #ResourceString(key)# macros.")]
+	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. See `page-schema-resources` guidance for the full check.")]
 	string? Resources = null,
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties")]

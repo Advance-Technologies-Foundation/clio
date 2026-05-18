@@ -1752,7 +1752,7 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of explicit localizable string key-value pairs for labels, captions, titles, validator messages, and #ResourceString(key)# macros."),
+					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance."),
 					Field("validate", BooleanType, "Run client-side validation before save."),
 					Field("verify", BooleanType, "Read the page back after save.")
 				]),
@@ -2508,7 +2508,7 @@ internal static class ToolContractCatalog {
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
 					Field("body", StringType, "Full page body with all marker pairs. Reuse `get-page.raw.body` rather than `bundle` or `bundle.viewConfig`."),
 					Field("dry-run", BooleanType, "Validate without saving."),
-					Field(ResourcesFieldName, StringType, "Optional JSON object string of resource strings.")),
+					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -2583,7 +2583,7 @@ internal static class ToolContractCatalog {
 				["body"],
 				[
 					Field("body", StringType, "Full JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character."),
-					Field(ResourcesFieldName, StringType, "Optional JSON object string of resource key-value pairs for #ResourceString(key)# macros. Applicable to web pages only.")
+					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom titles, button captions, validator messages, explicit overrides). Applicable to web pages only. Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance.")
 				]),
 			EnvelopeOutput(
 				"valid",

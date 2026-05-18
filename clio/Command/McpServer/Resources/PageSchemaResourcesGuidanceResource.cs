@@ -19,119 +19,78 @@ public sealed class PageSchemaResourcesGuidanceResource {
 		Text = """
 		       clio MCP page-schema resources guide
 
-		       Scope
-		       - Use this guide when the task adds, changes, or references localizable strings (resources) in a Freedom UI page body.
-		       - Resources are the mechanism for localizing captions, labels, titles, and error messages displayed on Freedom UI pages.
-		       - Deciding whether to use resources — and which pattern to use — is a common source of inconsistency when editing pages.
+		       Scope: use when a Freedom UI page change adds, references, or modifies localizable strings (captions, labels, titles, validator messages).
 
 		       ─────────────────────────────────────────────────────────────
-		       RECOMMENDED APPROACH — binding-based resources
+		       THE DECISION ALGORITHM
 		       ─────────────────────────────────────────────────────────────
 
-		       The recommended approach for referencing localizable strings in Freedom UI pages is the binding syntax:
-		         $Resources.Strings.<ResourceKey>
+		       Two independent decisions per localizable string — do not conflate them:
 
-		       This is a reactive binding expression resolved by the Freedom UI engine. It works for ALL localizable strings registered in the schema — not only for data-source-bound captions.
+		       1. REFERENCE SYNTAX in the page body
+		          - Default: `$Resources.Strings.<ResourceKey>` (reactive binding; resolved by the Freedom UI engine for any key registered in the schema's `localizableStrings`).
+		          - Exception: validator params — use `#ResourceString(<Key>)#` there (see VALIDATOR PARAMS).
+		          - Inside `viewConfigDiff` string values (`label`, `caption`, `tooltip`, `placeholder`) both forms are interchangeable; prefer the binding form except where convention already established the macro form — notably data grid column captions in list pages and embedded grids like AttachmentList (`"#ResourceString(PDS_UsrName)#"`, `"#ResourceString(AttachmentListDS_Name)#"`).
 
-		       Resource key naming for data-bound controls
-		       - The resource key always matches the view model attribute name that the control binds to — NOT the column name on its own.
-		       - The view model attribute name is what appears in the binding expression (e.g. `$UsrName`, `$PDS_UsrColumn2_r2s859x`, `$PageParameters_UsrLookupParameter1_z257v57`). The resource key is the same identifier without the leading `$`.
-		       - IMPORTANT: the platform auto-provides `$Resources.Strings.<AttributeName>` ONLY for view model attributes that are themselves bound to a data source column. The prefix in the attribute name (or the absence of one) does NOT decide this — what matters is the underlying DS binding.
-		         * `$UsrName` resolves automatically only if the `UsrName` view model attribute is bound to a data source column (e.g. via `modelConfig.attributes.UsrName.modelConfig.path` pointing at a DS column). A plain attribute name with no DS binding will NOT produce an auto-provided resource string.
-		         * `$PDS_UsrStatus` resolves automatically because the designer-generated `PDS_UsrStatus` attribute is bound to the `UsrStatus` column of the `PDS` data source.
-		         * An attribute defined only in `viewModelConfigDiff` without a DS binding (e.g. a free-form local attribute) gets no auto-provided caption — you must register its resource key explicitly via `resources`.
-		       - Real-world examples observed in pages (all bound to a DS column):
-		         * Binding `$UsrName`                                  → `$Resources.Strings.UsrName` (plain attribute, no prefix)
-		         * Binding `$PDS_UsrColumn2_r2s859x`                   → `$Resources.Strings.PDS_UsrColumn2_r2s859x` (designer-generated PDS_ prefix with hash suffix)
-		         * Binding `$PageParameters_UsrLookupParameter1_z257v57` → `$Resources.Strings.PageParameters_UsrLookupParameter1_z257v57` (page-parameter attribute)
-		       - The `PDS_` prefix is NOT mandatory. It appears when the page designer auto-generates the attribute against the primary data source, and the designer often appends a short hash suffix (e.g. `_r2s859x`). Manually authored attributes commonly use plain names without any prefix.
-		       - Other data source names produce their own prefixes (e.g. `MyDs_Account`, `AttachmentListDS_Name`).
-		       - You can also reference any custom localizable string registered in the schema's `localizableStrings` array using the same syntax: `$Resources.Strings.UsrMyCustomCaption`.
+		       2. REGISTER VIA `resources` PARAMETER? — depends on the target page, not the key name. Call `get-page` and inspect the merged `bundle.viewModelConfig.attributes.<Key>` (this is the effective runtime view, regardless of whether the attribute lives in the parent schema, inline `viewModelConfig`, or is added via `viewModelConfigDiff`). Then apply:
+		          - Exists AND has a DS binding (`modelConfig.path` → data source column) → platform auto-provides the caption from the entity column → **DO NOT register** (unless overriding the caption with a custom value).
+		          - Does NOT exist, OR exists without a DS binding → **MUST register** with an explicit value, or the binding will not resolve.
 
-		       Rule: when adding `$Resources.Strings.<Key>` for a data-bound control, copy the attribute identifier from the existing binding (`bindTo` / `$<attr>`); do not invent a key from the column name. If the attribute is not bound to a DS, you must register the resource key yourself via `resources`.
+		       Same key name can require registration on one page and not on another. Prefixes (`PDS_`, `PageParameters_`, `MyDs_`, `AttachmentListDS_`, or none) are NOT signals — only the underlying DS binding matters.
 
-		       ─────────────────────────────────────────────────────────────
-		       #ResourceString(KeyName)# MACRO
-		       ─────────────────────────────────────────────────────────────
+		       KEY NAMING for data-bound controls: the resource key equals the view model attribute name from the binding (drop the leading `$`). Copy it from the existing `bindTo` / `$<attr>`; do not invent it from the column name. Examples: `$UsrName` → `UsrName`; `$PDS_UsrColumn2_r2s859x` → `PDS_UsrColumn2_r2s859x` (designer-generated prefix + hash suffix); `$PageParameters_UsrLookupParameter1_z257v57` → same identifier.
 
-		       `#ResourceString(KeyName)#` is a macro that gets replaced with the localizable string value during schema pre-processing.
-		       - The key must be registered in the schema's `localizableStrings` array.
-		       - Registration happens automatically when you pass the `resources` parameter on `update-page` / `sync-pages`.
-		       - Inside `viewConfigDiff` string values (e.g. `label`, `caption`, `tooltip`, `placeholder`) both `$Resources.Strings.<Key>` and `#ResourceString(Key)#` are valid and interchangeable. Real pages mix both styles; prefer the binding form when in doubt because it is the reactive option.
-		       - Data grid column captions (in list pages and embedded grids such as AttachmentList) are commonly authored with the macro form: `"caption": "#ResourceString(PDS_UsrName)#"`, `"caption": "#ResourceString(AttachmentListDS_Name)#"`. Either form works, but the macro form matches existing conventions in those areas.
-		       - Use this macro (and only this macro) in contexts where the reactive binding engine does not process the value, notably validator params — see VALIDATOR PARAMS below.
+		       PAIRED EXAMPLES — same key name, opposite verdicts depending on the page
+		       - Page A has `PDS_UsrStatus` bound to DS column `PDS.UsrStatus`:
+		         ❌ `resources: '{"PDS_UsrStatus": "Status"}'` — unnecessary noise; platform already provides the caption.
+		         ✅ Bind `$Resources.Strings.PDS_UsrStatus` and pass nothing.
+		         ✅ `resources: '{"PDS_UsrStatus": "Custom status caption"}'` ONLY to deliberately override the inherited caption.
+		       - Page B has `UsrLocalFlag` declared in `viewModelConfigDiff` with no DS binding:
+		         ✅ `resources: '{"UsrLocalFlag": "Local flag"}'` — required, or `$Resources.Strings.UsrLocalFlag` will not resolve.
+		       - Page C does not declare `PDS_UsrStatus` at all:
+		         ✅ `resources: '{"PDS_UsrStatus": "Status"}'` — required; platform has nothing to auto-provide.
 
 		       ─────────────────────────────────────────────────────────────
-		       DECISION TABLE — when to use each pattern
+		       DECISION TABLE
 		       ─────────────────────────────────────────────────────────────
 
-		       | Scenario | Pattern | Pass `resources` param? |
+		       | Scenario | Reference syntax | Pass `resources` param? |
 		       | --- | --- | --- |
-		       | Data-bound form field label (default attribute caption) | `$Resources.Strings.<AttributeName>` (e.g. `$Resources.Strings.PDS_UsrStatus`) | NO — platform auto-provides for the bound attribute |
-		       | Data-bound form field label (override caption) | `$Resources.Strings.<Key>` or `#ResourceString(<Key>)#` (interchangeable) | YES — register the override key with an explicit value |
-		       | Data grid column caption (list page / embedded grid) | `#ResourceString(<DataSource>_<Column>)#` (convention) or `$Resources.Strings.<DataSource>_<Column>` | YES for custom columns; NO when the platform auto-provides the caption |
-		       | Custom tab caption | `$Resources.Strings.UsrMyTab_caption` (or `#ResourceString(UsrMyTab_caption)#`) | YES — register the key with an explicit value |
-		       | Expansion panel / group title | `$Resources.Strings.UsrMyGroup_title` (or `#ResourceString(UsrMyGroup_title)#`) | YES — register the key with an explicit value |
-		       | Button caption (localizable) | `$Resources.Strings.UsrMyButton_caption` (or `#ResourceString(UsrMyButton_caption)#`) | YES — register the key with an explicit value |
-		       | Button caption (simple, non-localizable) | Inline string: `"caption": "Click me"` | NO — no resource needed |
-		       | Validator error message | `#ResourceString(UsrMyValidator_Message)#` (macro form required) | YES — always provide an explicit value |
-		       | Inherited caption from parent schema | Already registered in parent | NO — do not re-register |
-		       | Converter display values | None | NO — converters are pure value transforms, never use resources |
+		       | Key matches a DS-bound view model attribute on the page, default caption acceptable | `$Resources.Strings.<Key>` | NO — platform auto-provides |
+		       | Key matches a DS-bound view model attribute on the page, overriding the caption | `$Resources.Strings.<Key>` | YES — register with the override value |
+		       | Key has NO matching DS-bound attribute (custom tab/group title, button caption, custom grid column, free-form `viewModelConfigDiff` attribute) | `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for grid column captions by convention) | YES — must register with an explicit value |
+		       | Validator error message | `#ResourceString(<Key>)#` (macro form required) | YES — always register with an explicit value |
+		       | Inherited caption from parent schema, simple non-localizable strings, converter display values | Inherited / inline string / N/A | NO |
 
 		       ─────────────────────────────────────────────────────────────
-		       HOW TO PASS RESOURCES
+		       HOW TO PASS, AND PRESERVATION
 		       ─────────────────────────────────────────────────────────────
 
-		       Pass the `resources` parameter as a JSON object string mapping keys to their display values:
-		         resources: '{"UsrDetailsTab_caption": "Details", "UsrSave_caption": "Save record"}'
+		       Pass the `resources` parameter as a JSON object string of `Key → display string` pairs; values must be plain strings (no nesting/arrays) and must be explicit:
+		         `resources: '{"UsrDetailsTab_caption": "Details", "UsrSave_caption": "Save record"}'`
 
-		       Each key in the object corresponds to a localizable string that will be registered in the schema's `localizableStrings` array.
-		       Values must be plain strings — no nesting, no arrays.
-		       Always provide explicit values for all resource keys.
-
-		       ─────────────────────────────────────────────────────────────
-		       RESOURCE PRESERVATION
-		       ─────────────────────────────────────────────────────────────
-
-		       When `update-page` or `sync-pages` processes resources:
-		       1. All existing `localizableStrings` entries are preserved (including platform entries like SaveButton, CancelButton, GeneralInfoTab_caption).
-		       2. New entries from the `resources` parameter are added.
-		       3. Existing entries are never deleted or overwritten — only new entries are added.
+		       `update-page` / `sync-pages` preserve all existing `localizableStrings` entries (platform entries like `SaveButton`, `CancelButton`, `GeneralInfoTab_caption` included) and only ADD new entries — never delete or overwrite. Preservation is not permission to skip the registration check: confirm no DS-bound view model attribute with that name already provides the caption before adding it, otherwise you create unnecessary noise.
 
 		       ─────────────────────────────────────────────────────────────
 		       VALIDATOR PARAMS — special rule
 		       ─────────────────────────────────────────────────────────────
 
-		       Validator params (inside viewModelConfigDiff attribute validators) are not processed by the reactive binding engine.
-		       The `$Resources.Strings.*` binding syntax does NOT work in validator params — it will be rejected by clio validation.
-		       Use `#ResourceString(KeyName)#` for validator param values instead:
+		       Validator params (inside `viewModelConfigDiff` attribute validators) are not processed by the reactive binding engine. `$Resources.Strings.*` is rejected by clio validation here — use `#ResourceString(KeyName)#`.
 
-		       CORRECT:
-		         "params": { "message": "#ResourceString(UsrMaxLength_Message)#" }
+		       ✅ `"params": { "message": "#ResourceString(UsrMaxLength_Message)#" }`
+		       ❌ `"params": { "message": "$Resources.Strings.UsrMaxLength_Message" }`
 
-		       WRONG (rejected by clio validation):
-		         "params": { "message": "$Resources.Strings.UsrMaxLength_Message" }
-
-		       Read `page-schema-validators` for the full validator authoring guide.
+		       See `page-schema-validators` for the full validator authoring guide.
 
 		       ─────────────────────────────────────────────────────────────
 		       COMMON MISTAKES
 		       ─────────────────────────────────────────────────────────────
 
-		       1. Using `$Resources.Strings.*` in validator params — validator params are not processed by the reactive binding engine; use `#ResourceString(KeyName)#` instead.
-		       2. Forgetting to pass `resources` when adding custom localizable strings — keys without explicit values may not be registered, and the resource will not resolve at runtime.
-		       3. Adding resources for inherited captions — parent schema resources are already registered; re-adding them is unnecessary (though harmless).
-		       4. Re-registering keys the platform already provides — for view model attributes that are bound to a data source column, the platform auto-provides `$Resources.Strings.<AttributeName>` from the entity schema column caption. Do not pass these via `resources` unless you intend to override the caption. This auto-provision happens only when the attribute itself has a DS binding; attribute-name prefixes (`PDS_`, none, `PageParameters_`, etc.) do not by themselves trigger it.
-		       5. Inventing data-source resource keys from column names — the key must match the view model attribute name from the binding (e.g. `$PDS_UsrColumn2_r2s859x` → `$Resources.Strings.PDS_UsrColumn2_r2s859x`), not the bare column name. The `PDS_` prefix is not guaranteed; some attributes use plain names like `UsrName` or other prefixes like `PageParameters_`.
-
-		       ─────────────────────────────────────────────────────────────
-		       WHEN NOT TO ADD RESOURCES
-		       ─────────────────────────────────────────────────────────────
-
-		       - Data-bound field labels that use the default attribute caption — the platform auto-provides them.
-		       - Inherited captions from parent schemas — they are already registered.
-		       - Simple non-localizable strings — inline them directly as string values.
-		       - Converters — converters are pure value transforms and never use resources.
+		       1. Passing `resources` for a key without checking the page first — if a DS-bound attribute with that exact name already exists, the platform auto-provides the caption and the entry is unnecessary. The key name alone cannot tell you; inspect `bundle.viewModelConfig.attributes.<Key>` from `get-page` (merged form — reflects parent, inline `viewModelConfig`, and `viewModelConfigDiff` additions in one view).
+		       2. Treating a prefix (e.g. `PDS_`) as a signal of auto-provisioning — only the DS binding on the attribute matters. Manually authored attributes use plain names (`UsrName`); page-parameter attributes use `PageParameters_`; other data sources use their own prefixes (`MyDs_`, `AttachmentListDS_`).
+		       3. Inventing data-source resource keys from column names — the key must match the view model attribute identifier from the binding, including any designer-generated hash suffix (e.g. `PDS_UsrColumn2_r2s859x`).
+		       4. Using `$Resources.Strings.*` in validator params — rejected by clio validation; use `#ResourceString(KeyName)#`.
+		       5. Re-registering inherited captions from a parent schema — already registered; the entry is unnecessary (though harmless).
 		       """
 	};
 

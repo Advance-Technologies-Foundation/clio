@@ -23,6 +23,8 @@ public sealed class PageModificationGuidanceResource {
 		       clio MCP page modification guide
 
 		       PRE-EDIT GUIDANCE CHECKLIST — read before writing any body
+		       MOBILE CHECK: If `get-page` returned `schema-type: "mobile"`, STOP — call `get-guidance` with name `mobile-page-modification` instead. Mobile pages use plain JSON (NOT AMD), have a completely different component registry, and must NOT contain handlers, validators, or converters. The rules below apply ONLY to web pages (schema-type: "web").
+
 		       Before touching raw.body, determine which section you are modifying and call the corresponding guidance first:
 
 		       | Requirement pattern | Call get-guidance with name | Why |
@@ -35,6 +37,8 @@ public sealed class PageModificationGuidanceResource {
 		       | body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter | `page-schema-resources` | Most resource registrations for DS-bound captions (e.g. `PDS_UsrStatus`) are unnecessary — the platform auto-provides them. Guidance specifies which keys must vs must-not be registered, and `$Resources.Strings.*` is rejected in validator params. |
 
 		       STOP. Do NOT call get-component-info and pick a component type to solve a display transformation requirement until you have read `page-schema-converters` and confirmed the OOTB decision table does not cover your case. A common mistake is treating a display transformation as a component selection problem.
+
+		       STOP. Touching resources at all? Read `page-schema-resources` first. This covers any body that contains `$Resources.Strings.*` or `#ResourceString(...)#`, and any call that passes the `resources` parameter — no exceptions, no "simple cases".
 
 		       Replacing-schema concept
 		       - When a Freedom UI designer saves changes to a page, Creatio creates a replacing schema in a "design package".
