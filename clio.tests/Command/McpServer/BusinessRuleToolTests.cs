@@ -49,7 +49,7 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Maps list-business-rules arguments into environment-scoped read options.")]
+	[Description("Maps list-business-rules arguments into package-scoped read options.")]
 	public void BusinessRuleList_Should_Map_Arguments_And_Return_Normalized_Response() {
 		// Arrange
 		IBusinessRuleReadService service = Substitute.For<IBusinessRuleReadService>();
@@ -63,34 +63,30 @@ public sealed class BusinessRuleToolTests {
 				SchemaName = "Contact",
 				Count = 1,
 				Rules = [
-					new BusinessRuleReadItem {
-						UId = "RuleUId",
-						Name = "BusinessRule_1",
-						Caption = "Require owner",
-						Enabled = true
-					}
+					new BusinessRuleReadSummary("BusinessRule_1", "Require owner")
 				]
 			});
 		BusinessRuleReadTool tool = new(command, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		BusinessRuleListResponse result = tool.BusinessRuleList("dev", "entity", "Contact");
+		BusinessRuleListResponse result = tool.BusinessRuleList("dev", "UsrApp", "entity", "Contact");
 
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "the tool should return the structured service response");
-		result.Rules.Should().ContainSingle(rule => rule.UId == "RuleUId",
-			because: "normalized rule identities should pass through the MCP tool");
+		result.Rules.Should().ContainSingle(rule => rule.Name == "BusinessRule_1",
+			because: "rule summaries should pass through the MCP tool");
 		commandResolver.Received(1).Resolve<BusinessRuleReadCommand>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "dev"));
 		service.Received(1).List(Arg.Is<BusinessRuleReadRequest>(request =>
-			request.ScopeType == "entity"
+			request.PackageName == "UsrApp"
+			&& request.ScopeType == "entity"
 			&& request.SchemaName == "Contact"));
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Maps get-business-rule selector arguments into environment-scoped read options.")]
+	[Description("Maps get-business-rule name selector arguments into package-scoped read options.")]
 	public void BusinessRuleGet_Should_Map_Selector_Arguments() {
 		// Arrange
 		IBusinessRuleReadService service = Substitute.For<IBusinessRuleReadService>();
@@ -103,7 +99,6 @@ public sealed class BusinessRuleToolTests {
 				ScopeType = BusinessRuleScopeTypes.Page,
 				SchemaName = "Contact_FormPage",
 				Rule = new BusinessRuleReadItem {
-					UId = "RuleUId",
 					Name = "BusinessRule_1",
 					Caption = "Hide button",
 					Enabled = true
@@ -114,23 +109,23 @@ public sealed class BusinessRuleToolTests {
 		// Act
 		BusinessRuleGetResponse result = tool.BusinessRuleGet(
 			"dev",
+			"UsrApp",
 			"page",
 			"Contact_FormPage",
-			ruleUId: "RuleUId");
+			"BusinessRule_1");
 
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "the tool should return the structured get response");
-		result.Rule!.UId.Should().Be("RuleUId",
+		result.Rule!.Name.Should().Be("BusinessRule_1",
 			because: "the selected rule should be returned from the service");
 		commandResolver.Received(1).Resolve<BusinessRuleReadCommand>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "dev"));
 		service.Received(1).Get(Arg.Is<BusinessRuleGetRequest>(request =>
-			request.ScopeType == "page"
+			request.PackageName == "UsrApp"
+			&& request.ScopeType == "page"
 			&& request.SchemaName == "Contact_FormPage"
-			&& request.RuleUId == "RuleUId"
-			&& request.RuleName == null
-			&& request.Caption == null));
+			&& request.RuleName == "BusinessRule_1"));
 	}
 
 	[Test]

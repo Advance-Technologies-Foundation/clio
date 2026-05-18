@@ -22,7 +22,9 @@ internal static class BusinessRuleMetadataReadConverter {
 
 	internal static BusinessRuleReadItem FromMetadata(
 		JsonObject rule,
-		string scopeType) {
+		string scopeType,
+		string? caption,
+		bool strict = false) {
 		ArgumentNullException.ThrowIfNull(rule);
 
 		JsonObject? firstCase = ReadFirstCase(rule);
@@ -30,17 +32,25 @@ internal static class BusinessRuleMetadataReadConverter {
 			? ReadConditionGroup(conditionNode)
 			: null;
 		IReadOnlyList<BusinessRuleAction> actions = firstCase?["actions"] is JsonArray actionNodes
-			? ReadActions(actionNodes, scopeType)
+			? ReadActions(actionNodes, scopeType, strict)
 			: [];
 
 		return new BusinessRuleReadItem {
-			UId = ReadString(rule["uId"]),
 			Name = ReadString(rule["name"]),
-			Caption = ReadCaption(rule["caption"]),
+			Caption = caption ?? ReadCaption(rule["caption"]),
 			Enabled = ReadBoolean(rule["enabled"]),
 			Condition = condition,
 			Actions = actions
 		};
+	}
+
+	internal static BusinessRuleReadSummary ToSummary(
+		JsonObject rule,
+		string? caption) {
+		ArgumentNullException.ThrowIfNull(rule);
+		return new BusinessRuleReadSummary(
+			ReadString(rule["name"]),
+			caption ?? ReadCaption(rule["caption"]));
 	}
 
 	private static JsonObject? ReadFirstCase(JsonObject rule) {
@@ -131,14 +141,15 @@ internal static class BusinessRuleMetadataReadConverter {
 
 	private static IReadOnlyList<BusinessRuleAction> ReadActions(
 		JsonArray actions,
-		string scopeType) {
+		string scopeType,
+		bool strict) {
 		List<BusinessRuleAction> result = [];
 		for (int index = 0; index < actions.Count; index++) {
 			if (actions[index] is not JsonObject action) {
 				continue;
 			}
 
-			BusinessRuleAction? normalizedAction = ReadAction(action, scopeType);
+			BusinessRuleAction? normalizedAction = ReadAction(action, scopeType, strict);
 			if (normalizedAction is not null) {
 				result.Add(normalizedAction);
 			}
@@ -148,7 +159,8 @@ internal static class BusinessRuleMetadataReadConverter {
 
 	private static BusinessRuleAction? ReadAction(
 		JsonObject action,
-		string scopeType) {
+		string scopeType,
+		bool strict) {
 		string? typeName = ReadString(action["typeName"]);
 		if (string.Equals(typeName, BusinessRuleSetValuesElementTypeName, StringComparison.Ordinal)) {
 			return new SetValuesBusinessRuleAction(ReadSetValueItems(action["items"]));
@@ -156,6 +168,9 @@ internal static class BusinessRuleMetadataReadConverter {
 
 		string? actionType = ResolveActionType(typeName, scopeType);
 		if (string.IsNullOrWhiteSpace(actionType)) {
+			if (strict) {
+				throw new InvalidOperationException($"Business-rule action type '{typeName}' is not supported by the normalized read contract.");
+			}
 			return null;
 		}
 

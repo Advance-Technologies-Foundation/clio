@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
-using Clio.Common;
+using Clio.Command.AddonSchemaDesigner;
+using Clio.Command.EntitySchemaDesigner;
+using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
 namespace Clio.Command.BusinessRules;
 
@@ -22,138 +23,173 @@ public interface IBusinessRuleReadService {
 	/// <summary>
 	/// Gets one business rule from one entity or page scope.
 	/// </summary>
-	/// <param name="request">Get request with exactly one selector.</param>
+	/// <param name="request">Get request with a rule name selector.</param>
 	/// <returns>Normalized get response.</returns>
 	BusinessRuleGetResponse Get(BusinessRuleGetRequest request);
 }
 
 internal sealed class BusinessRuleReadService(
-	IApplicationClient applicationClient,
-	IServiceUrlBuilder serviceUrlBuilder)
+	IBusinessRulePackageResolver packageResolver,
+	IEntityBusinessRuleSchemaProvider entitySchemaProvider,
+	IPageBusinessRuleSchemaProvider pageSchemaProvider,
+	IAddonSchemaDesignerClient addonSchemaDesignerClient)
 	: IBusinessRuleReadService {
-
-	private static readonly JsonSerializerOptions JsonOptions = new() {
-		PropertyNameCaseInsensitive = true,
-		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-		WriteIndented = true
-	};
 
 	public BusinessRuleListResponse List(BusinessRuleReadRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		string normalizedScopeType = NormalizeScopeType(request.ScopeType);
-		ValidateSchemaName(request.SchemaName);
+		ValidateRequest(request.PackageName, request.SchemaName);
 
-		BusinessRulesManagerResponse response = ExecuteGetBusinessRules(request.SchemaName, normalizedScopeType);
-		if (!response.Success) {
-			return CreateListError(
-				normalizedScopeType,
-				request.SchemaName,
-				response.ErrorInfo?.Message ?? "BusinessRulesManagerService.GetBusinessRules failed.");
-		}
-
-		ScopeBusinessRulesResponse? scopeResponse = response.BusinessRules?.FirstOrDefault();
-		if (scopeResponse is null || string.IsNullOrWhiteSpace(scopeResponse.BusinessRulesConfig)) {
+		try {
+			AddonSchemaDto schema = ReadAddonSchema(request.PackageName, normalizedScopeType, request.SchemaName);
+			IReadOnlyList<JsonObject> rules = ReadRules(schema.MetaData);
+			IReadOnlyDictionary<string, string> captions = BuildCaptionMap(schema.Resources);
+			IReadOnlyList<BusinessRuleReadSummary> summaries = rules
+				.Select(rule => BusinessRuleMetadataReadConverter.ToSummary(rule, ReadCaption(rule, captions)))
+				.ToList();
 			return new BusinessRuleListResponse {
 				Success = true,
 				ScopeType = normalizedScopeType,
 				SchemaName = request.SchemaName,
-				Count = 0,
-				Rules = []
+				Count = summaries.Count,
+				Rules = summaries
 			};
+		} catch (Exception ex) {
+			return CreateListError(normalizedScopeType, request.SchemaName, ex.Message);
 		}
-
-		IReadOnlyList<BusinessRuleReadItem> rules = ParseRules(
-			scopeResponse.BusinessRulesConfig,
-			normalizedScopeType);
-		return new BusinessRuleListResponse {
-			Success = true,
-			ScopeType = normalizedScopeType,
-			SchemaName = request.SchemaName,
-			Count = rules.Count,
-			Rules = rules
-		};
 	}
 
 	public BusinessRuleGetResponse Get(BusinessRuleGetRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
-		string? selectorError = ValidateSelector(request);
-		if (!string.IsNullOrWhiteSpace(selectorError)) {
+		string normalizedScopeType = NormalizeScopeType(request.ScopeType);
+		ValidateRequest(request.PackageName, request.SchemaName);
+		if (string.IsNullOrWhiteSpace(request.RuleName)) {
+			return CreateGetError(normalizedScopeType, request.SchemaName, "ruleName is required.");
+		}
+
+		try {
+			AddonSchemaDto schema = ReadAddonSchema(request.PackageName, normalizedScopeType, request.SchemaName);
+			IReadOnlyList<JsonObject> rules = ReadRules(schema.MetaData);
+			IReadOnlyDictionary<string, string> captions = BuildCaptionMap(schema.Resources);
+			JsonObject? match = rules.SingleOrDefault(rule =>
+				string.Equals(ReadString(rule["name"]), request.RuleName.Trim(), StringComparison.OrdinalIgnoreCase));
+			if (match is null) {
+				return CreateGetError(
+					normalizedScopeType,
+					request.SchemaName,
+					$"Business rule with ruleName '{request.RuleName}' was not found for {normalizedScopeType} schema '{request.SchemaName}'.");
+			}
+
 			return new BusinessRuleGetResponse {
-				Success = false,
-				ScopeType = request.ScopeType,
+				Success = true,
+				ScopeType = normalizedScopeType,
 				SchemaName = request.SchemaName,
-				Error = selectorError
+				Rule = BusinessRuleMetadataReadConverter.FromMetadata(
+					match,
+					normalizedScopeType,
+					ReadCaption(match, captions),
+					strict: true)
 			};
+		} catch (Exception ex) {
+			return CreateGetError(normalizedScopeType, request.SchemaName, ex.Message);
 		}
+	}
 
-		BusinessRuleListResponse listResponse = List(new BusinessRuleReadRequest(
-			request.ScopeType,
-			request.SchemaName));
-		if (!listResponse.Success) {
-			return new BusinessRuleGetResponse {
-				Success = false,
-				ScopeType = listResponse.ScopeType,
-				SchemaName = listResponse.SchemaName,
-				Error = listResponse.Error
-			};
-		}
+	private AddonSchemaDto ReadAddonSchema(
+		string packageName,
+		string scopeType,
+		string schemaName) {
+		Guid packageUId = packageResolver.ResolveUId(packageName);
+		AddonGetRequestDto request = string.Equals(scopeType, BusinessRuleScopeTypes.Entity, StringComparison.Ordinal)
+			? BuildEntityAddonRequest(schemaName, packageUId)
+			: BuildPageAddonRequest(schemaName, packageUId);
+		return addonSchemaDesignerClient.GetSchema(request);
+	}
 
-		IReadOnlyList<BusinessRuleReadItem> matches = FindMatches(listResponse.Rules, request);
-		if (matches.Count == 0) {
-			return new BusinessRuleGetResponse {
-				Success = false,
-				ScopeType = listResponse.ScopeType,
-				SchemaName = listResponse.SchemaName,
-				Error = BuildNotFoundMessage(request)
-			};
-		}
-
-		if (matches.Count > 1) {
-			return new BusinessRuleGetResponse {
-				Success = false,
-				ScopeType = listResponse.ScopeType,
-				SchemaName = listResponse.SchemaName,
-				Error = "Business-rule selector is ambiguous. Use ruleUId or ruleName.",
-				Matches = matches.Select(ToIdentity).ToList()
-			};
-		}
-
-		return new BusinessRuleGetResponse {
-			Success = true,
-			ScopeType = listResponse.ScopeType,
-			SchemaName = listResponse.SchemaName,
-			Rule = matches[0]
+	private AddonGetRequestDto BuildEntityAddonRequest(string schemaName, Guid packageUId) {
+		EntityDesignSchemaDto entitySchema = entitySchemaProvider.GetSchema(schemaName, packageUId);
+		return new AddonGetRequestDto {
+			AddonName = BusinessRuleAddonName,
+			TargetSchemaUId = entitySchema.UId,
+			TargetParentSchemaUId = entitySchema.ParentSchema?.UId ?? Guid.Empty,
+			TargetPackageUId = packageUId,
+			TargetSchemaManagerName = EntitySchemaManagerName,
+			UseFullHierarchy = true
 		};
 	}
 
-	private BusinessRulesManagerResponse ExecuteGetBusinessRules(string schemaName, string scopeType) {
-		BusinessRulesManagerRequest request = new([
-			new BusinessRulesScopeRequest(
-				schemaName,
-				ToPlatformScopeType(scopeType),
-				null)
-		]);
-		string body = JsonSerializer.Serialize(request, JsonOptions);
-		string responseBody = applicationClient.ExecutePostRequest(
-			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetBusinessRules),
-			body);
-		return JsonSerializer.Deserialize<BusinessRulesManagerResponse>(responseBody, JsonOptions)
-			?? throw new InvalidOperationException("BusinessRulesManagerService.GetBusinessRules returned an empty response.");
+	private AddonGetRequestDto BuildPageAddonRequest(string schemaName, Guid packageUId) {
+		PageBusinessRuleSchemaContext pageContext = pageSchemaProvider.GetSchema(schemaName, packageUId);
+		return new AddonGetRequestDto {
+			AddonName = BusinessRuleAddonName,
+			TargetSchemaUId = Guid.Parse(pageContext.SchemaUId),
+			TargetParentSchemaUId = pageContext.ParentSchemaUId,
+			TargetPackageUId = packageUId,
+			TargetSchemaManagerName = ClientUnitSchemaManagerName,
+			UseFullHierarchy = true
+		};
 	}
 
-	private static IReadOnlyList<BusinessRuleReadItem> ParseRules(
-		string businessRulesConfig,
-		string scopeType) {
-		JsonNode? rulesNode = JsonNode.Parse(businessRulesConfig);
-		if (rulesNode is not JsonArray rulesArray) {
-			throw new InvalidOperationException("BusinessRulesManagerService returned businessRulesConfig that is not a JSON array.");
+	private static IReadOnlyList<JsonObject> ReadRules(string? metaData) {
+		if (string.IsNullOrWhiteSpace(metaData)) {
+			return [];
 		}
-
-		return rulesArray
-			.OfType<JsonObject>()
-			.Select(rule => BusinessRuleMetadataReadConverter.FromMetadata(rule, scopeType))
-			.ToList();
+		JsonNode? metadataNode = JsonNode.Parse(metaData);
+		if (metadataNode is not JsonObject metadata) {
+			throw new InvalidOperationException("Business-rule add-on metadata root must be a JSON object.");
+		}
+		if (!metadata.TryGetPropertyValue("rules", out JsonNode? rulesNode) || rulesNode is null) {
+			return [];
+		}
+		if (rulesNode is not JsonArray rulesArray) {
+			throw new InvalidOperationException("Business-rule add-on metadata 'rules' property must be a JSON array.");
+		}
+		return rulesArray.OfType<JsonObject>().ToList();
 	}
+
+	private static IReadOnlyDictionary<string, string> BuildCaptionMap(IEnumerable<AddonResourceDto> resources) {
+		Dictionary<string, string> captions = new(StringComparer.OrdinalIgnoreCase);
+		foreach (AddonResourceDto resource in resources) {
+			string? ruleUId = ExtractRuleUIdFromCaptionResource(resource.Key);
+			if (string.IsNullOrWhiteSpace(ruleUId)) {
+				continue;
+			}
+			string? caption = resource.Value
+				.FirstOrDefault(value => string.Equals(value.Key, EntitySchemaDesignerSupport.DefaultCultureName, StringComparison.OrdinalIgnoreCase))
+				?.Value
+				?? resource.Value.FirstOrDefault()?.Value;
+			if (!string.IsNullOrWhiteSpace(caption)) {
+				captions[ruleUId] = caption;
+			}
+		}
+		return captions;
+	}
+
+	private static string? ExtractRuleUIdFromCaptionResource(string key) {
+		string[] parts = key.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+		if (parts.Length == 2 && string.Equals(parts[1], "Caption", StringComparison.OrdinalIgnoreCase)) {
+			return parts[0];
+		}
+		if (parts.Length == 4
+			&& string.Equals(parts[0], "AddonConfig", StringComparison.Ordinal)
+			&& string.Equals(parts[1], "Rules", StringComparison.Ordinal)
+			&& string.Equals(parts[3], "Caption", StringComparison.OrdinalIgnoreCase)) {
+			return parts[2];
+		}
+		return null;
+	}
+
+	private static string? ReadCaption(JsonObject rule, IReadOnlyDictionary<string, string> captions) {
+		string? ruleUId = ReadString(rule["uId"]);
+		return !string.IsNullOrWhiteSpace(ruleUId) && captions.TryGetValue(ruleUId, out string? caption)
+			? caption
+			: null;
+	}
+
+	private static string? ReadString(JsonNode? node) =>
+		node is JsonValue && node.GetValueKind() == JsonValueKind.String
+			? node.GetValue<string>()
+			: null;
 
 	private static string NormalizeScopeType(string scopeType) {
 		if (string.Equals(scopeType, BusinessRuleScopeTypes.Entity, StringComparison.OrdinalIgnoreCase)) {
@@ -165,60 +201,14 @@ internal sealed class BusinessRuleReadService(
 		throw new ArgumentException("scopeType must be either 'entity' or 'page'.");
 	}
 
-	private static string ToPlatformScopeType(string scopeType) =>
-		string.Equals(scopeType, BusinessRuleScopeTypes.Entity, StringComparison.OrdinalIgnoreCase)
-			? "Model"
-			: "ViewModel";
-
-	private static void ValidateSchemaName(string schemaName) {
+	private static void ValidateRequest(string packageName, string schemaName) {
+		if (string.IsNullOrWhiteSpace(packageName)) {
+			throw new ArgumentException("packageName is required.");
+		}
 		if (string.IsNullOrWhiteSpace(schemaName)) {
 			throw new ArgumentException("schemaName is required.");
 		}
 	}
-
-	private static string? ValidateSelector(BusinessRuleGetRequest request) {
-		int selectorCount = CountProvided(request.RuleUId)
-			+ CountProvided(request.RuleName)
-			+ CountProvided(request.Caption);
-		return selectorCount == 1
-			? null
-			: "Provide exactly one selector: ruleUId, ruleName, or caption.";
-	}
-
-	private static int CountProvided(string? value) =>
-		string.IsNullOrWhiteSpace(value) ? 0 : 1;
-
-	private static IReadOnlyList<BusinessRuleReadItem> FindMatches(
-		IReadOnlyList<BusinessRuleReadItem> rules,
-		BusinessRuleGetRequest request) {
-		if (!string.IsNullOrWhiteSpace(request.RuleUId)) {
-			return rules
-				.Where(rule => string.Equals(rule.UId, request.RuleUId, StringComparison.OrdinalIgnoreCase))
-				.ToList();
-		}
-
-		if (!string.IsNullOrWhiteSpace(request.RuleName)) {
-			return rules
-				.Where(rule => string.Equals(rule.Name, request.RuleName, StringComparison.Ordinal))
-				.ToList();
-		}
-
-		return rules
-			.Where(rule => string.Equals(rule.Caption, request.Caption, StringComparison.Ordinal))
-			.ToList();
-	}
-
-	private static string BuildNotFoundMessage(BusinessRuleGetRequest request) {
-		string selector = !string.IsNullOrWhiteSpace(request.RuleUId)
-			? $"ruleUId '{request.RuleUId}'"
-			: !string.IsNullOrWhiteSpace(request.RuleName)
-				? $"ruleName '{request.RuleName}'"
-				: $"caption '{request.Caption}'";
-		return $"Business rule with {selector} was not found for {request.ScopeType} schema '{request.SchemaName}'.";
-	}
-
-	private static BusinessRuleIdentity ToIdentity(BusinessRuleReadItem rule) =>
-		new(rule.UId, rule.Name, rule.Caption, rule.Enabled);
 
 	private static BusinessRuleListResponse CreateListError(
 		string scopeType,
@@ -231,39 +221,14 @@ internal sealed class BusinessRuleReadService(
 			Error = error
 		};
 
-	private sealed record BusinessRulesManagerRequest(
-		[property: JsonPropertyName("scopes")] IReadOnlyList<BusinessRulesScopeRequest> Scopes);
-
-	private sealed record BusinessRulesScopeRequest(
-		[property: JsonPropertyName("name")] string Name,
-		[property: JsonPropertyName("type")] string Type,
-		[property: JsonPropertyName("modelType")] string? ModelType);
-
-	private sealed record BusinessRulesManagerResponse {
-		[JsonPropertyName("success")]
-		public bool Success { get; init; }
-
-		[JsonPropertyName("businessRules")]
-		public IReadOnlyList<ScopeBusinessRulesResponse>? BusinessRules { get; init; }
-
-		[JsonPropertyName("errorInfo")]
-		public BusinessRulesErrorInfo? ErrorInfo { get; init; }
-	}
-
-	private sealed record ScopeBusinessRulesResponse {
-		[JsonPropertyName("schemaName")]
-		public string? SchemaName { get; init; }
-
-		[JsonPropertyName("type")]
-		public string? Type { get; init; }
-
-		[JsonPropertyName("modelType")]
-		public string? ModelType { get; init; }
-
-		[JsonPropertyName("businessRulesConfig")]
-		public string? BusinessRulesConfig { get; init; }
-	}
-
-	private sealed record BusinessRulesErrorInfo(
-		[property: JsonPropertyName("message")] string? Message);
+	private static BusinessRuleGetResponse CreateGetError(
+		string scopeType,
+		string schemaName,
+		string error) =>
+		new() {
+			Success = false,
+			ScopeType = scopeType,
+			SchemaName = schemaName,
+			Error = error
+		};
 }

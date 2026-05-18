@@ -74,7 +74,7 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the canonical business-rule read contracts with entity/page scope and deterministic selector guidance.")]
+	[Description("Returns the canonical business-rule read contracts with package scope and rule-name selector guidance.")]
 	public void ToolContractGet_Should_Return_BusinessRuleRead_Contracts() {
 		// Arrange
 		ToolContractGetTool tool = new();
@@ -92,33 +92,26 @@ public sealed class ToolContractGetToolTests {
 			because: "both list and get read contracts were requested explicitly");
 		ToolContractDefinition listContract = result.Tools!.Single(contract =>
 			contract.Name == BusinessRuleReadTool.BusinessRuleListToolName);
-		listContract.InputSchema.Required.Should().Contain(["environmentName", "scopeType", "schemaName"],
-			because: "listing rules requires a target environment and one entity or page scope");
+		listContract.InputSchema.Required.Should().Contain(["environmentName", "packageName", "scopeType", "schemaName"],
+			because: "listing rules requires a target environment, package, and one entity or page scope");
 		listContract.InputSchema.Properties.Should().NotContain(field => field.Name == "includeRawMetadata",
 			because: "business-rule read tools should expose only normalized MCP schema fields");
 		listContract.OutputContract.FailureSignals.Should().NotContain(signal => signal.Contains("unsupportedDetails", StringComparison.Ordinal),
 			because: "unsupportedDetails is intentionally not part of the MCP contract");
 		listContract.OutputContract.Fields.Should().Contain(field => field.Name == "rules",
-			because: "list-business-rules returns normalized rule collection payloads");
+			because: "list-business-rules returns lightweight rule summaries");
 		ToolContractDefinition getContract = result.Tools!.Single(contract =>
 			contract.Name == BusinessRuleReadTool.BusinessRuleGetToolName);
 		getContract.InputSchema.Properties.Should().NotContain(field => field.Name == "includeRawMetadata",
 			because: "raw Creatio metadata is not exposed through the business-rule read MCP schema");
-		getContract.InputSchema.AnyOf.Should().Contain(selector =>
-				selector.SequenceEqual(new[] { "ruleUId" }),
-			because: "ruleUId should be advertised as a deterministic selector");
-		getContract.InputSchema.AnyOf.Should().Contain(selector =>
-				selector.SequenceEqual(new[] { "ruleName" }),
-			because: "ruleName should be an alternative exact selector");
-		getContract.InputSchema.AnyOf.Should().Contain(selector =>
-				selector.SequenceEqual(new[] { "caption" }),
-			because: "caption should be advertised as an allowed but potentially ambiguous selector");
-		getContract.InputSchema.Validators.Should().Contain(validator =>
-				validator.Code == "invalid-rule-selector" &&
-				validator.Fields!.SequenceEqual(new[] { "ruleUId", "ruleName", "caption" }),
-			because: "get-business-rule must require exactly one selector");
-		getContract.OutputContract.Fields.Should().Contain(field => field.Name == "matches",
-			because: "ambiguous selector failures should return matching rule identities");
+		getContract.InputSchema.Required.Should().Contain(["environmentName", "packageName", "scopeType", "schemaName", "ruleName"],
+			because: "get-business-rule should select rules only by package-scoped business-rule name");
+		getContract.InputSchema.Properties.Should().NotContain(field => field.Name == "ruleUId",
+			because: "business-rule UID should not be part of the agent-facing selector contract");
+		getContract.InputSchema.Properties.Should().NotContain(field => field.Name == "caption",
+			because: "caption selectors can be ambiguous and should not be exposed");
+		getContract.OutputContract.Fields.Should().NotContain(field => field.Name == "matches",
+			because: "name selection should not need ambiguous selector matches");
 	}
 
 	[Test]

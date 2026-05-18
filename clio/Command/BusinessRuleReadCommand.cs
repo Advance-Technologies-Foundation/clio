@@ -10,6 +10,11 @@ namespace Clio.Command;
 /// </summary>
 public sealed class BusinessRuleReadOptions : EnvironmentNameOptions {
 	/// <summary>
+	/// Gets or sets target package name.
+	/// </summary>
+	public string PackageName { get; set; } = string.Empty;
+
+	/// <summary>
 	/// Gets or sets target scope type: entity or page.
 	/// </summary>
 	public string ScopeType { get; set; } = string.Empty;
@@ -20,19 +25,9 @@ public sealed class BusinessRuleReadOptions : EnvironmentNameOptions {
 	public string SchemaName { get; set; } = string.Empty;
 
 	/// <summary>
-	/// Gets or sets selected business-rule UID.
-	/// </summary>
-	public string? RuleUId { get; set; }
-
-	/// <summary>
 	/// Gets or sets selected business-rule platform name.
 	/// </summary>
-	public string? RuleName { get; set; }
-
-	/// <summary>
-	/// Gets or sets selected business-rule caption.
-	/// </summary>
-	public string? Caption { get; set; }
+	public string RuleName { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -51,6 +46,7 @@ public sealed class BusinessRuleReadCommand(
 	public BusinessRuleListResponse List(BusinessRuleReadOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		return businessRuleReadService.List(new BusinessRuleReadRequest(
+			options.PackageName,
 			options.ScopeType,
 			options.SchemaName));
 	}
@@ -63,11 +59,10 @@ public sealed class BusinessRuleReadCommand(
 	public BusinessRuleGetResponse Get(BusinessRuleReadOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		return businessRuleReadService.Get(new BusinessRuleGetRequest(
+			options.PackageName,
 			options.ScopeType,
 			options.SchemaName,
-			options.RuleUId,
-			options.RuleName,
-			options.Caption));
+			options.RuleName));
 	}
 
 	public override int Execute(BusinessRuleReadOptions options) {

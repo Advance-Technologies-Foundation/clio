@@ -264,7 +264,6 @@ internal static class ToolContractCatalog {
 	private const string PageSchemaNameCamelFieldName = "pageSchemaName";
 	private const string ScopeTypeCamelFieldName = "scopeType";
 	private const string SchemaNameCamelFieldName = "schemaName";
-	private const string RuleUIdCamelFieldName = "ruleUId";
 	private const string RuleNameCamelFieldName = "ruleName";
 	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
@@ -1545,9 +1544,10 @@ internal static class ToolContractCatalog {
 			BusinessRuleReadTool.BusinessRuleListToolName,
 			"Lists existing entity/object or Freedom UI page business rules from a Creatio environment as normalized MCP business-rule payloads.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameCamelFieldName, ScopeTypeCamelFieldName, SchemaNameCamelFieldName],
+				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, ScopeTypeCamelFieldName, SchemaNameCamelFieldName],
 				[
 					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameCamelFieldName, StringType, PackageNameDescription),
 					Field(ScopeTypeCamelFieldName, StringType, "Business-rule scope type. Supported values: entity, page."),
 					Field(SchemaNameCamelFieldName, StringType, "Entity schema name when scopeType is entity; Freedom UI page schema name when scopeType is page.")
 				],
@@ -1571,7 +1571,7 @@ internal static class ToolContractCatalog {
 					[SchemaNameCamelFieldName] = "Contact_FormPage"
 				})
 			],
-			Flow([BusinessRuleReadTool.BusinessRuleListToolName], "Use before editing or deleting business rules to inspect available rule identities and captions."),
+			Flow([BusinessRuleReadTool.BusinessRuleListToolName], "Use before editing or deleting business rules to inspect available rule names and captions in one package."),
 			[],
 			[]);
 	}
@@ -1579,44 +1579,38 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildBusinessRuleGet() {
 		return new ToolContractDefinition(
 			BusinessRuleReadTool.BusinessRuleGetToolName,
-			"Gets one existing entity/object or Freedom UI page business rule from a Creatio environment by UID, platform name, or caption.",
+			"Gets one existing entity/object or Freedom UI page business rule from a Creatio environment by platform name.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameCamelFieldName, ScopeTypeCamelFieldName, SchemaNameCamelFieldName],
+				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, ScopeTypeCamelFieldName, SchemaNameCamelFieldName, RuleNameCamelFieldName],
 				[
 					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameCamelFieldName, StringType, PackageNameDescription),
 					Field(ScopeTypeCamelFieldName, StringType, "Business-rule scope type. Supported values: entity, page."),
 					Field(SchemaNameCamelFieldName, StringType, "Entity schema name when scopeType is entity; Freedom UI page schema name when scopeType is page."),
-					Field(RuleUIdCamelFieldName, StringType, "Business-rule UID. Preferred selector. Provide exactly one of ruleUId, ruleName, or caption."),
-					Field(RuleNameCamelFieldName, StringType, "Business-rule platform name, for example BusinessRule_1234567. Provide exactly one of ruleUId, ruleName, or caption."),
-					Field(CaptionFieldName, StringType, "Business-rule caption. Provide exactly one of ruleUId, ruleName, or caption.")
-				],
-				[
-					[RuleUIdCamelFieldName],
-					[RuleNameCamelFieldName],
-					[CaptionFieldName]
+					Field(RuleNameCamelFieldName, StringType, "Business-rule platform name, for example BusinessRule_1234567. Matched case-insensitively.")
 				],
 				Validators: [
 					new ToolContractValidator("enum", "unsupported-scope-type", ScopeTypeCamelFieldName,
-						Context: "Supported values: entity, page."),
-					new ToolContractValidator("exactly-one", "invalid-rule-selector", Fields: [RuleUIdCamelFieldName, RuleNameCamelFieldName, CaptionFieldName],
-						Context: "Provide exactly one selector. ruleUId is preferred because captions can duplicate.")
+						Context: "Supported values: entity, page.")
 				]),
 			BusinessRuleReadOutput(includeRuleField: true),
 			CommonErrorContract,
 			[],
 			[],
 			[
-				Example("Get a Contact entity business rule by UID", new Dictionary<string, object?> {
+				Example("Get a Contact entity business rule by name", new Dictionary<string, object?> {
 					[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+					[PackageNameCamelFieldName] = ExamplePackageName,
 					[ScopeTypeCamelFieldName] = BusinessRuleScopeTypes.Entity,
 					[SchemaNameCamelFieldName] = "Contact",
-					[RuleUIdCamelFieldName] = "00000000-0000-0000-0000-000000000001"
+					[RuleNameCamelFieldName] = "BusinessRule_0000001"
 				}),
-				Example("Get a Contact page business rule by caption", new Dictionary<string, object?> {
+				Example("Get a Contact page business rule by name", new Dictionary<string, object?> {
 					[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+					[PackageNameCamelFieldName] = ExamplePackageName,
 					[ScopeTypeCamelFieldName] = BusinessRuleScopeTypes.Page,
 					[SchemaNameCamelFieldName] = "Contact_FormPage",
-					[CaptionFieldName] = "Hide owner when status is closed"
+					[RuleNameCamelFieldName] = "BusinessRule_0000002"
 				})
 			],
 			Flow(
@@ -1624,14 +1618,10 @@ internal static class ToolContractCatalog {
 					BusinessRuleReadTool.BusinessRuleListToolName,
 					BusinessRuleReadTool.BusinessRuleGetToolName
 				],
-				"List rules first when the caller only knows a caption or natural-language description, then get by ruleUId for deterministic follow-up work."),
+				"List rules first when the caller only knows a caption or natural-language description, then get by ruleName for deterministic follow-up work."),
 			[],
 			[],
-			[
-				new ToolAntiPattern(
-					"Calling get-business-rule with only a caption when multiple rules can share the same caption.",
-					"The tool returns an ambiguity result instead of choosing silently; use list-business-rules to pick a ruleUId.")
-			]);
+			[]);
 	}
 
 	private static ToolOutputContract BusinessRuleReadOutput(bool includeRuleField) {
@@ -1642,11 +1632,10 @@ internal static class ToolContractCatalog {
 			Field(SchemaNameCamelFieldName, StringType, "Requested entity or page schema name.")
 		];
 		if (includeRuleField) {
-			fields.Add(Field(RuleFieldName, ObjectType, "One normalized business rule with uId, name, caption, enabled, condition, and actions."));
-			fields.Add(Field("matches", ArrayType, "Ambiguous selector matches with uId, name, caption, and enabled."));
+			fields.Add(Field(RuleFieldName, ObjectType, "One normalized business rule with name, caption, enabled, condition, and actions."));
 		} else {
 			fields.Add(Field("count", NumberType, "Number of returned rules."));
-			fields.Add(Field("rules", ArrayType, "Normalized business rules with uId, name, caption, enabled, condition, and actions."));
+			fields.Add(Field("rules", ArrayType, "Business-rule summaries with name and caption."));
 		}
 
 		return new ToolOutputContract(

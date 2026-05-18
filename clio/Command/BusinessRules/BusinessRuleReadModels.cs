@@ -7,6 +7,7 @@ namespace Clio.Command.BusinessRules;
 /// Request for reading business rules from one entity or page scope.
 /// </summary>
 public sealed record BusinessRuleReadRequest(
+	string PackageName,
 	string ScopeType,
 	string SchemaName);
 
@@ -14,11 +15,10 @@ public sealed record BusinessRuleReadRequest(
 /// Request for reading one business rule from one entity or page scope.
 /// </summary>
 public sealed record BusinessRuleGetRequest(
+	string PackageName,
 	string ScopeType,
 	string SchemaName,
-	string? RuleUId,
-	string? RuleName,
-	string? Caption);
+	string RuleName);
 
 /// <summary>
 /// Structured response for listing normalized business rules.
@@ -40,7 +40,7 @@ public sealed record BusinessRuleListResponse {
 	public int Count { get; init; }
 
 	[JsonPropertyName("rules")]
-	public IReadOnlyList<BusinessRuleReadItem> Rules { get; init; } = [];
+	public IReadOnlyList<BusinessRuleReadSummary> Rules { get; init; } = [];
 }
 
 /// <summary>
@@ -61,27 +61,19 @@ public sealed record BusinessRuleGetResponse {
 
 	[JsonPropertyName("rule")]
 	public BusinessRuleReadItem? Rule { get; init; }
-
-	[JsonPropertyName("matches")]
-	public IReadOnlyList<BusinessRuleIdentity> Matches { get; init; } = [];
 }
 
 /// <summary>
-/// Stable business-rule identity used by read and follow-up edit/delete flows.
+/// Lightweight business-rule summary used by list operations.
 /// </summary>
-public sealed record BusinessRuleIdentity(
-	[property: JsonPropertyName("uId")] string? UId,
+public sealed record BusinessRuleReadSummary(
 	[property: JsonPropertyName("name")] string? Name,
-	[property: JsonPropertyName("caption")] string? Caption,
-	[property: JsonPropertyName("enabled")] bool? Enabled);
+	[property: JsonPropertyName("caption")] string? Caption);
 
 /// <summary>
 /// Normalized business-rule payload returned by read MCP tools.
 /// </summary>
 public sealed record BusinessRuleReadItem {
-	[JsonPropertyName("uId")]
-	public string? UId { get; init; }
-
 	[JsonPropertyName("name")]
 	public string? Name { get; init; }
 

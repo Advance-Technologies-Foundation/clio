@@ -34,8 +34,8 @@ public sealed class BusinessRuleReadToolE2ETests {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
 
 		// Assert
-		AssertReadTool(tools, BusinessRuleReadTool.BusinessRuleListToolName, ["environmentName", "scopeType", "schemaName"]);
-		AssertReadTool(tools, BusinessRuleReadTool.BusinessRuleGetToolName, ["environmentName", "scopeType", "schemaName"]);
+		AssertReadTool(tools, BusinessRuleReadTool.BusinessRuleListToolName, ["environmentName", "packageName", "scopeType", "schemaName"]);
+		AssertReadTool(tools, BusinessRuleReadTool.BusinessRuleGetToolName, ["environmentName", "packageName", "scopeType", "schemaName", "ruleName"]);
 		JsonElement listInputSchema = JsonSerializer.SerializeToElement(
 			tools.Single(tool => tool.Name == BusinessRuleReadTool.BusinessRuleListToolName).ProtocolTool.InputSchema);
 		listInputSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name)
@@ -44,8 +44,11 @@ public sealed class BusinessRuleReadToolE2ETests {
 		JsonElement getInputSchema = JsonSerializer.SerializeToElement(
 			tools.Single(tool => tool.Name == BusinessRuleReadTool.BusinessRuleGetToolName).ProtocolTool.InputSchema);
 		getInputSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name)
-			.Should().Contain(["ruleUId", "ruleName", "caption"],
-				because: "get-business-rule should advertise all deterministic selector options");
+			.Should().Contain("ruleName",
+				because: "get-business-rule should advertise the canonical rule-name selector");
+		getInputSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name)
+			.Should().NotContain(["ruleUId", "caption"],
+				because: "get-business-rule should not expose UID or caption selectors");
 		getInputSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name)
 			.Should().NotContain("includeRawMetadata",
 				because: "get-business-rule should not expose raw Creatio metadata parameters");
@@ -66,11 +69,12 @@ public sealed class BusinessRuleReadToolE2ETests {
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
 			BusinessRuleReadTool.BusinessRuleListToolName,
-			new Dictionary<string, object?> {
-				["environmentName"] = invalidEnvironmentName,
-				["scopeType"] = "entity",
-				["schemaName"] = "Contact"
-			},
+				new Dictionary<string, object?> {
+					["environmentName"] = invalidEnvironmentName,
+					["packageName"] = "UsrApp",
+					["scopeType"] = "entity",
+					["schemaName"] = "Contact"
+				},
 			cancellationTokenSource.Token);
 		BusinessRuleReadEnvelope envelope = ExtractEnvelope(callResult);
 
@@ -87,7 +91,7 @@ public sealed class BusinessRuleReadToolE2ETests {
 	[Description("Binds get-business-rule through the real MCP server and reports an invalid environment failure from command resolution.")]
 	[AllureTag(BusinessRuleReadTool.BusinessRuleGetToolName)]
 	[AllureName("get-business-rule binds selector payloads")]
-	[AllureDescription("Starts the real clio MCP server, calls get-business-rule by ruleUId with an intentionally missing environment, then verifies the request reaches environment-aware command resolution.")]
+	[AllureDescription("Starts the real clio MCP server, calls get-business-rule by ruleName with an intentionally missing environment, then verifies the request reaches environment-aware command resolution.")]
 	public async Task BusinessRuleGet_Should_Bind_Selector_And_Report_Invalid_Environment() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -98,12 +102,13 @@ public sealed class BusinessRuleReadToolE2ETests {
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
 			BusinessRuleReadTool.BusinessRuleGetToolName,
-			new Dictionary<string, object?> {
-				["environmentName"] = invalidEnvironmentName,
-				["scopeType"] = "page",
-				["schemaName"] = "Contact_FormPage",
-				["ruleUId"] = "00000000-0000-0000-0000-000000000001"
-			},
+				new Dictionary<string, object?> {
+					["environmentName"] = invalidEnvironmentName,
+					["packageName"] = "UsrApp",
+					["scopeType"] = "page",
+					["schemaName"] = "Contact_FormPage",
+					["ruleName"] = "BusinessRule_0000001"
+				},
 			cancellationTokenSource.Token);
 		BusinessRuleReadEnvelope envelope = ExtractEnvelope(callResult);
 

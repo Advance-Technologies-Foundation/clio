@@ -478,6 +478,9 @@ public sealed class BusinessRuleReadTool(
 		[Description("Creatio environment name.")]
 		[Required]
 		string environmentName,
+		[Description("Target package name on the Creatio environment.")]
+		[Required]
+		string packageName,
 		[Description("Business-rule scope type. Supported values: entity, page.")]
 		[Required]
 		string scopeType,
@@ -486,6 +489,7 @@ public sealed class BusinessRuleReadTool(
 		string schemaName) {
 		BusinessRuleReadOptions options = new() {
 			EnvironmentName = environmentName,
+			PackageName = packageName,
 			ScopeType = scopeType,
 			SchemaName = schemaName
 		};
@@ -499,25 +503,24 @@ public sealed class BusinessRuleReadTool(
 		[Description("Creatio environment name.")]
 		[Required]
 		string environmentName,
+		[Description("Target package name on the Creatio environment.")]
+		[Required]
+		string packageName,
 		[Description("Business-rule scope type. Supported values: entity, page.")]
 		[Required]
 		string scopeType,
 		[Description("Entity schema name when scopeType is entity; Freedom UI page schema name when scopeType is page.")]
 		[Required]
 		string schemaName,
-		[Description("Business-rule UID. Preferred selector. Provide exactly one of ruleUId, ruleName, or caption.")]
-		string? ruleUId = null,
-		[Description("Business-rule platform name, for example BusinessRule_1234567. Provide exactly one of ruleUId, ruleName, or caption.")]
-		string? ruleName = null,
-		[Description("Business-rule caption. Provide exactly one of ruleUId, ruleName, or caption.")]
-		string? caption = null) {
+		[Description("Business-rule platform name, for example BusinessRule_1234567.")]
+		[Required]
+		string ruleName) {
 		BusinessRuleReadOptions options = new() {
 			EnvironmentName = environmentName,
+			PackageName = packageName,
 			ScopeType = scopeType,
 			SchemaName = schemaName,
-			RuleUId = ruleUId,
-			RuleName = ruleName,
-			Caption = caption
+			RuleName = ruleName
 		};
 		return ExecuteRead(options, resolvedCommand => resolvedCommand.Get(options));
 	}
