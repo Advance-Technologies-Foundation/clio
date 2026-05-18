@@ -524,7 +524,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				["name"],
 				[
-					Field("name", StringType, "Stable guidance name. Known values include app-modeling, data-bindings, existing-app-maintenance, dataforge-orchestration, page-schema-handlers, page-schema-creatio-devkit-common, and page-schema-validators.")
+					Field("name", StringType, "Stable guidance name. Known values include app-modeling, data-bindings, existing-app-maintenance, dataforge-orchestration, page-modification, page-schema-handlers, page-schema-creatio-devkit-common, and page-schema-validators.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -544,6 +544,9 @@ internal static class ToolContractCatalog {
 				}),
 				Example("Read validator authoring guidance", new Dictionary<string, object?> {
 					["name"] = "page-schema-validators"
+				}),
+				Example("Read general page modification guidance", new Dictionary<string, object?> {
+					["name"] = "page-modification"
 				}),
 				Example("Read SDK common page-schema guidance", new Dictionary<string, object?> {
 					["name"] = "page-schema-creatio-devkit-common"
@@ -1744,12 +1747,12 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageSync() {
 		return new ToolContractDefinition(
 			PageSyncTool.ToolName,
-			"Canonical page write path that batches page body validation, save, and optional read-back verification for one or more pages.",
+			"Canonical page write path that batches page body validation, save, and optional read-back verification for one or more pages. Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string."),
+					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of explicit localizable string key-value pairs for labels, captions, titles, validator messages, and #ResourceString(key)# macros."),
 					Field("validate", BooleanType, "Run client-side validation before save."),
 					Field("verify", BooleanType, "Read the page back after save.")
 				]),
@@ -1875,7 +1878,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageGet() {
 		return new ToolContractDefinition(
 			PageGetTool.ToolName,
-			"Reads a Freedom UI page bundle plus the raw editable body so the caller can inspect before mutating and edit `raw.body` directly when saving.",
+			"Reads a Freedom UI page bundle plus the raw editable body so the caller can inspect before mutating and edit `raw.body` directly when saving. Before editing `raw.body`, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance.",
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(

@@ -179,6 +179,10 @@ public class PageToolsTests {
 			because: "get-page prompt guidance should route guide lookups through the dedicated guidance tool");
 		prompt.Should().Contain("`existing-app-maintenance`",
 			because: "get-page prompt guidance should point callers to the MCP-owned existing-app maintenance guide name");
+		prompt.Should().Contain("`page-modification`",
+			because: "get-page prompt guidance should route page-body edits through the general page modification guide first");
+		prompt.Should().Contain("pre-edit checklist",
+			because: "get-page prompt guidance should use page-modification as the router for specialized page-authoring guides");
 		prompt.Should().Contain("`page-schema-handlers`",
 			because: "get-page prompt guidance should point handler edits to the dedicated clio-owned handler guide name");
 		prompt.Should().Contain($"you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-handlers` before proposing or applying changes",
@@ -254,6 +258,12 @@ public class PageToolsTests {
 			because: "get-page description should surface the section name so callers know which guide to read before editing");
 		description.Should().Contain("call get-guidance with name `page-schema-validators`",
 			because: "get-page description should route callers to the dedicated validator guide through get-guidance");
+		description.Should().Contain("get-guidance with name `page-modification`",
+			because: "get-page description should route callers to the general page modification guide before body edits");
+		description.Should().Contain("pre-edit checklist",
+			because: "get-page description should leave specialized guide selection to the general page modification guide");
+		description.Should().NotContain("page-schema-resources",
+			because: "get-page should point at the general page-modification router instead of a localizable-string leaf guide");
 	}
 
 	[Test]
@@ -277,6 +287,10 @@ public class PageToolsTests {
 			because: "sync-pages description should surface the validator section name as part of body authoring rules");
 		description.Should().Contain("call get-guidance with name `page-schema-validators`",
 			because: "sync-pages description should route callers to the dedicated validator guide through get-guidance");
+		description.Should().Contain("call get-guidance with name `page-modification`",
+			because: "sync-pages description should route broad page edits through the general page modification guide");
+		description.Should().NotContain("page-schema-resources",
+			because: "sync-pages should avoid surfacing localizable-string leaf guidance directly in the broad tool description");
 	}
 
 	[Test]
@@ -300,6 +314,10 @@ public class PageToolsTests {
 			because: "update-page description should surface the validator section name as part of body authoring rules");
 		description.Should().Contain("call get-guidance with name `page-schema-validators` first",
 			because: "update-page description should make validator guidance a mandatory precondition before validator authoring");
+		description.Should().Contain("call get-guidance with name `page-modification`",
+			because: "update-page description should route broad page edits through the general page modification guide");
+		description.Should().NotContain("page-schema-resources",
+			because: "update-page should avoid surfacing localizable-string leaf guidance directly in the broad tool description");
 	}
 
 	[Test]

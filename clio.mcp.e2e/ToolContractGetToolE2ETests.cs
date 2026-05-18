@@ -122,8 +122,12 @@ public sealed class ToolContractGetToolE2ETests {
 		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
 			.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "pages" &&
-				field.Description.Contains("get-page.raw.body", StringComparison.Ordinal),
-				because: "sync-pages should advertise raw.body as the source of page write payloads");
+				field.Description.Contains("get-page.raw.body", StringComparison.Ordinal) &&
+				field.Description.Contains("localizable string", StringComparison.Ordinal),
+				because: "sync-pages should advertise raw.body as the source of page write payloads and clarify resources as localizable strings");
+		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
+			.Description.Should().Contain("page-modification",
+				because: "sync-pages should route body and resource-payload edits through the general page modification guide");
 		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
 			.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "pages" &&
@@ -709,6 +713,10 @@ public sealed class ToolContractGetToolE2ETests {
 			}),
 			because: "list-pages should advertise a single update-page fallback sequence after discovery");
 		ToolContractDefinition pageGetContract = response.Tools!.Single(tool => tool.Name == PageGetTool.ToolName);
+		pageGetContract.Description.Should().Contain("page-modification",
+			because: "get-page should route planned body edits to the general page modification guide through get-tool-contract");
+		pageGetContract.Description.Should().NotContain("page-schema-resources",
+			because: "get-page should avoid surfacing localizable-string leaf guidance directly in the broad contract description");
 		pageGetContract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "raw" &&
 				field.Description.Contains("raw.body", StringComparison.Ordinal),
