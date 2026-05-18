@@ -221,6 +221,16 @@ public sealed class PageMetadataInfo {
 	[JsonPropertyName("rootSchemaUId")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public string RootSchemaUId { get; init; }
+
+	/// <summary>
+	/// Gets or sets a human-readable schema type label: <c>"mobile"</c> when the schema type is 10,
+	/// <c>"web"</c> when 9, or <c>"unknown"</c> otherwise.
+	/// Callers should call <c>get-guidance</c> with name <c>mobile-page-modification</c> when this is <c>"mobile"</c>.
+	/// </summary>
+	[JsonProperty("schema-type")]
+	[JsonPropertyName("schema-type")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public string SchemaType { get; init; }
 }
 
 /// <summary>

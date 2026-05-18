@@ -11,7 +11,7 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 public static class ComponentInfoGrouping {
 	public static readonly IReadOnlyList<string> CategoryOrder =
-		new[] { "containers", "fields", "interactive", "display" };
+		new[] { "containers", "fields", "interactive", "display", "filtering" };
 
 	public static IReadOnlyList<ComponentRegistryEntry> FilterEntries(
 		IReadOnlyList<ComponentRegistryEntry> entries, string? search) {

@@ -34,18 +34,24 @@ chosen by:
 
 `--version` and `--environment` (or `--uri`) are mutually exclusive.
 
+Pass `--schema-type mobile` to query the mobile component registry instead
+of the default web one. The mobile catalog ships as static data inside
+clio.dll, has no CDN tier, and ignores `--version` / `--environment`; its
+responses omit `resolvedTargetVersion` and `resolvedFrom` accordingly.
+
 Output defaults to JSON (identical to the MCP tool's response shape) so the
 result pipes cleanly into `jq` and other scripting tools. Pass `--pretty`
 for a human-readable text rendering on stdout.
 
-The response carries `resolvedTargetVersion` and `resolvedFrom` markers
-(`"environment"` | `"latest-fallback"`) so consumers can tell when the
-catalog actually matched the requested target version and when it fell back.
+The web-catalog response carries `resolvedTargetVersion` and `resolvedFrom`
+markers (`"environment"` | `"latest-fallback"`) so consumers can tell when
+the catalog actually matched the requested target version and when it fell
+back.
 
 ## Synopsis
 
 ```bash
-get-component-info [<component-type>] [--search <keyword>] [--version <semver>] [--environment <name>] [--pretty]
+get-component-info [<component-type>] [--search <keyword>] [--version <semver>] [--environment <name>] [--schema-type <web|mobile>] [--pretty]
 ```
 
 ## Aliases
@@ -79,6 +85,10 @@ component-info
 
 --pretty                           Emit a human-readable text block on
                                    stdout instead of JSON.
+
+--schema-type                      Component registry to query: 'web'
+                                   (default) or 'mobile'. Mobile ignores
+                                   --version/--environment.
 ```
 
 ## Examples
@@ -101,6 +111,10 @@ clio get-component-info crt.Input --environment dev
 
 # Pretty text output for humans
 clio get-component-info crt.Button --pretty
+
+# Mobile catalog
+clio get-component-info --schema-type mobile
+clio get-component-info crt.Toggle --schema-type mobile
 
 # Pipe into jq
 clio get-component-info | jq '.groups[].items[].componentType'

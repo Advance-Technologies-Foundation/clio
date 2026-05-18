@@ -140,6 +140,49 @@ public sealed class ComponentInfoToolTests {
 	]
 	""";
 
+	private const string TestMobileRegistryJson = """
+	[
+	  {
+	    "componentType": "crt.Toggle",
+	    "category": "fields",
+	    "description": "Boolean toggle switch. Mobile-only.",
+	    "container": false,
+	    "parentTypes": ["crt.GridContainer"],
+	    "properties": {
+	      "control": { "type": "string", "description": "Bound Boolean attribute." }
+	    },
+	    "typicalChildren": [],
+	    "example": {
+	      "operation": "insert",
+	      "name": "ActiveToggle",
+	      "values": { "type": "crt.Toggle", "control": "$PDS_IsActive" },
+	      "parentName": "DetailsGrid",
+	      "propertyName": "items",
+	      "index": 0
+	    }
+	  },
+	  {
+	    "componentType": "crt.BarcodeScanner",
+	    "category": "fields",
+	    "description": "Barcode scanner field. Mobile-only.",
+	    "container": false,
+	    "parentTypes": ["crt.GridContainer"],
+	    "properties": {
+	      "control": { "type": "string", "description": "Bound scanned value attribute." }
+	    },
+	    "typicalChildren": [],
+	    "example": {
+	      "operation": "insert",
+	      "name": "BarcodeField",
+	      "values": { "type": "crt.BarcodeScanner", "control": "$PDS_Barcode" },
+	      "parentName": "DetailsGrid",
+	      "propertyName": "items",
+	      "index": 0
+	    }
+	  }
+	]
+	""";
+
 	[Test]
 	[Description("Advertises the stable MCP tool name for get-component-info so callers and tests share the same production identifier.")]
 	public void ComponentInfoTool_Should_Advertise_Stable_Tool_Name() {
@@ -320,7 +363,8 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Report_Environment_When_Resolver_Succeeds() {
 		// Arrange
 		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
-		ComponentInfoTool tool = new(catalog, StubPlatformVersionResolver.Environment("8.1.5"));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		ComponentInfoTool tool = new(catalog, mobileCatalog, StubPlatformVersionResolver.Environment("8.1.5"));
 
 		// Act
 		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
@@ -341,7 +385,8 @@ public sealed class ComponentInfoToolTests {
 		// back to "latest" because 8.1.5 is not yet published on the CDN.
 		FallbackRegistryClient client = new(TestRegistryJson, fallbackVersion: "latest");
 		ComponentInfoCatalog catalog = new(client);
-		ComponentInfoTool tool = new(catalog, StubPlatformVersionResolver.Environment("8.1.5"));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		ComponentInfoTool tool = new(catalog, mobileCatalog, StubPlatformVersionResolver.Environment("8.1.5"));
 
 		// Act
 		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
@@ -425,7 +470,68 @@ public sealed class ComponentInfoToolTests {
 
 	private static ComponentInfoTool CreateTool() {
 		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
-		return new ComponentInfoTool(catalog, StubPlatformVersionResolver.LatestFallback());
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		return new ComponentInfoTool(catalog, mobileCatalog, StubPlatformVersionResolver.LatestFallback());
+	}
+
+	[Test]
+	[Description("Returns grouped mobile component summaries when schema-type is 'mobile'.")]
+	public async Task ComponentInfoTool_Should_Return_Mobile_Catalog_When_SchemaType_Is_Mobile() {
+		ComponentInfoTool tool = CreateTool();
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(SchemaType: "mobile"));
+
+		response.Success.Should().BeTrue(
+			because: "listing mobile components should succeed when the mobile registry is available");
+		response.Mode.Should().Be("list",
+			because: "omitting component-type should return list mode for the mobile catalog");
+		response.Count.Should().Be(2,
+			because: "the test mobile registry has exactly two entries");
+		response.ResolvedTargetVersion.Should().BeNull(
+			because: "mobile responses must omit the web-only version marker — mobile catalog has no CDN/version concept");
+		response.ResolvedFrom.Should().BeNull(
+			because: "mobile responses must omit the resolver tier marker — there is no per-environment probe for mobile");
+	}
+
+	[Test]
+	[Description("Returns mobile component detail when schema-type is 'mobile' and a known mobile type is requested.")]
+	public async Task ComponentInfoTool_Should_Return_Mobile_Detail_When_SchemaType_Is_Mobile_And_Type_Is_Known() {
+		ComponentInfoTool tool = CreateTool();
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Toggle", SchemaType: "mobile"));
+
+		response.Success.Should().BeTrue(
+			because: "crt.Toggle exists in the mobile registry");
+		response.Mode.Should().Be("detail",
+			because: "specifying a known mobile component type should return detail mode");
+		response.ComponentType.Should().Be("crt.Toggle",
+			because: "the detail response should echo the requested mobile component type");
+	}
+
+	[Test]
+	[Description("Returns not-found error when requesting a web-only component from the mobile catalog.")]
+	public async Task ComponentInfoTool_Should_Return_Error_When_Web_Only_Type_Is_Requested_From_Mobile_Catalog() {
+		ComponentInfoTool tool = CreateTool();
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Label", SchemaType: "mobile"));
+
+		response.Success.Should().BeFalse(
+			because: "crt.Label is a web component and should not appear in the mobile catalog");
+		response.Error.Should().Contain("crt.Label",
+			because: "the failure should identify the missing component type");
+	}
+
+	[Test]
+	[Description("Defaults to the web catalog when schema-type is omitted.")]
+	public async Task ComponentInfoTool_Should_Default_To_Web_Catalog_When_SchemaType_Is_Omitted() {
+		ComponentInfoTool tool = CreateTool();
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
+
+		response.Success.Should().BeTrue(
+			because: "crt.TabContainer exists in the web registry — omitting schema-type should use the web catalog");
+		response.ComponentType.Should().Be("crt.TabContainer",
+			because: "web catalog lookup should still work when schema-type is not specified");
 	}
 
 	/// <summary>Test double that serves the same in-memory JSON for every version request.</summary>
@@ -442,6 +548,28 @@ public sealed class ComponentInfoToolTests {
 		public Task<bool> RefreshAsync(string version, CancellationToken cancellationToken = default) {
 			return Task.FromResult(false);
 		}
+	}
+
+	/// <summary>Test double for the mobile catalog: parses a JSON snippet in-memory, no filesystem.</summary>
+	private sealed class InMemoryMobileCatalog : IMobileComponentInfoCatalog {
+		private readonly ComponentCatalogState _state;
+
+		public InMemoryMobileCatalog(string registryJson) {
+			ComponentRegistryEntry[] entries = JsonSerializer.Deserialize<ComponentRegistryEntry[]>(
+				registryJson,
+				new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+			_state = ComponentInfoCatalog.BuildState(entries, "In-memory mobile test catalog", "mobile", ComponentRegistrySource.Embedded);
+		}
+
+		public IReadOnlyList<ComponentRegistryEntry> GetAll() => _state.Entries;
+
+		public IReadOnlyList<ComponentRegistryEntry> Search(string? search) =>
+			ComponentInfoGrouping.FilterEntries(_state.Entries, search);
+
+		public ComponentRegistryEntry? Find(string componentType) =>
+			string.IsNullOrWhiteSpace(componentType)
+				? null
+				: _state.Lookup.TryGetValue(componentType.Trim(), out ComponentRegistryEntry? entry) ? entry : null;
 	}
 
 	/// <summary>Test double that returns a pre-configured platform version resolution.</summary>

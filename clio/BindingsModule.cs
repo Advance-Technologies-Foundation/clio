@@ -257,6 +257,7 @@ public class BindingsModule {
 		services.AddSingleton<IComponentRegistryCacheStore, ComponentRegistryCacheStore>();
 		services.AddSingleton<IComponentRegistryClient, ComponentRegistryClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
+		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
 		services.AddSingleton<IPlatformVersionResolver, PlatformVersionResolver>();
 		services.AddSingleton<IPlatformVersionResolverFactory, PlatformVersionResolverFactory>();
 		services.AddTransient<ComponentRegistryRefreshCommand>();

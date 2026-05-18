@@ -232,6 +232,7 @@ internal static class ToolContractCatalog {
 	private const string SelectorCodeFieldName = "code";
 	private const string SelectorIdFieldName = "id";
 	private const string SchemaNameFieldName = "schema-name";
+	private const string ResourcesFieldName = "resources";
 	private const string StringType = "string";
 	private const string StatusFieldName = "status";
 	private const string SuccessFalseSignal = "success == false";
@@ -321,6 +322,7 @@ internal static class ToolContractCatalog {
 			[ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName] = BuildModifyEntitySchemaColumn(),
 			[ComponentInfoTool.ToolName] = BuildComponentInfo(),
 			[PageUpdateTool.ToolName] = BuildPageUpdate(),
+			[PageValidateTool.ToolName] = BuildPageValidate(),
 			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete(),
 			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate(),
 			[CreatePageBusinessRuleTool.BusinessRuleCreateToolName] = BuildPageBusinessRuleCreate(),
@@ -362,6 +364,7 @@ internal static class ToolContractCatalog {
 		ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
 		ComponentInfoTool.ToolName,
 		PageUpdateTool.ToolName,
+		PageValidateTool.ToolName,
 		ApplicationDeleteTool.ToolName,
 		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
 		CompileCreatioTool.CompileCreatioToolName
@@ -521,7 +524,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				["name"],
 				[
-					Field("name", StringType, "Stable guidance name. Known values include app-modeling, data-bindings, existing-app-maintenance, dataforge-orchestration, page-schema-handlers, page-schema-creatio-devkit-common, and page-schema-validators.")
+					Field("name", StringType, "Stable guidance name. Known values include app-modeling, data-bindings, existing-app-maintenance, dataforge-orchestration, page-modification, page-schema-handlers, page-schema-creatio-devkit-common, and page-schema-validators.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -541,6 +544,9 @@ internal static class ToolContractCatalog {
 				}),
 				Example("Read validator authoring guidance", new Dictionary<string, object?> {
 					["name"] = "page-schema-validators"
+				}),
+				Example("Read general page modification guidance", new Dictionary<string, object?> {
+					["name"] = "page-modification"
 				}),
 				Example("Read SDK common page-schema guidance", new Dictionary<string, object?> {
 					["name"] = "page-schema-creatio-devkit-common"
@@ -1741,12 +1747,12 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageSync() {
 		return new ToolContractDefinition(
 			PageSyncTool.ToolName,
-			"Canonical page write path that batches page body validation, save, and optional read-back verification for one or more pages.",
+			"Canonical page write path that batches page body validation, save, and optional read-back verification for one or more pages. Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string."),
+					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance."),
 					Field("validate", BooleanType, "Run client-side validation before save."),
 					Field("verify", BooleanType, "Read the page back after save.")
 				]),
@@ -1771,7 +1777,7 @@ internal static class ToolContractCatalog {
 						new Dictionary<string, object?> {
 							[SchemaNameFieldName] = "UsrTaskApp_FormPage",
 							["body"] = "/* raw.body returned by get-page */ define(...)",
-							["resources"] = "{\"PDS_Name\":\"Title\"}"
+							[ResourcesFieldName] = "{\"PDS_Name\":\"Title\"}"
 						}
 					},
 					["validate"] = true
@@ -1872,7 +1878,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageGet() {
 		return new ToolContractDefinition(
 			PageGetTool.ToolName,
-			"Reads a Freedom UI page bundle plus the raw editable body so the caller can inspect before mutating and edit `raw.body` directly when saving.",
+			"Reads a Freedom UI page bundle plus the raw editable body so the caller can inspect before mutating and edit `raw.body` directly when saving. Before editing `raw.body`, call get-guidance with name `page-modification` and use its checklist to choose specialized guidance.",
 			new ToolInputSchemaContract(
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
@@ -2502,7 +2508,7 @@ internal static class ToolContractCatalog {
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
 					Field("body", StringType, "Full page body with all marker pairs. Reuse `get-page.raw.body` rather than `bundle` or `bundle.viewConfig`."),
 					Field("dry-run", BooleanType, "Validate without saving."),
-					Field("resources", StringType, "Optional JSON object string of resource strings.")),
+					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -2527,7 +2533,7 @@ internal static class ToolContractCatalog {
 				Example("Dry-run validate one page body copied from get-page raw.body", new Dictionary<string, object?> {
 					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
 					["body"] = "/* raw.body returned by get-page */ define(...)",
-					["resources"] = "{\"UsrDetailsTab_caption\":\"Details\"}",
+					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}",
 					["dry-run"] = true,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
@@ -2564,6 +2570,60 @@ internal static class ToolContractCatalog {
 						PageSyncTool.ToolName
 					])
 			]);
+	}
+
+	private static ToolContractDefinition BuildPageValidate() {
+		return new ToolContractDefinition(
+			PageValidateTool.ToolName,
+			"Client-side Freedom UI page body validation without saving to Creatio. " +
+			"For web pages (body starts with `define(`): checks marker integrity, JS syntax, JSON content, field bindings, column bindings, " +
+			"handler structure, and VendorPrefix.Name format for converters, validators, and handler request values. " +
+			"For mobile pages (plain JSON body starting with `{`): validates that disallowed constructs (validators, handlers, custom converters sections) are absent.",
+			new ToolInputSchemaContract(
+				["body"],
+				[
+					Field("body", StringType, "Full JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character."),
+					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom titles, button captions, validator messages, explicit overrides). Applicable to web pages only. Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance.")
+				]),
+			EnvelopeOutput(
+				"valid",
+				[
+					"valid == false"
+				],
+				Field("valid", BooleanType, "Whether the page body passed all validations."),
+				Field("validation", ObjectType, "Structured validation result with markers-ok, js-syntax-ok, content-ok, errors, and warnings.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Validate a web page body before saving", new Dictionary<string, object?> {
+					["body"] = "define(\"MyApp/MyPage\", /** ... */)"
+				}),
+				Example("Validate a web page body with resources", new Dictionary<string, object?> {
+					["body"] = "define(\"MyApp/MyPage\", /** ... */)",
+					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}"
+				}),
+				Example("Validate a mobile page body", new Dictionary<string, object?> {
+					["body"] = "{\"type\": \"ep.MobileViewElement\", \"items\": []}"
+				})
+			],
+			Flow(
+				[
+					PageGetTool.ToolName,
+					PageValidateTool.ToolName
+				],
+				"Validate a page body fetched via get-page before saving with sync-pages or update-page."),
+			[
+				Flow(
+					[
+						PageGetTool.ToolName,
+						PageValidateTool.ToolName,
+						PageSyncTool.ToolName
+					],
+					"Full read-validate-save cycle using sync-pages as the canonical save path.")
+			],
+			[]);
 	}
 
 	private static ToolContractDefinition BuildApplicationDelete() {

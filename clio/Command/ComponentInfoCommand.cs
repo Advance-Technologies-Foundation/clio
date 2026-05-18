@@ -30,6 +30,10 @@ public sealed class ComponentInfoCommandOptions : EnvironmentOptions {
 	[Option("pretty", Required = false, Default = false,
 		HelpText = "Render a human-readable text block on stdout instead of JSON.")]
 	public bool Pretty { get; set; }
+
+	[Option("schema-type", Required = false,
+		HelpText = "Component registry to query: 'web' (default) or 'mobile'. Mobile uses the bundled mobile registry and ignores --version/--environment.")]
+	public string SchemaType { get; set; }
 }
 
 /// <summary>
@@ -39,22 +43,27 @@ public sealed class ComponentInfoCommandOptions : EnvironmentOptions {
 /// human-readable rendering (--pretty).
 /// </summary>
 public sealed class ComponentInfoCommand {
+	private const string SchemaTypeMobile = "mobile";
+
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		WriteIndented = true,
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 	};
 
 	private readonly IComponentInfoCatalog _catalog;
+	private readonly IMobileComponentInfoCatalog _mobileCatalog;
 	private readonly IPlatformVersionResolverFactory _resolverFactory;
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly ILogger _logger;
 
 	public ComponentInfoCommand(
 		IComponentInfoCatalog catalog,
+		IMobileComponentInfoCatalog mobileCatalog,
 		IPlatformVersionResolverFactory resolverFactory,
 		ISettingsRepository settingsRepository,
 		ILogger logger) {
 		_catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+		_mobileCatalog = mobileCatalog ?? throw new ArgumentNullException(nameof(mobileCatalog));
 		_resolverFactory = resolverFactory ?? throw new ArgumentNullException(nameof(resolverFactory));
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -65,6 +74,18 @@ public sealed class ComponentInfoCommand {
 	}
 
 	internal async Task<int> ExecuteAsync(ComponentInfoCommandOptions options, CancellationToken cancellationToken) {
+		if (IsMobile(options.SchemaType)) {
+			ComponentInfoResponse mobileResponse;
+			try {
+				mobileResponse = BuildMobileResponse(options);
+			} catch (Exception ex) {
+				_logger.WriteError($"get-component-info: mobile catalog load failed: {ex.Message}");
+				return 1;
+			}
+			Emit(mobileResponse, options.Pretty);
+			return mobileResponse.Success ? 0 : 1;
+		}
+
 		bool hasExplicitVersion = !string.IsNullOrWhiteSpace(options.Version);
 		bool hasEnvironment = !string.IsNullOrWhiteSpace(options.Environment) || !string.IsNullOrWhiteSpace(options.Uri);
 		if (hasExplicitVersion && hasEnvironment) {
@@ -86,6 +107,51 @@ public sealed class ComponentInfoCommand {
 
 		Emit(response, options.Pretty);
 		return response.Success ? 0 : 1;
+	}
+
+	private static bool IsMobile(string? schemaType) =>
+		string.Equals(schemaType, SchemaTypeMobile, StringComparison.OrdinalIgnoreCase);
+
+	private ComponentInfoResponse BuildMobileResponse(ComponentInfoCommandOptions options) {
+		string? componentType = options.ComponentType?.Trim();
+		bool listMode = string.IsNullOrWhiteSpace(componentType)
+			|| string.Equals(componentType, "list", StringComparison.OrdinalIgnoreCase);
+
+		if (listMode) {
+			IReadOnlyList<ComponentRegistryEntry> entries = _mobileCatalog.Search(options.Search);
+			return new ComponentInfoResponse {
+				Success = true,
+				Mode = "list",
+				Count = entries.Count,
+				Groups = ComponentInfoGrouping.CreateGroups(entries)
+			};
+		}
+
+		ComponentRegistryEntry? entry = _mobileCatalog.Find(componentType!);
+		if (entry is not null) {
+			return new ComponentInfoResponse {
+				Success = true,
+				Mode = "detail",
+				Count = 1,
+				ComponentType = entry.ComponentType,
+				Category = entry.Category,
+				Description = entry.Description,
+				Container = entry.Container,
+				ParentTypes = entry.ParentTypes,
+				Properties = entry.Properties,
+				TypicalChildren = entry.TypicalChildren,
+				Example = entry.Example
+			};
+		}
+
+		IReadOnlyList<ComponentRegistryEntry> suggestions = _mobileCatalog.Search(options.Search);
+		return new ComponentInfoResponse {
+			Success = false,
+			Mode = "list",
+			Error = $"Component type '{componentType}' was not found.",
+			Count = suggestions.Count,
+			Groups = ComponentInfoGrouping.CreateGroups(suggestions)
+		};
 	}
 
 	private void Emit(ComponentInfoResponse response, bool pretty) {

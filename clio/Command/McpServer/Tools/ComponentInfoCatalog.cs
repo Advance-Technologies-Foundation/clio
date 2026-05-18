@@ -5,13 +5,15 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Common;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// Provides the curated Freedom UI component catalog used by MCP tools. All callers
-/// pass <c>"latest"</c> in v1; per-version selection lands once the platform version
-/// resolver (Commit 4) wires <c>GetSysInfo</c> into the call path.
+/// Provides the curated Freedom UI component catalog used by MCP tools.
+/// Backed by the CDN → file cache → embedded snapshot chain, async because the
+/// CDN tier and the per-version selection both happen at request time.
 /// </summary>
 public interface IComponentInfoCatalog {
 	/// <summary>
@@ -38,8 +40,6 @@ public interface IComponentInfoCatalog {
 /// only responsible for turning bytes into POCOs (parse cost is sub-millisecond).
 /// </summary>
 public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
-	private static readonly string[] CategoryOrder = ["containers", "fields", "interactive", "display"];
-
 	private readonly IComponentRegistryClient _registryClient;
 
 	public ComponentInfoCatalog(IComponentRegistryClient registryClient) {
@@ -61,11 +61,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	/// <inheritdoc />
 	public async Task<IReadOnlyList<ComponentRegistryEntry>> SearchAsync(string requestedVersion, string? search, CancellationToken cancellationToken = default) {
 		ComponentCatalogState state = await LoadAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
-		if (string.IsNullOrWhiteSpace(search)) {
-			return state.Entries;
-		}
-		string query = search.Trim();
-		return state.Entries.Where(entry => Matches(entry, query)).ToArray();
+		return ComponentInfoGrouping.FilterEntries(state.Entries, search);
 	}
 
 	/// <inheritdoc />
@@ -96,30 +92,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 			throw new InvalidOperationException("Component registry stream is empty or invalid.");
 		}
 
-		string[] duplicateTypes = rawEntries
-			.Where(entry => !string.IsNullOrWhiteSpace(entry.ComponentType))
-			.GroupBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
-			.Where(group => group.Count() > 1)
-			.Select(group => group.Key)
-			.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-			.ToArray();
-		if (duplicateTypes.Length > 0) {
-			throw new InvalidOperationException(
-				$"Component registry contains duplicate component types: {string.Join(", ", duplicateTypes)}.");
-		}
-
-		ComponentRegistryEntry[] orderedEntries = rawEntries
-			.Where(entry => !string.IsNullOrWhiteSpace(entry.ComponentType))
-			.OrderBy(entry => GetCategorySortKey(entry.Category))
-			.ThenBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
-			.ToArray();
-		if (orderedEntries.Length == 0) {
-			throw new InvalidOperationException("Component registry stream does not contain valid component types.");
-		}
-
-		Dictionary<string, ComponentRegistryEntry> lookup = orderedEntries
-			.ToDictionary(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase);
-		return new ComponentCatalogState(orderedEntries, lookup, resolvedVersion, source);
+		return BuildState(rawEntries, "Component registry stream", resolvedVersion, source);
 	}
 
 	private async Task<ComponentCatalogState> LoadCatalogStateAsync(string requestedVersion, CancellationToken cancellationToken) {
@@ -135,34 +108,126 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 			: requestedVersion.Trim();
 	}
 
-	private static bool Matches(ComponentRegistryEntry entry, string query) {
-		return Contains(entry.ComponentType, query)
-			|| Contains(entry.Category, query)
-			|| Contains(entry.Description, query)
-			|| entry.ParentTypes.Any(parentType => Contains(parentType, query))
-			|| entry.TypicalChildren.Any(childType => Contains(childType, query))
-			|| entry.Properties.Any(property =>
-				Contains(property.Key, query)
-				|| Contains(property.Value.Type, query)
-				|| Contains(property.Value.Description, query)
-				|| property.Value.Values?.Any(value => Contains(value, query)) == true);
-	}
+	internal static ComponentCatalogState BuildState(
+		ComponentRegistryEntry[] rawEntries,
+		string sourceDescription,
+		string resolvedVersion,
+		ComponentRegistrySource source) {
+		string[] duplicateTypes = rawEntries
+			.Where(entry => !string.IsNullOrWhiteSpace(entry.ComponentType))
+			.GroupBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
+			.Where(group => group.Count() > 1)
+			.Select(group => group.Key)
+			.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+		if (duplicateTypes.Length > 0) {
+			throw new InvalidOperationException(
+				$"{sourceDescription} contains duplicate component types: {string.Join(", ", duplicateTypes)}.");
+		}
 
-	private static bool Contains(string? value, string query) {
-		return !string.IsNullOrWhiteSpace(value)
-			&& value.Contains(query, StringComparison.OrdinalIgnoreCase);
-	}
+		ComponentRegistryEntry[] orderedEntries = rawEntries
+			.Where(entry => !string.IsNullOrWhiteSpace(entry.ComponentType))
+			.OrderBy(entry => ComponentInfoGrouping.GetCategorySortKey(entry.Category))
+			.ThenBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+		if (orderedEntries.Length == 0) {
+			throw new InvalidOperationException($"{sourceDescription} does not contain valid component types.");
+		}
 
-	private static int GetCategorySortKey(string? category) {
-		int index = Array.FindIndex(
-			CategoryOrder,
-			item => string.Equals(item, category, StringComparison.OrdinalIgnoreCase));
-		return index >= 0 ? index : CategoryOrder.Length;
+		Dictionary<string, ComponentRegistryEntry> lookup = orderedEntries
+			.ToDictionary(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase);
+		return new ComponentCatalogState(orderedEntries, lookup, resolvedVersion, source);
 	}
 }
 
 /// <summary>
-/// Parsed snapshot of the component registry ready for catalog operations.
+/// Mobile Freedom UI component catalog. Loaded synchronously from a shipped JSON file
+/// (no CDN tier) — mobile components are stable across versions, so per-version
+/// selection and the layered fallback chain are not warranted here.
+/// </summary>
+public interface IMobileComponentInfoCatalog {
+	/// <summary>Returns every curated mobile component definition.</summary>
+	IReadOnlyList<ComponentRegistryEntry> GetAll();
+
+	/// <summary>Returns mobile component definitions matching <paramref name="search"/>.</summary>
+	IReadOnlyList<ComponentRegistryEntry> Search(string? search);
+
+	/// <summary>Finds a mobile component definition by its type name.</summary>
+	ComponentRegistryEntry? Find(string componentType);
+}
+
+/// <summary>
+/// File-system-backed mobile catalog. Reads
+/// <c>Command/McpServer/Data/MobileComponentRegistry.json</c> from the executing
+/// directory on first access and caches the parsed state for the process lifetime.
+/// </summary>
+public sealed class MobileComponentInfoCatalog : IMobileComponentInfoCatalog {
+	private const string RegistryFileName = "MobileComponentRegistry.json";
+	private const string RegistryLabel = "Mobile component";
+
+	private readonly Lazy<ComponentCatalogState> _catalogState;
+
+	public MobileComponentInfoCatalog(
+		IFileSystem fileSystem,
+		IWorkingDirectoriesProvider workingDirectoriesProvider) {
+		ArgumentNullException.ThrowIfNull(fileSystem);
+		ArgumentNullException.ThrowIfNull(workingDirectoriesProvider);
+		_catalogState = new Lazy<ComponentCatalogState>(
+			() => LoadCatalogState(fileSystem, workingDirectoriesProvider),
+			isThreadSafe: true);
+	}
+
+	/// <inheritdoc />
+	public IReadOnlyList<ComponentRegistryEntry> GetAll() => _catalogState.Value.Entries;
+
+	/// <inheritdoc />
+	public IReadOnlyList<ComponentRegistryEntry> Search(string? search) {
+		return ComponentInfoGrouping.FilterEntries(_catalogState.Value.Entries, search);
+	}
+
+	/// <inheritdoc />
+	public ComponentRegistryEntry? Find(string componentType) {
+		if (string.IsNullOrWhiteSpace(componentType)) {
+			return null;
+		}
+		return _catalogState.Value.Lookup.TryGetValue(componentType.Trim(), out ComponentRegistryEntry? entry)
+			? entry
+			: null;
+	}
+
+	private static ComponentCatalogState LoadCatalogState(
+		IFileSystem fileSystem,
+		IWorkingDirectoriesProvider workingDirectoriesProvider) {
+		string registryPath = fileSystem.Path.Combine(
+			workingDirectoriesProvider.ExecutingDirectory,
+			"Command",
+			"McpServer",
+			"Data",
+			RegistryFileName);
+		if (!fileSystem.File.Exists(registryPath)) {
+			throw new InvalidOperationException(
+				$"{RegistryLabel} registry file was not found at '{registryPath}'.");
+		}
+
+		string registryJson = fileSystem.File.ReadAllText(registryPath);
+		ComponentRegistryEntry[]? rawEntries = JsonSerializer.Deserialize<ComponentRegistryEntry[]>(
+			registryJson,
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+		if (rawEntries is null || rawEntries.Length == 0) {
+			throw new InvalidOperationException(
+				$"{RegistryLabel} registry file '{registryPath}' is empty or invalid.");
+		}
+
+		return ComponentInfoCatalog.BuildState(
+			rawEntries,
+			$"{RegistryLabel} registry file '{registryPath}'",
+			resolvedVersion: "mobile",
+			source: ComponentRegistrySource.Embedded);
+	}
+}
+
+/// <summary>
+/// Parsed snapshot of a component registry ready for catalog operations.
 /// </summary>
 /// <param name="Entries">Ordered list of catalog entries.</param>
 /// <param name="Lookup">Case-insensitive map of componentType → entry.</param>

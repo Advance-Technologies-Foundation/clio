@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -140,7 +141,7 @@ public sealed class ComponentInfoCommandTests {
 		RecordingCatalog catalog = new(SampleRegistry, echoRequestedVersion: true);
 		StubResolverFactory factory = new(new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment));
 		ISettingsRepository repository = StubSettingsRepository("dev");
-		ComponentInfoCommand command = new(catalog, factory, repository, logger);
+		ComponentInfoCommand command = new(catalog, StubMobileCatalog.Empty(), factory, repository, logger);
 
 		int exit = await command.ExecuteAsync(
 			new ComponentInfoCommandOptions { Environment = "dev" }, CancellationToken.None);
@@ -166,19 +167,19 @@ public sealed class ComponentInfoCommandTests {
 		logger.Captured.Should().Contain("crt.TabContainer");
 	}
 
-	private static ComponentInfoCommand CreateCommand(CapturedLogger logger, string fallbackVersion = null) {
+	private static ComponentInfoCommand CreateCommand(CapturedLogger logger, string fallbackVersion = null, IMobileComponentInfoCatalog mobileCatalog = null) {
 		IComponentInfoCatalog catalog = fallbackVersion is null
 			? new RecordingCatalog(SampleRegistry, echoRequestedVersion: true)
 			: new RecordingCatalog(SampleRegistry, echoRequestedVersion: false, fallbackVersion: fallbackVersion);
 		StubResolverFactory factory = new(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback));
 		ISettingsRepository repository = Substitute.For<ISettingsRepository>();
-		return new ComponentInfoCommand(catalog, factory, repository, logger);
+		return new ComponentInfoCommand(catalog, mobileCatalog ?? StubMobileCatalog.Empty(), factory, repository, logger);
 	}
 
 	private static ComponentInfoCommand CreateCommandWith(RecordingCatalog catalog, CapturedLogger logger, int resolverFactoryProbeCount) {
 		StubResolverFactory factory = new(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback));
 		ISettingsRepository repository = Substitute.For<ISettingsRepository>();
-		return new ComponentInfoCommand(catalog, factory, repository, logger);
+		return new ComponentInfoCommand(catalog, StubMobileCatalog.Empty(), factory, repository, logger);
 	}
 
 	private static ComponentInfoResponse ParseJson(string output) {
@@ -254,6 +255,36 @@ public sealed class ComponentInfoCommandTests {
 
 		public Task<ComponentRegistryEntry> FindAsync(string requestedVersion, string componentType, CancellationToken cancellationToken = default) =>
 			throw new NotImplementedException();
+	}
+
+	/// <summary>Test double for the mobile catalog: in-memory entries, no filesystem.</summary>
+	private sealed class StubMobileCatalog : IMobileComponentInfoCatalog {
+		private readonly IReadOnlyList<ComponentRegistryEntry> _entries;
+		private readonly IReadOnlyDictionary<string, ComponentRegistryEntry> _lookup;
+
+		private StubMobileCatalog(IReadOnlyList<ComponentRegistryEntry> entries) {
+			_entries = entries;
+			_lookup = entries.ToDictionary(e => e.ComponentType, StringComparer.OrdinalIgnoreCase);
+		}
+
+		public static StubMobileCatalog Empty() => new(Array.Empty<ComponentRegistryEntry>());
+
+		public static StubMobileCatalog FromJson(string registryJson) {
+			ComponentRegistryEntry[] parsed = JsonSerializer.Deserialize<ComponentRegistryEntry[]>(
+				registryJson,
+				new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+			return new StubMobileCatalog(parsed);
+		}
+
+		public IReadOnlyList<ComponentRegistryEntry> GetAll() => _entries;
+
+		public IReadOnlyList<ComponentRegistryEntry> Search(string? search) =>
+			ComponentInfoGrouping.FilterEntries(_entries, search);
+
+		public ComponentRegistryEntry? Find(string componentType) =>
+			string.IsNullOrWhiteSpace(componentType)
+				? null
+				: _lookup.TryGetValue(componentType.Trim(), out ComponentRegistryEntry? entry) ? entry : null;
 	}
 
 	private sealed class StubResolverFactory(PlatformVersionResolution result) : IPlatformVersionResolverFactory {

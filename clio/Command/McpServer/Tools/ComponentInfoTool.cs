@@ -14,10 +14,15 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for curated Freedom UI component metadata.
 /// </summary>
 [McpServerToolType]
-public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IPlatformVersionResolver versionResolver) {
+public sealed class ComponentInfoTool(
+	IComponentInfoCatalog catalog,
+	IMobileComponentInfoCatalog mobileCatalog,
+	IPlatformVersionResolver versionResolver) {
+
 	internal const string ToolName = "get-component-info";
 	internal const string ResolvedFromEnvironment = ComponentInfoResolution.ResolvedFromEnvironment;
 	internal const string ResolvedFromLatestFallback = ComponentInfoResolution.ResolvedFromLatestFallback;
+	internal const string SchemaTypeMobile = "mobile";
 
 	/// <summary>
 	/// Returns grouped component summaries or full metadata for a specific component type.
@@ -26,55 +31,19 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IPlatformVe
 	/// <param name="cancellationToken">Cancellation token propagated by the MCP host.</param>
 	/// <returns>A structured response with grouped summaries or a full component definition.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Get curated Freedom UI component metadata by component type or list all known types")]
+	[Description("Get curated Freedom UI component metadata by component type or list all known types. " +
+		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
+		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
 	public async Task<ComponentInfoResponse> GetComponentInfo(
-		[Description("Parameters: component-type (optional; omit or use 'list' to list all), search (optional keyword filter)")]
+		[Description("Parameters: component-type (optional; omit or use 'list' to list all), search (optional keyword filter), schema-type (optional; 'web' or 'mobile'; default: 'web')")]
 		[Required]
 		ComponentInfoArgs args,
 		CancellationToken cancellationToken = default) {
 		try {
-			PlatformVersionResolution version = await versionResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
-			ComponentCatalogState state = await catalog.LoadAsync(version.ResolvedVersion, cancellationToken).ConfigureAwait(false);
-			string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
-				version.Source, version.ResolvedVersion, state.ResolvedVersion);
-
-			if (string.IsNullOrWhiteSpace(args.ComponentType)
-				|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
-				IReadOnlyList<ComponentRegistryEntry> filtered = ComponentInfoGrouping.FilterEntries(state.Entries, args.Search);
-				return CreateListResponse(filtered, state, resolvedFrom);
+			if (IsMobile(args.SchemaType)) {
+				return BuildMobileResponse(args);
 			}
-
-			ComponentRegistryEntry? entry = state.Lookup.TryGetValue(args.ComponentType.Trim(), out ComponentRegistryEntry? found)
-				? found
-				: null;
-			if (entry is null) {
-				IReadOnlyList<ComponentRegistryEntry> filtered = ComponentInfoGrouping.FilterEntries(state.Entries, args.Search);
-				return new ComponentInfoResponse {
-					Success = false,
-					Mode = "list",
-					Error = $"Component type '{args.ComponentType}' was not found.",
-					Count = filtered.Count,
-					Groups = ComponentInfoGrouping.CreateGroups(filtered),
-					ResolvedTargetVersion = state.ResolvedVersion,
-					ResolvedFrom = resolvedFrom
-				};
-			}
-
-			return new ComponentInfoResponse {
-				Success = true,
-				Mode = "detail",
-				Count = 1,
-				ComponentType = entry.ComponentType,
-				Category = entry.Category,
-				Description = entry.Description,
-				Container = entry.Container,
-				ParentTypes = entry.ParentTypes,
-				Properties = entry.Properties,
-				TypicalChildren = entry.TypicalChildren,
-				Example = entry.Example,
-				ResolvedTargetVersion = state.ResolvedVersion,
-				ResolvedFrom = resolvedFrom
-			};
+			return await BuildWebResponseAsync(args, cancellationToken).ConfigureAwait(false);
 		}
 		catch (Exception ex) {
 			return new ComponentInfoResponse {
@@ -87,13 +56,92 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IPlatformVe
 		}
 	}
 
-	private static ComponentInfoResponse CreateListResponse(IReadOnlyList<ComponentRegistryEntry> entries, ComponentCatalogState state, string resolvedFrom) {
+	private async Task<ComponentInfoResponse> BuildWebResponseAsync(ComponentInfoArgs args, CancellationToken cancellationToken) {
+		PlatformVersionResolution version = await versionResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
+		ComponentCatalogState state = await catalog.LoadAsync(version.ResolvedVersion, cancellationToken).ConfigureAwait(false);
+		string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
+			version.Source, version.ResolvedVersion, state.ResolvedVersion);
+
+		if (string.IsNullOrWhiteSpace(args.ComponentType)
+			|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
+			IReadOnlyList<ComponentRegistryEntry> filtered = ComponentInfoGrouping.FilterEntries(state.Entries, args.Search);
+			return CreateListResponse(filtered, state.ResolvedVersion, resolvedFrom);
+		}
+
+		if (state.Lookup.TryGetValue(args.ComponentType.Trim(), out ComponentRegistryEntry? entry)) {
+			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom);
+		}
+
+		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, args.Search);
+		return new ComponentInfoResponse {
+			Success = false,
+			Mode = "list",
+			Error = $"Component type '{args.ComponentType}' was not found.",
+			Count = suggestions.Count,
+			Groups = ComponentInfoGrouping.CreateGroups(suggestions),
+			ResolvedTargetVersion = state.ResolvedVersion,
+			ResolvedFrom = resolvedFrom
+		};
+	}
+
+	private ComponentInfoResponse BuildMobileResponse(ComponentInfoArgs args) {
+		// The mobile catalog ships as static data inside clio.dll's deployed Data/ folder;
+		// no CDN, no per-environment version probe — the response intentionally omits the
+		// resolvedTargetVersion/resolvedFrom markers because they would be meaningless here.
+		if (string.IsNullOrWhiteSpace(args.ComponentType)
+			|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
+			return CreateListResponse(mobileCatalog.Search(args.Search), resolvedTargetVersion: null, resolvedFrom: null);
+		}
+
+		ComponentRegistryEntry? entry = mobileCatalog.Find(args.ComponentType);
+		if (entry is not null) {
+			return CreateDetailResponse(entry, resolvedTargetVersion: null, resolvedFrom: null);
+		}
+
+		IReadOnlyList<ComponentRegistryEntry> suggestions = mobileCatalog.Search(args.Search);
+		return new ComponentInfoResponse {
+			Success = false,
+			Mode = "list",
+			Error = $"Component type '{args.ComponentType}' was not found.",
+			Count = suggestions.Count,
+			Groups = ComponentInfoGrouping.CreateGroups(suggestions)
+		};
+	}
+
+	private static bool IsMobile(string? schemaType) =>
+		string.Equals(schemaType, SchemaTypeMobile, StringComparison.OrdinalIgnoreCase);
+
+	private static ComponentInfoResponse CreateListResponse(
+		IReadOnlyList<ComponentRegistryEntry> entries,
+		string? resolvedTargetVersion,
+		string? resolvedFrom) {
 		return new ComponentInfoResponse {
 			Success = true,
 			Mode = "list",
 			Count = entries.Count,
 			Groups = ComponentInfoGrouping.CreateGroups(entries),
-			ResolvedTargetVersion = state.ResolvedVersion,
+			ResolvedTargetVersion = resolvedTargetVersion,
+			ResolvedFrom = resolvedFrom
+		};
+	}
+
+	private static ComponentInfoResponse CreateDetailResponse(
+		ComponentRegistryEntry entry,
+		string? resolvedTargetVersion,
+		string? resolvedFrom) {
+		return new ComponentInfoResponse {
+			Success = true,
+			Mode = "detail",
+			Count = 1,
+			ComponentType = entry.ComponentType,
+			Category = entry.Category,
+			Description = entry.Description,
+			Container = entry.Container,
+			ParentTypes = entry.ParentTypes,
+			Properties = entry.Properties,
+			TypicalChildren = entry.TypicalChildren,
+			Example = entry.Example,
+			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom
 		};
 	}
@@ -109,7 +157,11 @@ public sealed record ComponentInfoArgs(
 
 	[property: JsonPropertyName("search")]
 	[property: Description("Optional keyword filter applied in list mode and in not-found suggestions, for example 'tab'.")]
-	string? Search = null
+	string? Search = null,
+
+	[property: JsonPropertyName("schema-type")]
+	[property: Description("Component registry to query: 'web' (default) for standard Freedom UI pages, or 'mobile' for mobile page components (crt.Toggle, crt.BarcodeScanner, crt.Sort, etc.).")]
+	string? SchemaType = null
 );
 
 /// <summary>

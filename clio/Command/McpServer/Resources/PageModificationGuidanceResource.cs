@@ -22,8 +22,10 @@ public sealed class PageModificationGuidanceResource {
 		Text = """
 		       clio MCP page modification guide
 
-		       PRE-EDIT GUIDANCE CHECKLIST — read before writing any body
-		       Before touching raw.body, determine which section you are modifying and call the corresponding guidance first:
+		       PRE-EDIT GUIDANCE CHECKLIST — MANDATORY before writing any body
+		       MOBILE CHECK: If `get-page` returned `schema-type: "mobile"`, STOP — call `get-guidance` with name `mobile-page-modification` instead. Mobile pages use plain JSON (NOT AMD), have a completely different component registry, and must NOT contain handlers, validators, or converters. The rules below apply ONLY to web pages (schema-type: "web"). NOTE: even on mobile, a subset of the checklist below still applies (notably `page-schema-resources` and entity-level `business-rules`) — the mobile guide lists which items carry over.
+
+		       GATE: if ANY row in the table below matches your change, you MUST call the listed guide before producing the body. Skipping a matching row is treated as a defect, not a shortcut.
 
 		       | Requirement pattern | Call get-guidance with name | Why |
 		       | --- | --- | --- |
@@ -32,8 +34,11 @@ public sealed class PageModificationGuidanceResource {
 		       | business logic, cross-field orchestration, async data loading, side effects | `page-schema-handlers` | Handlers are NOT the same as converters. |
 		       | required field, max length, format enforcement with error message | `page-schema-validators` | Validators write to viewModelConfigDiff, not viewConfigDiff. |
 		       | SDK service calls (SysSettingsService, HttpClientService, etc.) | `page-schema-creatio-devkit-common` | Correct import syntax and async patterns. |
+		       | body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter | `page-schema-resources` | Most resource registrations for DS-bound captions (e.g. `PDS_UsrStatus`) are unnecessary — the platform auto-provides them. Guidance specifies which keys must vs must-not be registered, and `$Resources.Strings.*` is rejected in validator params. |
 
-		       STOP. Do NOT call get-component-info and pick a component type to solve a display transformation requirement until you have read `page-schema-converters` and confirmed the OOTB decision table does not cover your case. The most common mistake is treating a display transformation as a component selection problem.
+		       STOP. Do NOT call get-component-info and pick a component type to solve a display transformation requirement until you have read `page-schema-converters` and confirmed the OOTB decision table does not cover your case. A common mistake is treating a display transformation as a component selection problem.
+
+		       STOP. Touching resources at all? Read `page-schema-resources` first. This covers any body that contains `$Resources.Strings.*` or `#ResourceString(...)#`, and any call that passes the `resources` parameter — no exceptions, no "simple cases".
 
 		       Replacing-schema concept
 		       - When a Freedom UI designer saves changes to a page, Creatio creates a replacing schema in a "design package".
@@ -174,7 +179,7 @@ public sealed class PageModificationGuidanceResource {
 
 		       Rules for viewConfigDiff
 		       - `operation` must be one of: `insert`, `remove`, `merge`, `move`.
-		       - `name` is the unique component id inside the hierarchy. Prefix custom components with `Usr` or project-specific prefix to avoid collisions. For entity-bound FormPage fields, the `control` binding uses the `$PDS_<ColumnName>` attribute key — use `get-component-info` for ready-to-use examples.
+		       - `name` is the unique component id inside the hierarchy. Prefix custom components with `Usr` or project-specific prefix to avoid collisions. For entity-bound FormPage fields, the `control` binding uses the view-model attribute key — commonly `$PDS_<Column>` for designer-generated attributes against the primary data source, but may be `$Usr<Column>`, `$PageParameters_<Name>`, or another prefix depending on how the attribute was defined. Copy the attribute key from the existing binding rather than constructing one from the column name; use `get-component-info` for ready-to-use examples.
 		       - `parentName` must match an existing container name from `bundle.viewConfig`.
 		       - `propertyName` is usually `items` for containers.
 		       - `index` is the insertion position within `parentName.items[]`.
