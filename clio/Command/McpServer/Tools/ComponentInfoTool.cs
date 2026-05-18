@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -35,10 +34,14 @@ public sealed class ComponentInfoTool(
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
 		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
 	public async Task<ComponentInfoResponse> GetComponentInfo(
-		[Description("Parameters: component-type (optional; omit or use 'list' to list all), search (optional keyword filter), schema-type (optional; 'web' or 'mobile'; default: 'web')")]
-		[Required]
-		ComponentInfoArgs args,
+		[Description("Freedom UI component type, for example 'crt.TabContainer'. Omit or use 'list' to return the catalog.")]
+		string? componentType = null,
+		[Description("Optional keyword filter applied in list mode and in not-found suggestions, for example 'tab'.")]
+		string? search = null,
+		[Description("Component registry to query: 'web' (default) for standard Freedom UI pages, or 'mobile' for mobile page components (crt.Toggle, crt.BarcodeScanner, crt.Sort, etc.).")]
+		string? schemaType = null,
 		CancellationToken cancellationToken = default) {
+		ComponentInfoArgs args = new(componentType, search, schemaType);
 		try {
 			if (IsMobile(args.SchemaType)) {
 				return BuildMobileResponse(args);

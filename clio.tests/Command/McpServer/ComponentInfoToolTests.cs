@@ -221,7 +221,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
+		ComponentInfoResponse response = await tool.GetComponentInfo();
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -247,7 +247,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -273,7 +273,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "tab"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(search: "tab");
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -294,7 +294,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "bulkActions"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(search: "bulkActions");
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -315,7 +315,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.MenuItem"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.MenuItem");
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -339,7 +339,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Unknown"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Unknown");
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -363,7 +363,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = new(catalog, mobileCatalog, StubPlatformVersionResolver.Environment("8.1.5"));
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
+		ComponentInfoResponse response = await tool.GetComponentInfo();
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -385,7 +385,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = new(catalog, mobileCatalog, StubPlatformVersionResolver.Environment("8.1.5"));
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
+		ComponentInfoResponse response = await tool.GetComponentInfo();
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -475,7 +475,7 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Return_Mobile_Catalog_When_SchemaType_Is_Mobile() {
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(SchemaType: "mobile"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(schemaType: "mobile");
 
 		response.Success.Should().BeTrue(
 			because: "listing mobile components should succeed when the mobile registry is available");
@@ -494,7 +494,7 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Return_Mobile_Detail_When_SchemaType_Is_Mobile_And_Type_Is_Known() {
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Toggle", SchemaType: "mobile"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Toggle", schemaType: "mobile");
 
 		response.Success.Should().BeTrue(
 			because: "crt.Toggle exists in the mobile registry");
@@ -509,7 +509,7 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Return_Error_When_Web_Only_Type_Is_Requested_From_Mobile_Catalog() {
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Label", SchemaType: "mobile"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Label", schemaType: "mobile");
 
 		response.Success.Should().BeFalse(
 			because: "crt.Label is a web component and should not appear in the mobile catalog");
@@ -522,7 +522,7 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Default_To_Web_Catalog_When_SchemaType_Is_Omitted() {
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
 
 		response.Success.Should().BeTrue(
 			because: "crt.TabContainer exists in the web registry — omitting schema-type should use the web catalog");
