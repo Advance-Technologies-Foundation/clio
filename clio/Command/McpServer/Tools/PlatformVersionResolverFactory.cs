@@ -24,17 +24,17 @@ public sealed class PlatformVersionResolverFactory : IPlatformVersionResolverFac
 	private readonly IApplicationClientFactory _applicationClientFactory;
 	private readonly IServiceUrlBuilderFactory _serviceUrlBuilderFactory;
 	private readonly TimeProvider _timeProvider;
-	private readonly ILogger<PlatformVersionResolver> _resolverLogger;
+	private readonly ILoggerFactory _loggerFactory;
 
 	public PlatformVersionResolverFactory(
 		IApplicationClientFactory applicationClientFactory,
 		IServiceUrlBuilderFactory serviceUrlBuilderFactory,
 		TimeProvider timeProvider,
-		ILogger<PlatformVersionResolver> resolverLogger) {
+		ILoggerFactory loggerFactory) {
 		_applicationClientFactory = applicationClientFactory ?? throw new ArgumentNullException(nameof(applicationClientFactory));
 		_serviceUrlBuilderFactory = serviceUrlBuilderFactory ?? throw new ArgumentNullException(nameof(serviceUrlBuilderFactory));
 		_timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-		_resolverLogger = resolverLogger ?? throw new ArgumentNullException(nameof(resolverLogger));
+		_loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
 	}
 
 	public IPlatformVersionResolver Create(EnvironmentSettings settings) {
@@ -42,11 +42,14 @@ public sealed class PlatformVersionResolverFactory : IPlatformVersionResolverFac
 			throw new ArgumentNullException(nameof(settings));
 		}
 		IApplicationClient applicationClient = _applicationClientFactory.CreateEnvironmentClient(settings);
+		// Loggers are constructed per call rather than stored as ILogger<PlatformVersionResolver>
+		// on the factory — that would mismatch the factory's enclosing type (Sonar S6672) and
+		// the factory itself has no logging of its own to justify a typed instance field.
 		return new PlatformVersionResolver(
 			applicationClient,
 			settings,
 			_serviceUrlBuilderFactory,
 			_timeProvider,
-			_resolverLogger);
+			_loggerFactory.CreateLogger<PlatformVersionResolver>());
 	}
 }
