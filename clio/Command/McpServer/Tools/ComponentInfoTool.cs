@@ -38,7 +38,14 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IPlatformVe
 		try {
 			PlatformVersionResolution version = await versionResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 			ComponentCatalogState state = await catalog.LoadAsync(version.ResolvedVersion, cancellationToken).ConfigureAwait(false);
-			string resolvedFrom = MapResolverSource(version.Source);
+			// Only report "environment" when the resolver AND the catalog agreed on the
+			// requested version. If the catalog fell back (per-version CDN 404 → latest,
+			// CDN/cache down → embedded), the loaded data does not match the target
+			// environment and AI must treat it as a superset, so emit "latest-fallback".
+			string resolvedFrom = version.Source == VersionResolutionSource.Environment
+				&& string.Equals(state.ResolvedVersion, version.ResolvedVersion, StringComparison.OrdinalIgnoreCase)
+					? ResolvedFromEnvironment
+					: ResolvedFromLatestFallback;
 
 			if (string.IsNullOrWhiteSpace(args.ComponentType)
 				|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
@@ -88,12 +95,6 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IPlatformVe
 			};
 		}
 	}
-
-	private static string MapResolverSource(VersionResolutionSource source) => source switch {
-		VersionResolutionSource.Environment => ResolvedFromEnvironment,
-		VersionResolutionSource.LatestFallback => ResolvedFromLatestFallback,
-		_ => ResolvedFromLatestFallback
-	};
 
 	private static IReadOnlyList<ComponentRegistryEntry> FilterEntries(ComponentCatalogState state, string? search) {
 		if (string.IsNullOrWhiteSpace(search)) {

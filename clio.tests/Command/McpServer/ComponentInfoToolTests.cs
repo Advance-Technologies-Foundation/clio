@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -334,6 +335,48 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("When the registry client falls back to a different version, the response reports latest-fallback even if the resolver succeeded.")]
+	public async Task ComponentInfoTool_Should_Report_Latest_Fallback_When_Catalog_Falls_Back() {
+		// Arrange — resolver says "8.1.5" (environment probe succeeded) but the client falls
+		// back to "latest" because 8.1.5 is not yet published on the CDN.
+		FallbackRegistryClient client = new(TestRegistryJson, fallbackVersion: "latest");
+		ComponentInfoCatalog catalog = new(client);
+		ComponentInfoTool tool = new(catalog, StubPlatformVersionResolver.Environment("8.1.5"));
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the catalog still loads through the fallback chain");
+		response.ResolvedTargetVersion.Should().Be("latest",
+			because: "the response must echo the version actually loaded by the client, not the requested one");
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "AI must see latest-fallback whenever the loaded catalog does not match the target environment");
+	}
+
+	[Test]
+	[Description("Successive LoadAsync calls re-parse the underlying bytes so refreshed CDN/cache writes are visible without a process restart.")]
+	public async Task ComponentInfoCatalog_Should_Not_Pin_Parsed_State_Across_Calls() {
+		// Arrange — two registries differing by a single componentType. Simulates the
+		// scenario where the background refresh writes newer bytes to disk between calls.
+		const string firstPayload = """[{"componentType":"crt.First","category":"interactive","description":"first","container":false,"properties":{}}]""";
+		const string secondPayload = """[{"componentType":"crt.Second","category":"interactive","description":"second","container":false,"properties":{}}]""";
+		SequenceRegistryClient client = new(firstPayload, secondPayload);
+		ComponentInfoCatalog catalog = new(client);
+
+		// Act
+		ComponentRegistryEntry? firstHit = await catalog.FindAsync("latest", "crt.First");
+		ComponentRegistryEntry? secondHit = await catalog.FindAsync("latest", "crt.Second");
+
+		// Assert
+		firstHit.Should().NotBeNull(
+			because: "the first LoadAsync observes the initial payload");
+		secondHit.Should().NotBeNull(
+			because: "the second LoadAsync must re-parse the newer payload, not return the cached first one");
+	}
+
+	[Test]
 	[Description("Catalog loaded through the embedded fallback exposes the full curated Freedom UI surface.")]
 	public async Task ComponentInfoCatalog_Should_Load_From_Embedded_Resource() {
 		// Arrange
@@ -411,6 +454,46 @@ public sealed class ComponentInfoToolTests {
 
 		public Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) =>
 			Task.FromResult(resolution);
+	}
+
+	/// <summary>Test double that always reports a different resolved version than was requested.</summary>
+	private sealed class FallbackRegistryClient(string registryJson, string fallbackVersion) : IComponentRegistryClient {
+		private readonly byte[] _payload = Encoding.UTF8.GetBytes(registryJson);
+
+		public Task<ComponentRegistryFetchResult> GetAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+			return Task.FromResult(new ComponentRegistryFetchResult(
+				new MemoryStream(_payload, writable: false),
+				fallbackVersion,
+				ComponentRegistrySource.Cdn));
+		}
+
+		public Task<bool> RefreshAsync(string version, CancellationToken cancellationToken = default) {
+			return Task.FromResult(false);
+		}
+	}
+
+	/// <summary>Test double that returns a different payload on each successive GetAsync call.</summary>
+	private sealed class SequenceRegistryClient : IComponentRegistryClient {
+		private readonly Queue<byte[]> _payloads;
+
+		public SequenceRegistryClient(params string[] payloads) {
+			_payloads = new Queue<byte[]>();
+			foreach (string payload in payloads) {
+				_payloads.Enqueue(Encoding.UTF8.GetBytes(payload));
+			}
+		}
+
+		public Task<ComponentRegistryFetchResult> GetAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+			byte[] payload = _payloads.Count > 0 ? _payloads.Dequeue() : throw new InvalidOperationException("No more payloads queued.");
+			return Task.FromResult(new ComponentRegistryFetchResult(
+				new MemoryStream(payload, writable: false),
+				requestedVersion,
+				ComponentRegistrySource.Cdn));
+		}
+
+		public Task<bool> RefreshAsync(string version, CancellationToken cancellationToken = default) {
+			return Task.FromResult(false);
+		}
 	}
 
 	/// <summary>Test double that exercises the real embedded resource in clio.dll.</summary>

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -33,27 +32,24 @@ public interface IComponentInfoCatalog {
 
 /// <summary>
 /// Loads the curated Freedom UI component catalog through
-/// <see cref="IComponentRegistryClient"/>. Caches the parsed state per resolved version
-/// so the parse, ordering, and duplicate-detection work happens once per process per version.
+/// <see cref="IComponentRegistryClient"/>. Re-parses on every request so background CDN
+/// refreshes and <c>clio component-registry-refresh</c> writes become visible to AI without
+/// a process restart. The byte-level cache lives in the registry client; the catalog is
+/// only responsible for turning bytes into POCOs (parse cost is sub-millisecond).
 /// </summary>
 public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	private static readonly string[] CategoryOrder = ["containers", "fields", "interactive", "display"];
 
 	private readonly IComponentRegistryClient _registryClient;
-	private readonly ConcurrentDictionary<string, Task<ComponentCatalogState>> _stateByVersion;
 
 	public ComponentInfoCatalog(IComponentRegistryClient registryClient) {
 		_registryClient = registryClient ?? throw new ArgumentNullException(nameof(registryClient));
-		_stateByVersion = new ConcurrentDictionary<string, Task<ComponentCatalogState>>(StringComparer.OrdinalIgnoreCase);
 	}
 
 	/// <inheritdoc />
 	public Task<ComponentCatalogState> LoadAsync(string requestedVersion, CancellationToken cancellationToken = default) {
 		string key = NormaliseVersion(requestedVersion);
-		return _stateByVersion.GetOrAdd(
-			key,
-			static (versionKey, args) => args.Self.LoadCatalogStateAsync(versionKey, args.CancellationToken),
-			(Self: this, CancellationToken: cancellationToken));
+		return LoadCatalogStateAsync(key, cancellationToken);
 	}
 
 	/// <inheritdoc />
