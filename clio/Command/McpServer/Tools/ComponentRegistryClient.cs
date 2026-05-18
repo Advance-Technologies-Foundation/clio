@@ -188,7 +188,7 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 		http.Timeout = CdnFetchTimeout;
 		// CDN URL layout: {base}{version}/ComponentRegistry.json — the version is a directory
 		// containing the fixed-name registry file (matches the creatio-ui Jenkins publisher).
-		string url = _cdnBaseUrl + version + "/" + CdnRegistryFileName;
+		string url = BuildCdnUrl(version);
 
 		for (int attempt = 1; attempt <= CdnFetchAttempts; attempt++) {
 			FetchAttemptResult result = await TryFetchOnceAsync(http, url, version, attempt, cancellationToken).ConfigureAwait(false);
@@ -295,5 +295,15 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 	private static string ResolveCdnBaseUrl() {
 		string? envOverride = Environment.GetEnvironmentVariable(CdnBaseUrlEnvironmentVariable);
 		return string.IsNullOrWhiteSpace(envOverride) ? DefaultCdnBaseUrl : envOverride;
+	}
+
+	// Builds {base}{version}/ComponentRegistry.json through Uri composition.
+	// The relative path is a single interpolated string passed to Uri's relative-path
+	// constructor, so the slash is part of a URL-protocol path token rather than a
+	// free-floating concatenation separator (RFC 3986 path delimiter, always '/').
+	private string BuildCdnUrl(string version) {
+		Uri baseUri = new(_cdnBaseUrl, UriKind.Absolute);
+		Uri relativeUri = new($"{version}/{CdnRegistryFileName}", UriKind.Relative);
+		return new Uri(baseUri, relativeUri).AbsoluteUri;
 	}
 }
