@@ -84,10 +84,13 @@ public sealed class ComponentInfoTool(
 		};
 	}
 
+	/// <summary>
+	/// Builds the mobile-schema response branch. The mobile catalog ships as static data
+	/// inside the deployed Data folder, has no CDN tier, and is not version-pinned, so
+	/// the response intentionally omits the <c>resolvedTargetVersion</c> and
+	/// <c>resolvedFrom</c> markers — they would be meaningless here.
+	/// </summary>
 	private ComponentInfoResponse BuildMobileResponse(ComponentInfoArgs args) {
-		// The mobile catalog ships as static data inside clio.dll's deployed Data/ folder;
-		// no CDN, no per-environment version probe — the response intentionally omits the
-		// resolvedTargetVersion/resolvedFrom markers because they would be meaningless here.
 		if (string.IsNullOrWhiteSpace(args.ComponentType)
 			|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
 			return CreateListResponse(mobileCatalog.Search(args.Search), resolvedTargetVersion: null, resolvedFrom: null);
