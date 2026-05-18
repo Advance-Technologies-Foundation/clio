@@ -2,9 +2,9 @@
 
 > **Audience**: AI agents (clio MCP) creating or editing mobile Freedom UI page schemas.
 >
-> **Last verified**: 2026-05-14
+> **Last verified**: 2026-05-18
 >
-> **Verification sources**: clio source code (C# — `SchemaValidationService`, `PageUpdateCommand`, `PageSchemaBodyParser`), creatio-ui source (TypeScript), `CrtUIPlatform` package schemas, Creatio Academy, Creatio 8.x live environment.
+> **Verification sources**: clio source code (C# — `SchemaValidationService`, `PageUpdateCommand`, `PageSchemaBodyParser`, `MobileComponentRegistry.json`), `CrtUIPlatform` package schemas (PackageStore), Creatio Academy, Creatio 8.x live environment.
 
 ---
 
@@ -31,7 +31,6 @@ All templates live in the `CrtUIPlatform` package. Two independent root schemas;
 ```
 BlankMobilePageTemplate  (478ab83b-527b-4830-b2b8-2206bb9bf283)
     Standalone root. Bare crt.Scaffold with empty leading/actions/items.
-    Also the value of the BASE_MOBILE_TEMPLATE_ANGULAR constant (creatio-ui designer).
 
 BaseMobileTemplate       (1d1942c9-6993-41c6-9eda-7b697acca221)
     Separate root. Adds $PageTitle and a CloseButton to the Scaffold,
@@ -112,6 +111,10 @@ All four verified mobile templates use exactly one `crt.Scaffold` insert at the 
 | `actions` | Right-side action items (save button, search button) |
 | `floatAction` | Single floating action button object (`crt.FloatingActionButton`) |
 | `items` | Page body — array of container/component references |
+| `header` | Header child components |
+| `fullScreen` | Full-screen mode (boolean) |
+| `useSurface` | Use surface background color (boolean) |
+| `leadingWidth` | Leading area width (number) |
 
 ---
 
@@ -173,16 +176,16 @@ Mobile components are registered through mobile-specific decorators (`@CrtMobile
 **Layout and structure**
 `crt.Scaffold` (root — always required), `crt.GridContainer`, `crt.FlexContainer`,
 `crt.TabPanel`, `crt.TabContainer`, `crt.ExpansionPanel`, `crt.Label`, `crt.Button`,
-`crt.FloatingActionButton`, `crt.Menu`, `crt.ButtonToggleGroup`
+`crt.FloatingActionButton`
 
 **Data and collections**
 `crt.List`, `crt.FileList`, `crt.Feed`, `crt.Gallery`, `crt.Timeline`
 
 **Navigation / filtering**
-`crt.FolderTree`, `crt.FolderTreeActions`, `crt.QuickFilter`, `crt.QuickFilterGroup`, `crt.Sort`
+`crt.FolderTreeActions`, `crt.QuickFilter`, `crt.QuickFilterGroup`, `crt.Sort`
 
 **Profile and special**
-`crt.CompactProfile`, `crt.CommunicationOptions`, `crt.EntityStageProgressBar`
+`crt.CommunicationOptions`, `crt.EntityStageProgressBar`
 
 **Widgets**
 `crt.IndicatorWidget`, `crt.ChartWidget`
@@ -199,7 +202,7 @@ The standard page workflow applies — see `page-creation` and `page-modificatio
 
 **`update-page` / `sync-pages`**: both auto-detect mobile JSON bodies and actively reject disallowed sections (`handlers`, `validators`, `converters`) with a clear error message.
 
-**`list-pages`**: the `schema-type` field returns `"mobile"` for schemaType=10 pages, `"web"` for schemaType=9, and `"unknown"` otherwise.
+**`get-page`**: the response includes a `schema-type` field that returns `"mobile"` for schemaType=10 pages, `"web"` for schemaType=9, and `"unknown"` otherwise. Use this to confirm mobile vs web before editing.
 
 ---
 
@@ -218,17 +221,7 @@ Since Creatio 8.3.2, creating a new app or section automatically generates a mob
 
 ---
 
-## 10. Feature Flags
-
-| Flag | Effect |
-|---|---|
-| `UseMobilePageDesigner` | When enabled: mobile pages (schemaType=10) appear in the application page list; the Mobile Pages tab appears in the page template picker; mobile schema types are shown in the workspace dialog |
-| `DisableCanvasSizeSwitcher` | Hides the phone/tablet size switcher in the mobile designer canvas |
-| `EnableMobileCanvasToolbar` | Enables the device orientation rotation button in the canvas toolbar |
-
----
-
-## 11. AI Generation Rules
+## 10. AI Generation Rules
 
 1. **Always use a mobile template** from `list-page-templates --schema-type mobile`. Never create a mobile page from a web template.
 2. **Body is plain JSON** — no `define(...)` wrapper, no `handlers`, `converters`, or `validators` sections.
