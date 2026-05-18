@@ -225,8 +225,7 @@
 			var cancellationTokenSource = new CancellationTokenSource();
 			var log = initialInstallLog;
 			var task = Task.Factory.StartNew(
-				() => log = ListenForLogs(cancellationTokenSource.Token, environmentSettings, initialInstallLog),
-				cancellationTokenSource.Token);
+				() => log = ListenForLogs(cancellationTokenSource.Token, environmentSettings, initialInstallLog));
 			string result = InstallPackageOnServer(fileName, environmentSettings, packageInstallOptions);
 			BaseResponse response = JsonConvert.DeserializeObject<BaseResponse>(result);
 			cancellationTokenSource.Cancel();
