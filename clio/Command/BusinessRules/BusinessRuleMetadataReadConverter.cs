@@ -27,13 +27,11 @@ internal static class BusinessRuleMetadataReadConverter {
 		bool strict = false) {
 		ArgumentNullException.ThrowIfNull(rule);
 
-		JsonObject? firstCase = ReadFirstCase(rule);
-		BusinessRuleConditionGroup? condition = firstCase?["condition"] is JsonObject conditionNode
-			? ReadConditionGroup(conditionNode)
-			: null;
-		IReadOnlyList<BusinessRuleAction> actions = firstCase?["actions"] is JsonArray actionNodes
-			? ReadActions(actionNodes, scopeType, strict)
-			: [];
+		JsonObject? firstCase = strict
+			? ReadRequiredFirstCase(rule)
+			: ReadFirstCase(rule);
+		BusinessRuleConditionGroup? condition = ReadCondition(firstCase, strict);
+		IReadOnlyList<BusinessRuleAction> actions = ReadActions(firstCase, scopeType, strict);
 
 		return new BusinessRuleReadItem {
 			Name = ReadString(rule["name"]),
@@ -62,6 +60,26 @@ internal static class BusinessRuleMetadataReadConverter {
 			return firstCase;
 		}
 
+		return null;
+	}
+
+	private static JsonObject ReadRequiredFirstCase(JsonObject rule) {
+		if (rule["cases"] is not JsonArray cases) {
+			throw new InvalidOperationException("Business-rule metadata 'cases' property must be a JSON array.");
+		}
+		if (cases.Count == 0 || cases[0] is not JsonObject firstCase) {
+			throw new InvalidOperationException("Business-rule metadata must contain a first case object.");
+		}
+		return firstCase;
+	}
+
+	private static BusinessRuleConditionGroup? ReadCondition(JsonObject? firstCase, bool strict) {
+		if (firstCase?["condition"] is JsonObject conditionNode) {
+			return ReadConditionGroup(conditionNode);
+		}
+		if (strict) {
+			throw new InvalidOperationException("Business-rule case metadata 'condition' property must be a JSON object.");
+		}
 		return null;
 	}
 
@@ -140,12 +158,28 @@ internal static class BusinessRuleMetadataReadConverter {
 			: ReadString(expression["expression"]);
 
 	private static IReadOnlyList<BusinessRuleAction> ReadActions(
+		JsonObject? firstCase,
+		string scopeType,
+		bool strict) {
+		if (firstCase?["actions"] is JsonArray actionNodes) {
+			return ReadActions(actionNodes, scopeType, strict);
+		}
+		if (strict) {
+			throw new InvalidOperationException("Business-rule case metadata 'actions' property must be a JSON array.");
+		}
+		return [];
+	}
+
+	private static IReadOnlyList<BusinessRuleAction> ReadActions(
 		JsonArray actions,
 		string scopeType,
 		bool strict) {
 		List<BusinessRuleAction> result = [];
 		for (int index = 0; index < actions.Count; index++) {
 			if (actions[index] is not JsonObject action) {
+				if (strict) {
+					throw new InvalidOperationException("Business-rule action metadata must be a JSON object.");
+				}
 				continue;
 			}
 

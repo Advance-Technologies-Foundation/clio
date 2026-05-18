@@ -83,6 +83,60 @@ public sealed class PageBusinessRuleSchemaProviderTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Loads only page schema identifiers without parsing page bodies when read operations need add-on identity.")]
+	public void GetSchemaIdentity_Should_Not_Parse_Page_Bodies() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		IPageSchemaBodyParser bodyParser = Substitute.For<IPageSchemaBodyParser>();
+		IPageBundleBuilder bundleBuilder = Substitute.For<IPageBundleBuilder>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://dev/DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(
+				"http://dev/DataService/json/SyncReply/SelectQuery",
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("""{"success":true,"rows":[{"UId":"11111111-1111-1111-1111-111111111111"}]}""");
+		hierarchyClient.GetParentSchemas(
+				"11111111-1111-1111-1111-111111111111",
+				"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+			.Returns([
+				new PageDesignerHierarchySchema {
+					UId = "22222222-2222-2222-2222-222222222222",
+					Name = "UsrPage",
+					Body = "{ broken body"
+				},
+				new PageDesignerHierarchySchema {
+					UId = "33333333-3333-3333-3333-333333333333",
+					Name = "BasePage",
+					Body = "parent"
+				}
+			]);
+		PageBusinessRuleSchemaProvider provider = new(
+			applicationClient,
+			serviceUrlBuilder,
+			hierarchyClient,
+			bodyParser,
+			bundleBuilder);
+
+		// Act
+		PageBusinessRuleSchemaIdentity result = provider.GetSchemaIdentity(
+			"UsrPage",
+			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+
+		// Assert
+		result.SchemaUId.Should().Be("22222222-2222-2222-2222-222222222222",
+			because: "read operations only need the add-on target schema identifier");
+		result.ParentSchemaUId.Should().Be(Guid.Parse("33333333-3333-3333-3333-333333333333"),
+			because: "read operations still need the direct parent schema identifier for AddonSchemaDesigner");
+		bodyParser.DidNotReceive().Parse(Arg.Any<string>());
+		bundleBuilder.DidNotReceive().Build(Arg.Any<IReadOnlyList<PageSchemaBundlePart>>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Uses a same-name page schema from the target package before falling back to root schema discovery.")]
 	public void GetSchema_Should_Use_Existing_Schema_In_Target_Package() {
 		// Arrange

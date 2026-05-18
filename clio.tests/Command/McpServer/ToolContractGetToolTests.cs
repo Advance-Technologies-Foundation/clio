@@ -94,12 +94,17 @@ public sealed class ToolContractGetToolTests {
 			contract.Name == BusinessRuleReadTool.BusinessRuleListToolName);
 		listContract.InputSchema.Required.Should().Contain(["environmentName", "packageName", "scopeType", "schemaName"],
 			because: "listing rules requires a target environment, package, and one entity or page scope");
+		listContract.Description.Should().Contain("name/caption summaries",
+			because: "list-business-rules returns lightweight summaries rather than full normalized rule bodies");
 		listContract.InputSchema.Properties.Should().NotContain(field => field.Name == "includeRawMetadata",
 			because: "business-rule read tools should expose only normalized MCP schema fields");
 		listContract.OutputContract.FailureSignals.Should().NotContain(signal => signal.Contains("unsupportedDetails", StringComparison.Ordinal),
 			because: "unsupportedDetails is intentionally not part of the MCP contract");
 		listContract.OutputContract.Fields.Should().Contain(field => field.Name == "rules",
 			because: "list-business-rules returns lightweight rule summaries");
+		listContract.Examples.Should().OnlyContain(example =>
+				listContract.InputSchema.Required.All(requiredField => example.Arguments.ContainsKey(requiredField)),
+			because: "published examples should be directly executable against the required input schema");
 		ToolContractDefinition getContract = result.Tools!.Single(contract =>
 			contract.Name == BusinessRuleReadTool.BusinessRuleGetToolName);
 		getContract.InputSchema.Properties.Should().NotContain(field => field.Name == "includeRawMetadata",

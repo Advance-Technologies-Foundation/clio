@@ -119,7 +119,7 @@ internal sealed class BusinessRuleReadService(
 	}
 
 	private AddonGetRequestDto BuildPageAddonRequest(string schemaName, Guid packageUId) {
-		PageBusinessRuleSchemaContext pageContext = pageSchemaProvider.GetSchema(schemaName, packageUId);
+		PageBusinessRuleSchemaIdentity pageContext = pageSchemaProvider.GetSchemaIdentity(schemaName, packageUId);
 		return new AddonGetRequestDto {
 			AddonName = BusinessRuleAddonName,
 			TargetSchemaUId = Guid.Parse(pageContext.SchemaUId),

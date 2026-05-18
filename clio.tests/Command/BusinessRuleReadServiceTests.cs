@@ -33,10 +33,9 @@ public sealed class BusinessRuleReadServiceTests {
 				UId = Guid.Parse("33333333-3333-3333-3333-333333333333")
 			}
 		});
-		_pageSchemaProvider.GetSchema("Contact_FormPage", Arg.Any<Guid>()).Returns(new PageBusinessRuleSchemaContext(
+		_pageSchemaProvider.GetSchemaIdentity("Contact_FormPage", Arg.Any<Guid>()).Returns(new PageBusinessRuleSchemaIdentity(
 			"44444444-4444-4444-4444-444444444444",
-			Guid.Parse("55555555-5555-5555-5555-555555555555"),
-			new PageBundleInfo()));
+			Guid.Parse("55555555-5555-5555-5555-555555555555")));
 		_service = new BusinessRuleReadService(
 			_packageResolver,
 			_entitySchemaProvider,
@@ -166,6 +165,76 @@ public sealed class BusinessRuleReadServiceTests {
 			because: "get should not silently return partial normalized data for unsupported shapes");
 		result.Error.Should().Contain("not supported",
 			because: "callers need a clear reason why the rule cannot be represented");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a failure when get-business-rule metadata has malformed cases instead of a case array.")]
+	public void Get_Should_Fail_For_Malformed_Cases_Metadata() {
+		// Arrange
+		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(CreateAddonSchema("""
+				[
+				  {
+				    "uId": "RuleUId",
+				    "name": "BusinessRule_Malformed",
+				    "enabled": true,
+				    "cases": {}
+				  }
+				]
+				"""));
+
+		// Act
+		BusinessRuleGetResponse result = _service.Get(new BusinessRuleGetRequest(
+			"UsrApp",
+			"entity",
+			"Contact",
+			"BusinessRule_Malformed"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "get should fail instead of returning partial data for unsupported stored shapes");
+		result.Error.Should().Contain("'cases' property must be a JSON array",
+			because: "callers need a clear unsupported-shape error");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a failure when get-business-rule metadata has a case without an actions array.")]
+	public void Get_Should_Fail_For_Malformed_Actions_Metadata() {
+		// Arrange
+		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(CreateAddonSchema("""
+				[
+				  {
+				    "uId": "RuleUId",
+				    "name": "BusinessRule_MalformedActions",
+				    "enabled": true,
+				    "cases": [
+				      {
+				        "condition": {
+				          "logicalOperation": 1,
+				          "conditions": []
+				        },
+				        "actions": {}
+				      }
+				    ]
+				  }
+				]
+				"""));
+
+		// Act
+		BusinessRuleGetResponse result = _service.Get(new BusinessRuleGetRequest(
+			"UsrApp",
+			"entity",
+			"Contact",
+			"BusinessRule_MalformedActions"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "get should fail instead of returning partial data for unsupported action shapes");
+		result.Error.Should().Contain("'actions' property must be a JSON array",
+			because: "callers need a clear unsupported-shape error");
 	}
 
 	[Test]

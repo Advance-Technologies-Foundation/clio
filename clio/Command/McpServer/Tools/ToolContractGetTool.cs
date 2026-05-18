@@ -1542,7 +1542,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildBusinessRuleList() {
 		return new ToolContractDefinition(
 			BusinessRuleReadTool.BusinessRuleListToolName,
-			"Lists existing entity/object or Freedom UI page business rules from a Creatio environment as normalized MCP business-rule payloads.",
+			"Lists existing entity/object or Freedom UI page business rules from a Creatio environment as name/caption summaries.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, ScopeTypeCamelFieldName, SchemaNameCamelFieldName],
 				[
@@ -1562,11 +1562,13 @@ internal static class ToolContractCatalog {
 			[
 				Example("List Contact entity business rules", new Dictionary<string, object?> {
 					[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+					[PackageNameCamelFieldName] = ExamplePackageName,
 					[ScopeTypeCamelFieldName] = BusinessRuleScopeTypes.Entity,
 					[SchemaNameCamelFieldName] = "Contact"
 				}),
 				Example("List Contact page business rules", new Dictionary<string, object?> {
 					[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
+					[PackageNameCamelFieldName] = ExamplePackageName,
 					[ScopeTypeCamelFieldName] = BusinessRuleScopeTypes.Page,
 					[SchemaNameCamelFieldName] = "Contact_FormPage"
 				})

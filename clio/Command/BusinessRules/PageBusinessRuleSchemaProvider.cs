@@ -7,12 +7,17 @@ namespace Clio.Command.BusinessRules;
 
 internal interface IPageBusinessRuleSchemaProvider {
 	PageBusinessRuleSchemaContext GetSchema(string pageSchemaName, Guid packageUId);
+	PageBusinessRuleSchemaIdentity GetSchemaIdentity(string pageSchemaName, Guid packageUId);
 }
 
 internal sealed record PageBusinessRuleSchemaContext(
 	string SchemaUId,
 	Guid ParentSchemaUId,
 	PageBundleInfo Bundle);
+
+internal sealed record PageBusinessRuleSchemaIdentity(
+	string SchemaUId,
+	Guid ParentSchemaUId);
 
 internal sealed class PageBusinessRuleSchemaProvider(
 	IApplicationClient applicationClient,
@@ -23,6 +28,23 @@ internal sealed class PageBusinessRuleSchemaProvider(
 	: IPageBusinessRuleSchemaProvider {
 
 	public PageBusinessRuleSchemaContext GetSchema(string pageSchemaName, Guid packageUId) {
+		TargetSchemaResolution resolution = ResolveTargetSchema(pageSchemaName, packageUId);
+		List<PageSchemaBundlePart> parts = resolution.Hierarchy
+			.Where(schema => schema.Body is not null)
+			.Select(schema => new PageSchemaBundlePart(schema, bodyParser.Parse(schema.Body)))
+			.ToList();
+		PageBundleInfo bundle = bundleBuilder.Build(parts);
+		return new PageBusinessRuleSchemaContext(
+			resolution.Identity.SchemaUId,
+			resolution.Identity.ParentSchemaUId,
+			bundle);
+	}
+
+	public PageBusinessRuleSchemaIdentity GetSchemaIdentity(string pageSchemaName, Guid packageUId) {
+		return ResolveTargetSchema(pageSchemaName, packageUId).Identity;
+	}
+
+	private TargetSchemaResolution ResolveTargetSchema(string pageSchemaName, Guid packageUId) {
 		string normalizedSchemaName = pageSchemaName.Trim();
 		string targetPackageUId = packageUId.ToString();
 		var (schemaUId, schemaLookupError) = PageSchemaMetadataHelper.QueryExistingSchemaInPackage(
@@ -38,24 +60,30 @@ internal sealed class PageBusinessRuleSchemaProvider(
 			schemaUId = ResolveRootSchemaUId(normalizedSchemaName, targetPackageUId);
 		}
 
+		IReadOnlyList<PageDesignerHierarchySchema> hierarchy = LoadTargetHierarchy(pageSchemaName, packageUId, schemaUId);
+		PageDesignerHierarchySchema currentSchema = hierarchy[0];
+		string parentSchemaUId = hierarchy.Skip(1).FirstOrDefault()?.UId;
+		PageBusinessRuleSchemaIdentity identity = new(
+			currentSchema.UId,
+			string.IsNullOrWhiteSpace(parentSchemaUId) ? Guid.Empty : Guid.Parse(parentSchemaUId));
+		return new TargetSchemaResolution(identity, hierarchy);
+	}
+
+	private IReadOnlyList<PageDesignerHierarchySchema> LoadTargetHierarchy(
+		string pageSchemaName,
+		Guid packageUId,
+		string schemaUId) {
 		IReadOnlyList<PageDesignerHierarchySchema> hierarchy =
-			hierarchyClient.GetParentSchemas(schemaUId, targetPackageUId);
+			hierarchyClient.GetParentSchemas(schemaUId, packageUId.ToString());
 		if (hierarchy.Count == 0) {
 			throw new InvalidOperationException($"Page schema '{pageSchemaName}' hierarchy is empty.");
 		}
-
-		List<PageSchemaBundlePart> parts = hierarchy
-			.Where(schema => schema.Body is not null)
-			.Select(schema => new PageSchemaBundlePart(schema, bodyParser.Parse(schema.Body)))
-			.ToList();
-		PageBundleInfo bundle = bundleBuilder.Build(parts);
-		PageDesignerHierarchySchema currentSchema = hierarchy[0];
-		string parentSchemaUId = hierarchy.Skip(1).FirstOrDefault()?.UId;
-		return new PageBusinessRuleSchemaContext(
-			currentSchema.UId,
-			string.IsNullOrWhiteSpace(parentSchemaUId) ? Guid.Empty : Guid.Parse(parentSchemaUId),
-			bundle);
+		return hierarchy;
 	}
+
+	private sealed record TargetSchemaResolution(
+		PageBusinessRuleSchemaIdentity Identity,
+		IReadOnlyList<PageDesignerHierarchySchema> Hierarchy);
 
 	private string ResolveRootSchemaUId(string pageSchemaName, string targetPackageUId) {
 		var (metadata, error) = PageSchemaMetadataHelper.QuerySysSchemaRow(

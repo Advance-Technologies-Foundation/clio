@@ -54,7 +54,7 @@ public sealed class BusinessRuleReadCommand(
 	/// <summary>
 	/// Gets one normalized business rule for the requested scope.
 	/// </summary>
-	/// <param name="options">Read options with exactly one selector.</param>
+	/// <param name="options">Read options with the selected business-rule platform name.</param>
 	/// <returns>Business-rule get response.</returns>
 	public BusinessRuleGetResponse Get(BusinessRuleReadOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
