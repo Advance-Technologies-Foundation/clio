@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -16,11 +15,9 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 [McpServerToolType]
 public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IPlatformVersionResolver versionResolver) {
-	private static readonly string[] CategoryOrder = ["containers", "fields", "interactive", "display"];
-
 	internal const string ToolName = "get-component-info";
-	internal const string ResolvedFromEnvironment = "environment";
-	internal const string ResolvedFromLatestFallback = "latest-fallback";
+	internal const string ResolvedFromEnvironment = ComponentInfoResolution.ResolvedFromEnvironment;
+	internal const string ResolvedFromLatestFallback = ComponentInfoResolution.ResolvedFromLatestFallback;
 
 	/// <summary>
 	/// Returns grouped component summaries or full metadata for a specific component type.
@@ -38,18 +35,12 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IPlatformVe
 		try {
 			PlatformVersionResolution version = await versionResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 			ComponentCatalogState state = await catalog.LoadAsync(version.ResolvedVersion, cancellationToken).ConfigureAwait(false);
-			// Only report "environment" when the resolver AND the catalog agreed on the
-			// requested version. If the catalog fell back (per-version CDN 404 → latest,
-			// CDN/cache down → embedded), the loaded data does not match the target
-			// environment and AI must treat it as a superset, so emit "latest-fallback".
-			string resolvedFrom = version.Source == VersionResolutionSource.Environment
-				&& string.Equals(state.ResolvedVersion, version.ResolvedVersion, StringComparison.OrdinalIgnoreCase)
-					? ResolvedFromEnvironment
-					: ResolvedFromLatestFallback;
+			string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
+				version.Source, version.ResolvedVersion, state.ResolvedVersion);
 
 			if (string.IsNullOrWhiteSpace(args.ComponentType)
 				|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
-				IReadOnlyList<ComponentRegistryEntry> filtered = FilterEntries(state, args.Search);
+				IReadOnlyList<ComponentRegistryEntry> filtered = ComponentInfoGrouping.FilterEntries(state.Entries, args.Search);
 				return CreateListResponse(filtered, state, resolvedFrom);
 			}
 
@@ -57,13 +48,13 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IPlatformVe
 				? found
 				: null;
 			if (entry is null) {
-				IReadOnlyList<ComponentRegistryEntry> filtered = FilterEntries(state, args.Search);
+				IReadOnlyList<ComponentRegistryEntry> filtered = ComponentInfoGrouping.FilterEntries(state.Entries, args.Search);
 				return new ComponentInfoResponse {
 					Success = false,
 					Mode = "list",
 					Error = $"Component type '{args.ComponentType}' was not found.",
 					Count = filtered.Count,
-					Groups = CreateGroups(filtered),
+					Groups = ComponentInfoGrouping.CreateGroups(filtered),
 					ResolvedTargetVersion = state.ResolvedVersion,
 					ResolvedFrom = resolvedFrom
 				};
@@ -96,66 +87,15 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IPlatformVe
 		}
 	}
 
-	private static IReadOnlyList<ComponentRegistryEntry> FilterEntries(ComponentCatalogState state, string? search) {
-		if (string.IsNullOrWhiteSpace(search)) {
-			return state.Entries;
-		}
-		string query = search.Trim();
-		return state.Entries.Where(entry => Matches(entry, query)).ToArray();
-	}
-
-	private static bool Matches(ComponentRegistryEntry entry, string query) {
-		return ContainsCi(entry.ComponentType, query)
-			|| ContainsCi(entry.Category, query)
-			|| ContainsCi(entry.Description, query)
-			|| entry.ParentTypes.Any(parentType => ContainsCi(parentType, query))
-			|| entry.TypicalChildren.Any(childType => ContainsCi(childType, query))
-			|| entry.Properties.Any(property =>
-				ContainsCi(property.Key, query)
-				|| ContainsCi(property.Value.Type, query)
-				|| ContainsCi(property.Value.Description, query)
-				|| property.Value.Values?.Any(value => ContainsCi(value, query)) == true);
-	}
-
-	private static bool ContainsCi(string? value, string query) {
-		return !string.IsNullOrWhiteSpace(value)
-			&& value.Contains(query, StringComparison.OrdinalIgnoreCase);
-	}
-
 	private static ComponentInfoResponse CreateListResponse(IReadOnlyList<ComponentRegistryEntry> entries, ComponentCatalogState state, string resolvedFrom) {
 		return new ComponentInfoResponse {
 			Success = true,
 			Mode = "list",
 			Count = entries.Count,
-			Groups = CreateGroups(entries),
+			Groups = ComponentInfoGrouping.CreateGroups(entries),
 			ResolvedTargetVersion = state.ResolvedVersion,
 			ResolvedFrom = resolvedFrom
 		};
-	}
-
-	private static IReadOnlyList<ComponentInfoGroup> CreateGroups(IReadOnlyList<ComponentRegistryEntry> entries) {
-		return entries
-			.GroupBy(entry => entry.Category, StringComparer.OrdinalIgnoreCase)
-			.OrderBy(group => GetCategorySortKey(group.Key))
-			.ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
-			.Select(group => new ComponentInfoGroup {
-				Category = group.Key,
-				Items = group
-					.OrderBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
-					.Select(entry => new ComponentInfoListItem {
-						ComponentType = entry.ComponentType,
-						Description = entry.Description
-					})
-					.ToArray()
-			})
-			.ToArray();
-	}
-
-	private static int GetCategorySortKey(string? category) {
-		int index = Array.FindIndex(
-			CategoryOrder,
-			item => string.Equals(item, category, StringComparison.OrdinalIgnoreCase));
-		return index >= 0 ? index : CategoryOrder.Length;
 	}
 }
 
