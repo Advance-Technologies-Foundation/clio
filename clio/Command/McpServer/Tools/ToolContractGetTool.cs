@@ -232,6 +232,7 @@ internal static class ToolContractCatalog {
 	private const string SelectorCodeFieldName = "code";
 	private const string SelectorIdFieldName = "id";
 	private const string SchemaNameFieldName = "schema-name";
+	private const string ResourcesFieldName = "resources";
 	private const string StringType = "string";
 	private const string StatusFieldName = "status";
 	private const string SuccessFalseSignal = "success == false";
@@ -1773,7 +1774,7 @@ internal static class ToolContractCatalog {
 						new Dictionary<string, object?> {
 							[SchemaNameFieldName] = "UsrTaskApp_FormPage",
 							["body"] = "/* raw.body returned by get-page */ define(...)",
-							["resources"] = "{\"PDS_Name\":\"Title\"}"
+							[ResourcesFieldName] = "{\"PDS_Name\":\"Title\"}"
 						}
 					},
 					["validate"] = true
@@ -2504,7 +2505,7 @@ internal static class ToolContractCatalog {
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
 					Field("body", StringType, "Full page body with all marker pairs. Reuse `get-page.raw.body` rather than `bundle` or `bundle.viewConfig`."),
 					Field("dry-run", BooleanType, "Validate without saving."),
-					Field("resources", StringType, "Optional JSON object string of resource strings.")),
+					Field(ResourcesFieldName, StringType, "Optional JSON object string of resource strings.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -2529,7 +2530,7 @@ internal static class ToolContractCatalog {
 				Example("Dry-run validate one page body copied from get-page raw.body", new Dictionary<string, object?> {
 					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
 					["body"] = "/* raw.body returned by get-page */ define(...)",
-					["resources"] = "{\"UsrDetailsTab_caption\":\"Details\"}",
+					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}",
 					["dry-run"] = true,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
@@ -2579,7 +2580,7 @@ internal static class ToolContractCatalog {
 				["body"],
 				[
 					Field("body", StringType, "Full JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character."),
-					Field("resources", StringType, "Optional JSON object string of resource key-value pairs for #ResourceString(key)# macros. Applicable to web pages only.")
+					Field(ResourcesFieldName, StringType, "Optional JSON object string of resource key-value pairs for #ResourceString(key)# macros. Applicable to web pages only.")
 				]),
 			EnvelopeOutput(
 				"valid",
@@ -2598,7 +2599,7 @@ internal static class ToolContractCatalog {
 				}),
 				Example("Validate a web page body with resources", new Dictionary<string, object?> {
 					["body"] = "define(\"MyApp/MyPage\", /** ... */)",
-					["resources"] = "{\"UsrDetailsTab_caption\":\"Details\"}"
+					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}"
 				}),
 				Example("Validate a mobile page body", new Dictionary<string, object?> {
 					["body"] = "{\"type\": \"ep.MobileViewElement\", \"items\": []}"

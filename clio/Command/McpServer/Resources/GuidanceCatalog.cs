@@ -50,6 +50,10 @@ internal static class GuidanceCatalog {
 				"page-schema-creatio-devkit-common",
 				"Canonical MCP guidance for using @creatio-devkit/common in Freedom UI page handlers validators and related frontend-source patterns.",
 				PageSchemaCreatioDevkitCommonGuidanceResource.Guide),
+			["page-schema-resources"] = Create(
+				"page-schema-resources",
+				"Canonical MCP guidance for Freedom UI page localizable strings: $Resources.Strings.* as the recommended binding, #ResourceString()# required for validator params (and conventional for grid captions), resources parameter usage, and common mistakes.",
+				PageSchemaResourcesGuidanceResource.Guide),
 			["page-schema-validators"] = Create(
 				"page-schema-validators",
 				"Canonical MCP guidance for creating and editing Freedom UI page validators inside raw page schema bodies.",

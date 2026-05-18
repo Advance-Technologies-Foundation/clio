@@ -32,6 +32,7 @@ public sealed class PageModificationGuidanceResource {
 		       | business logic, cross-field orchestration, async data loading, side effects | `page-schema-handlers` | Handlers are NOT the same as converters. |
 		       | required field, max length, format enforcement with error message | `page-schema-validators` | Validators write to viewModelConfigDiff, not viewConfigDiff. |
 		       | SDK service calls (SysSettingsService, HttpClientService, etc.) | `page-schema-creatio-devkit-common` | Correct import syntax and async patterns. |
+		       | data-bound field caption (`$Resources.Strings.<vmAttr>` for a control bound to a DS attribute), custom caption, tab title, button label, expansion panel title, validator error message, or any other localizable string (`$Resources.Strings.*` bindings or `#ResourceString()#` macros) | `page-schema-resources` | Resource key naming and pattern choice are easy to get wrong: keys must match the bound vm attribute (not the column name), and `$Resources.Strings.*` is rejected in validator params. |
 
 		       STOP. Do NOT call get-component-info and pick a component type to solve a display transformation requirement until you have read `page-schema-converters` and confirmed the OOTB decision table does not cover your case. The most common mistake is treating a display transformation as a component selection problem.
 
@@ -174,7 +175,7 @@ public sealed class PageModificationGuidanceResource {
 
 		       Rules for viewConfigDiff
 		       - `operation` must be one of: `insert`, `remove`, `merge`, `move`.
-		       - `name` is the unique component id inside the hierarchy. Prefix custom components with `Usr` or project-specific prefix to avoid collisions. For entity-bound FormPage fields, the `control` binding uses the `$PDS_<ColumnName>` attribute key — use `get-component-info` for ready-to-use examples.
+		       - `name` is the unique component id inside the hierarchy. Prefix custom components with `Usr` or project-specific prefix to avoid collisions. For entity-bound FormPage fields, the `control` binding uses the view-model attribute key — commonly `$PDS_<Column>` for designer-generated attributes against the primary data source, but may be `$Usr<Column>`, `$PageParameters_<Name>`, or another prefix depending on how the attribute was defined. Copy the attribute key from the existing binding rather than constructing one from the column name; use `get-component-info` for ready-to-use examples.
 		       - `parentName` must match an existing container name from `bundle.viewConfig`.
 		       - `propertyName` is usually `items` for containers.
 		       - `index` is the insertion position within `parentName.items[]`.
