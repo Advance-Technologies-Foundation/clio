@@ -74,7 +74,7 @@ public sealed class PageUpdateTool(
 
 	private static string ValidatePageBody(string body) =>
 		PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile
-			? ValidateMobilePageBody(body)
+			? ValidateMobilePageBody()
 			: ValidateWebPageBody(body);
 
 	private static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>
@@ -94,7 +94,7 @@ public sealed class PageUpdateTool(
 			Password = args.Password
 		};
 
-	private static string ValidateMobilePageBody(string _) {
+	private static string ValidateMobilePageBody() {
 		// All validation happens in the underlying command, no additional checks required
 		return null;
 	}
