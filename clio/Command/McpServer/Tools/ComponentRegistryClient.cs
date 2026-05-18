@@ -63,8 +63,9 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 	// overridable at runtime via CdnBaseUrlEnvironmentVariable for dev/staging.
 	[SuppressMessage("Major Code Smell", "S1075:URIs should not be hardcoded",
 		Justification = "This is the product's well-known CDN endpoint, not a configurable resource path. Overridable at runtime via " + CdnBaseUrlEnvironmentVariable + ".")]
-	internal const string DefaultCdnBaseUrl = "https://academy.creatio.com/api/component-registry/";
+	internal const string DefaultCdnBaseUrl = "https://academy.creatio.com/api/mcp/";
 
+	internal const string CdnRegistryFileName = "ComponentRegistry.json";
 	internal const string CdnBaseUrlEnvironmentVariable = "CLIO_COMPONENT_REGISTRY_CDN_BASE_URL";
 	internal const string LatestVersion = "latest";
 	internal const int CdnFetchAttempts = 3;
@@ -185,7 +186,9 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 	private async Task<Stream?> TryFetchFromCdnAsync(string version, CancellationToken cancellationToken) {
 		HttpClient http = _httpClientFactory.CreateClient(HttpClientName);
 		http.Timeout = CdnFetchTimeout;
-		string url = _cdnBaseUrl + version + ".json";
+		// CDN URL layout: {base}{version}/ComponentRegistry.json — the version is a directory
+		// containing the fixed-name registry file (matches the creatio-ui Jenkins publisher).
+		string url = _cdnBaseUrl + version + "/" + CdnRegistryFileName;
 
 		for (int attempt = 1; attempt <= CdnFetchAttempts; attempt++) {
 			FetchAttemptResult result = await TryFetchOnceAsync(http, url, version, attempt, cancellationToken).ConfigureAwait(false);

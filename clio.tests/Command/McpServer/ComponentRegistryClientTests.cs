@@ -17,7 +17,7 @@ namespace Clio.Tests.Command.McpServer;
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class ComponentRegistryClientTests {
-	private const string CdnBaseUrl = "https://cdn.test/api/component-registry/";
+	private const string CdnBaseUrl = "https://cdn.test/api/mcp/";
 	private const string SamplePayload = """[ { "componentType": "crt.Sample", "category": "interactive", "description": "test", "container": false, "properties": {} } ]""";
 
 	[Test]
@@ -64,7 +64,7 @@ public sealed class ComponentRegistryClientTests {
 		// Arrange
 		FakeRegistryCacheStore cache = new();
 		FakeHttpHandler handler = new();
-		handler.Enqueue("8.2.1.json", HttpStatusCode.OK, SamplePayload);
+		handler.Enqueue("8.2.1/ComponentRegistry.json", HttpStatusCode.OK, SamplePayload);
 		ComponentRegistryClient client = CreateClient(cache, handler);
 
 		// Act
@@ -79,13 +79,13 @@ public sealed class ComponentRegistryClientTests {
 	}
 
 	[Test]
-	[Description("When the per-version file 404s the client falls back to the latest.json file on CDN.")]
+	[Description("When the per-version file 404s the client falls back to latest/ComponentRegistry.json on CDN.")]
 	public async Task GetAsync_Falls_Back_To_Latest_When_Version_Missing_On_Cdn() {
 		// Arrange
 		FakeRegistryCacheStore cache = new();
 		FakeHttpHandler handler = new();
-		handler.Enqueue("9.9.9.json", HttpStatusCode.NotFound, body: null);
-		handler.Enqueue("latest.json", HttpStatusCode.OK, SamplePayload);
+		handler.Enqueue("9.9.9/ComponentRegistry.json", HttpStatusCode.NotFound, body: null);
+		handler.Enqueue("latest/ComponentRegistry.json", HttpStatusCode.OK, SamplePayload);
 		ComponentRegistryClient client = CreateClient(cache, handler);
 
 		// Act
@@ -124,7 +124,7 @@ public sealed class ComponentRegistryClientTests {
 		// Arrange
 		FakeRegistryCacheStore cache = new();
 		FakeHttpHandler handler = new();
-		handler.Enqueue("latest.json", HttpStatusCode.OK, SamplePayload);
+		handler.Enqueue("latest/ComponentRegistry.json", HttpStatusCode.OK, SamplePayload);
 		ComponentRegistryClient client = CreateClient(cache, handler);
 
 		// Act

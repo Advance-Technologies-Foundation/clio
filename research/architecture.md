@@ -8,7 +8,7 @@ The component catalog is a data product. Its evolution (appearance of components
 
 1. **Source of truth — TS decorators + ViewConfig + JSDoc in creatio-ui.** No manual JSON on the platform side.
 2. **The extractor runs in `creatio-ui` Jenkins** at GA-tag time (`8.2.0`, `8.2.1`, `8.3.0`, …). The extracted JSON is uploaded to academy.creatio.com CDN by the same job. No separate composer repo, no second CI stage.
-3. **Distribution channel: public HTTPS CDN at academy.creatio.com.** URL pattern: `https://academy.creatio.com/api/component-registry/{version}.json`. A `latest.json` alias points to the freshest GA. No authentication.
+3. **Distribution channel: public HTTPS CDN at academy.creatio.com.** URL pattern: `https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json`. A `latest/ComponentRegistry.json` alias points to the freshest GA. No authentication.
 4. **Per-version files, not per-entry availability.** Each GA-tag publishes a self-contained JSON file. clio selects the file matching the platform version of the target environment; it does not filter records inside a file.
 5. **JSON shape: drop-in compatible with the current in-repo `ComponentRegistry.json`** — top-level array of `ComponentRegistryEntry` objects. No wrapper, no `schemaVersion`, no `categories` block in v1.
 6. **No AI-side overrides in v1.** The CI emits the full extracted set. AI-team curation is a possible future stage.
@@ -35,11 +35,11 @@ The component catalog is a data product. Its evolution (appearance of components
             └─────────────┬───────────────────────────────┘
                           │ HTTPS PUT (Jenkins → CDN)
                           ▼
-   ┌─── https://academy.creatio.com/api/component-registry/ ───┐
-   │     8.2.0.json                                            │
-   │     8.2.1.json                                            │
-   │     8.3.0.json                                            │
-   │     latest.json    (alias to the freshest GA)             │
+   ┌─── https://academy.creatio.com/api/mcp/ ──────────────────┐
+   │     8.2.0/ComponentRegistry.json                          │
+   │     8.2.1/ComponentRegistry.json                          │
+   │     8.3.0/ComponentRegistry.json                          │
+   │     latest/ComponentRegistry.json (alias to freshest GA)  │
    │                                                           │
    │     Each file: top-level JSON array of                    │
    │                ComponentRegistryEntry (drop-in            │
@@ -76,7 +76,7 @@ The component catalog is a data product. Its evolution (appearance of components
 |---|---|---|
 | **creatio-ui** | Platform-UI team | `@CrtViewElement` decorators, `*ViewConfig` interfaces, JSDoc metadata, the Jenkins extractor, the CDN upload step |
 | **clio** | clio team | HTTP client, file cache, build-time-embedded snapshot, `IPlatformVersionResolver`, `ComponentInfoCatalog`, MCP tools, guidance resources |
-| **academy.creatio.com** infra | Academy team (consumer of the contract) | Hosting of the static files at `/api/component-registry/`; uptime, cache headers, TLS |
+| **academy.creatio.com** infra | Academy team (consumer of the contract) | Hosting of the static files at `/api/mcp/`; uptime, cache headers, TLS |
 
 The CDN is **not a domain** in the architectural sense — it is a transport contract. The contract (URL pattern, JSON shape, freshness expectations) is described in [jenkins-pipeline-spec.md](jenkins-pipeline-spec.md).
 
@@ -104,7 +104,7 @@ The CDN serves a flat top-level array — byte-for-byte compatible with the curr
 
 No `availability` fields per entry. No top-level wrapper. The consumer (`ComponentRegistryEntry` POCO in clio) is unchanged from the existing shape — pure drop-in.
 
-**Why no per-entry `availability`:** version selection happens at the **file level** on the CDN (`8.2.0.json` vs `8.3.0.json`). The catalog inside a file is already version-specific; there is nothing to filter at request time inside clio.
+**Why no per-entry `availability`:** version selection happens at the **file level** on the CDN (`8.2.0/ComponentRegistry.json` vs `8.3.0/ComponentRegistry.json`). The catalog inside a file is already version-specific; there is nothing to filter at request time inside clio.
 
 This trades richness for simplicity. A future schema bump (when AI needs cross-version diffing in the same response, or per-property `@since` data) is a coordinated CDN-shape + clio change, not part of v1.
 
@@ -124,8 +124,8 @@ master (8.4 dev) ─┬─ cut → 8.3.x branch created
                   │          refresh Jenkins artifact (still no CDN)
                   │
                   └─ tag 8.3.0 (GA) ─ extract → PUT to CDN
-                                        ↳ /api/component-registry/8.3.0.json
-                                        ↳ /api/component-registry/latest.json
+                                        ↳ /api/mcp/8.3.0/ComponentRegistry.json
+                                        ↳ /api/mcp/latest/ComponentRegistry.json
                                             (updated only if 8.3.0 > current latest)
                                                 ↳ clio runtime picks it up
                                                    on next 24h-TTL refresh
@@ -239,8 +239,8 @@ Extracted from [extractor-analysis.md](extractor-analysis.md) and the prior rese
    - `values` — for union types of string literals
    - `default` — from `@CrtInterfaceDesignerItem.defaultPropertyValues[name]`
 5. `category` — JSDoc `@aiCategory` overrides; otherwise — mapping via `viewElementGroupType`.
-6. **Output:** a single JSON file matching the current top-level array shape. Path: `dist/component-registry/{version}.json`.
-7. **Upload step:** HTTPS PUT to `https://academy.creatio.com/api/component-registry/{version}.json`. On success and only if `{version} > current latest semver`, also update `latest.json` (atomic rename / copy on the academy side).
+6. **Output:** a single JSON file matching the current top-level array shape. Path: `dist/component-registry/{version}.json` in the producer workspace; uploaded under the canonical CDN path below.
+7. **Upload step:** HTTPS PUT to `https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json`. On success and only if `{version} > current latest semver`, also update `latest/ComponentRegistry.json` (atomic rename / copy on the academy side).
 
 Note: JSDoc `@since` / `@deprecated` parsing **is allowed in extractor output** (the schema simply ignores the fields in v1). This preserves the optionality of switching the model to per-entry availability later without changing the extractor — the consumer side (clio) just starts reading them.
 
@@ -253,12 +253,12 @@ Note: JSDoc `@since` / `@deprecated` parsing **is allowed in extractor output** 
 - **Do not do decorator extraction via regex.** AST walk via `ts-morph`.
 - **Do not block the creatio-ui release on the extractor.** Build the registry in a separate Jenkins job that fails isolated; a registry-publish failure must not block a platform GA.
 - **Do not have clio mutate the CDN.** clio is read-only. The only side-effect of clio is its own local cache.
-- **Do not skip the `latest.json` semver check.** A backport (8.2.5 published after 8.3.0 is GA) must not overwrite `latest.json` to point at the older version.
+- **Do not skip the `latest/ComponentRegistry.json` semver check.** A backport (8.2.5 published after 8.3.0 is GA) must not overwrite the `latest` alias to point at the older version.
 - **Do not embed the API endpoint URL deep in clio code.** Use a single configurable constant — see [clio-target-structure.md](clio-target-structure.md).
 
 ## Infrastructure artifacts that can be reused
 
-- **academy.creatio.com** — existing public infrastructure (the academy site itself). The `/api/component-registry/` prefix is a new path under existing TLS + DNS.
+- **academy.creatio.com** — existing public infrastructure (the academy site itself). The `/api/mcp/` prefix is a new path under existing TLS + DNS.
 - **Jenkins pipeline-library** in creatio-ui — the `@Library('pipeline-library')` pattern is already in use.
 - **Nx monorepo** in creatio-ui — `nx.json`, `project.json` in each lib — the standard path for an extractor task. See [jenkins-pipeline-spec.md](jenkins-pipeline-spec.md) for the proposed `nx` target naming.
 - **MSBuild custom targets** in clio's csproj — used as the fetch-at-pack mechanism (`<Target Name="ResolveCdnSnapshot" BeforeTargets="…">`).

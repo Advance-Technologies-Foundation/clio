@@ -117,7 +117,7 @@ public sealed class ComponentRegistryCacheStore : IComponentRegistryCacheStore {
 		ComponentRegistryCacheMetadata metadata = new(
 			FetchedAt: fetchedAt,
 			ExpiresAt: fetchedAt + EntryTtl,
-			SourceUrl: $"https://academy.creatio.com/api/component-registry/{version}.json",
+			SourceUrl: $"https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json",
 			Etag: etag?.Tag,
 			LastModified: lastModified,
 			ContentSha256: Convert.ToHexString(SHA256.HashData(payload)));

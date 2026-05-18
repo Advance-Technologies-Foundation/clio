@@ -23,15 +23,7 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
 		<LangVersion>12</LangVersion>
-		<!--
-			MSB3923 is emitted by the DownloadFile task in ResolveCdnSnapshot while
-			academy.creatio.com/api/component-registry/ is not yet hosted by the academy team.
-			Once the CDN endpoint goes live and successful downloads become the norm,
-			drop MSB3923 from this list so a future genuine fetch failure stays visible.
-			The Message task inside ResolveCdnSnapshot keeps fallbackToSeed=true visible
-			in the build log either way.
-		-->
-		<NoWarn>NU5119;NU5118;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169;MSB3923</NoWarn>
+		<NoWarn>NU5119;NU5118;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169</NoWarn>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
@@ -104,17 +96,19 @@
 		The MSBuild target below fetches the freshest catalog from the academy.creatio.com CDN
 		at build time and embeds it into clio.dll. On fetch failure the committed seed file
 		(Command\McpServer\Data\ComponentRegistry.seed.json) is used instead, so offline
-		builds and pre-CDN bootstrap still succeed. See research/clio-target-structure.md
-		and research/implementation-plan-part1-cdn.md for the design.
+		builds still succeed. See research/clio-target-structure.md and
+		research/implementation-plan-part1-cdn.md for the design.
 	-->
 	<PropertyGroup>
-		<CdnSnapshotUrl Condition="'$(CdnSnapshotUrl)' == ''">https://academy.creatio.com/api/component-registry/latest.json</CdnSnapshotUrl>
+		<CdnSnapshotUrl Condition="'$(CdnSnapshotUrl)' == ''">https://academy.creatio.com/api/mcp/latest/ComponentRegistry.json</CdnSnapshotUrl>
 		<!--
 			Staging is rooted at $(MSBuildProjectDirectory)/obj/ rather than $(IntermediateOutputPath)
 			because the latter is empty at the time top-level PropertyGroup is evaluated (before
 			$(TargetFramework) is bound), which would dump the staging into the project root.
+			$(TargetFramework) is included in the path so multi-targeted inner builds
+			(net8.0 + net10.0) do not race on the same DownloadFile destination.
 		-->
-		<CdnSnapshotStaging>$(MSBuildProjectDirectory)/obj/component-registry/</CdnSnapshotStaging>
+		<CdnSnapshotStaging>$(MSBuildProjectDirectory)/obj/component-registry/$(TargetFramework)/</CdnSnapshotStaging>
 		<CdnSnapshotPath>$(CdnSnapshotStaging)ComponentRegistry.json</CdnSnapshotPath>
 		<CdnSnapshotMetadataPath>$(CdnSnapshotStaging)embedded-metadata.json</CdnSnapshotMetadataPath>
 		<SeedSnapshotPath>$(MSBuildProjectDirectory)/Command/McpServer/Data/ComponentRegistry.seed.json</SeedSnapshotPath>

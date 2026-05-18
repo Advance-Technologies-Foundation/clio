@@ -23,9 +23,11 @@ sidecar (ETag, Last-Modified, SHA-256). Failed downloads do not poison the
 cache — the previous entry stays as-is.
 
 The CDN base URL defaults to
-`https://academy.creatio.com/api/component-registry/` and can be overridden
-with the `CLIO_COMPONENT_REGISTRY_CDN_BASE_URL` environment variable for
-dev or staging.
+`https://academy.creatio.com/api/mcp/` and can be overridden with the
+`CLIO_COMPONENT_REGISTRY_CDN_BASE_URL` environment variable for dev or
+staging. Per-version payloads live at
+`{base}{version}/ComponentRegistry.json`, with `latest/ComponentRegistry.json`
+as the alias for the most recently published GA.
 
 ## Synopsis
 
@@ -42,7 +44,7 @@ component-registry
 ```bash
 --version                          Refresh a specific platform version
                                    (3-part SemVer, for example 8.2.1).
-                                   Omit to refresh latest.json.
+                                   Omit to refresh latest/ComponentRegistry.json.
 
 --all                              Refresh every version currently present
                                    in the local cache directory.
@@ -51,7 +53,7 @@ component-registry
 ## Examples
 
 ```bash
-# Refresh the latest.json alias (the most common case).
+# Refresh the latest/ComponentRegistry.json alias (the most common case).
 clio component-registry-refresh
 
 # Refresh a specific GA file.

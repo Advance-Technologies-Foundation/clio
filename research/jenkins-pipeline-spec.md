@@ -14,9 +14,9 @@ Sister documents:
 | Source repo | `Advance-Technologies-Foundation/creatio-ui` (monorepo) |
 | Output artifact | A single JSON file per platform GA-tag |
 | Output schema | Top-level array of `ComponentRegistryEntry` objects (same as the current in-repo file in clio) |
-| Filename convention | `{Major.Minor.Patch}.json`, e.g. `8.2.1.json`. SemVer 3-part, no prefix, no build/revision component, no leading `v`. |
-| Special filename | `latest.json` — copy of the highest-semver published GA file |
-| Destination | `https://academy.creatio.com/api/component-registry/{filename}` (HTTPS PUT or whatever method the academy infra exposes; see § Upload mechanism) |
+| Path convention | `{Major.Minor.Patch}/ComponentRegistry.json`, e.g. `8.3.4/ComponentRegistry.json`. SemVer 3-part directory, no prefix, no build/revision component, no leading `v`; the filename is always `ComponentRegistry.json`. |
+| Special path | `latest/ComponentRegistry.json` — copy of the highest-semver published GA payload |
+| Destination | `https://academy.creatio.com/api/mcp/{path}` (HTTPS PUT or whatever method the academy infra exposes; see § Upload mechanism) |
 | Trigger | GA-tag in creatio-ui (`8.2.0`, `8.2.1`, `8.3.0`, …). Branch-cut runs the same job in **baseline mode** (artifact only; no CDN upload). |
 | Cache headers (recommended) | `Cache-Control: public, max-age=86400` (matches clio's 24h TTL); `ETag` strongly recommended |
 | Access | Public, no authentication |
@@ -199,7 +199,7 @@ pipeline {
             when { expression { env.PUBLISH_VERSION == '' } }
             steps {
                 sh '''
-                    curl -sf https://academy.creatio.com/api/component-registry/latest.json \
+                    curl -sf https://academy.creatio.com/api/mcp/latest/ComponentRegistry.json \
                         -o /tmp/previous-latest.json || true
                     node tools/component-registry-extractor/diff.js \
                         dist/component-registry/output.json \
@@ -216,14 +216,14 @@ pipeline {
                     # Per-version
                     ./tools/cdn-upload.sh \
                         --source dist/component-registry/output.json \
-                        --dest "/api/component-registry/${PUBLISH_VERSION}.json"
+                        --dest "/api/mcp/${PUBLISH_VERSION}/ComponentRegistry.json"
 
-                    # latest.json (semver-gated)
+                    # latest alias (semver-gated)
                     CURRENT_LATEST=$(./tools/cdn-current-latest.sh)
                     if ./tools/semver-gt.sh "${PUBLISH_VERSION}" "${CURRENT_LATEST}"; then
                         ./tools/cdn-upload.sh \
                             --source dist/component-registry/output.json \
-                            --dest "/api/component-registry/latest.json"
+                            --dest "/api/mcp/latest/ComponentRegistry.json"
                     fi
                 '''
             }
@@ -257,7 +257,7 @@ Whichever option is chosen, the Jenkins job must:
 3. Emit a strong `ETag` so clio's stale-while-revalidate flow can short-circuit unchanged content.
 4. Log the URL of the published file for the release thread.
 
-Open question for the academy team: **what is the supported upload API for `/api/component-registry/`?**
+Open question for the academy team: **what is the supported upload API for `/api/mcp/`?**
 
 ## Cache headers (recommended)
 

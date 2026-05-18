@@ -44,11 +44,11 @@ PR [clio#595](https://github.com/Advance-Technologies-Foundation/clio/pull/595) 
             └─────────────┬───────────────────────────────┘
                           │ HTTPS PUT (CI)
                           ▼
-   ┌─── https://academy.creatio.com/api/component-registry/ ───┐
-   │     8.2.0.json                                            │
-   │     8.2.1.json                                            │
-   │     8.3.0.json                                            │
-   │     latest.json    (alias to the freshest GA)             │
+   ┌─── https://academy.creatio.com/api/mcp/ ──────────────────┐
+   │     8.2.0/ComponentRegistry.json                          │
+   │     8.2.1/ComponentRegistry.json                          │
+   │     8.3.0/ComponentRegistry.json                          │
+   │     latest/ComponentRegistry.json (alias to freshest GA)  │
    └─────────────┬─────────────────────────────────────────────┘
                  │ HTTPS GET (clio runtime, 24h TTL,
                  │  stale-while-revalidate, no auth)
@@ -74,7 +74,7 @@ PR [clio#595](https://github.com/Advance-Technologies-Foundation/clio/pull/595) 
 ## Key architectural decisions
 
 - **Two isolated domains**: creatio-ui (source + CI + CDN upload), clio (consumer + fallback chain + version resolver). No third repo.
-- **CDN as transport**: public HTTPS on academy.creatio.com, no auth. URL pattern `https://academy.creatio.com/api/component-registry/{version}.json` + `latest.json` alias.
+- **CDN as transport**: public HTTPS on academy.creatio.com, no auth. URL pattern `https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json` + `latest/ComponentRegistry.json` alias.
 - **Per-version delivery**: each GA-tag (`8.2.0`, `8.2.1`, `8.3.0`, …) gets its own file. No per-entry `availability` ranges — the file is the unit of versioning.
 - **JSON shape is drop-in compatible** with the current `ComponentRegistry.json` (top-level array of `ComponentRegistryEntry`). No wrapper, no `schemaVersion`, no `categories` (yet).
 - **No AI-side overrides in v1.** `creatio-ui` CI emits the full extracted set. Curation is a future stage if needed.

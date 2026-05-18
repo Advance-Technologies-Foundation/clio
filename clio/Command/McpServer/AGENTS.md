@@ -78,11 +78,12 @@ no longer lives as a flat JSON file in the repo. Runtime resolution happens
 through a three-layer fallback chain implemented in
 `Tools/ComponentRegistryClient.cs`:
 
-1. **CDN.** `https://academy.creatio.com/api/component-registry/{version}.json`
+1. **CDN.** `https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json`
    (override via `CLIO_COMPONENT_REGISTRY_CDN_BASE_URL` env var). Per-platform-
-   version file plus a `latest.json` alias maintained by the producer-side CI.
-   Until the academy endpoint goes live, every fetch lands at 404 and the
-   chain falls through — this is expected.
+   version file plus a `latest/ComponentRegistry.json` alias maintained by the
+   producer-side CI. Versions that have not been published yet return 404 and
+   the chain falls through to the cache, the `latest` alias, and finally the
+   embedded snapshot — this is expected.
 2. **File cache.** `~/.clio/cache/component-registry/{version}.json` with a
    24h TTL and a `{version}.meta.json` sidecar (ETag, Last-Modified, SHA-256).
    Cache hits return synchronously; stale entries return immediately while a
@@ -92,9 +93,9 @@ through a three-layer fallback chain implemented in
    `Clio.ComponentRegistry.ComponentRegistry.json` and
    `Clio.ComponentRegistry.embedded-metadata.json` are produced at clio build
    time by the `ResolveCdnSnapshot` MSBuild target — that target GETs the CDN
-   `latest.json` and on failure copies `Command/McpServer/Data/ComponentRegistry.seed.json`
-   instead. So even an offline `dotnet build` succeeds and ships a valid
-   catalog inside the assembly.
+   `latest/ComponentRegistry.json` and on failure copies
+   `Command/McpServer/Data/ComponentRegistry.seed.json` instead. So even an
+   offline `dotnet build` succeeds and ships a valid catalog inside the assembly.
 
 The platform version is resolved per request by
 `Tools/PlatformVersionResolver.cs` via cliogate `GET /rest/CreatioApiGateway/GetSysInfo`,
@@ -108,7 +109,7 @@ to `latest`, and the MCP response carries the `resolvedFrom` marker
 To force-refresh the local cache without waiting for the 24h TTL, use the
 `clio component-registry-refresh` verb:
 
-- no flags → refresh `latest.json`
+- no flags → refresh `latest/ComponentRegistry.json`
 - `--version 8.2.1` → refresh that GA file
 - `--all` → refresh every per-version file currently in the cache directory
 

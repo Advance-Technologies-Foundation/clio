@@ -24,8 +24,8 @@ The version returned by `GetSysInfo` is mapped to a CDN file name (e.g. `8.1.5.x
 
 | Aspect | State |
 |---|---|
-| Primary source | `https://academy.creatio.com/api/component-registry/{version}.json` (per-version file on academy CDN) |
-| Latest alias | `https://academy.creatio.com/api/component-registry/latest.json` (CI-maintained pointer to the freshest GA) |
+| Primary source | `https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json` (per-version file on academy CDN) |
+| Latest alias | `https://academy.creatio.com/api/mcp/latest/ComponentRegistry.json` (CI-maintained pointer to the freshest GA) |
 | Runtime cache | `~/.clio/cache/component-registry/{version}.json` + `{version}.meta.json` (Last-Modified, ETag, expiresAt, sourceUrl) |
 | Embedded fallback | `Clio.ComponentRegistry.ComponentRegistry.json` as an embedded resource in `clio.dll`. Populated at `dotnet pack` time via MSBuild `ResolveCdnSnapshot` target. Committed seed-snapshot serves as the bootstrap source and as the fallback when the MSBuild fetch fails. |
 | Loader | `Stream` from CDN/cache/embedded, parsed by the same `JsonSerializer.Deserialize<ComponentRegistryEntry[]>` |
@@ -157,7 +157,7 @@ Location: `~/.clio/cache/component-registry/`.
   {
     "fetchedAt": "2026-05-13T10:00:00Z",
     "expiresAt": "2026-05-14T10:00:00Z",
-    "sourceUrl": "https://academy.creatio.com/api/component-registry/8.2.1.json",
+    "sourceUrl": "https://academy.creatio.com/api/mcp/8.2.1/ComponentRegistry.json",
     "etag": "W/\"abc123\"",
     "lastModified": "Wed, 13 May 2026 09:00:00 GMT",
     "contentSha256": "..."
@@ -274,7 +274,7 @@ Logging at each tier (`source=cdn`, `source=cache`, `source=embedded`, with vers
 
 ## MSBuild fetch target (build-time embedded refresh)
 
-Goal: at `dotnet pack` time of clio, fetch `latest.json` from the CDN and embed it as `Clio.ComponentRegistry.ComponentRegistry.json` resource in `clio.dll`. On failure, fall back to a committed seed-snapshot in the repo.
+Goal: at `dotnet pack` time of clio, fetch `latest/ComponentRegistry.json` from the CDN and embed it as `Clio.ComponentRegistry.ComponentRegistry.json` resource in `clio.dll`. On failure, fall back to a committed seed-snapshot in the repo.
 
 Sketch:
 
@@ -282,7 +282,7 @@ Sketch:
 <!-- in clio.csproj -->
 <Target Name="ResolveCdnSnapshot" BeforeTargets="GenerateAssemblyInfo;CoreCompile;PrepareResources">
     <PropertyGroup>
-        <CdnSnapshotUrl>https://academy.creatio.com/api/component-registry/latest.json</CdnSnapshotUrl>
+        <CdnSnapshotUrl>https://academy.creatio.com/api/mcp/latest/ComponentRegistry.json</CdnSnapshotUrl>
         <CdnSnapshotPath>$(IntermediateOutputPath)ComponentRegistry.json</CdnSnapshotPath>
         <CdnSnapshotMetadataPath>$(IntermediateOutputPath)embedded-metadata.json</CdnSnapshotMetadataPath>
         <SeedSnapshotPath>$(MSBuildProjectDirectory)/Command/McpServer/Data/ComponentRegistry.seed.json</SeedSnapshotPath>
