@@ -94,6 +94,43 @@ internal class UnregisterCommandTests : BaseCommandTests<UnregisterOptions>{
 	}
 
 	[Test]
+	[Description("Execute should log only the message without stack trace when exception occurs in normal mode")]
+	public void Execute_WhenProcessExecutorThrows_LogsMessageOnly_InNormalMode() {
+		bool originalDebugMode = Program.IsDebugMode;
+		Program.IsDebugMode = false;
+		try {
+			_processExecutor
+				.When(x => x.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()))
+				.Do(_ => throw new Exception("reg failure"));
+
+			_unregisterCommand.Execute(new UnregisterOptions());
+
+			_logger.Received(1).WriteError("reg failure");
+			_logger.DidNotReceive().WriteError(Arg.Is<string>(s => s.Contains("   at ")));
+		} finally {
+			Program.IsDebugMode = originalDebugMode;
+		}
+	}
+
+	[Test]
+	[Description("Execute should log full stack trace when exception occurs in debug mode")]
+	public void Execute_WhenProcessExecutorThrows_LogsFullStackTrace_InDebugMode() {
+		bool originalDebugMode = Program.IsDebugMode;
+		Program.IsDebugMode = true;
+		try {
+			_processExecutor
+				.When(x => x.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()))
+				.Do(_ => throw new Exception("reg failure"));
+
+			_unregisterCommand.Execute(new UnregisterOptions());
+
+			_logger.Received(1).WriteError(Arg.Is<string>(s => s.Contains("   at ")));
+		} finally {
+			Program.IsDebugMode = originalDebugMode;
+		}
+	}
+
+	[Test]
 	[Description("Execute should return error and terminate early when process exit code is non-zero.")]
 	public void Execute_WhenProcessExitCodeIsNonZero_ReturnsError() {
 		// Arrange

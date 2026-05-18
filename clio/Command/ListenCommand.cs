@@ -19,11 +19,23 @@ public class ListenOptions : EnvironmentOptions
 	[Option("loglevel", Required = false, HelpText = "Log level (ALL, Debug, Error, Fatal, Info, Trace, Warn)", Default = "All")]
 	public string LogLevel { get; set; }
 
-	[Option("logPattern", Required = false, HelpText = "Log pattern (i.e. ExceptNoisyLoggers)", Default = "")]
+	[Option("log-pattern", Required = false, HelpText = "Log pattern (i.e. ExceptNoisyLoggers)")]
 	public string LogPattern { get; set; }
-	
-	[Option("FileName", Required = false, HelpText = "File path to save logs into")]
+
+	[Option("logPattern", Required = false, Hidden = true, HelpText = "Alias for --log-pattern")]
+	public string LogPatternAlias {
+		get => LogPattern;
+		set { if (!string.IsNullOrEmpty(value)) LogPattern = value; }
+	}
+
+	[Option("file-name", Required = false, HelpText = "File path to save logs into")]
 	public string FileName { get; set; }
+
+	[Option("FileName", Required = false, Hidden = true, HelpText = "Alias for --file-name")]
+	public string FileNameAlias {
+		get => FileName;
+		set { if (!string.IsNullOrEmpty(value)) FileName = value; }
+	}
 
 	[Option("Silent", Required = false, HelpText = "Disable messages in console", Default = false)]
 	public bool Silent { get; set; }

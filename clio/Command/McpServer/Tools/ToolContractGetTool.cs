@@ -270,6 +270,8 @@ internal static class ToolContractCatalog {
 	private const string BindingNameDescription = "Binding name.";
 	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
 	private const string WorkspacePathFieldName = "workspace-path";
+	private const string DataForgePlatformRequirementDescription =
+		"Requires Creatio platform version 10.0.0 or later; CrtDataForge is included in supported platform versions.";
 
 		private static readonly ToolErrorContract CommonErrorContract = new([
 			new ToolErrorCodeContract("tool-not-found", "Requested tool name is not registered by clio MCP."),
@@ -292,7 +294,6 @@ internal static class ToolContractCatalog {
 			[ApplicationSectionGetListTool.ApplicationSectionGetListToolName] = BuildApplicationSectionGetList(),
 			[ApplicationGetInfoTool.ApplicationGetInfoToolName] = BuildApplicationGetInfo(),
 			[ApplicationGetListTool.ApplicationGetListToolName] = BuildApplicationGetList(),
-			[DataForgeTool.DataForgeHealthToolName] = BuildDataForgeHealth(),
 			[DataForgeTool.DataForgeStatusToolName] = BuildDataForgeStatus(),
 			[DataForgeTool.DataForgeFindTablesToolName] = BuildDataForgeFindTables(),
 			[DataForgeTool.DataForgeFindLookupsToolName] = BuildDataForgeFindLookups(),
@@ -339,7 +340,6 @@ internal static class ToolContractCatalog {
 		ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
 		ApplicationGetInfoTool.ApplicationGetInfoToolName,
 		ApplicationGetListTool.ApplicationGetListToolName,
-		DataForgeTool.DataForgeHealthToolName,
 		DataForgeTool.DataForgeStatusToolName,
 		DataForgeTool.DataForgeFindTablesToolName,
 		DataForgeTool.DataForgeFindLookupsToolName,
@@ -948,29 +948,11 @@ internal static class ToolContractCatalog {
 			[]);
 	}
 
-	private static ToolContractDefinition BuildDataForgeHealth() {
-		return BuildDataForgeContract(
-			new DataForgeContractDescriptor {
-				ToolName = DataForgeTool.DataForgeHealthToolName,
-				Description = "Checks direct dataforge-service health endpoints for the selected Creatio target.",
-				InputFields = DataForgeConnectionFields(),
-				OutputFields = DataForgeEnvelopeFields(
-					"Health probe correlation identifier.",
-					Field("health", ObjectType, "Health payload with liveness/readiness and Data Forge readiness flags.")),
-				Examples = [
-					Example("Check Data Forge health for a configured environment", new Dictionary<string, object?> {
-						[EnvironmentNameFieldName] = ExampleEnvironmentName
-					})
-				],
-				PreferredFlow = Flow([DataForgeTool.DataForgeHealthToolName], "Use before Data Forge discovery when callers need to confirm liveness/readiness for the target environment.")
-			});
-	}
-
 	private static ToolContractDefinition BuildDataForgeStatus() {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeStatusToolName,
-				Description = "Combines direct dataforge-service probes with Creatio Data Forge maintenance readiness for the selected target.",
+				Description = "Checks whether Data Forge is ready to provide schema, lookup, relation, and maintenance context for a Creatio environment. " + DataForgePlatformRequirementDescription,
 				InputFields = DataForgeConnectionFields(),
 				OutputFields = DataForgeEnvelopeFields(
 					"Health probe correlation identifier.",
@@ -981,12 +963,7 @@ internal static class ToolContractCatalog {
 						[EnvironmentNameFieldName] = ExampleEnvironmentName
 					})
 				],
-				PreferredFlow = Flow([DataForgeTool.DataForgeStatusToolName], "Use when callers need both direct service probes and maintenance readiness before Data Forge discovery."),
-				FallbackFlow = [
-					Flow(
-						[DataForgeTool.DataForgeHealthToolName, DataForgeTool.DataForgeStatusToolName],
-						"Fallback when callers first want to verify direct health before reading maintenance readiness.")
-				]
+				PreferredFlow = Flow([DataForgeTool.DataForgeStatusToolName], "Use before longer schema-planning workflows when callers need to know whether Data Forge discovery is available.")
 			});
 	}
 
@@ -994,7 +971,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeFindTablesToolName,
-				Description = "Finds similar Creatio tables through dataforge-service using a free-text query.",
+				Description = "Finds existing Creatio tables that semantically match a business concept, so callers can reuse or compare schemas before creating new ones. " + DataForgePlatformRequirementDescription,
 				RequiredFields = [QueryFieldName],
 				InputFields = DataForgeConnectionFields(
 					Field(QueryFieldName, StringType, "Table search term."),
@@ -1021,7 +998,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeFindLookupsToolName,
-				Description = "Finds similar Creatio lookups through dataforge-service using a free-text query and optional lookup schema selector.",
+				Description = "Finds lookup values and lookup schemas that match a requested business value, useful for resolving lookup references before writing data bindings. " + DataForgePlatformRequirementDescription,
 				RequiredFields = [QueryFieldName],
 				InputFields = DataForgeConnectionFields(
 					Field(QueryFieldName, StringType, "Lookup search term."),
@@ -1053,7 +1030,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeGetRelationsToolName,
-				Description = "Returns semantic relation paths between two Creatio tables.",
+				Description = "Finds known relationship paths between two Creatio tables to help model references or understand existing entity links. " + DataForgePlatformRequirementDescription,
 				RequiredFields = ["source-table", "target-table"],
 				InputFields = DataForgeConnectionFields(
 					Field("source-table", StringType, "Source table name."),
@@ -1082,7 +1059,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeGetTableColumnsToolName,
-				Description = "Reads runtime entity columns from Creatio without package context.",
+				Description = "Returns the logical columns of a Creatio table, including captions, data types, required flags, and lookup targets. " + DataForgePlatformRequirementDescription,
 				RequiredFields = ["table-name"],
 				InputFields = DataForgeConnectionFields(
 					Field("table-name", StringType, "Target runtime entity schema name.")),
@@ -1095,7 +1072,7 @@ internal static class ToolContractCatalog {
 						[EnvironmentNameFieldName] = ExampleEnvironmentName
 					})
 				],
-				PreferredFlow = Flow([DataForgeTool.DataForgeGetTableColumnsToolName], "Use after table discovery when callers need runtime column hints without package ownership context."),
+				PreferredFlow = Flow([DataForgeTool.DataForgeGetTableColumnsToolName], "Use after table discovery when callers need column hints for a selected Creatio table."),
 				FallbackFlow = [
 					Flow(
 						[DataForgeTool.DataForgeFindTablesToolName, DataForgeTool.DataForgeGetTableColumnsToolName],
@@ -1108,7 +1085,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeContextToolName,
-				Description = "Aggregates Data Forge health, maintenance readiness, similar tables, lookups, relations, and runtime columns into one context payload.",
+				Description = "Builds a compact Data Forge context package for planning schema work: similar tables, lookup matches, relation paths, table columns, and readiness status. " + DataForgePlatformRequirementDescription,
 				InputFields = DataForgeConnectionFields(
 					Field("requirement-summary", StringType, "Optional free-text summary used when candidate-terms are omitted."),
 					Field("candidate-terms", ArrayType, "Optional table-search terms."),
@@ -1147,7 +1124,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeInitializeToolName,
-				Description = "Schedules Data Forge initialize jobs through the Creatio maintenance service.",
+				Description = "Schedules a full Data Forge initialization when the index is missing, stale, or not ready. " + DataForgePlatformRequirementDescription,
 				InputFields = DataForgeConnectionFields(),
 				OutputFields = DataForgeEnvelopeFields(
 					"Mutation correlation identifier when available.",
@@ -1165,7 +1142,7 @@ internal static class ToolContractCatalog {
 		return BuildDataForgeContract(
 			new DataForgeContractDescriptor {
 				ToolName = DataForgeTool.DataForgeUpdateToolName,
-				Description = "Schedules Data Forge update jobs through the Creatio maintenance service.",
+				Description = "Schedules a Data Forge index refresh after schema changes or when discovery results appear stale. " + DataForgePlatformRequirementDescription,
 				InputFields = DataForgeConnectionFields(),
 				OutputFields = DataForgeEnvelopeFields(
 					"Mutation correlation identifier when available.",
@@ -1193,7 +1170,7 @@ internal static class ToolContractCatalog {
 				[..descriptor.OutputFields]),
 			CommonErrorContract,
 			descriptor.Aliases ?? DataForgeConnectionAliases(),
-			DataForgeDefaults(),
+			[],
 			descriptor.Examples,
 			descriptor.PreferredFlow,
 			descriptor.FallbackFlow,
@@ -1334,18 +1311,18 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameCamelFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameCamelFieldName, StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets, Formula assignments with simple direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age.")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
 					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
 						Context: $"Supported values: {BusinessRuleConstants.SupportedActionTypesDescription}."),
 					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rule.actions[*].items[*]",
-						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }, { type: Formula, expression }, or { type: AttributeValue, path }. Formula expression must be a string using a simple direct-field arithmetic expression, for example Field1 + Field2. AttributeValue source paths may be direct columns or forward reference paths like LookupColumn.SourceColumn; the final source attribute and target attribute must have the same data value type. Formula functions, comparison operators, and string literals are not supported in formula scope."),
+						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }, { type: Formula, expression }, or { type: AttributeValue, path }. Formula expression must be a string using a simple numeric direct-field arithmetic expression, for example Field1 + Field2. Formula target and source attributes must be numeric; date/time arithmetic is not supported. AttributeValue source paths may be direct columns or forward reference paths like LookupColumn.SourceColumn; the final source attribute and target attribute must have the same data value type. Formula functions, comparison operators, and string literals are not supported in formula scope."),
 					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rule.actions[*].items[*].value.value",
 						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, and ISO 8601 time strings with timezone suffix for Time targets."),
 					new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rule.actions[*].items[*].value.expression",
-						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against an arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column.")
+						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against a numeric arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct numeric source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -2674,22 +2651,13 @@ internal static class ToolContractCatalog {
 	private static IReadOnlyList<ToolContractField> DataForgeConnectionFields(params ToolContractField[] leadingFields) {
 		return [
 			..leadingFields,
-			Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-			Field("uri", StringType, "Explicit Creatio URL."),
-			Field(LoginFieldName, StringType, "Explicit login."),
-			Field(PasswordFieldName, StringType, "Explicit password."),
-			Field("client-id", StringType, "Optional OAuth client id override for dataforge-service."),
-			Field("client-secret", StringType, "Optional OAuth client secret override for dataforge-service."),
-			Field("auth-app-uri", StringType, "Optional OAuth authority/application URI override."),
-			Field("allow-syssettings-auth-fallback", BooleanType, "Whether Data Forge auth may fall back to Creatio syssettings when OAuth credentials are omitted."),
-			Field("scope", StringType, "OAuth scope for dataforge-service token requests.")
+			Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 		];
 	}
 
 	private static IReadOnlyList<IReadOnlyList<string>> DataForgeConnectionRequirements() {
 		return [
-			[EnvironmentNameFieldName],
-			["uri", LoginFieldName, PasswordFieldName]
+			[EnvironmentNameFieldName]
 		];
 	}
 
@@ -2743,26 +2711,6 @@ internal static class ToolContractCatalog {
 			"Use 'default-value-source' instead of 'defaultValueSource'.");
 	}
 
-	private static ToolContractAlias ClientIdParameterAlias() {
-		return Alias(ParameterScope, "client-id", "clientId", RejectedStatus,
-			"Use 'client-id' instead of 'clientId'.");
-	}
-
-	private static ToolContractAlias ClientSecretParameterAlias() {
-		return Alias(ParameterScope, "client-secret", "clientSecret", RejectedStatus,
-			"Use 'client-secret' instead of 'clientSecret'.");
-	}
-
-	private static ToolContractAlias AuthAppUriParameterAlias() {
-		return Alias(ParameterScope, "auth-app-uri", "authAppUri", RejectedStatus,
-			"Use 'auth-app-uri' instead of 'authAppUri'.");
-	}
-
-	private static ToolContractAlias AllowSysSettingsAuthFallbackParameterAlias() {
-		return Alias(ParameterScope, "allow-syssettings-auth-fallback", "allowSysSettingsAuthFallback", RejectedStatus,
-			"Use 'allow-syssettings-auth-fallback' instead of 'allowSysSettingsAuthFallback'.");
-	}
-
 	private static ToolContractAlias TitleParameterAlias() {
 		return Alias(ParameterScope, TitleLocalizationsFieldName, "title", RejectedStatus,
 			$"Use '{TitleLocalizationsFieldName}' instead of legacy scalar 'title'.");
@@ -2797,20 +2745,7 @@ internal static class ToolContractCatalog {
 	private static IReadOnlyList<ToolContractAlias> DataForgeConnectionAliases(params ToolContractAlias[] extraAliases) {
 		return [
 			EnvironmentNameParameterAlias(),
-			ClientIdParameterAlias(),
-			ClientSecretParameterAlias(),
-			AuthAppUriParameterAlias(),
-			AllowSysSettingsAuthFallbackParameterAlias(),
 			..extraAliases
-		];
-	}
-
-	private static IReadOnlyList<ToolContractDefaultValue> DataForgeDefaults() {
-		return [
-			Default("allow-syssettings-auth-fallback", "true",
-				"Use Creatio syssettings OAuth credentials when explicit Data Forge OAuth credentials are omitted."),
-			Default("scope", "use_enrichment",
-				"Default Data Forge OAuth scope for semantic discovery and context enrichment.")
 		];
 	}
 

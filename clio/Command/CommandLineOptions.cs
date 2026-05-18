@@ -16,19 +16,19 @@ namespace Clio
 				set { if (!string.IsNullOrEmpty(value)) Uri = value; }
 			}
 
-			[Option('p', "Password", Required = false, HelpText = "User password")]
+			[Option('p', "password", Required = false, HelpText = "User password")]
 			public string Password { get; set; }
 
-			[Option("password", Required = false, Hidden = true, HelpText = "Alias for --Password")]
+			[Option("Password", Required = false, Hidden = true, HelpText = "Alias for --password")]
 			public string PasswordAlias {
 				get => Password;
 				set { if (!string.IsNullOrEmpty(value)) Password = value; }
 			}
 
-			[Option('l', "Login", Required = false, HelpText = "User login (administrator permission required)")]
+			[Option('l', "login", Required = false, HelpText = "User login (administrator permission required)")]
 			public string Login { get; set; }
 
-			[Option("login", Required = false, Hidden = true, HelpText = "Alias for --Login")]
+			[Option("Login", Required = false, Hidden = true, HelpText = "Alias for --login")]
 			public string LoginAlias {
 				get => Login;
 				set { if (!string.IsNullOrEmpty(value)) Login = value; }
@@ -37,18 +37,36 @@ namespace Clio
 			[Option('i', "IsNetCore", Required = false, HelpText = "Use .NET Core application", Hidden = true)]
 		public bool? IsNetCore { get; set; }
 
-			[Option('e', "Environment", Required = false, HelpText = "Environment name")]
+			[Option('e', "environment", Required = false, HelpText = "Environment name")]
 			public string Environment { get; set; }
 
-			[Option('m', "Maintainer", Required = false, HelpText = "Maintainer name")]
+			[Option("Environment", Required = false, Hidden = true, HelpText = "Alias for --environment")]
+			public string EnvironmentAlias {
+				get => Environment;
+				set { if (!string.IsNullOrEmpty(value)) Environment = value; }
+			}
+
+			[Option('m', "maintainer", Required = false, HelpText = "Maintainer name")]
 			public string Maintainer { get; set; }
+
+			[Option("Maintainer", Required = false, Hidden = true, HelpText = "Alias for --maintainer")]
+			public string MaintainerAlias {
+				get => Maintainer;
+				set { if (!string.IsNullOrEmpty(value)) Maintainer = value; }
+			}
 
 			[Option('c', "dev", Required = false, HelpText = "Developer mode state for environment")]
 			public string DevMode { get; set; }
 
-			[Option("WorkspacePathes", Required = false, HelpText = "Workspace path")]
+			[Option("workspace-pathes", Required = false, HelpText = "Workspace path")]
 			public string WorkspacePathes {
 				get; set;
+			}
+
+			[Option("WorkspacePathes", Required = false, Hidden = true, HelpText = "Alias for --workspace-pathes")]
+			public string WorkspacePathesAlias {
+				get => WorkspacePathes;
+				set { if (!string.IsNullOrEmpty(value)) WorkspacePathes = value; }
 			}
 
 			public bool? DeveloperModeEnabled {
@@ -67,17 +85,41 @@ namespace Clio
 				}
 			}
 
-			[Option('s', "Safe", Required = false, HelpText = "Safe action in this environment")]
+			[Option('s', "safe", Required = false, HelpText = "Safe action in this environment")]
 			public string Safe { get; set; }
 
-			[Option("clientId", Required = false, HelpText = "OAuth client id")]
+			[Option("Safe", Required = false, Hidden = true, HelpText = "Alias for --safe")]
+			public string SafeAlias {
+				get => Safe;
+				set { if (!string.IsNullOrEmpty(value)) Safe = value; }
+			}
+
+			[Option("client-id", Required = false, HelpText = "OAuth client id")]
 			public string ClientId { get; set; }
 
-			[Option("clientSecret", Required = false, HelpText = "OAuth client secret")]
+			[Option("clientId", Required = false, Hidden = true, HelpText = "Alias for --client-id")]
+			public string ClientIdAlias {
+				get => ClientId;
+				set { if (!string.IsNullOrEmpty(value)) ClientId = value; }
+			}
+
+			[Option("client-secret", Required = false, HelpText = "OAuth client secret")]
 			public string ClientSecret { get; set; }
 
-			[Option("authAppUri", Required = false, HelpText = "OAuth app URI")]
+			[Option("clientSecret", Required = false, Hidden = true, HelpText = "Alias for --client-secret")]
+			public string ClientSecretAlias {
+				get => ClientSecret;
+				set { if (!string.IsNullOrEmpty(value)) ClientSecret = value; }
+			}
+
+			[Option("auth-app-uri", Required = false, HelpText = "OAuth app URI")]
 			public string AuthAppUri { get; set; }
+
+			[Option("authAppUri", Required = false, Hidden = true, HelpText = "Alias for --auth-app-uri")]
+			public string AuthAppUriAlias {
+				get => AuthAppUri;
+				set { if (!string.IsNullOrEmpty(value)) AuthAppUri = value; }
+			}
 
 
 			[Option("silent", Required = false, HelpText = "Use default behavior without user interaction")]
@@ -97,8 +139,14 @@ namespace Clio
 				}
 			}
 
-			[Option("restartEnvironment", Required = false, HelpText = "Restart environment after execute command")]
+			[Option("restart-environment", Required = false, HelpText = "Restart environment after execute command")]
 			public bool RestartEnvironment { get; set; }
+
+			[Option("restartEnvironment", Required = false, Hidden = true, HelpText = "Alias for --restart-environment")]
+			public bool RestartEnvironmentAlias {
+				get => RestartEnvironment;
+				set { if (value) RestartEnvironment = value; }
+			}
 
 			public static bool IsNullOrEmpty(EnvironmentOptions options) {
 				if (options == null) {

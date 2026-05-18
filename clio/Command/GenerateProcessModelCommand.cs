@@ -22,25 +22,40 @@ public class GenerateProcessModelCommandOptions : EnvironmentOptions{
 	/// <summary>
 	/// Relative or absolute destination path used by the current command writer.
 	/// </summary>
-	[Option('d', "DestinationPath", Required = false,
-		HelpText = "Destination folder or explicit .cs file path for the generated process model.",
-		Default = ".")]
+	[Option('d', "destination-path", Required = false,
+		HelpText = "Destination folder or explicit .cs file path for the generated process model.")]
 	public string DestinationPath { get; set; } = ".";
 
+	[Option("DestinationPath", Required = false, Hidden = true, HelpText = "Alias for --destination-path")]
+	public string DestinationPathAlias {
+		get => DestinationPath;
+		set { if (!string.IsNullOrEmpty(value)) DestinationPath = value; }
+	}
 
 	/// <summary>
 	/// Namespace for generated process model classes.
 	/// </summary>
-	[Option('n', "Namespace", Required = false, HelpText = "Namespace for generated process model classes.",
+	[Option('n', "namespace", Required = false, HelpText = "Namespace for generated process model classes.",
 		Default = "AtfTIDE.ProcessModels")]
 	public string Namespace { get; set; } = "AtfTIDE.ProcessModels";
 
+	[Option("Namespace", Required = false, Hidden = true, HelpText = "Alias for --namespace")]
+	public string NamespaceAlias {
+		get => Namespace;
+		set { if (!string.IsNullOrEmpty(value)) Namespace = value; }
+	}
 
 	/// <summary>
 	/// Culture name used to select localized process captions and descriptions.
 	/// </summary>
-	[Option('x', "Culture", Required = false, HelpText = "Description culture", Default = "en-US")]
+	[Option('x', "culture", Required = false, HelpText = "Description culture", Default = "en-US")]
 	public string Culture { get; set; } = "en-US";
+
+	[Option("Culture", Required = false, Hidden = true, HelpText = "Alias for --culture")]
+	public string CultureAlias {
+		get => Culture;
+		set { if (!string.IsNullOrEmpty(value)) Culture = value; }
+	}
 
 	#endregion
 }

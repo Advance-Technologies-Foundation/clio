@@ -12,8 +12,14 @@ public class UnzipPkgOptions {
 
 	#region Properties: Public
 
-	[Option('d', "DestinationPath", Required = false, HelpText = "Destination path for package folder")]
+	[Option('d', "destination-path", Required = false, HelpText = "Destination path for package folder")]
 	public string DestinationPath { get; set; }
+
+	[Option("DestinationPath", Required = false, Hidden = true, HelpText = "Alias for --destination-path")]
+	public string DestinationPathAlias {
+		get => DestinationPath;
+		set { if (!string.IsNullOrEmpty(value)) DestinationPath = value; }
+	}
 
 	[Value(0, MetaName = "Name", Required = false, HelpText = "Name of the compressed package")]
 	public string Name { get; set; }

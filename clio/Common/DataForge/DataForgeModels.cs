@@ -4,42 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace Clio.Common.DataForge;
 
-public enum DataForgeAuthMode {
-	None,
-	OAuthClientCredentials
-}
-
-public sealed record DataForgeConfigRequest {
-	public string? ServiceUrl { get; init; }
-	public int? TimeoutMs { get; init; }
-	public int? SimilarTablesLimit { get; init; }
-	public int? LookupResultLimit { get; init; }
-	public int? TableRelationshipsLimit { get; init; }
-	public string? AuthAppUri { get; init; }
-	public string? ClientId { get; init; }
-	public string? ClientSecret { get; init; }
-	public string? Scope { get; init; }
-	public bool AllowSysSettingsAuthFallback { get; init; }
-}
-
-public sealed record DataForgeResolvedConfig(
-	string ServiceUrl,
-	int TimeoutMs,
-	int SimilarTablesLimit,
-	int LookupResultLimit,
-	int TableRelationshipsLimit,
-	DataForgeAuthMode AuthMode,
-	string? TokenUrl,
-	string? ClientId,
-	string? ClientSecret,
-	string Scope
-);
-
 public sealed class DataForgeTargetOptions : EnvironmentOptions {
-	public bool AllowSysSettingsAuthFallback { get; set; }
-
-	[Description("OAuth scope for dataforge-service token requests. Defaults to use_enrichment.")]
-	public string? Scope { get; set; }
 }
 
 /// <summary>
@@ -113,15 +78,6 @@ public sealed record DataForgeCoverage(
 	[property: JsonPropertyName("lookups")] bool Lookups,
 	[property: JsonPropertyName("relations")] bool Relations,
 	[property: JsonPropertyName("table-columns")] bool Columns
-);
-
-public sealed record DataForgeHealthResponse(
-	[property: JsonPropertyName("success")] bool Success,
-	[property: JsonPropertyName("source")] string Source,
-	[property: JsonPropertyName("correlation-id")] string CorrelationId,
-	[property: JsonPropertyName("warnings")] IReadOnlyList<string> Warnings,
-	[property: JsonPropertyName("error")] DataForgeErrorResult? Error,
-	[property: JsonPropertyName("health")] DataForgeHealthResult? Health
 );
 
 public sealed record DataForgeStatusResponse(

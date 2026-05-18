@@ -16,8 +16,14 @@ namespace Clio.Command
 		[Value(2, MetaName = "Type", Required = false, HelpText = "Type", Default = "Text")]
 		public string Type { get; set; }
 
-		[Option("GET", Required = false, HelpText = "Use GET to retrieve sys-setting", Default = false)]
+		[Option("get", Required = false, HelpText = "Use GET to retrieve sys-setting")]
 		public bool IsGet { get; set; }
+
+		[Option("GET", Required = false, Hidden = true, HelpText = "Alias for --get")]
+		public bool IsGetAlias {
+			get => IsGet;
+			set { if (value) IsGet = value; }
+		}
 
 	}
 

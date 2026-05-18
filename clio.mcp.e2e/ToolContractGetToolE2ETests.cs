@@ -164,7 +164,6 @@ public sealed class ToolContractGetToolE2ETests {
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
 				["tool-names"] = new[] {
-					DataForgeTool.DataForgeHealthToolName,
 					DataForgeTool.DataForgeStatusToolName,
 					DataForgeTool.DataForgeFindTablesToolName,
 					DataForgeTool.DataForgeFindLookupsToolName,
@@ -191,10 +190,9 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "explicit lookup should still return Data Forge initialize for remediation workflows");
 		explicitResponse.Tools!.Select(tool => tool.Name).Should().Contain(DataForgeTool.DataForgeUpdateToolName,
 			because: "explicit lookup should still return Data Forge update for remediation workflows");
-		explicitResponse.Tools!.Single(tool => tool.Name == DataForgeTool.DataForgeHealthToolName)
-			.Defaults.Should().Contain(definition =>
-				definition.Name == "scope" && definition.Value == "use_enrichment",
-				because: "the explicit Data Forge contract should advertise the default OAuth scope");
+		explicitResponse.Tools.Should().OnlyContain(tool =>
+				tool.Description.Contains("Creatio platform version 10.0.0 or later"),
+			because: "Data Forge contracts should advertise the platform version requirement through the real MCP server");
 	}
 
 	[Test]
@@ -557,6 +555,11 @@ public sealed class ToolContractGetToolE2ETests {
 				validator.Field == "rule.actions[*].items[*]" &&
 				validator.Context!.Contains("forward reference paths like LookupColumn.SourceColumn", StringComparison.Ordinal),
 			because: "the contract should advertise AttributeValue source support for Set values");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "set-values-shape" &&
+				validator.Field == "rule.actions[*].items[*]" &&
+				validator.Context!.Contains("direct-field arithmetic expression", StringComparison.Ordinal),
+			because: "the real MCP server contract should advertise the simple direct-field formula scope");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-constant" &&
 				validator.Field == "rule.actions[*].items[*].value.value" &&

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Clio;
 using Clio.Common;
 using Clio.UserEnvironment;
 using CommandLine;
@@ -55,7 +56,7 @@ namespace Clio.Command
 				_logger.WriteInfo("Done");
 				return 0;
 			} catch (Exception e) {
-				_logger.WriteError(e.ToString());
+				_logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
 				return 1;
 			}
 		}

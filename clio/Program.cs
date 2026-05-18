@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
@@ -1134,7 +1135,9 @@ internal class Program {
 				appUpdater.UpdateInBackgroundAsync().GetAwaiter().GetResult();
 			} else {
 				ConsoleLogger.Instance.WriteWarning(
-					$"clio {latestVersion} is available. Run 'clio update' to update.");
+					RuntimeInformation.IsOSPlatform(OSPlatform.Windows) 
+						? $"clio {latestVersion} is available. Run 'dotnet tool update clio -g' to update." 
+						: $"clio {latestVersion} is available. Run 'clio update' to update.");
 			}
 		} catch {
 			// startup update check must never crash the tool

@@ -15,7 +15,7 @@ public sealed class ApplicationCreateEnrichmentServiceTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Builds a normalized Data Forge enrichment request from the application shell input and forwards it to the shared builder.")]
-	public async Task EnrichAsync_Should_Build_Request_From_Application_Create_Input() {
+	public async Task Enrich_Should_Build_Request_From_Application_Create_Input() {
 		// Arrange
 		IDataForgeEnrichmentBuilder enrichmentBuilder = Substitute.For<IDataForgeEnrichmentBuilder>();
 		DataForgeEnrichmentRequest? capturedRequest = null;
@@ -26,7 +26,7 @@ public sealed class ApplicationCreateEnrichmentServiceTests {
 			Coverage: new DataForgeCoverage(true, true, true, true, true),
 			Warnings: [],
 			ContextSummary: new ApplicationDataForgeContextSummary([], [], [], []));
-		enrichmentBuilder.BuildAsync(Arg.Any<DataForgeEnrichmentRequest>(), default)
+		enrichmentBuilder.Build(Arg.Any<DataForgeEnrichmentRequest>(), default)
 			.Returns(callInfo => {
 				capturedRequest = callInfo.Arg<DataForgeEnrichmentRequest>();
 				return expected;
@@ -34,7 +34,7 @@ public sealed class ApplicationCreateEnrichmentServiceTests {
 		ApplicationCreateEnrichmentService sut = new(enrichmentBuilder);
 
 		// Act
-		ApplicationDataForgeResult result = await sut.EnrichAsync(
+		ApplicationDataForgeResult result = sut.Enrich(
 			new ApplicationCreateArgs(
 				EnvironmentName: "sandbox",
 				Name: "Task App",
@@ -71,11 +71,11 @@ public sealed class ApplicationCreateEnrichmentServiceTests {
 	[Test]
 	[Category("Unit")]
 	[Description("When the description is absent, uses the section description as the requirement summary for the shared builder request.")]
-	public async Task EnrichAsync_Should_Fall_Back_To_Section_Description_For_RequirementSummary() {
+	public async Task Enrich_Should_Fall_Back_To_Section_Description_For_RequirementSummary() {
 		// Arrange
 		IDataForgeEnrichmentBuilder enrichmentBuilder = Substitute.For<IDataForgeEnrichmentBuilder>();
 		DataForgeEnrichmentRequest? capturedRequest = null;
-		enrichmentBuilder.BuildAsync(Arg.Any<DataForgeEnrichmentRequest>(), default)
+		enrichmentBuilder.Build(Arg.Any<DataForgeEnrichmentRequest>(), default)
 			.Returns(callInfo => {
 				capturedRequest = callInfo.Arg<DataForgeEnrichmentRequest>();
 				return new ApplicationDataForgeResult(
@@ -89,7 +89,7 @@ public sealed class ApplicationCreateEnrichmentServiceTests {
 		ApplicationCreateEnrichmentService sut = new(enrichmentBuilder);
 
 		// Act
-		_ = await sut.EnrichAsync(
+		_ = sut.Enrich(
 			new ApplicationCreateArgs(
 				EnvironmentName: "sandbox",
 				Name: "Task App",

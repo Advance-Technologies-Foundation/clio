@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using Clio.Tests.Infrastructure;
@@ -96,5 +97,57 @@ public sealed class SettingsRepositoryGetEnvironmentTests {
 
 		result.IsNetCore.Should().BeTrue(
 			because: "an explicit IsNetCore=true option must be respected even when only a URI is provided");
+	}
+
+	[Test]
+	[Description("Reproduces issue #516: empty Environments dict and no ActiveEnvironmentName causes a cryptic 'key ''' error. Must show a descriptive message instead.")]
+	public void GetEnvironment_WithNoEnvArg_WhenEnvironmentsEmptyAndNoActiveKey_SuggestsRegistration() {
+		var fs = TestFileSystem.MockFileSystem();
+		fs.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(
+			File.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-no-active-env-key-empty-envs.json"))));
+		SettingsRepository sut = new(fs);
+		var options = new EnvironmentOptions();
+
+		Action act = () => sut.GetEnvironment(options);
+
+		act.Should().Throw<Exception>()
+			.WithMessage("*No environments are registered*",
+				because: "when Environments is empty the error must tell the user to register one first, not show the confusing 'Environment with key ''' message from issue #516");
+	}
+
+	[Test]
+	[Description("When environments exist but no active key is set, the error must list available environments and suggest set-active-environment.")]
+	public void GetEnvironment_WithNoEnvArg_WhenEnvironmentsExistButNoActiveKey_SuggestsSetActiveEnvironment() {
+		var fs = TestFileSystem.MockFileSystem();
+		fs.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(
+			File.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-no-active-env-key.json"))));
+		SettingsRepository sut = new(fs);
+		var options = new EnvironmentOptions();
+
+		Action act = () => sut.GetEnvironment(options);
+
+		act.Should().Throw<Exception>()
+			.WithMessage("*set-active-environment*",
+				because: "the error must guide the user to activate one of their existing environments")
+			.And.Message.Should().Contain("dev",
+				because: "the error must list the available environment names so the user knows what to pass");
+	}
+
+	[Test]
+	[Description("When ActiveEnvironmentKey is set but points to a non-existing environment, the error must name the wrong key and suggest set-active-environment.")]
+	public void GetEnvironment_WithNoEnvArg_WhenActiveKeyDoesNotMatchAnyEnvironment_NamesTheMissingKey() {
+		var fs = TestFileSystem.MockFileSystem();
+		fs.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(
+			File.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"))));
+		SettingsRepository sut = new(fs);
+		var options = new EnvironmentOptions();
+
+		Action act = () => sut.GetEnvironment(options);
+
+		act.Should().Throw<Exception>()
+			.WithMessage("*wrong-dev*",
+				because: "the error must name the specific key that was configured so the user can find and fix it")
+			.And.Message.Should().Contain("set-active-environment",
+				because: "the error must tell the user exactly how to fix the wrong active environment key");
 	}
 }

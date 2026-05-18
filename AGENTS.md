@@ -96,6 +96,27 @@ The install command is `push-pkg`, **not** `push-package` (that verb does not ex
 | Lock a package | `lock-package` |
 | Unlock a package | `unlock-package` |
 
+# CLI parameter naming convention
+
+All CLI option long names defined with `[Option("...", ...)]` **must use kebab-case** (e.g. `--restart-environment`, `--db-server-uri`).
+
+**Never use camelCase or PascalCase** (e.g. `--restartEnvironment`, `--SysAdminUnitName`) for new or modified option names.
+
+When renaming an existing camelCase option to kebab-case:
+1. Change the main `[Option]` string to kebab-case.
+2. Add a **hidden** alias property that delegates to the main property (for backward compatibility):
+```csharp
+[Option("restart-environment", Required = false, HelpText = "...")]
+public bool RestartEnvironment { get; set; }
+
+[Option("restartEnvironment", Required = false, Hidden = true, HelpText = "Alias for --restart-environment")]
+public bool RestartEnvironmentAlias {
+    get => RestartEnvironment;
+    set { if (value) RestartEnvironment = value; }
+}
+```
+3. Update all docs (`clio/docs/commands/*.md`, `clio/help/en/*.txt`) to use the new kebab-case form.
+
 # Documentation structure for commands
 
 - `clio\Commands.md` - Overview of all commands (displayed when user types `clio help`)

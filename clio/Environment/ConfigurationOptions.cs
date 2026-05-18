@@ -552,7 +552,19 @@ namespace Clio
 			if (envSettings == null) {
 				var envName = options.Environment ?? settingsRepository.GetDefaultEnvironmentName();
 				if (!settingsRepository.IsEnvironmentExists(envName) && !hasDirectUri) {
-					throw new Exception($"Environment with key '{envName}' not found. Check youre config file or command arguments.");
+					if (string.IsNullOrWhiteSpace(envName)) {
+						var allEnvs = settingsRepository.GetAllEnvironments();
+						if (allEnvs.Count > 0) {
+							string envList = string.Join(", ", allEnvs.Keys);
+							throw new Exception(
+								$"No active environment configured. Run 'clio set-active-environment <name>' to activate one of the registered environments ({envList}), or pass --environment <name>.");
+						}
+						throw new Exception(
+							$"No environments are registered. Run 'clio reg-web-app --name <name> --url <url>' to register an environment first.");
+					}
+					throw new Exception(
+						$"Active environment '{envName}' is not found in the registered environments. " +
+						$"Run 'clio set-active-environment <name>' to fix this, or pass --environment <name>.");
 				} else {
 					envSettings = new EnvironmentSettings();
 				}

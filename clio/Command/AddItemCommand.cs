@@ -29,20 +29,50 @@ internal class AddItemOptions : EnvironmentOptions{
 	[Value(1, MetaName = "Item name", Required = false, HelpText = "Item name")]
 	public string ItemName { get; set; }
 
-	[Option('d', "DestinationPath", Required = false, HelpText = "Path to source directory.", Default = null)]
+	[Option('d', "destination-path", Required = false, HelpText = "Path to source directory.", Default = null)]
 	public string DestinationPath { get; set; }
 
-	[Option('n', "Namespace", Required = false, HelpText = "Name space for service classes.", Default = null)]
+	[Option("DestinationPath", Required = false, Hidden = true, HelpText = "Alias for --destination-path")]
+	public string DestinationPathAlias {
+		get => DestinationPath;
+		set { if (!string.IsNullOrEmpty(value)) DestinationPath = value; }
+	}
+
+	[Option('n', "namespace", Required = false, HelpText = "Name space for service classes.", Default = null)]
 	public string Namespace { get; set; }
 
-	[Option('f', "Fields", Required = false, HelpText = "Required fields for model class", Default = null)]
+	[Option("Namespace", Required = false, Hidden = true, HelpText = "Alias for --namespace")]
+	public string NamespaceAlias {
+		get => Namespace;
+		set { if (!string.IsNullOrEmpty(value)) Namespace = value; }
+	}
+
+	[Option('f', "fields", Required = false, HelpText = "Required fields for model class", Default = null)]
 	public string Fields { get; set; }
 
-	[Option('a', "All", Required = false, HelpText = "Create all models", Default = true)]
+	[Option("Fields", Required = false, Hidden = true, HelpText = "Alias for --fields")]
+	public string FieldsAlias {
+		get => Fields;
+		set { if (!string.IsNullOrEmpty(value)) Fields = value; }
+	}
+
+	[Option('a', "all", Required = false, HelpText = "Create all models", Default = true)]
 	public bool CreateAll { get; set; }
 
-	[Option('x', "Culture", Required = false, HelpText = "Description culture", Default = "en-US")]
+	[Option("All", Required = false, Hidden = true, HelpText = "Alias for --all")]
+	public bool CreateAllAlias {
+		get => CreateAll;
+		set { if (value) CreateAll = value; }
+	}
+
+	[Option('x', "culture", Required = false, HelpText = "Description culture")]
 	public string Culture { get; set; } = "en-US";
+
+	[Option("Culture", Required = false, Hidden = true, HelpText = "Alias for --culture")]
+	public string CultureAlias {
+		get => Culture;
+		set { if (!string.IsNullOrEmpty(value)) Culture = value; }
+	}
 
 	#endregion
 }

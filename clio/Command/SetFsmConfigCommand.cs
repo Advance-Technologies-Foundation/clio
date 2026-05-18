@@ -64,13 +64,19 @@ public class SetFsmConfigOptions : EnvironmentNameOptions {
 	/// <summary>
 	/// Gets or sets the path to the Creatio application root folder.
 	/// </summary>
-	[Option("physicalPath", Required = false, HelpText = "Path to applications")]
+	[Option("physical-path", Required = false, HelpText = "Path to applications")]
 	public string PhysicalPath { get; set; }
+
+	[Option("physicalPath", Required = false, Hidden = true, HelpText = "Alias for --physical-path")]
+	public string PhysicalPathAlias {
+		get => PhysicalPath;
+		set { if (!string.IsNullOrEmpty(value)) PhysicalPath = value; }
+	}
 
 	/// <summary>
 	/// Gets or sets the target FSM mode.
 	/// </summary>
-	[Value(0, MetaName = "IsFsm", Required = true, HelpText = "on or off", Default = "on")]
+	[Value(0, MetaName = "IsFsm", Required = false, HelpText = "on or off", Default = "on")]
 	public string IsFsm { get; set; }
 
 	#endregion
