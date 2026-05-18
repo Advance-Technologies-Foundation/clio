@@ -74,8 +74,8 @@ public sealed class PageUpdateTool(
 
 	private static string ValidatePageBody(string body) =>
 		PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile
-			? null
-			: CollectValidatorErrors(body);
+			? ValidateMobilePageBody(body)
+			: ValidateWebPageBody(body);
 
 	private static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>
 		new() {
@@ -94,7 +94,12 @@ public sealed class PageUpdateTool(
 			Password = args.Password
 		};
 
-	private static string CollectValidatorErrors(string body) {
+	private static string ValidateMobilePageBody(string _) {
+		// All validation happens in the underlying command, no additional checks required
+		return null;
+	}
+
+	private static string ValidateWebPageBody(string body) {
 		var errors = new List<string>();
 		Collect(SchemaValidationService.ValidateMarkerContent(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorParamResourceBindings(body), errors);

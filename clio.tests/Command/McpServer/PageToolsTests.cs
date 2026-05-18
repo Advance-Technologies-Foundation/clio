@@ -208,9 +208,11 @@ public class PageToolsTests {
 		prompt.Should().Contain("`verify`",
 			because: "page guidance should surface the optional read-back semantics for sync-pages");
 		prompt.Should().Contain("`resources`",
-			because: "page guidance should tell callers how to preserve ResourceString macros during sync-pages");
-		prompt.Should().Contain("valid JSON object string",
-			because: "get-page prompt guidance should clarify that malformed resource payloads are rejected");
+			because: "page guidance should surface the resources parameter so callers know it exists before authoring localizable strings");
+		prompt.Should().Contain($"you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-resources`",
+			because: "resources guidance should be mandatory before authorship so callers cannot register DS-bound caption keys that the platform already auto-provides");
+		prompt.Should().Contain("NOT sufficient justification",
+			because: "page guidance should block the common shortcut of passing resources just because the body contains a localizable-string reference");
 		prompt.Should().Contain("declared view-model attribute from `viewModelConfig` / `viewModelConfigDiff`",
 			because: "page guidance should steer standard fields toward declared view-model attributes instead of naming conventions");
 		prompt.Should().Contain("If validator or handler logic moves to a different declared attribute for the same field, rebind the control to that same attribute.",
@@ -227,8 +229,6 @@ public class PageToolsTests {
 			because: "page guidance should explicitly call out body.js as the editable JavaScript source");
 		prompt.Should().Contain("Do not send bundle data back to page tools",
 			because: "page guidance should explicitly reject submitting bundle content to write tools");
-		prompt.Should().Contain("do not send a nested object payload",
-			because: "page guidance should explicitly reject non-string resources payloads");
 		prompt.Should().NotContain("Use `sync-pages` only when you need to save multiple pages in one workflow.",
 			because: "sync-pages should no longer be presented as a multi-page-only path");
 		prompt.Should().NotContain("`schemaName`",
