@@ -24,17 +24,17 @@ public sealed class PlatformVersionResolverFactory : IPlatformVersionResolverFac
 	private readonly IApplicationClientFactory _applicationClientFactory;
 	private readonly IServiceUrlBuilderFactory _serviceUrlBuilderFactory;
 	private readonly TimeProvider _timeProvider;
-	private readonly ILoggerFactory _loggerFactory;
+	private readonly ILogger<PlatformVersionResolver> _resolverLogger;
 
 	public PlatformVersionResolverFactory(
 		IApplicationClientFactory applicationClientFactory,
 		IServiceUrlBuilderFactory serviceUrlBuilderFactory,
 		TimeProvider timeProvider,
-		ILoggerFactory loggerFactory) {
+		ILogger<PlatformVersionResolver> resolverLogger) {
 		_applicationClientFactory = applicationClientFactory ?? throw new ArgumentNullException(nameof(applicationClientFactory));
 		_serviceUrlBuilderFactory = serviceUrlBuilderFactory ?? throw new ArgumentNullException(nameof(serviceUrlBuilderFactory));
 		_timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-		_loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+		_resolverLogger = resolverLogger ?? throw new ArgumentNullException(nameof(resolverLogger));
 	}
 
 	public IPlatformVersionResolver Create(EnvironmentSettings settings) {
@@ -47,6 +47,6 @@ public sealed class PlatformVersionResolverFactory : IPlatformVersionResolverFac
 			settings,
 			_serviceUrlBuilderFactory,
 			_timeProvider,
-			_loggerFactory.CreateLogger<PlatformVersionResolver>());
+			_resolverLogger);
 	}
 }
