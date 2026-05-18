@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Abstractions;
+using System.IO.Abstractions.TestingHelpers;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -136,6 +138,81 @@ public sealed class ComponentRegistryClientTests {
 	}
 
 	[Test]
+	[Description("CLIO_COMPONENT_REGISTRY_LOCAL_FILE wins over cache, CDN, and embedded — and is never written to cache.")]
+	public async Task GetAsync_Returns_Local_Override_When_Env_Var_Points_To_Existing_File() {
+		// Arrange
+		const string overridePath = "/tmp/local-override.json";
+		MockFileSystem fs = new();
+		fs.AddFile(overridePath, new MockFileData(SamplePayload));
+		FakeRegistryCacheStore cache = new();
+		cache.Seed("8.2.1", "[ { \"componentType\": \"crt.Cached\", \"category\": \"display\", \"properties\": {} } ]", isFresh: true);
+		FakeHttpHandler handler = new();
+		ComponentRegistryClient client = CreateClient(cache, handler, fileSystem: fs);
+
+		using EnvironmentVariableScope envScope = new(ComponentRegistryClient.LocalFileEnvironmentVariable, overridePath);
+
+		// Act
+		ComponentRegistryFetchResult result = await client.GetAsync("8.2.1");
+
+		// Assert
+		result.Source.Should().Be(ComponentRegistrySource.Local,
+			because: "the local-file override is Tier 0 and must trump even a fresh cache entry");
+		result.ResolvedVersion.Should().Be("8.2.1",
+			because: "the override is transparent — the requested version is what gets resolved");
+		handler.Requests.Should().BeEmpty(
+			because: "a successful local override must short-circuit the network");
+		cache.WrittenVersions.Should().BeEmpty(
+			because: "the override is a read-only test channel; writing it to cache would poison the next env-unset call");
+	}
+
+	[Test]
+	[Description("Missing override file falls through the normal CDN/cache chain.")]
+	public async Task GetAsync_Falls_Through_When_Local_Override_File_Missing() {
+		// Arrange
+		const string overridePath = "/tmp/does-not-exist.json";
+		MockFileSystem fs = new();
+		FakeRegistryCacheStore cache = new();
+		FakeHttpHandler handler = new();
+		handler.Enqueue("8.2.1/ComponentRegistry.json", HttpStatusCode.OK, SamplePayload);
+		ComponentRegistryClient client = CreateClient(cache, handler, fileSystem: fs);
+
+		using EnvironmentVariableScope envScope = new(ComponentRegistryClient.LocalFileEnvironmentVariable, overridePath);
+
+		// Act
+		ComponentRegistryFetchResult result = await client.GetAsync("8.2.1");
+
+		// Assert
+		result.Source.Should().Be(ComponentRegistrySource.Cdn,
+			because: "a misconfigured override path must not stall the AI — fall through to the existing chain");
+	}
+
+	[Test]
+	[Description("RefreshAsync ignores the local-file override and always pulls fresh CDN bytes into the cache.")]
+	public async Task RefreshAsync_Ignores_Local_Override_And_Fetches_From_Cdn() {
+		// Arrange
+		const string overridePath = "/tmp/local-override.json";
+		MockFileSystem fs = new();
+		fs.AddFile(overridePath, new MockFileData(SamplePayload));
+		FakeRegistryCacheStore cache = new();
+		FakeHttpHandler handler = new();
+		handler.Enqueue("latest/ComponentRegistry.json", HttpStatusCode.OK, SamplePayload);
+		ComponentRegistryClient client = CreateClient(cache, handler, fileSystem: fs);
+
+		using EnvironmentVariableScope envScope = new(ComponentRegistryClient.LocalFileEnvironmentVariable, overridePath);
+
+		// Act
+		bool refreshed = await client.RefreshAsync("latest");
+
+		// Assert
+		refreshed.Should().BeTrue(
+			because: "refresh is a deliberate CDN pull — the local override must not silently mask the network round-trip");
+		handler.Requests.Should().NotBeEmpty(
+			because: "RefreshAsync must hit the CDN even when an override is configured");
+		cache.WrittenVersions.Should().Contain("latest",
+			because: "RefreshAsync persists CDN bytes (not override bytes) so subsequent reads serve real data");
+	}
+
+	[Test]
 	[Description("RefreshAsync reports failure when the CDN never returns success.")]
 	public async Task RefreshAsync_Returns_False_When_Cdn_Down() {
 		// Arrange
@@ -155,12 +232,15 @@ public sealed class ComponentRegistryClientTests {
 	private static ComponentRegistryClient CreateClient(
 		FakeRegistryCacheStore cache,
 		FakeHttpHandler handler,
-		IEmbeddedRegistryReader? embedded = null) {
+		IEmbeddedRegistryReader? embedded = null,
+		IFileSystem? fileSystem = null) {
 		embedded ??= new FakeEmbeddedRegistryReader(SamplePayload, "latest");
+		fileSystem ??= new MockFileSystem();
 		return new ComponentRegistryClient(
 			new FakeHttpClientFactory(handler),
 			cache,
 			embedded,
+			fileSystem,
 			NullLogger<ComponentRegistryClient>.Instance,
 			CdnBaseUrl);
 	}
@@ -238,5 +318,18 @@ public sealed class ComponentRegistryClientTests {
 	private sealed class FakeEmbeddedRegistryReader(string payload, string version) : IEmbeddedRegistryReader {
 		public Stream OpenRegistryStream() => new MemoryStream(Encoding.UTF8.GetBytes(payload), writable: false);
 		public string EmbeddedVersion => version;
+	}
+
+	private sealed class EnvironmentVariableScope : IDisposable {
+		private readonly string _name;
+		private readonly string? _previous;
+
+		public EnvironmentVariableScope(string name, string? value) {
+			_name = name;
+			_previous = Environment.GetEnvironmentVariable(name);
+			Environment.SetEnvironmentVariable(name, value);
+		}
+
+		public void Dispose() => Environment.SetEnvironmentVariable(_name, _previous);
 	}
 }

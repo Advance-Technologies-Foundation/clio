@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -49,7 +50,12 @@ public enum ComponentRegistrySource {
 	/// <summary>Returned bytes came from the on-disk cache (fresh or stale).</summary>
 	FileCache,
 	/// <summary>Returned bytes came from the embedded resource baked into clio.dll.</summary>
-	Embedded
+	Embedded,
+	/// <summary>
+	/// Returned bytes came from a developer-supplied file pointed to by
+	/// <c>CLIO_COMPONENT_REGISTRY_LOCAL_FILE</c>. Highest-priority tier; never cached.
+	/// </summary>
+	Local
 }
 
 /// <summary>
@@ -67,6 +73,7 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 
 	internal const string CdnRegistryFileName = "ComponentRegistry.json";
 	internal const string CdnBaseUrlEnvironmentVariable = "CLIO_COMPONENT_REGISTRY_CDN_BASE_URL";
+	internal const string LocalFileEnvironmentVariable = "CLIO_COMPONENT_REGISTRY_LOCAL_FILE";
 	internal const string LatestVersion = "latest";
 	internal const int CdnFetchAttempts = 3;
 	internal static readonly TimeSpan CdnFetchTimeout = TimeSpan.FromSeconds(30);
@@ -76,6 +83,7 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 	private readonly IHttpClientFactory _httpClientFactory;
 	private readonly IComponentRegistryCacheStore _cacheStore;
 	private readonly IEmbeddedRegistryReader _embeddedReader;
+	private readonly IFileSystem _fileSystem;
 	private readonly ILogger<ComponentRegistryClient> _logger;
 	private readonly string _cdnBaseUrl;
 
@@ -83,19 +91,22 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 		IHttpClientFactory httpClientFactory,
 		IComponentRegistryCacheStore cacheStore,
 		IEmbeddedRegistryReader embeddedReader,
+		IFileSystem fileSystem,
 		ILogger<ComponentRegistryClient> logger)
-		: this(httpClientFactory, cacheStore, embeddedReader, logger, ResolveCdnBaseUrl()) {
+		: this(httpClientFactory, cacheStore, embeddedReader, fileSystem, logger, ResolveCdnBaseUrl()) {
 	}
 
 	internal ComponentRegistryClient(
 		IHttpClientFactory httpClientFactory,
 		IComponentRegistryCacheStore cacheStore,
 		IEmbeddedRegistryReader embeddedReader,
+		IFileSystem fileSystem,
 		ILogger<ComponentRegistryClient> logger,
 		string cdnBaseUrl) {
 		_httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
 		_cacheStore = cacheStore ?? throw new ArgumentNullException(nameof(cacheStore));
 		_embeddedReader = embeddedReader ?? throw new ArgumentNullException(nameof(embeddedReader));
+		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_cdnBaseUrl = string.IsNullOrWhiteSpace(cdnBaseUrl) ? DefaultCdnBaseUrl : cdnBaseUrl;
 		if (!_cdnBaseUrl.EndsWith('/')) {
@@ -107,6 +118,14 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 	public async Task<ComponentRegistryFetchResult> GetAsync(string requestedVersion, CancellationToken cancellationToken = default) {
 		if (string.IsNullOrWhiteSpace(requestedVersion)) {
 			requestedVersion = LatestVersion;
+		}
+
+		// Tier 0: developer override via CLIO_COMPONENT_REGISTRY_LOCAL_FILE. Read every call so
+		// editing the file is visible to a long-running `clio mcp serve` without restart. Never
+		// written to cache — the override stays a read-only test channel.
+		Stream? local = TryOpenLocalOverride(requestedVersion);
+		if (local is not null) {
+			return new ComponentRegistryFetchResult(local, requestedVersion, ComponentRegistrySource.Local);
 		}
 
 		// Tier 1: cache hit for the requested version. Stale cache is served immediately
@@ -290,6 +309,40 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 				BackgroundRefreshGate.Release();
 			}
 		});
+	}
+
+	private Stream? TryOpenLocalOverride(string requestedVersion) {
+		string? path = Environment.GetEnvironmentVariable(LocalFileEnvironmentVariable);
+		if (string.IsNullOrWhiteSpace(path)) {
+			return null;
+		}
+
+		if (!_fileSystem.File.Exists(path)) {
+			// Information rather than Warning: a misconfigured path would otherwise spam the
+			// MCP serve log on every component-info call.
+			_logger.LogInformation(
+				"component-registry local-override-missing version={Version} path={Path}",
+				requestedVersion, path);
+			return null;
+		}
+
+		try {
+			Stream stream = _fileSystem.File.OpenRead(path);
+			_logger.LogInformation(
+				"component-registry source=local version={Version} path={Path}",
+				requestedVersion, path);
+			return stream;
+		} catch (IOException ex) {
+			_logger.LogInformation(ex,
+				"component-registry local-override-failed version={Version} path={Path}",
+				requestedVersion, path);
+			return null;
+		} catch (UnauthorizedAccessException ex) {
+			_logger.LogInformation(ex,
+				"component-registry local-override-failed version={Version} path={Path}",
+				requestedVersion, path);
+			return null;
+		}
 	}
 
 	private static string ResolveCdnBaseUrl() {

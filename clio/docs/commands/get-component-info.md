@@ -21,8 +21,11 @@ a regular CLI verb. It supports two modes:
   first positional argument.
 
 The catalog is loaded through the CDN → file cache → embedded snapshot
-fallback chain (see `component-registry-refresh` for cache control). The
-version to load is chosen by:
+fallback chain (see `component-registry-refresh` for cache control). For
+local payload iteration, point `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` at a
+`ComponentRegistry.json` on disk — it short-circuits every other tier
+(`source=local`) and is re-read on every call. The version to load is
+chosen by:
 
 1. `--version <semver>` — explicit override (highest priority).
 2. `--environment <name>` or `--uri ...` — probe cliogate `GetSysInfo` on
