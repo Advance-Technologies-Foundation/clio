@@ -120,6 +120,7 @@ public sealed class ToolContractGetToolTests {
 			because: "guidance lookup should require the stable guide name");
 		contract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "name" &&
+				field.Description.Contains("page-modification", StringComparison.Ordinal) &&
 				field.Description.Contains("page-schema-handlers", StringComparison.Ordinal) &&
 				field.Description.Contains("page-schema-validators", StringComparison.Ordinal),
 			because: "the contract should advertise the stable guidance-name selector");
@@ -131,6 +132,10 @@ public sealed class ToolContractGetToolTests {
 			example.Arguments.TryGetValue("name", out object? value)
 			&& string.Equals(value?.ToString(), "page-schema-handlers", StringComparison.Ordinal)).Should().BeTrue(
 			because: "the contract should advertise the canonical handler guidance lookup example");
+		contract.Examples.Any(example =>
+			example.Arguments.TryGetValue("name", out object? value)
+			&& string.Equals(value?.ToString(), "page-modification", StringComparison.Ordinal)).Should().BeTrue(
+			because: "the contract should advertise the canonical general page modification guidance lookup example");
 	}
 
 	[Test]
@@ -585,7 +590,11 @@ public sealed class ToolContractGetToolTests {
 					PageGetTool.ToolName
 				}),
 				because: "list-pages should keep the legacy update-page fallback as a single-save sequence after discovery");
-			ToolContractDefinition pageGetContract = contracts.Single(contract => contract.Name == PageGetTool.ToolName);
+		ToolContractDefinition pageGetContract = contracts.Single(contract => contract.Name == PageGetTool.ToolName);
+		pageGetContract.Description.Should().Contain("page-modification",
+			because: "get-page should route planned body edits to the general page modification guide through the contract surface");
+		pageGetContract.Description.Should().NotContain("page-schema-resources",
+			because: "get-page should route through the general page-modification guide instead of a localizable-string leaf guide");
 		pageGetContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					PageListTool.ToolName,
@@ -595,6 +604,10 @@ public sealed class ToolContractGetToolTests {
 				},
 				because: "get-page should advertise sync-pages as the canonical save path after inspection");
 		ToolContractDefinition pageSyncContract = contracts.Single(contract => contract.Name == PageSyncTool.ToolName);
+		pageSyncContract.Description.Should().Contain("page-modification",
+			because: "sync-pages should route body and resource-payload edits through the general page modification guide");
+		pageSyncContract.Description.Should().NotContain("page-schema-resources",
+			because: "sync-pages should avoid surfacing localizable-string leaf guidance directly in the broad contract description");
 		pageSyncContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					PageListTool.ToolName,
@@ -624,8 +637,9 @@ public sealed class ToolContractGetToolTests {
 			because: "update-page should point callers back to the canonical sync-pages workflow");
 		pageSyncContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "pages" &&
-				field.Description.Contains("get-page.raw.body"),
-			because: "sync-pages should advertise raw.body as the source of page write payloads");
+				field.Description.Contains("get-page.raw.body") &&
+				field.Description.Contains("localizable string"),
+			because: "sync-pages should advertise raw.body as the source of page write payloads and clarify resources as localizable strings");
 		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "body" &&
 				field.Description.Contains("get-page.raw.body"),

@@ -1,6 +1,7 @@
 namespace Clio.Command;
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Clio.Common;
@@ -114,13 +115,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 			}
 
 			string rootSchemaUId = FindRootSchemaUId(initialHierarchy, options.SchemaName) ?? schemaUId;
-			System.Collections.Generic.IReadOnlyList<PageDesignerHierarchySchema> hierarchy;
-			if (!string.Equals(rootSchemaUId, schemaUId, StringComparison.OrdinalIgnoreCase)) {
-				var fullHierarchy = _hierarchyClient.GetParentSchemas(rootSchemaUId, designPackageUId);
-				hierarchy = fullHierarchy.Count > 0 ? fullHierarchy : initialHierarchy;
-			} else {
-				hierarchy = initialHierarchy;
-			}
+			IReadOnlyList<PageDesignerHierarchySchema> hierarchy = ResolveHierarchy(schemaUId, rootSchemaUId, designPackageUId, initialHierarchy);
 
 			PageDesignerHierarchySchema currentSchema = hierarchy[0];
 
@@ -148,7 +143,8 @@ public class PageGetCommand : Command<PageGetOptions> {
 			bool willCreateReplacing = editableSchema is null
 				&& !string.IsNullOrWhiteSpace(designPackageUId)
 				&& !string.Equals(designPackageUId, currentSchema.PackageUId, StringComparison.OrdinalIgnoreCase);
-			string editableBody = editableSchema?.Body ?? BuildEmptyBody(options.SchemaName);
+			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(currentSchema.SchemaType);
+			string editableBody = editableSchema?.Body ?? BuildEmptyBody(options.SchemaName, pageSchemaType);
 			PageOwnBodySummary ownBodySummary = BuildOwnBodySummary(editableSchema ?? currentSchema, _bodyParser);
 			response = new PageGetResponse {
 				Success = true,
@@ -162,7 +158,8 @@ public class PageGetCommand : Command<PageGetOptions> {
 					DesignPackageUId = designPackageUId,
 					DesignPackageName = designPackageName,
 					RootSchemaUId = rootSchemaUId,
-					WillCreateReplacingInDesignPackage = willCreateReplacing
+					WillCreateReplacingInDesignPackage = willCreateReplacing,
+					SchemaType = pageSchemaType.ToLabel()
 				},
 				Bundle = new PageBundleInfo {
 					Name = bundle.Name,
@@ -203,6 +200,18 @@ public class PageGetCommand : Command<PageGetOptions> {
 		return success ? 0 : 1;
 	}
 
+	private IReadOnlyList<PageDesignerHierarchySchema> ResolveHierarchy(
+		string schemaUId,
+		string rootSchemaUId,
+		string designPackageUId,
+		IReadOnlyList<PageDesignerHierarchySchema> initialHierarchy) {
+		if (string.Equals(rootSchemaUId, schemaUId, StringComparison.OrdinalIgnoreCase)) {
+			return initialHierarchy;
+		}
+		IReadOnlyList<PageDesignerHierarchySchema> fullHierarchy = _hierarchyClient.GetParentSchemas(rootSchemaUId, designPackageUId);
+		return fullHierarchy.Count > 0 ? fullHierarchy : initialHierarchy;
+	}
+
 	private PageDesignerHierarchySchema LoadReplacingSchemaInDesignPackage(string schemaName, string designPackageUId) {
 		string replacingUId = PageSchemaMetadataHelper.FindExistingSchemaInPackage(
 			_applicationClient, _serviceUrlBuilder, schemaName, designPackageUId);
@@ -210,7 +219,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 			return null;
 		}
 		try {
-			System.Collections.Generic.IReadOnlyList<PageDesignerHierarchySchema> replacingHierarchy =
+			IReadOnlyList<PageDesignerHierarchySchema> replacingHierarchy =
 				_hierarchyClient.GetParentSchemas(replacingUId, designPackageUId);
 			return replacingHierarchy.FirstOrDefault(
 				s => string.Equals(s.UId, replacingUId, StringComparison.OrdinalIgnoreCase));
@@ -219,7 +228,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 		}
 	}
 
-	private static string FindRootSchemaUId(System.Collections.Generic.IReadOnlyList<PageDesignerHierarchySchema> hierarchy, string schemaName) {
+	private static string FindRootSchemaUId(IReadOnlyList<PageDesignerHierarchySchema> hierarchy, string schemaName) {
 		for (int i = hierarchy.Count - 1; i >= 0; i--) {
 			if (string.Equals(hierarchy[i].Name, schemaName, StringComparison.OrdinalIgnoreCase)) {
 				return hierarchy[i].UId;
@@ -228,7 +237,10 @@ public class PageGetCommand : Command<PageGetOptions> {
 		return null;
 	}
 
-	private static string BuildEmptyBody(string schemaName) {
+	private static string BuildEmptyBody(string schemaName, PageSchemaType schemaType) {
+		if (schemaType == PageSchemaType.Mobile) {
+			return "{\n\t\"viewConfigDiff\": [],\n\t\"viewModelConfigDiff\": [],\n\t\"modelConfigDiff\": []\n}";
+		}
 		return "define(\"" + schemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {\n\treturn {\n\t\tviewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/,\n\t\tviewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,\n\t\tmodelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,\n\t\thandlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,\n\t\tconverters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,\n\t\tvalidators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/\n\t};\n});";
 	}
 
@@ -250,9 +262,9 @@ public class PageGetCommand : Command<PageGetOptions> {
 		};
 	}
 
-	private static (int count, System.Collections.Generic.List<string> requests) ExtractHandlerInfo(string handlers) {
+	private static (int count, List<string> requests) ExtractHandlerInfo(string handlers) {
 		int count = 0;
-		var requests = new System.Collections.Generic.List<string>();
+		var requests = new List<string>();
 		if (string.IsNullOrEmpty(handlers) || handlers == "[]")
 			return (count, requests);
 		int depth = 0;
@@ -267,14 +279,14 @@ public class PageGetCommand : Command<PageGetOptions> {
 		var requestRegex = new System.Text.RegularExpressions.Regex(
 			@"request\s*:\s*[""']([^""']+)[""']",
 			System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.Compiled,
-			System.TimeSpan.FromSeconds(1));
+			TimeSpan.FromSeconds(1));
 		foreach (System.Text.RegularExpressions.Match m in requestRegex.Matches(handlers))
 			requests.Add(m.Groups[1].Value);
 		return (count, requests);
 	}
 
-	private static System.Collections.Generic.List<PageOperationInfo> ExtractViewConfigOps(PageParsedSchemaBody parsed) {
-		var ops = new System.Collections.Generic.List<PageOperationInfo>();
+	private static List<PageOperationInfo> ExtractViewConfigOps(PageParsedSchemaBody parsed) {
+		var ops = new List<PageOperationInfo>();
 		if (parsed.ViewConfigDiff is not Newtonsoft.Json.Linq.JArray viewDiff)
 			return ops;
 		foreach (Newtonsoft.Json.Linq.JToken item in viewDiff) {

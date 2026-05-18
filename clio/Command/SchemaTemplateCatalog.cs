@@ -7,14 +7,6 @@ using Clio.Common;
 using Newtonsoft.Json.Linq;
 
 /// <summary>
-/// Freedom UI schema types exposed by <c>schema.template.api/templates</c>.
-/// </summary>
-public enum PageSchemaType {
-	FreedomUIPage = 9,
-	MobilePage = 10
-}
-
-/// <summary>
 /// Provides access to the live Freedom UI page template catalog.
 /// </summary>
 public interface ISchemaTemplateCatalog {
@@ -41,8 +33,8 @@ public sealed class SchemaTemplateCatalog : ISchemaTemplateCatalog {
 			return LoadForSchemaType((int)schemaType.Value);
 		}
 		var combined = new List<PageTemplateInfo>();
-		combined.AddRange(LoadForSchemaType((int)PageSchemaType.FreedomUIPage));
-		combined.AddRange(LoadForSchemaType((int)PageSchemaType.MobilePage));
+		combined.AddRange(LoadForSchemaType((int)PageSchemaType.Web));
+		combined.AddRange(LoadForSchemaType((int)PageSchemaType.Mobile));
 		return combined;
 	}
 

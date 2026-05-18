@@ -99,6 +99,42 @@ public sealed class ComponentInfoToolE2ETests {
 	}
 
 	[Test]
+	[Description("Returns mobile-specific component catalog when schema-type is 'mobile', including crt.Toggle and excluding web-only types like crt.DataGrid.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info returns mobile catalog when schema-type is mobile")]
+	[AllureDescription("Starts the real clio MCP server, calls get-component-info with schema-type=mobile, and verifies the response contains mobile-specific components and excludes web-only types.")]
+	public async Task ComponentInfoTool_Should_Return_Mobile_Catalog_When_SchemaType_Is_Mobile() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ComponentInfoResponse mobileListResponse = await CallComponentInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["schema-type"] = "mobile" });
+
+		// Assert
+		mobileListResponse.Success.Should().BeTrue(
+			because: "the mobile catalog is shipped with the registry and must be discoverable");
+		mobileListResponse.Mode.Should().Be("list",
+			because: "schema-type=mobile without a search term should return the full mobile catalog in list mode");
+		mobileListResponse.Count.Should().BeGreaterThan(0,
+			because: "the shipped mobile registry should contain at least one component entry");
+		mobileListResponse.Groups.Should().NotBeNullOrEmpty(
+			because: "the mobile catalog response should be organized into groups like the web catalog");
+		IEnumerable<string> mobileTypes = mobileListResponse.Groups!
+			.SelectMany(group => group.Items)
+			.Select(item => item.ComponentType)
+			.ToList();
+		mobileTypes.Should().Contain("crt.Toggle",
+			because: "crt.Toggle is a mobile-specific Boolean control present in the mobile registry");
+		mobileTypes.Should().NotContain("crt.DataGrid",
+			because: "crt.DataGrid is a web-only component that must not appear in the mobile catalog");
+	}
+
+	[Test]
 	[Description("Returns a readable not-found response when get-component-info receives an unknown component type.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-component-info reports unknown component types")]

@@ -25,13 +25,15 @@ public sealed class PageUpdateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
+		"Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
 		"For conditional visibility, editability, or required state based on field values (e.g. \"when Status=Closed, hide Description\"), use business rules instead of writing handlers or validators in page body \u2014 call get-guidance with name `business-rules` to learn more. " +
 		"Section authoring rules for the body payload: " +
 		"if the requirement involves display-only value transformation (email as mailto link, phone as tel link, text to uppercase, boolean inversion, number formatting, any value that should look different on screen without changing the underlying model) call get-guidance with name `page-schema-converters` first — this determines whether a converter is the right tool before choosing a component type; " +
 		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
 		"if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
-		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
+		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls; " +
+		"if the body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter, call get-guidance with name `page-schema-resources` first — do NOT register localizable strings until this guidance tells you to do so.")]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("Parameters: schema-name, body (required); resources, dry-run, skip-sampling (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageUpdateArgs args,
@@ -39,9 +41,10 @@ public sealed class PageUpdateTool(
 		CancellationToken cancellationToken = default) {
 		PageUpdateOptions options = BuildOptions(args);
 		if (!string.IsNullOrWhiteSpace(options.Body)) {
-			string validationError = CollectValidatorErrors(options.Body);
-			if (validationError != null)
-				return new PageUpdateResponse { Success = false, Error = validationError };
+			string bodyError = ValidatePageBody(options.Body);
+			if (bodyError != null) {
+				return new PageUpdateResponse { Success = false, Error = bodyError };
+			}
 		}
 		PageSamplingReview samplingReview = null;
 		if (!options.DryRun && args.SkipSampling != true) {
@@ -69,6 +72,11 @@ public sealed class PageUpdateTool(
 		return response;
 	}
 
+	private static string ValidatePageBody(string body) =>
+		PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile
+			? ValidateMobilePageBody()
+			: ValidateWebPageBody(body);
+
 	private static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>
 		new() {
 			SchemaName = args.SchemaName,
@@ -86,7 +94,12 @@ public sealed class PageUpdateTool(
 			Password = args.Password
 		};
 
-	private static string CollectValidatorErrors(string body) {
+	private static string ValidateMobilePageBody() {
+		// All validation happens in the underlying command, no additional checks required
+		return null;
+	}
+
+	private static string ValidateWebPageBody(string body) {
 		var errors = new List<string>();
 		Collect(SchemaValidationService.ValidateMarkerContent(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorParamResourceBindings(body), errors);
@@ -136,7 +149,7 @@ public sealed record PageUpdateArgs(
 	string? Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros in the body, e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. Unresolved macros are auto-registered with captions derived from key names.")]
+	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions \u2014 e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. See `page-schema-resources` guidance for the full check.")]
 	string? Resources,
 
 	[property: JsonPropertyName("dry-run")]

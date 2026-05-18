@@ -13,8 +13,8 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for curated Freedom UI component metadata.
 /// </summary>
 [McpServerToolType]
-public sealed class ComponentInfoTool(IComponentInfoCatalog catalog) {
-	private static readonly string[] CategoryOrder = ["containers", "fields", "interactive", "display"];
+public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IMobileComponentInfoCatalog mobileCatalog) {
+	private static readonly string[] CategoryOrder = ["containers", "fields", "interactive", "display", "filtering"];
 
 	internal const string ToolName = "get-component-info";
 
@@ -24,25 +24,28 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog) {
 	/// <param name="args">Tool arguments that select either list or detail mode.</param>
 	/// <returns>A structured response with grouped summaries or a full component definition.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Get curated Freedom UI component metadata by component type or list all known types")]
+	[Description("Get curated Freedom UI component metadata by component type or list all known types. " +
+		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
+		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types. ")]
 	public ComponentInfoResponse GetComponentInfo(
-		[Description("Parameters: component-type (optional; omit or use 'list' to list all), search (optional keyword filter)")]
+		[Description("Parameters: component-type (optional; omit or use 'list' to list all), search (optional keyword filter), schema-type (optional; 'web' or 'mobile'; default: 'web')")]
 		[Required]
 		ComponentInfoArgs args) {
 		try {
+			IComponentInfoCatalog activeCatalog = ResolveActiveCatalog(args.SchemaType);
 			if (string.IsNullOrWhiteSpace(args.ComponentType)
 				|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
-				return CreateListResponse(catalog.Search(args.Search));
+				return CreateListResponse(activeCatalog.Search(args.Search));
 			}
 
-			ComponentRegistryEntry? entry = catalog.Find(args.ComponentType);
+			ComponentRegistryEntry? entry = activeCatalog.Find(args.ComponentType);
 			if (entry is null) {
 				return new ComponentInfoResponse {
 					Success = false,
 					Mode = "list",
 					Error = $"Component type '{args.ComponentType}' was not found.",
-					Count = catalog.Search(args.Search).Count,
-					Groups = CreateGroups(catalog.Search(args.Search))
+					Count = activeCatalog.Search(args.Search).Count,
+					Groups = CreateGroups(activeCatalog.Search(args.Search))
 				};
 			}
 
@@ -70,6 +73,11 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog) {
 			};
 		}
 	}
+
+	private IComponentInfoCatalog ResolveActiveCatalog(string? schemaType) =>
+		string.Equals(schemaType, "mobile", StringComparison.OrdinalIgnoreCase)
+			? mobileCatalog
+			: catalog;
 
 	private static ComponentInfoResponse CreateListResponse(IReadOnlyList<ComponentRegistryEntry> entries) {
 		return new ComponentInfoResponse {
@@ -116,7 +124,11 @@ public sealed record ComponentInfoArgs(
 
 	[property: JsonPropertyName("search")]
 	[property: Description("Optional keyword filter applied in list mode and in not-found suggestions, for example 'tab'.")]
-	string? Search = null
+	string? Search = null,
+
+	[property: JsonPropertyName("schema-type")]
+	[property: Description("Component registry to query: 'web' (default) for standard Freedom UI pages, or 'mobile' for mobile page components (crt.Toggle, crt.BarcodeScanner, crt.Sort, etc.).")]
+	string? SchemaType = null
 );
 
 /// <summary>

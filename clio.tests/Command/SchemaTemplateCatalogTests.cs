@@ -55,7 +55,7 @@ public sealed class SchemaTemplateCatalogTests {
 
 	[Test]
 	public void GetTemplates_Web_Returns_Parsed_Items() {
-		var templates = _catalog.GetTemplates(PageSchemaType.FreedomUIPage);
+		var templates = _catalog.GetTemplates(PageSchemaType.Web);
 
 		templates.Should().HaveCount(3);
 		templates[0].Name.Should().Be("PageWithTabsAndProgressBarTemplate");
@@ -65,7 +65,7 @@ public sealed class SchemaTemplateCatalogTests {
 
 	[Test]
 	public void GetTemplates_Mobile_Returns_Only_Mobile_Items() {
-		var templates = _catalog.GetTemplates(PageSchemaType.MobilePage);
+		var templates = _catalog.GetTemplates(PageSchemaType.Mobile);
 
 		templates.Should().ContainSingle();
 		templates[0].Name.Should().Be("BlankMobilePageTemplate");
@@ -116,15 +116,15 @@ public sealed class SchemaTemplateCatalogTests {
 			.Returns("""{"success": false, "errorInfo": { "message": "forbidden" }}""");
 		SchemaTemplateCatalog catalog = new(_applicationClient, _serviceUrlBuilder);
 
-		Action act = () => catalog.GetTemplates(PageSchemaType.FreedomUIPage);
+		Action act = () => catalog.GetTemplates(PageSchemaType.Web);
 
 		act.Should().Throw<System.InvalidOperationException>().WithMessage("forbidden");
 	}
 
 	[Test]
 	public void GetTemplates_Cached_Across_Calls() {
-		_catalog.GetTemplates(PageSchemaType.FreedomUIPage);
-		_catalog.GetTemplates(PageSchemaType.FreedomUIPage);
+		_catalog.GetTemplates(PageSchemaType.Web);
+		_catalog.GetTemplates(PageSchemaType.Web);
 
 		_applicationClient.Received(1)
 			.ExecuteGetRequest("http://test/rest/schema.template.api/templates?schemaType=9");

@@ -17,11 +17,48 @@ public interface IPageSchemaBodyParser {
 }
 
 internal sealed class PageSchemaBodyParser : IPageSchemaBodyParser {
+	/// <inheritdoc />
 	public PageParsedSchemaBody Parse(string body) {
 		if (string.IsNullOrWhiteSpace(body)) {
 			throw new InvalidOperationException("Page schema body is empty");
 		}
 
+		return PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile
+			? ParseMobileJsonBody(body)
+			: ParseAmdBody(body);
+	}
+
+	/// <summary>
+	/// Parses a mobile page body — plain JSON with top-level <c>viewConfigDiff</c>,
+	/// <c>viewModelConfigDiff</c>, and <c>modelConfigDiff</c> arrays.
+	/// </summary>
+	private static PageParsedSchemaBody ParseMobileJsonBody(string body) {
+		JObject json;
+		try {
+			json = JObject.Parse(body);
+		} catch (Exception ex) {
+			throw new InvalidOperationException(
+				$"Failed to parse mobile page body as JSON: {ex.Message}", ex);
+		}
+
+		return new PageParsedSchemaBody {
+			ViewConfigDiff = json["viewConfigDiff"] as JArray ?? new JArray(),
+			ViewModelConfigDiff = json["viewModelConfigDiff"] as JArray ?? new JArray(),
+			ModelConfigDiff = json["modelConfigDiff"] as JArray ?? new JArray(),
+			ViewModelConfig = new JObject(),
+			ModelConfig = new JObject(),
+			Deps = "[]",
+			Args = "()",
+			Handlers = "[]",
+			Converters = "{}",
+			Validators = "{}"
+		};
+	}
+
+	/// <summary>
+	/// Parses an AMD-wrapped web page body using marker-based section extraction.
+	/// </summary>
+	private static PageParsedSchemaBody ParseAmdBody(string body) {
 		return new PageParsedSchemaBody {
 			ViewConfigDiff = ParseJsonSection(body, new JArray(), "SCHEMA_VIEW_CONFIG_DIFF", "SCHEMA_DIFF"),
 			ViewModelConfig = ParseJsonSection(body, new JObject(), "SCHEMA_VIEW_MODEL_CONFIG"),

@@ -157,11 +157,8 @@ namespace Clio.Command {
 			_logger.WriteInfo($"  failed: {error}");
 		}
 
-		private static string DescribeSchemaType(int schemaType) => schemaType switch {
-			9 => "web",
-			10 => "mobile",
-			_ => schemaType.ToString()
-		};
+		private static string DescribeSchemaType(int schemaType) =>
+			PageSchemaTypeExtensions.FromNumericValue(schemaType).ToLabel();
 
 		public override int Execute(PageCreateOptions options) {
 			bool success = TryCreatePage(options, out PageCreateResponse response);

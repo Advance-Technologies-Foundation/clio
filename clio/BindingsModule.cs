@@ -253,6 +253,7 @@ public class BindingsModule {
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
 		services.AddTransient<IPageBundleBuilder, PageBundleBuilder>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
+		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
 		
 		// MCP Tools
 		services.AddTransient<PageListTool>();

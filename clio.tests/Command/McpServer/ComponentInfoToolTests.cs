@@ -17,6 +17,7 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ComponentInfoToolTests {
 	private static readonly string RegistryRoot = GetRootedPath("clio");
 	private static readonly string RegistryPath = Path.Combine(RegistryRoot, "Command", "McpServer", "Data", "ComponentRegistry.json");
+	private static readonly string MobileRegistryPath = Path.Combine(RegistryRoot, "Command", "McpServer", "Data", "MobileComponentRegistry.json");
 	private const string TestRegistryJson = """
 	[
 	  {
@@ -134,6 +135,49 @@ public sealed class ComponentInfoToolTests {
 	      "name": "TitleLabel",
 	      "values": { "type": "crt.Label", "caption": "Title" },
 	      "parentName": "Header",
+	      "propertyName": "items",
+	      "index": 0
+	    }
+	  }
+	]
+	""";
+
+	private const string TestMobileRegistryJson = """
+	[
+	  {
+	    "componentType": "crt.Toggle",
+	    "category": "fields",
+	    "description": "Boolean toggle switch. Mobile-only.",
+	    "container": false,
+	    "parentTypes": ["crt.GridContainer"],
+	    "properties": {
+	      "control": { "type": "string", "description": "Bound Boolean attribute." }
+	    },
+	    "typicalChildren": [],
+	    "example": {
+	      "operation": "insert",
+	      "name": "ActiveToggle",
+	      "values": { "type": "crt.Toggle", "control": "$PDS_IsActive" },
+	      "parentName": "DetailsGrid",
+	      "propertyName": "items",
+	      "index": 0
+	    }
+	  },
+	  {
+	    "componentType": "crt.BarcodeScanner",
+	    "category": "fields",
+	    "description": "Barcode scanner field. Mobile-only.",
+	    "container": false,
+	    "parentTypes": ["crt.GridContainer"],
+	    "properties": {
+	      "control": { "type": "string", "description": "Bound scanned value attribute." }
+	    },
+	    "typicalChildren": [],
+	    "example": {
+	      "operation": "insert",
+	      "name": "BarcodeField",
+	      "values": { "type": "crt.BarcodeScanner", "control": "$PDS_Barcode" },
+	      "parentName": "DetailsGrid",
 	      "propertyName": "items",
 	      "index": 0
 	    }
@@ -315,12 +359,82 @@ public sealed class ComponentInfoToolTests {
 
 	private static ComponentInfoTool CreateTool() {
 		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData> {
-			[RegistryPath] = new(TestRegistryJson)
+			[RegistryPath] = new(TestRegistryJson),
+			[MobileRegistryPath] = new(TestMobileRegistryJson)
 		}, RegistryRoot);
 		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 		workingDirectoriesProvider.ExecutingDirectory.Returns(RegistryRoot);
 		ComponentInfoCatalog catalog = new(fileSystem, workingDirectoriesProvider);
-		return new ComponentInfoTool(catalog);
+		MobileComponentInfoCatalog mobileCatalog = new(fileSystem, workingDirectoriesProvider);
+		return new ComponentInfoTool(catalog, mobileCatalog);
+	}
+
+	[Test]
+	[Description("Returns grouped mobile component summaries when schema-type is 'mobile'.")]
+	public void ComponentInfoTool_Should_Return_Mobile_Catalog_When_SchemaType_Is_Mobile() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs(SchemaType: "mobile"));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "listing mobile components should succeed when the mobile registry is available");
+		response.Mode.Should().Be("list",
+			because: "omitting component-type should return list mode for the mobile catalog");
+		response.Count.Should().Be(2,
+			because: "the test mobile registry has exactly two entries");
+	}
+
+	[Test]
+	[Description("Returns mobile component detail when schema-type is 'mobile' and a known mobile type is requested.")]
+	public void ComponentInfoTool_Should_Return_Mobile_Detail_When_SchemaType_Is_Mobile_And_Type_Is_Known() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs("crt.Toggle", SchemaType: "mobile"));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "crt.Toggle exists in the mobile registry");
+		response.Mode.Should().Be("detail",
+			because: "specifying a known mobile component type should return detail mode");
+		response.ComponentType.Should().Be("crt.Toggle",
+			because: "the detail response should echo the requested mobile component type");
+	}
+
+	[Test]
+	[Description("Returns not-found error when requesting a web-only component from the mobile catalog.")]
+	public void ComponentInfoTool_Should_Return_Error_When_Web_Only_Type_Is_Requested_From_Mobile_Catalog() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs("crt.Label", SchemaType: "mobile"));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "crt.Label is a web component and should not appear in the mobile catalog");
+		response.Error.Should().Contain("crt.Label",
+			because: "the failure should identify the missing component type");
+	}
+
+	[Test]
+	[Description("Defaults to the web catalog when schema-type is omitted.")]
+	public void ComponentInfoTool_Should_Default_To_Web_Catalog_When_SchemaType_Is_Omitted() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "crt.TabContainer exists in the web registry — omitting schema-type should use the web catalog");
+		response.ComponentType.Should().Be("crt.TabContainer",
+			because: "web catalog lookup should still work when schema-type is not specified");
 	}
 
 	private static string GetRootedPath(params string[] segments) {

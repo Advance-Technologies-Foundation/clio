@@ -31,6 +31,7 @@ public sealed class PageSyncTool(
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
 	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
 	             "(SCHEMA_CONVERTERS and SCHEMA_VALIDATORS keys; SCHEMA_HANDLERS entry `request` values). " +
+	             "Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
 	             "For conditional visibility, editability, or required state based on field values (e.g. \"when Status=Closed, hide Description\"), use business rules instead of writing handlers or validators in page body \u2014 call get-guidance with name `business-rules` to learn more. " +
 	             "Section authoring rules for the body payload: " +
 	             "if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
@@ -85,6 +86,41 @@ public sealed class PageSyncTool(
 		};
 	}
 
+	private PageSyncPageResult TryValidatePage(
+		PageSyncPageInput page,
+		PageSamplingReview samplingReview,
+		out PageSyncValidationResult validationResult) {
+		validationResult = null;
+		if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
+			SchemaValidationResult mobileErrors = SchemaValidationService.ValidateMobileBody(page.Body);
+			if (!mobileErrors.IsValid)
+				return new PageSyncPageResult {
+					SchemaName = page.SchemaName,
+					Success = false,
+					Validation = new PageSyncValidationResult {
+						MarkersOk = true,
+						JsSyntaxOk = true,
+						ContentOk = false,
+						Errors = mobileErrors.Errors
+					},
+					SamplingReview = samplingReview,
+					Error = "Mobile page validation failed: " + string.Join("; ", mobileErrors.Errors)
+				};
+		} else {
+			validationResult = ValidateBody(page.Body, page.Resources);
+			if (!validationResult.MarkersOk || !validationResult.JsSyntaxOk || !validationResult.ContentOk)
+				return new PageSyncPageResult {
+					SchemaName = page.SchemaName,
+					Success = false,
+					Validation = validationResult,
+					SamplingReview = samplingReview,
+					Error = "Client-side validation failed: " +
+						string.Join("; ", validationResult.Errors ?? Array.Empty<string>())
+				};
+		}
+		return null;
+	}
+
 	private PageSyncPageResult SyncSinglePage(
 		PageSyncPageInput page,
 		PageUpdateCommand updateCommand,
@@ -95,17 +131,9 @@ public sealed class PageSyncTool(
 		try {
 			PageSyncValidationResult validationResult = null;
 			if (validate) {
-				validationResult = ValidateBody(page.Body, page.Resources);
-				if (!validationResult.MarkersOk || !validationResult.JsSyntaxOk || !validationResult.ContentOk) {
-					return new PageSyncPageResult {
-						SchemaName = page.SchemaName,
-						Success = false,
-						Validation = validationResult,
-						SamplingReview = samplingReview,
-						Error = "Client-side validation failed: " +
-							string.Join("; ", validationResult.Errors ?? Array.Empty<string>())
-					};
-				}
+				PageSyncPageResult validationFailure = TryValidatePage(page, samplingReview, out validationResult);
+				if (validationFailure != null)
+					return validationFailure;
 			}
 			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
 				return new PageSyncPageResult {
@@ -358,7 +386,7 @@ public sealed record PageSyncPageInput(
 	string Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros")]
+	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. See `page-schema-resources` guidance for the full check.")]
 	string? Resources = null,
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties")]

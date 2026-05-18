@@ -599,6 +599,82 @@ public sealed class PageUpdateToolE2ETests {
 		return string.Empty;
 	}
 
+	[Test]
+	[Description("Rejects a mobile JSON body that contains a 'validators' section without making any remote call.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects mobile body with 'validators' key")]
+	[AllureDescription("Verifies that update-page returns a structured validation error for a mobile body containing the 'validators' key, without reaching Creatio.")]
+	public async Task PageUpdateTool_Should_Reject_Mobile_Body_With_Validators() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string mobileBodyWithValidators = """
+			{
+			  "viewConfigDiff": [],
+			  "validators": {}
+			}
+			""";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrMobile_FormPage",
+					["body"] = mobileBodyWithValidators
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "mobile validation failures should be surfaced as structured tool results, not protocol errors");
+		response.Success.Should().BeFalse(
+			because: "mobile pages do not support the 'validators' key — update-page must reject the body");
+		response.Error.Should().Contain("validators",
+			because: "the error should identify the disallowed 'validators' key");
+	}
+
+	[Test]
+	[Description("Accepts a valid mobile JSON body (plain JSON starting with '{') and skips AMD marker validation.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page accepts a valid mobile JSON body without AMD markers")]
+	[AllureDescription("Verifies that update-page passes a well-formed mobile body through mobile validation only (no AMD marker checks) before attempting the save.")]
+	public async Task PageUpdateTool_Should_Accept_Valid_Mobile_Body_Without_AMD_Markers() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrMobile_FormPage",
+					["body"] = mobileBody,
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid mobile body should produce a structured result even when dry-run fails because the schema doesn't exist");
+		response.Error.Should().NotContain("SCHEMA_",
+			because: "AMD marker errors must not appear when the body is a mobile JSON object");
+	}
+
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
 		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
 		try {
@@ -611,7 +687,7 @@ public sealed class PageUpdateToolE2ETests {
 			return false;
 		}
 	}
-	
+
 	private sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
