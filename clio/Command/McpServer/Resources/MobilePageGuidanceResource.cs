@@ -26,6 +26,16 @@ public sealed class MobilePageGuidanceResource {
 		       Mobile pages (schemaType=10) have fundamentally different rules from web pages.
 		       Applying web page patterns to mobile pages will cause broken schemas or silent no-ops.
 
+		       ─────────────────────────────────────────────────────────────
+		       PRE-EDIT CHECKLIST APPLICABILITY (web guide → mobile)
+		       ─────────────────────────────────────────────────────────────
+		       The web `page-modification` PRE-EDIT GUIDANCE CHECKLIST partially applies on mobile:
+		         APPLIES IN FULL: `page-schema-resources`, entity-level `business-rules` (`create-entity-business-rule`).
+		         PARTIAL:  `page-schema-converters` — read for concept; only the inline OOTB binding form is valid on mobile (see OOTB list below).
+		         DOES NOT APPLY: `page-schema-handlers`, `page-schema-validators`, `page-schema-creatio-devkit-common` — the corresponding mobile sections do not exist.
+
+		       If a web guide tells you to add a section this mobile guide forbids (handlers / validators / custom converters / AMD deps), the mobile rule wins.
+
 		       ─────────────────────────────────
 		       BODY FORMAT — plain JSON, not AMD
 		       ─────────────────────────────────

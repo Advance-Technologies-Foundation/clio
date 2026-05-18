@@ -22,10 +22,10 @@ public sealed class PageModificationGuidanceResource {
 		Text = """
 		       clio MCP page modification guide
 
-		       PRE-EDIT GUIDANCE CHECKLIST — read before writing any body
-		       MOBILE CHECK: If `get-page` returned `schema-type: "mobile"`, STOP — call `get-guidance` with name `mobile-page-modification` instead. Mobile pages use plain JSON (NOT AMD), have a completely different component registry, and must NOT contain handlers, validators, or converters. The rules below apply ONLY to web pages (schema-type: "web").
+		       PRE-EDIT GUIDANCE CHECKLIST — MANDATORY before writing any body
+		       MOBILE CHECK: If `get-page` returned `schema-type: "mobile"`, STOP — call `get-guidance` with name `mobile-page-modification` instead. Mobile pages use plain JSON (NOT AMD), have a completely different component registry, and must NOT contain handlers, validators, or converters. The rules below apply ONLY to web pages (schema-type: "web"). NOTE: even on mobile, a subset of the checklist below still applies (notably `page-schema-resources` and entity-level `business-rules`) — the mobile guide lists which items carry over.
 
-		       Before touching raw.body, determine which section you are modifying and call the corresponding guidance first:
+		       GATE: if ANY row in the table below matches your change, you MUST call the listed guide before producing the body. Skipping a matching row is treated as a defect, not a shortcut.
 
 		       | Requirement pattern | Call get-guidance with name | Why |
 		       | --- | --- | --- |
