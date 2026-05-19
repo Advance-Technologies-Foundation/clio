@@ -48,6 +48,32 @@ internal static class BusinessRuleHelpers {
 	internal static bool IsForwardReferencePath(string path) =>
 		path.Contains('.', StringComparison.Ordinal);
 
+	/// <summary>
+	/// Resolves a single path segment against a Name-keyed column dictionary, accepting either
+	/// the column <c>Name</c> or its <c>UId</c> (GUID-shaped string). UId lookup is a one-time
+	/// linear scan over the dictionary values — schemas typically carry under ~100 columns and
+	/// the column map is cached per session, so the cost is negligible compared to an extra
+	/// HTTP round-trip.
+	/// </summary>
+	internal static bool TryResolveColumnByNameOrUId(
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columns,
+		string segment,
+		out EntitySchemaColumnDto? column) {
+		if (columns.TryGetValue(segment, out column)) {
+			return true;
+		}
+		if (Guid.TryParse(segment, out Guid uid)) {
+			foreach (EntitySchemaColumnDto candidate in columns.Values) {
+				if (candidate.UId == uid) {
+					column = candidate;
+					return true;
+				}
+			}
+		}
+		column = null;
+		return false;
+	}
+
 	internal static string GetRootAttributePath(string path) {
 		int separatorIndex = path.IndexOf('.');
 		return separatorIndex > 0

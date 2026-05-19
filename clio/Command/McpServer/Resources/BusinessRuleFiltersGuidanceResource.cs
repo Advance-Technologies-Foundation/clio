@@ -180,12 +180,31 @@ public sealed class BusinessRuleFiltersGuidanceResource {
 		           }
 		         }
 
+		       Discovery flow (primary: DataForge, fallback: MCP native)
+		       - Preferred: use the DataForge MCP tools to discover schemas, columns, and 1:N relations before composing the filter -- they index Creatio metadata in one place and return fast, structured results.
+		         - Tables / lookup root schemas: `dataforge-find-tables`, `dataforge-find-lookups`.
+		         - Columns on a schema: `dataforge-get-table-columns`.
+		         - 1:N relation paths (input for backward references): `dataforge-get-relations`.
+		         - Aggregated context for a single AI request: `dataforge-context`.
+		       - Fallback when DataForge is not available, not configured for the target environment, or has not finished indexing the requested schema (`dataforge-health` reports `data-structure-readiness=false` or `lookups-readiness=false`):
+		         - Tables / schemas: `find-entity-schema`.
+		         - Columns: `get-entity-schema-properties`.
+		         - Reference schema names already live in `EntityDesignSchemaDto.ReferenceSchema` returned by `get-entity-schema-properties`, so forward paths can be assembled the same way as with DataForge output.
+		         - 1:N child-to-parent relations: search columns on candidate child schemas via `get-entity-schema-properties` and pick the Lookup that points back to the parent.
+		       - Either discovery path produces the same friendly-filter payload; clio's structural and schema-aware validators run identically. No runtime dependency on DataForge.
+
+		       columnPath: Name or UId accepted
+		       - Every segment in `filters[*].columnPath` may be either the column `Name` (e.g. `Country`) or the column `UId` (GUID string, e.g. `3b2f8b1d-1234-...`).
+		       - clio auto-detects GUID-shape segments and looks them up by `Column.UId` on the schema; otherwise it falls back to a name lookup.
+		       - The emitted BVE1 envelope is always rewritten to use canonical `Name` segments so the platform runtime resolves the path without UId mapping.
+		       - Use UIds when the AI assistant wants explicit identity (no risk of name collisions across packages) and Names when readability matters.
+
 		       Anti-patterns
 		       - Do NOT mix `items` with `targetAttribute` / `filter` for `type=apply-static-filter`.
 		       - Do NOT pass `rootSchemaName` -- it is inferred.
-		       - Do NOT use multi-id arrays for Lookup leaves; send a single GUID string.
+		       - Multi-id arrays ARE supported for Lookup leaves with `EQUAL` / `NOT_EQUAL`: pass `value: ["guid1", "guid2", "display-name", ...]`. Mixed GUID + display-name entries resolve per-element.
 		       - Do NOT use backward-reference brackets `[Schema:Column]` inside `filters[*].columnPath`.
-		       - Do NOT rely on the runtime to fix non-existent lookup records; the server-side converter rejects them at create time and clio surfaces that as `filter.server-rejected`.
+		       - Display-name lookup values are resolved automatically against the lookup's primary display column; ambiguous (multiple matches) and no-match cases surface as `filter.lookup-record-not-found`.
 		       - Do NOT invent comparison or logical tokens; the vocabularies above are exhaustive for clio Phase 1.
 
 		       BEFORE SAVE CHECKLIST

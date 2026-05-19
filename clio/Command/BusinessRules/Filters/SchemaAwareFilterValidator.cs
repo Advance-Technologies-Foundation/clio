@@ -119,15 +119,15 @@ internal sealed class SchemaAwareFilterValidator(IFilterSchemaProvider schemaPro
 		EntitySchemaColumnDto? lastResolved = null;
 		for (int i = 0; i < segments.Length; i++) {
 			string segment = segments[i];
-			if (!currentColumns.TryGetValue(segment, out EntitySchemaColumnDto? column)) {
+			if (!BusinessRuleHelpers.TryResolveColumnByNameOrUId(currentColumns, segment, out EntitySchemaColumnDto? column)) {
 				string sample = string.Join(", ", currentColumns.Keys.Take(20));
 				string ellipsis = currentColumns.Count > 20 ? ", ..." : string.Empty;
 				throw new BusinessRuleFilterException(
 					BusinessRuleFilterErrorCodes.PathUnknown,
 					fieldPath,
-					$"Column '{segment}' not found on schema '{currentSchema}'. Available: {sample}{ellipsis}.");
+					$"Column '{segment}' not found on schema '{currentSchema}' (looked up by Name and UId). Available names: {sample}{ellipsis}.");
 			}
-			lastResolved = column;
+			lastResolved = column!;
 			bool isLastSegment = i == segments.Length - 1;
 			if (isLastSegment) {
 				break;
@@ -261,6 +261,12 @@ internal sealed class SchemaAwareFilterValidator(IFilterSchemaProvider schemaPro
 		string typeName = BusinessRuleHelpers.MapDataValueTypeName(column.DataValueType);
 		JsonElement element = value.Value;
 		JsonValueKind kind = element.ValueKind;
+		// Relative-date macros on a Date / DateTime / Time column are accepted as JSON strings
+		// without ISO format enforcement; the converter routes them to EsqMacroBuilder.
+		if (SupportedDateTimeDataValueTypeNames.Contains(typeName)
+			&& Clio.Command.BusinessRules.Filters.Esq.EsqMacroBuilder.IsMacroValue(value)) {
+			return;
+		}
 		if (string.Equals(typeName, "Lookup", StringComparison.Ordinal)) {
 			RequireLookupGuid(element, kind, column, fieldPath);
 		} else if (string.Equals(typeName, "Boolean", StringComparison.Ordinal)) {

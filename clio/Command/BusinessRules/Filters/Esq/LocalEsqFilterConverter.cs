@@ -92,21 +92,37 @@ internal sealed class LocalEsqFilterConverter(
 	}
 
 	private SerializableFilter BuildLeaf(StaticFilterLeaf leaf, string schemaName) {
+		// Resolve column AND rewrite each path segment from UId (GUID-shape) to Name.
+		// The platform BVE1 runtime reads `columnPath` strings by Name, not by UId; callers may
+		// legitimately pass GUIDs so the friendly contract stays explicit about which column is
+		// referenced even when names clash.
+		(EntitySchemaColumnDto leafColumn, string nameOnlyPath) =
+			ResolveLeafColumnWithNameOnlyPath(leaf.ColumnPath, schemaName);
+		StaticFilterLeaf normalizedLeaf = leaf with { ColumnPath = nameOnlyPath };
 		string comparison = leaf.ComparisonType?.ToUpperInvariant() ?? string.Empty;
 		if (string.Equals(comparison, "IS_NULL", StringComparison.Ordinal)) {
-			return BuildNullFilter(leaf.ColumnPath, isNull: true);
+			return BuildNullFilter(nameOnlyPath, isNull: true);
 		}
 		if (string.Equals(comparison, "IS_NOT_NULL", StringComparison.Ordinal)) {
-			return BuildNullFilter(leaf.ColumnPath, isNull: false);
+			return BuildNullFilter(nameOnlyPath, isNull: false);
 		}
-		EntitySchemaColumnDto leafColumn = ResolveLeafColumn(leaf.ColumnPath, schemaName);
 		string leafTypeName = BusinessRuleHelpers.MapDataValueTypeName(leafColumn.DataValueType);
 		bool isLookupLeaf = string.Equals(leafTypeName, "Lookup", StringComparison.Ordinal)
 			&& leafColumn.ReferenceSchema is not null;
 		if (isLookupLeaf) {
-			return BuildLookupFilter(leaf, leafColumn);
+			return BuildLookupFilter(normalizedLeaf, leafColumn);
 		}
-		return BuildCompareFilter(leaf, leafColumn);
+		// Relative-date macro values (e.g. "PREVIOUS_WEEK", "WITHIN_PREV_DAYS(7)", "DAY_OF_WEEK(2)")
+		// route to the macro builder when the column is Date / DateTime / Time. The resulting
+		// filter is still serialized as a static envelope; the platform runtime evaluates the
+		// macro against time-of-fire.
+		bool isTemporalLeaf = string.Equals(leafTypeName, "DateTime", StringComparison.Ordinal)
+			|| string.Equals(leafTypeName, "Date", StringComparison.Ordinal)
+			|| string.Equals(leafTypeName, "Time", StringComparison.Ordinal);
+		if (isTemporalLeaf && EsqMacroBuilder.IsMacroValue(normalizedLeaf.Value)) {
+			return EsqMacroBuilder.Build(normalizedLeaf, leafColumn);
+		}
+		return BuildCompareFilter(normalizedLeaf, leafColumn);
 	}
 
 	private SerializableFilter BuildBackwardReference(
@@ -431,7 +447,9 @@ internal sealed class LocalEsqFilterConverter(
 			.Value ?? fallback;
 	}
 
-	private EntitySchemaColumnDto ResolveLeafColumn(string columnPath, string rootSchemaName) {
+	private (EntitySchemaColumnDto Column, string NameOnlyPath) ResolveLeafColumnWithNameOnlyPath(
+		string columnPath,
+		string rootSchemaName) {
 		string[] segments = NormalizeColumnPath(columnPath).Split('.');
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> currentColumns =
 			schemaProvider.GetSchemaColumns(rootSchemaName);
@@ -439,12 +457,15 @@ internal sealed class LocalEsqFilterConverter(
 		EntitySchemaColumnDto? lastResolved = null;
 		for (int i = 0; i < segments.Length; i++) {
 			string segment = segments[i];
-			if (!currentColumns.TryGetValue(segment, out EntitySchemaColumnDto? column)) {
+			if (!BusinessRuleHelpers.TryResolveColumnByNameOrUId(currentColumns, segment, out EntitySchemaColumnDto? column)) {
 				throw new BusinessRuleFilterException(
 					BusinessRuleFilterErrorCodes.PathUnknown,
 					$"rule.actions[*].filter.filters[*].columnPath",
-					$"Column '{segment}' not found on schema '{currentSchema}' while resolving '{columnPath}'.");
+					$"Column '{segment}' not found on schema '{currentSchema}' while resolving '{columnPath}' (looked up by Name and UId).");
 			}
+			// Rewrite UId-form segments to their canonical Name so the emitted BVE1 envelope
+			// carries platform-native path strings the runtime can resolve without UId mapping.
+			segments[i] = !string.IsNullOrWhiteSpace(column!.Name) ? column.Name : segment;
 			lastResolved = column;
 			bool isLastSegment = i == segments.Length - 1;
 			if (isLastSegment) {
@@ -460,7 +481,7 @@ internal sealed class LocalEsqFilterConverter(
 			currentSchema = column.ReferenceSchema.Name!;
 			currentColumns = schemaProvider.GetSchemaColumns(currentSchema);
 		}
-		return lastResolved!;
+		return (lastResolved!, string.Join('.', segments));
 	}
 
 	// CrtCopilot's NormalizeColumnPath strips a trailing 'Id' on each path segment because
