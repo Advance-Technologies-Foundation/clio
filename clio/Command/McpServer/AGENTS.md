@@ -88,10 +88,11 @@ through a three-layer fallback chain implemented in
    and the chain falls through to the cache, the `latest` alias, and finally
    the embedded snapshot — this is expected.
 2. **File cache.** `~/.clio/cache/component-registry/{version}.json` with a
-   24h TTL and a `{version}.meta.json` sidecar (ETag, Last-Modified, SHA-256).
-   Cache hits return synchronously; stale entries return immediately while a
-   single background refresh runs (stale-while-revalidate). AI requests never
-   block on the network.
+   5-minute TTL and a `{version}.meta.json` sidecar (ETag, Last-Modified, SHA-256).
+   The TTL is aligned with the 5-minute academy mirror cadence so producer
+   pushes reach AI within roughly 10 minutes worst-case. Cache hits return
+   synchronously; stale entries return immediately while a single background
+   refresh runs (stale-while-revalidate). AI requests never block on the network.
 3. **Embedded snapshot in `clio.dll`.** Manifest resources
    `Clio.ComponentRegistry.ComponentRegistry.json` and
    `Clio.ComponentRegistry.embedded-metadata.json` are produced at clio build
@@ -109,7 +110,7 @@ to `latest`, and the MCP response carries the `resolvedFrom` marker
 (`"environment"` | `"latest-fallback"`) so AI can interpret the result correctly
 (see `Resources/PageModificationGuidanceResource.cs` for the guidance text).
 
-To force-refresh the local cache without waiting for the 24h TTL, use the
+To force-refresh the local cache without waiting for the 5min TTL, use the
 `clio component-registry-refresh` verb:
 
 - no flags → refresh `latest/ComponentRegistry.json`

@@ -26,7 +26,7 @@ The version returned by `GetSysInfo` is mapped to a CDN file name (e.g. `8.1.5.x
 |---|---|
 | Primary source | `https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json` (per-version file on academy CDN) |
 | Latest alias | `https://academy.creatio.com/api/mcp/latest/ComponentRegistry.json` (CI-maintained pointer to the freshest GA) |
-| Runtime cache | `~/.clio/cache/component-registry/{version}.json` + `{version}.meta.json` (Last-Modified, ETag, expiresAt, sourceUrl) |
+| Runtime cache | `~/.clio/cache/component-registry/{version}.json` + `{version}.meta.json` (Last-Modified, ETag, expiresAt, sourceUrl); 5-minute TTL with stale-while-revalidate |
 | Embedded fallback | `Clio.ComponentRegistry.ComponentRegistry.json` as an embedded resource in `clio.dll`. Populated at `dotnet pack` time via MSBuild `ResolveCdnSnapshot` target. Committed seed-snapshot serves as the bootstrap source and as the fallback when the MSBuild fetch fails. |
 | Loader | `Stream` from CDN/cache/embedded, parsed by the same `JsonSerializer.Deserialize<ComponentRegistryEntry[]>` |
 | Model | **Unchanged** — `ComponentRegistryEntry` and `ComponentPropertyDefinition` keep current fields. No `availability`. Schema is drop-in compatible. |
@@ -156,7 +156,7 @@ Location: `~/.clio/cache/component-registry/`.
   ```json
   {
     "fetchedAt": "2026-05-13T10:00:00Z",
-    "expiresAt": "2026-05-14T10:00:00Z",
+    "expiresAt": "2026-05-13T10:05:00Z",
     "sourceUrl": "https://academy.creatio.com/api/mcp/8.2.1/ComponentRegistry.json",
     "etag": "W/\"abc123\"",
     "lastModified": "Wed, 13 May 2026 09:00:00 GMT",
@@ -164,7 +164,7 @@ Location: `~/.clio/cache/component-registry/`.
   }
   ```
 
-- TTL: `expiresAt = fetchedAt + 24h`.
+- TTL: `expiresAt = fetchedAt + 5min`.
 - Cache invalidation: by `expiresAt` only (no checksum check on read). Corrupted parse triggers cache deletion and falls through.
 - Size: each file ~190 KB at current registry size; per-version caching means the directory could hold ~5 files long-term (~1 MB). Unbounded growth not a concern for foreseeable future; no eviction policy in v1.
 
@@ -230,7 +230,7 @@ clio component-registry refresh [--version <semver>] [--all]
 - `--version 8.2.1`: refresh that single file.
 - `--all`: refresh all files currently present in the local cache.
 
-Operationally useful when a user wants to pick up a newly published GA without waiting for the 24h TTL. Trivial wrapper over `IComponentRegistryClient.RefreshAsync(version)`.
+Operationally useful when a user wants to pick up a newly published GA without waiting for the 5min TTL (rarely needed at that cadence, but kept for parity with longer past TTLs and for force-refresh debugging). Trivial wrapper over `IComponentRegistryClient.RefreshAsync(version)`.
 
 ## Resolution stack for `target-version` (internal)
 

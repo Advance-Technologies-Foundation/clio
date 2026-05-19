@@ -42,7 +42,7 @@ public sealed record ComponentRegistryCacheReadResult(Stream Content, bool IsFre
 /// </summary>
 public sealed class ComponentRegistryCacheStore : IComponentRegistryCacheStore {
 	internal const string CacheDirectoryName = "component-registry";
-	internal static readonly TimeSpan EntryTtl = TimeSpan.FromHours(24);
+	internal static readonly TimeSpan EntryTtl = TimeSpan.FromMinutes(5);
 
 	private readonly IFileSystem _fileSystem;
 	private readonly TimeProvider _timeProvider;

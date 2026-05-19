@@ -47,14 +47,14 @@ public sealed class ComponentRegistryCacheStoreTests {
 
 		// Assert
 		read.Should().NotBeNull(because: "a just-written cache entry must be retrievable");
-		read!.IsFresh.Should().BeTrue(because: "TTL is 24h and only zero seconds elapsed");
+		read!.IsFresh.Should().BeTrue(because: "TTL is 5min and only zero seconds elapsed");
 		using StreamReader reader = new(read.Content);
 		(await reader.ReadToEndAsync()).Should().Be(SamplePayloadJson,
 			because: "the cached payload must round-trip byte-for-byte");
 	}
 
 	[Test]
-	[Description("Once 24 hours pass the cache entry is reported as stale but still served.")]
+	[Description("Once the 5-minute TTL passes the cache entry is reported as stale but still served.")]
 	public async Task TryReadAsync_Reports_Stale_After_Ttl() {
 		// Arrange
 		MockFileSystem fileSystem = new();
@@ -64,12 +64,12 @@ public sealed class ComponentRegistryCacheStoreTests {
 		await store.WriteAsync("latest", Encoding.UTF8.GetBytes(SamplePayloadJson), etag: null, lastModified: null);
 
 		// Act
-		clock.Advance(TimeSpan.FromHours(25));
+		clock.Advance(TimeSpan.FromMinutes(6));
 		ComponentRegistryCacheReadResult? read = await store.TryReadAsync("latest");
 
 		// Assert
 		read.Should().NotBeNull(because: "stale entries are still returned to support stale-while-revalidate");
-		read!.IsFresh.Should().BeFalse(because: "25h > 24h TTL so the entry is past its ExpiresAt");
+		read!.IsFresh.Should().BeFalse(because: "6min > 5min TTL so the entry is past its ExpiresAt");
 	}
 
 	[Test]

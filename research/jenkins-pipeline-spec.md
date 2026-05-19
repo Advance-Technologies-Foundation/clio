@@ -31,7 +31,7 @@ Sister documents:
 | Special path | `latest/ComponentRegistry.json` — copy of the highest-semver published GA payload |
 | Destination | `gitdigital.creatio.com/academy/static-files-mcp` (GitLab). Commit the payload under the path above on the `master` branch. The academy mirror copies it to `https://academy.creatio.com/api/mcp/{path}` on its next 5-minute tick. |
 | Trigger | GA-tag in creatio-ui (`8.2.0`, `8.2.1`, `8.3.0`, …). Branch-cut runs the same job in **baseline mode** (artifact only; no git push). |
-| Cache headers (recommended) | `Cache-Control: public, max-age=86400` (matches clio's 24h TTL); `ETag` strongly recommended. Headers are emitted by the academy edge — the producer does not set them. |
+| Cache headers (recommended) | `Cache-Control: public, max-age=300` (matches clio's 5min TTL and the 5-minute mirror cadence); `ETag` strongly recommended. Headers are emitted by the academy edge — the producer does not set them. |
 | Access | Public read on the CDN edge, no authentication. GitLab write access is restricted to the academy team and the Jenkins service account. |
 | Failure isolation | Registry-publish failure MUST NOT block the platform GA release |
 
@@ -303,7 +303,7 @@ These headers are emitted by the academy mirror, not by the producer. They are r
 
 | Header | Value | Why |
 |---|---|---|
-| `Cache-Control` | `public, max-age=86400` | clio uses a 24h app-level TTL; matching CDN edge TTL avoids stale-edge issues. Longer is acceptable (clio will conditional-GET via ETag). |
+| `Cache-Control` | `public, max-age=300` | clio uses a 5min app-level TTL aligned with the 5-minute mirror cadence; matching CDN edge TTL avoids stale-edge issues. Longer would force AI to wait extra ticks for a freshly mirrored payload. |
 | `ETag` | `"<sha256-of-payload>"` or `W/"..."` | Lets clio's stale-while-revalidate path short-circuit unchanged content with a 304. |
 | `Last-Modified` | RFC 1123 timestamp | Optional, supplementary to ETag. |
 | `Content-Type` | `application/json; charset=utf-8` | clio expects JSON content. |
@@ -367,4 +367,4 @@ When this PR is reviewed and the implementation work begins in `creatio-ui`:
 - [ ] Implement the extractor under `tools/component-registry-extractor/` (see [extractor-analysis.md](extractor-analysis.md) for filters and invariants).
 - [ ] Implement the Jenkins pipeline per the sketch above; pin it to GA-tag triggers.
 - [ ] Run the pipeline in `dry-run` mode against the current `master` checkout. Compare the output to the current clio in-repo `ComponentRegistry.json` (it must be a **superset**, per [extractor-analysis.md § Regression](extractor-analysis.md)).
-- [ ] After the first GA-tag run with `MODE=publish`, confirm the new files appear under `https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json` within ≤5 minutes, then confirm clio's CDN client picks up the new `latest/ComponentRegistry.json` on its next 24h refresh.
+- [ ] After the first GA-tag run with `MODE=publish`, confirm the new files appear under `https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json` within ≤5 minutes, then confirm clio's CDN client picks up the new `latest/ComponentRegistry.json` on its next 5min refresh.

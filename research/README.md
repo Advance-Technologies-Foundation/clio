@@ -62,7 +62,7 @@ PR [clio#595](https://github.com/Advance-Technologies-Foundation/clio/pull/595) 
    │     8.3.0/ComponentRegistry.json                          │
    │     latest/ComponentRegistry.json (alias to freshest GA)  │
    └─────────────┬─────────────────────────────────────────────┘
-                 │ HTTPS GET (clio runtime, 24h TTL,
+                 │ HTTPS GET (clio runtime, 5min TTL,
                  │  stale-while-revalidate, no auth)
                  ▼
          ┌─────────── clio ────────────┐
@@ -91,7 +91,7 @@ PR [clio#595](https://github.com/Advance-Technologies-Foundation/clio/pull/595) 
 - **JSON shape is drop-in compatible** with the current `ComponentRegistry.json` (top-level array of `ComponentRegistryEntry`). No wrapper, no `schemaVersion`, no `categories` (yet).
 - **No AI-side overrides in v1.** `creatio-ui` CI emits the full extracted set. Curation is a future stage if needed.
 - **Three-layer fallback in clio**: CDN → file cache (`~/.clio/cache/component-registry/`) → embedded snapshot in `clio.dll` (fetched at clio build time from CDN `latest.json` via MSBuild target; with a committed seed-snapshot for bootstrap and offline build).
-- **Cache policy**: TTL 24h, **stale-while-revalidate** — expired cache is returned synchronously, refresh runs in the background. AI never blocks on the network.
+- **Cache policy**: TTL 5min, **stale-while-revalidate** — expired cache is returned synchronously, refresh runs in the background. AI never blocks on the network. Worst-case freshness end-to-end is ~10 minutes (5min mirror + 5min TTL).
 - **Version resolution in clio**: internal stack `explicit target-version > GetSysInfo > latest`. In v1 the MCP tool surface activates only the lower two rungs (Args unchanged); `explicit` is reserved for a future tool-surface bump.
 - **MCP contract**: `ComponentInfoArgs` unchanged. `ComponentInfoResponse` adds `resolvedTargetVersion` + `resolvedFrom` (`"environment"` | `"latest-fallback"`).
 - **Trigger in creatio-ui CI**: GA-tag only. Branch-cut produces a Jenkins baseline artifact for regression detection (no git push to `static-files-mcp`, therefore no CDN refresh).

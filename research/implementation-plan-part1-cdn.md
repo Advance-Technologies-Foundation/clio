@@ -32,8 +32,8 @@ academy.creatio.com (public HTTPS CDN)
     │
     └─ /api/mcp/8.3.0/ComponentRegistry.json
         └─ /api/mcp/latest/ComponentRegistry.json
-            └─ Cache-Control: public, max-age=86400; ETag
-                ▼ HTTPS GET (24h TTL, stale-while-revalidate)
+            └─ Cache-Control: public, max-age=300; ETag
+                ▼ HTTPS GET (5min TTL, stale-while-revalidate)
 clio runtime
     │
     └─ IComponentRegistryClient
@@ -102,7 +102,7 @@ public sealed class ComponentRegistryClient(
     : IComponentRegistryClient {
 
     private const string CdnBaseUrl = "https://academy.creatio.com/api/mcp/";
-    private static readonly TimeSpan CacheTtl = TimeSpan.FromHours(24);
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
     private static readonly SemaphoreSlim BackgroundRefreshGate = new(initialCount: 1);
 
     public async Task<ComponentRegistryFetchResult> GetAsync(string requestedVersion, CancellationToken ct = default) {
@@ -190,7 +190,7 @@ public sealed record CacheReadResult(Stream Content, bool IsFresh);
 public sealed class ComponentRegistryCacheStore(IFileSystem fileSystem, TimeProvider clock)
     : IComponentRegistryCacheStore {
 
-    private static readonly TimeSpan Ttl = TimeSpan.FromHours(24);
+    private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(5);
     private readonly string _root = fileSystem.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".clio", "cache", "component-registry");
@@ -714,7 +714,7 @@ All open questions are closed by the Q&A session that produced this branch. Summ
 | 7 | AI-side overrides | Removed in v1. |
 | 8 | Composer repo + NuGet 0.1.0 | Deleted (composer-repo via GitHub delete; NuGet via unlist + nuget.org support). |
 | 9 | Fallback chain in clio | 3-layer: CDN → file cache (`~/.clio/cache/component-registry/`) → embedded snapshot in `clio.dll`. |
-| 10 | Cache policy | TTL 24h, stale-while-revalidate (background refresh; AI never blocks on network). |
+| 10 | Cache policy | TTL 5min, stale-while-revalidate (background refresh; AI never blocks on network). Aligned with the 5-minute academy mirror cadence so producer pushes reach AI within roughly 10 minutes worst-case. |
 | 11 | Embedded snapshot refresh | Build-time fetch via MSBuild `ResolveCdnSnapshot`; seed-snapshot in repo for bootstrap + offline build. |
 | 12 | Version resolver stack | Internal: `explicit > GetSysInfo > latest`. v1 tool surface activates `GetSysInfo > latest` only. |
 | 13 | MCP tool surface | `ComponentInfoArgs` unchanged. `ComponentInfoResponse` adds `resolvedTargetVersion` + `resolvedFrom`. |
