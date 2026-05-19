@@ -38,7 +38,15 @@ internal static class PageBodyMerger {
 		if (string.IsNullOrWhiteSpace(incomingBody)) {
 			throw new InvalidOperationException("Incoming body is empty — pass the new viewConfigDiff/handlers fragment.");
 		}
+		return PageSchemaTypeExtensions.FromBody(currentBody) == PageSchemaType.Mobile
+			? MergeMobile(currentBody, incomingBody)
+			: MergeWeb(currentBody, incomingBody);
+	}
 
+	/// <summary>
+	/// Merges two web (AMD) page bodies using marker-based section replacement.
+	/// </summary>
+	private static string MergeWeb(string currentBody, string incomingBody) {
 		JArray mergedViewConfigDiff = MergeArrayByName(
 			ReadJsonArray(currentBody, "SCHEMA_VIEW_CONFIG_DIFF"),
 			ReadJsonArray(incomingBody, "SCHEMA_VIEW_CONFIG_DIFF"));
@@ -62,6 +70,43 @@ internal static class PageBodyMerger {
 		result = ReplaceSection(result, "SCHEMA_HANDLERS", mergedHandlers);
 		result = ReplaceSection(result, "SCHEMA_CONVERTERS", mergedConverters);
 		return result;
+	}
+
+	/// <summary>
+	/// Merges two mobile page bodies (plain JSON with top-level <c>viewConfigDiff</c>,
+	/// <c>viewModelConfigDiff</c>, and <c>modelConfigDiff</c> arrays).
+	/// </summary>
+	private static string MergeMobile(string currentBody, string incomingBody) {
+		JObject current;
+		JObject incoming;
+		try {
+			current = JObject.Parse(currentBody);
+		} catch (Exception ex) {
+			throw new InvalidOperationException(
+				$"Current mobile page body is not valid JSON: {ex.Message}", ex);
+		}
+		try {
+			incoming = JObject.Parse(incomingBody);
+		} catch (Exception ex) {
+			throw new InvalidOperationException(
+				$"Incoming mobile page body is not valid JSON: {ex.Message}", ex);
+		}
+
+		JArray mergedViewConfigDiff = MergeArrayByName(
+			current["viewConfigDiff"] as JArray ?? new JArray(),
+			incoming["viewConfigDiff"] as JArray ?? new JArray());
+		JArray mergedViewModelConfigDiff = MergeArrayAppend(
+			current["viewModelConfigDiff"] as JArray ?? new JArray(),
+			incoming["viewModelConfigDiff"] as JArray ?? new JArray());
+		JArray mergedModelConfigDiff = MergeArrayAppend(
+			current["modelConfigDiff"] as JArray ?? new JArray(),
+			incoming["modelConfigDiff"] as JArray ?? new JArray());
+
+		current["viewConfigDiff"] = mergedViewConfigDiff;
+		current["viewModelConfigDiff"] = mergedViewModelConfigDiff;
+		current["modelConfigDiff"] = mergedModelConfigDiff;
+
+		return current.ToString(Newtonsoft.Json.Formatting.None);
 	}
 
 	/// <summary>

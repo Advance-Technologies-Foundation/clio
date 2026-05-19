@@ -1671,7 +1671,9 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string bodyWithBadJson = CreatePageBody(viewConfigDiff: "[{ bad json }]");
 		PageUpdateArgs args = new("UsrTest_FormPage", bodyWithBadJson, null, null, null, null, null, null);
 
@@ -1697,7 +1699,9 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string body = CreatePageBody(
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"$Resources.Strings.UsrUpperCaseValidator_Message"}}}}}}""",
 			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
@@ -1730,7 +1734,9 @@ public class PageToolsTests
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(System.Text.Json.JsonSerializer.Serialize(new { success = true }));
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string body = CreatePageBody(
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"#ResourceString(UsrUpperCaseValidator_Message)#"}}}}}}""",
 			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
@@ -1754,7 +1760,9 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string body = CreatePageBody(
 			handlers: """{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { await next?.handle(request); } }""");
 		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
@@ -1783,7 +1791,9 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string body = CreatePageBody(
 			handlers: """[{ handler: async (request, next) => { await next?.handle(request); } }]""");
 		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
@@ -1811,7 +1821,9 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","control":"$UsrName"}}]""",
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"NameMaxLength":{"type":"crt.MaxLength","params":{"max":4}}}}}}""");
@@ -1841,7 +1853,9 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrCode","values":{"type":"crt.Input","control":"$UsrCode","validators":[{"id":"usr.MaxLengthFromSysSettingValidator","params":{"settingCode":"MaxProcessLoopCount","message":"Too long"}}]}}]""",
 			viewModelConfig: """{"attributes":{"UsrCode":{"modelConfig":{"path":"PDS.UsrCode"}}}}""",
@@ -1909,7 +1923,9 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
-		PageSyncTool tool = new(commandResolver, fileSystem);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -1953,7 +1969,9 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
-		PageSyncTool tool = new(commandResolver, fileSystem);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -1996,7 +2014,9 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
-		PageSyncTool tool = new(commandResolver, fileSystem);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -2043,7 +2063,9 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
-		PageSyncTool tool = new(commandResolver, fileSystem);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -3304,6 +3326,178 @@ public class PageToolsTests
 			because: "merging two empty converter sections must produce an empty converter section");
 	}
 
+	[Test]
+	[Description("ParseSamplingResponse parses a valid JSON response with ok=true")]
+	public void ParseSamplingResponse_Should_Parse_Ok_Response() {
+		string text = "{\"ok\":true,\"issues\":[],\"warnings\":[]}";
+
+		PageSamplingReview result = PageBodySamplingService.ParseSamplingResponse(text);
+
+		result.Ok.Should().BeTrue(because: "ok=true in the response");
+		result.Skipped.Should().BeFalse(because: "valid response was parsed successfully");
+		result.Issues.Should().BeNull(because: "empty issues array becomes null");
+		result.Warnings.Should().BeNull(because: "empty warnings array becomes null");
+	}
+
+	[Test]
+	[Description("ParseSamplingResponse parses a response with ok=false and issues")]
+	public void ParseSamplingResponse_Should_Parse_Issues() {
+		string text = "{\"ok\":false,\"issues\":[\"handler 'usr.Missing' not found\"],\"warnings\":[\"minor concern\"]}";
+
+		PageSamplingReview result = PageBodySamplingService.ParseSamplingResponse(text);
+
+		result.Ok.Should().BeFalse(because: "ok=false in the response");
+		result.Issues.Should().ContainSingle(because: "one issue was reported")
+			.Which.Should().Contain("usr.Missing");
+		result.Warnings.Should().ContainSingle(because: "one warning was reported");
+	}
+
+	[Test]
+	[Description("ParseSamplingResponse strips markdown code fences from the response")]
+	public void ParseSamplingResponse_Should_Strip_Markdown_Fences() {
+		string text = "```json\n{\"ok\":true,\"issues\":[],\"warnings\":[]}\n```";
+
+		PageSamplingReview result = PageBodySamplingService.ParseSamplingResponse(text);
+
+		result.Ok.Should().BeTrue(because: "markdown fences should be stripped before parsing");
+		result.Skipped.Should().BeFalse(because: "valid response was parsed after stripping fences");
+	}
+
+	[Test]
+	[Description("ParseSamplingResponse returns Skipped=true for unparseable text")]
+	public void ParseSamplingResponse_Should_Skip_On_Invalid_Text() {
+		string text = "I cannot review this page.";
+
+		PageSamplingReview result = PageBodySamplingService.ParseSamplingResponse(text);
+
+		result.Skipped.Should().BeTrue(because: "non-JSON text should result in a skipped review");
+	}
+
+	[Test]
+	[Description("MobileSystemPrompt is distinct from SystemPrompt and validates mobile-specific type-mismatch heuristic")]
+	public void MobileSystemPrompt_Should_Be_Mobile_Specific() {
+		PageBodySamplingService.MobileSystemPrompt.Should().NotBe(PageBodySamplingService.SystemPrompt,
+			because: "mobile and web prompts must be different");
+		PageBodySamplingService.MobileSystemPrompt.Should().Contain("mobile",
+			because: "the mobile prompt should mention mobile pages");
+		PageBodySamplingService.MobileSystemPrompt.Should().NotContain("SCHEMA_HANDLERS",
+			because: "mobile pages do not have SCHEMA_HANDLERS markers");
+		PageBodySamplingService.MobileSystemPrompt.Should().NotContain("SCHEMA_CONVERTERS",
+			because: "mobile pages do not have SCHEMA_CONVERTERS markers");
+		PageBodySamplingService.MobileSystemPrompt.Should().Contain("viewModelConfig",
+			because: "the prompt must mention both viewModelConfigDiff and viewModelConfig variants");
+		PageBodySamplingService.MobileSystemPrompt.Should().Contain("modelConfig",
+			because: "the prompt must mention both modelConfigDiff and modelConfig variants");
+		PageBodySamplingService.MobileSystemPrompt.Should().Contain("Type mismatch",
+			because: "the prompt must include the type-mismatch heuristic");
+		PageBodySamplingService.MobileSystemPrompt.Should().Contain("crt.DateTimePicker",
+			because: "the prompt must give a concrete example of type-mismatch");
+		PageBodySamplingService.MobileSystemPrompt.Should().NotContain("operation",
+			because: "viewConfigDiff structure is checked deterministically, not by sampling");
+	}
+
+	[Test]
+	[Description("Web SystemPrompt validates handler request references, non-crt converter declarations, and type-mismatch heuristic")]
+	public void SystemPrompt_Should_Validate_Handler_And_Converter_References() {
+		PageBodySamplingService.SystemPrompt.Should().Contain("request",
+			because: "web prompt must mention that handlers are matched by their request field");
+		PageBodySamplingService.SystemPrompt.Should().Contain("SCHEMA_HANDLERS",
+			because: "web prompt must reference SCHEMA_HANDLERS for handler cross-reference");
+		PageBodySamplingService.SystemPrompt.Should().Contain("crt.",
+			because: "web prompt must explain that crt.* converters are built-in and must not be declared");
+		PageBodySamplingService.SystemPrompt.Should().NotContain("SCHEMA_VALIDATORS",
+			because: "validator cross-reference is handled deterministically, not by sampling");
+		PageBodySamplingService.SystemPrompt.Should().NotContain("view binds to viewModel only",
+			because: "MVVM binding is handled deterministically, not by sampling");
+		PageBodySamplingService.SystemPrompt.Should().Contain("Type mismatch",
+			because: "web prompt must include the type-mismatch heuristic for control-to-attribute checks");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: merges viewConfigDiff by name, viewModelConfigDiff and modelConfigDiff by append")]
+	public void PageBodyMerger_Should_Merge_Mobile_Bodies() {
+		string currentBody = "{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"size\":\"large\"}}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM1\"}],\"modelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"M1\"}]}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"NewButton\",\"values\":{\"type\":\"crt.Button\"}},{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"size\":\"small\"}}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM2\"}],\"modelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"M2\"}]}";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		JObject result = JObject.Parse(merged);
+		JArray viewConfigDiff = (JArray)result["viewConfigDiff"];
+		viewConfigDiff.Count.Should().Be(2, because: "existing + new entry, collision replaced");
+		viewConfigDiff.Any(t => t["name"]?.ToString() == "NewButton").Should().BeTrue(because: "new entry is appended");
+		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "small").Should().BeTrue(because: "incoming wins on name collision");
+		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "large").Should().BeFalse(because: "old entry with same name is replaced");
+
+		JArray viewModelConfigDiff = (JArray)result["viewModelConfigDiff"];
+		viewModelConfigDiff.Count.Should().Be(2, because: "viewModelConfigDiff uses append, both items kept");
+
+		JArray modelConfigDiff = (JArray)result["modelConfigDiff"];
+		modelConfigDiff.Count.Should().Be(2, because: "modelConfigDiff uses append, both items kept");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: incoming body with empty arrays leaves current arrays unchanged")]
+	public void PageBodyMerger_Mobile_Should_Preserve_Current_When_Incoming_Is_Empty() {
+		string currentBody = "{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"A\"}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM1\"}],\"modelConfigDiff\":[]}";
+		string incomingBody = "{\"viewConfigDiff\":[],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		JObject result = JObject.Parse(merged);
+		((JArray)result["viewConfigDiff"]).Count.Should().Be(1, because: "current entry must survive when incoming viewConfigDiff is empty");
+		((JArray)result["viewModelConfigDiff"]).Count.Should().Be(1, because: "current entry must survive when incoming viewModelConfigDiff is empty");
+		((JArray)result["modelConfigDiff"]).Count.Should().Be(0, because: "both sides are empty so result is empty");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: incoming body missing array keys still produces a valid result")]
+	public void PageBodyMerger_Mobile_Should_Handle_Missing_Keys_In_Incoming() {
+		string currentBody = "{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"A\"}],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"B\"}]}";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		JObject result = JObject.Parse(merged);
+		((JArray)result["viewConfigDiff"]).Count.Should().Be(2, because: "A (existing) and B (incoming) should both be present");
+		((JArray)result["viewModelConfigDiff"]).Count.Should().Be(0, because: "incoming has no viewModelConfigDiff, current is empty");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: current body missing array keys gets them from incoming")]
+	public void PageBodyMerger_Mobile_Should_Handle_Missing_Keys_In_Current() {
+		string currentBody = "{}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"A\"}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM1\"}]}";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		JObject result = JObject.Parse(merged);
+		((JArray)result["viewConfigDiff"]).Count.Should().Be(1, because: "incoming entry should appear when current has no viewConfigDiff key");
+		((JArray)result["viewModelConfigDiff"]).Count.Should().Be(1, because: "incoming entry should appear when current has no viewModelConfigDiff key");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: invalid incoming JSON throws InvalidOperationException")]
+	public void PageBodyMerger_Mobile_Should_Throw_On_Invalid_Incoming_Json() {
+		string currentBody = "{\"viewConfigDiff\":[]}";
+		string incomingBody = "{not valid json";
+
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		act.Should().Throw<InvalidOperationException>(because: "invalid incoming JSON must be rejected with a descriptive error");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: preserves extra top-level properties that are not merge targets")]
+	public void PageBodyMerger_Mobile_Should_Preserve_Extra_Properties() {
+		string currentBody = "{\"viewConfigDiff\":[],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[],\"customProp\":\"keep\"}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"A\"}]}";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		JObject result = JObject.Parse(merged);
+		result["customProp"]?.ToString().Should().Be("keep", because: "extra properties in the current body must not be discarded");
+	}
+
 	private static IPageDesignerHierarchyClient CreateHierarchyClientFor(string schemaUId, string packageUId = "test-pkg-uid") {
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
 		hierarchyClient.GetDesignPackageUId(schemaUId).Returns(packageUId);
@@ -3327,7 +3521,9 @@ public class PageToolsTests
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(System.Text.Json.JsonSerializer.Serialize(new { success = true }));
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string mobileBody = """
 			{
 			  "viewConfigDiff": [],

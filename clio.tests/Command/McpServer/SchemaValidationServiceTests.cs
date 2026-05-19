@@ -813,7 +813,7 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Standard field declared view-model binding with datasource caption passes semantic validation")]
+	[Description("Standard field declared view-model binding with auto-provided label passes semantic validation")]
 	public void ValidateStandardFieldBindings_DeclaredAttributeBindingWithDatasourceCaption_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
 			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]",
@@ -821,7 +821,7 @@ public sealed class SchemaValidationServiceTests
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
 
-		result.IsValid.Should().BeTrue("because the field binds to a declared view-model attribute with a datasource caption");
+		result.IsValid.Should().BeTrue("because the field binds to a declared view-model attribute with an auto-provided label");
 		result.Errors.Should().BeEmpty();
 		result.Warnings.Should().BeEmpty();
 	}
@@ -840,7 +840,7 @@ public sealed class SchemaValidationServiceTests
 		result.IsValid.Should().BeTrue("because the explicit resource makes the pattern suspicious but not conclusively broken");
 		result.Errors.Should().BeEmpty();
 		result.Warnings.Should().ContainSingle(warning => warning.Contains("UsrStatus_caption"),
-			"because the validator should steer callers toward datasource captions");
+			"because the validator should steer callers toward auto-provided labels");
 	}
 
 	[Test]
@@ -860,8 +860,8 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Label referencing $Resources.Strings.KEY warns when KEY is absent from explicit resources")]
-	public void ValidateStandardFieldBindings_LabelResourceKeyMissingFromExplicitResources_ReturnsWarning() {
+	[Description("Label referencing $Resources.Strings.KEY for a DS-bound attribute does not warn when KEY is absent — the platform auto-provides it")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyMissingButDsBound_ReturnsNoWarning() {
 		string body = BuildDiffBackedPageBody(
 			"[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.PDS_UsrName\",\"control\":\"$UsrName\"}}]",
 			"[{\"operation\":\"merge\",\"values\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
@@ -870,10 +870,42 @@ public sealed class SchemaValidationServiceTests
 			body,
 			new Dictionary<string, string> { ["PDS_UsrRequesterName"] = "Requester Name" });
 
+		result.IsValid.Should().BeTrue("because DS-bound caption keys are auto-provided by the platform");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().BeEmpty("because the label matches the DS-bound attribute and the platform auto-provides it");
+	}
+
+	[Test]
+	[Description("Label using attribute name as resource key does not warn when that attribute is DS-bound — the platform auto-provides captions for DS-bound attributes regardless of naming")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyIsAttributeNameAndDsBound_ReturnsNoWarning() {
+		string body = BuildDiffBackedPageBody(
+			"[{\"operation\":\"insert\",\"name\":\"UsrLabel\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrLabel\",\"control\":\"$UsrLabel\"}}]",
+			"[{\"operation\":\"merge\",\"values\":{\"UsrLabel\":{\"modelConfig\":{\"path\":\"PDS.UsrFullName\"}}}}]");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(
+			body,
+			new Dictionary<string, string> { ["SomeOtherKey"] = "Other" });
+
+		result.IsValid.Should().BeTrue("because UsrLabel is a DS-bound attribute and the platform auto-provides its caption");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().BeEmpty("because the resource key matches a DS-bound attribute name and the platform auto-provides the caption");
+	}
+
+	[Test]
+	[Description("Label referencing $Resources.Strings.KEY warns when KEY is absent and does not match any DS-bound attribute")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyMissingNotDsBound_ReturnsWarning() {
+		string body = BuildDiffBackedPageBody(
+			"[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrCustomLabel\",\"control\":\"$UsrName\"}}]",
+			"[{\"operation\":\"merge\",\"values\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(
+			body,
+			new Dictionary<string, string> { ["PDS_UsrName"] = "Name" });
+
 		result.IsValid.Should().BeTrue("because a missing label resource is a recoverable issue, not a hard failure");
 		result.Errors.Should().BeEmpty();
-		result.Warnings.Should().ContainSingle(w => w.Contains("PDS_UsrName") && w.Contains("render blank"),
-			"because the validator should surface that the label key is absent from the provided resources");
+		result.Warnings.Should().ContainSingle(w => w.Contains("UsrCustomLabel") && w.Contains("render blank"),
+			"because the label key does not match any DS-bound attribute and is missing from resources");
 	}
 
 	[Test]
@@ -2846,4 +2878,429 @@ public sealed class SchemaValidationServiceTests
 	}
 
         #endregion
+
+	#region ValidateMobileComponentTypes
+
+	[Test]
+	[Description("Returns valid when all mobile component types are in the allowed set.")]
+	public void ValidateMobileComponentTypes_WhenAllTypesAllowed_ReturnsValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"Field1","values":{"type":"crt.Input"}},
+		                  {"operation":"insert","name":"Field2","values":{"type":"crt.Button"}}
+		                ]
+		              }
+		              """;
+		HashSet<string> allowed = new(StringComparer.OrdinalIgnoreCase) { "crt.Input", "crt.Button" };
+		HashSet<string> webOnly = new(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileComponentTypes(body, allowed, webOnly);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because both component types are in the allowed set");
+		result.Warnings.Should().BeEmpty("because no web-only components were found");
+	}
+
+	[Test]
+	[Description("Produces a warning when a web-only component type is used in a mobile page.")]
+	public void ValidateMobileComponentTypes_WhenWebOnlyTypeUsed_ReturnsWarning() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"Grid1","values":{"type":"crt.DataGrid"}}
+		                ]
+		              }
+		              """;
+		HashSet<string> allowed = new(StringComparer.OrdinalIgnoreCase) { "crt.Input", "crt.Button" };
+		HashSet<string> webOnly = new(StringComparer.OrdinalIgnoreCase) { "crt.DataGrid" };
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileComponentTypes(body, allowed, webOnly);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because web-only types produce warnings, not errors");
+		result.Warnings.Should().ContainSingle(w => w.Contains("crt.DataGrid"),
+			because: "the warning must identify the web-only component type");
+	}
+
+	[Test]
+	[Description("Returns valid when viewConfigDiff is empty or absent.")]
+	public void ValidateMobileComponentTypes_WhenNoViewConfigDiff_ReturnsValid() {
+		// Arrange
+		string body = """{"viewModelConfigDiff":[]}""";
+		HashSet<string> allowed = new(StringComparer.OrdinalIgnoreCase) { "crt.Input" };
+		HashSet<string> webOnly = new(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileComponentTypes(body, allowed, webOnly);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because there are no component types to validate");
+	}
+
+	[Test]
+	[Description("Silently allows unknown types that are in neither mobile nor web registry (custom components).")]
+	public void ValidateMobileComponentTypes_WhenCustomType_ReturnsValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"X","type":"usr.CustomWidget"}
+		                ]
+		              }
+		              """;
+		HashSet<string> allowed = new(StringComparer.OrdinalIgnoreCase) { "crt.Input" };
+		HashSet<string> webOnly = new(StringComparer.OrdinalIgnoreCase) { "crt.DataGrid" };
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileComponentTypes(body, allowed, webOnly);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because custom types not in either registry should be allowed");
+		result.Warnings.Should().BeEmpty("because the type is not a known web-only component");
+	}
+
+	#endregion
+
+	#region ValidateMobileViewConfigDiffStructure
+
+	[Test]
+	[Description("Returns valid when all viewConfigDiff entries have operation and name.")]
+	public void ValidateMobileViewConfigDiffStructure_WhenAllEntriesValid_ReturnsValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"Field1","values":{"type":"crt.Input"}},
+		                  {"operation":"merge","name":"Field2","values":{"visible":false}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileViewConfigDiffStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because all entries have both operation and name");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Reports error when a viewConfigDiff entry is missing operation.")]
+	public void ValidateMobileViewConfigDiffStructure_WhenMissingOperation_ReturnsError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"name":"Field1","values":{"type":"crt.Input"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileViewConfigDiffStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because the entry is missing the operation property");
+		result.Errors.Should().ContainSingle(e => e.Contains("operation"),
+			because: "the error must identify the missing property");
+	}
+
+	[Test]
+	[Description("Reports error when a viewConfigDiff entry is missing name.")]
+	public void ValidateMobileViewConfigDiffStructure_WhenMissingName_ReturnsError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","values":{"type":"crt.Input"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileViewConfigDiffStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because the entry is missing the name property");
+		result.Errors.Should().ContainSingle(e => e.Contains("name"),
+			because: "the error must identify the missing property");
+	}
+
+	[Test]
+	[Description("Reports error listing both missing properties when entry has neither operation nor name.")]
+	public void ValidateMobileViewConfigDiffStructure_WhenMissingBoth_ReportsBoth() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"values":{"type":"crt.Input"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileViewConfigDiffStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because both required properties are missing");
+		result.Errors.Should().ContainSingle(e => e.Contains("operation") && e.Contains("name"),
+			because: "both missing properties should be reported in a single error");
+	}
+
+	[Test]
+	[Description("Returns valid when viewConfigDiff is absent.")]
+	public void ValidateMobileViewConfigDiffStructure_WhenNoViewConfigDiff_ReturnsValid() {
+		// Arrange
+		string body = """{"viewModelConfigDiff":[]}""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileViewConfigDiffStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because there is no viewConfigDiff to validate");
+	}
+
+	#endregion
+
+	#region ValidateMobileFieldBindings
+
+	[Test]
+	[Description("Returns valid when all $-bindings match declared viewModelConfigDiff attributes.")]
+	public void ValidateMobileFieldBindings_WhenBindingsMatchAttributes_ReturnsValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"Field1","values":{"control":"$UsrName"}}
+		                ],
+		                "viewModelConfigDiff": [
+		                  {"operation":"merge","path":["attributes"],"values":{"UsrName":{}}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because $UsrName matches the declared UsrName attribute");
+	}
+
+	[Test]
+	[Description("Reports an error when a $-binding references an undeclared attribute.")]
+	public void ValidateMobileFieldBindings_WhenBindingMissesAttribute_ReturnsError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"Field1","values":{"control":"$UsrMissing"}}
+		                ],
+		                "viewModelConfigDiff": [
+		                  {"operation":"merge","path":["attributes"],"values":{"UsrName":{}}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because $UsrMissing is not declared in viewModelConfigDiff");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrMissing"),
+			because: "the error must identify the undeclared attribute");
+	}
+
+	[Test]
+	[Description("Strips converter pipe from binding before cross-referencing.")]
+	public void ValidateMobileFieldBindings_WhenBindingHasConverterPipe_StripsConverter() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"F","values":{"value":"$UsrName | crt.InvertBooleanValue"}}
+		                ],
+		                "viewModelConfigDiff": [
+		                  {"operation":"merge","path":["attributes"],"values":{"UsrName":{}}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the attribute name after stripping the converter pipe matches");
+	}
+
+	[Test]
+	[Description("Returns valid when there are no viewModelConfigDiff attributes to cross-check.")]
+	public void ValidateMobileFieldBindings_WhenNoViewModelAttributes_ReturnsValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"F","values":{"control":"$UsrName"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because there are no declared attributes to cross-check against");
+	}
+
+	[Test]
+	[Description("Skips $Resources bindings without reporting errors.")]
+	public void ValidateMobileFieldBindings_WhenResourceBinding_SkipsBinding() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"F","values":{"caption":"$Resources.Strings.Title"}}
+		                ],
+		                "viewModelConfigDiff": [
+		                  {"operation":"merge","path":["attributes"],"values":{"UsrName":{}}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because $Resources.Strings.* bindings are resource references, not attribute bindings");
+	}
+
+	[Test]
+	[Description("Non-attributes viewModelConfigDiff entries (e.g. path:[\"title\"]) should not register their values keys as declared attributes.")]
+	public void ValidateMobileFieldBindings_WhenNonAttributesDiffEntry_DoesNotOverCollect() {
+		// Arrange — one real attribute (UsrKnown) declared under path:["attributes"],
+		// plus a non-attribute entry targeting path:["title"] whose values key "caption"
+		// must NOT be treated as a declared attribute.
+		// $UsrMissing is bound in view but not declared → should be an error.
+		string body = """
+		              {
+		                "viewModelConfigDiff": [
+		                  { "operation": "merge", "path": ["attributes"], "values": { "UsrKnown": { "modelConfig": { "path": "PDS.UsrKnown" } } } },
+		                  { "operation": "merge", "path": ["title"], "values": { "caption": "My Page" } }
+		                ],
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "UsrField1", "values": { "type": "crt.Input", "label": "$UsrKnown" } },
+		                  { "operation": "insert", "name": "UsrField2", "values": { "type": "crt.Input", "label": "$UsrMissing" } }
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body);
+
+		// Assert — "caption" from the title entry must NOT be treated as a declared attribute
+		result.IsValid.Should().BeFalse("because $UsrMissing is bound in view but not declared as an attribute");
+		result.Errors.Should().Contain(e => e.Contains("UsrMissing"),
+			because: "the non-attributes entry should not mask the missing attribute");
+		result.Errors.Should().NotContain(e => e.Contains("UsrKnown"),
+			because: "UsrKnown is properly declared under the attributes path");
+	}
+
+	#endregion
+
+	#region ValidateSchemaDepsCompleteness
+
+	[Test]
+	[Description("Returns a warning when handlers use sdk. but SCHEMA_DEPS omits @creatio-devkit/common.")]
+	public void ValidateSchemaDepsCompleteness_WhenSdkUsedButDepMissing_ReturnsWarning() {
+		// Arrange
+		string body =
+			"define(\"Module\", /**SCHEMA_DEPS*/[\"css!Module\"]/**SCHEMA_DEPS*/, " +
+			"/**SCHEMA_ARGS*/(css)/**SCHEMA_ARGS*/ => ({" +
+			"/**SCHEMA_HANDLERS*/[{request:\"crt.HandleViewModelInitRequest\",handler: async (request, next) => { sdk.HandlerChainService; }}]/**SCHEMA_HANDLERS*/" +
+			"}));";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateSchemaDepsCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because missing deps is a warning, not an error");
+		result.Warnings.Should().ContainSingle(w => w.Contains("@creatio-devkit/common"),
+			because: "handlers reference sdk. but the dependency is not in SCHEMA_DEPS");
+	}
+
+	[Test]
+	[Description("Returns no warning when handlers use sdk. and SCHEMA_DEPS includes @creatio-devkit/common.")]
+	public void ValidateSchemaDepsCompleteness_WhenSdkUsedAndDepPresent_ReturnsClean() {
+		// Arrange
+		string body =
+			"define(\"Module\", /**SCHEMA_DEPS*/[\"@creatio-devkit/common\"]/**SCHEMA_DEPS*/, " +
+			"/**SCHEMA_ARGS*/(sdk)/**SCHEMA_ARGS*/ => ({" +
+			"/**SCHEMA_HANDLERS*/[{request:\"crt.HandleViewModelInitRequest\",handler: async (request, next) => { sdk.HandlerChainService; }}]/**SCHEMA_HANDLERS*/" +
+			"}));";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateSchemaDepsCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the dependency is properly declared");
+		result.Warnings.Should().BeEmpty("because the SDK dependency is present in SCHEMA_DEPS");
+	}
+
+	[Test]
+	[Description("Returns no warning when handlers do not reference sdk at all.")]
+	public void ValidateSchemaDepsCompleteness_WhenNoSdkUsage_ReturnsClean() {
+		// Arrange
+		string body =
+			"define(\"Module\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ => ({" +
+			"/**SCHEMA_HANDLERS*/[{request:\"crt.HandleViewModelInitRequest\",handler: async (request, next) => { console.log(\"hello\"); }}]/**SCHEMA_HANDLERS*/" +
+			"}));";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateSchemaDepsCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because no SDK references are present");
+		result.Warnings.Should().BeEmpty("because handlers don't use sdk");
+	}
+
+	[Test]
+	[Description("Returns clean result when there are no SCHEMA_HANDLERS.")]
+	public void ValidateSchemaDepsCompleteness_WhenNoHandlers_ReturnsClean() {
+		// Arrange
+		string body =
+			"define(\"Module\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ => ({}));";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateSchemaDepsCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because there are no handlers to check");
+		result.Warnings.Should().BeEmpty("because there is nothing to cross-reference");
+	}
+
+	[Test]
+	[Description("A local variable named 'sdk' without property access should not trigger the SDK dependency warning.")]
+	public void ValidateSchemaDepsCompleteness_WhenLocalVariableNamedSdk_DoesNotWarn() {
+		// Arrange — "sdk" appears but not as "sdk." or "sdk["
+		string body =
+			"define(\"Module\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ => ({" +
+			"/**SCHEMA_HANDLERS*/[{request:\"crt.HandleViewModelInitRequest\",handler: async (request, next) => { const sdk = 42; return sdk + 1; }}]/**SCHEMA_HANDLERS*/" +
+			"}));";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateSchemaDepsCompleteness(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the word sdk is a local variable, not an SDK access");
+		result.Warnings.Should().BeEmpty("because \\bsdk\\s*[.[] does not match a bare identifier assignment");
+	}
+
+	#endregion
 }

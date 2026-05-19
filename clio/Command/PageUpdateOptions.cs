@@ -221,9 +221,13 @@ namespace Clio.Command {
 				? hierarchy.FirstOrDefault(s => string.Equals(s.UId, rootUId, StringComparison.OrdinalIgnoreCase)) ?? head : head;
 			(string editableUId, bool isCreateReplacing) = ResolveEditableUId(head, schemaName, designPackageUId);
 			context = new EditableSchemaContext {
-				SchemaName = schemaName, EditableSchemaUId = editableUId, DesignPackageUId = designPackageUId,
-				IsCreateReplacing = isCreateReplacing, ParentSchemaUId = isCreateReplacing ? root.UId : null,
-				ParentSchemaName = root.Name, TemplateSchemaUId = isCreateReplacing ? root.UId : editableUId,
+				SchemaName = schemaName,
+				EditableSchemaUId = editableUId,
+				DesignPackageUId = designPackageUId,
+				IsCreateReplacing = isCreateReplacing,
+				ParentSchemaUId = isCreateReplacing ? root.UId : null,
+				ParentSchemaName = root.Name,
+				TemplateSchemaUId = isCreateReplacing ? root.UId : editableUId,
 				SchemaType = pageSchemaType
 			};
 			response = null;
