@@ -298,8 +298,10 @@ namespace Clio.Command {
 				MergeOptionalProperties(schemaToSave, optionalProperties);
 			}
 			var bodyKeys = ResourceStringHelper.ExtractKeys(body);
+			var dsBoundKeys = SchemaValidationService.CollectViewModelPaths(body)
+				.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
 			var existingStrings = schemaToSave["localizableStrings"] as JArray;
-			var (cleaned, registered) = ResourceStringHelper.CleanAndMerge(existingStrings, explicitResources, bodyKeys);
+			var (cleaned, registered) = ResourceStringHelper.CleanAndMerge(existingStrings, explicitResources, bodyKeys, dsBoundKeys);
 			schemaToSave["localizableStrings"] = cleaned;
 			return registered.Count > 0 ? registered : null;
 		}

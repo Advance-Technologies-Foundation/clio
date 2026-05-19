@@ -569,13 +569,13 @@ internal static class ToolContractCatalog {
 			ApplicationCreateTool.ApplicationCreateToolName,
 			"Creates a Creatio application and returns installed application identity plus the created application context envelope and Data Forge enrichment diagnostics.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, "name", "code", TemplateCodeFieldName, IconBackgroundFieldName],
+				[EnvironmentNameFieldName, "name", "code", TemplateCodeFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field("name", StringType, "Application display name."),
 					Field("code", StringType, "Application code (business-meaningful part; SchemaNamePrefix is auto-applied by clio)."),
 					Field(TemplateCodeFieldName, StringType, "Technical template code such as AppFreedomUI."),
-					Field(IconBackgroundFieldName, StringType, "Hex color string in #RRGGBB format."),
+					Field(IconBackgroundFieldName, StringType, "Optional hex color in #RRGGBB format from the Freedom UI palette. A random palette color is assigned when omitted."),
 					Field(DescriptionFieldName, StringType, "Optional application description."),
 					Field(IconIdFieldName, StringType, "Optional icon GUID or 'auto'."),
 					Field("client-type-id", StringType, "Optional client type identifier."),

@@ -78,12 +78,13 @@ internal static class ResourceStringHelper {
 	public static (JArray cleaned, List<string> registered) CleanAndMerge(
 		JArray localizableStrings,
 		Dictionary<string, string> resources,
-		HashSet<string> bodyKeys) {
+		HashSet<string> bodyKeys,
+		IReadOnlySet<string> dsBoundKeys = null) {
 		var result = new JArray();
 		var existingKeys = new HashSet<string>();
 		var registered = new List<string>();
 		CopyExistingEntries(localizableStrings, result, existingKeys);
-		RegisterMissingBodyKeys(bodyKeys, resources, existingKeys, result, registered);
+		RegisterMissingBodyKeys(bodyKeys, resources, dsBoundKeys, existingKeys, result, registered);
 		if (resources != null) {
 			foreach (KeyValuePair<string, string> kvp in resources.Where(kvp =>
 				         !existingKeys.Contains(kvp.Key) &&
@@ -115,11 +116,12 @@ internal static class ResourceStringHelper {
 	private static void RegisterMissingBodyKeys(
 		IEnumerable<string> bodyKeys,
 		IReadOnlyDictionary<string, string> resources,
+		IReadOnlySet<string> dsBoundKeys,
 		ISet<string> existingKeys,
 		JArray result,
 		ICollection<string> registered) {
 		foreach (string key in bodyKeys.Where(key => !existingKeys.Contains(key))) {
-			if (!TryResolveResourceValue(resources, key, out string value)) {
+			if (!TryResolveResourceValue(resources, key, dsBoundKeys, out string value)) {
 				continue;
 			}
 			result.Add(CreateLocalizableEntry(key, value));
@@ -130,10 +132,16 @@ internal static class ResourceStringHelper {
 	private static bool TryResolveResourceValue(
 		IReadOnlyDictionary<string, string> resources,
 		string key,
+		IReadOnlySet<string> dsBoundKeys,
 		out string value) {
 		if (resources != null && resources.TryGetValue(key, out string explicitValue)) {
 			value = explicitValue;
 			return true;
+		}
+		// Skip auto-derivation for DS-bound attributes — the platform auto-provides their captions.
+		if (dsBoundKeys != null && dsBoundKeys.Contains(key)) {
+			value = null;
+			return false;
 		}
 		if (key.StartsWith("Usr")) {
 			value = DeriveCaption(key);
