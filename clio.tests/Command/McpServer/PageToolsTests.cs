@@ -17,7 +17,8 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "McpServer")]
-public class PageToolsTests {
+public class PageToolsTests
+{
 
 	[Test]
 	[Description("Verifies that PageListTool has the correct MCP tool name")]
@@ -2570,6 +2571,16 @@ public class PageToolsTests {
 				["schemaType"] = 9,
 				["schemaVersion"] = 1,
 				["body"] = "original body",
+				["localizableStrings"] = new JArray {
+					new JObject {
+						["name"] = "DefaultPageTitle",
+						["values"] = new JArray { new JObject { ["cultureName"] = "en-US", ["value"] = "Page title" } }
+					},
+					new JObject {
+						["name"] = "SaveButton",
+						["values"] = new JArray { new JObject { ["cultureName"] = "en-US", ["value"] = "Save" } }
+					}
+				},
 				["package"] = new JObject { ["uId"] = originalPackageUId, ["name"] = "CrtCustomer360App" },
 				["parent"] = new JObject { ["uId"] = "b7b898d0-8c77-4953-c097-23fa6800da02", ["name"] = "ListPageV3Template" },
 				["isReadOnly"] = true,
@@ -2609,6 +2620,11 @@ public class PageToolsTests {
 			because: "parent must reference the original schema so replacing inherits from it");
 		savedDto["extendParent"].Value<bool>().Should().BeTrue(
 			because: "replacing schemas must extend their parent for diff-based body merge");
+		savedDto["localizableStrings"].Should().NotBeNull(
+			because: "SaveSchema deletes schema-level strings omitted from the DTO, so new replacing schemas must carry template resources");
+		savedDto["localizableStrings"].Children<JObject>().Select(item => item["name"].ToString())
+			.Should().BeEquivalentTo(["DefaultPageTitle", "SaveButton"],
+				because: "the designer sends inherited template localizable strings on first save");
 		savedDto["body"].ToString().Should().Be(validBody,
 			because: "the body passed to update-page must be written into the new replacing schema DTO");
 	}

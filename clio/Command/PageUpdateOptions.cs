@@ -12,7 +12,8 @@ namespace Clio.Command {
 	/// Options for the <c>update-page</c> command.
 	/// </summary>
 	[Verb("update-page", Aliases = ["page-update"], HelpText = "Update Freedom UI page schema body")]
-	public class PageUpdateOptions : EnvironmentOptions {
+	public class PageUpdateOptions : EnvironmentOptions
+	{
 		/// <summary>
 		/// Gets or sets the page schema name to update.
 		/// </summary>
@@ -79,7 +80,8 @@ namespace Clio.Command {
 	/// <summary>
 	/// Validates and saves raw Freedom UI page bodies.
 	/// </summary>
-	public class PageUpdateCommand : Command<PageUpdateOptions> {
+	public class PageUpdateCommand : Command<PageUpdateOptions>
+	{
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
@@ -362,7 +364,7 @@ namespace Clio.Command {
 			dto["isReadOnly"] = false;
 			dto["extendParent"] = true;
 			dto["caption"] = null;
-			dto["localizableStrings"] = null;
+			dto["localizableStrings"] = template["localizableStrings"]?.DeepClone() ?? new JArray();
 			dto["package"] = new JObject {
 				["uId"] = context.DesignPackageUId,
 				["name"] = string.Empty
