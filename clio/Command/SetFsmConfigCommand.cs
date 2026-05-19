@@ -99,6 +99,8 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
 	private readonly IIisScanner _iisScanner;
+	private readonly IFsmModeStatusService _fsmModeStatusService;
+	private readonly Clio.Package.IFileDesignModePackages _fileDesignModePackages;
 
 	#endregion
 
@@ -112,13 +114,18 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 	/// <param name="fileSystem">Filesystem abstraction used to resolve and update config files.</param>
 	/// <param name="logger">Logger used for command output.</param>
 	/// <param name="iisScanner">IIS scanner for discovering Creatio sites.</param>
+	/// <param name="fsmModeStatusService">Service used to probe the current FSM state on remote .NET Framework Creatio environments.</param>
+	/// <param name="fileDesignModePackages">Service used to remotely toggle the Web.config FSM flag via cliogate's SetFileDesignMode endpoint.</param>
 	public SetFsmConfigCommand(IValidator<SetFsmConfigOptions> validator, ISettingsRepository settingsRepository,
-		IFileSystem fileSystem, ILogger logger, IIisScanner iisScanner) {
+		IFileSystem fileSystem, ILogger logger, IIisScanner iisScanner, IFsmModeStatusService fsmModeStatusService,
+		Clio.Package.IFileDesignModePackages fileDesignModePackages) {
 		_validator = validator;
 		_settingsRepository = settingsRepository;
 		_fileSystem = fileSystem;
 		_logger = logger;
 		_iisScanner = iisScanner;
+		_fsmModeStatusService = fsmModeStatusService;
+		_fileDesignModePackages = fileDesignModePackages;
 	}
 
 	#endregion
@@ -134,7 +141,10 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 		}
 
 		EnvironmentSettings environmentSettings = TryGetEnvironmentSettings(options);
-		ValidatePlatformSupport(environmentSettings);
+		PlatformSupportResult supportResult = EnsurePlatformSupport(options, environmentSettings);
+		if (!supportResult.ShouldContinue) {
+			return supportResult.ExitCode;
+		}
 
 		string environmentPath = ResolveEnvironmentPath(options, environmentSettings);
 		bool isFsm = string.Equals(options.IsFsm?.Trim(), "on", StringComparison.OrdinalIgnoreCase);
@@ -259,14 +269,101 @@ public class SetFsmConfigCommand : Command<SetFsmConfigOptions>
 		return _settingsRepository.GetEnvironment(options);
 	}
 
-	private static void ValidatePlatformSupport(EnvironmentSettings environmentSettings) {
+	private PlatformSupportResult EnsurePlatformSupport(SetFsmConfigOptions options,
+		EnvironmentSettings environmentSettings) {
 		if (OperatingSystem.IsWindows()) {
-			return;
+			return PlatformSupportResult.Continue;
 		}
 
-		if (environmentSettings is not null && !environmentSettings.IsNetCore) {
-			throw new Exception("On macOS and Linux this command is supported only for NET8 (IsNetCore=true) environments.");
+		if (environmentSettings is not null && environmentSettings.IsNetCore) {
+			return PlatformSupportResult.Continue;
 		}
+
+		if (!string.IsNullOrWhiteSpace(options.PhysicalPath)) {
+			return PlatformSupportResult.Continue;
+		}
+
+		if (environmentSettings is null || string.IsNullOrWhiteSpace(options.Environment)) {
+			return PlatformSupportResult.Continue;
+		}
+
+		bool requestOn = string.Equals(options.IsFsm?.Trim(), "on", StringComparison.OrdinalIgnoreCase);
+		string requestedMode = requestOn ? "on" : "off";
+
+		FsmModeStatusResult status;
+		try {
+			status = _fsmModeStatusService.GetStatus(options.Environment);
+		} catch (Exception ex) {
+			_logger.WriteError(
+				$"Could not determine current FSM state on environment '{options.Environment}': {ex.Message}. "
+				+ "Remote FSM toggle on .NET Framework Creatio from macOS/Linux requires probing the server first.");
+			return PlatformSupportResult.Fail;
+		}
+
+		if (string.Equals(status.Mode, requestedMode, StringComparison.OrdinalIgnoreCase)) {
+			_logger.WriteLine(
+				$"FSM already {requestedMode} on environment '{options.Environment}'; no config edit needed.");
+			return PlatformSupportResult.Success;
+		}
+
+		Clio.Package.SetFileDesignModeResult remoteResult = _fileDesignModePackages.SetFileDesignMode(requestOn);
+		if (remoteResult.EndpointAvailable && remoteResult.Success) {
+			_logger.WriteLine(
+				$"FSM toggled remotely via cliogate on environment '{options.Environment}': "
+				+ $"{remoteResult.PreviousFileDesignMode} → {remoteResult.NewFileDesignMode}. "
+				+ "IIS will auto-recycle the AppPool to pick up the new Web.config.");
+			return PlatformSupportResult.Success;
+		}
+
+		if (!remoteResult.EndpointAvailable) {
+			_logger.WriteLine(
+				$"cliogate SetFileDesignMode endpoint is not available on '{options.Environment}' "
+				+ "(server cliogate is older than the version that ships with this clio). "
+				+ "Falling back to actionable error with manual instructions.");
+		} else {
+			_logger.WriteError(
+				$"cliogate SetFileDesignMode endpoint returned an error on '{options.Environment}': "
+				+ remoteResult.ErrorMessage);
+		}
+
+		_logger.WriteError(BuildActionableError(options.Environment, requestedMode, status.Mode));
+		return PlatformSupportResult.Fail;
+	}
+
+	private static string BuildActionableError(string envName, string requestedMode, string actualMode) {
+		string fileDesignModeValue = requestedMode == "on" ? "true" : "false";
+		string useStaticFileContentValue = requestedMode == "on" ? "false" : "true";
+		return string.Join(Environment.NewLine,
+			"FSM toggle on .NET Framework Creatio is not supported from macOS/Linux clio:",
+			"it requires editing Web.config on the IIS host.",
+			$"Current state on '{envName}': {actualMode}. Requested: {requestedMode}.",
+			"",
+			"Options:",
+			$"  (a) Run `clio turn-fsm {requestedMode} -e {envName}` from a Windows machine that has",
+			"      the Creatio IIS site visible locally.",
+			$"  (b) Ask the env admin to set `terrasoft/fileDesignMode enabled=\"{fileDesignModeValue}\"` and",
+			$"      `appSettings/UseStaticFileContent value=\"{useStaticFileContentValue}\"` in Web.config on",
+			$"      '{envName}', then recycle the AppPool.",
+			$"  (c) After the toggle, run `clio get-fsm-mode -e {envName}` to confirm, then",
+			$"      `clio pkg-to-file-system -e {envName}` (or `pkg-to-db`) works from any platform.");
+	}
+
+	#endregion
+
+	#region Nested: PlatformSupportResult
+
+	private readonly struct PlatformSupportResult {
+		public bool ShouldContinue { get; }
+		public int ExitCode { get; }
+
+		private PlatformSupportResult(bool shouldContinue, int exitCode) {
+			ShouldContinue = shouldContinue;
+			ExitCode = exitCode;
+		}
+
+		public static PlatformSupportResult Continue { get; } = new(true, 0);
+		public static PlatformSupportResult Success { get; } = new(false, 0);
+		public static PlatformSupportResult Fail { get; } = new(false, 1);
 	}
 
 	#endregion
