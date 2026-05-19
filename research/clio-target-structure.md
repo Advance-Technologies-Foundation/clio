@@ -330,7 +330,7 @@ Notes:
 - Fail-on-duplicate ([ComponentInfoCatalog.cs:101](../clio/Command/McpServer/Tools/ComponentInfoCatalog.cs#L101)) remains.
 - Existing callers that pass no environment context get `resolvedFrom: "latest-fallback"`.
 - `ComponentRegistryEntry` and `ComponentPropertyDefinition` field shapes are unchanged.
-- The current 92-record content is preserved as the seed-snapshot, and as the CDN's `latest.json` until the creatio-ui Jenkins job updates it.
+- The current 92-record content is preserved as the seed-snapshot, and matches the CDN's `latest/ComponentRegistry.json` until the creatio-ui Jenkins job pushes a fresher payload into `static-files-mcp` and the academy mirror copies it across.
 - `CategoryOrder` array stays hardcoded.
 
 ## What changes

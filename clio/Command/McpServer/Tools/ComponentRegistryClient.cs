@@ -206,7 +206,8 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 		HttpClient http = _httpClientFactory.CreateClient(HttpClientName);
 		http.Timeout = CdnFetchTimeout;
 		// CDN URL layout: {base}{version}/ComponentRegistry.json — the version is a directory
-		// containing the fixed-name registry file (matches the creatio-ui Jenkins publisher).
+		// containing the fixed-name registry file (matches the layout in the static-files-mcp
+		// GitLab repo that the academy edge mirrors every 5 minutes).
 		string url = BuildCdnUrl(version);
 
 		for (int attempt = 1; attempt <= CdnFetchAttempts; attempt++) {

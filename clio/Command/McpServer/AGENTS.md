@@ -79,11 +79,14 @@ through a three-layer fallback chain implemented in
 `Tools/ComponentRegistryClient.cs`:
 
 1. **CDN.** `https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json`
-   (override via `CLIO_COMPONENT_REGISTRY_CDN_BASE_URL` env var). Per-platform-
-   version file plus a `latest/ComponentRegistry.json` alias maintained by the
-   producer-side CI. Versions that have not been published yet return 404 and
-   the chain falls through to the cache, the `latest` alias, and finally the
-   embedded snapshot — this is expected.
+   (override via `CLIO_COMPONENT_REGISTRY_CDN_BASE_URL` env var). The academy
+   edge is a 5-minute mirror of the `static-files-mcp` GitLab repository
+   (`gitdigital.creatio.com/academy/static-files-mcp`) where per-version files
+   and the `latest/ComponentRegistry.json` alias are maintained by the
+   producer-side CI (Jenkins job in `creatio-ui` is planned; files are added
+   manually until then). Versions that have not been published yet return 404
+   and the chain falls through to the cache, the `latest` alias, and finally
+   the embedded snapshot — this is expected.
 2. **File cache.** `~/.clio/cache/component-registry/{version}.json` with a
    24h TTL and a `{version}.meta.json` sidecar (ETag, Last-Modified, SHA-256).
    Cache hits return synchronously; stale entries return immediately while a
@@ -117,10 +120,11 @@ Exit code is 0 only when every requested refresh got a 2xx from the CDN.
 
 When changing the catalog data source, refer to:
 
-- `research/architecture.md` — two-domain SoT (creatio-ui CI → CDN → clio).
+- `research/architecture.md` — target architecture (creatio-ui CI → `static-files-mcp` GitLab → academy 5-minute mirror → clio).
 - `research/clio-target-structure.md` — consumer-side design.
 - `research/jenkins-pipeline-spec.md` — producer-side contract for the
-  creatio-ui team (URL pattern, JSON shape, GA-tag trigger, `latest.json` semver gate).
+  creatio-ui team (URL pattern, JSON shape, GA-tag trigger, git push into
+  `static-files-mcp`, `latest/ComponentRegistry.json` semver gate).
 
 ## Workspace-scoped tools
 

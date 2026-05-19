@@ -2,7 +2,7 @@
 
 Real numbers and the noise list for the extractor that the creatio-ui team will implement under `tools/component-registry-extractor/` (location and trigger details in [jenkins-pipeline-spec.md](jenkins-pipeline-spec.md)). This document confirms that the inclusion criterion `@CrtViewElement` plus exclusion folder filters give a deterministic superset of the current manually maintained `ComponentRegistry.json`.
 
-> **Note on the v1 architecture.** The earlier research iteration assumed the extractor output goes to an NPM package (`@creatio/component-registry`) and is then merged by a separate composer-repo. Under the CDN model adopted in this branch, the extractor output goes **directly** to the academy.creatio.com CDN — see [jenkins-pipeline-spec.md](jenkins-pipeline-spec.md). The filters, invariants, and numbers below are unchanged by that shift; only the consumer of the extracted JSON differs.
+> **Note on the v1 architecture.** The earlier research iteration assumed the extractor output goes to an NPM package (`@creatio/component-registry`) and is then merged by a separate composer-repo. Under the CDN model adopted in this branch, the extractor output is committed to the `static-files-mcp` GitLab repository, which the academy infrastructure mirrors to `academy.creatio.com/api/mcp/` every 5 minutes — see [jenkins-pipeline-spec.md](jenkins-pipeline-spec.md). The filters, invariants, and numbers below are unchanged by that shift; only the consumer of the extracted JSON differs.
 
 ## Filtering criteria
 
@@ -36,7 +36,7 @@ Real numbers and the noise list for the extractor that the creatio-ui team will 
 Under v1 of the CDN model there is **no AI-side curation layer** — the extractor publishes the full 192-record set directly. AI consumers will see all 100 new candidates immediately when the first GA-tag pipeline lands. This is a deliberate trade against the earlier composer-repo approach where these were going to be hidden by `aiHidden: true` entries in `overrides.json`.
 
 A future curation stage (if measured value justifies the maintenance cost) could re-introduce an overlay on either side:
-- producer-side overlay during the Jenkins job (cleanest), or
+- producer-side overlay during the Jenkins job, applied before the git push to `static-files-mcp` (cleanest), or
 - consumer-side overlay shipped with clio.
 
 Neither is part of v1.
@@ -113,14 +113,14 @@ Three natural subcategories of "noise" are visible. They are NOT filtered in v1,
 
 ## Implementation location (under the CDN model)
 
-The extractor lives at `tools/component-registry-extractor/` inside the `creatio-ui` monorepo, owned by the Platform-UI team. The Jenkins pipeline that runs the extractor is described in [jenkins-pipeline-spec.md](jenkins-pipeline-spec.md). The output is a single JSON file uploaded to academy.creatio.com per-GA-tag.
+The extractor lives at `tools/component-registry-extractor/` inside the `creatio-ui` monorepo, owned by the Platform-UI team. The Jenkins pipeline that runs the extractor is described in [jenkins-pipeline-spec.md](jenkins-pipeline-spec.md). The output is a single JSON file pushed to the `static-files-mcp` GitLab repository per-GA-tag, which the academy mirror then exposes under `https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json`.
 
 This contrasts with the earlier (now abandoned) plan where:
 - The extractor still lived in creatio-ui, but
 - Its output was an NPM package (`@creatio/component-registry`), and
 - A separate `creatio-component-registry-composer` repo merged per-version NPM snapshots into a unified NuGet bundle.
 
-Under the CDN model, the extractor + upload happen in a single Jenkins job; there is no intermediate consumer in the chain.
+Under the CDN model, extraction and publication happen in a single Jenkins job; the only step it does not own is the academy mirror, which is academy-owned infrastructure.
 
 ## Where these filters and numbers come from
 

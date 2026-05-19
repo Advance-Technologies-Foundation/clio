@@ -5,7 +5,7 @@
 ## 0. Target state of this part
 
 - clio reads the Freedom UI component catalog from **academy.creatio.com CDN over HTTPS**, with a layered fallback to a runtime file cache (`~/.clio/cache/component-registry/`) and an embedded snapshot in `clio.dll`.
-- The embedded snapshot is **fetched at clio build time** by an MSBuild `ResolveCdnSnapshot` target that GETs `https://academy.creatio.com/api/component-registry/latest.json`; on fetch failure it falls back to a committed seed file in the clio repo.
+- The embedded snapshot is **fetched at clio build time** by an MSBuild `ResolveCdnSnapshot` target that GETs `https://academy.creatio.com/api/mcp/latest/ComponentRegistry.json`; on fetch failure it falls back to a committed seed file in the clio repo.
 - The current in-repo file [clio/Command/McpServer/Data/ComponentRegistry.json](../clio/Command/McpServer/Data/ComponentRegistry.json) is **renamed** to `ComponentRegistry.seed.json` (same content) — it is the bootstrap/offline-build fallback and is **not** loaded at runtime.
 - A new `IPlatformVersionResolver` probes `GetSysInfo` via cliogate to resolve the active environment's `CoreVersion`, then maps that to a CDN filename.
 - The MCP tool `get-component-info` keeps its existing `ComponentInfoArgs`. The `ComponentInfoResponse` gains two new fields: `resolvedTargetVersion` and `resolvedFrom` (`"environment"` | `"latest-fallback"`).
@@ -17,17 +17,23 @@
 ## 1. Steady-state architecture (for reference)
 
 ```
-creatio-ui (Platform-UI team) ─── GA-tag `8.3.0` (parallel cross-repo PR)
+creatio-ui (Platform-UI team) ─── GA-tag `8.3.0` (parallel cross-repo PR; Jenkins job is planned)
     │
-    └─ Jenkins extractor → upload ComponentRegistry.json
-        │                  to academy.creatio.com/api/component-registry/8.3.0.json
-        │                  + latest.json (if 8.3.0 > current latest)
+    └─ Jenkins extractor → git push to
+        │                  gitdigital.creatio.com/academy/static-files-mcp
+        │                  └─ 8.3.0/ComponentRegistry.json
+        │                  └─ latest/ComponentRegistry.json (if 8.3.0 > current latest)
+        ▼
+static-files-mcp GitLab repo (academy team)
+    │
+    └─ academy mirror copies the repo to the public CDN tree every 5 minutes
         ▼
 academy.creatio.com (public HTTPS CDN)
     │
-    └─ Cache-Control: public, max-age=86400; ETag
-        │
-        ▼ HTTPS GET (24h TTL, stale-while-revalidate)
+    └─ /api/mcp/8.3.0/ComponentRegistry.json
+        └─ /api/mcp/latest/ComponentRegistry.json
+            └─ Cache-Control: public, max-age=86400; ETag
+                ▼ HTTPS GET (24h TTL, stale-while-revalidate)
 clio runtime
     │
     └─ IComponentRegistryClient
@@ -41,7 +47,7 @@ clio runtime
                               + ResolvedTargetVersion + ResolvedFrom in Response
 ```
 
-Two CI pipelines total: creatio-ui Jenkins (upload on GA-tag), clio CI (build + tests, including MSBuild fetch target). No third party.
+Two CI pipelines total: creatio-ui Jenkins (git push to `static-files-mcp` on GA-tag — planned), clio CI (build + tests, including MSBuild fetch target). The academy mirror is academy-owned infrastructure, not a separate CI pipeline. No third party.
 
 ---
 
@@ -95,7 +101,7 @@ public sealed class ComponentRegistryClient(
     ILogger<ComponentRegistryClient> logger)
     : IComponentRegistryClient {
 
-    private const string CdnBaseUrl = "https://academy.creatio.com/api/component-registry/";
+    private const string CdnBaseUrl = "https://academy.creatio.com/api/mcp/";
     private static readonly TimeSpan CacheTtl = TimeSpan.FromHours(24);
     private static readonly SemaphoreSlim BackgroundRefreshGate = new(initialCount: 1);
 
@@ -137,7 +143,7 @@ public sealed class ComponentRegistryClient(
         var http = httpClientFactory.CreateClient("component-registry");
         http.Timeout = TimeSpan.FromSeconds(30);
         try {
-            using var resp = await http.GetAsync($"{CdnBaseUrl}{version}.json", HttpCompletionOption.ResponseHeadersRead, ct);
+            using var resp = await http.GetAsync($"{CdnBaseUrl}{version}/ComponentRegistry.json", HttpCompletionOption.ResponseHeadersRead, ct);
             if (!resp.IsSuccessStatusCode) {
                 logger.LogInformation("registry cdn-get version={Version} status={Status}", version, (int)resp.StatusCode);
                 return null;
@@ -218,7 +224,7 @@ public sealed class ComponentRegistryCacheStore(IFileSystem fileSystem, TimeProv
         var meta = new CacheMetadata(
             FetchedAt: clock.GetUtcNow(),
             ExpiresAt: clock.GetUtcNow() + Ttl,
-            SourceUrl: $"https://academy.creatio.com/api/component-registry/{version}.json",
+            SourceUrl: $"https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json",
             Etag: etag,
             LastModified: lastModified,
             ContentSha256: Convert.ToHexString(SHA256.HashData(payload)));
@@ -282,7 +288,7 @@ In `clio/clio.csproj`:
 
 ```xml
 <PropertyGroup>
-    <CdnSnapshotUrl Condition="'$(CdnSnapshotUrl)' == ''">https://academy.creatio.com/api/component-registry/latest.json</CdnSnapshotUrl>
+    <CdnSnapshotUrl Condition="'$(CdnSnapshotUrl)' == ''">https://academy.creatio.com/api/mcp/latest/ComponentRegistry.json</CdnSnapshotUrl>
     <CdnSnapshotStaging>$(IntermediateOutputPath)component-registry/</CdnSnapshotStaging>
     <CdnSnapshotPath>$(CdnSnapshotStaging)ComponentRegistry.json</CdnSnapshotPath>
     <CdnSnapshotMetadataPath>$(CdnSnapshotStaging)embedded-metadata.json</CdnSnapshotMetadataPath>
@@ -336,7 +342,7 @@ In `clio/clio.csproj`:
 
 The `BeforeTargets` runs the target early enough that the file exists when `EmbeddedResource` is collected. `Inputs`/`Outputs` are stale-marked so incremental builds skip the fetch when the seed is unchanged.
 
-**Bootstrap behavior**: until the first creatio-ui Jenkins run uploads to academy.creatio.com, `latest.json` returns 404 and `_FallbackToSeed` becomes `true`. Build succeeds with the seed file embedded. Once the CDN is live, builds pick up the latest GA content automatically.
+**Bootstrap behavior**: until the producer pipeline is fully built up, `latest/ComponentRegistry.json` may be missing from the CDN (or stale, with manual priming done from `static-files-mcp`) and `_FallbackToSeed` becomes `true`. Build succeeds with the seed file embedded. Once the academy mirror is serving fresh payloads, builds pick up the latest GA content automatically.
 
 ### 3.5 `IPlatformVersionResolver`
 
@@ -688,7 +694,7 @@ Commits 2–7 are sequential because each builds on the previous. Commit 1 (rese
 - Pre-release platform tags (`8.3.0-rc1`). Not published to CDN; clio falls back to `latest`.
 - Integration of `latest.json` semver gate logic in clio. clio just GETs `latest.json` — semver promotion is the producer's job.
 - A bot that auto-refreshes the seed-snapshot when CDN content changes. Manual or scheduled task in a future PR.
-- Implementation of the creatio-ui Jenkins job. Cross-repo PR owned by Platform-UI team.
+- Implementation of the creatio-ui Jenkins job (the git push side) and any tweaks the academy team may need on the 5-minute mirror. Cross-repo / cross-team tracks.
 - composer-repo deletion + NuGet 0.1.0 unlist — § Legacy decommissioning.
 
 ---
@@ -700,10 +706,10 @@ All open questions are closed by the Q&A session that produced this branch. Summ
 | # | Question | Decision |
 |---|---|---|
 | 1 | Branch strategy | New branch `research/mcp-components-cdn` from `master`. PR #595 closed without merge. |
-| 2 | Distribution channel | Public HTTPS CDN at `https://academy.creatio.com/api/component-registry/{version}.json`. No auth. |
-| 3 | Versioning model on CDN | Per-version + `latest.json` alias. SemVer-gated `latest.json` promotion. |
-| 4 | CDN access | Public, no authentication. |
-| 5 | CI in creatio-ui | Jenkins, trigger on GA-tag. Branch-cut runs baseline mode (artifact only). |
+| 2 | Distribution channel | Public HTTPS CDN at `https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json`, mirrored every 5 minutes from the `static-files-mcp` GitLab repository. No auth on the CDN. |
+| 3 | Versioning model | Per-version + `latest/ComponentRegistry.json` alias. SemVer-gated `latest/` promotion in the same git commit. |
+| 4 | CDN access | Public, no authentication. GitLab write access restricted to the academy team and the Jenkins service account. |
+| 5 | CI in creatio-ui | Jenkins (planned), trigger on GA-tag, git push to `static-files-mcp`. Branch-cut runs baseline mode (artifact only). |
 | 6 | JSON schema | Drop-in compatible — top-level array of `ComponentRegistryEntry`. No per-entry `availability`, no wrappers. |
 | 7 | AI-side overrides | Removed in v1. |
 | 8 | Composer repo + NuGet 0.1.0 | Deleted (composer-repo via GitHub delete; NuGet via unlist + nuget.org support). |
