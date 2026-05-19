@@ -737,57 +737,11 @@ namespace cliogate.Files.cs
 			CheckCanManageSolution();
 			SetFileDesignModeResponse response = new SetFileDesignModeResponse();
 			try {
-				string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-				// Creatio on .NET Framework hosts the runtime under Terrasoft.WebApp,
-				// but the fileDesignMode flag lives in the *root* site Web.config
-				// (the parent directory). Try both, parent first.
-				string[] candidatePaths = new[] {
-					Path.Combine(baseDir, "..", "Web.config"),
-					Path.Combine(baseDir, "Web.config")
-				};
+				FileDesignModeLookup lookup = LocateFileDesignModeNode();
+				response.WebConfigPath = lookup.WebConfigPath;
+				response.SearchAttempts = string.Join("; ", lookup.Attempts.ToArray());
 
-				string webConfigPath = null;
-				string content = null;
-				System.Xml.XmlNode root = null;
-				System.Xml.XmlNode terrasoftNode = null;
-				System.Xml.XmlNode fileDesignModeNode = null;
-				System.Xml.XmlDocument doc = null;
-				List<string> attempts = new List<string>();
-
-				foreach (string candidate in candidatePaths) {
-					string resolved = Path.GetFullPath(candidate);
-					attempts.Add(resolved + " exists=" + File.Exists(resolved));
-					if (!File.Exists(resolved)) {
-						continue;
-					}
-					try {
-						string candidateContent = File.ReadAllText(resolved);
-						System.Xml.XmlDocument candidateDoc = new System.Xml.XmlDocument();
-						candidateDoc.LoadXml(candidateContent);
-						System.Xml.XmlNode candidateRoot = candidateDoc.DocumentElement;
-						System.Xml.XmlNode candidateTerrasoft = candidateRoot.SelectSingleNode("descendant::terrasoft");
-						if (candidateTerrasoft == null) {
-							continue;
-						}
-						System.Xml.XmlNode candidateFdm = candidateTerrasoft.SelectSingleNode("descendant::fileDesignMode");
-						if (candidateFdm != null && candidateFdm.Attributes["enabled"] != null) {
-							webConfigPath = resolved;
-							content = candidateContent;
-							doc = candidateDoc;
-							root = candidateRoot;
-							terrasoftNode = candidateTerrasoft;
-							fileDesignModeNode = candidateFdm;
-							break;
-						}
-					} catch {
-						continue;
-					}
-				}
-
-				response.WebConfigPath = webConfigPath;
-				response.SearchAttempts = string.Join("; ", attempts.ToArray());
-
-				if (fileDesignModeNode == null) {
+				if (lookup.FileDesignModeNode == null) {
 					response.Success = false;
 					response.ErrorInfo = new ErrorInfo {
 						Message = "Could not locate <terrasoft>/<fileDesignMode enabled=\"...\"/> in any candidate Web.config. Tried: " + response.SearchAttempts
@@ -795,30 +749,19 @@ namespace cliogate.Files.cs
 					return response;
 				}
 
-				response.PreviousFileDesignMode = fileDesignModeNode.Attributes["enabled"].Value;
-				string newValue = isFileDesignMode ? "true" : "false";
-				fileDesignModeNode.Attributes["enabled"].Value = newValue;
-				response.NewFileDesignMode = newValue;
+				string fileDesignModeNewValue = isFileDesignMode ? "true" : "false";
+				string useStaticFileContentNewValue = isFileDesignMode ? "false" : "true";
 
-				System.Xml.XmlNode appSettings = root.SelectSingleNode("descendant::appSettings");
-				if (appSettings != null) {
-					string useStaticFileContentNewValue = isFileDesignMode ? "false" : "true";
-					foreach (System.Xml.XmlNode cNode in appSettings.ChildNodes) {
-						if (cNode.Attributes != null
-							&& cNode.Attributes["key"] != null
-							&& cNode.Attributes["key"].Value == "UseStaticFileContent") {
-							response.PreviousUseStaticFileContent = cNode.Attributes["value"].Value;
-							cNode.Attributes["value"].Value = useStaticFileContentNewValue;
-							response.NewUseStaticFileContent = useStaticFileContentNewValue;
-							break;
-						}
-					}
-				}
+				response.PreviousFileDesignMode = lookup.FileDesignModeNode.Attributes["enabled"].Value;
+				lookup.FileDesignModeNode.Attributes["enabled"].Value = fileDesignModeNewValue;
+				response.NewFileDesignMode = fileDesignModeNewValue;
 
-				File.WriteAllText(webConfigPath, doc.OuterXml);
+				UpdateUseStaticFileContent(lookup.Root, useStaticFileContentNewValue, response);
+
+				File.WriteAllText(lookup.WebConfigPath, lookup.Document.OuterXml);
 				response.Success = true;
 				_log.WarnFormat("cliogate.SetFileDesignMode: fileDesignMode={0} → {1} ({2})",
-					response.PreviousFileDesignMode, response.NewFileDesignMode, webConfigPath);
+					response.PreviousFileDesignMode, response.NewFileDesignMode, lookup.WebConfigPath);
 			} catch (Exception ex) {
 				response.Success = false;
 				response.ErrorInfo = new ErrorInfo {
@@ -827,6 +770,75 @@ namespace cliogate.Files.cs
 				};
 			}
 			return response;
+		}
+
+		// Creatio on .NET Framework hosts the runtime under Terrasoft.WebApp, but the
+		// fileDesignMode flag lives in the *root* site Web.config (the parent directory).
+		// Try both, parent first.
+		private static FileDesignModeLookup LocateFileDesignModeNode() {
+			string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+			string[] candidatePaths = new[] {
+				Path.Combine(baseDir, "..", "Web.config"),
+				Path.Combine(baseDir, "Web.config")
+			};
+
+			FileDesignModeLookup result = new FileDesignModeLookup();
+			foreach (string candidate in candidatePaths) {
+				string resolved = Path.GetFullPath(candidate);
+				result.Attempts.Add(resolved + " exists=" + File.Exists(resolved));
+				if (!File.Exists(resolved)) {
+					continue;
+				}
+				if (TryLoadFileDesignModeFromFile(resolved, result)) {
+					return result;
+				}
+			}
+			return result;
+		}
+
+		private static bool TryLoadFileDesignModeFromFile(string resolvedPath, FileDesignModeLookup result) {
+			try {
+				System.Xml.XmlDocument candidateDoc = new System.Xml.XmlDocument();
+				candidateDoc.LoadXml(File.ReadAllText(resolvedPath));
+				System.Xml.XmlNode candidateRoot = candidateDoc.DocumentElement;
+				System.Xml.XmlNode candidateTerrasoft = candidateRoot?.SelectSingleNode("descendant::terrasoft");
+				System.Xml.XmlNode candidateFdm = candidateTerrasoft?.SelectSingleNode("descendant::fileDesignMode");
+				if (candidateFdm?.Attributes["enabled"] == null) {
+					return false;
+				}
+				result.WebConfigPath = resolvedPath;
+				result.Document = candidateDoc;
+				result.Root = candidateRoot;
+				result.FileDesignModeNode = candidateFdm;
+				return true;
+			} catch {
+				return false;
+			}
+		}
+
+		private static void UpdateUseStaticFileContent(System.Xml.XmlNode root, string newValue,
+			SetFileDesignModeResponse response) {
+			System.Xml.XmlNode appSettings = root.SelectSingleNode("descendant::appSettings");
+			if (appSettings == null) {
+				return;
+			}
+			foreach (System.Xml.XmlNode cNode in appSettings.ChildNodes) {
+				if (cNode.Attributes?["key"]?.Value == "UseStaticFileContent") {
+					response.PreviousUseStaticFileContent = cNode.Attributes["value"].Value;
+					cNode.Attributes["value"].Value = newValue;
+					response.NewUseStaticFileContent = newValue;
+					return;
+				}
+			}
+		}
+
+		private sealed class FileDesignModeLookup
+		{
+			public string WebConfigPath { get; set; }
+			public System.Xml.XmlDocument Document { get; set; }
+			public System.Xml.XmlNode Root { get; set; }
+			public System.Xml.XmlNode FileDesignModeNode { get; set; }
+			public List<string> Attempts { get; } = new List<string>();
 		}
 		#endregion
 

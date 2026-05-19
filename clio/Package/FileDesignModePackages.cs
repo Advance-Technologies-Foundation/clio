@@ -189,14 +189,20 @@ namespace Clio.Package
 					ErrorMessage: "Could not parse cliogate SetFileDesignMode response: " + ex.Message);
 			}
 
+			string errorMessage = null;
+			if (!parsed.Success) {
+				errorMessage = parsed.ErrorInfo != null
+					? parsed.ErrorInfo.Message
+					: "Unknown error from cliogate.";
+			}
+
 			return new SetFileDesignModeResult(
 				EndpointAvailable: true,
 				Success: parsed.Success,
 				PreviousFileDesignMode: parsed.PreviousFileDesignMode,
 				NewFileDesignMode: parsed.NewFileDesignMode,
 				WebConfigPath: parsed.WebConfigPath,
-				ErrorMessage: parsed.Success ? null
-					: (parsed.ErrorInfo != null ? parsed.ErrorInfo.Message : "Unknown error from cliogate."));
+				ErrorMessage: errorMessage);
 		}
 
 		#endregion
