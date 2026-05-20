@@ -49,11 +49,12 @@ BaseMobileTemplate       (1d1942c9-6993-41c6-9eda-7b697acca221)
                   ListContainer with crt.List bound to $Items.
 ```
 
-### Template selection guidance
+### Typical template use cases
 
-| Use case | Recommended template |
+| Use case | Template |
 |---|---|
 | Custom / blank page | `BlankMobilePageTemplate` |
+| Simple page with title bar (no record ops) | `BaseMobileTemplate` |
 | Record (form) page | `BaseMobilePageTemplate` |
 | Record page with tabs, feed, attachments | `MobilePageWithTabsFreedomTemplate` |
 | List / section page | `BaseMobileListTemplate` |
@@ -72,7 +73,9 @@ Mobile page bodies are **plain JSON** — not AMD `define(...)` JavaScript modul
 }
 ```
 
-**No other top-level sections exist in mobile page bodies.** `handlers`, `converters`, and `validators` are web-only (AMD) sections and cannot appear in mobile pages. Specifically, it is not possible to *define* a custom converter inside a mobile page body. However, existing OOTB converters can be *referenced* as inline binding expressions within `viewConfigDiff` values — for example, `"visible": "$HasUnsavedData | crt.InvertBooleanValue"` or `"visible": "$CardState | crt.IsEqual : 'edit'"`. These are expression strings, not entries in any `converters` section.
+**No other top-level sections exist in mobile page bodies.** `handlers`, `converters`, and `validators` are web-only (AMD) sections. The clio validation pipeline (`PageSchemaBodyParser`) rejects mobile bodies that contain them.
+
+OOTB converters can be *referenced* as inline binding expressions within `viewConfigDiff` values — for example, `"visible": "$HasUnsavedData | crt.InvertBooleanValue"` or `"visible": "$CardState | crt.IsEqual : 'edit'"`. These are expression strings evaluated by the mobile runtime, not entries in a `converters` section.
 
 ### Section semantics
 
@@ -84,9 +87,9 @@ Mobile page bodies are **plain JSON** — not AMD `define(...)` JavaScript modul
 
 ---
 
-## 4. `crt.Scaffold` — Mandatory Root Element
+## 4. `crt.Scaffold` — Root Element
 
-All four verified mobile templates use exactly one `crt.Scaffold` insert at the top level of `viewConfigDiff`. All other content goes inside it. Treat this as a verified current template convention rather than a guaranteed constraint for every future mobile runtime.
+All five verified mobile templates insert exactly one `crt.Scaffold` at the top level of `viewConfigDiff`. All other content goes inside it. Consumer pages inherit the Scaffold from their parent template.
 
 ```json
 {
@@ -134,7 +137,7 @@ Verified from creatio-ui mobile page designer features service:
 | Page properties panel | `crt.PagePropertiesPanel` | `crt.MobilePagePropertiesPanel` |
 | Component registries | Web registries | **Separate mobile registries** |
 
-**Do not mix web-only components into mobile pages.** A component type like `crt.Button` exists in both registries but may have different available properties.
+A component type like `crt.Button` exists in both registries but may have different available properties. Web-only components are not rendered by the mobile runtime.
 
 ---
 
@@ -192,17 +195,16 @@ Mobile components are registered through mobile-specific decorators (`@CrtMobile
 
 ---
 
-## 8. clio MCP Workflow
+## 8. clio MCP Tool Behavior
 
-The standard page workflow applies — see `page-creation` and `page-modification` guidance for mechanics. Mobile-specific differences:
+Mobile pages use the same clio MCP workflow as web pages (`create-page`, `get-page`, `update-page`, `sync-pages`). Mobile-specific differences:
 
-**`list-page-templates`**: filter by `schema-type: "mobile"` (also accepts `"10"` or `"mobilepage"`) to list only mobile templates.
-
-**`create-page`**: mobile vs web is determined by the chosen template; response includes `schemaType: 10`. Preferred path: use `create-app-section --with-mobile-pages true` — mobile pages are only visible in the mobile app when linked through an app section.
-
-**`update-page` / `sync-pages`**: both auto-detect mobile JSON bodies and actively reject disallowed sections (`handlers`, `validators`, `converters`) with a clear error message.
-
-**`get-page`**: the response includes a `schema-type` field that returns `"mobile"` for schemaType=10 pages, `"web"` for schemaType=9, and `"unknown"` otherwise. Use this to confirm mobile vs web before editing.
+| Tool | Mobile-specific behavior |
+|---|---|
+| `list-page-templates` | `schema-type: "mobile"` (also `"10"`, `"mobilepage"`) filters to mobile templates only |
+| `create-page` | Mobile vs web is determined by the chosen template; response includes `schemaType: 10` |
+| `update-page` / `sync-pages` | Auto-detect mobile JSON bodies; reject disallowed sections (`handlers`, `validators`, `converters`) with an error |
+| `get-page` | Response `schema-type` field returns `"mobile"` for schemaType=10, `"web"` for schemaType=9, `"unknown"` otherwise |
 
 ---
 
@@ -221,13 +223,38 @@ Since Creatio 8.3.2, creating a new app or section automatically generates a mob
 
 ---
 
-## 10. AI Generation Rules
+## 10. OOTB Converters
 
-1. **Always use a mobile template** from `list-page-templates --schema-type mobile`. Never create a mobile page from a web template.
-2. **Body is plain JSON** — no `define(...)` wrapper, no `handlers`, `converters`, or `validators` sections.
-3. **`crt.Scaffold` is always the root** — insert it first in `viewConfigDiff`.
-4. **One data source per page (designer constraint)** — the mobile designer disables multi-data-source; define only one data source in `modelConfigDiff`.
-5. **Read `bundle.json` before adding elements** — mobile page templates add many nodes (Scaffold, buttons, containers). Read the bundle first to avoid duplicating inherited nodes.
-6. **Mobile component registry is separate** — verify a component exists on mobile before using it. Do not assume all `crt.*` web components are available on mobile.
-7. **`Boolean` → `Toggle`** — the mobile designer maps Boolean data type to `crt.Toggle`, not `crt.Checkbox`.
+OOTB converters are referenced as inline pipe expressions in `viewConfigDiff` binding values.
+Syntax: `"$Attribute | crt.ConverterName"` or `"$Attribute | crt.ConverterName : arg"`.
+Converters can be chained: `"$Attr | crt.A : arg | crt.B"`.
+
+Available: `crt.ToObjectProp`, `crt.InvertBooleanValue`, `crt.IsEqual`, `crt.AndBooleanValue`, `crt.IsInArray`, `crt.Concat`, `crt.ToCollectionFilters`.
+
+See `MobilePageGuidanceResource` for per-converter contracts and usage examples.
+
+---
+
+## 11. Requests
+
+Requests are bound to component events in `viewConfigDiff` (e.g. `clicked`, `valueChange`, `updated`).
+Binding syntax: `"clicked": { "request": "crt.<Name>", "params": { ... } }`
+
+Request classes are defined in the mobile-app runtime (`ts/src/lib/requests/`) with `@CrtRequest` decorator. 20 requests are available, grouped into: navigation, record operations, data loading, business processes, files, dialogs/lookups, communication options, and mobile-only (native device) capabilities.
+
+See `MobilePageGuidanceResource` for the full request list with per-request param contracts.
+
+---
+
+## 12. Verified Facts for AI Agents
+
+Facts derived from source verification (not prescriptive rules — see `MobilePageGuidanceResource` for agent directives):
+
+- Mobile pages use web templates with `schemaType=10`; web templates have `schemaType=9`.
+- All five templates provide `crt.Scaffold` as the root element.
+- The mobile designer sets `disableMultiDataSource: true` — one data source per page.
+- The mobile designer maps `Boolean` data type to `crt.Toggle`, not `crt.Checkbox`.
+- Mobile page templates inject nodes (Scaffold, buttons, containers) that appear in `bundle.json`.
+- The mobile component registry is separate from web; not all `crt.*` web components are available.
+- A mobile page must be linked through an app section to be visible in the mobile app.
 

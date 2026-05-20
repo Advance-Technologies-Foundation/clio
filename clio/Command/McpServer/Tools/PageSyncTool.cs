@@ -20,7 +20,9 @@ namespace Clio.Command.McpServer.Tools;
 [McpServerToolType]
 public sealed class PageSyncTool(
 	IToolCommandResolver commandResolver,
-	IFileSystem fileSystem) {
+	IFileSystem fileSystem,
+	IMobileComponentInfoCatalog mobileComponentCatalog,
+	IComponentInfoCatalog webComponentCatalog) {
 
 	internal const string ToolName = "sync-pages";
 
@@ -47,7 +49,7 @@ public sealed class PageSyncTool(
 		if (args.SkipSampling != true) {
 			foreach (PageSyncPageInput page in args.Pages) {
 				samplingResults[page.SchemaName] = await PageBodySamplingService.TrySamplingReviewAsync(
-					server, page.SchemaName, page.Body, cancellationToken);
+					server, page.SchemaName, page.Body, page.Resources, cancellationToken);
 			}
 		}
 		var results = new List<PageSyncPageResult>();
@@ -92,19 +94,14 @@ public sealed class PageSyncTool(
 		out PageSyncValidationResult validationResult) {
 		validationResult = null;
 		if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
-			SchemaValidationResult mobileErrors = SchemaValidationService.ValidateMobileBody(page.Body);
-			if (!mobileErrors.IsValid)
+			validationResult = MobilePageValidation.Run(page.Body, mobileComponentCatalog, webComponentCatalog);
+			if (!validationResult.ContentOk)
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
 					Success = false,
-					Validation = new PageSyncValidationResult {
-						MarkersOk = true,
-						JsSyntaxOk = true,
-						ContentOk = false,
-						Errors = mobileErrors.Errors
-					},
+					Validation = validationResult,
 					SamplingReview = samplingReview,
-					Error = "Mobile page validation failed: " + string.Join("; ", mobileErrors.Errors)
+					Error = "Mobile page validation failed: " + string.Join("; ", validationResult.Errors ?? [])
 				};
 		} else {
 			validationResult = ValidateBody(page.Body, page.Resources);
@@ -238,6 +235,8 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateValidatorDeclarations(body));
 		SchemaValidationResult bindingResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateColumnBindings(body));
+		SchemaValidationResult schemaDepsResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateSchemaDepsCompleteness(body));
 		List<string> errors = CollectErrors(
 			markerResult,
 			syntaxResult,
@@ -253,7 +252,7 @@ public sealed class PageSyncTool(
 			converterDeclResult,
 			converterFunctionShapeResult,
 			validatorDeclResult);
-		List<string> warnings = CollectWarnings(fieldResult, bindingResult);
+		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult);
 		bool contentOk = IsContentValidationSuccessful(
 			contentResult,
 			fieldResult,
@@ -316,7 +315,8 @@ public sealed class PageSyncTool(
 
 	private static List<string> CollectWarnings(
 		SchemaValidationResult fieldResult,
-		SchemaValidationResult bindingResult) {
+		SchemaValidationResult bindingResult,
+		SchemaValidationResult schemaDepsResult) {
 		var warnings = new List<string>();
 		if (fieldResult.Warnings.Count > 0) {
 			warnings.AddRange(fieldResult.Warnings);
@@ -324,6 +324,10 @@ public sealed class PageSyncTool(
 
 		if (!bindingResult.IsValid) {
 			warnings.AddRange(bindingResult.Errors);
+		}
+
+		if (schemaDepsResult.Warnings.Count > 0) {
+			warnings.AddRange(schemaDepsResult.Warnings);
 		}
 
 		return warnings;

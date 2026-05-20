@@ -71,6 +71,7 @@ public sealed class ApplicationSectionCreateService(
 	IServiceUrlBuilder serviceUrlBuilder,
 	IServiceUrlBuilderFactory serviceUrlBuilderFactory,
 	IApplicationInfoService applicationInfoService,
+	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory,
 	ILogger logger)
 	: IApplicationSectionCreateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
@@ -108,6 +109,8 @@ public sealed class ApplicationSectionCreateService(
 		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
+		string schemaNamePrefix = SysSettingCodes.ReadSchemaNamePrefix(sysSettingsManager);
 		logger.WriteInfo($"Loading application info for '{request.ApplicationCode}'...");
 		ApplicationInfoResult beforeInfo = applicationInfoService.GetApplicationInfo(
 			environmentName,
@@ -117,7 +120,8 @@ public sealed class ApplicationSectionCreateService(
 			request,
 			beforeInfo,
 			client,
-			environmentSettings);
+			environmentSettings,
+			schemaNamePrefix);
 		string requestBody = JsonSerializer.Serialize(BuildInsertBody(resolvedRequest), JsonOptions);
 		if (string.IsNullOrWhiteSpace(resolvedRequest.EntitySchemaName)) {
 			CheckEntitySchemaDoesNotExist(client, environmentSettings, resolvedRequest.SectionCode, request.Caption);
@@ -161,8 +165,9 @@ public sealed class ApplicationSectionCreateService(
 		ApplicationSectionCreateRequest request,
 		ApplicationInfoResult applicationInfo,
 		IApplicationClient client,
-		EnvironmentSettings environmentSettings) {
-		string sectionCode = GenerateCodeFromCaption(request.Caption);
+		EnvironmentSettings environmentSettings,
+		string schemaNamePrefix) {
+		string sectionCode = GenerateCodeFromCaption(request.Caption, schemaNamePrefix);
 		string iconBackground = string.IsNullOrWhiteSpace(request.IconBackground)
 		? GenerateRandomHexColor()
 		: request.IconBackground.Trim();
@@ -546,7 +551,7 @@ public sealed class ApplicationSectionCreateService(
 			querySource = 0
 		};
 
-	private static string GenerateCodeFromCaption(string caption) {
+	private static string GenerateCodeFromCaption(string caption, string schemaNamePrefix) {
 		string[] words = CodeWordRegex.Split(caption.Trim())
 			.Where(item => !string.IsNullOrWhiteSpace(item))
 			.ToArray();
@@ -556,7 +561,7 @@ public sealed class ApplicationSectionCreateService(
 				nameof(caption));
 		}
 
-		StringBuilder builder = new("Usr");
+		StringBuilder builder = new(schemaNamePrefix);
 		foreach (string word in words) {
 			string normalizedWord = NormalizeWord(word);
 			if (!string.IsNullOrWhiteSpace(normalizedWord)) {
@@ -564,14 +569,15 @@ public sealed class ApplicationSectionCreateService(
 			}
 		}
 
-		if (builder.Length == 3) {
+		int prefixLength = schemaNamePrefix.Length;
+		if (builder.Length == prefixLength) {
 			throw new ArgumentException(
 				$"Section caption '{caption}' contains no valid characters for code generation.",
 				nameof(caption));
 		}
 
-		if (char.IsDigit(builder[3])) {
-			builder.Insert(3, "_");
+		if (prefixLength < builder.Length && char.IsDigit(builder[prefixLength])) {
+			builder.Insert(prefixLength, "_");
 		}
 
 		return builder.ToString();

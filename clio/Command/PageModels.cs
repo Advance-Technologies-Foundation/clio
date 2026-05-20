@@ -678,6 +678,11 @@ public sealed class PageUpdateResponse {
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public PageSamplingReview SamplingReview { get; set; }
 
+	[JsonProperty("warnings", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("warnings")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Warnings { get; set; }
+
 	[JsonProperty("page", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("page")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]

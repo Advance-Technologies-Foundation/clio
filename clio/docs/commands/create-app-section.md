@@ -85,7 +85,10 @@ create a web-only section with automatically resolved icon metadata
 
 - --application-code is required.
 - When --entity-schema-name is provided, the section reuses that entity.
-- The section code is generated automatically from the caption.
+- The section code is generated automatically from the caption and prefixed
+  with the active SchemaNamePrefix system setting from the target environment
+  (for example caption "Orders" produces "UsrOrders" when SchemaNamePrefix is
+  "Usr", or "Orders" when the setting is empty).
 
 ## Reporting Bugs
 

@@ -2,6 +2,7 @@ using System.Linq;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -11,7 +12,7 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class ValidatePageToolTests {
 
-	private static PageValidateTool CreateTool() => new();
+	private static PageValidateTool CreateTool() => new(Substitute.For<IMobileComponentInfoCatalog>(), Substitute.For<IComponentInfoCatalog>());
 
 	[Test]
 	[Description("Advertises the stable MCP tool name for validate-page.")]

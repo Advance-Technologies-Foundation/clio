@@ -8,7 +8,9 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 [McpServerToolType]
-public sealed class PageValidateTool {
+public sealed class PageValidateTool(
+	IMobileComponentInfoCatalog mobileComponentCatalog,
+	IComponentInfoCatalog webComponentCatalog) {
 
 	internal const string ToolName = "validate-page";
 
@@ -25,15 +27,10 @@ public sealed class PageValidateTool {
 		[Description("Parameters: body (required); resources (optional)")]
 		[Required] PageValidateArgs args) {
 		if (PageSchemaTypeExtensions.FromBody(args.Body) == PageSchemaType.Mobile) {
-			SchemaValidationResult mobileResult = SchemaValidationService.ValidateMobileBody(args.Body);
+			PageSyncValidationResult mobileResult = MobilePageValidation.Run(args.Body, mobileComponentCatalog, webComponentCatalog);
 			return new PageValidateResponse {
-				Valid = mobileResult.IsValid,
-				Validation = new PageSyncValidationResult {
-					MarkersOk = true,
-					JsSyntaxOk = true,
-					ContentOk = mobileResult.IsValid,
-					Errors = mobileResult.IsValid ? null : mobileResult.Errors
-				}
+				Valid = mobileResult.ContentOk,
+				Validation = mobileResult
 			};
 		}
 		PageSyncValidationResult result = Validate(args.Body, args.Resources);
@@ -72,7 +69,9 @@ public sealed class PageValidateTool {
 			ValidatorDecl: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateValidatorDeclarations(body)),
 			ValidatorFactoryShape: RunContentValidation(contentResult,
-				() => SchemaValidationService.ValidateCustomValidatorFactoryShape(body)));
+				() => SchemaValidationService.ValidateCustomValidatorFactoryShape(body)),
+			SchemaDeps: RunContentValidation(contentResult,
+				() => SchemaValidationService.ValidateSchemaDepsCompleteness(body)));
 
 	private static PageSyncValidationResult BuildResult(
 		SchemaValidationResult markerResult,
@@ -88,6 +87,7 @@ public sealed class PageValidateTool {
 		if (!content.Binding.IsValid) {
 			warnings.AddRange(content.Binding.Errors);
 		}
+		warnings.AddRange(content.SchemaDeps.Warnings);
 		bool contentOk = contentResult.IsValid && content.Field.IsValid && content.ConverterDecl.IsValid &&
 			content.ConverterFunctionShape.IsValid && content.HandlerStructure.IsValid &&
 			content.ValidatorDecl.IsValid && content.ValidatorFactoryShape.IsValid;
@@ -135,7 +135,8 @@ public sealed class PageValidateTool {
 		SchemaValidationResult ConverterFunctionShape,
 		SchemaValidationResult HandlerStructure,
 		SchemaValidationResult ValidatorDecl,
-		SchemaValidationResult ValidatorFactoryShape);
+		SchemaValidationResult ValidatorFactoryShape,
+		SchemaValidationResult SchemaDeps);
 }
 
 public sealed record PageValidateArgs(

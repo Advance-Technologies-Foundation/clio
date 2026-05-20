@@ -199,10 +199,12 @@ internal static class ToolContractCatalog {
 	private const string ApplicationIdFieldName = "application-id";
 	private const string ArrayType = "array";
 	private const string BindingNameFieldName = "binding-name";
+	private const string BooleanFalseLiteral = "false";
 	private const string BooleanType = "boolean";
 	private const string ColumnNameFieldName = "column-name";
 	private const string ColumnsFieldName = "columns";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
+	private const string DryRunFieldName = "dry-run";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
 	private const string EnvironmentNameFieldName = "environment-name";
 	private const string ErrorFieldName = "error";
@@ -233,6 +235,7 @@ internal static class ToolContractCatalog {
 	private const string SelectorIdFieldName = "id";
 	private const string SchemaNameFieldName = "schema-name";
 	private const string ResourcesFieldName = "resources";
+	private const string SkipSamplingFieldName = "skip-sampling";
 	private const string StringType = "string";
 	private const string StatusFieldName = "status";
 	private const string SuccessFalseSignal = "success == false";
@@ -268,6 +271,7 @@ internal static class ToolContractCatalog {
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
 	private const string MakeRequiredActionTypeName = "make-required";
 	private const string ValuesFieldName = "values";
+	private const string VerifyFieldName = "verify";
 	private const string BindingNameDescription = "Binding name.";
 	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
 	private const string WorkspacePathFieldName = "workspace-path";
@@ -577,13 +581,13 @@ internal static class ToolContractCatalog {
 			ApplicationCreateTool.ApplicationCreateToolName,
 			"Creates a Creatio application and returns installed application identity plus the created application context envelope and Data Forge enrichment diagnostics.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, "name", "code", TemplateCodeFieldName, IconBackgroundFieldName],
+				[EnvironmentNameFieldName, "name", "code", TemplateCodeFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field("name", StringType, "Application display name."),
 					Field("code", StringType, "Application code (business-meaningful part; SchemaNamePrefix is auto-applied by clio)."),
 					Field(TemplateCodeFieldName, StringType, "Technical template code such as AppFreedomUI."),
-					Field(IconBackgroundFieldName, StringType, "Hex color string in #RRGGBB format."),
+					Field(IconBackgroundFieldName, StringType, "Optional hex color in #RRGGBB format from the Freedom UI palette. A random palette color is assigned when omitted."),
 					Field(DescriptionFieldName, StringType, "Optional application description."),
 					Field(IconIdFieldName, StringType, "Optional icon GUID or 'auto'."),
 					Field("client-type-id", StringType, "Optional client type identifier."),
@@ -1762,9 +1766,10 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance."),
+					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance. Each page item also accepts `optional-properties` (JSON array of {key, value} merged into schema optionalProperties)."),
 					Field("validate", BooleanType, "Run client-side validation before save."),
-					Field("verify", BooleanType, "Read the page back after save.")
+					Field(VerifyFieldName, BooleanType, "Read the page back after save."),
+					Field(SkipSamplingFieldName, BooleanType, "If true, skip the AI semantic review before saving each page.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1778,7 +1783,8 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				Default("validate", "true", "Client-side validation is enabled by default."),
-				Default("verify", "false", "Read-back verification is optional and disabled by default.")
+				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default."),
+				Default(SkipSamplingFieldName, BooleanFalseLiteral, "AI semantic review runs by default; set true to skip.")
 			],
 			[
 				Example("Validate and save one page body copied from get-page raw.body", new Dictionary<string, object?> {
@@ -1787,7 +1793,7 @@ internal static class ToolContractCatalog {
 						new Dictionary<string, object?> {
 							[SchemaNameFieldName] = "UsrTaskApp_FormPage",
 							["body"] = "/* raw.body returned by get-page */ define(...)",
-							[ResourcesFieldName] = "{\"PDS_Name\":\"Title\"}"
+							[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}"
 						}
 					},
 					["validate"] = true
@@ -2513,12 +2519,19 @@ internal static class ToolContractCatalog {
 			PageUpdateTool.ToolName,
 			"Fallback single-page save path for a full Freedom UI page body copied from `get-page.raw.body` when the workflow explicitly requires dry-run or legacy save behavior.",
 			new ToolInputSchemaContract(
-				[SchemaNameFieldName, "body"],
+				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
-					Field("body", StringType, "Full page body with all marker pairs. Reuse `get-page.raw.body` rather than `bundle` or `bundle.viewConfig`."),
-					Field("dry-run", BooleanType, "Validate without saving."),
-					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance.")),
+					Field("body", StringType, "Full page body with all marker pairs. Reuse `get-page.raw.body` rather than `bundle` or `bundle.viewConfig`. Either `body` or `body-file` must be provided."),
+					Field("body-file", StringType, "Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping."),
+					Field(DryRunFieldName, BooleanType, "Validate without saving."),
+					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
+					Field("optional-properties", StringType, "JSON array of {key, value} objects merged into schema optionalProperties (e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]')."),
+					Field(SkipSamplingFieldName, BooleanType, "If true, skip the AI semantic review before saving."),
+					Field(VerifyFieldName, BooleanType, "If true, read the page back after saving and return its metadata. Best-effort \u2014 verify failure does not fail the update."),
+					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries dedupe by `name` (incoming wins), handlers dedupe by `request`."),
+					Field("target-package-uid", StringType, "Explicit target package UId for the replacing schema. Overrides automatic design-package resolution."),
+					Field("target-schema-uid", StringType, "Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -2536,15 +2549,20 @@ internal static class ToolContractCatalog {
 			[
 				SchemaNameParameterAlias(),
 				EnvironmentNameParameterAlias(),
-				Alias(ParameterScope, "dry-run", "dryRun", RejectedStatus, "Use 'dry-run' instead of 'dryRun'.")
+				Alias(ParameterScope, DryRunFieldName, "dryRun", RejectedStatus, "Use 'dry-run' instead of 'dryRun'.")
 			],
-			[],
+			[
+				Default(DryRunFieldName, BooleanFalseLiteral, "Saves by default; pass true to validate without writing."),
+				Default(SkipSamplingFieldName, BooleanFalseLiteral, "AI semantic review runs by default; set true to skip."),
+				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default."),
+				Default("mode", "replace", "Body is written verbatim by default; pass 'append' to merge with the existing body.")
+			],
 			[
 				Example("Dry-run validate one page body copied from get-page raw.body", new Dictionary<string, object?> {
 					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
 					["body"] = "/* raw.body returned by get-page */ define(...)",
 					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}",
-					["dry-run"] = true,
+					[DryRunFieldName] = true,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
