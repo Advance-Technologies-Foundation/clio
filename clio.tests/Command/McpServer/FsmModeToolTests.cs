@@ -371,7 +371,9 @@ public sealed class FsmModeToolTests
 					Substitute.For<ISettingsRepository>(),
 					new Clio.Common.FileSystem(new System.IO.Abstractions.FileSystem()),
 					Substitute.For<ILogger>(),
-					Substitute.For<IIisScanner>()),
+					Substitute.For<IIisScanner>(),
+					Substitute.For<IFsmModeStatusService>(),
+					Substitute.For<Clio.Package.IFileDesignModePackages>()),
 				new LoadPackagesToFileSystemCommand(
 					Substitute.For<Clio.Package.IFileDesignModePackages>(),
 					Substitute.For<ILogger>()),
