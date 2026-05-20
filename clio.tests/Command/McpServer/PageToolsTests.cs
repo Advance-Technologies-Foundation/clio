@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using Clio.Command;
@@ -7,7 +8,6 @@ using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NSubstitute;
 using NUnit.Framework;
@@ -3500,6 +3500,74 @@ public class PageToolsTests
 		result["customProp"]?.ToString().Should().Be("keep", because: "extra properties in the current body must not be discarded");
 	}
 
+	[Test]
+	[Description("PageBodyMerger mobile: full-config 'viewModelConfig' form on the current body is rejected by append merge")]
+	public void PageBodyMerger_Mobile_Should_Throw_When_Current_Uses_Full_ViewModelConfig_Form() {
+		string currentBody = "{\"viewModelConfig\":{\"attributes\":{}},\"viewConfigDiff\":[]}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"A\"}]}";
+
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		act.Should().Throw<InvalidOperationException>(
+				because: "append merge does not support the full 'viewModelConfig' form and must fail loudly instead of silently producing a mixed body")
+			.WithMessage("*viewModelConfig*");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: full-config 'modelConfig' form on the current body is rejected by append merge")]
+	public void PageBodyMerger_Mobile_Should_Throw_When_Current_Uses_Full_ModelConfig_Form() {
+		string currentBody = "{\"modelConfig\":{\"path\":\"x\"},\"viewConfigDiff\":[]}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"A\"}]}";
+
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		act.Should().Throw<InvalidOperationException>(
+				because: "append merge does not support the full 'modelConfig' form and must fail loudly instead of silently producing a mixed body")
+			.WithMessage("*modelConfig*");
+	}
+
+	[Test]
+	[Description("PageBodyMerger web: full-form 'SCHEMA_VIEW_MODEL_CONFIG' marker on the current body is rejected by append merge")]
+	public void PageBodyMerger_Web_Should_Throw_When_Current_Uses_Full_ViewModelConfig_Marker() {
+		string currentBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/ " +
+			"/**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"A\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		act.Should().Throw<InvalidOperationException>(
+				because: "append merge against a form-page body (full SCHEMA_VIEW_MODEL_CONFIG marker) would silently drop the incoming diff and must fail loudly instead")
+			.WithMessage("*SCHEMA_VIEW_MODEL_CONFIG*");
+	}
+
+	[Test]
+	[Description("PageBodyMerger web: full-form 'SCHEMA_MODEL_CONFIG' marker on the current body is rejected by append merge")]
+	public void PageBodyMerger_Web_Should_Throw_When_Current_Uses_Full_ModelConfig_Marker() {
+		string currentBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"A\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		act.Should().Throw<InvalidOperationException>(
+				because: "append merge against a body with the full SCHEMA_MODEL_CONFIG marker would silently drop the incoming SCHEMA_MODEL_CONFIG_DIFF and must fail loudly instead")
+			.WithMessage("*SCHEMA_MODEL_CONFIG*");
+	}
+
 	private static IPageDesignerHierarchyClient CreateHierarchyClientFor(string schemaUId, string packageUId = "test-pkg-uid") {
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
 		hierarchyClient.GetDesignPackageUId(schemaUId).Returns(packageUId);
@@ -3543,6 +3611,97 @@ public class PageToolsTests
 			because: "mobile JSON bodies should not trigger AMD marker validation");
 		response.Error.Should().NotContain("SCHEMA_VIEW_CONFIG_DIFF",
 			because: "AMD marker validation errors must not appear for mobile bodies");
+	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage rejects the call when neither 'body' nor 'body-file' is provided.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_Rejects_When_Body_And_BodyFile_Both_Missing() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the tool must fail fast when no body content is supplied");
+		response.Error.Should().Contain("body-file",
+			because: "the error must explicitly mention both 'body' and 'body-file' so the caller can pick either input");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "no save attempt may be made when there is no body to send");
+	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage loads body from BodyFile and runs validation against the resolved content (catches malformed JSON markers loaded from disk).")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_BodyFile_Triggers_Validation_On_Resolved_Content() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		string bodyWithBadJson = CreatePageBody(viewConfigDiff: "[{ bad json }]");
+		string tempFile = Path.Combine(Path.GetTempPath(), $"clio-bodyfile-{Path.GetRandomFileName()}.js");
+		File.WriteAllText(tempFile, bodyWithBadJson);
+		try {
+			PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null, BodyFile: tempFile);
+
+			// Act
+			PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "validation must run against the body loaded from BodyFile, not be skipped because inline body is empty");
+			response.Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
+				because: "the marker that contains malformed JSON in the file must be reported");
+			applicationClient.ReceivedCalls().Should().BeEmpty(
+				because: "no save attempt may be made when validation fails");
+		}
+		finally {
+			if (File.Exists(tempFile)) {
+				File.Delete(tempFile);
+			}
+		}
+	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage returns a descriptive error when BodyFile points to a missing file.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_Rejects_When_BodyFile_Missing() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		string missingPath = Path.Combine(Path.GetTempPath(), $"clio-missing-{Path.GetRandomFileName()}.js");
+		PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null, BodyFile: missingPath);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a missing BodyFile must produce a load failure before any save attempt");
+		response.Error.Should().Contain(missingPath, because: "the error must identify the missing file path so the caller can fix the input");
+		applicationClient.ReceivedCalls().Should().BeEmpty(because: "no save attempt may be made when the body cannot be loaded");
 	}
 
 }

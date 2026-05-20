@@ -47,6 +47,17 @@ internal static class PageBodyMerger {
 	/// Merges two web (AMD) page bodies using marker-based section replacement.
 	/// </summary>
 	private static string MergeWeb(string currentBody, string incomingBody) {
+		// Append-merge only supports the diff form. The full-config forms
+		// `viewModelConfig` / `modelConfig` may appear on root schemas but
+		// are not the default and are not handled here. Refuse rather than
+		// silently dropping the incoming diff because the matching `_DIFF`
+		// marker is missing from the current body.
+		if (ReadRawSection(currentBody, "SCHEMA_VIEW_MODEL_CONFIG") != null ||
+			ReadRawSection(currentBody, "SCHEMA_MODEL_CONFIG") != null) {
+			throw new InvalidOperationException(
+				"Web append merge does not support bodies that use the full 'SCHEMA_VIEW_MODEL_CONFIG' or 'SCHEMA_MODEL_CONFIG' form. " +
+				"Use 'replace' mode, or convert the body to the diff form (SCHEMA_VIEW_MODEL_CONFIG_DIFF / SCHEMA_MODEL_CONFIG_DIFF) before append.");
+		}
 		JArray mergedViewConfigDiff = MergeArrayByName(
 			ReadJsonArray(currentBody, "SCHEMA_VIEW_CONFIG_DIFF"),
 			ReadJsonArray(incomingBody, "SCHEMA_VIEW_CONFIG_DIFF"));
@@ -90,6 +101,16 @@ internal static class PageBodyMerger {
 		} catch (Exception ex) {
 			throw new InvalidOperationException(
 				$"Incoming mobile page body is not valid JSON: {ex.Message}", ex);
+		}
+
+		// Append-merge only supports the diff form. The full-config forms
+		// `viewModelConfig` / `modelConfig` may appear on root schemas but
+		// are not the default and are not handled here. Refuse rather than
+		// silently producing a body that mixes full-config and *Diff siblings.
+		if (current["viewModelConfig"] is JObject || current["modelConfig"] is JObject) {
+			throw new InvalidOperationException(
+				"Mobile append merge does not support bodies that use the full 'viewModelConfig' or 'modelConfig' form. " +
+				"Use 'replace' mode, or convert the body to the diff form (viewModelConfigDiff / modelConfigDiff) before append.");
 		}
 
 		JArray mergedViewConfigDiff = MergeArrayByName(

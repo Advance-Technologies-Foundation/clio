@@ -3485,4 +3485,109 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	#endregion
+
+	#region CollectMobileViewModelPaths
+
+	[Test]
+	[Description("Mobile body with viewModelConfigDiff containing modelConfig.path entries returns those paths keyed by attribute name.")]
+	public void CollectMobileViewModelPaths_WithViewModelConfigDiff_ReturnsBoundPaths() {
+		// Arrange
+		string body = """
+		              {
+		                "viewModelConfigDiff": [
+		                  {
+		                    "operation": "merge",
+		                    "path": ["attributes"],
+		                    "values": {
+		                      "UsrName": { "modelConfig": { "path": "Name" } },
+		                      "UsrCode": { "modelConfig": { "path": "Code" } }
+		                    }
+		                  }
+		                ]
+		              }
+		              """;
+
+		// Act
+		Dictionary<string, string> result = SchemaValidationService.CollectMobileViewModelPaths(body);
+
+		// Assert
+		result.Should().ContainKey("UsrName", because: "attributes with modelConfig.path are DS-bound and must be collected");
+		result["UsrName"].Should().Be("Name", because: "the recorded path must equal the modelConfig.path value");
+		result.Should().ContainKey("UsrCode", because: "every attribute with modelConfig.path must be collected");
+		result["UsrCode"].Should().Be("Code", because: "the recorded path must equal the modelConfig.path value");
+	}
+
+	[Test]
+	[Description("Mobile body with full-form viewModelConfig.attributes returns DS-bound paths.")]
+	public void CollectMobileViewModelPaths_WithFullViewModelConfig_ReturnsBoundPaths() {
+		// Arrange
+		string body = """
+		              {
+		                "viewModelConfig": {
+		                  "attributes": {
+		                    "UsrName": { "modelConfig": { "path": "Name" } }
+		                  }
+		                }
+		              }
+		              """;
+
+		// Act
+		Dictionary<string, string> result = SchemaValidationService.CollectMobileViewModelPaths(body);
+
+		// Assert
+		result.Should().ContainKey("UsrName",
+			because: "full-form viewModelConfig with attributes still binds attributes to data source columns and must be detected");
+		result["UsrName"].Should().Be("Name", because: "the recorded path must equal the modelConfig.path value");
+	}
+
+	[Test]
+	[Description("Invalid JSON returns an empty dictionary instead of throwing.")]
+	public void CollectMobileViewModelPaths_InvalidJson_ReturnsEmpty() {
+		// Act
+		Dictionary<string, string> result = SchemaValidationService.CollectMobileViewModelPaths("{not valid");
+
+		// Assert
+		result.Should().BeEmpty(because: "the helper must be tolerant of malformed bodies and return an empty result");
+	}
+
+	[Test]
+	[Description("Empty body returns an empty dictionary without scanning.")]
+	public void CollectMobileViewModelPaths_EmptyBody_ReturnsEmpty() {
+		// Act
+		Dictionary<string, string> result = SchemaValidationService.CollectMobileViewModelPaths(string.Empty);
+
+		// Assert
+		result.Should().BeEmpty(because: "an empty body has no attributes to collect");
+	}
+
+	[Test]
+	[Description("Web AMD body (not JSON object root) returns an empty dictionary because mobile collection only walks JSON.")]
+	public void CollectMobileViewModelPaths_WebAmdBody_ReturnsEmpty() {
+		// Act
+		Dictionary<string, string> result = SchemaValidationService.CollectMobileViewModelPaths(ValidListPageBody);
+
+		// Assert
+		result.Should().BeEmpty(because: "an AMD-wrapped body is not a JSON object and the mobile collector must not throw or invent entries");
+	}
+
+	[Test]
+	[Description("Diff entry without modelConfig.path values is skipped without throwing.")]
+	public void CollectMobileViewModelPaths_DiffWithoutModelConfig_ReturnsEmpty() {
+		// Arrange
+		string body = """
+		              {
+		                "viewModelConfigDiff": [
+		                  { "operation": "merge", "path": ["attributes"], "values": { "UsrCaption": { "caption": "Hi" } } }
+		                ]
+		              }
+		              """;
+
+		// Act
+		Dictionary<string, string> result = SchemaValidationService.CollectMobileViewModelPaths(body);
+
+		// Assert
+		result.Should().BeEmpty(because: "attributes without a modelConfig.path are not DS-bound and must not be reported");
+	}
+
+	#endregion
 }

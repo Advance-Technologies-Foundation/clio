@@ -57,8 +57,6 @@ internal static class PageBodySamplingService {
 
 	internal const string MobileSystemPrompt =
 		"You are reviewing a Creatio Freedom UI mobile page body (plain JSON) before it is saved to Creatio.\n" +
-		"The body is a JSON object with optional top-level arrays: viewConfigDiff (or viewConfig), " +
-		"viewModelConfigDiff (or viewModelConfig), modelConfigDiff (or modelConfig).\n" +
 		"Custom (non-`crt.*`) handler request types and converter names are only valid when they are " +
 		"registered globally by a separately deployed remote AMD module, which leaves no trace in the body.\n" +
 		"Check ONLY the following semantic issues:\n" +

@@ -313,25 +313,29 @@ public static class SchemaValidationService
 			}
 			int index = 0;
 			foreach (JsonElement entry in vcd.EnumerateArray()) {
-				if (entry.ValueKind != JsonValueKind.Object) {
-					index++;
-					continue;
-				}
-				bool hasOperation = entry.TryGetProperty("operation", out _);
-				bool hasName = entry.TryGetProperty("name", out _);
-				if (!hasOperation || !hasName) {
-					result.IsValid = false;
-					var missing = new List<string>(2);
-					if (!hasOperation) missing.Add("operation");
-					if (!hasName) missing.Add("name");
-					result.Errors.Add(
-						$"viewConfigDiff entry at index {index} is missing required " +
-						$"{(missing.Count == 1 ? "property" : "properties")}: {string.Join(", ", missing)}.");
-				}
+				ValidateViewConfigDiffEntry(entry, index, result);
 				index++;
 			}
 		}
 		return result;
+	}
+
+	private static void ValidateViewConfigDiffEntry(JsonElement entry, int index, SchemaValidationResult result) {
+		if (entry.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		bool hasOperation = entry.TryGetProperty("operation", out _);
+		bool hasName = entry.TryGetProperty("name", out _);
+		if (hasOperation && hasName) {
+			return;
+		}
+		result.IsValid = false;
+		var missing = new List<string>(2);
+		if (!hasOperation) missing.Add("operation");
+		if (!hasName) missing.Add("name");
+		result.Errors.Add(
+			$"viewConfigDiff entry at index {index} is missing required " +
+			$"{(missing.Count == 1 ? "property" : "properties")}: {string.Join(", ", missing)}.");
 	}
 
 	/// <summary>
@@ -364,11 +368,9 @@ public static class SchemaValidationService
 				return result; // nothing to cross-check against
 			}
 			HashSet<string> referencedAttributes = CollectMobileViewBindings(root);
-			foreach (string attr in referencedAttributes) {
-				if (!declaredAttributes.Contains(attr)) {
-					result.Errors.Add(
-						$"viewConfigDiff binds to '${attr}' but no matching attribute is declared in viewModelConfigDiff/viewModelConfig.");
-				}
+			foreach (string attr in referencedAttributes.Where(a => !declaredAttributes.Contains(a))) {
+				result.Errors.Add(
+					$"viewConfigDiff binds to '${attr}' but no matching attribute is declared in viewModelConfigDiff/viewModelConfig.");
 			}
 			if (result.Errors.Count > 0) {
 				result.IsValid = false;
@@ -390,25 +392,7 @@ public static class SchemaValidationService
 	/// </returns>
 	public static SchemaValidationResult ValidateSchemaDepsCompleteness(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
-		if (string.IsNullOrEmpty(jsBody)) {
-			return result;
-		}
-		if (!PageSchemaSectionReader.TryRead(jsBody, out string handlersContent, SchemaHandlersMarker)) {
-			return result;
-		}
-		if (string.IsNullOrWhiteSpace(handlersContent) || handlersContent.Trim() == "[]") {
-			return result;
-		}
-		bool handlersMentionSdk =
-			SdkUsagePattern.IsMatch(handlersContent);
-		if (!handlersMentionSdk) {
-			// Also check converters — async converters can use SDK
-			if (PageSchemaSectionReader.TryRead(jsBody, out string convertersContent, SchemaConvertersMarker) &&
-				!string.IsNullOrWhiteSpace(convertersContent) && convertersContent.Trim() != "{}") {
-				handlersMentionSdk = SdkUsagePattern.IsMatch(convertersContent);
-			}
-		}
-		if (!handlersMentionSdk) {
+		if (string.IsNullOrEmpty(jsBody) || !HandlersOrConvertersMentionSdk(jsBody)) {
 			return result;
 		}
 		if (!PageSchemaSectionReader.TryRead(jsBody, out string depsContent, "SCHEMA_DEPS")) {
@@ -421,6 +405,26 @@ public static class SchemaValidationService
 				"Call get-guidance with name 'page-schema-creatio-devkit-common' for the correct pattern.");
 		}
 		return result;
+	}
+
+	private static bool HandlersOrConvertersMentionSdk(string jsBody) {
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string handlersContent, SchemaHandlersMarker)) {
+			return false;
+		}
+		if (string.IsNullOrWhiteSpace(handlersContent) || handlersContent.Trim() == "[]") {
+			return false;
+		}
+		if (SdkUsagePattern.IsMatch(handlersContent)) {
+			return true;
+		}
+		// Also check converters — async converters can use SDK
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string convertersContent, SchemaConvertersMarker)) {
+			return false;
+		}
+		if (string.IsNullOrWhiteSpace(convertersContent) || convertersContent.Trim() == "{}") {
+			return false;
+		}
+		return SdkUsagePattern.IsMatch(convertersContent);
 	}
 
 	private static string? GetMobileEntryType(JsonElement entry) {
@@ -467,12 +471,11 @@ public static class SchemaValidationService
 					}
 				}
 			}
-		} else if (!isArray && section.ValueKind == JsonValueKind.Object) {
-			if (section.TryGetProperty(AttributesPropertyName, out JsonElement attrs) &&
-				attrs.ValueKind == JsonValueKind.Object) {
-				foreach (JsonProperty attr in attrs.EnumerateObject()) {
-					attributes.Add(attr.Name);
-				}
+		} else if (!isArray && section.ValueKind == JsonValueKind.Object
+			&& section.TryGetProperty(AttributesPropertyName, out JsonElement attrs)
+			&& attrs.ValueKind == JsonValueKind.Object) {
+			foreach (JsonProperty attr in attrs.EnumerateObject()) {
+				attributes.Add(attr.Name);
 			}
 		}
 	}
@@ -499,25 +502,34 @@ public static class SchemaValidationService
 	}
 
 	private static void ExtractDollarBindings(JsonElement obj, HashSet<string> bindings) {
-		foreach (JsonProperty prop in obj.EnumerateObject()) {
-			if (prop.Value.ValueKind == JsonValueKind.String) {
-				string? val = prop.Value.GetString();
-				if (val != null && val.StartsWith("$", StringComparison.Ordinal) && val.Length > 1) {
-					string attrName = val[1..];
-					// Strip converter pipe: "$AttrName | crt.InvertBooleanValue" → "AttrName"
-					int pipeIndex = attrName.IndexOf('|', StringComparison.Ordinal);
-					if (pipeIndex > 0) {
-						attrName = attrName[..pipeIndex].TrimEnd();
-					}
-					// Skip resource bindings like $Resources.Strings.X
-					if (!attrName.StartsWith("Resources.", StringComparison.Ordinal)) {
-						bindings.Add(attrName);
-					}
+		foreach (JsonElement value in obj.EnumerateObject().Select(p => p.Value)) {
+			if (value.ValueKind == JsonValueKind.String) {
+				if (TryNormalizeDollarBinding(value.GetString(), out string? attrName) && attrName != null) {
+					bindings.Add(attrName);
 				}
-			} else if (prop.Value.ValueKind == JsonValueKind.Object) {
-				ExtractDollarBindings(prop.Value, bindings);
+			} else if (value.ValueKind == JsonValueKind.Object) {
+				ExtractDollarBindings(value, bindings);
 			}
 		}
+	}
+
+	private static bool TryNormalizeDollarBinding(string? raw, out string? attrName) {
+		attrName = null;
+		if (raw == null || raw.Length <= 1 || !raw.StartsWith("$", StringComparison.Ordinal)) {
+			return false;
+		}
+		string candidate = raw[1..];
+		// Strip converter pipe: "$AttrName | crt.InvertBooleanValue" → "AttrName"
+		int pipeIndex = candidate.IndexOf('|', StringComparison.Ordinal);
+		if (pipeIndex > 0) {
+			candidate = candidate[..pipeIndex].TrimEnd();
+		}
+		// Skip resource bindings like $Resources.Strings.X
+		if (candidate.StartsWith("Resources.", StringComparison.Ordinal)) {
+			return false;
+		}
+		attrName = candidate;
+		return true;
 	}
 
 	public static string BuildMarkerPattern(string markerName) {
@@ -794,6 +806,75 @@ public static class SchemaValidationService
 		CollectViewModelPathsFromMarker(jsBody, modelPaths, "SCHEMA_VIEW_MODEL_CONFIG_DIFF");
 		CollectViewModelPathsFromMarker(jsBody, modelPaths, "SCHEMA_VIEW_MODEL_CONFIG");
 		return modelPaths;
+	}
+
+	/// <summary>
+	/// Collects view-model attribute names whose <c>modelConfig.path</c> binds them to a
+	/// data source column, scanning a mobile (plain JSON) page body. Used to suppress
+	/// auto-derivation of <c>$Resources.Strings.Usr*</c> captions for keys that the
+	/// platform already auto-provides from the entity column caption.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>
+	/// A dictionary of attribute name to <c>modelConfig.path</c> value. Empty when the
+	/// body is not valid JSON or contains no DS-bound attributes.
+	/// </returns>
+	internal static Dictionary<string, string> CollectMobileViewModelPaths(string body) {
+		var modelPaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		if (string.IsNullOrWhiteSpace(body)) {
+			return modelPaths;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return modelPaths;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind != JsonValueKind.Object) {
+				return modelPaths;
+			}
+			CollectMobileModelPathsFromDiff(root, "viewModelConfigDiff", modelPaths);
+			CollectMobileModelPathsFromDiff(root, "modelConfigDiff", modelPaths);
+			CollectMobileModelPathsFromConfig(root, "viewModelConfig", modelPaths);
+			CollectMobileModelPathsFromConfig(root, "modelConfig", modelPaths);
+		}
+		return modelPaths;
+	}
+
+	private static void CollectMobileModelPathsFromDiff(
+		JsonElement root, string propertyName, Dictionary<string, string> modelPaths) {
+		if (!root.TryGetProperty(propertyName, out JsonElement diff) ||
+			diff.ValueKind != JsonValueKind.Array) {
+			return;
+		}
+		foreach (JsonElement entry in diff.EnumerateArray()) {
+			if (entry.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (!ShouldScanAsAttributesContainer(entry)) {
+				continue;
+			}
+			if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+				values.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			CollectNamedModelPaths(values, modelPaths);
+		}
+	}
+
+	private static void CollectMobileModelPathsFromConfig(
+		JsonElement root, string propertyName, Dictionary<string, string> modelPaths) {
+		if (!root.TryGetProperty(propertyName, out JsonElement config) ||
+			config.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		if (!config.TryGetProperty(AttributesPropertyName, out JsonElement attrs) ||
+			attrs.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		CollectNamedModelPaths(attrs, modelPaths);
 	}
 
 	private static void CollectViewModelPathsFromMarker(

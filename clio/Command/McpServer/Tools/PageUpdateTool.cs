@@ -41,37 +41,21 @@ public sealed class PageUpdateTool(
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
 		PageUpdateOptions options = BuildOptions(args);
-		IReadOnlyList<string> validationWarnings = null;
-		if (!string.IsNullOrWhiteSpace(options.Body)) {
-			if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
-				PageSyncValidationResult mobileResult = MobilePageValidation.Run(
-					options.Body, mobileComponentCatalog, webComponentCatalog);
-				if (!mobileResult.ContentOk)
-					return new PageUpdateResponse {
-						Success = false,
-						Error = "Validation failed: " + string.Join("; ", mobileResult.Errors ?? [])
-					};
-				validationWarnings = mobileResult.Warnings;
-			} else {
-				(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body);
-				if (bodyError != null)
-					return new PageUpdateResponse {
-						Success = false,
-						Error = bodyError
-					};
-				validationWarnings = webWarnings;
-			}
-		}
-		PageSamplingReview samplingReview = null;
-		if (!options.DryRun && args.SkipSampling != true) {
-			samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(server, args.SchemaName, args.Body, args.Resources, cancellationToken);
-			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0)
-				return new PageUpdateResponse {
-					Success = false,
-					Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues),
-					SamplingReview = samplingReview
-				};
-		}
+		(bool bodyLoaded, string bodyLoadError) = PageUpdateBodyLoader.TryLoadBodyFromFile(options);
+		if (!bodyLoaded)
+			return new PageUpdateResponse { Success = false, Error = bodyLoadError };
+		if (string.IsNullOrWhiteSpace(options.Body))
+			return new PageUpdateResponse {
+				Success = false,
+				Error = "Either 'body' or 'body-file' must provide page body content."
+			};
+		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
+		if (validationFailure != null)
+			return validationFailure;
+		(PageUpdateResponse samplingFailure, PageSamplingReview samplingReview) =
+			await TryRunSamplingAsync(options, args, server, cancellationToken);
+		if (samplingFailure != null)
+			return samplingFailure;
 		PageUpdateResponse response;
 		lock (CommandExecutionSyncRoot) {
 			PageUpdateCommand resolvedCommand;
@@ -87,6 +71,42 @@ public sealed class PageUpdateTool(
 		response.SamplingReview = samplingReview;
 		response.Warnings = validationWarnings;
 		return response;
+	}
+
+	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(PageUpdateOptions options) {
+		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
+			PageSyncValidationResult mobileResult = MobilePageValidation.Run(
+				options.Body, mobileComponentCatalog, webComponentCatalog);
+			if (!mobileResult.ContentOk) {
+				return (new PageUpdateResponse {
+					Success = false,
+					Error = "Validation failed: " + string.Join("; ", mobileResult.Errors ?? [])
+				}, null);
+			}
+			return (null, mobileResult.Warnings);
+		}
+		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body);
+		if (bodyError != null) {
+			return (new PageUpdateResponse { Success = false, Error = bodyError }, null);
+		}
+		return (null, webWarnings);
+	}
+
+	private static async Task<(PageUpdateResponse Failure, PageSamplingReview Review)> TryRunSamplingAsync(
+		PageUpdateOptions options, PageUpdateArgs args, McpServerLib.McpServer server, CancellationToken cancellationToken) {
+		if (options.DryRun || args.SkipSampling == true) {
+			return (null, null);
+		}
+		PageSamplingReview samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(
+			server, args.SchemaName, options.Body, args.Resources, cancellationToken);
+		if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
+			return (new PageUpdateResponse {
+				Success = false,
+				Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues),
+				SamplingReview = samplingReview
+			}, samplingReview);
+		}
+		return (null, samplingReview);
 	}
 
 	private static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>
