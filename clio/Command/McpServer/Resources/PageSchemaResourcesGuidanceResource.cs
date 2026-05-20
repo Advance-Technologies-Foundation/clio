@@ -22,6 +22,12 @@ public sealed class PageSchemaResourcesGuidanceResource {
 		       Scope: use when a Freedom UI page change adds, references, or modifies localizable strings (captions, labels, titles, validator messages).
 
 		       ─────────────────────────────────────────────────────────────
+		       WHEN TO USE A LOCALIZABLE STRING
+		       ─────────────────────────────────────────────────────────────
+
+		       Author user-visible string values as localizable-string bindings, not inline literals. The rule covers any string-like property the runtime renders to the user (e.g. `label`, `caption`, `title`, `tooltip`, `placeholder`, `description`, button/tab/group captions, validator and dialog messages — non-exhaustive). Inline literals are fine for non-displayed values: type/schema/attribute names, enum-like state values (`labelPosition`, `size`, `direction`, …), and binding/converter expressions. Applies equally to web and mobile.
+
+		       ─────────────────────────────────────────────────────────────
 		       THE DECISION ALGORITHM
 		       ─────────────────────────────────────────────────────────────
 
@@ -30,7 +36,7 @@ public sealed class PageSchemaResourcesGuidanceResource {
 		       1. REFERENCE SYNTAX in the page body
 		          - Default: `$Resources.Strings.<ResourceKey>` (reactive binding; resolved by the Freedom UI engine for any key registered in the schema's `localizableStrings`).
 		          - Exception: validator params — use `#ResourceString(<Key>)#` there (see VALIDATOR PARAMS).
-		          - Inside `viewConfigDiff` string values (`label`, `caption`, `tooltip`, `placeholder`) both forms are interchangeable; prefer the binding form except where convention already established the macro form — notably data grid column captions in list pages and embedded grids like AttachmentList (`"#ResourceString(PDS_UsrName)#"`, `"#ResourceString(AttachmentListDS_Name)#"`).
+		          - Inside `viewConfigDiff` string values (any user-visible string-like property — `label`, `caption`, `title`, `tooltip`, `placeholder`, `description`, etc. are examples, not an exhaustive list) both forms are interchangeable; prefer the binding form except where convention already established the macro form — notably data grid column captions in list pages and embedded grids like AttachmentList (`"#ResourceString(PDS_UsrName)#"`, `"#ResourceString(AttachmentListDS_Name)#"`).
 
 		       2. REGISTER VIA `resources` PARAMETER? — depends on the target page, not the key name. Call `get-page` and inspect the merged `bundle.viewModelConfig.attributes.<Key>` (this is the effective runtime view, regardless of whether the attribute lives in the parent schema, inline `viewModelConfig`, or is added via `viewModelConfigDiff`). Then apply:
 		          - Exists AND has a DS binding (`modelConfig.path` → data source column) → platform auto-provides the caption from the entity column → **DO NOT register** (unless overriding the caption with a custom value).
@@ -91,6 +97,7 @@ public sealed class PageSchemaResourcesGuidanceResource {
 		       3. Inventing data-source resource keys from column names — the key must match the view model attribute identifier from the binding, including any designer-generated hash suffix (e.g. `PDS_UsrColumn2_r2s859x`).
 		       4. Using `$Resources.Strings.*` in validator params — rejected by clio validation; use `#ResourceString(KeyName)#`.
 		       5. Re-registering inherited captions from a parent schema — already registered; the entry is unnecessary (though harmless).
+		       6. Hardcoding a user-visible string as an inline literal — bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for validator params).
 		       """
 	};
 
