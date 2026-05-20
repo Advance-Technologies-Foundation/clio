@@ -433,6 +433,60 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Deserializes apply-filter actions and preserves target/source lookup settings for downstream validation and conversion.")]
+	public void BusinessRuleCreate_Should_Deserialize_ApplyFilter_Action() {
+		// Arrange
+		string payload = """
+		{
+		  "environment-name": "dev",
+		  "package-name": "UsrPkg",
+		  "entity-schema-name": "UsrOrder",
+		  "rule": {
+		    "caption": "Filter city by country",
+		    "condition": {
+		      "logicalOperation": "AND",
+		      "conditions": []
+		    },
+		    "actions": [
+		      {
+		        "type": "apply-filter",
+		        "target": "City",
+		        "targetFilterPath": "Country",
+		        "source": "Country",
+		        "sourceFilterPath": "TimeZone",
+		        "clearValue": true,
+		        "populateValue": true
+		      }
+		    ]
+		  }
+		}
+		""";
+
+		// Act
+		BusinessRuleToolPayload? payloadArgs = JsonSerializer.Deserialize<BusinessRuleToolPayload>(payload);
+
+		// Assert
+		payloadArgs.Should().NotBeNull(
+			because: "apply-filter payloads should deserialize from the MCP JSON shape");
+		ApplyFilterBusinessRuleAction action = payloadArgs!.Rule.ToBusinessRule().Actions.Single()
+			.Should().BeOfType<ApplyFilterBusinessRuleAction>(
+				because: "the MCP action discriminator should map apply-filter payloads to the shared model").Subject;
+		action.Target.Should().Be("City",
+			because: "the target lookup root should be preserved");
+		action.TargetFilterPath.Should().Be("Country",
+			because: "the target-side filter path should be preserved");
+		action.Source.Should().Be("Country",
+			because: "the source lookup root should be preserved");
+		action.SourceFilterPath.Should().Be("TimeZone",
+			because: "the optional source filter path should survive MCP payload binding when provided");
+		action.ClearValue.Should().BeTrue(
+			because: "clearValue should survive MCP payload binding");
+		action.PopulateValue.Should().BeTrue(
+			because: "populateValue should survive MCP payload binding");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Deserializes unary business-rule payloads that omit rightExpression for filled-state comparisons.")]
 	public void BusinessRuleCreate_Should_Deserialize_Unary_Payload_Without_Right_Expression() {
 		// Arrange

@@ -50,7 +50,10 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
-		BusinessRuleConditionMetadataDto condition = metadata.Cases[0].Condition!.Conditions[0];
+		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
+				because: "standard business rules should still persist grouped case conditions").Subject;
+		BusinessRuleConditionMetadataDto condition = conditionGroup.Conditions[0];
 		condition.ComparisonType.Should().Be(expectedMetadataValue,
 			because: "each supported wire comparison should map to the corresponding Creatio business-rule enum value");
 		if (shouldIncludeRightExpression) {
@@ -104,39 +107,46 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRuleCaseMetadataDto @case = metadata.Cases.Single();
 		@case.Condition.Should().NotBeNull(
 			because: "the metadata case should contain the converted condition group");
-		@case.Condition!.LogicalOperation.Should().Be(BusinessRuleConstants.LogicalOr,
+		BusinessRuleGroupConditionMetadataDto conditionGroup = @case.Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
+				because: "standard multi-condition rules should still persist a condition group").Subject;
+		conditionGroup.LogicalOperation.Should().Be(BusinessRuleConstants.LogicalOr,
 			because: "OR groups should map to the business-rule logical OR constant");
-		@case.Condition.Conditions.Should().HaveCount(2,
+		conditionGroup.Conditions.Should().HaveCount(2,
 			because: "every source condition should be preserved in metadata");
-		@case.Condition.Conditions[0].ComparisonType.Should().Be(BusinessRuleConstants.ComparisonEqual,
+		conditionGroup.Conditions[0].ComparisonType.Should().Be(BusinessRuleConstants.ComparisonEqual,
 			because: "equal comparisons should map to the business-rule equality constant");
-		@case.Condition.Conditions[1].ComparisonType.Should().Be(BusinessRuleConstants.ComparisonNotEqual,
+		conditionGroup.Conditions[1].ComparisonType.Should().Be(BusinessRuleConstants.ComparisonNotEqual,
 			because: "not-equal comparisons should map to the business-rule inequality constant");
-		@case.Condition.Conditions[0].LeftExpression.Type.Should().Be("AttributeValue",
+		conditionGroup.Conditions[0].LeftExpression.Type.Should().Be("AttributeValue",
 			because: "left expressions should remain attribute references in metadata");
-		@case.Condition.Conditions[0].LeftExpression.Path.Should().Be("Owner",
+		conditionGroup.Conditions[0].LeftExpression.Path.Should().Be("Owner",
 			because: "the left attribute path should be preserved");
-		@case.Condition.Conditions[0].LeftExpression.DataValueTypeName.Should().Be("Lookup",
+		conditionGroup.Conditions[0].LeftExpression.DataValueTypeName.Should().Be("Lookup",
 			because: "lookup attributes should preserve their runtime data value type");
-		@case.Condition.Conditions[0].LeftExpression.ReferenceSchemaName.Should().Be("Contact",
+		conditionGroup.Conditions[0].LeftExpression.ReferenceSchemaName.Should().Be("Contact",
 			because: "lookup attributes should preserve the reference schema name");
-		@case.Condition.Conditions[0].RightExpression.Type.Should().Be("AttributeValue",
+		conditionGroup.Conditions[0].RightExpression.Type.Should().Be("AttributeValue",
 			because: "attribute-to-attribute comparisons should emit an attribute expression on the right side");
-		@case.Condition.Conditions[0].RightExpression.Path.Should().Be("Approver",
+		conditionGroup.Conditions[0].RightExpression.Path.Should().Be("Approver",
 			because: "the right attribute path should be preserved for attribute comparisons");
-		@case.Condition.Conditions[1].RightExpression.Type.Should().Be("Const",
+		conditionGroup.Conditions[1].RightExpression.Type.Should().Be("Const",
 			because: "constant comparisons should emit value expressions on the right side");
-		@case.Condition.Conditions[1].RightExpression.DataValueTypeName.Should().Be("Money",
+		conditionGroup.Conditions[1].RightExpression.DataValueTypeName.Should().Be("Money",
 			because: "constant expressions should inherit the left attribute runtime type");
-		@case.Condition.Conditions[1].RightExpression.ReferenceSchemaName.Should().BeNullOrEmpty(
+		conditionGroup.Conditions[1].RightExpression.ReferenceSchemaName.Should().BeNullOrEmpty(
 			because: "non-lookup constants should not carry a reference schema");
-		@case.Condition.Conditions[1].RightExpression.Value.Should().NotBeNull(
+		conditionGroup.Conditions[1].RightExpression.Value.Should().NotBeNull(
 			because: "constant comparisons should keep a persisted value payload in metadata");
-		@case.Condition.Conditions[1].RightExpression.Value!.ToString().Should().Be("5",
+		conditionGroup.Conditions[1].RightExpression.Value!.ToString().Should().Be("5",
 			because: "numeric constants should keep the raw comparison value");
-		@case.Actions[0].Items.Should().Be(" Owner ,Amount,Owner",
+		@case.Actions[0].Should().BeOfType<FieldSelectionBusinessRuleActionMetadataDto>(
+			because: "field-state entity actions should still persist as field-selection metadata").Subject.Items
+			.Should().Be(" Owner ,Amount,Owner",
 			because: "action items should be preserved exactly as supplied without trimming or deduplication");
-		@case.Actions[1].Items.Should().Be("Status",
+		@case.Actions[1].Should().BeOfType<FieldSelectionBusinessRuleActionMetadataDto>(
+			because: "field-state entity actions should still persist as field-selection metadata").Subject.Items
+			.Should().Be("Status",
 			because: "single target actions should keep their single attribute name");
 		metadata.Triggers.Should().HaveCount(4,
 			because: "the converter should emit change triggers for referenced attributes plus the data-loaded trigger");
@@ -181,7 +191,10 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
-		BusinessRuleExpressionMetadataDto rightExpression = metadata.Cases[0].Condition!.Conditions[0].RightExpression;
+		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
+				because: "standard business rules should still persist grouped case conditions").Subject;
+		BusinessRuleExpressionMetadataDto rightExpression = conditionGroup.Conditions[0].RightExpression;
 		rightExpression.Type.Should().Be("Const",
 			because: "lookup comparisons against a constant should emit a constant right expression");
 		rightExpression.DataValueTypeName.Should().Be("Lookup",
@@ -222,7 +235,10 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
 
 		// Assert
-		BusinessRuleConditionMetadataDto condition = metadata.Cases[0].Condition!.Conditions[0];
+		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
+				because: "page business rules should still persist grouped case conditions").Subject;
+		BusinessRuleConditionMetadataDto condition = conditionGroup.Conditions[0];
 		condition.LeftExpression.ReferenceSchemaName.Should().BeNull(
 			because: "page AttributeValue metadata should match Creatio page add-on shape and omit referenceSchemaName");
 		condition.RightExpression!.ReferenceSchemaName.Should().Be("Country",
@@ -265,7 +281,10 @@ public sealed class BusinessRuleMetadataConverterTests {
 				BusinessRuleConstants.BusinessRuleOptionalElementTypeName
 			],
 			because: "page editability and required-state actions should persist using Creatio business-rule metadata type names");
-		metadata.Cases.Single().Actions.Select(action => action.Items).Should().Equal([
+		metadata.Cases.Single().Actions
+			.Select(action => action.Should().BeOfType<FieldSelectionBusinessRuleActionMetadataDto>(
+				because: "page actions should persist as field-selection metadata").Subject.Items)
+			.Should().Equal([
 				"NameInput",
 				"AmountInput",
 				"CloseDateInput",
@@ -325,7 +344,9 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
-		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single();
+		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single()
+			.Should().BeOfType<FieldSelectionBusinessRuleActionMetadataDto>(
+				because: "set-values should still persist through the field-selection metadata DTO shape").Subject;
 		action.TypeName.Should().Be(BusinessRuleConstants.BusinessRuleSetValuesElementTypeName,
 			because: "set-values actions should persist as the core BusinessRuleActionSetValues type");
 		action.Items.Should().BeOfType<List<BusinessRuleSetValueItemMetadataDto>>(
@@ -405,7 +426,9 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
-		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single();
+		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single()
+			.Should().BeOfType<FieldSelectionBusinessRuleActionMetadataDto>(
+				because: "formula set-values should still persist through the field-selection metadata DTO shape").Subject;
 		List<BusinessRuleSetValueItemMetadataDto> items = (List<BusinessRuleSetValueItemMetadataDto>)action.Items!;
 		BusinessRuleExpressionMetadataDto value = items.Single().Value;
 		value.TypeName.Should().Be(BusinessRuleConstants.BusinessRuleFormulaExpressionTypeName,
@@ -485,7 +508,9 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(attributeMap, rule, "UsrTask");
 
 		// Assert
-		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single();
+		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single()
+			.Should().BeOfType<FieldSelectionBusinessRuleActionMetadataDto>(
+				because: "attribute-source set-values should still persist through the field-selection metadata DTO shape").Subject;
 		List<BusinessRuleSetValueItemMetadataDto> items = (List<BusinessRuleSetValueItemMetadataDto>)action.Items!;
 		items[0].Value.TypeName.Should().Be(BusinessRuleConstants.BusinessRuleAttributeExpressionTypeName,
 			because: "direct AttributeValue sources should persist as core attribute expressions");
@@ -508,6 +533,229 @@ public sealed class BusinessRuleMetadataConverterTests {
 		metadata.Triggers.Should().Contain(trigger =>
 				trigger.Type == BusinessRuleConstants.DataLoadedTriggerType && trigger.Name == string.Empty,
 			because: "Set values rules should still run on DataLoaded");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps apply-filter rules into a parent filter-lookup rule that preserves user conditions plus autogenerated clear and populate child rules.")]
+	public void ToEntityMetadata_Should_Map_ApplyFilter_Into_Parent_And_Child_Rules() {
+		// Arrange
+		string supervisorId = "4055a3b6-867e-3756-311a-576cbaba3230";
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Owner"] = new("Owner", "Lookup", "Contact"),
+				["Country"] = new("Country", "Lookup", "Country"),
+				["Country.TimeZone"] = new("Country.TimeZone", "Lookup", "TimeZone"),
+				["City"] = new("City", "Lookup", "City"),
+				["City.Country"] = new("City.Country", "Lookup", "Country"),
+				["City.Country.TimeZone"] = new("City.Country.TimeZone", "Lookup", "TimeZone")
+			};
+		BusinessRule rule = new(
+			"  Filter city by country timezone  ",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Owner"),
+						"equal",
+						new BusinessRuleExpression("Const", value: JsonSerializer.SerializeToElement(supervisorId)))
+				]),
+			[
+				new ApplyFilterBusinessRuleAction(
+					"City",
+					"Country.TimeZone",
+					"Country",
+					"TimeZone",
+					clearValue: true,
+					populateValue: false)
+			]);
+
+		// Act
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = BusinessRuleMetadataConverter.ToEntityMetadata(attributeMap, rule, "UsrOrder");
+
+		// Assert
+		metadata.Should().HaveCount(2,
+			because: "apply-filter with clear only should emit one parent rule and one autogenerated clear child rule");
+		BusinessRuleMetadataDto parentRule = metadata[0];
+		BusinessRuleMetadataDto clearRule = metadata[1];
+		parentRule.Caption.Should().Be("Filter city by country timezone",
+			because: "the parent apply-filter rule should trim and keep the requested caption");
+		clearRule.Caption.Should().Be($"ChildRule-{parentRule.UId}-ClearValue",
+			because: "autogenerated child rules should carry deterministic non-empty captions like the platform designer");
+		parentRule.Cases.Single().Condition.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
+			because: "the parent apply-filter rule should persist the user-authored parent condition group").Subject.Conditions.Should().ContainSingle(
+			because: "apply-filter parent rules should no longer discard the incoming user conditions");
+		BusinessRuleConditionMetadataDto parentCondition = parentRule.Cases.Single().Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
+				because: "the parent rule should still use a group condition metadata wrapper").Subject.Conditions.Single();
+		parentCondition.LeftExpression.Path.Should().Be("Owner",
+			because: "the preserved parent condition should still target the original left attribute");
+		parentCondition.RightExpression.Should().NotBeNull(
+			because: "the preserved parent condition should still include the original right expression");
+		parentCondition.RightExpression!.Value.Should().NotBeNull(
+			because: "the preserved parent condition should still contain the original constant payload");
+		parentCondition.RightExpression!.Value!.ToString().Should().Be(supervisorId,
+			because: "the preserved parent condition should keep the original constant comparison value");
+		parentRule.Cases.Single().Actions.Should().ContainSingle(
+			because: "apply-filter parent rules should contain a single filter lookup action");
+		BusinessRuleFilterLookupActionMetadataDto action = parentRule.Cases.Single().Actions.Single()
+			.Should().BeOfType<BusinessRuleFilterLookupActionMetadataDto>(
+				because: "the parent rule should persist the lookup filter action metadata shape").Subject;
+		action.TypeName.Should().Be(BusinessRuleConstants.BusinessRuleFilterLookupElementTypeName,
+			because: "apply-filter actions should use the Creatio filter lookup metadata type");
+		action.LeftExpression.Path.Should().Be("City",
+			because: "the left lookup expression should point at the target lookup");
+		action.LeftExpression.FilterExpression.Should().Be("Country.TimeZone",
+			because: "the target filter path should be stored separately from the target lookup root path");
+		action.LeftExpression.DataValueTypeName.Should().Be("Lookup",
+			because: "parent apply-filter target expressions should preserve the lookup data value type for UI parity");
+		action.LeftExpression.ReferenceSchemaName.Should().Be("City",
+			because: "parent apply-filter target expressions should preserve the target lookup reference schema");
+		action.RightExpression.Path.Should().Be("Country",
+			because: "the right lookup expression should point at the source lookup");
+		action.RightExpression.FilterExpression.Should().Be("TimeZone",
+			because: "the optional source filter path should be stored on the right expression");
+		action.RightExpression.DataValueTypeName.Should().Be("Lookup",
+			because: "parent apply-filter source expressions should preserve the lookup data value type for UI parity");
+		action.RightExpression.ReferenceSchemaName.Should().Be("Country",
+			because: "parent apply-filter source expressions should preserve the source lookup reference schema");
+		parentRule.Triggers.Select(trigger => (trigger.Type, trigger.Name)).Should().Contain([
+				(BusinessRuleConstants.DataLoadedTriggerType, string.Empty),
+				(BusinessRuleConstants.ChangeAttributeValueTriggerType, "Country"),
+				(BusinessRuleConstants.ChangeAttributeValueTriggerType, "Owner")
+			],
+			because: "the parent apply-filter rule should trigger on DataLoaded, source lookup changes, and preserved parent-condition attributes");
+		clearRule.ParentUId.Should().Be(parentRule.UId,
+			because: "autogenerated clear child rules should reference the parent rule");
+		clearRule.ParentActionUId.Should().Be(action.UId,
+			because: "autogenerated clear child rules should reference the parent action");
+		BusinessRuleConditionMetadataDto clearCondition = clearRule.Cases.Single().Condition!
+			.Should().BeOfType<BusinessRuleConditionMetadataDto>(
+				because: "autogenerated clear child rules should persist a direct condition like the UI metadata").Subject;
+		clearCondition.ComparisonType.Should().Be(BusinessRuleConstants.ComparisonNotEqual,
+			because: "clear child rules should compare source and current target-filter values");
+		JsonElement clearConditionJson = JsonSerializer.SerializeToElement(clearCondition, BusinessRuleConstants.JsonOptions);
+		clearConditionJson.GetProperty("leftExpression").EnumerateObject().Select(property => property.Name).Should()
+			.BeEquivalentTo(["typeName", "uId", "type", "path"],
+				because: "UI-generated apply-filter clear child conditions omit lookup descriptor metadata on attribute expressions");
+		clearConditionJson.GetProperty("rightExpression").EnumerateObject().Select(property => property.Name).Should()
+			.BeEquivalentTo(["typeName", "uId", "type", "path"],
+				because: "UI-generated apply-filter clear child conditions keep only the minimal attribute expression payload");
+		FieldSelectionBusinessRuleActionMetadataDto clearAction = clearRule.Cases.Single().Actions.Single()
+			.Should().BeOfType<FieldSelectionBusinessRuleActionMetadataDto>(
+				because: "clear child rules should reset the target lookup through a set-values action").Subject;
+		List<BusinessRuleSetValueItemMetadataDto> clearItems = clearAction.Items.Should().BeOfType<List<BusinessRuleSetValueItemMetadataDto>>(
+			because: "clear child rules should persist one set-values item").Subject;
+		clearItems.Should().ContainSingle(
+			because: "clear child rules should emit exactly one set-values item for the lookup reset");
+		clearItems.Single().Expression.Path.Should().Be("City",
+			because: "clear child rules should reset the target lookup root itself");
+		clearItems.Single().Expression.DataValueTypeName.Should().Be("Lookup",
+			because: "the clear child target expression should preserve the lookup data value type");
+		clearItems.Single().Expression.ReferenceSchemaName.Should().Be("City",
+			because: "the clear child target expression should preserve the target lookup reference schema");
+		clearItems.Single().Value.TypeName.Should().Be(BusinessRuleConstants.BusinessRuleEmptyValueExpressionTypeName,
+			because: "clear child rules should assign the empty lookup expression");
+		clearItems.Single().Value.DataValueTypeName.Should().Be("Lookup",
+			because: "the empty lookup expression should preserve its lookup type metadata");
+		clearItems.Single().Value.Value.Should().Be(Guid.Empty.ToString(),
+			because: "UI parity requires clear child rules to assign the zero GUID empty lookup value");
+		BusinessRuleMetadataDto populateRule = BusinessRuleMetadataConverter.ToEntityMetadata(
+			attributeMap,
+			new BusinessRule(
+				rule.Caption,
+				rule.Condition,
+				[
+					new ApplyFilterBusinessRuleAction(
+						"City",
+						"Country.TimeZone",
+						"Country",
+						"TimeZone",
+						clearValue: false,
+						populateValue: true)
+				]),
+			"UsrOrder")[1];
+		JsonElement populateConditionJson = JsonSerializer.SerializeToElement(
+				populateRule.Cases.Single().Condition!,
+				BusinessRuleConstants.JsonOptions);
+		populateConditionJson.GetProperty("leftExpression").EnumerateObject().Select(property => property.Name).Should()
+			.BeEquivalentTo(["typeName", "uId", "type", "path"],
+				because: "UI-generated apply-filter populate child conditions also omit lookup descriptor metadata");
+		FieldSelectionBusinessRuleActionMetadataDto populateAction = populateRule.Cases.Single().Actions.Single()
+			.Should().BeOfType<FieldSelectionBusinessRuleActionMetadataDto>(
+				because: "populate child rules should assign a lookup value through a set-values action").Subject;
+		List<BusinessRuleSetValueItemMetadataDto> populateItems = populateAction.Items.Should().BeOfType<List<BusinessRuleSetValueItemMetadataDto>>(
+			because: "populate child rules should persist one set-values item").Subject;
+		populateItems.Should().ContainSingle(
+			because: "populate child rules should emit exactly one set-values item for the source lookup");
+		populateItems.Single().Expression.Path.Should().Be("Country",
+			because: "populate child rules should assign the source lookup root");
+		populateItems.Single().Expression.DataValueTypeName.Should().Be("Lookup",
+			because: "the populate child target expression should preserve the lookup data value type");
+		populateItems.Single().Expression.ReferenceSchemaName.Should().Be("Country",
+			because: "the populate child target expression should preserve the source lookup reference schema");
+		populateItems.Single().Value.Path.Should().Be("City.Country.TimeZone",
+			because: "populate child rules should copy the resolved target-related lookup path");
+		populateItems.Single().Value.DataValueTypeName.Should().Be("Lookup",
+			because: "the copied target-related lookup path should preserve its lookup data value type");
+		populateItems.Single().Value.ReferenceSchemaName.Should().Be("TimeZone",
+			because: "the copied target-related lookup path should preserve the final lookup reference schema");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Preserves a user-authored apply-filter parent condition for the Supervisor-created ninja regression scenario.")]
+	public void ToEntityMetadata_Should_Preserve_ApplyFilter_Parent_Condition_For_Supervisor_Created_Ninja() {
+		// Arrange
+		string supervisorId = "4055a3b6-867e-3756-311a-576cbaba3230";
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["CreatedBy"] = new("CreatedBy", "Lookup", "Contact"),
+				["Clan"] = new("Clan", "Lookup", "NinjaClan"),
+				["Clan.CreatedBy"] = new("Clan.CreatedBy", "Lookup", "Contact")
+			};
+		BusinessRule rule = new(
+			"Filter clan by Supervisor-created ninja",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "CreatedBy"),
+						"equal",
+						new BusinessRuleExpression("Const", value: JsonSerializer.SerializeToElement(supervisorId)))
+				]),
+			[
+				new ApplyFilterBusinessRuleAction(
+					"Clan",
+					"CreatedBy",
+					"CreatedBy",
+					null,
+					clearValue: true,
+					populateValue: false)
+			]);
+
+		// Act
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = BusinessRuleMetadataConverter.ToEntityMetadata(attributeMap, rule, "Ninja");
+
+		// Assert
+		BusinessRuleMetadataDto parentRule = metadata[0];
+		BusinessRuleGroupConditionMetadataDto parentConditionGroup = parentRule.Cases.Single().Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
+				because: "apply-filter parent rules should preserve the top-level user condition group").Subject;
+		parentConditionGroup.Conditions.Should().ContainSingle(
+			because: "the reported regression had exactly one Supervisor condition that must survive conversion");
+		BusinessRuleConditionMetadataDto condition = parentConditionGroup.Conditions.Single();
+		condition.LeftExpression.Path.Should().Be("CreatedBy",
+			because: "the preserved condition should still compare the CreatedBy attribute");
+		condition.RightExpression.Should().NotBeNull(
+			because: "the preserved condition should still compare against the Supervisor constant");
+		condition.RightExpression!.Value.Should().NotBeNull(
+			because: "the preserved condition should still carry the Supervisor constant payload");
+		condition.RightExpression!.Value!.ToString().Should().Be(supervisorId,
+			because: "the preserved condition should keep the Supervisor identifier from the original payload");
+		parentRule.Triggers.Select(trigger => (trigger.Type, trigger.Name)).Should().Contain(
+				(BusinessRuleConstants.ChangeAttributeValueTriggerType, "CreatedBy"),
+			because: "the preserved parent condition should keep the parent rule reactive to CreatedBy changes");
 	}
 
 	[Test]
@@ -636,9 +884,12 @@ public sealed class BusinessRuleMetadataConverterTests {
 		string json = JsonSerializer.Serialize(metadata, BusinessRuleConstants.JsonOptions);
 
 		// Assert
-		metadata.Cases[0].Condition!.LogicalOperation.Should().Be(BusinessRuleConstants.LogicalAnd,
+		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
+				because: "standard business rules should still persist grouped case conditions").Subject;
+		conditionGroup.LogicalOperation.Should().Be(BusinessRuleConstants.LogicalAnd,
 			because: "AND groups should map to the business-rule logical AND constant");
-		metadata.Cases[0].Condition.Conditions[0].ComparisonType.Should().Be(BusinessRuleConstants.ComparisonEqual,
+		conditionGroup.Conditions[0].ComparisonType.Should().Be(BusinessRuleConstants.ComparisonEqual,
 			because: "equal comparisons should map to the business-rule equality constant");
 		using JsonDocument document = JsonDocument.Parse(json);
 		string rightExpressionJson = document.RootElement
@@ -698,7 +949,10 @@ public sealed class BusinessRuleMetadataConverterTests {
 
 		// Act
 		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
-		BusinessRuleExpressionMetadataDto rightExpression = metadata.Cases[0].Condition!.Conditions[0].RightExpression!;
+		BusinessRuleGroupConditionMetadataDto dateConditionGroup = metadata.Cases[0].Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
+				because: "standard business rules should still persist grouped case conditions").Subject;
+		BusinessRuleExpressionMetadataDto rightExpression = dateConditionGroup.Conditions[0].RightExpression!;
 		string json = JsonSerializer.Serialize(metadata, BusinessRuleConstants.JsonOptions);
 
 		// Assert
@@ -743,7 +997,10 @@ public sealed class BusinessRuleMetadataConverterTests {
 
 		// Act
 		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
-		BusinessRuleExpressionMetadataDto rightExpression = metadata.Cases[0].Condition!.Conditions[0].RightExpression!;
+		BusinessRuleGroupConditionMetadataDto timeConditionGroup = metadata.Cases[0].Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
+				because: "standard business rules should still persist grouped case conditions").Subject;
+		BusinessRuleExpressionMetadataDto rightExpression = timeConditionGroup.Conditions[0].RightExpression!;
 		string json = JsonSerializer.Serialize(metadata, BusinessRuleConstants.JsonOptions);
 
 		// Assert

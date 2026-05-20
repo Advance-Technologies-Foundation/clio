@@ -27,6 +27,7 @@ internal static class BusinessRuleValidator {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction) {
 		ArgumentNullException.ThrowIfNull(rule);
+		bool isApplyFilterRule = IsApplyFilterOnlyRule(rule);
 
 		if (string.IsNullOrWhiteSpace(rule.Caption)) {
 			throw new ArgumentException("rule.caption is required.");
@@ -39,6 +40,12 @@ internal static class BusinessRuleValidator {
 		if (rule.Actions is null || rule.Actions.Count == 0) {
 			throw new ArgumentException("rule.actions must contain at least one action.");
 		}
+		if (rule.Actions.Exists(action =>
+			    string.Equals(action?.ActionType, ApplyFilterActionTypeName, StringComparison.OrdinalIgnoreCase))
+			&& !isApplyFilterRule) {
+			throw new ArgumentException(
+				"apply-filter rules support exactly one action and cannot be combined with other entity business-rule actions.");
+		}
 		if (string.IsNullOrWhiteSpace(rule.Condition.LogicalOperation)) {
 			throw new ArgumentException("rule.condition.logicalOperation is required.");
 		}
@@ -48,11 +55,11 @@ internal static class BusinessRuleValidator {
 			throw new ArgumentException($"Unsupported rule.condition.logicalOperation '{rule.Condition.LogicalOperation}'. Use AND or OR.");
 		}
 
-		if (rule.Condition.Conditions is null || rule.Condition.Conditions.Count == 0) {
+		if (!isApplyFilterRule && (rule.Condition.Conditions is null || rule.Condition.Conditions.Count == 0)) {
 			throw new ArgumentException("rule.condition.conditions must contain at least one condition.");
 		}
 
-		foreach (BusinessRuleCondition condition in rule.Condition.Conditions) {
+		foreach (BusinessRuleCondition condition in rule.Condition.Conditions ?? []) {
 			if (condition is null) {
 				throw new ArgumentException("rule.condition.conditions[*] is required.");
 			}
@@ -103,6 +110,11 @@ internal static class BusinessRuleValidator {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
 		if (string.IsNullOrEmpty(action.ActionType)) {
 			throw new ArgumentException("rule.actions[*].type is required.");
+		}
+
+		if (string.Equals(action.ActionType, ApplyFilterActionTypeName, StringComparison.OrdinalIgnoreCase)) {
+			ValidateApplyFilterAction(action, attributeMap);
+			return;
 		}
 
 		if (string.Equals(action.ActionType, SetValuesActionTypeName, StringComparison.OrdinalIgnoreCase)) {
@@ -459,6 +471,102 @@ internal static class BusinessRuleValidator {
 		if (IsForwardReferencePath(path)) {
 			throw new ArgumentException(
 				$"{fieldName} must reference a direct entity attribute. Forward reference paths are supported only in rule.actions[*].items[*].value.path.");
+		}
+	}
+
+	private static bool IsApplyFilterOnlyRule(BusinessRule rule) =>
+		rule.Actions.Count == 1
+		&& string.Equals(rule.Actions[0]?.ActionType, ApplyFilterActionTypeName, StringComparison.OrdinalIgnoreCase);
+
+	private static void ValidateApplyFilterAction(
+		BusinessRuleAction action,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		if (action is not ApplyFilterBusinessRuleAction applyFilterAction) {
+			throw new ArgumentException("rule.actions[*] apply-filter payload is invalid.");
+		}
+
+		if (string.IsNullOrWhiteSpace(applyFilterAction.Target)) {
+			throw new ArgumentException("rule.actions[*].target is required when type is 'apply-filter'.");
+		}
+
+		ValidateDirectAttributePath(applyFilterAction.Target, "rule.actions[*].target");
+		BusinessRuleAttributeDescriptor targetDescriptor = ResolveAttribute(
+			attributeMap,
+			applyFilterAction.Target,
+			"rule.actions[*].target");
+		EnsureLookupDescriptor(targetDescriptor, applyFilterAction.Target, "rule.actions[*].target");
+
+		if (string.IsNullOrWhiteSpace(applyFilterAction.Source)) {
+			throw new ArgumentException("rule.actions[*].source is required when type is 'apply-filter'.");
+		}
+
+		ValidateDirectAttributePath(applyFilterAction.Source, "rule.actions[*].source");
+		BusinessRuleAttributeDescriptor sourceDescriptor = ResolveAttribute(
+			attributeMap,
+			applyFilterAction.Source,
+			"rule.actions[*].source");
+		EnsureLookupDescriptor(sourceDescriptor, applyFilterAction.Source, "rule.actions[*].source");
+
+		if (string.IsNullOrWhiteSpace(applyFilterAction.TargetFilterPath)) {
+			throw new ArgumentException("rule.actions[*].targetFilterPath is required when type is 'apply-filter'.");
+		}
+
+		BusinessRuleAttributeDescriptor leftDescriptor = ResolveRelativeLookupPath(
+			attributeMap,
+			applyFilterAction.Target,
+			applyFilterAction.TargetFilterPath,
+			"rule.actions[*].targetFilterPath");
+
+		BusinessRuleAttributeDescriptor rightDescriptor = string.IsNullOrWhiteSpace(applyFilterAction.SourceFilterPath)
+			? sourceDescriptor
+			: ResolveRelativeLookupPath(
+				attributeMap,
+				applyFilterAction.Source,
+				applyFilterAction.SourceFilterPath,
+				"rule.actions[*].sourceFilterPath");
+
+		ValidateCompatibleDescriptors(leftDescriptor, rightDescriptor);
+
+		if (!string.IsNullOrWhiteSpace(applyFilterAction.SourceFilterPath) && applyFilterAction.PopulateValue) {
+			throw new ArgumentException(
+				"rule.actions[*].populateValue is not supported when rule.actions[*].sourceFilterPath is set for apply-filter.");
+		}
+	}
+
+	private static BusinessRuleAttributeDescriptor ResolveRelativeLookupPath(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		string rootPath,
+		string relativePath,
+		string fieldName) {
+		string combinedPath = $"{rootPath}.{relativePath.Trim()}";
+		return ResolveAttribute(attributeMap, combinedPath, fieldName);
+	}
+
+	private static void EnsureLookupDescriptor(
+		BusinessRuleAttributeDescriptor descriptor,
+		string path,
+		string fieldName) {
+		if (!string.Equals(descriptor.DataValueTypeName, "Lookup", StringComparison.OrdinalIgnoreCase)) {
+			throw new ArgumentException($"Attribute '{path}' in {fieldName} must be a Lookup.");
+		}
+
+		if (string.IsNullOrWhiteSpace(descriptor.ReferenceSchemaName)) {
+			throw new ArgumentException($"Lookup attribute '{path}' in {fieldName} must declare a reference schema.");
+		}
+	}
+
+	private static void ValidateCompatibleDescriptors(
+		BusinessRuleAttributeDescriptor leftDescriptor,
+		BusinessRuleAttributeDescriptor rightDescriptor) {
+		if (!string.Equals(leftDescriptor.DataValueTypeName, rightDescriptor.DataValueTypeName, StringComparison.OrdinalIgnoreCase)) {
+			throw new ArgumentException(
+				$"apply-filter compares target path '{leftDescriptor.Path}' ({leftDescriptor.DataValueTypeName}) to source path '{rightDescriptor.Path}' ({rightDescriptor.DataValueTypeName}). Both sides must have the same data value type.");
+		}
+
+		if (string.Equals(leftDescriptor.DataValueTypeName, "Lookup", StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(leftDescriptor.ReferenceSchemaName, rightDescriptor.ReferenceSchemaName, StringComparison.OrdinalIgnoreCase)) {
+			throw new ArgumentException(
+				$"apply-filter compares lookup path '{leftDescriptor.Path}' ({leftDescriptor.ReferenceSchemaName}) to '{rightDescriptor.Path}' ({rightDescriptor.ReferenceSchemaName}). Both lookup sides must reference the same schema.");
 		}
 	}
 }

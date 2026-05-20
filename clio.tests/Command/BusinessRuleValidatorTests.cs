@@ -855,6 +855,99 @@ public sealed class BusinessRuleValidatorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Accepts apply-filter rules with an empty condition group when lookup paths resolve to matching types.")]
+	public void Validate_Should_Accept_ApplyFilter_With_Empty_Condition_Group() {
+		// Arrange
+		BusinessRule rule = new(
+			"Filter city by country",
+			new BusinessRuleConditionGroup("AND", []),
+			[
+				new ApplyFilterBusinessRuleAction(
+					"City",
+					"Country.TimeZone",
+					"Country",
+					"TimeZone",
+					clearValue: true,
+					populateValue: false)
+			]);
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["City"] = new("City", "Lookup", "City"),
+				["City.Country.TimeZone"] = new("City.Country.TimeZone", "Lookup", "TimeZone"),
+				["Country"] = new("Country", "Lookup", "Country"),
+				["Country.TimeZone"] = new("Country.TimeZone", "Lookup", "TimeZone")
+			};
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, attributeMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "apply-filter is the one entity-rule shape that keeps its logic inside the action payload and may omit outer conditions");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects apply-filter rules that combine the lookup-filter action with any other entity action.")]
+	public void Validate_Should_Reject_ApplyFilter_Combined_With_Other_Action() {
+		// Arrange
+		BusinessRule rule = new(
+			"Invalid mixed rule",
+			new BusinessRuleConditionGroup("AND", []),
+			[
+				new ApplyFilterBusinessRuleAction("City", "Country", "Country", null),
+				new MakeRequiredBusinessRuleAction(["Owner"])
+			]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("City", 10, "City"),
+			CreateColumn("Country", 10, "Country"),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("apply-filter rules support exactly one action and cannot be combined with other entity business-rule actions.",
+				because: "apply-filter persistence expands into a dedicated parent/child rule family and cannot share a single input rule with other action kinds");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects apply-filter populateValue when sourceFilterPath is provided.")]
+	public void Validate_Should_Reject_ApplyFilter_PopulateValue_With_SourceFilterPath() {
+		// Arrange
+		BusinessRule rule = new(
+			"Invalid populate filter",
+			new BusinessRuleConditionGroup("AND", []),
+			[
+				new ApplyFilterBusinessRuleAction(
+					"City",
+					"Country.TimeZone",
+					"Country",
+					"TimeZone",
+					clearValue: false,
+					populateValue: true)
+			]);
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["City"] = new("City", "Lookup", "City"),
+				["City.Country.TimeZone"] = new("City.Country.TimeZone", "Lookup", "TimeZone"),
+				["Country"] = new("Country", "Lookup", "Country"),
+				["Country.TimeZone"] = new("Country.TimeZone", "Lookup", "TimeZone")
+			};
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, attributeMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.actions[*].populateValue is not supported when rule.actions[*].sourceFilterPath is set for apply-filter.",
+				because: "current Freedom UI behavior does not allow back-population when the source side is a nested lookup path");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects conditions that omit the right expression payload.")]
 	public void Validate_Should_Reject_Missing_Right_Expression() {
 		// Arrange
@@ -902,8 +995,8 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("Unsupported rule.actions[*].type 'set-visible'. Supported values: make-editable, make-read-only, make-required, make-optional, set-values.",
-				because: "the current business-rule action subset is intentionally limited to field state changes and constant Set values");
+			.WithMessage("Unsupported rule.actions[*].type 'set-visible'. Supported values: make-editable, make-read-only, make-required, make-optional, set-values, apply-filter.",
+				because: "the current business-rule action subset is intentionally limited to supported field-state, set-values, and lookup-filter actions");
 	}
 
 	[Test]

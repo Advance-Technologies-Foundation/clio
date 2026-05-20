@@ -46,7 +46,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			.GetProperty("actions")
 			.GetProperty("items");
 		JsonElement anyOf = actionSchema.GetProperty("anyOf");
-		anyOf.GetArrayLength().Should().Be(5,
+		anyOf.GetArrayLength().Should().Be(6,
 			because: "the real MCP tools/list schema should describe each supported business-rule action subtype");
 		anyOf.EnumerateArray().Select(GetActionType).Should().NotContain(["hide-element", "show-element"],
 			because: "page-only actions should not appear in the entity business-rule runtime schema");
@@ -62,6 +62,19 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		setValuesItemsSchema.GetProperty("properties").EnumerateObject()
 			.Select(property => property.Name).Should().Contain(["expression", "value"],
 				because: "Set values action items should advertise target and value expression objects");
+		JsonElement applyFilterSchema = anyOf.EnumerateArray()
+			.Single(branch => branch.GetProperty("properties").GetProperty("type").GetProperty("const").GetString() == "apply-filter");
+		applyFilterSchema.GetProperty("properties").EnumerateObject()
+			.Select(property => property.Name).Should().Contain([
+				"type",
+				"target",
+				"targetFilterPath",
+				"source",
+				"sourceFilterPath",
+				"clearValue",
+				"populateValue"
+			],
+			because: "apply-filter should advertise its dedicated lookup-filter payload fields through the runtime schema");
 	}
 
 	[Test]
@@ -94,6 +107,38 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		execution.Output.Should().Contain(message =>
 				ContainsText(message.Value, invalidEnvironmentName),
 			because: "the failure should come from resolving the requested environment, not from deserializing the Set values payload");
+	}
+
+	[Test]
+	[Description("Binds an apply-filter business-rule payload through the real MCP server and reports an invalid environment failure from command execution.")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tool binds apply-filter payloads")]
+	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with an apply-filter payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
+	public async Task BusinessRuleCreate_Should_Bind_ApplyFilter_Payload_And_Report_Invalid_Environment() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-apply-filter-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["environmentName"] = invalidEnvironmentName,
+				["packageName"] = "UsrPkg",
+				["entitySchemaName"] = "UsrOrder",
+				["rule"] = CreateApplyFilterRule()
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "valid apply-filter payloads should bind and return the standard command execution envelope");
+		execution.ExitCode.Should().NotBe(0,
+			because: "the intentionally missing environment should fail during command execution");
+		execution.Output.Should().Contain(message =>
+				ContainsText(message.Value, invalidEnvironmentName),
+			because: "the failure should come from resolving the requested environment, not from deserializing the apply-filter payload");
 	}
 
 	[Test]
@@ -231,6 +276,25 @@ public sealed class EntityBusinessRuleToolE2ETests {
 						CreateFormulaSetValuesItem("UsrTotalScore", "UsrScore + UsrBonusScore"),
 						CreateAttributeSetValuesItem("UsrCreatorAge", "CreatedBy.Age")
 					}
+				}
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateApplyFilterRule() =>
+		new Dictionary<string, object?> {
+			["caption"] = "Filter city by country",
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = Array.Empty<object>()
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "apply-filter",
+					["target"] = "City",
+					["targetFilterPath"] = "Country",
+					["source"] = "Country",
+					["clearValue"] = true,
+					["populateValue"] = true
 				}
 			}
 		};

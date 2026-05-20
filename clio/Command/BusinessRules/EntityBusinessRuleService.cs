@@ -45,14 +45,14 @@ internal sealed class EntityBusinessRuleService(
 		BusinessRuleValidator.Validate(request.Rule, attributeContext.Attributes);
 		ValidateFormulas(attributeContext.EntitySchema.Name, attributeContext.Attributes, request.Rule);
 
-		BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToMetadata(
+		IReadOnlyList<BusinessRuleMetadataDto> createdRules = BusinessRuleMetadataConverter.ToEntityMetadata(
 			attributeContext.Attributes,
 			request.Rule,
 			attributeContext.EntitySchema.Name);
 		return businessRuleAddonService.AppendRule(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			request.Rule,
-			createdRule);
+			createdRules);
 	}
 
 	private void ValidateFormulas(
