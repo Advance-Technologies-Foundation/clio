@@ -56,18 +56,18 @@ public sealed class PageUpdateTool(
 					SamplingReview = samplingReview
 				};
 		}
-		PageUpdateResponse response;
-		lock (CommandExecutionSyncRoot) {
+		PageUpdateResponse response = ExecuteWithCleanLog(() => {
 			PageUpdateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageUpdateCommand>(options);
 			} catch (Exception ex) {
 				return new PageUpdateResponse { Success = false, Error = ex.Message };
 			}
-			resolvedCommand.TryUpdatePage(options, out response);
-			if (response.Success && args.Verify == true)
-				TryVerifyPage(args, response);
-		}
+			resolvedCommand.TryUpdatePage(options, out PageUpdateResponse inner);
+			if (inner.Success && args.Verify == true)
+				TryVerifyPage(args, inner);
+			return inner;
+		});
 		response.SamplingReview = samplingReview;
 		return response;
 	}

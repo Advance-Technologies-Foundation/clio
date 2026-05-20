@@ -33,7 +33,7 @@ public sealed class GetSchemaTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		lock (CommandExecutionSyncRoot) {
+		return ExecuteWithCleanLog(() => {
 			GetSourceCodeSchemaCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<GetSourceCodeSchemaCommand>(options);
@@ -43,7 +43,7 @@ public sealed class GetSchemaTool(
 			}
 			resolvedCommand.TryGetSchema(options, out GetSourceCodeSchemaResponse response);
 			return response;
-		}
+		});
 	}
 }
 

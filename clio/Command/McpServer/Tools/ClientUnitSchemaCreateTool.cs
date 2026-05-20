@@ -31,17 +31,16 @@ public sealed class ClientUnitSchemaCreateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		ClientUnitSchemaCreateResponse response;
-		lock (CommandExecutionSyncRoot) {
+		return ExecuteWithCleanLog(() => {
 			ClientUnitSchemaCreateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<ClientUnitSchemaCreateCommand>(options);
 			} catch (Exception ex) {
 				return new ClientUnitSchemaCreateResponse { Success = false, Error = ex.Message };
 			}
-			resolvedCommand.TryCreate(options, out response);
-		}
-		return response;
+			resolvedCommand.TryCreate(options, out ClientUnitSchemaCreateResponse response);
+			return response;
+		});
 	}
 }
 

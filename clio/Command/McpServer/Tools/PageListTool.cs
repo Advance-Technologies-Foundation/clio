@@ -59,7 +59,7 @@ public sealed class PageListTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		lock (CommandExecutionSyncRoot) {
+		return ExecuteWithCleanLog(() => {
 			PageListCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageListCommand>(options);
@@ -68,7 +68,7 @@ public sealed class PageListTool(
 			}
 			resolvedCommand.TryListPages(options, out PageListResponse response);
 			return response;
-		}
+		});
 	}
 
 	private static string? GetLegacyAliasError(PageListArgs args) {

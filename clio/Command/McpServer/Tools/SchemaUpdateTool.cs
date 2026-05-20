@@ -36,7 +36,7 @@ public sealed class SchemaUpdateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		lock (CommandExecutionSyncRoot) {
+		return ExecuteWithCleanLog(() => {
 			SourceCodeSchemaUpdateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<SourceCodeSchemaUpdateCommand>(options);
@@ -46,7 +46,7 @@ public sealed class SchemaUpdateTool(
 			}
 			resolvedCommand.TryUpdateSchema(options, out SourceCodeSchemaUpdateResponse response);
 			return response;
-		}
+		});
 	}
 }
 
