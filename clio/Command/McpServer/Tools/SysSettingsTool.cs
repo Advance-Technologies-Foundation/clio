@@ -198,7 +198,7 @@ public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver) {
 		return uId;
 	}
 
-	private SysSettingCreateResult ApplyInitialValue(SysSettingsManager manager, CreateSysSettingArgs args) {
+	private static SysSettingCreateResult ApplyInitialValue(SysSettingsManager manager, CreateSysSettingArgs args) {
 		if (args.Value is null) {
 			return new SysSettingCreateResult(true, args.Code, args.ValueTypeName);
 		}
