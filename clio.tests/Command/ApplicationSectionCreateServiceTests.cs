@@ -18,6 +18,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 	private IApplicationClient _applicationClient = null!;
 	private IServiceUrlBuilder _serviceUrlBuilder = null!;
 	private IApplicationInfoService _applicationInfoService = null!;
+	private ISysSettingsManager _sysSettingsManager = null!;
 	private EnvironmentSettings _environmentSettings = null!;
 	private ApplicationSectionCreateService _sut = null!;
 	private ILogger _logger = null!;
@@ -43,12 +44,15 @@ public sealed class ApplicationSectionCreateServiceTests {
 			.Returns(callInfo => $"https://example.invalid/{callInfo.ArgAt<string>(0)}");
 		IServiceUrlBuilderFactory serviceUrlBuilderFactory = Substitute.For<IServiceUrlBuilderFactory>();
 		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
+		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns("Usr");
 		_sut = new ApplicationSectionCreateService(
 			_settingsRepository,
 			_applicationClientFactory,
 			_serviceUrlBuilder,
 			serviceUrlBuilderFactory,
 			_applicationInfoService,
+			_ => _sysSettingsManager,
 			_logger);
 	}
 
@@ -306,6 +310,82 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
+	[Description("Section code uses the default Usr prefix when SchemaNamePrefix returns Usr.")]
+	public void CreateSection_Should_Generate_Code_With_Usr_Prefix() {
+		// Arrange
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns("Usr");
+		SetUpPrefixTestMocks("UsrTestSection");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(ApplicationCode: "UsrOrdersApp", Caption: "TestSection"));
+
+		// Assert
+		result.Section.Code.Should().Be("UsrTestSection",
+			because: "SchemaNamePrefix=Usr should produce the Usr-prefixed section code");
+		result.Entity!.Name.Should().Be("UsrTestSection",
+			because: "the entity schema name should match the prefix-derived section code");
+	}
+
+	[Test]
+	[Description("Section code uses a custom prefix when SchemaNamePrefix returns a non-default value.")]
+	public void CreateSection_Should_Generate_Code_With_Custom_Prefix() {
+		// Arrange
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns("Tst");
+		SetUpPrefixTestMocks("TstTestSection");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(ApplicationCode: "UsrOrdersApp", Caption: "TestSection"));
+
+		// Assert
+		result.Section.Code.Should().Be("TstTestSection",
+			because: "SchemaNamePrefix=Tst should produce the Tst-prefixed section code instead of the hardcoded Usr");
+		result.Entity!.Name.Should().Be("TstTestSection",
+			because: "the entity schema name should match the prefix-derived section code");
+	}
+
+	[Test]
+	[Description("Section code has no prefix when SchemaNamePrefix is empty.")]
+	public void CreateSection_Should_Generate_Code_With_No_Prefix_When_Prefix_Is_Empty() {
+		// Arrange
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns(string.Empty);
+		SetUpPrefixTestMocks("TestSection");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(ApplicationCode: "UsrOrdersApp", Caption: "TestSection"));
+
+		// Assert
+		result.Section.Code.Should().Be("TestSection",
+			because: "empty SchemaNamePrefix should produce an unprefixed section code");
+		result.Entity!.Name.Should().Be("TestSection",
+			because: "the entity schema name should match the unprefixed section code");
+	}
+
+	[Test]
+	[Description("Section code inserts an underscore separator after the prefix when the caption starts with a digit, using the actual prefix length instead of the legacy hardcoded value.")]
+	public void CreateSection_Should_Insert_Underscore_After_Prefix_When_Caption_Starts_With_Digit() {
+		// Arrange
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns("MyPrefix");
+		SetUpPrefixTestMocks("MyPrefix_2024Orders");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(ApplicationCode: "UsrOrdersApp", Caption: "2024 Orders"));
+
+		// Assert
+		result.Section.Code.Should().Be("MyPrefix_2024Orders",
+			because: "the underscore separator must be inserted at the prefix boundary (length 8) so the identifier does not start with a digit");
+		result.Entity!.Name.Should().Be("MyPrefix_2024Orders",
+			because: "the entity schema name should match the prefix-derived section code");
+	}
+
+	[Test]
 	[Description("Rejects requests that omit application-code before any remote calls are made.")]
 	public void CreateSection_Should_Reject_Missing_ApplicationCode() {
 		// Arrange
@@ -353,6 +433,44 @@ public sealed class ApplicationSectionCreateServiceTests {
 			.WithMessage("*#RRGGBB format*",
 				because: "non-hex strings are never valid palette values");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+	}
+
+	private void SetUpPrefixTestMocks(string expectedCode) {
+		ApplicationEntityInfoResult entity = new("entity-uid", expectedCode, "TestSection", []);
+		ApplicationInfoResult beforeInfo = new(
+			"pkg-uid", "UsrOrdersApp", [], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		ApplicationInfoResult afterInfo = new(
+			"pkg-uid", "UsrOrdersApp", [entity],
+			[new PageListItem { SchemaName = $"{expectedCode}_FormPage", UId = "page-new", PackageName = "UsrOrdersApp", ParentSchemaName = "BasePageV2" }],
+			"app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(beforeInfo, afterInfo);
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysAppIcons\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"11111111-1111-1111-1111-111111111111"}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"Code\"", StringComparison.Ordinal) &&
+				!body.Contains("\"filters\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)))
+			.Returns($$$"""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"TestSection","Code":"{{{expectedCode}}}","Description":"","EntitySchemaName":"{{{expectedCode}}}","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":"195785B4-F55A-4E72-ACE3-6480B54C8FA5"}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+				body.Contains("\"filters\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
 	}
 }
 
