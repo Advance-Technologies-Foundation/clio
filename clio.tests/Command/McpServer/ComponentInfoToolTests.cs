@@ -452,7 +452,7 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
-	[Description("Returns grouped mobile component summaries when schema-type is 'mobile'.")]
+	[Description("Returns grouped mobile component summaries when schema-type is 'mobile'. Mobile responses now carry the same resolvedTargetVersion + resolvedFrom markers as web — both flavors share the same async pipeline and the same wrapped envelope, so AI consumers no longer need to branch on schema-type to discover version metadata.")]
 	public async Task ComponentInfoTool_Should_Return_Mobile_Catalog_When_SchemaType_Is_Mobile() {
 		ComponentInfoTool tool = CreateTool();
 
@@ -464,10 +464,10 @@ public sealed class ComponentInfoToolTests {
 			because: "omitting component-type should return list mode for the mobile catalog");
 		response.Count.Should().Be(2,
 			because: "the test mobile registry has exactly two entries");
-		response.ResolvedTargetVersion.Should().BeNull(
-			because: "mobile responses must omit the web-only version marker — mobile catalog has no CDN/version concept");
-		response.ResolvedFrom.Should().BeNull(
-			because: "mobile responses must omit the resolver tier marker — there is no per-environment probe for mobile");
+		response.ResolvedTargetVersion.Should().NotBeNullOrEmpty(
+			because: "mobile and web now share the same async pipeline and both carry the resolved catalog version");
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "the stub resolver in the test fixture reports latest-fallback regardless of flavor");
 	}
 
 	[Test]
@@ -801,15 +801,19 @@ public sealed class ComponentInfoToolTests {
 			_state = ComponentInfoCatalog.BuildState(entries, "In-memory mobile test catalog", "mobile", ComponentRegistrySource.Local);
 		}
 
-		public IReadOnlyList<ComponentRegistryEntry> GetAll() => _state.Entries;
+		public Task<ComponentCatalogState> LoadAsync(string requestedVersion, CancellationToken cancellationToken = default) =>
+			Task.FromResult(_state);
 
-		public IReadOnlyList<ComponentRegistryEntry> Search(string? search) =>
-			ComponentInfoGrouping.FilterEntries(_state.Entries, search);
+		public Task<IReadOnlyList<ComponentRegistryEntry>> GetAllAsync(string requestedVersion, CancellationToken cancellationToken = default) =>
+			Task.FromResult(_state.Entries);
 
-		public ComponentRegistryEntry? Find(string componentType) =>
-			string.IsNullOrWhiteSpace(componentType)
+		public Task<IReadOnlyList<ComponentRegistryEntry>> SearchAsync(string requestedVersion, string? search, CancellationToken cancellationToken = default) =>
+			Task.FromResult(ComponentInfoGrouping.FilterEntries(_state.Entries, search));
+
+		public Task<ComponentRegistryEntry?> FindAsync(string requestedVersion, string componentType, CancellationToken cancellationToken = default) =>
+			Task.FromResult(string.IsNullOrWhiteSpace(componentType)
 				? null
-				: _state.Lookup.TryGetValue(componentType.Trim(), out ComponentRegistryEntry? entry) ? entry : null;
+				: _state.Lookup.TryGetValue(componentType.Trim(), out ComponentRegistryEntry? entry) ? entry : null);
 	}
 
 	/// <summary>Test double that returns a pre-configured platform version resolution.</summary>

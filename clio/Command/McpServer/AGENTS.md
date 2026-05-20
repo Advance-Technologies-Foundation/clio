@@ -204,6 +204,47 @@ to dereference globals separately. The merge is also exercised by
 `Live_Snapshot_Detail_Should_Merge_Global_Content_Into_Inputs_And_TypeDefinitions`
 in `ComponentRegistrySnapshotTests`.
 
+### Mobile flavor (`schema-type=mobile`)
+
+The mobile component catalog goes through the **same** infrastructure as the web
+catalog — same `IComponentRegistryClient` implementation, same wrapped envelope
+deserialisation, same `[JsonExtensionData] UnmappedExtensions` snapshot guard,
+same async pipeline, same `CreateDetailResponse`, same response shape
+(`inputs`/`outputs`/`content.typeDefinitions`/`documentation`/
+`resolvedTargetVersion`/`resolvedFrom`). The two flavors are isolated by a
+`RegistryFlavor` config carried on the client at construction time:
+
+| Flavor | CDN file | Cache subdirectory | Local-override env var | Bundled fallback |
+|---|---|---|---|---|
+| Web (default) | `{base}/{version}/ComponentRegistry.json` | `~/.clio/cache/component-registry/` | `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` | none (exhaustion → `ComponentRegistryUnavailableException`) |
+| Mobile | `{base}/{version}/MobileComponentRegistry.json` | `~/.clio/cache/component-registry/mobile/` | `CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE` | `Command/McpServer/Data/MobileComponentRegistry.json` (transitional, while producer rolls out) |
+
+The mobile fallback is a deliberate, narrowly-scoped concession: the academy
+mirror does not yet serve `MobileComponentRegistry.json` (the producer-side
+Jenkins job for the mobile feed is in progress), so the bundled in-repo file
+keeps `get-component-info schema-type=mobile` working in the interim. Once the
+producer publishes, the bundled file becomes dead weight — the
+`Command/McpServer/Data/**` csproj content glob will quietly stop having a
+file to ship, and the entire `BundledFileRelativePath` slot on
+`RegistryFlavor.Mobile` can be set to null in a follow-up commit. No mobile
+asymmetry survives in code paths beyond this one fallback tier.
+
+DI registration sits in `BindingsModule.cs`:
+
+```csharp
+services.AddSingleton<IComponentRegistryClient, ComponentRegistryClient>();      // web (default)
+services.AddSingleton<IMobileComponentRegistryClient>(sp => new MobileComponentRegistryClient(
+    sp.GetRequiredService<IHttpClientFactory>(),
+    ComponentRegistryCacheStore.WithSubdirectory(..., RegistryFlavor.Mobile.CacheSubdirectoryName),
+    ...,
+    sp.GetRequiredService<IWorkingDirectoriesProvider>()));
+```
+
+`IMobileComponentRegistryClient` is a marker interface that adds no methods over
+`IComponentRegistryClient` — it exists so the DI container can distinguish the
+two singleton registrations at injection time. The implementation
+(`MobileComponentRegistryClient`) inherits verbatim from the web type.
+
 ### Snapshot guard against silent data loss
 
 Every POCO on the registry deserialisation path carries an

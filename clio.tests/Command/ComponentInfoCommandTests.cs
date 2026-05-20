@@ -374,12 +374,11 @@ public sealed class ComponentInfoCommandTests {
 
 	/// <summary>Test double for the mobile catalog: in-memory entries, no filesystem.</summary>
 	private sealed class StubMobileCatalog : IMobileComponentInfoCatalog {
-		private readonly IReadOnlyList<ComponentRegistryEntry> _entries;
-		private readonly IReadOnlyDictionary<string, ComponentRegistryEntry> _lookup;
+		private readonly ComponentCatalogState _state;
 
 		private StubMobileCatalog(IReadOnlyList<ComponentRegistryEntry> entries) {
-			_entries = entries;
-			_lookup = entries.ToDictionary(e => e.ComponentType, StringComparer.OrdinalIgnoreCase);
+			Dictionary<string, ComponentRegistryEntry> lookup = entries.ToDictionary(e => e.ComponentType, StringComparer.OrdinalIgnoreCase);
+			_state = new ComponentCatalogState(entries, lookup, "latest", ComponentRegistrySource.Local);
 		}
 
 		public static StubMobileCatalog Empty() => new(Array.Empty<ComponentRegistryEntry>());
@@ -391,15 +390,19 @@ public sealed class ComponentInfoCommandTests {
 			return new StubMobileCatalog(parsed);
 		}
 
-		public IReadOnlyList<ComponentRegistryEntry> GetAll() => _entries;
+		public Task<ComponentCatalogState> LoadAsync(string requestedVersion, CancellationToken cancellationToken = default) =>
+			Task.FromResult(_state);
 
-		public IReadOnlyList<ComponentRegistryEntry> Search(string? search) =>
-			ComponentInfoGrouping.FilterEntries(_entries, search);
+		public Task<IReadOnlyList<ComponentRegistryEntry>> GetAllAsync(string requestedVersion, CancellationToken cancellationToken = default) =>
+			Task.FromResult(_state.Entries);
 
-		public ComponentRegistryEntry? Find(string componentType) =>
-			string.IsNullOrWhiteSpace(componentType)
+		public Task<IReadOnlyList<ComponentRegistryEntry>> SearchAsync(string requestedVersion, string? search, CancellationToken cancellationToken = default) =>
+			Task.FromResult(ComponentInfoGrouping.FilterEntries(_state.Entries, search));
+
+		public Task<ComponentRegistryEntry?> FindAsync(string requestedVersion, string componentType, CancellationToken cancellationToken = default) =>
+			Task.FromResult(string.IsNullOrWhiteSpace(componentType)
 				? null
-				: _lookup.TryGetValue(componentType.Trim(), out ComponentRegistryEntry? entry) ? entry : null;
+				: _state.Lookup.TryGetValue(componentType.Trim(), out ComponentRegistryEntry? entry) ? entry : null);
 	}
 
 	private sealed class StubResolverFactory(PlatformVersionResolution result) : IPlatformVersionResolverFactory {

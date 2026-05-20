@@ -45,10 +45,7 @@ public sealed class ComponentInfoTool(
 		CancellationToken cancellationToken = default) {
 		ComponentInfoArgs args = new(componentType, search, schemaType);
 		try {
-			if (IsMobile(args.SchemaType)) {
-				return BuildMobileResponse(args);
-			}
-			return await BuildWebResponseAsync(args, cancellationToken).ConfigureAwait(false);
+			return await BuildResponseAsync(args, cancellationToken).ConfigureAwait(false);
 		}
 		catch (Exception ex) {
 			return new ComponentInfoResponse {
@@ -61,9 +58,21 @@ public sealed class ComponentInfoTool(
 		}
 	}
 
-	private async Task<ComponentInfoResponse> BuildWebResponseAsync(ComponentInfoArgs args, CancellationToken cancellationToken) {
+	/// <summary>
+	/// Single async pipeline that backs both the web and mobile flavors. The branch
+	/// only picks the right catalog source up front; everything below — version
+	/// resolution, envelope merge, documentation lazy-load, suggestion fallback — is
+	/// identical on both surfaces. That symmetry is what makes the response shape
+	/// (<c>inputs</c> / <c>outputs</c> / <c>content.typeDefinitions</c> /
+	/// <c>documentation</c> / <c>resolvedTargetVersion</c> / <c>resolvedFrom</c>)
+	/// stable across the <c>schema-type</c> dimension.
+	/// </summary>
+	private async Task<ComponentInfoResponse> BuildResponseAsync(ComponentInfoArgs args, CancellationToken cancellationToken) {
+		bool isMobile = IsMobile(args.SchemaType);
 		PlatformVersionResolution version = await versionResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
-		ComponentCatalogState state = await catalog.LoadAsync(version.ResolvedVersion, cancellationToken).ConfigureAwait(false);
+		ComponentCatalogState state = isMobile
+			? await mobileCatalog.LoadAsync(version.ResolvedVersion, cancellationToken).ConfigureAwait(false)
+			: await catalog.LoadAsync(version.ResolvedVersion, cancellationToken).ConfigureAwait(false);
 		string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
 			version.Source, version.ResolvedVersion, state.ResolvedVersion);
 
@@ -87,37 +96,6 @@ public sealed class ComponentInfoTool(
 			Items = ComponentInfoGrouping.CreateItems(suggestions),
 			ResolvedTargetVersion = state.ResolvedVersion,
 			ResolvedFrom = resolvedFrom
-		};
-	}
-
-	/// <summary>
-	/// Builds the mobile-schema response branch. The mobile catalog ships as static data
-	/// inside the deployed Data folder, has no CDN tier, and is not version-pinned, so
-	/// the response intentionally omits the <c>resolvedTargetVersion</c> and
-	/// <c>resolvedFrom</c> markers — they would be meaningless here.
-	/// </summary>
-	private ComponentInfoResponse BuildMobileResponse(ComponentInfoArgs args) {
-		if (string.IsNullOrWhiteSpace(args.ComponentType)
-			|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
-			return CreateListResponse(mobileCatalog.Search(args.Search), resolvedTargetVersion: null, resolvedFrom: null);
-		}
-
-		ComponentRegistryEntry? entry = mobileCatalog.Find(args.ComponentType);
-		if (entry is not null) {
-			// Mobile catalog ships as static data without a CDN tier, so the docs
-			// pipeline is not consulted here even if a future mobile entry lists
-			// content.docs[]. Documentation is intentionally null for mobile.
-			// Mobile has no global envelope either — pass globalContent: null.
-			return CreateDetailResponse(entry, resolvedTargetVersion: null, resolvedFrom: null, documentation: null, globalContent: null);
-		}
-
-		IReadOnlyList<ComponentRegistryEntry> suggestions = mobileCatalog.Search(args.Search);
-		return new ComponentInfoResponse {
-			Success = false,
-			Mode = "list",
-			Error = $"Component type '{args.ComponentType}' was not found.",
-			Count = suggestions.Count,
-			Items = ComponentInfoGrouping.CreateItems(suggestions)
 		};
 	}
 

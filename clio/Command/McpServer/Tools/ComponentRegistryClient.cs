@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Common;
 using Microsoft.Extensions.Logging;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -58,9 +59,66 @@ public enum ComponentRegistrySource {
 }
 
 /// <summary>
-/// HTTP-backed implementation of <see cref="IComponentRegistryClient"/>.
+/// Profile that distinguishes the web and mobile component-registry pipelines. The
+/// two consumers share the same cache+CDN infrastructure (same envelope shape, same
+/// 5min TTL, same retry/backoff, same UnmappedExtensions guard), but they read
+/// different files from the CDN and from disk, and each has its own developer
+/// local-override env var.
 /// </summary>
-public sealed class ComponentRegistryClient : IComponentRegistryClient {
+/// <param name="DisplayName">Stable identifier used in log lines (e.g. <c>"web"</c>, <c>"mobile"</c>).</param>
+/// <param name="CdnRegistryFileName">Bare filename served by the academy CDN; e.g. <c>"ComponentRegistry.json"</c>.</param>
+/// <param name="LocalFileEnvironmentVariable">Name of the env var that forces a local override of the entire chain.</param>
+/// <param name="CacheSubdirectoryName">
+/// Optional sub-folder under <c>~/.clio/cache/component-registry/</c> isolating this
+/// flavor's payloads. Empty for the web flavor (back-compat with cache files written
+/// before the mobile flavor existed).
+/// </param>
+/// <param name="BundledFileRelativePath">
+/// Optional path (relative to the executing directory) to a static file shipped with
+/// the install that should serve as a final fallback when both cache and CDN miss.
+/// Used today by the mobile flavor as a transitional bootstrap: the producer is in
+/// the process of publishing <c>MobileComponentRegistry.json</c> to the academy CDN,
+/// and the bundled file keeps <c>get-component-info schema-type=mobile</c> working in
+/// the meantime. <c>null</c> for the web flavor — web exhaustion throws
+/// <see cref="ComponentRegistryUnavailableException"/> per the published 2-tier contract.
+/// </param>
+public sealed record RegistryFlavor(
+	string DisplayName,
+	string CdnRegistryFileName,
+	string LocalFileEnvironmentVariable,
+	string CacheSubdirectoryName,
+	string? BundledFileRelativePath) {
+
+	/// <summary>Web flavor: the original component registry — <c>academy/api/mcp/{version}/ComponentRegistry.json</c>.</summary>
+	public static readonly RegistryFlavor Web = new(
+		DisplayName: "web",
+		CdnRegistryFileName: "ComponentRegistry.json",
+		LocalFileEnvironmentVariable: "CLIO_COMPONENT_REGISTRY_LOCAL_FILE",
+		CacheSubdirectoryName: string.Empty,
+		BundledFileRelativePath: null);
+
+	/// <summary>
+	/// Mobile flavor: same wrapped-envelope contract, separate file —
+	/// <c>academy/api/mcp/{version}/MobileComponentRegistry.json</c>. Cache lives in a
+	/// dedicated subfolder so web and mobile payloads cannot collide on the same
+	/// <c>latest.json</c> key. The bundled file
+	/// <c>Command/McpServer/Data/MobileComponentRegistry.json</c> backs up the chain
+	/// until producer publishes to CDN.
+	/// </summary>
+	public static readonly RegistryFlavor Mobile = new(
+		DisplayName: "mobile",
+		CdnRegistryFileName: "MobileComponentRegistry.json",
+		LocalFileEnvironmentVariable: "CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE",
+		CacheSubdirectoryName: "mobile",
+		BundledFileRelativePath: "Command/McpServer/Data/MobileComponentRegistry.json");
+}
+
+/// <summary>
+/// HTTP-backed implementation of <see cref="IComponentRegistryClient"/>. The same
+/// type backs both the web and mobile flavors via the <see cref="RegistryFlavor"/>
+/// constructor parameter.
+/// </summary>
+public class ComponentRegistryClient : IComponentRegistryClient {
 	internal const string HttpClientName = "component-registry";
 
 	// The default CDN base URL is a deliberate product constant — it identifies the
@@ -70,8 +128,10 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 		Justification = "This is the product's well-known CDN endpoint, not a configurable resource path. Overridable at runtime via " + CdnBaseUrlEnvironmentVariable + ".")]
 	internal const string DefaultCdnBaseUrl = "https://academy.creatio.com/api/mcp/";
 
+	/// <summary>Back-compat alias of <see cref="RegistryFlavor.Web"/>.<c>CdnRegistryFileName</c>.</summary>
 	internal const string CdnRegistryFileName = "ComponentRegistry.json";
 	internal const string CdnBaseUrlEnvironmentVariable = "CLIO_COMPONENT_REGISTRY_CDN_BASE_URL";
+	/// <summary>Back-compat alias of <see cref="RegistryFlavor.Web"/>.<c>LocalFileEnvironmentVariable</c>.</summary>
 	internal const string LocalFileEnvironmentVariable = "CLIO_COMPONENT_REGISTRY_LOCAL_FILE";
 	internal const string LatestVersion = "latest";
 	internal const int CdnFetchAttempts = 3;
@@ -83,14 +143,26 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 	private readonly IComponentRegistryCacheStore _cacheStore;
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger<ComponentRegistryClient> _logger;
+	private readonly IWorkingDirectoriesProvider? _workingDirectoriesProvider;
 	private readonly string _cdnBaseUrl;
+	private readonly RegistryFlavor _flavor;
 
 	public ComponentRegistryClient(
 		IHttpClientFactory httpClientFactory,
 		IComponentRegistryCacheStore cacheStore,
 		IFileSystem fileSystem,
 		ILogger<ComponentRegistryClient> logger)
-		: this(httpClientFactory, cacheStore, fileSystem, logger, ResolveCdnBaseUrl()) {
+		: this(httpClientFactory, cacheStore, fileSystem, logger, ResolveCdnBaseUrl(), RegistryFlavor.Web, workingDirectoriesProvider: null) {
+	}
+
+	public ComponentRegistryClient(
+		IHttpClientFactory httpClientFactory,
+		IComponentRegistryCacheStore cacheStore,
+		IFileSystem fileSystem,
+		ILogger<ComponentRegistryClient> logger,
+		RegistryFlavor flavor,
+		IWorkingDirectoriesProvider? workingDirectoriesProvider)
+		: this(httpClientFactory, cacheStore, fileSystem, logger, ResolveCdnBaseUrl(), flavor, workingDirectoriesProvider) {
 	}
 
 	internal ComponentRegistryClient(
@@ -98,11 +170,24 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 		IComponentRegistryCacheStore cacheStore,
 		IFileSystem fileSystem,
 		ILogger<ComponentRegistryClient> logger,
-		string cdnBaseUrl) {
+		string cdnBaseUrl)
+		: this(httpClientFactory, cacheStore, fileSystem, logger, cdnBaseUrl, RegistryFlavor.Web, workingDirectoriesProvider: null) {
+	}
+
+	internal ComponentRegistryClient(
+		IHttpClientFactory httpClientFactory,
+		IComponentRegistryCacheStore cacheStore,
+		IFileSystem fileSystem,
+		ILogger<ComponentRegistryClient> logger,
+		string cdnBaseUrl,
+		RegistryFlavor flavor,
+		IWorkingDirectoriesProvider? workingDirectoriesProvider) {
 		_httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
 		_cacheStore = cacheStore ?? throw new ArgumentNullException(nameof(cacheStore));
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
+		_flavor = flavor ?? throw new ArgumentNullException(nameof(flavor));
+		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_cdnBaseUrl = string.IsNullOrWhiteSpace(cdnBaseUrl) ? DefaultCdnBaseUrl : cdnBaseUrl;
 		if (!_cdnBaseUrl.EndsWith('/')) {
 			_cdnBaseUrl += "/";
@@ -172,14 +257,24 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 			}
 		}
 
-		// Tier exhausted: both the requested version and the latest alias miss in both
-		// the file cache and on the CDN. There is no in-DLL snapshot to fall back to,
-		// so surface a clear error. ComponentInfoTool's catch-all turns this into a
-		// graceful MCP response that points the operator at the local-override env var.
+		// Tier 4 (mobile only, transitional): the bundled file shipped under
+		// Command/McpServer/Data/MobileComponentRegistry.json. The producer is still
+		// rolling out the mobile feed onto academy.creatio.com/api/mcp; until then,
+		// the bundled file keeps mobile `get-component-info` calls working. Web has
+		// no equivalent — its embedded tier was retired in a503b832 once the academy
+		// mirror went live.
+		Stream? bundled = TryOpenBundledFile(requestedVersion);
+		if (bundled is not null) {
+			return new ComponentRegistryFetchResult(bundled, requestedVersion, ComponentRegistrySource.Local);
+		}
+
+		// Tier exhausted: cache + CDN both miss, no local override, no bundled fallback.
+		// Surface a clear error — ComponentInfoTool's catch-all turns it into a graceful
+		// MCP response that points the operator at the flavor's local-override env var.
 		_logger.LogWarning(
-			"component-registry source=unavailable fallbackFrom={Requested} cdn={CdnBaseUrl}",
-			requestedVersion, _cdnBaseUrl);
-		throw new ComponentRegistryUnavailableException(requestedVersion, _cdnBaseUrl);
+			"component-registry source=unavailable flavor={Flavor} fallbackFrom={Requested} cdn={CdnBaseUrl}",
+			_flavor.DisplayName, requestedVersion, _cdnBaseUrl);
+		throw new ComponentRegistryUnavailableException(requestedVersion, _cdnBaseUrl, _flavor.LocalFileEnvironmentVariable);
 	}
 
 	/// <inheritdoc />
@@ -308,7 +403,8 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 	}
 
 	private Stream? TryOpenLocalOverride(string requestedVersion) {
-		string? path = Environment.GetEnvironmentVariable(LocalFileEnvironmentVariable);
+		string envVarName = _flavor.LocalFileEnvironmentVariable;
+		string? path = Environment.GetEnvironmentVariable(envVarName);
 		if (string.IsNullOrWhiteSpace(path)) {
 			return null;
 		}
@@ -319,19 +415,50 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 		// confusing results in long-running `clio mcp serve` sessions.
 		if (!_fileSystem.File.Exists(path)) {
 			_logger.LogWarning(
-				"component-registry local-override-missing version={Version} path={Path}",
-				requestedVersion, path);
+				"component-registry local-override-missing flavor={Flavor} version={Version} path={Path}",
+				_flavor.DisplayName, requestedVersion, path);
 			throw new FileNotFoundException(
 				$"Component registry override file does not exist: '{path}'. " +
-				$"Either fix the path or unset {LocalFileEnvironmentVariable} to fall back to the CDN/cache chain.",
+				$"Either fix the path or unset {envVarName} to fall back to the CDN/cache chain.",
 				path);
 		}
 
 		Stream stream = _fileSystem.File.OpenRead(path);
 		_logger.LogInformation(
-			"component-registry source=local version={Version} path={Path}",
-			requestedVersion, path);
+			"component-registry source=local flavor={Flavor} version={Version} path={Path}",
+			_flavor.DisplayName, requestedVersion, path);
 		return stream;
+	}
+
+	/// <summary>
+	/// Last-resort bundled-file fallback. Only the mobile flavor populates
+	/// <see cref="RegistryFlavor.BundledFileRelativePath"/> — the file ships in the
+	/// install via the <c>Command/McpServer/Data/**</c> csproj content glob and keeps
+	/// <c>get-component-info schema-type=mobile</c> working during the producer-side
+	/// rollout. Returns <c>null</c> for the web flavor (no bundled file configured)
+	/// or when the bundled file is absent (e.g. once the producer goes live and the
+	/// in-repo copy is deleted).
+	/// </summary>
+	private Stream? TryOpenBundledFile(string requestedVersion) {
+		if (string.IsNullOrWhiteSpace(_flavor.BundledFileRelativePath)) {
+			return null;
+		}
+		if (_workingDirectoriesProvider is null) {
+			return null;
+		}
+		string absolutePath = _fileSystem.Path.Combine(
+			_workingDirectoriesProvider.ExecutingDirectory,
+			_flavor.BundledFileRelativePath);
+		if (!_fileSystem.File.Exists(absolutePath)) {
+			_logger.LogInformation(
+				"component-registry bundled-missing flavor={Flavor} version={Version} path={Path}",
+				_flavor.DisplayName, requestedVersion, absolutePath);
+			return null;
+		}
+		_logger.LogInformation(
+			"component-registry source=bundled flavor={Flavor} version={Version} path={Path}",
+			_flavor.DisplayName, requestedVersion, absolutePath);
+		return _fileSystem.File.OpenRead(absolutePath);
 	}
 
 	private static string ResolveCdnBaseUrl() {
@@ -339,14 +466,39 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 		return string.IsNullOrWhiteSpace(envOverride) ? DefaultCdnBaseUrl : envOverride;
 	}
 
-	// Builds {base}{version}/ComponentRegistry.json through Uri composition.
+	// Builds {base}{version}/{flavor.CdnRegistryFileName} through Uri composition.
 	// The relative path is a single interpolated string passed to Uri's relative-path
 	// constructor, so the slash is part of a URL-protocol path token rather than a
 	// free-floating concatenation separator (RFC 3986 path delimiter, always '/').
 	private string BuildCdnUrl(string version) {
 		Uri baseUri = new(_cdnBaseUrl, UriKind.Absolute);
-		Uri relativeUri = new($"{version}/{CdnRegistryFileName}", UriKind.Relative);
+		Uri relativeUri = new($"{version}/{_flavor.CdnRegistryFileName}", UriKind.Relative);
 		return new Uri(baseUri, relativeUri).AbsoluteUri;
+	}
+}
+
+/// <summary>
+/// Marker interface that selects the mobile-flavored registry client at DI time.
+/// Adds no new methods over <see cref="IComponentRegistryClient"/> — the contract is
+/// identical, the implementation is the same <see cref="ComponentRegistryClient"/>
+/// type, only the constructor-time <see cref="RegistryFlavor"/> differs.
+/// </summary>
+public interface IMobileComponentRegistryClient : IComponentRegistryClient {
+}
+
+/// <summary>
+/// Concrete subtype used to register the mobile flavor through standard DI. The
+/// implementation is inherited verbatim from <see cref="ComponentRegistryClient"/>;
+/// only the flavor selection happens here.
+/// </summary>
+public sealed class MobileComponentRegistryClient : ComponentRegistryClient, IMobileComponentRegistryClient {
+	public MobileComponentRegistryClient(
+		IHttpClientFactory httpClientFactory,
+		IComponentRegistryCacheStore cacheStore,
+		IFileSystem fileSystem,
+		ILogger<ComponentRegistryClient> logger,
+		IWorkingDirectoriesProvider workingDirectoriesProvider)
+		: base(httpClientFactory, cacheStore, fileSystem, logger, RegistryFlavor.Mobile, workingDirectoriesProvider) {
 	}
 }
 
@@ -360,9 +512,14 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 /// </summary>
 public sealed class ComponentRegistryUnavailableException : InvalidOperationException {
 	public ComponentRegistryUnavailableException(string requestedVersion, string cdnBaseUrl)
-		: base(BuildMessage(requestedVersion, cdnBaseUrl)) {
+		: this(requestedVersion, cdnBaseUrl, RegistryFlavor.Web.LocalFileEnvironmentVariable) {
+	}
+
+	public ComponentRegistryUnavailableException(string requestedVersion, string cdnBaseUrl, string localFileEnvironmentVariable)
+		: base(BuildMessage(requestedVersion, cdnBaseUrl, localFileEnvironmentVariable)) {
 		RequestedVersion = requestedVersion;
 		CdnBaseUrl = cdnBaseUrl;
+		LocalFileEnvironmentVariable = localFileEnvironmentVariable;
 	}
 
 	/// <summary>The version that was originally requested when the chain ran out of tiers.</summary>
@@ -371,7 +528,10 @@ public sealed class ComponentRegistryUnavailableException : InvalidOperationExce
 	/// <summary>The CDN base URL that the client failed to reach.</summary>
 	public string CdnBaseUrl { get; }
 
-	private static string BuildMessage(string requestedVersion, string cdnBaseUrl) =>
+	/// <summary>The flavor-specific env var name the operator can use for a local override.</summary>
+	public string LocalFileEnvironmentVariable { get; }
+
+	private static string BuildMessage(string requestedVersion, string cdnBaseUrl, string localFileEnvironmentVariable) =>
 		$"Component registry version '{requestedVersion}' is unavailable: file cache is empty and the CDN at '{cdnBaseUrl}' could not be reached. " +
-		$"Set {ComponentRegistryClient.LocalFileEnvironmentVariable} to a local registry JSON for offline development, or retry once connectivity is restored.";
+		$"Set {localFileEnvironmentVariable} to a local registry JSON for offline development, or retry once connectivity is restored.";
 }

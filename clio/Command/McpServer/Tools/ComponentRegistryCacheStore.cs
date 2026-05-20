@@ -52,6 +52,17 @@ public sealed class ComponentRegistryCacheStore : IComponentRegistryCacheStore {
 		: this(fileSystem, timeProvider, DefaultRoot(fileSystem)) {
 	}
 
+	/// <summary>
+	/// Flavor-aware factory. The <paramref name="subdirectory"/> isolates payloads
+	/// per flavor (e.g. <c>"mobile"</c> → <c>~/.clio/cache/component-registry/mobile/</c>)
+	/// so web and mobile cannot collide on the same <c>latest.json</c> key. Pass an
+	/// empty string for the web flavor — keeps the cache layout that pre-mobile builds
+	/// already populated on user disks.
+	/// </summary>
+	public static ComponentRegistryCacheStore WithSubdirectory(
+		IFileSystem fileSystem, TimeProvider timeProvider, string subdirectory) =>
+		new(fileSystem, timeProvider, ComposeRoot(fileSystem, subdirectory));
+
 	internal ComponentRegistryCacheStore(IFileSystem fileSystem, TimeProvider timeProvider, string rootDirectory) {
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
@@ -176,6 +187,13 @@ public sealed class ComponentRegistryCacheStore : IComponentRegistryCacheStore {
 	private static string DefaultRoot(IFileSystem fileSystem) {
 		string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 		return fileSystem.Path.Combine(profile, ".clio", "cache", CacheDirectoryName);
+	}
+
+	private static string ComposeRoot(IFileSystem fileSystem, string subdirectory) {
+		string baseRoot = DefaultRoot(fileSystem);
+		return string.IsNullOrEmpty(subdirectory)
+			? baseRoot
+			: fileSystem.Path.Combine(baseRoot, subdirectory);
 	}
 
 	private static readonly JsonSerializerOptions MetadataSerializerOptions = new() {

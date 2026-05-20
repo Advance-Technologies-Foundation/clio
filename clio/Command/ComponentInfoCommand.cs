@@ -74,17 +74,7 @@ public sealed class ComponentInfoCommand {
 	}
 
 	internal async Task<int> ExecuteAsync(ComponentInfoCommandOptions options, CancellationToken cancellationToken) {
-		if (IsMobile(options.SchemaType)) {
-			ComponentInfoResponse mobileResponse;
-			try {
-				mobileResponse = BuildMobileResponse(options);
-			} catch (Exception ex) {
-				_logger.WriteError($"get-component-info: mobile catalog load failed: {ex.Message}");
-				return 1;
-			}
-			Emit(mobileResponse, options.Pretty);
-			return mobileResponse.Success ? 0 : 1;
-		}
+		bool isMobile = IsMobile(options.SchemaType);
 
 		bool hasExplicitVersion = !string.IsNullOrWhiteSpace(options.Version);
 		bool hasEnvironment = !string.IsNullOrWhiteSpace(options.Environment) || !string.IsNullOrWhiteSpace(options.Uri);
@@ -98,10 +88,13 @@ public sealed class ComponentInfoCommand {
 
 		ComponentInfoResponse response;
 		try {
-			ComponentCatalogState state = await _catalog.LoadAsync(resolution.ResolvedVersion, cancellationToken).ConfigureAwait(false);
+			ComponentCatalogState state = isMobile
+				? await _mobileCatalog.LoadAsync(resolution.ResolvedVersion, cancellationToken).ConfigureAwait(false)
+				: await _catalog.LoadAsync(resolution.ResolvedVersion, cancellationToken).ConfigureAwait(false);
 			response = BuildResponse(options, state, resolution);
 		} catch (Exception ex) {
-			_logger.WriteError($"get-component-info: catalog load failed: {ex.Message}");
+			string flavor = isMobile ? "mobile " : string.Empty;
+			_logger.WriteError($"get-component-info: {flavor}catalog load failed: {ex.Message}");
 			return 1;
 		}
 
@@ -111,38 +104,6 @@ public sealed class ComponentInfoCommand {
 
 	private static bool IsMobile(string? schemaType) =>
 		string.Equals(schemaType, SchemaTypeMobile, StringComparison.OrdinalIgnoreCase);
-
-	private ComponentInfoResponse BuildMobileResponse(ComponentInfoCommandOptions options) {
-		string? componentType = options.ComponentType?.Trim();
-		bool listMode = string.IsNullOrWhiteSpace(componentType)
-			|| string.Equals(componentType, "list", StringComparison.OrdinalIgnoreCase);
-
-		if (listMode) {
-			IReadOnlyList<ComponentRegistryEntry> entries = _mobileCatalog.Search(options.Search);
-			return new ComponentInfoResponse {
-				Success = true,
-				Mode = "list",
-				Count = entries.Count,
-				Items = ComponentInfoGrouping.CreateItems(entries)
-			};
-		}
-
-		ComponentRegistryEntry? entry = _mobileCatalog.Find(componentType!);
-		if (entry is not null) {
-			// Mobile catalog has no global envelope (no baseInputs / global
-			// typeDefinitions) — pass null so the merge logic is a no-op.
-			return BuildDetail(entry, resolvedTargetVersion: null, resolvedFrom: null, globalContent: null);
-		}
-
-		IReadOnlyList<ComponentRegistryEntry> suggestions = _mobileCatalog.Search(options.Search);
-		return new ComponentInfoResponse {
-			Success = false,
-			Mode = "list",
-			Error = $"Component type '{componentType}' was not found.",
-			Count = suggestions.Count,
-			Items = ComponentInfoGrouping.CreateItems(suggestions)
-		};
-	}
 
 	/// <summary>
 	/// Builds the detail response for the CLI verb. Delegates to the MCP tool's
