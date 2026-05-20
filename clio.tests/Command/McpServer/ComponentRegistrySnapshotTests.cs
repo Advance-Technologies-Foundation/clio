@@ -100,25 +100,25 @@ public sealed class ComponentRegistrySnapshotTests {
 	}
 
 	[Test]
-	[Description("The bundled mobile registry payload (which backs `get-component-info schema-type=mobile` until the producer publishes MobileComponentRegistry.json to academy.creatio.com) must deserialise through the same wrapped envelope as the web payload with no fields landing on an UnmappedExtensions bucket — the snapshot guard is intentionally symmetric across flavors.")]
-	public void Bundled_Mobile_Snapshot_Should_Have_No_Unmapped_Fields() {
-		// Arrange — the fixture is a verbatim copy of
-		// clio/Command/McpServer/Data/MobileComponentRegistry.json checked in at
-		// commit time. Refresh procedure documented at the top of the file.
+	[Description("The live mobile registry payload (https://academy.creatio.com/api/mcp/latest/MobileComponentRegistry.json, mirrored 2026-05-20) must deserialise through the same wrapped envelope as the web payload with no fields landing on an UnmappedExtensions bucket — the snapshot guard is intentionally symmetric across flavors.")]
+	public void Live_Mobile_Registry_Snapshot_Should_Have_No_Unmapped_Fields() {
+		// Arrange — the fixture is a verbatim pull of the live academy URL above,
+		// also copied into clio/Command/McpServer/Data/MobileComponentRegistry.json
+		// for offline iteration. Refresh procedure: re-run the curl into both
+		// paths (see commit message of this test's most recent update).
 		string snapshotPath = Path.Combine(
 			TestContext.CurrentContext.TestDirectory,
-			"Command/McpServer/Fixtures/MobileComponentRegistry.bundled-snapshot.json");
+			"Command/McpServer/Fixtures/MobileComponentRegistry.live-snapshot.json");
 		File.Exists(snapshotPath).Should().BeTrue(
-			because: $"the bundled mobile fixture must be present at '{snapshotPath}' for this guard to be meaningful");
+			because: $"the live mobile fixture must be present at '{snapshotPath}' for this guard to be meaningful");
 
 		// Act
 		using FileStream stream = File.OpenRead(snapshotPath);
 		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
 
 		// Assert — every component entry must round-trip without leaving fields on
-		// the UnmappedExtensions bucket. Mobile entries are in the legacy
-		// (properties/category) shape today; the snapshot pins that fact so a
-		// future edit cannot accidentally drop a field on the floor.
+		// the UnmappedExtensions bucket. The producer can evolve the mobile shape
+		// freely; this guard locks down silent data loss on the consumer side.
 		foreach (ComponentRegistryEntry entry in state.Entries) {
 			UnmappedKeys(entry.UnmappedExtensions).Should().BeEmpty(
 				because: $"any new top-level key on mobile entry '{entry.ComponentType}' must be mapped");
@@ -128,7 +128,7 @@ public sealed class ComponentRegistrySnapshotTests {
 			}
 		}
 		state.Entries.Should().NotBeEmpty(
-			because: "the bundled mobile catalog must list at least one component");
+			because: "the live mobile catalog must list at least one component");
 	}
 
 	private static IEnumerable<string> UnmappedKeys(IDictionary<string, JsonElement>? bucket) =>
