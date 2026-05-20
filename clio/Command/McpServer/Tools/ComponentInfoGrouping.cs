@@ -58,15 +58,8 @@ public static class ComponentInfoGrouping {
 	/// without breaking matching.
 	/// </summary>
 	private static bool BindingsMatch(IReadOnlyDictionary<string, JsonElement>? bindings, string query) {
-		if (bindings is null || bindings.Count == 0) {
-			return false;
-		}
-		foreach (KeyValuePair<string, JsonElement> binding in bindings) {
-			if (BindingMatches(binding.Key, binding.Value, query)) {
-				return true;
-			}
-		}
-		return false;
+		return bindings is { Count: > 0 }
+			&& bindings.Any(binding => BindingMatches(binding.Key, binding.Value, query));
 	}
 
 	/// <summary>
