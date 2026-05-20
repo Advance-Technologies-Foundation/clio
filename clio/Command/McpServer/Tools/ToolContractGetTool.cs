@@ -1551,6 +1551,8 @@ internal static class ToolContractCatalog {
 		BusinessRuleExample(summary, EntitySchemaNameCamelFieldName, entitySchemaName, caption, leftPath,
 			comparisonType, actionType, actionItems, constantValue);
 
+	private const string BusinessRuleValueKey = "value";
+
 	private static Dictionary<string, object?> BusinessRuleSetValueItem(string path, object value) {
 		return new Dictionary<string, object?> {
 			["expression"] = new Dictionary<string, object?> {
@@ -1570,7 +1572,7 @@ internal static class ToolContractCatalog {
 				["type"] = "AttributeValue",
 				["path"] = path
 			},
-			["value"] = new Dictionary<string, object?> {
+			[BusinessRuleValueKey] = new Dictionary<string, object?> {
 				["type"] = "Formula",
 				["expression"] = formula
 			}
@@ -1583,7 +1585,7 @@ internal static class ToolContractCatalog {
 				["type"] = "AttributeValue",
 				["path"] = path
 			},
-			["value"] = new Dictionary<string, object?> {
+			[BusinessRuleValueKey] = new Dictionary<string, object?> {
 				["type"] = "AttributeValue",
 				["path"] = sourcePath
 			}
@@ -1622,7 +1624,7 @@ internal static class ToolContractCatalog {
 		if (constantValue is not null) {
 			condition["rightExpression"] = new Dictionary<string, object?> {
 				["type"] = "Const",
-				["value"] = constantValue
+				[BusinessRuleValueKey] = constantValue
 			};
 		}
 

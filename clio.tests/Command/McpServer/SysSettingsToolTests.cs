@@ -1,6 +1,7 @@
 using System;
 using System.Net.Http;
 using ATF.Repository.Providers;
+using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -12,6 +13,20 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class SysSettingsToolTests {
+
+	private static IToolCommandResolver BuildResolver(ISysSettingsManager manager) {
+		SysSettingsCommand command = new(manager, Substitute.For<ILogger>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SysSettingsCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		return commandResolver;
+	}
+
+	private static IToolCommandResolver BuildResolverThatThrows(Exception ex) {
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SysSettingsCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw ex);
+		return commandResolver;
+	}
 
 	#region get-sys-setting
 
@@ -27,9 +42,7 @@ public sealed class SysSettingsToolTests {
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		dataProvider.GetSysSettingValue<string>("MaxFileSize").Returns("10485760");
 		SysSettingsManager manager = new(dataProvider);
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SysSettingGetTool tool = new(commandResolver);
+		SysSettingGetTool tool = new(BuildResolver(manager));
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "MaxFileSize"));
 
@@ -45,9 +58,7 @@ public sealed class SysSettingsToolTests {
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		dataProvider.GetSysSettingValue<string>("UnknownCode").Returns((string)null);
 		SysSettingsManager manager = new(dataProvider);
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SysSettingGetTool tool = new(commandResolver);
+		SysSettingGetTool tool = new(BuildResolver(manager));
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "UnknownCode"));
 
@@ -58,8 +69,8 @@ public sealed class SysSettingsToolTests {
 	[Test]
 	[Category("Unit")]
 	public void GetSysSetting_Should_Fail_When_Code_Is_Missing() {
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		SysSettingGetTool tool = new(commandResolver);
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		SysSettingGetTool tool = new(BuildResolver(manager));
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", ""));
 
@@ -70,10 +81,7 @@ public sealed class SysSettingsToolTests {
 	[Test]
 	[Category("Unit")]
 	public void GetSysSetting_Should_Categorize_Network_Errors() {
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
-			.Returns(_ => throw new HttpRequestException("Connection refused."));
-		SysSettingGetTool tool = new(commandResolver);
+		SysSettingGetTool tool = new(BuildResolverThatThrows(new HttpRequestException("Connection refused.")));
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("offline", "MaxFileSize"));
 
@@ -95,10 +103,7 @@ public sealed class SysSettingsToolTests {
 	[Test]
 	[Category("Unit")]
 	public void ListSysSettings_Should_Categorize_Generic_Failures() {
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
-			.Returns(_ => throw new TimeoutException("read timed out"));
-		SysSettingsListTool tool = new(commandResolver);
+		SysSettingsListTool tool = new(BuildResolverThatThrows(new TimeoutException("read timed out")));
 
 		SysSettingsListResult result = tool.ListSysSettings(new ListSysSettingsArgs("local"));
 
@@ -120,8 +125,8 @@ public sealed class SysSettingsToolTests {
 	[Test]
 	[Category("Unit")]
 	public void CreateSysSetting_Should_Reject_Missing_Required_Fields() {
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		SysSettingCreateTool tool = new(commandResolver);
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		SysSettingCreateTool tool = new(BuildResolver(manager));
 
 		SysSettingCreateResult result = tool.CreateSysSetting(
 			new CreateSysSettingArgs("local", "", "Display", "Integer"));
@@ -133,8 +138,8 @@ public sealed class SysSettingsToolTests {
 	[Test]
 	[Category("Unit")]
 	public void CreateSysSetting_Should_Reject_Unsupported_Value_Type() {
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		SysSettingCreateTool tool = new(commandResolver);
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		SysSettingCreateTool tool = new(BuildResolver(manager));
 
 		SysSettingCreateResult result = tool.CreateSysSetting(
 			new CreateSysSettingArgs("local", "MyCode", "MyName", "UnsupportedType"));
@@ -146,10 +151,7 @@ public sealed class SysSettingsToolTests {
 	[Test]
 	[Category("Unit")]
 	public void CreateSysSetting_Should_Categorize_Authentication_Errors() {
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
-			.Returns(_ => throw new UnauthorizedAccessException("Forbidden"));
-		SysSettingCreateTool tool = new(commandResolver);
+		SysSettingCreateTool tool = new(BuildResolverThatThrows(new UnauthorizedAccessException("Forbidden")));
 
 		SysSettingCreateResult result = tool.CreateSysSetting(
 			new CreateSysSettingArgs("local", "MyCode", "MyName", "Text"));
@@ -171,8 +173,8 @@ public sealed class SysSettingsToolTests {
 	[Test]
 	[Category("Unit")]
 	public void UpdateSysSetting_Should_Reject_Missing_Code() {
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		SysSettingUpdateTool tool = new(commandResolver);
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		SysSettingUpdateTool tool = new(BuildResolver(manager));
 
 		SysSettingUpdateResult result = tool.UpdateSysSetting(
 			new UpdateSysSettingArgs("local", "", "x"));
@@ -184,10 +186,7 @@ public sealed class SysSettingsToolTests {
 	[Test]
 	[Category("Unit")]
 	public void UpdateSysSetting_Should_Categorize_Network_Errors() {
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
-			.Returns(_ => throw new HttpRequestException("Connection refused."));
-		SysSettingUpdateTool tool = new(commandResolver);
+		SysSettingUpdateTool tool = new(BuildResolverThatThrows(new HttpRequestException("Connection refused.")));
 
 		SysSettingUpdateResult result = tool.UpdateSysSetting(
 			new UpdateSysSettingArgs("offline", "MaxFileSize", "10485760"));

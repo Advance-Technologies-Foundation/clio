@@ -1,10 +1,17 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
+using System.Security.Authentication;
 using Clio.Common;
 using CommandLine;
+using CreatioModel;
 
 namespace Clio.Command
 {
-	[Verb("set-syssetting", Aliases = ["ss", "syssetting", "sys-setting", "get-syssetting"], HelpText = "Set setting value")]
+	[Verb("set-syssetting", Aliases =  ["ss", "syssetting", "sys-setting", "get-syssetting"], HelpText = "Set setting value")]
 	public class SysSettingsOptions : EnvironmentOptions
 	{
 		[Value(0, MetaName = "Code", Required = true, HelpText = "Sys-setting code")]
@@ -28,6 +35,16 @@ namespace Clio.Command
 	}
 
 	public class SysSettingsCommand : Command<SysSettingsOptions> {
+
+		private const string LookupTypeName = "Lookup";
+
+		private static readonly string[] SupportedValueTypeNames = [
+			"Text", "ShortText", "MediumText", "LongText", "SecureText", "MaxSizeText",
+			"Boolean", "DateTime", "Date", "Time", "Integer",
+			"Money", "Float", "Binary", LookupTypeName,
+			"Currency", "Decimal"
+		];
+
 		private readonly ISysSettingsManager _sysSettingsManager;
 		private readonly ILogger _logger;
 
@@ -72,6 +89,161 @@ namespace Clio.Command
 				return 1;
 			}
 			return 0;
+		}
+
+		/// <summary>
+		/// Reads a single sys-setting value by code and returns a structured result. Categorizes network,
+		/// authentication, and validation failures into a non-throwing error envelope for MCP callers.
+		/// </summary>
+		public SysSettingGetResult TryGetSysSetting(GetSysSettingArgs args) {
+			try {
+				if (string.IsNullOrWhiteSpace(args.Code)) {
+					throw new ArgumentException("code is required.");
+				}
+				string value = _sysSettingsManager.GetSysSettingValueByCode(args.Code);
+				return new SysSettingGetResult(true, args.Code, value ?? string.Empty);
+			} catch (Exception ex) {
+				string message = CategorizeError(ex, "reading sys-setting");
+				return new SysSettingGetResult(false, args.Code, string.Empty, message);
+			}
+		}
+
+		/// <summary>
+		/// Returns the catalog of sys-settings on the target environment with code, display name, value-type, default value, and cacheable/personal flags.
+		/// </summary>
+		public SysSettingsListResult TryListSysSettings(ListSysSettingsArgs args) {
+			try {
+				List<SysSettings> settings = _sysSettingsManager.GetAllSysSettingsWithValues();
+				SysSettingItem[] items = settings.Select(setting => new SysSettingItem(
+						setting.Code,
+						setting.Name,
+						setting.ValueTypeName,
+						setting.DefValue,
+						setting.IsCacheable,
+						setting.IsPersonal))
+					.ToArray();
+				return new SysSettingsListResult(true, items);
+			} catch (Exception ex) {
+				string message = CategorizeError(ex, "listing sys-settings");
+				return new SysSettingsListResult(false, Array.Empty<SysSettingItem>(), message);
+			}
+		}
+
+		/// <summary>
+		/// Creates a new sys-setting with the supplied metadata. For <c>Lookup</c> settings resolves the
+		/// reference entity schema UId by name. Applies the optional initial value via the same code path
+		/// as <see cref="TryUpdateSysSetting"/>, so the surfaced result includes the assigned value.
+		/// </summary>
+		public SysSettingCreateResult TryCreateSysSetting(CreateSysSettingArgs args) {
+			try {
+				ValidateCreateArgs(args);
+				Guid? referenceSchemaUId = ResolveReferenceSchemaUId(args);
+				SysSettingsManager.InsertSysSettingResponse response = _sysSettingsManager.InsertSysSetting(
+					args.Name,
+					args.Code,
+					args.ValueTypeName,
+					args.IsCacheable ?? true,
+					args.Description ?? string.Empty,
+					args.IsPersonal ?? false,
+					referenceSchemaUId);
+				if (!response.Success) {
+					string message = response.ResponseStatus?.Message;
+					return new SysSettingCreateResult(false, args.Code, args.ValueTypeName, null,
+						string.IsNullOrWhiteSpace(message) ? "Failed creating sys-setting." : message);
+				}
+				return ApplyInitialValue(args);
+			} catch (Exception ex) {
+				string message = CategorizeError(ex, "creating sys-setting");
+				return new SysSettingCreateResult(false, args.Code, args.ValueTypeName, null, message);
+			}
+		}
+
+		/// <summary>
+		/// Updates an existing sys-setting value. The provided <c>value-type-name</c> is used only as a
+		/// fallback when the setting type cannot be resolved on the target environment.
+		/// </summary>
+		public SysSettingUpdateResult TryUpdateSysSetting(UpdateSysSettingArgs args) {
+			try {
+				if (string.IsNullOrWhiteSpace(args.Code)) {
+					throw new ArgumentException("code is required.");
+				}
+				if (args.Value is null) {
+					throw new ArgumentException("value is required.");
+				}
+				string valueTypeName = string.IsNullOrWhiteSpace(args.ValueTypeName) ? "Text" : args.ValueTypeName;
+				bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, args.Value, valueTypeName);
+				if (!updated) {
+					return new SysSettingUpdateResult(false, args.Code, null,
+						"Failed to update sys-setting. The setting may not exist, or the value did not match the expected type.");
+				}
+				string readback = _sysSettingsManager.GetSysSettingValueByCode(args.Code);
+				return new SysSettingUpdateResult(true, args.Code, readback);
+			} catch (Exception ex) {
+				string message = CategorizeError(ex, "updating sys-setting");
+				return new SysSettingUpdateResult(false, args.Code, null, message);
+			}
+		}
+
+		private static void ValidateCreateArgs(CreateSysSettingArgs args) {
+			if (string.IsNullOrWhiteSpace(args.Code)) {
+				throw new ArgumentException("code is required.");
+			}
+			if (string.IsNullOrWhiteSpace(args.Name)) {
+				throw new ArgumentException("name is required.");
+			}
+			if (string.IsNullOrWhiteSpace(args.ValueTypeName)) {
+				throw new ArgumentException("value-type-name is required.");
+			}
+			if (!SupportedValueTypeNames.Contains(args.ValueTypeName, StringComparer.Ordinal)) {
+				throw new ArgumentException(
+					$"Unsupported value-type-name '{args.ValueTypeName}'. Allowed values: " +
+					string.Join(", ", SupportedValueTypeNames) + ".");
+			}
+			if (args.ValueTypeName == LookupTypeName
+				&& string.IsNullOrWhiteSpace(args.ReferenceSchemaName)) {
+				throw new ArgumentException(
+					"reference-schema-name is required when value-type-name is 'Lookup'.");
+			}
+		}
+
+		private Guid? ResolveReferenceSchemaUId(CreateSysSettingArgs args) {
+			if (args.ValueTypeName != LookupTypeName
+				|| string.IsNullOrWhiteSpace(args.ReferenceSchemaName)) {
+				return null;
+			}
+			Guid? uId = _sysSettingsManager.FindSchemaUIdByName(args.ReferenceSchemaName);
+			if (uId is null) {
+				throw new ArgumentException(
+					$"Entity schema '{args.ReferenceSchemaName}' was not found on the target environment.");
+			}
+			return uId;
+		}
+
+		private SysSettingCreateResult ApplyInitialValue(CreateSysSettingArgs args) {
+			if (args.Value is null) {
+				return new SysSettingCreateResult(true, args.Code, args.ValueTypeName);
+			}
+			bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, args.Value, args.ValueTypeName);
+			if (!updated) {
+				return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, null,
+					Error: null,
+					Warning: "Sys-setting was created, but the initial value could not be applied.");
+			}
+			string assignedValue = _sysSettingsManager.GetSysSettingValueByCode(args.Code);
+			return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, assignedValue);
+		}
+
+		internal static string CategorizeError(Exception ex, string operationLabel) {
+			return ex switch {
+				HttpRequestException => $"Network error {operationLabel}.",
+				WebException => $"Network error {operationLabel}.",
+				SocketException => $"Network error {operationLabel}.",
+				UnauthorizedAccessException => $"Authentication error {operationLabel}.",
+				AuthenticationException => $"Authentication error {operationLabel}.",
+				ArgumentException argEx => argEx.Message,
+				InvalidOperationException invEx => invEx.Message,
+				_ => $"Failed {operationLabel}."
+			};
 		}
 	}
 }
