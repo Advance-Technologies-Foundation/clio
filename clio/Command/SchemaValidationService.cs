@@ -456,27 +456,35 @@ public static class SchemaValidationService
 			return;
 		}
 		if (isArray && section.ValueKind == JsonValueKind.Array) {
-			foreach (JsonElement entry in section.EnumerateArray()) {
-				if (entry.ValueKind != JsonValueKind.Object) {
-					continue;
-				}
-				if (!ShouldScanAsAttributesContainer(entry)) {
-					continue;
-				}
-				// Merge-into-attributes pattern: { "operation":"merge", "path":["attributes"], "values":{...} }
-				if (entry.TryGetProperty(ValuesPropertyName, out JsonElement values) &&
-					values.ValueKind == JsonValueKind.Object) {
-					foreach (JsonProperty attr in values.EnumerateObject()) {
-						attributes.Add(attr.Name);
-					}
-				}
+			CollectAttributesFromArraySection(section, attributes);
+		} else if (!isArray && section.ValueKind == JsonValueKind.Object) {
+			CollectAttributesFromObjectSection(section, attributes);
+		}
+	}
+
+	private static void CollectAttributesFromArraySection(JsonElement section, HashSet<string> attributes) {
+		foreach (JsonElement entry in section.EnumerateArray()) {
+			if (entry.ValueKind != JsonValueKind.Object || !ShouldScanAsAttributesContainer(entry)) {
+				continue;
 			}
-		} else if (!isArray && section.ValueKind == JsonValueKind.Object
-			&& section.TryGetProperty(AttributesPropertyName, out JsonElement attrs)
-			&& attrs.ValueKind == JsonValueKind.Object) {
-			foreach (JsonProperty attr in attrs.EnumerateObject()) {
-				attributes.Add(attr.Name);
+			// Merge-into-attributes pattern: { "operation":"merge", "path":["attributes"], "values":{...} }
+			if (entry.TryGetProperty(ValuesPropertyName, out JsonElement values) &&
+				values.ValueKind == JsonValueKind.Object) {
+				AddObjectPropertyNames(values, attributes);
 			}
+		}
+	}
+
+	private static void CollectAttributesFromObjectSection(JsonElement section, HashSet<string> attributes) {
+		if (section.TryGetProperty(AttributesPropertyName, out JsonElement attrs) &&
+			attrs.ValueKind == JsonValueKind.Object) {
+			AddObjectPropertyNames(attrs, attributes);
+		}
+	}
+
+	private static void AddObjectPropertyNames(JsonElement obj, HashSet<string> attributes) {
+		foreach (JsonProperty attr in obj.EnumerateObject()) {
+			attributes.Add(attr.Name);
 		}
 	}
 
