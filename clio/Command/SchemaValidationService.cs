@@ -22,7 +22,6 @@ public static class SchemaValidationService
 	private const string ParamsPropertyName = "params";
 	private const string TypePropertyName = "type";
 
-	private static readonly Regex SdkUsagePattern = new(@"\bsdk\s*[.\[]", RegexOptions.Compiled);
 
 	public static readonly string[] RequiredMarkerNames = {
 		"SCHEMA_DEPS",
@@ -39,6 +38,8 @@ public static class SchemaValidationService
 	};
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
+
+	private static readonly Regex SdkUsagePattern = new(@"\bsdk\s*[.\[]", RegexOptions.Compiled, RegexTimeout);
 
 	private static readonly Regex ResourceStringPattern = new(
 		@"^#ResourceString\(([^)]+)\)#$",
