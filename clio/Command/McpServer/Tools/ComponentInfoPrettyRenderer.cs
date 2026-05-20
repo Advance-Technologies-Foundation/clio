@@ -75,7 +75,10 @@ public static class ComponentInfoPrettyRenderer {
 			sb.Append("typicalChildren:  ").AppendLine(string.Join(", ", children));
 		}
 		AppendProperties(sb, response.Properties);
+		AppendBindings(sb, "inputs", response.Inputs);
+		AppendBindings(sb, "outputs", response.Outputs);
 		AppendExample(sb, response.Example);
+		AppendDocumentation(sb, response.Documentation);
 	}
 
 	private static void AppendProperties(StringBuilder sb, IReadOnlyDictionary<string, ComponentPropertyDefinition>? properties) {
@@ -102,6 +105,84 @@ public static class ComponentInfoPrettyRenderer {
 		}
 	}
 
+	/// <summary>
+	/// Renders the wrapped-shape <c>inputs</c> / <c>outputs</c> dictionaries. Each
+	/// value is a producer-owned <see cref="JsonElement"/> blob, so the renderer only
+	/// pulls well-known string fields (<c>type</c>, <c>description</c>, <c>default</c>,
+	/// <c>values</c>) onto the one-line summary; richer keys (<c>keyType</c>, <c>items</c>,
+	/// <c>deprecated</c>, future additions) stay invisible at the CLI surface but remain
+	/// available through the JSON detail mode.
+	/// </summary>
+	private static void AppendBindings(StringBuilder sb, string label, IReadOnlyDictionary<string, JsonElement>? bindings) {
+		if (bindings is null || bindings.Count == 0) {
+			return;
+		}
+		sb.AppendLine().Append(label).AppendLine(":");
+		int nameWidth = bindings.Keys.Max(key => key.Length);
+		int typeWidth = bindings.Values.Max(value => GetBindingString(value, "type")?.Length ?? 0);
+		foreach (KeyValuePair<string, JsonElement> binding in bindings) {
+			string? type = GetBindingString(binding.Value, "type");
+			string? description = GetBindingString(binding.Value, "description");
+			string? defaultValue = GetBindingDefaultLiteral(binding.Value);
+			sb.Append("  ")
+				.Append(binding.Key.PadRight(nameWidth))
+				.Append("  ")
+				.Append((type ?? string.Empty).PadRight(typeWidth));
+			if (!string.IsNullOrWhiteSpace(description)) {
+				sb.Append("  ").Append(description);
+			}
+			if (!string.IsNullOrWhiteSpace(defaultValue)) {
+				sb.Append("  default=").Append(defaultValue);
+			}
+			List<string>? values = GetBindingStringArray(binding.Value, "values");
+			if (values is { Count: > 0 }) {
+				sb.Append("  values=[").Append(string.Join(", ", values)).Append(']');
+			}
+			sb.AppendLine();
+		}
+	}
+
+	private static string? GetBindingString(JsonElement element, string propertyName) {
+		if (element.ValueKind != JsonValueKind.Object
+			|| !element.TryGetProperty(propertyName, out JsonElement property)
+			|| property.ValueKind != JsonValueKind.String) {
+			return null;
+		}
+		return property.GetString();
+	}
+
+	private static string? GetBindingDefaultLiteral(JsonElement element) {
+		if (element.ValueKind != JsonValueKind.Object
+			|| !element.TryGetProperty("default", out JsonElement property)) {
+			return null;
+		}
+		// Compact representation. Numbers/bools/null come through as their raw text;
+		// strings are wrapped in quotes; complex shapes serialise to single-line JSON.
+		return property.ValueKind switch {
+			JsonValueKind.Null => "null",
+			JsonValueKind.True => "true",
+			JsonValueKind.False => "false",
+			JsonValueKind.Number => property.GetRawText(),
+			JsonValueKind.String => "\"" + property.GetString() + "\"",
+			_ => property.GetRawText()
+		};
+	}
+
+	private static List<string>? GetBindingStringArray(JsonElement element, string propertyName) {
+		if (element.ValueKind != JsonValueKind.Object
+			|| !element.TryGetProperty(propertyName, out JsonElement property)
+			|| property.ValueKind != JsonValueKind.Array) {
+			return null;
+		}
+		List<string> values = [];
+		foreach (JsonElement item in property.EnumerateArray()) {
+			if (item.ValueKind == JsonValueKind.String) {
+				values.Add(item.GetString() ?? string.Empty);
+			}
+		}
+		return values;
+	}
+
 	private static void AppendExample(StringBuilder sb, JsonElement? example) {
 		if (example is null) {
 			return;
@@ -109,6 +190,22 @@ public static class ComponentInfoPrettyRenderer {
 		sb.AppendLine().AppendLine("example:");
 		string indented = JsonSerializer.Serialize(example, IndentedJson);
 		foreach (string line in indented.Split('\n')) {
+			sb.Append("  ").AppendLine(line.TrimEnd('\r'));
+		}
+	}
+
+	/// <summary>
+	/// Appends the long-form documentation block when the response carries one. The
+	/// payload is markdown concatenated from every successfully-fetched <c>content.docs[]</c>
+	/// file; the renderer indents it under a labelled header so the operator can tell
+	/// the block apart from the structured metadata above.
+	/// </summary>
+	private static void AppendDocumentation(StringBuilder sb, string? documentation) {
+		if (string.IsNullOrWhiteSpace(documentation)) {
+			return;
+		}
+		sb.AppendLine().AppendLine("documentation:");
+		foreach (string line in documentation.Split('\n')) {
 			sb.Append("  ").AppendLine(line.TrimEnd('\r'));
 		}
 	}

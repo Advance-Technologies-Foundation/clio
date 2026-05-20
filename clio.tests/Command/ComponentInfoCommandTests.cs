@@ -166,6 +166,60 @@ public sealed class ComponentInfoCommandTests {
 		logger.Captured.Should().Contain("crt.TabContainer");
 	}
 
+	[Test]
+	[Description("Wrapped-shape detail responses emit inputs/outputs in JSON and on the --pretty stdout block — the CLI verb shares the same bug surface as the MCP tool.")]
+	public async Task Returns_Wrapped_Detail_With_Inputs_And_Outputs() {
+		const string wrappedRegistry = """
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.WrappedButton",
+		      "inputs": {
+		        "caption": { "type": "string", "default": "", "description": "Component title." },
+		        "color":   { "type": "string", "values": ["primary", "accent"] }
+		      },
+		      "outputs": {
+		        "clicked": { "type": "RequestBindingConfig" }
+		      }
+		    }
+		  ]
+		}
+		""";
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(wrappedRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		// Act — JSON path
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.WrappedButton" }, CancellationToken.None);
+		exit.Should().Be(0);
+
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Mode.Should().Be("detail");
+		parsed.ComponentType.Should().Be("crt.WrappedButton");
+		parsed.Inputs.Should().NotBeNull(because: "the CLI verb must surface wrapped-shape inputs verbatim, not drop them");
+		parsed.Inputs!.Should().ContainKeys("caption", "color");
+		parsed.Outputs.Should().NotBeNull();
+		parsed.Outputs!.Should().ContainKey("clicked");
+		parsed.Properties.Should().BeNull(because: "the legacy properties block must be omitted, not emitted as an empty object");
+
+		// Act — --pretty path on the same input
+		logger.Reset();
+		exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.WrappedButton", Pretty = true }, CancellationToken.None);
+		exit.Should().Be(0);
+		logger.Captured.Should().Contain("inputs:",
+			because: "the --pretty renderer must label the inputs block so operators can read it");
+		logger.Captured.Should().Contain("caption");
+		logger.Captured.Should().Contain("color");
+		logger.Captured.Should().Contain("values=[primary, accent]",
+			because: "enum constraints from the inputs block must be rendered the same way as legacy properties");
+		logger.Captured.Should().Contain("outputs:");
+		logger.Captured.Should().Contain("clicked");
+	}
+
 	private static ComponentInfoCommand CreateCommand(CapturedLogger logger, string fallbackVersion = null, IMobileComponentInfoCatalog mobileCatalog = null) {
 		IComponentInfoCatalog catalog = fallbackVersion is null
 			? new RecordingCatalog(SampleRegistry, echoRequestedVersion: true)
@@ -199,6 +253,17 @@ public sealed class ComponentInfoCommandTests {
 		private readonly StringBuilder _buffer = new();
 		public string Captured => _buffer.ToString();
 		public List<string> Errors { get; } = new();
+
+		/// <summary>
+		/// Clears the captured buffer and error list. Used by multi-act tests that
+		/// invoke the verb twice on the same logger (e.g. JSON output then --pretty
+		/// output on the same registry) so the second assertion only sees the
+		/// second invocation's output.
+		/// </summary>
+		public void Reset() {
+			_buffer.Clear();
+			Errors.Clear();
+		}
 
 		// Members carrying the actual captured signal:
 		public void Write(string value) => _buffer.Append(value);

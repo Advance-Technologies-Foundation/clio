@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -566,6 +567,145 @@ public sealed class ComponentInfoToolTests {
 			because: "crt.TabContainer exists in the web registry — omitting schema-type should use the web catalog");
 		response.ComponentType.Should().Be("crt.TabContainer",
 			because: "web catalog lookup should still work when schema-type is not specified");
+	}
+
+	[Test]
+	[Description("A wrapped-shape entry without content.docs[] still returns inputs/outputs in the detail response — these blocks are the regular per-component metadata for the new payload, not opt-in extras.")]
+	public async Task ComponentInfoTool_Should_Return_Inputs_And_Outputs_For_Wrapped_Registry_Entry() {
+		// Arrange — a "simple" wrapped-shape component: no content.docs[], no
+		// description, but with inputs and outputs (this is the shape that produced
+		// the empty crt.Button bug — inputs/outputs were silently dropped).
+		const string registryJson = """
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.SimpleButton",
+		      "inputs": {
+		        "caption": {
+		          "type": "string",
+		          "default": "",
+		          "description": "Component title."
+		        },
+		        "disabled": {
+		          "type": "boolean",
+		          "default": false
+		        },
+		        "color": {
+		          "type": "string",
+		          "values": ["primary", "accent", "default"]
+		        }
+		      },
+		      "outputs": {
+		        "clicked": { "type": "RequestBindingConfig" },
+		        "blurred": { "type": "RequestBindingConfig" }
+		      }
+		    }
+		  ]
+		}
+		""";
+		ComponentInfoTool tool = new(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			StubPlatformVersionResolver.LatestFallback(),
+			new FakeDocsClient());
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.SimpleButton");
+
+		// Assert
+		response.Success.Should().BeTrue();
+		response.Mode.Should().Be("detail");
+		response.Inputs.Should().NotBeNull(
+			because: "the wrapped registry inputs block is the regular per-component metadata in the new payload shape — it must round-trip through the response");
+		response.Inputs!.Should().ContainKeys("caption", "disabled", "color");
+		response.Outputs.Should().NotBeNull(
+			because: "outputs must also round-trip through the response for the new payload shape");
+		response.Outputs!.Should().ContainKeys("clicked", "blurred");
+		response.Documentation.Should().BeNull(
+			because: "content.docs[] is the opt-in extra for complex components — its absence must not suppress inputs/outputs");
+		response.Properties.Should().BeNull(
+			because: "the wrapped registry does not populate the legacy properties block — it must be omitted, not surfaced as an empty object");
+	}
+
+	[Test]
+	[Description("After the source JsonDocument used for catalog deserialisation is disposed, inputs/outputs JsonElement values remain accessible — System.Text.Json gives each JsonElement property its own root document.")]
+	public async Task ComponentInfoTool_Inputs_Should_Survive_Source_Document_Disposal() {
+		// Arrange — exercises the lifetime contract that makes JsonElement-typed POCO
+		// fields safe to retain past the deserialiser scope. The catalog implementation
+		// disposes its JsonDocument inside LoadCatalogStateAsync; without this contract
+		// every subsequent access here would throw ObjectDisposedException.
+		const string registryJson = """
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.Persistent",
+		      "inputs": {
+		        "caption": { "type": "string", "description": "Title." }
+		      }
+		    }
+		  ]
+		}
+		""";
+		ComponentInfoTool tool = new(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			StubPlatformVersionResolver.LatestFallback(),
+			new FakeDocsClient());
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Persistent");
+		GC.Collect();
+		GC.WaitForPendingFinalizers();
+
+		// Assert
+		response.Inputs.Should().NotBeNull();
+		JsonElement caption = response.Inputs!["caption"];
+		caption.ValueKind.Should().Be(JsonValueKind.Object,
+			because: "the JsonElement must still point at a live backing document after the source JsonDocument is disposed and GC has run");
+		caption.GetProperty("type").GetString().Should().Be("string");
+		caption.GetProperty("description").GetString().Should().Be("Title.");
+	}
+
+	[Test]
+	[Description("List-mode search matches wrapped-shape entries through inputs/outputs keys when the legacy descriptive fields are empty — without this the search filter would be useless on the new payload shape.")]
+	public async Task ComponentInfoTool_Should_Match_Search_Query_Against_Wrapped_Registry_Inputs() {
+		// Arrange — three components, two with inputs/outputs, one without. The search
+		// query "selection" matches a property *inside* one component's inputs block.
+		const string registryJson = """
+		{
+		  "components": [
+		    { "componentType": "crt.NoMatch" },
+		    {
+		      "componentType": "crt.HitOnInput",
+		      "inputs": {
+		        "selectionMode": { "type": "string", "values": ["single", "multiple"] }
+		      }
+		    },
+		    {
+		      "componentType": "crt.HitOnOutputDesc",
+		      "outputs": {
+		        "fired": { "type": "RequestBindingConfig", "description": "Triggered on selection change." }
+		      }
+		    }
+		  ]
+		}
+		""";
+		ComponentInfoTool tool = new(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			StubPlatformVersionResolver.LatestFallback(),
+			new FakeDocsClient());
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(search: "selection");
+
+		// Assert
+		response.Success.Should().BeTrue();
+		response.Mode.Should().Be("list");
+		response.Items.Should().NotBeNull();
+		response.Items!.Select(item => item.ComponentType).Should().BeEquivalentTo(
+			new[] { "crt.HitOnInput", "crt.HitOnOutputDesc" },
+			because: "search must find matches inside the inputs key set AND inside output description fields");
 	}
 
 	/// <summary>Test double that serves the same in-memory JSON for every version request.</summary>

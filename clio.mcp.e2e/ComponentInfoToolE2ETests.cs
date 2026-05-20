@@ -72,18 +72,18 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "search-only queries should keep get-component-info in list mode");
 		tabListResponse.Count.Should().BeGreaterThan(0,
 			because: "the shipped registry should contain tab-related component metadata");
-		tabListResponse.Groups.Should().NotBeNullOrEmpty(
-			because: "list mode should return grouped summaries");
-		tabListResponse.Groups!.SelectMany(group => group.Items).Select(item => item.ComponentType)
+		tabListResponse.Items.Should().NotBeNullOrEmpty(
+			because: "list mode should return a flat item list");
+		tabListResponse.Items!.Select(item => item.ComponentType)
 			.Should().Contain("crt.TabContainer",
 				because: "the tab search should surface crt.TabContainer from the shipped registry");
 		propertySearchResponse.Success.Should().BeTrue(
 			because: "searches by property metadata should work against the shipped registry");
 		propertySearchResponse.Mode.Should().Be("list",
 			because: "property searches should stay in list mode");
-		propertySearchResponse.Groups.Should().NotBeNullOrEmpty(
-			because: "property metadata matches should still be grouped");
-		propertySearchResponse.Groups!.SelectMany(group => group.Items).Select(item => item.ComponentType)
+		propertySearchResponse.Items.Should().NotBeNullOrEmpty(
+			because: "property metadata matches should still surface in the flat item list");
+		propertySearchResponse.Items!.Select(item => item.ComponentType)
 			.Should().Contain("crt.Gallery",
 				because: "bulkActions should surface gallery metadata derived from the frontend");
 		detailResponse.Success.Should().BeTrue(
@@ -94,8 +94,15 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "the detail response should echo the requested component type");
 		detailResponse.Container.Should().BeTrue(
 			because: "menu items can host submenu items");
-		detailResponse.Properties.Should().ContainKey("items",
-			because: "nested menu contracts should expose their submenu slot metadata");
+		// crt.MenuItem details may arrive either through the legacy properties block
+		// (older catalogs) or through the wrapped-shape inputs/outputs blocks (current
+		// static-files-mcp registry). Accept either — both describe the same surface.
+		bool hasItemsInLegacy = detailResponse.Properties is not null
+			&& detailResponse.Properties.ContainsKey("items");
+		bool hasItemsInWrapped = detailResponse.Inputs is not null
+			&& detailResponse.Inputs.ContainsKey("items");
+		(hasItemsInLegacy || hasItemsInWrapped).Should().BeTrue(
+			because: "nested menu contracts should expose their submenu slot metadata in either properties or inputs");
 
 		// CDN migration markers: every response from the real clio MCP server must now
 		// expose the resolver tier and the catalog version it landed on, so AI can react
@@ -133,10 +140,9 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "schema-type=mobile without a search term should return the full mobile catalog in list mode");
 		mobileListResponse.Count.Should().BeGreaterThan(0,
 			because: "the shipped mobile registry should contain at least one component entry");
-		mobileListResponse.Groups.Should().NotBeNullOrEmpty(
-			because: "the mobile catalog response should be organized into groups like the web catalog");
-		IEnumerable<string> mobileTypes = mobileListResponse.Groups!
-			.SelectMany(group => group.Items)
+		mobileListResponse.Items.Should().NotBeNullOrEmpty(
+			because: "the mobile catalog response should expose a flat item list like the web catalog");
+		IEnumerable<string> mobileTypes = mobileListResponse.Items!
 			.Select(item => item.ComponentType)
 			.ToList();
 		mobileTypes.Should().Contain("crt.Toggle",
@@ -167,8 +173,8 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "unknown component lookups should return a structured failure envelope");
 		response.Error.Should().Contain("crt.DoesNotExist",
 			because: "the failure should identify the missing component type");
-		response.Groups.Should().NotBeNullOrEmpty(
-			because: "the fallback response should still expose available types for discovery");
+		response.Items.Should().NotBeNullOrEmpty(
+			because: "the fallback response should still expose available types for discovery in the flat item list");
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {

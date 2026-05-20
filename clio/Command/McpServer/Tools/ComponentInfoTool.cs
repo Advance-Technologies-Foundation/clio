@@ -151,6 +151,8 @@ public sealed class ComponentInfoTool(
 			Container = entry.Container ? true : null,
 			ParentTypes = entry.ParentTypes.Count == 0 ? null : entry.ParentTypes,
 			Properties = entry.Properties.Count == 0 ? null : entry.Properties,
+			Inputs = entry.Inputs is { Count: > 0 } ? entry.Inputs : null,
+			Outputs = entry.Outputs is { Count: > 0 } ? entry.Outputs : null,
 			TypicalChildren = entry.TypicalChildren.Count == 0 ? null : entry.TypicalChildren,
 			Example = entry.Example,
 			ResolvedTargetVersion = resolvedTargetVersion,
@@ -262,11 +264,35 @@ public sealed class ComponentInfoResponse {
 	public IReadOnlyList<string>? ParentTypes { get; init; }
 
 	/// <summary>
-	/// Gets or sets the curated property catalog for the component.
+	/// Gets or sets the curated property catalog for the component. Populated by the
+	/// legacy registry shape (top-level array with <c>properties</c>); empty in the
+	/// wrapped registry shape where the producer uses <see cref="Inputs"/> and
+	/// <see cref="Outputs"/> instead.
 	/// </summary>
 	[JsonPropertyName("properties")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyDictionary<string, ComponentPropertyDefinition>? Properties { get; init; }
+
+	/// <summary>
+	/// Gets or sets the component's input bindings in the wrapped registry shape.
+	/// Each value is surfaced as a forward-compatible <see cref="JsonElement"/> so the
+	/// producer can evolve the inner schema (e.g. add <c>keyType</c>, <c>items</c>,
+	/// <c>deprecated</c>) without a coordinated clio release. Omitted entirely when
+	/// the underlying entry has no <c>inputs</c> block.
+	/// </summary>
+	[JsonPropertyName("inputs")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? Inputs { get; init; }
+
+	/// <summary>
+	/// Gets or sets the component's output bindings in the wrapped registry shape.
+	/// Same forward-compatible <see cref="JsonElement"/> treatment as
+	/// <see cref="Inputs"/>; omitted entirely when the entry has no <c>outputs</c>
+	/// block.
+	/// </summary>
+	[JsonPropertyName("outputs")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? Outputs { get; init; }
 
 	/// <summary>
 	/// Gets or sets typical child component types for container components.
@@ -378,11 +404,34 @@ public sealed class ComponentRegistryEntry {
 	public IReadOnlyList<string> ParentTypes { get; init; } = [];
 
 	/// <summary>
-	/// Gets or sets the curated property metadata.
+	/// Gets or sets the curated property metadata. Populated by the legacy registry
+	/// shape (top-level array). The wrapped registry shape produced by
+	/// <c>static-files-mcp</c> uses <see cref="Inputs"/> and <see cref="Outputs"/>
+	/// instead — both deserialise from the same JSON without a coordinated rename.
 	/// </summary>
 	[JsonPropertyName("properties")]
 	public IReadOnlyDictionary<string, ComponentPropertyDefinition> Properties { get; init; }
 		= new Dictionary<string, ComponentPropertyDefinition>();
+
+	/// <summary>
+	/// Gets or sets the component's input bindings from the wrapped registry shape.
+	/// Values are kept as <see cref="JsonElement"/> so the producer can evolve the
+	/// inner schema (e.g. add <c>keyType</c>, <c>items</c>, <c>deprecated</c>) without
+	/// a coordinated clio release. The forward-compatible payload is surfaced
+	/// verbatim through <c>ComponentInfoResponse.Inputs</c>.
+	/// </summary>
+	[JsonPropertyName("inputs")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? Inputs { get; init; }
+
+	/// <summary>
+	/// Gets or sets the component's output bindings from the wrapped registry shape.
+	/// Same forward-compatible <see cref="JsonElement"/> treatment as
+	/// <see cref="Inputs"/>; surfaced verbatim through <c>ComponentInfoResponse.Outputs</c>.
+	/// </summary>
+	[JsonPropertyName("outputs")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? Outputs { get; init; }
 
 	/// <summary>
 	/// Gets or sets typical child component types.

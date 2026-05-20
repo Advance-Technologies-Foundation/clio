@@ -161,6 +161,38 @@ of every successfully-fetched file in registry order, separated by
 `\n\n---\n\n`. List responses and mobile responses never carry the field
 (mobile has no CDN tier; list mode does not load docs).
 
+### Detail-response shape (`inputs`/`outputs` vs legacy `properties`)
+
+The producer ships two schema generations under the same registry URL,
+and `Tools/ComponentInfoTool.cs` surfaces both verbatim:
+
+- **Wrapped (current).** Each component entry carries `inputs` and
+  `outputs` dictionaries. Values are forward-compatible JSON blobs whose
+  inner schema is owned by the producer (`type`, `default`, `description`,
+  `values`, `keyType`, `valueType`, `items`, `deprecated`, …) — clio
+  stores them as `JsonElement` so a producer-side schema addition does
+  NOT require a coordinated clio release.
+- **Legacy.** Older entries carry a single `properties` dictionary with a
+  fixed clio-side POCO (`ComponentPropertyDefinition`). This shape still
+  appears in the mobile catalog and in older per-version files.
+
+`CreateDetailResponse` populates `inputs`/`outputs` only when the
+underlying entry actually has them, and `properties` only when populated —
+the catch is that `inputs`+`outputs` and `properties` describe the same
+component surface but in different schema generations, so both can be
+absent (mobile entries without bindings) and both can be empty (the
+legacy `properties: {}` block on a wrapped-shape entry). AI must look at
+both fields, not just `properties`, when generating `viewConfigDiff`
+inserts or matching output events to handler `request` strings — see the
+canonical guidance in `Resources/PageModificationGuidanceResource.cs`.
+
+List-mode search (`ComponentInfoGrouping.Matches`) inspects the wrapped
+shape too: it walks every `inputs`/`outputs` key and the well-known
+`type` / `description` / `values` properties inside each binding value.
+Without this branch the search filter would be useless on the new payload
+because the legacy `category`/`description`/`properties` fields are empty
+in the wrapped shape.
+
 When changing the catalog data source, refer to:
 
 - `research/architecture.md` — target architecture (creatio-ui CI → `static-files-mcp` GitLab → academy 5-minute mirror → clio).

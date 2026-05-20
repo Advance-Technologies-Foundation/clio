@@ -155,6 +155,8 @@ public sealed class ComponentInfoCommand {
 			Container = entry.Container ? true : null,
 			ParentTypes = entry.ParentTypes.Count == 0 ? null : entry.ParentTypes,
 			Properties = entry.Properties.Count == 0 ? null : entry.Properties,
+			Inputs = entry.Inputs is { Count: > 0 } ? entry.Inputs : null,
+			Outputs = entry.Outputs is { Count: > 0 } ? entry.Outputs : null,
 			TypicalChildren = entry.TypicalChildren.Count == 0 ? null : entry.TypicalChildren,
 			Example = entry.Example,
 			ResolvedTargetVersion = resolvedTargetVersion,

@@ -199,6 +199,12 @@ public sealed class PageModificationGuidanceResource {
 		       - `resolvedFrom: "latest-fallback"` means no usable platform version was resolved (no active environment, cliogate < `2.0.0.32`, probe failed, or `CoreVersion` did not parse). The response carries the most recent platform catalog clio knows of, which may be a superset of the target environment. Use it for discovery, but be prepared for `update-page` to reject a component or property that does not exist on the target stand — that is a legitimate signal that the AI catalog was wider than the platform.
 		       - Do not paper over a `latest-fallback` by pinning a target version yourself. Fix the upstream signal (active environment, cliogate version) so the next call resolves to `"environment"`.
 
+		       Detail-response payload shape (read once before composing `update-page` bodies)
+		       - `inputs` — the curated input bindings for the component (e.g. `caption`, `disabled`, `color` on `crt.Button`). Each value carries `type` and may carry `default`, `description`, `values` (enum constraints), `items` (array element type), `keyType`/`valueType` (record shape). Map these directly onto the `values` object of a `viewConfigDiff` insert.
+		       - `outputs` — the curated output bindings (events) for the component (e.g. `clicked`, `blurred`, `focused`). Output bindings are bound through `request` descriptors in the body — match each `outputs.<name>` to a `viewConfigDiff` entry's `values.<name>.request` and add a matching `handlers` entry with the same `request` string.
+		       - `properties` — present only for legacy catalog entries that did not migrate to the `inputs`/`outputs` split. When `properties` is omitted, use `inputs`+`outputs` instead — both describe the same component surface, just different schema generations.
+		       - `documentation` — opt-in long-form markdown for complex components (e.g. `crt.DataGrid`); concatenated from every file listed in the producer's `content.docs[]`. Use it as the source of truth for non-trivial composition rules (e.g. data-grid features matrix). Absent on simple components — do not interpret its absence as missing data.
+
 		       Known limitations
 		       - `update-page` fail-closed on design-package resolution: if `GetDesignPackageUId` fails for a write, the call returns an error instead of silently falling back to the original package.
 		       - `get-page` uses a best-effort fallback to the original package if design-package resolution fails, because reads are non-destructive.

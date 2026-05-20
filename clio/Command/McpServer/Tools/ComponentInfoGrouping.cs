@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -43,7 +44,55 @@ public static class ComponentInfoGrouping {
 				ContainsCi(property.Key, query)
 				|| ContainsCi(property.Value.Type, query)
 				|| ContainsCi(property.Value.Description, query)
-				|| property.Value.Values?.Any(value => ContainsCi(value, query)) == true);
+				|| property.Value.Values?.Any(value => ContainsCi(value, query)) == true)
+			|| BindingsMatch(entry.Inputs, query)
+			|| BindingsMatch(entry.Outputs, query);
+	}
+
+	/// <summary>
+	/// Searches the wrapped-shape <c>inputs</c> / <c>outputs</c> dictionaries for a
+	/// query match. The values are <see cref="JsonElement"/> blobs whose schema is owned
+	/// by the producer (see <c>static-files-mcp</c>), so the matcher only looks at
+	/// well-known string fields (<c>type</c>, <c>description</c>, <c>values</c>) — that
+	/// keeps the search predictable while still letting the producer add unknown keys
+	/// without breaking matching.
+	/// </summary>
+	private static bool BindingsMatch(IReadOnlyDictionary<string, JsonElement>? bindings, string query) {
+		if (bindings is null || bindings.Count == 0) {
+			return false;
+		}
+		foreach (KeyValuePair<string, JsonElement> binding in bindings) {
+			if (ContainsCi(binding.Key, query)) {
+				return true;
+			}
+			if (binding.Value.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (TryGetStringProperty(binding.Value, "type", out string? type) && ContainsCi(type, query)) {
+				return true;
+			}
+			if (TryGetStringProperty(binding.Value, "description", out string? description) && ContainsCi(description, query)) {
+				return true;
+			}
+			if (binding.Value.TryGetProperty("values", out JsonElement values) && values.ValueKind == JsonValueKind.Array) {
+				foreach (JsonElement value in values.EnumerateArray()) {
+					if (value.ValueKind == JsonValueKind.String && ContainsCi(value.GetString(), query)) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	private static bool TryGetStringProperty(JsonElement element, string propertyName, out string? value) {
+		if (element.TryGetProperty(propertyName, out JsonElement property)
+			&& property.ValueKind == JsonValueKind.String) {
+			value = property.GetString();
+			return true;
+		}
+		value = null;
+		return false;
 	}
 
 	private static bool ContainsCi(string? value, string query) {
