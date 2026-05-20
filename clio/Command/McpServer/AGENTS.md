@@ -119,6 +119,41 @@ To force-refresh the local cache without waiting for the 5min TTL, use the
 
 Exit code is 0 only when every requested refresh got a 2xx from the CDN.
 
+### Long-form documentation (`content.docs[]`)
+
+A component entry may carry a `content.docs[]` array — a list of paths
+(e.g. `docs/data-grid.component.md`) that live alongside the registry under
+the same `/api/mcp/{version}/` prefix on the academy edge. When a detail
+request hits an entry with `content.docs[]`, clio lazily fetches each file
+through a sibling pipeline implemented in
+`Tools/ComponentRegistryDocsClient.cs`:
+
+- **Cache.** `~/.clio/cache/component-registry/{version}/{docPath}` (plus a
+  `.meta.json` sidecar). Same 5-minute TTL + stale-while-revalidate as the
+  registry payload; `~/.clio/cache/component-registry/` delete resets the
+  whole chain in one go.
+- **CDN.** `https://academy.creatio.com/api/mcp/{version}/{docPath}` — three
+  attempts with exponential backoff on 5xx / network errors, immediate
+  fall-through on 4xx.
+- **No embedded tier for docs.** If the cache misses and the CDN cannot
+  serve the file, the docs client returns `null` and the MCP tool **skips
+  that file** — partial-failure mode by design. The other docs of the same
+  component are still concatenated, the `documentation` field is omitted
+  entirely only when every file fails, and the rest of the detail response
+  (componentType, properties, example, …) is unaffected.
+
+The raw doc paths come from a writable GitLab repository, so
+`Tools/ComponentRegistryDocsPath.cs` validates every value against
+`^docs/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*\.md$` and a `Path.GetFullPath`
+containment check before any HTTP or filesystem touch. Both checks run in
+the docs client AND in the docs cache store as defence in depth — never
+add a new call site that bypasses them.
+
+Detail responses receive a `documentation` field that is the concatenation
+of every successfully-fetched file in registry order, separated by
+`\n\n---\n\n`. List responses and mobile responses never carry the field
+(mobile has no CDN tier; list mode does not load docs).
+
 When changing the catalog data source, refer to:
 
 - `research/architecture.md` — target architecture (creatio-ui CI → `static-files-mcp` GitLab → academy 5-minute mirror → clio).

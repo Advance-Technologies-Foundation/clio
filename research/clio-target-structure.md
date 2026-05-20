@@ -26,7 +26,7 @@ The version returned by `GetSysInfo` is mapped to a CDN file name (e.g. `8.1.5.x
 |---|---|
 | Primary source | `https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json` (per-version file on academy CDN) |
 | Latest alias | `https://academy.creatio.com/api/mcp/latest/ComponentRegistry.json` (CI-maintained pointer to the freshest GA) |
-| Runtime cache | `~/.clio/cache/component-registry/{version}.json` + `{version}.meta.json` (Last-Modified, ETag, expiresAt, sourceUrl); 5-minute TTL with stale-while-revalidate |
+| Runtime cache | `~/.clio/cache/component-registry/{version}.json` + `{version}.meta.json` (Last-Modified, ETag, expiresAt, sourceUrl); 5-minute TTL with stale-while-revalidate. Long-form docs live in the same root under `{version}/{docPath}` (e.g. `{version}/docs/data-grid.component.md`) with parallel `.meta.json` sidecars and the same TTL. |
 | Embedded fallback | `Clio.ComponentRegistry.ComponentRegistry.json` as an embedded resource in `clio.dll`. Populated at `dotnet pack` time via MSBuild `ResolveCdnSnapshot` target. Committed seed-snapshot serves as the bootstrap source and as the fallback when the MSBuild fetch fails. |
 | Loader | `Stream` from CDN/cache/embedded, parsed by the same `JsonSerializer.Deserialize<ComponentRegistryEntry[]>` |
 | Model | **Unchanged** — `ComponentRegistryEntry` and `ComponentPropertyDefinition` keep current fields. No `availability`. Schema is drop-in compatible. |
@@ -231,6 +231,19 @@ clio component-registry refresh [--version <semver>] [--all]
 - `--all`: refresh all files currently present in the local cache.
 
 Operationally useful when a user wants to pick up a newly published GA without waiting for the 5min TTL (rarely needed at that cadence, but kept for parity with longer past TTLs and for force-refresh debugging). Trivial wrapper over `IComponentRegistryClient.RefreshAsync(version)`.
+
+#### 8. Long-form documentation pipeline (`content.docs[]`)
+
+A component entry may list one or more documentation files under `content.docs[]` (e.g. `docs/data-grid.component.md`). These files live on the CDN under the same `/api/mcp/{version}/` prefix and exist to give AI agents long-form prose context that doesn't belong in the structured `properties` map (recipes, do-this-not-that guidance, step-by-step playbooks).
+
+clio fetches them lazily on detail requests through a dedicated pipeline (`IComponentRegistryDocsClient` → `IComponentRegistryDocsCacheStore`) that mirrors the registry-payload one in shape but with two deliberate differences:
+
+- **Two-tier fallback, not three.** `cache → CDN`. There is no embedded tier for docs — the files are optional, not invariant, so when both tiers miss the client returns `null` and the MCP tool simply skips that file. Other docs from the same component still concatenate; the response just carries fewer documentation blocks.
+- **Path validation is mandatory.** Producer paths arrive over the network from a writable GitLab repository, so every value is matched against `^docs/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*\.md$` and a `Path.GetFullPath` containment check before any HTTP or filesystem touch. The validator lives in `Tools/ComponentRegistryDocsPath.cs` and is enforced in both the client and the cache store (defence in depth).
+
+Cache layout: `{version}/{docPath}` + `{docPath}.meta.json` under `~/.clio/cache/component-registry/`. TTL and stale-while-revalidate are identical to the registry-payload cache, so a single `~/.clio/cache/component-registry/` delete resets every layer.
+
+Response shape: detail responses receive a `documentation` field that is the concatenation of every successfully-fetched file in registry order, separated by `\n\n---\n\n`. The field is omitted entirely when the component has no docs, when every fetch fails, when the schema is mobile, or when the response is in list mode.
 
 ## Resolution stack for `target-version` (internal)
 

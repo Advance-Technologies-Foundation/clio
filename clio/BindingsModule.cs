@@ -255,7 +255,9 @@ public class BindingsModule {
 		services.AddSingleton<TimeProvider>(TimeProvider.System);
 		services.AddSingleton<IEmbeddedRegistryReader, EmbeddedRegistryReader>();
 		services.AddSingleton<IComponentRegistryCacheStore, ComponentRegistryCacheStore>();
+		services.AddSingleton<IComponentRegistryDocsCacheStore, ComponentRegistryDocsCacheStore>();
 		services.AddSingleton<IComponentRegistryClient, ComponentRegistryClient>();
+		services.AddSingleton<IComponentRegistryDocsClient, ComponentRegistryDocsClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
 		services.AddSingleton<IPlatformVersionResolver, PlatformVersionResolver>();

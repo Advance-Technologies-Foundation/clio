@@ -16,6 +16,7 @@ The CDN at academy.creatio.com is the transport contract. The GitLab repository 
 6. **No AI-side overrides in v1.** The CI emits the full extracted set. AI-team curation is a possible future stage.
 7. **clio consumes via HTTP**, with a three-layer fallback chain: CDN → file cache (`~/.clio/cache/component-registry/`) → embedded snapshot in `clio.dll`. The embedded snapshot is regenerated at clio build time by an MSBuild target that fetches `latest/ComponentRegistry.json` from the CDN.
 8. **Cache policy: TTL 5min, stale-while-revalidate.** AI requests never block on the network — expired cache is returned synchronously while a background refresh runs. The short TTL keeps clio aligned with the 5-minute academy mirror cadence so a producer push lands in AI's hands within roughly 10 minutes worst-case.
+9. **Long-form documentation is a sibling pipeline.** A component entry may carry a `content.docs[]` array (e.g. `docs/data-grid.component.md`); the files live next to the registry under `/api/mcp/{version}/`. clio fetches them lazily on detail requests through a two-tier cache → CDN chain (no embedded tier — docs are optional, so a miss simply skips the file). The same 5-minute TTL + stale-while-revalidate apply. Path values from the producer are validated against a strict allow-list before any HTTP or filesystem activity.
 
 ## Target architecture
 

@@ -16,12 +16,14 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class ComponentInfoTool(
 	IComponentInfoCatalog catalog,
 	IMobileComponentInfoCatalog mobileCatalog,
-	IPlatformVersionResolver versionResolver) {
+	IPlatformVersionResolver versionResolver,
+	IComponentRegistryDocsClient docsClient) {
 
 	internal const string ToolName = "get-component-info";
 	internal const string ResolvedFromEnvironment = ComponentInfoResolution.ResolvedFromEnvironment;
 	internal const string ResolvedFromLatestFallback = ComponentInfoResolution.ResolvedFromLatestFallback;
 	internal const string SchemaTypeMobile = "mobile";
+	internal const string DocumentationSeparator = "\n\n---\n\n";
 
 	/// <summary>
 	/// Returns the component catalog list or full metadata for a specific component type.
@@ -72,7 +74,8 @@ public sealed class ComponentInfoTool(
 		}
 
 		if (state.Lookup.TryGetValue(args.ComponentType.Trim(), out ComponentRegistryEntry? entry)) {
-			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom);
+			string? documentation = await LoadDocumentationAsync(entry, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
+			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom, documentation);
 		}
 
 		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, args.Search);
@@ -101,7 +104,10 @@ public sealed class ComponentInfoTool(
 
 		ComponentRegistryEntry? entry = mobileCatalog.Find(args.ComponentType);
 		if (entry is not null) {
-			return CreateDetailResponse(entry, resolvedTargetVersion: null, resolvedFrom: null);
+			// Mobile catalog ships as static data without a CDN tier, so the docs
+			// pipeline is not consulted here even if a future mobile entry lists
+			// content.docs[]. Documentation is intentionally null for mobile.
+			return CreateDetailResponse(entry, resolvedTargetVersion: null, resolvedFrom: null, documentation: null);
 		}
 
 		IReadOnlyList<ComponentRegistryEntry> suggestions = mobileCatalog.Search(args.Search);
@@ -134,7 +140,8 @@ public sealed class ComponentInfoTool(
 	private static ComponentInfoResponse CreateDetailResponse(
 		ComponentRegistryEntry entry,
 		string? resolvedTargetVersion,
-		string? resolvedFrom) {
+		string? resolvedFrom,
+		string? documentation) {
 		return new ComponentInfoResponse {
 			Success = true,
 			Mode = "detail",
@@ -147,8 +154,36 @@ public sealed class ComponentInfoTool(
 			TypicalChildren = entry.TypicalChildren.Count == 0 ? null : entry.TypicalChildren,
 			Example = entry.Example,
 			ResolvedTargetVersion = resolvedTargetVersion,
-			ResolvedFrom = resolvedFrom
+			ResolvedFrom = resolvedFrom,
+			Documentation = string.IsNullOrEmpty(documentation) ? null : documentation
 		};
+	}
+
+	/// <summary>
+	/// Fetches every documentation file referenced by the entry through the docs
+	/// pipeline (cache → CDN, no embedded tier) and concatenates them in registry order
+	/// with <see cref="DocumentationSeparator"/>. Partial-failure mode: a single missed
+	/// fetch is skipped and the remaining files are still concatenated, matching the
+	/// graceful-degradation posture of the registry chain itself.
+	/// </summary>
+	private async Task<string?> LoadDocumentationAsync(
+		ComponentRegistryEntry entry,
+		string resolvedVersion,
+		CancellationToken cancellationToken) {
+		IReadOnlyList<string>? docs = entry.Content?.Docs;
+		if (docs is null || docs.Count == 0) {
+			return null;
+		}
+
+		List<string> blocks = new(capacity: docs.Count);
+		foreach (string docPath in docs) {
+			string? block = await docsClient.GetDocAsync(resolvedVersion, docPath, cancellationToken).ConfigureAwait(false);
+			if (!string.IsNullOrEmpty(block)) {
+				blocks.Add(block);
+			}
+		}
+
+		return blocks.Count == 0 ? null : string.Join(DocumentationSeparator, blocks);
 	}
 }
 
@@ -273,6 +308,20 @@ public sealed class ComponentInfoResponse {
 	[JsonPropertyName("resolvedFrom")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? ResolvedFrom { get; init; }
+
+	/// <summary>
+	/// Gets or sets the long-form documentation associated with the component. Populated
+	/// only on detail responses for components whose registry entry lists files under
+	/// <c>content.docs[]</c>; each file is fetched lazily through the docs CDN/cache
+	/// pipeline and the resulting markdown blocks are concatenated with
+	/// <c>"\n\n---\n\n"</c> separators in registry order. Omitted entirely when the
+	/// component has no documentation, when the schema is mobile, or when every
+	/// referenced file fails to fetch (the partial-failure mode skips failed files and
+	/// keeps the rest — see <c>clio/Command/McpServer/AGENTS.md</c>).
+	/// </summary>
+	[JsonPropertyName("documentation")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Documentation { get; init; }
 }
 
 /// <summary>
@@ -346,6 +395,34 @@ public sealed class ComponentRegistryEntry {
 	/// </summary>
 	[JsonPropertyName("example")]
 	public JsonElement? Example { get; init; }
+
+	/// <summary>
+	/// Gets or sets the per-component <c>content</c> block from the registry payload.
+	/// In the wrapped registry shape this carries the long-form documentation references
+	/// (<see cref="ComponentContent.Docs"/>) and per-component type definitions.
+	/// </summary>
+	[JsonPropertyName("content")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public ComponentContent? Content { get; init; }
+}
+
+/// <summary>
+/// The optional <c>content</c> block inside a <see cref="ComponentRegistryEntry"/>.
+/// Only the fields clio actually consumes are surfaced here; unknown keys are ignored
+/// by the deserialiser so the producer can evolve the block without a coordinated
+/// schema bump.
+/// </summary>
+public sealed class ComponentContent {
+	/// <summary>
+	/// Gets or sets the list of long-form documentation files for the component.
+	/// Each entry is a path relative to <c>/api/mcp/{version}/</c> (e.g.
+	/// <c>"docs/data-grid.component.md"</c>); clio fetches the bytes lazily on detail
+	/// requests, caches them with the same 5-minute TTL as the registry payload, and
+	/// concatenates them into the response <c>documentation</c> field.
+	/// </summary>
+	[JsonPropertyName("docs")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string>? Docs { get; init; }
 }
 
 /// <summary>
