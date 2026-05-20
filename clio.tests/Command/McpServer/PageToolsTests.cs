@@ -3405,8 +3405,10 @@ public class PageToolsTests
 			because: "web prompt must reference SCHEMA_HANDLERS for handler cross-reference");
 		PageBodySamplingService.SystemPrompt.Should().Contain("crt.",
 			because: "web prompt must explain that crt.* converters are built-in and must not be declared");
-		PageBodySamplingService.SystemPrompt.Should().NotContain("SCHEMA_VALIDATORS",
-			because: "validator cross-reference is handled deterministically, not by sampling");
+		PageBodySamplingService.SystemPrompt.Should().Contain("SCHEMA_VALIDATORS",
+			because: "web prompt must reference SCHEMA_VALIDATORS for validator type resolution — " +
+				"structural validator checks (params, resource format) are deterministic, but type resolution " +
+				"is ambiguous (page-local vs remote module) and belongs in sampling");
 		PageBodySamplingService.SystemPrompt.Should().NotContain("view binds to viewModel only",
 			because: "MVVM binding is handled deterministically, not by sampling");
 		PageBodySamplingService.SystemPrompt.Should().Contain("Type mismatch",

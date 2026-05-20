@@ -2879,6 +2879,188 @@ public sealed class SchemaValidationServiceTests
 
         #endregion
 
+	#region ValidateMobileNoValidatorReferences
+
+	[Test]
+	[Description("Returns valid when no attribute in viewModelConfigDiff binds a validators property.")]
+	public void ValidateMobileNoValidatorReferences_WhenNoValidators_ReturnsValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "viewModelConfigDiff": [
+		                  {
+		                    "operation": "merge",
+		                    "path": ["attributes"],
+		                    "values": {
+		                      "UsrName": {
+		                        "modelConfig": { "path": "PDS.UsrName" }
+		                      }
+		                    }
+		                  }
+		                ],
+		                "modelConfigDiff": []
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileNoValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because no attribute binds validators");
+		result.Errors.Should().BeEmpty("because there are no validator references to report");
+	}
+
+	[Test]
+	[Description("Reports an error when a viewModelConfigDiff attribute binds a validators property.")]
+	public void ValidateMobileNoValidatorReferences_WhenDiffAttributeBindsValidators_ReturnsError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "viewModelConfigDiff": [
+		                  {
+		                    "operation": "merge",
+		                    "path": ["attributes"],
+		                    "values": {
+		                      "UsrName": {
+		                        "modelConfig": { "path": "PDS.UsrName" },
+		                        "validators": {
+		                          "Required": { "type": "crt.Required" }
+		                        }
+		                      }
+		                    }
+		                  }
+		                ],
+		                "modelConfigDiff": []
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileNoValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because mobile pages do not support validator bindings");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrName"),
+			because: "the error must identify the attribute that binds validators");
+	}
+
+	[Test]
+	[Description("Reports an error when a viewModelConfig attribute binds a validators property.")]
+	public void ValidateMobileNoValidatorReferences_WhenConfigAttributeBindsValidators_ReturnsError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "viewModelConfig": {
+		                  "attributes": {
+		                    "UsrEmail": {
+		                      "modelConfig": { "path": "PDS.UsrEmail" },
+		                      "validators": {
+		                        "EmailFormat": { "type": "usr.EmailValidator" }
+		                      }
+		                    }
+		                  }
+		                },
+		                "modelConfigDiff": []
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileNoValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because mobile pages do not support validator bindings");
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrEmail"),
+			because: "the error must identify the attribute that binds validators");
+	}
+
+	[Test]
+	[Description("Reports multiple errors when several attributes in viewModelConfigDiff bind validators.")]
+	public void ValidateMobileNoValidatorReferences_WhenMultipleAttributesBindValidators_ReportsAll() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "viewModelConfigDiff": [
+		                  {
+		                    "operation": "merge",
+		                    "path": ["attributes"],
+		                    "values": {
+		                      "UsrName": {
+		                        "modelConfig": { "path": "PDS.UsrName" },
+		                        "validators": { "Required": { "type": "crt.Required" } }
+		                      },
+		                      "UsrPhone": {
+		                        "modelConfig": { "path": "PDS.UsrPhone" },
+		                        "validators": { "PhoneFormat": { "type": "usr.PhoneValidator" } }
+		                      }
+		                    }
+		                  }
+		                ],
+		                "modelConfigDiff": []
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileNoValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because both attributes bind validators on a mobile page");
+		result.Errors.Should().HaveCount(2,
+			because: "each attribute with a validators binding should produce a distinct error");
+	}
+
+	[Test]
+	[Description("Returns valid when the body is empty or null — edge case handled gracefully.")]
+	public void ValidateMobileNoValidatorReferences_WhenBodyIsEmpty_ReturnsValid() {
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileNoValidatorReferences("");
+
+		// Assert
+		result.IsValid.Should().BeTrue("because an empty body has no validator references to report");
+	}
+
+	[Test]
+	[Description("Returns valid when the body is invalid JSON — JSON errors are reported by ValidateMobileBody.")]
+	public void ValidateMobileNoValidatorReferences_WhenBodyIsInvalidJson_ReturnsValid() {
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileNoValidatorReferences("not json");
+
+		// Assert
+		result.IsValid.Should().BeTrue("because JSON parsing errors are reported by ValidateMobileBody, not this method");
+	}
+
+	[Test]
+	[Description("Returns valid when viewModelConfigDiff entries do not target the attributes path.")]
+	public void ValidateMobileNoValidatorReferences_WhenDiffDoesNotTargetAttributes_ReturnsValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "viewModelConfigDiff": [
+		                  {
+		                    "operation": "merge",
+		                    "path": ["details"],
+		                    "values": {
+		                      "SomeDetail": { "validators": { "X": { "type": "crt.Required" } } }
+		                    }
+		                  }
+		                ],
+		                "modelConfigDiff": []
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileNoValidatorReferences(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			"because the diff targets 'details' not 'attributes', so ShouldScanAsAttributesContainer should skip it");
+	}
+
+        #endregion
+
 	#region ValidateMobileComponentTypes
 
 	[Test]

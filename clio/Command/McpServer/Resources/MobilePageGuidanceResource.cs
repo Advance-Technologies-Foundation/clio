@@ -31,10 +31,11 @@ public sealed class MobilePageGuidanceResource {
 		       ─────────────────────────────────────────────────────────────
 		       The web `page-modification` PRE-EDIT GUIDANCE CHECKLIST partially applies on mobile:
 		         APPLIES IN FULL: `page-schema-resources`, entity-level `business-rules` (`create-entity-business-rule`).
-		         PARTIAL:  `page-schema-converters` — read for concept; only the inline OOTB binding form is valid on mobile (see OOTB list below).
-		         DOES NOT APPLY: `page-schema-handlers`, `page-schema-validators`, `page-schema-creatio-devkit-common` — the corresponding mobile sections do not exist.
+		         PARTIAL:  `page-schema-converters` — read for concept; on mobile only the inline OOTB binding form (see OOTB list below) or a reference to a custom converter that already exists in a remote module is valid. The page body itself must not declare a `converters` section.
+		         PARTIAL:  `page-schema-handlers` — read for concept; on mobile, handlers can only be referenced if they already exist in a remote module and the user explicitly asks for them. The page body itself must not declare a `handlers` section.
+		         DOES NOT APPLY: `page-schema-validators`, `page-schema-creatio-devkit-common` — validators are not supported on mobile at all (not even OOTB), and the devkit-common AMD dependency does not exist on mobile.
 
-		       If a web guide tells you to add a section this mobile guide forbids (handlers / validators / custom converters / AMD deps), the mobile rule wins.
+		       If a web guide tells you to add a section this mobile guide forbids (validators / inline handlers or converters declared in the page body / AMD deps), the mobile rule wins.
 
 		       ─────────────────────────────────
 		       BODY FORMAT — plain JSON, not AMD
@@ -52,22 +53,55 @@ public sealed class MobilePageGuidanceResource {
 		       DO NOT wrap the body in define(...).
 		       DO NOT add any AMD marker pairs (SCHEMA_DEPS, SCHEMA_VIEW_CONFIG_DIFF, etc.).
 
-		       Validators — do not generate:
-		         Mobile validators require AMD remote modules that cannot be AI-generated.
-		         Do not write a "validators" section. If the user explicitly names a custom validator
-		         from an existing remote module, it may be referenced, but do not add it to the body.
+		       ─────────────────────────────────────────────────────────────
+		       VALIDATORS, CONVERTERS, HANDLERS — mobile constraints
+		       ─────────────────────────────────────────────────────────────
 
-		       Converters — OOTB only, no custom section:
-		         Do not add a "converters" section. Reference OOTB converters only as inline binding
-		         expression strings in viewConfigDiff values, e.g.:
+		       Validators — not supported on mobile:
+		         Mobile pages do not support validators at all, including OOTB validators.
+		         Do not add a "validators" section. Do not reference any validator (custom or OOTB)
+		         from a mobile page body. If the user asks for validation, implement it via entity-level
+		         business rules (`create-entity-business-rule`) instead.
+
+		       Converters — OOTB inline, or reference an existing custom converter:
+		         Do not add a "converters" section to the page body.
+		         Reference OOTB converters as inline binding expression strings in viewConfigDiff values, e.g.:
 		           "visible": "$HasUnsavedData | crt.InvertBooleanValue"
 		           "visible": "$CardState | crt.IsEqual : 'edit'"
-		         Allowed OOTB converters:
-		           crt.ToObjectProp, crt.InvertBooleanValue, crt.IsEqual, crt.AndBooleanValue,
-		           crt.IsInArray, crt.Concat, crt.ToCollectionFilters
+		         Converters can be chained: ""$Attr | crt.ConverterA : arg | crt.ConverterB""
+		         All converters receive the piped value as the first argument.
 
-		       Handlers — not supported:
-		         Do not add a "handlers" section to mobile pages.
+		         Allowed OOTB converters:
+		           crt.ToObjectProp      — extracts a property from an object
+		             Arg: propertyName (string)
+		             ""$FileAttr | crt.ToObjectProp : 'displayValue'""
+		           crt.InvertBooleanValue — negates a boolean (true → false)
+		             No args.
+		             ""$HasUnsavedData | crt.InvertBooleanValue""
+		           crt.IsEqual           — compares piped value for equality, returns boolean
+		             Arg: compareValue (string | attribute ref)
+		             ""$CardState | crt.IsEqual : 'edit'""
+		           crt.AndBooleanValue   — logical AND of piped boolean with another boolean
+		             Arg: otherValue (boolean attribute ref)
+		             ""$SomeFlag | crt.AndBooleanValue : $AnotherFlag""
+		           crt.IsInArray         — checks if piped value is in an array, returns boolean
+		             Arg: array (attribute ref)
+		             ""$Name | crt.IsInArray : $AllowedNames""
+		           crt.Concat            — concatenates piped string with another value
+		             Arg: appendValue (string | attribute ref)
+		             ""$Prefix | crt.Concat : $Suffix""
+		           crt.ToCollectionFilters — converts selected collection items into filters
+		             Args: collectionName (string), selectionState (attribute ref)
+		             ""$Items | crt.ToCollectionFilters : 'Items' : $DataTable_SelectionState""
+
+		         Custom converters: only reference one if the user explicitly asks for it AND it already
+		         exists in a remote module (the page body still must not declare a `converters` section).
+
+		       Handlers — reference-only, from an existing remote module:
+		         Do not add a "handlers" section to the page body.
+		         Custom request handlers can be referenced (e.g. via `clicked` binding to a custom request
+		         type) only if the user explicitly asks for them AND the handler is already implemented in
+		         a remote module. Do not author handler code inside the mobile page body.
 
 		       ────────────────────────────────────────────────────────
 		       crt.Scaffold — do NOT re-insert
@@ -83,8 +117,7 @@ public sealed class MobilePageGuidanceResource {
 		       ─────────────────────────────────────────────────────────────
 		       ONE DATA SOURCE PER PAGE (designer constraint)
 		       ─────────────────────────────────────────────────────────────
-		       The mobile designer disables multi-data-source (disableMultiDataSource: true).
-		       Define only one data source in modelConfigDiff.
+		       The mobile designer disables multi-data-source. Define only one data source in modelConfigDiff.
 
 		       ─────────────────────────────────────────────────────────────
 		       COMPONENT REGISTRY — mobile components are separate
@@ -122,25 +155,136 @@ public sealed class MobilePageGuidanceResource {
 		       ─────────────────────────────────────────────────────────────
 		       REQUESTS AVAILABLE ON MOBILE
 		       ─────────────────────────────────────────────────────────────
-		       Use these built-in requests in button clicked attributes or viewModelConfigDiff.
-		       Do NOT invent request types not on this list.
+		       Use these built-in requests in viewConfigDiff event bindings (e.g. `clicked`,
+		       `valueChange`, `updated`). Do NOT invent request types not on this list.
+		       Params listed below go into the `params` object of the binding:
+		         "clicked": { "request": "crt.<Name>", "params": { ... } }
 
-		       Common requests (also available on web):
-		         crt.OpenPageRequest, crt.ClosePageRequest
-		         crt.SaveRecordRequest, crt.CancelRecordChangesRequest
-		         crt.CreateRecordRequest, crt.UpdateRecordRequest, crt.DeleteRecordRequest
-		         crt.CopyRecordRequest
-		         crt.LoadDataRequest, crt.RunBusinessProcessRequest
-		         crt.UploadFileRequest, crt.DeleteFileRequest
-		         crt.ShowDialogRequest
-		         crt.OpenLookupPageRequest
-		         crt.AddCommunicationOptionsRequest, crt.CreateCommunicationOptionRequest,
-		         crt.RemoveCommunicationOptionRequest
+		       ── Navigation ──────────────────────────────────────────────
 
-		       Mobile-only requests (native device capabilities):
-		         crt.SetAttributeFromBarcodeRequest  — trigger barcode/QR scanner, write result to an attribute
-		         crt.OpenAddressOnMapRequest          — open native maps app with an address
-		         crt.OpenCustomWebViewPageRequest     — open an in-app web view
+		       crt.OpenPageRequest
+		         Opens a Freedom UI page by schema name.
+		         params: schemaName (string, required)
+
+		       crt.ClosePageRequest
+		         Closes the current page. Triggers discard-changes confirmation when
+		         there are unsaved changes.
+		         params: (none)
+
+		       ── Record operations ───────────────────────────────────────
+
+		       crt.CreateRecordRequest
+		         Creates a new record and opens the edit page.
+		         params: entityName? (string), defaultValues? ([{attributeName, value}])
+
+		       crt.UpdateRecordRequest
+		         Opens an existing record for editing.
+		         params: entityName? (string), recordId? (string)
+
+		       crt.DeleteRecordRequest
+		         Deletes a record.
+		         params: recordId? (string)
+
+		       crt.CopyRecordRequest
+		         Creates a copy of an existing record.
+		         params: entityName? (string), recordId (string, required)
+
+		       crt.SaveRecordRequest
+		         Saves all pending changes on the current page.
+		         params: preventCardClose? (boolean — keep the page open after save)
+
+		       crt.CancelRecordChangesRequest
+		         Reverts unsaved changes on the current record; page stays open.
+		         params: (none)
+
+		       ── Data ────────────────────────────────────────────────────
+
+		       crt.LoadDataRequest
+		         Reloads data from a data source.
+		         params: dataSourceName? (string), updateCache? (boolean)
+
+		       ── Business process ────────────────────────────────────────
+
+		       crt.RunBusinessProcessRequest
+		         Starts a business process.
+		         params: processName (string, required),
+		                 processParameters? (Record<string, unknown>),
+		                 recordIdProcessParameterName? (string),
+		                 showNotification? (boolean),
+		                 notificationText? (string),
+		                 saveAtProcessStart? (boolean)
+
+		       ── Files ───────────────────────────────────────────────────
+
+		       crt.UploadFileRequest
+		         Uploads a file. On mobile supports camera, gallery, and file picker.
+		         params: viewElementName? (string),
+		                 itemsAttributeName? (string),
+		                 maximumAllowedFileSize? (number, MB),
+		                 allowedFileTypes? (string, comma-separated extensions),
+		                 fileEntitySchemaName? (string),
+		                 recordEntitySchemaName? (string),
+		                 recordColumnName? (string),
+		                 recordId? (string)
+
+		       crt.DeleteFileRequest
+		         Deletes an uploaded file.
+		         params: fileName? (string),
+		                 entityName? (string, defaults to 'SysFile'),
+		                 recordId? (string),
+		                 itemsAttributeName? (string)
+
+		       ── Dialogs and lookups ─────────────────────────────────────
+
+		       crt.ShowDialogRequest
+		         Shows a confirmation or informational dialog.
+		         params: title? (string),
+		                 message (string, required),
+		                 actions (DialogAction[], required — each has caption, key)
+
+		       crt.OpenLookupPageRequest
+		         Opens a lookup selection page.
+		         params: entitySchemaName? (string),
+		                 filtersConfig? ({filterAttributes: [{name, value?}]}),
+		                 features? ({create?: {enabled}, select?: {multiple?}}),
+		                 selectionState? ({type: 'specific', selected: []}),
+		                 caption? (string)
+
+		       ── Communication options ───────────────────────────────────
+
+		       crt.AddCommunicationOptionsRequest
+		         Opens add-communication-option UI (phone, email, etc.).
+		         params: viewElementName (string, required)
+
+		       crt.CreateCommunicationOptionRequest
+		         Creates a communication option record.
+		         params: masterRecordColumnName (string, required),
+		                 componentName (string, required),
+		                 values (Record<string, unknown>, required),
+		                 indexToInsert? (number)
+
+		       crt.RemoveCommunicationOptionRequest
+		         Removes a communication option.
+		         params: recordId (string, required),
+		                 collectionAttributeName (string, required)
+
+		       ── Mobile-only requests (native device capabilities) ──────
+
+		       crt.SetAttributeFromBarcodeRequest
+		         Triggers the barcode/QR scanner and writes the result to an attribute.
+		         params: attributeName (string, required),
+		                 lookupFilterColumn? (string — filter lookup values by scanned code)
+
+		       crt.OpenAddressOnMapRequest
+		         Opens the native maps app with the specified address.
+		         params: query (string[], required — address parts)
+
+		       crt.OpenCustomWebViewPageRequest
+		         Opens an in-app web view.
+		         params: controllerName? (string),
+		                 viewXClass? (string),
+		                 extensionsModel? (string),
+		                 parameters? (Record<string, JsonData>)
 
 		       ─────────────────────────────────────────────────────────────
 		       MOBILE PAGE NAMING CONVENTIONS (Creatio standard)
@@ -151,12 +295,13 @@ public sealed class MobilePageGuidanceResource {
 		       ─────────────────────────────────────────────────────────────
 		       TEMPLATE HIERARCHY (for reference)
 		       ─────────────────────────────────────────────────────────────
-		       BlankMobilePageTemplate  — bare Scaffold, no content
-		       BaseMobilePageTemplate   — record/form pages (adds CancelButton, SaveButton, FAB)
-		         └── MobilePageWithTabsFreedomTemplate — tabbed record pages (GeneralInfoTab, FeedTab, AttachmentsTab)
-		       BaseMobileListTemplate   — list/section pages (adds search, FAB, HeaderContainer, crt.List)
+		       BaseMobileTemplate       — root template shared by page and list branches (inserts Scaffold + MainContainer)
+		       ├── BaseMobilePageTemplate   — record/form pages (adds CancelButton, SaveButton, FAB)
+		       │     └── MobilePageWithTabsFreedomTemplate — tabbed record pages (GeneralInfoTab, FeedTab, AttachmentsTab)
+		       └── BaseMobileListTemplate   — list/section pages (adds search, FAB, HeaderContainer, crt.List)
+		       BlankMobilePageTemplate      — standalone bare Scaffold, no parent, no content
 
-		       All templates already insert crt.Scaffold — do NOT insert another one.
+		       All five templates already provide crt.Scaffold — do NOT insert another one.
 
 		       ─────────────────────────────────────────────────────────────
 		       SAVE WORKFLOW

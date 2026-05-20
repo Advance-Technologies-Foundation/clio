@@ -82,6 +82,9 @@ public static class SchemaValidationService
 		SchemaValidationResult bodyResult = ValidateMobileBody(body);
 		if (!bodyResult.IsValid) errors.AddRange(bodyResult.Errors);
 
+		SchemaValidationResult validatorRefsResult = ValidateMobileNoValidatorReferences(body);
+		if (!validatorRefsResult.IsValid) errors.AddRange(validatorRefsResult.Errors);
+
 		SchemaValidationResult structureResult = ValidateMobileViewConfigDiffStructure(body);
 		if (!structureResult.IsValid) errors.AddRange(structureResult.Errors);
 
@@ -138,6 +141,93 @@ public static class SchemaValidationService
 			}
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Validates that no attribute inside <c>viewModelConfigDiff</c> or <c>viewModelConfig</c>
+	/// binds a <c>validators</c> property. Mobile pages do not support validator usages —
+	/// neither custom nor OOTB — so any such reference must be reported as an error.
+	/// The actual validator definitions live in <c>SCHEMA_VALIDATORS</c> on web (forbidden at
+	/// the body level by <see cref="ValidateMobileBody"/>) or in a remote module. This check
+	/// covers the per-attribute binding form where a validator is applied to a specific attribute.
+	/// Field-level validation on mobile must be implemented via entity-level business rules.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body to validate.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is invalid when any attribute binds a <c>validators</c> property.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileNoValidatorReferences(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result; // JSON errors reported by ValidateMobileBody
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind != JsonValueKind.Object) {
+				return result;
+			}
+			ScanMobileAttributeValidatorsFromDiff(root, result);
+			ScanMobileAttributeValidatorsFromConfig(root, result);
+			if (result.Errors.Count > 0) {
+				result.IsValid = false;
+			}
+		}
+		return result;
+	}
+
+	private static void ScanMobileAttributeValidatorsFromDiff(JsonElement root, SchemaValidationResult result) {
+		if (!root.TryGetProperty("viewModelConfigDiff", out JsonElement diff) ||
+			diff.ValueKind != JsonValueKind.Array) {
+			return;
+		}
+		foreach (JsonElement entry in diff.EnumerateArray()) {
+			if (entry.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (!ShouldScanAsAttributesContainer(entry)) {
+				continue;
+			}
+			if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+				values.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			foreach (JsonProperty attr in values.EnumerateObject()) {
+				ReportIfAttributeHasValidators(attr, result);
+			}
+		}
+	}
+
+	private static void ScanMobileAttributeValidatorsFromConfig(JsonElement root, SchemaValidationResult result) {
+		if (!root.TryGetProperty("viewModelConfig", out JsonElement config) ||
+			config.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		if (!config.TryGetProperty(AttributesPropertyName, out JsonElement attrs) ||
+			attrs.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		foreach (JsonProperty attr in attrs.EnumerateObject()) {
+			ReportIfAttributeHasValidators(attr, result);
+		}
+	}
+
+	private static void ReportIfAttributeHasValidators(JsonProperty attr, SchemaValidationResult result) {
+		if (attr.Value.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		if (attr.Value.TryGetProperty(ValidatorsPropertyName, out _)) {
+			result.Errors.Add(
+				$"Attribute '{attr.Name}' binds a 'validators' property. " +
+				"Mobile pages do not support validator usages in any form (custom or OOTB). " +
+				"Remove the validators binding and implement field-level validation via " +
+				"entity-level business rules (create-entity-business-rule).");
+		}
 	}
 
 	/// <summary>

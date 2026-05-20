@@ -12,23 +12,39 @@ namespace Clio.Command.McpServer.Tools;
 internal static class PageBodySamplingService {
 
 	internal const string SystemPrompt =
-		"You are reviewing a Creatio Freedom UI page body (JavaScript) before it is saved to Creatio.\n" +
-		"Check ONLY the following semantic issues:\n" +
-		"1. Handler references: every handler `request` value used in SCHEMA_VIEW_CONFIG_DIFF must have " +
-		"a matching entry in SCHEMA_HANDLERS with the same `request` field — handlers are matched by their " +
-		"`request` property, not by function name\n" +
-		"2. Converter references: every non-crt.* converter name used in SCHEMA_VIEW_CONFIG_DIFF binding " +
-		"expressions (after the pipe `|`) must be declared in SCHEMA_CONVERTERS — platform crt.* converters " +
-		"are built-in and must NOT be declared\n" +
-		"3. Type mismatch: when a control's component type implies a data kind (e.g. crt.DateTimePicker → date, " +
+		"You are reviewing a Creatio Freedom UI page body (JavaScript) before it is saved to Creatio.\n\n" +
+		"NAME RESOLUTION MODEL (applies to handler `request` values, converter names, and validator names):\n" +
+		"Every reference resolves through one of THREE tiers:\n" +
+		"  (a) Platform built-in — uses the `crt.*` prefix (e.g. `crt.SaveRecordRequest`, `crt.InvertBooleanValue`). " +
+		"Built-ins are provided by Creatio and MUST NOT be declared on the page.\n" +
+		"  (b) Page-local — declared inside the page body in SCHEMA_HANDLERS, SCHEMA_CONVERTERS, or SCHEMA_VALIDATORS. " +
+		"Non-`crt.*` names (typically `usr.*`) may live here.\n" +
+		"  (c) Remote global module — registered globally by a separately deployed AMD module. " +
+		"These are NOT imported via the page's `define([...])` dependency array and leave NO trace in the page body. " +
+		"You cannot detect them from the body alone.\n\n" +
+		"Because of tier (c), a non-`crt.*` reference that is missing from the corresponding SCHEMA section is " +
+		"AMBIGUOUS — it could be a typo, or a legitimate global registration. Treat such cases as `warnings`, " +
+		"never as `issues`. Phrase the warning as: \"<name> not declared on page — verify it is provided by a remote module or fix the typo\".\n\n" +
+		"Check ONLY the following semantic concerns:\n" +
+		"1. Handler references: every handler `request` value used in SCHEMA_VIEW_CONFIG_DIFF should resolve via " +
+		"tier (a), (b), or (c). If it is not `crt.*` and has no matching entry in SCHEMA_HANDLERS (matched by the " +
+		"`request` field, not by function name), emit a WARNING per the rule above — do NOT mark as an issue.\n" +
+		"2. Converter references: every converter name used in SCHEMA_VIEW_CONFIG_DIFF binding expressions " +
+		"(after the pipe `|`) should resolve via tier (a), (b), or (c). If it is not `crt.*` and is not declared " +
+		"in SCHEMA_CONVERTERS, emit a WARNING per the rule above — do NOT mark as an issue.\n" +
+		"3. Validator references: every validator `type` value used in attribute `validators` bindings " +
+		"(inside SCHEMA_VIEW_MODEL_CONFIG_DIFF or viewModelConfig) should resolve via tier (a), (b), or (c). " +
+		"If it is not `crt.*` and has no matching entry in SCHEMA_VALIDATORS, emit a WARNING per the rule above — " +
+		"do NOT mark as an issue.\n" +
+		"4. Type mismatch: when a control's component type implies a data kind (e.g. crt.DateTimePicker → date, " +
 		"crt.NumberInput → number, crt.ComboBox → lookup), check that the bound attribute name does not " +
 		"obviously contradict it (e.g. crt.DateTimePicker bound to $UsrFullName is suspicious)\n" +
-		"4. Redundant resources: if a RESOURCES section is present, check each key against the body. " +
+		"5. Redundant resources: if a RESOURCES section is present, check each key against the body. " +
 		"When an attribute with a matching or similar name is bound to a data source column via " +
 		"`modelConfig.path` (e.g. \"PDS.UsrStatus\"), the platform auto-provides the caption — " +
 		"registering it is unnecessary UNLESS the value is clearly a custom override (not just the " +
 		"column name humanized). Warn for likely redundant entries.\n" +
-		"5. Missing resources: for any component property that uses a `$Resources.Strings.X` binding " +
+		"6. Missing resources: for any component property that uses a `$Resources.Strings.X` binding " +
 		"where X does NOT correspond to a datasource-bound attribute (no matching `modelConfig.path` " +
 		"like \"PDS.ColumnName\"), verify that key X appears in the RESOURCES section. " +
 		"If missing, flag as an issue — the property will render blank at runtime. " +
@@ -43,16 +59,23 @@ internal static class PageBodySamplingService {
 		"You are reviewing a Creatio Freedom UI mobile page body (plain JSON) before it is saved to Creatio.\n" +
 		"The body is a JSON object with optional top-level arrays: viewConfigDiff (or viewConfig), " +
 		"viewModelConfigDiff (or viewModelConfig), modelConfigDiff (or modelConfig).\n" +
+		"Custom (non-`crt.*`) handler request types and converter names are only valid when they are " +
+		"registered globally by a separately deployed remote AMD module, which leaves no trace in the body.\n" +
 		"Check ONLY the following semantic issues:\n" +
 		"1. Type mismatch: when a control's component type implies a data kind (e.g. crt.DateTimePicker → date, " +
 		"crt.NumberInput → number, crt.ComboBox → lookup), check that the bound attribute name does not " +
 		"obviously contradict it (e.g. crt.DateTimePicker bound to $UsrFullName is suspicious)\n" +
-		"2. Redundant resources: if a RESOURCES section is present, check each key against the body. " +
+		"2. Unresolved custom references: any non-`crt.*` converter name (used after `|` in a binding " +
+		"expression) or non-`crt.*` request type (used in a `clicked` binding or in viewModelConfigDiff) " +
+		"is ambiguous — it may be provided by a remote module, or it may be a typo. Emit a WARNING per " +
+		"reference: \"<name> not provided by Creatio OOTB — verify it is registered by a remote module or fix the typo\". " +
+		"Do NOT mark these as issues.\n" +
+		"3. Redundant resources: if a RESOURCES section is present, check each key against the body. " +
 		"When an attribute with a matching or similar name is bound to a data source column via " +
 		"`modelConfig.path` (e.g. \"PDS.UsrStatus\"), the platform auto-provides the caption — " +
 		"registering it is unnecessary UNLESS the value is clearly a custom override (not just the " +
 		"column name humanized). Warn for likely redundant entries.\n" +
-		"3. Missing resources: for any component property that uses a `$Resources.Strings.X` binding " +
+		"4. Missing resources: for any component property that uses a `$Resources.Strings.X` binding " +
 		"where X does NOT correspond to a datasource-bound attribute (no matching `modelConfig.path` " +
 		"like \"PDS.ColumnName\"), verify that key X appears in the RESOURCES section. " +
 		"If missing, flag as an issue — the property will render blank at runtime. " +
