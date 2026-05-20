@@ -5,6 +5,7 @@ using Clio.Common;
 using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 [TestFixture]
@@ -109,7 +110,38 @@ public sealed class DeleteSchemaRemoteCommandTests {
 		bool result = _command.TryDeleteRemote("UsrSchema", out DeleteSchemaRemoteResponse response);
 
 		result.Should().BeFalse();
-		response.Error.Should().Be("locked");
+		response.Error.Should().Be($"locked (endpoint={DeleteUrl})");
 		response.SchemaUId.Should().Be(SchemaUId);
+	}
+
+	[Test]
+	public void TryDeleteRemote_Reports_Endpoint_And_Body_When_Platform_Returns_Silent_NoOp() {
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(SchemaFoundJson);
+		const string noOpResponse = """{"success": true, "rowsAffected": 0, "errorInfo": null}""";
+		_applicationClient.ExecutePostRequest(DeleteUrl, Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(noOpResponse);
+
+		bool result = _command.TryDeleteRemote("UsrSchema", out DeleteSchemaRemoteResponse response);
+
+		result.Should().BeFalse();
+		response.Error.Should().Contain(DeleteUrl)
+			.And.Contain("rowsAffected=0")
+			.And.Contain("success=True")
+			.And.Contain("UsrSchema");
+	}
+
+	[Test]
+	public void TryDeleteRemote_Wraps_Exception_With_Type_Name() {
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new System.Net.WebException("boom"));
+
+		bool result = _command.TryDeleteRemote("UsrSchema", out DeleteSchemaRemoteResponse response);
+
+		result.Should().BeFalse();
+		response.Error.Should().Contain("[WebException]").And.Contain("boom");
 	}
 }

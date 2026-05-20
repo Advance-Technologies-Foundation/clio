@@ -129,9 +129,13 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 			DeleteWorkspaceItemsResponse deleteResponse =
 				Deserialize<DeleteWorkspaceItemsResponse>(responseJson, "Delete");
 			if (!deleteResponse.Success || deleteResponse.RowsAffected <= 0) {
-				string message = string.IsNullOrWhiteSpace(deleteResponse.ErrorInfo?.Message)
-					? $"Failed to delete schema '{schemaName}' from remote environment."
-					: deleteResponse.ErrorInfo.Message;
+				string platformMessage = deleteResponse.ErrorInfo?.Message;
+				string message = string.IsNullOrWhiteSpace(platformMessage)
+					? $"Platform did not delete schema '{schemaName}' "
+						+ $"(endpoint={deleteUrl}, success={deleteResponse.Success}, "
+						+ $"rowsAffected={deleteResponse.RowsAffected}, "
+						+ $"body={Truncate(responseJson, 500)})."
+					: $"{platformMessage} (endpoint={deleteUrl})";
 				response = new DeleteSchemaRemoteResponse {
 					Success = false,
 					SchemaName = schemaName,
@@ -152,9 +156,19 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 			return true;
 		}
 		catch (Exception ex) {
-			response = new DeleteSchemaRemoteResponse { Success = false, Error = ex.Message };
+			response = new DeleteSchemaRemoteResponse {
+				Success = false,
+				Error = $"[{ex.GetType().Name}] {ex.Message}"
+			};
 			return false;
 		}
+	}
+
+	private static string Truncate(string value, int maxLength) {
+		if (string.IsNullOrEmpty(value) || value.Length <= maxLength) {
+			return value;
+		}
+		return value[..maxLength] + "…";
 	}
 
 	private bool TryResolveSysSchema(string schemaName, out SysSchemaRemoteRecord record, out string error) {
