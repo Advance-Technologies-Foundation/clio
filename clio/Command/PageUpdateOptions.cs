@@ -12,7 +12,8 @@ namespace Clio.Command {
 	/// Options for the <c>update-page</c> command.
 	/// </summary>
 	[Verb("update-page", Aliases = ["page-update"], HelpText = "Update Freedom UI page schema body")]
-	public class PageUpdateOptions : EnvironmentOptions {
+	public class PageUpdateOptions : EnvironmentOptions
+	{
 		/// <summary>
 		/// Gets or sets the page schema name to update.
 		/// </summary>
@@ -79,7 +80,10 @@ namespace Clio.Command {
 	/// <summary>
 	/// Validates and saves raw Freedom UI page bodies.
 	/// </summary>
-	public class PageUpdateCommand : Command<PageUpdateOptions> {
+	public class PageUpdateCommand : Command<PageUpdateOptions>
+	{
+		private const string LocalizableStringsKey = "localizableStrings";
+
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
@@ -123,7 +127,7 @@ namespace Clio.Command {
 				if (options.DryRun) { response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null); return true; }
 				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
 				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
-				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, explicitResources, parsedOptionalProperties);
+				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
 				if (!TrySaveSchema(schemaToSave, out response)) return false;
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
 				return true;
@@ -134,14 +138,9 @@ namespace Clio.Command {
 		}
 
 		private static bool TryLoadBodyFromFile(PageUpdateOptions options, out PageUpdateResponse response) {
-			response = null;
-			if (!string.IsNullOrWhiteSpace(options.Body) || string.IsNullOrWhiteSpace(options.BodyFile)) return true;
-			if (!File.Exists(options.BodyFile)) {
-				response = new PageUpdateResponse { Success = false, Error = $"File not found: {options.BodyFile}" };
-				return false;
-			}
-			options.Body = File.ReadAllText(options.BodyFile);
-			return true;
+			(bool ok, string error) = PageUpdateBodyLoader.TryLoadBodyFromFile(options);
+			response = ok ? null : new PageUpdateResponse { Success = false, Error = error };
+			return ok;
 		}
 
 		private bool TryResolveContext(PageUpdateOptions options, out EditableSchemaContext context, out PageUpdateResponse response) {
@@ -219,9 +218,13 @@ namespace Clio.Command {
 				? hierarchy.FirstOrDefault(s => string.Equals(s.UId, rootUId, StringComparison.OrdinalIgnoreCase)) ?? head : head;
 			(string editableUId, bool isCreateReplacing) = ResolveEditableUId(head, schemaName, designPackageUId);
 			context = new EditableSchemaContext {
-				SchemaName = schemaName, EditableSchemaUId = editableUId, DesignPackageUId = designPackageUId,
-				IsCreateReplacing = isCreateReplacing, ParentSchemaUId = isCreateReplacing ? root.UId : null,
-				ParentSchemaName = root.Name, TemplateSchemaUId = isCreateReplacing ? root.UId : editableUId,
+				SchemaName = schemaName,
+				EditableSchemaUId = editableUId,
+				DesignPackageUId = designPackageUId,
+				IsCreateReplacing = isCreateReplacing,
+				ParentSchemaUId = isCreateReplacing ? root.UId : null,
+				ParentSchemaName = root.Name,
+				TemplateSchemaUId = isCreateReplacing ? root.UId : editableUId,
 				SchemaType = pageSchemaType
 			};
 			response = null;
@@ -286,15 +289,20 @@ namespace Clio.Command {
 			return null;
 		}
 
-		private static List<string> UpdateSchemaBody(JObject schemaToSave, string body, Dictionary<string, string> explicitResources, JArray optionalProperties = null) {
+		private static List<string> UpdateSchemaBody(JObject schemaToSave, string body, PageSchemaType schemaType,
+				Dictionary<string, string> explicitResources, JArray optionalProperties = null) {
 			schemaToSave["body"] = body;
 			if (optionalProperties != null) {
 				MergeOptionalProperties(schemaToSave, optionalProperties);
 			}
-			var bodyKeys = ResourceStringHelper.ExtractKeys(body);
-			var existingStrings = schemaToSave["localizableStrings"] as JArray;
-			var (cleaned, registered) = ResourceStringHelper.CleanAndMerge(existingStrings, explicitResources, bodyKeys);
-			schemaToSave["localizableStrings"] = cleaned;
+			HashSet<string> bodyKeys = ResourceStringHelper.ExtractKeys(body);
+			Dictionary<string, string> modelPaths = schemaType == PageSchemaType.Mobile
+				? SchemaValidationService.CollectMobileViewModelPaths(body)
+				: SchemaValidationService.CollectViewModelPaths(body);
+			var dsBoundKeys = modelPaths.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+			var existingStrings = schemaToSave[LocalizableStringsKey] as JArray;
+			(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(existingStrings, explicitResources, bodyKeys, dsBoundKeys);
+			schemaToSave[LocalizableStringsKey] = cleaned;
 			return registered.Count > 0 ? registered : null;
 		}
 
@@ -362,7 +370,7 @@ namespace Clio.Command {
 			dto["isReadOnly"] = false;
 			dto["extendParent"] = true;
 			dto["caption"] = null;
-			dto["localizableStrings"] = null;
+			dto[LocalizableStringsKey] = template[LocalizableStringsKey]?.DeepClone() ?? new JArray();
 			dto["package"] = new JObject {
 				["uId"] = context.DesignPackageUId,
 				["name"] = string.Empty

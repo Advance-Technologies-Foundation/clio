@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Command;
@@ -182,5 +183,63 @@ public sealed class ResourceStringHelperTests {
 			because: "#ResourceString(UsrNameInput_label)# is the macro form and must be extracted");
 		keys.Should().Contain("UsrInfoTab_caption",
 			because: "$Resources.Strings.UsrInfoTab_caption is the runtime-binding form and must also be extracted");
+	}
+
+	[Test]
+	[Description("CleanAndMerge skips auto-derivation for DS-bound Usr keys when dsBoundKeys is provided")]
+	public void CleanAndMerge_WhenUsrKeyIsDsBound_DoesNotAutoRegister() {
+		// Arrange
+		HashSet<string> bodyKeys = ["UsrStatus", "UsrCustomLabel"];
+		var dsBoundKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "UsrStatus" };
+
+		// Act
+		(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(
+			null, null, bodyKeys, dsBoundKeys);
+
+		// Assert
+		cleaned.Should().HaveCount(1,
+			because: "only UsrCustomLabel should be auto-registered; UsrStatus is DS-bound and skipped");
+		cleaned[0]!["name"]!.ToString().Should().Be("UsrCustomLabel",
+			because: "non-DS-bound Usr keys should still get auto-derived captions");
+		registered.Should().Equal(["UsrCustomLabel"],
+			because: "only the non-DS-bound key should be reported as newly registered");
+	}
+
+	[Test]
+	[Description("CleanAndMerge still registers DS-bound key when explicit resource value is provided")]
+	public void CleanAndMerge_WhenDsBoundKeyHasExplicitResource_StillRegisters() {
+		// Arrange
+		HashSet<string> bodyKeys = ["UsrStatus"];
+		var dsBoundKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "UsrStatus" };
+		var resources = new Dictionary<string, string> { ["UsrStatus"] = "Custom Status Label" };
+
+		// Act
+		(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(
+			null, resources, bodyKeys, dsBoundKeys);
+
+		// Assert
+		cleaned.Should().HaveCount(1,
+			because: "explicit resources should override the DS-bound skip logic");
+		cleaned[0]!["name"]!.ToString().Should().Be("UsrStatus",
+			because: "when an explicit value is provided, the key should be registered regardless of DS-binding");
+		registered.Should().Equal(["UsrStatus"],
+			because: "the explicitly-provided key should be reported as registered");
+	}
+
+	[Test]
+	[Description("CleanAndMerge with null dsBoundKeys behaves the same as before (backward compatible)")]
+	public void CleanAndMerge_WhenDsBoundKeysIsNull_AutoDerivesAllUsrKeys() {
+		// Arrange
+		HashSet<string> bodyKeys = ["UsrStatus", "UsrName"];
+
+		// Act
+		(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(
+			null, null, bodyKeys, null);
+
+		// Assert
+		cleaned.Should().HaveCount(2,
+			because: "with null dsBoundKeys, all Usr keys should be auto-derived as before");
+		registered.Should().Equal(["UsrStatus", "UsrName"],
+			because: "both Usr keys should be registered when no DS-bound filtering is applied");
 	}
 }
