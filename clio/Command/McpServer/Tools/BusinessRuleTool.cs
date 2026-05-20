@@ -21,26 +21,55 @@ public sealed class CreateEntityBusinessRuleTool(
 		OpenWorld = false)]
 	[Description("Creates an entity-level Freedom UI business rule.")]
 	public CommandExecutionResult BusinessRuleCreate(
-		[Description("Creatio environment name.")]
+		[Description("Parameters: environment-name, package-name, entity-schema-name, rule (all required).")]
 		[Required]
-		string environmentName,
-		[Description("Target package name on the Creatio environment.")]
-		[Required]
-		string packageName,
-		[Description("Target entity schema name.")]
-		[Required]
-		string entitySchemaName,
-		[Description("Structured entity business-rule definition.")]
-		[Required]
-		EntityBusinessRuleMcpContract rule) {
+		CreateEntityBusinessRuleArgs args) {
 		CreateEntityBusinessRuleOptions options = new () {
-			EnvironmentName = environmentName,
-			PackageName = packageName,
-			EntitySchemaName = entitySchemaName,
-			Rule = rule?.ToBusinessRule()!
+			EnvironmentName = args.EnvironmentName,
+			PackageName = args.PackageName,
+			EntitySchemaName = args.EntitySchemaName,
+			Rule = args.Rule?.ToBusinessRule()!
 		};
 		return InternalExecute<CreateEntityBusinessRuleCommand>(options);
 	}
+}
+
+/// <summary>
+/// MCP argument wrapper for entity-level business-rule creation.
+/// </summary>
+public sealed record CreateEntityBusinessRuleArgs
+{
+	/// <summary>
+	/// Gets the registered Creatio environment name.
+	/// </summary>
+	[JsonPropertyName("environment-name")]
+	[Description("Creatio environment name.")]
+	[Required]
+	public string EnvironmentName { get; init; } = null!;
+
+	/// <summary>
+	/// Gets the target package name on the Creatio environment.
+	/// </summary>
+	[JsonPropertyName("package-name")]
+	[Description("Target package name on the Creatio environment.")]
+	[Required]
+	public string PackageName { get; init; } = null!;
+
+	/// <summary>
+	/// Gets the target entity schema name.
+	/// </summary>
+	[JsonPropertyName("entity-schema-name")]
+	[Description("Target entity schema name.")]
+	[Required]
+	public string EntitySchemaName { get; init; } = null!;
+
+	/// <summary>
+	/// Gets the structured entity business-rule definition.
+	/// </summary>
+	[JsonPropertyName("rule")]
+	[Description("Structured entity business-rule definition.")]
+	[Required]
+	public EntityBusinessRuleMcpContract Rule { get; init; } = null!;
 }
 
 /// <summary>
@@ -438,24 +467,53 @@ public sealed class CreatePageBusinessRuleTool(
 		OpenWorld = false)]
 	[Description("Creates a page-level Freedom UI business rule that changes page element visibility, editability, or required state.")]
 	public CommandExecutionResult BusinessRuleCreate(
-		[Description("Creatio environment name.")]
+		[Description("Parameters: environment-name, package-name, page-schema-name, rule (all required).")]
 		[Required]
-		string environmentName,
-		[Description("Target package name on the Creatio environment.")]
-		[Required]
-		string packageName,
-		[Description("Target Freedom UI page schema name.")]
-		[Required]
-		string pageSchemaName,
-		[Description("Structured page business-rule definition. Use declared page attribute names from get-page bundle.viewModelConfig.attributes and page element names from bundle.viewConfig.")]
-		[Required]
-		PageBusinessRuleMcpContract rule) {
+		CreatePageBusinessRuleArgs args) {
 		CreatePageBusinessRuleOptions options = new () {
-			EnvironmentName = environmentName,
-			PackageName = packageName,
-			PageSchemaName = pageSchemaName,
-			Rule = rule?.ToBusinessRule()!
+			EnvironmentName = args.EnvironmentName,
+			PackageName = args.PackageName,
+			PageSchemaName = args.PageSchemaName,
+			Rule = args.Rule?.ToBusinessRule()!
 		};
 		return InternalExecute<CreatePageBusinessRuleCommand>(options);
 	}
+}
+
+/// <summary>
+/// MCP argument wrapper for page-level business-rule creation.
+/// </summary>
+public sealed record CreatePageBusinessRuleArgs
+{
+	/// <summary>
+	/// Gets the registered Creatio environment name.
+	/// </summary>
+	[JsonPropertyName("environment-name")]
+	[Description("Creatio environment name.")]
+	[Required]
+	public string EnvironmentName { get; init; } = null!;
+
+	/// <summary>
+	/// Gets the target package name on the Creatio environment.
+	/// </summary>
+	[JsonPropertyName("package-name")]
+	[Description("Target package name on the Creatio environment.")]
+	[Required]
+	public string PackageName { get; init; } = null!;
+
+	/// <summary>
+	/// Gets the target Freedom UI page schema name.
+	/// </summary>
+	[JsonPropertyName("page-schema-name")]
+	[Description("Target Freedom UI page schema name.")]
+	[Required]
+	public string PageSchemaName { get; init; } = null!;
+
+	/// <summary>
+	/// Gets the structured page business-rule definition.
+	/// </summary>
+	[JsonPropertyName("rule")]
+	[Description("Structured page business-rule definition. Use declared page attribute names from get-page bundle.viewModelConfig.attributes and page element names from bundle.viewConfig.")]
+	[Required]
+	public PageBusinessRuleMcpContract Rule { get; init; } = null!;
 }
