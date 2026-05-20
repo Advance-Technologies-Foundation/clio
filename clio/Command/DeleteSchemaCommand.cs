@@ -36,9 +36,6 @@ public sealed class DeleteSchemaRemoteResponse {
 	[System.Text.Json.Serialization.JsonPropertyName("schemaUId")]
 	public string SchemaUId { get; set; }
 
-	[System.Text.Json.Serialization.JsonPropertyName("managerName")]
-	public string ManagerName { get; set; }
-
 	[System.Text.Json.Serialization.JsonPropertyName("packageName")]
 	public string PackageName { get; set; }
 
