@@ -186,6 +186,8 @@ public class SysSettingsManager : ISysSettingsManager
 
 	private static readonly Guid AllUsersAdminUnitId = new("a29a3ba5-4b0d-de11-9a51-005056c00008");
 
+	private const string LookupTypeName = "Lookup";
+
 	private SysSettings GetSysSettingByCodeWithValues(string code){
 		SysSettings sysSetting = GetSysSettingByCode(code);
 		if (sysSetting is null) {
@@ -208,7 +210,7 @@ public class SysSettingsManager : ISysSettingsManager
 			"Date" => value.DateTimeValue.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
 			"Time" => value.DateTimeValue.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
 			"DateTime" => value.DateTimeValue.ToString("o", CultureInfo.InvariantCulture),
-			"Lookup" => value.GuidValue.ToString(),
+			LookupTypeName => value.GuidValue.ToString(),
 			_ => value.TextValue ?? string.Empty
 		};
 	}
@@ -264,7 +266,7 @@ public class SysSettingsManager : ISysSettingsManager
 			"Money" or "Currency" => new CCurrency(name, code, null, cached, description, valueForCurrentUser),
 			"Float" or "Decimal" => new CDecimal(name, code, null, cached, description, valueForCurrentUser),
 			"Binary" => new CBinary(name, code, null, cached, description, valueForCurrentUser),
-			"Lookup" => new Lookup(name, code, null, cached, description, valueForCurrentUser),
+			LookupTypeName => new Lookup(name, code, null, cached, description, valueForCurrentUser),
 			var _ => throw new ArgumentOutOfRangeException(nameof(valueTypeName), valueTypeName,
 				"Unsupported SysSettingType, Allowed values (Text, ShortText, MediumText, LongText, SecureText, " +
 				"MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Binary, Lookup). " +
@@ -393,7 +395,7 @@ public class SysSettingsManager : ISysSettingsManager
 		SysSchema sysSchema = AppDataContextFactory.GetAppDataContext(_dataProvider)
 			.Models<SysSchema>()
 			.Where(s => s.Name == schemaName)
-			.ToList().FirstOrDefault();
+			.AsEnumerable().FirstOrDefault();
 		return sysSchema?.UId;
 	}
 

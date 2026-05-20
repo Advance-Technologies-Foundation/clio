@@ -16,10 +16,12 @@ namespace Clio.Command.McpServer.Tools;
 
 internal static class SysSettingsToolSupport {
 
+	internal const string LookupTypeName = "Lookup";
+
 	internal static readonly string[] SupportedValueTypeNames = [
 		"Text", "ShortText", "MediumText", "LongText", "SecureText", "MaxSizeText",
 		"Boolean", "DateTime", "Date", "Time", "Integer",
-		"Money", "Float", "Binary", "Lookup",
+		"Money", "Float", "Binary", LookupTypeName,
 		"Currency", "Decimal"
 	];
 
@@ -136,34 +138,10 @@ public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver) {
 		[Required]
 		CreateSysSettingArgs args) {
 		try {
-			if (string.IsNullOrWhiteSpace(args.Code)) {
-				throw new ArgumentException("code is required.");
-			}
-			if (string.IsNullOrWhiteSpace(args.Name)) {
-				throw new ArgumentException("name is required.");
-			}
-			if (string.IsNullOrWhiteSpace(args.ValueTypeName)) {
-				throw new ArgumentException("value-type-name is required.");
-			}
-			if (!SysSettingsToolSupport.SupportedValueTypeNames.Contains(args.ValueTypeName, StringComparer.Ordinal)) {
-				throw new ArgumentException(
-					$"Unsupported value-type-name '{args.ValueTypeName}'. Allowed values: " +
-					string.Join(", ", SysSettingsToolSupport.SupportedValueTypeNames) + ".");
-			}
-			if (args.ValueTypeName == "Lookup" && string.IsNullOrWhiteSpace(args.ReferenceSchemaName)) {
-				throw new ArgumentException(
-					"reference-schema-name is required when value-type-name is 'Lookup'.");
-			}
+			ValidateCreateArgs(args);
 			SysSettingsManager manager = SysSettingsToolSupport.ResolveManager<SysSettingsManager>(
 				commandResolver, args.EnvironmentName);
-			Guid? referenceSchemaUId = null;
-			if (args.ValueTypeName == "Lookup" && !string.IsNullOrWhiteSpace(args.ReferenceSchemaName)) {
-				referenceSchemaUId = manager.FindSchemaUIdByName(args.ReferenceSchemaName);
-				if (referenceSchemaUId is null) {
-					throw new ArgumentException(
-						$"Entity schema '{args.ReferenceSchemaName}' was not found on the target environment.");
-				}
-			}
+			Guid? referenceSchemaUId = ResolveReferenceSchemaUId(manager, args);
 			SysSettingsManager.InsertSysSettingResponse response = manager.InsertSysSetting(
 				args.Name,
 				args.Code,
@@ -177,22 +155,61 @@ public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver) {
 				return new SysSettingCreateResult(false, args.Code, args.ValueTypeName, null,
 					string.IsNullOrWhiteSpace(message) ? "Failed creating sys-setting." : message);
 			}
-			string assignedValue = null;
-			if (args.Value is not null) {
-				bool updated = manager.UpdateSysSetting(args.Code, args.Value, args.ValueTypeName);
-				if (!updated) {
-					return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, null,
-						Error: null,
-						Warning: "Sys-setting was created, but the initial value could not be applied.");
-				}
-				assignedValue = manager.GetSysSettingValueByCode(args.Code);
-			}
-			return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, assignedValue);
+			return ApplyInitialValue(manager, args);
 		} catch (Exception ex) {
 			SysSettingsToolSupport.SysSettingsErrorResponse<string> error =
 				SysSettingsToolSupport.CategorizeError<string>(ex, "creating sys-setting", null);
 			return new SysSettingCreateResult(false, args.Code, args.ValueTypeName, error.Payload, error.Message);
 		}
+	}
+
+	private static void ValidateCreateArgs(CreateSysSettingArgs args) {
+		if (string.IsNullOrWhiteSpace(args.Code)) {
+			throw new ArgumentException("code is required.");
+		}
+		if (string.IsNullOrWhiteSpace(args.Name)) {
+			throw new ArgumentException("name is required.");
+		}
+		if (string.IsNullOrWhiteSpace(args.ValueTypeName)) {
+			throw new ArgumentException("value-type-name is required.");
+		}
+		if (!SysSettingsToolSupport.SupportedValueTypeNames.Contains(args.ValueTypeName, StringComparer.Ordinal)) {
+			throw new ArgumentException(
+				$"Unsupported value-type-name '{args.ValueTypeName}'. Allowed values: " +
+				string.Join(", ", SysSettingsToolSupport.SupportedValueTypeNames) + ".");
+		}
+		if (args.ValueTypeName == SysSettingsToolSupport.LookupTypeName
+			&& string.IsNullOrWhiteSpace(args.ReferenceSchemaName)) {
+			throw new ArgumentException(
+				"reference-schema-name is required when value-type-name is 'Lookup'.");
+		}
+	}
+
+	private static Guid? ResolveReferenceSchemaUId(SysSettingsManager manager, CreateSysSettingArgs args) {
+		if (args.ValueTypeName != SysSettingsToolSupport.LookupTypeName
+			|| string.IsNullOrWhiteSpace(args.ReferenceSchemaName)) {
+			return null;
+		}
+		Guid? uId = manager.FindSchemaUIdByName(args.ReferenceSchemaName);
+		if (uId is null) {
+			throw new ArgumentException(
+				$"Entity schema '{args.ReferenceSchemaName}' was not found on the target environment.");
+		}
+		return uId;
+	}
+
+	private SysSettingCreateResult ApplyInitialValue(SysSettingsManager manager, CreateSysSettingArgs args) {
+		if (args.Value is null) {
+			return new SysSettingCreateResult(true, args.Code, args.ValueTypeName);
+		}
+		bool updated = manager.UpdateSysSetting(args.Code, args.Value, args.ValueTypeName);
+		if (!updated) {
+			return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, null,
+				Error: null,
+				Warning: "Sys-setting was created, but the initial value could not be applied.");
+		}
+		string assignedValue = manager.GetSysSettingValueByCode(args.Code);
+		return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, assignedValue);
 	}
 }
 
