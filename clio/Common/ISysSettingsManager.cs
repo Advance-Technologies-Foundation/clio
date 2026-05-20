@@ -47,7 +47,10 @@ public interface ISysSettingsManager
 	T GetSysSettingValueByCode<T>(string code);
 
 	SysSettingsManager.InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
-		bool cached = true, string description = "", bool valueForCurrentUser = false);
+		bool cached = true, string description = "", bool valueForCurrentUser = false,
+		Guid? referenceSchemaUId = null);
+
+	Guid? FindSchemaUIdByName(string schemaName);
 
 	bool UpdateSysSetting(string code, object value, string valueTypeName = "");
 
@@ -79,6 +82,8 @@ public class SysSettingsManager : ISysSettingsManager
 	};
 
 	private sealed record UpdateSysSettingResponse(
+		[property: JsonPropertyName("saveResult")] Dictionary<string, bool> SaveResult,
+		[property: JsonPropertyName("rowsAffected")] int RowsAffected,
 		[property: JsonPropertyName("success")] bool Success,
 		[property: JsonPropertyName("responseStatus")] ResponseStatus ResponseStatus);
 
@@ -179,12 +184,52 @@ public class SysSettingsManager : ISysSettingsManager
 		return sysSetting;
 	}
 
+	private static readonly Guid AllUsersAdminUnitId = new("a29a3ba5-4b0d-de11-9a51-005056c00008");
+
+	private SysSettings GetSysSettingByCodeWithValues(string code){
+		SysSettings sysSetting = GetSysSettingByCode(code);
+		if (sysSetting is null) {
+			return null;
+		}
+		List<SysSettingsValue> values = AppDataContextFactory.GetAppDataContext(_dataProvider)
+			.Models<SysSettingsValue>()
+			.Where(v => v.SysSettingsId == sysSetting.Id)
+			.ToList();
+		sysSetting.SysSettingsValues = values;
+		return sysSetting;
+	}
+
+	private static string FormatTypedValue(SysSettings sysSetting, SysSettingsValue value){
+		return sysSetting.ValueTypeName switch {
+			"Boolean" => value.BooleanValue.ToString().ToLowerInvariant(),
+			"Integer" => value.IntegerValue.ToString(CultureInfo.InvariantCulture),
+			"Float" or "Money" or "Decimal" or "Currency"
+				=> value.FloatValue.ToString(CultureInfo.InvariantCulture),
+			"Date" => value.DateTimeValue.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+			"Time" => value.DateTimeValue.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
+			"DateTime" => value.DateTimeValue.ToString("o", CultureInfo.InvariantCulture),
+			"Lookup" => value.GuidValue.ToString(),
+			_ => value.TextValue ?? string.Empty
+		};
+	}
+
 	#endregion
 
 	#region Methods: Public
 
 	public string GetSysSettingValueByCode(string code){
-		return _dataProvider.GetSysSettingValue<string>(code) ?? string.Empty;
+		string providerValue = _dataProvider.GetSysSettingValue<string>(code);
+		if (!string.IsNullOrEmpty(providerValue)) {
+			return providerValue;
+		}
+		SysSettings sysSetting = GetSysSettingByCodeWithValues(code);
+		if (sysSetting?.SysSettingsValues is null || sysSetting.SysSettingsValues.Count == 0) {
+			return providerValue ?? string.Empty;
+		}
+		SysSettingsValue value = sysSetting.SysSettingsValues
+			.FirstOrDefault(v => v.SysAdminUnitId == AllUsersAdminUnitId)
+			?? sysSetting.SysSettingsValues.FirstOrDefault();
+		return value is null ? string.Empty : FormatTypedValue(sysSetting, value);
 	}
 
 	public T GetSysSettingValueByCode<T>(string code){
@@ -201,8 +246,9 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	public InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
-		bool cached = true, string description = "", bool valueForCurrentUser = false){
-		
+		bool cached = true, string description = "", bool valueForCurrentUser = false,
+		Guid? referenceSchemaUId = null){
+
 		CreatioSysSetting sysSetting = valueTypeName switch {
 			"Text" => new TextSetting(name, code, null, cached, description, valueForCurrentUser),
 			"ShortText" => new ShortText(name, code, null, cached, description, valueForCurrentUser),
@@ -215,13 +261,18 @@ public class SysSettingsManager : ISysSettingsManager
 			"Date" => new CDate(name, code, null, cached, description, valueForCurrentUser),
 			"Time" => new CTime(name, code, null, cached, description, valueForCurrentUser),
 			"Integer" => new CInteger(name, code, null, cached, description, valueForCurrentUser),
-			"Currency" => new CCurrency(name, code, null, cached, description, valueForCurrentUser),
-			"Decimal" => new CDecimal(name, code, null, cached, description, valueForCurrentUser),
+			"Money" or "Currency" => new CCurrency(name, code, null, cached, description, valueForCurrentUser),
+			"Float" or "Decimal" => new CDecimal(name, code, null, cached, description, valueForCurrentUser),
+			"Binary" => new CBinary(name, code, null, cached, description, valueForCurrentUser),
 			"Lookup" => new Lookup(name, code, null, cached, description, valueForCurrentUser),
 			var _ => throw new ArgumentOutOfRangeException(nameof(valueTypeName), valueTypeName,
 				"Unsupported SysSettingType, Allowed values (Text, ShortText, MediumText, LongText, SecureText, " +
-				"MaxSizeText, Boolean, DateTime, Date, Time, Integer, Currency, Decimal, Lookup)")
+				"MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Binary, Lookup). " +
+				"Aliases: Currency = Money, Decimal = Float.")
 		};
+		if (referenceSchemaUId.HasValue && referenceSchemaUId.Value != Guid.Empty) {
+			sysSetting.ReferenceSchemaUId = referenceSchemaUId.Value;
+		}
 		string json = sysSetting.ToString();
 		const string endpoint = "DataService/json/SyncReply/InsertSysSettingRequest";
 		string url = _serviceUrlBuilder.Build(endpoint);
@@ -297,14 +348,24 @@ public class SysSettingsManager : ISysSettingsManager
 		string postSysSettingsValuesUrl
 			= _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
 		try {
-			
+
 			string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
 			if (string.IsNullOrWhiteSpace(result)) {
 				_logger.WriteError($"SysSettings with code: {code} is not updated. Empty response received.");
 				return false;
 			}
-			string afterUpdateValue = GetSysSettingValueByCode(code).TrimStart('"').TrimEnd('"');
-			return afterUpdateValue.Equals(value.ToString(), StringComparison.OrdinalIgnoreCase);
+			UpdateSysSettingResponse response =
+				JsonSerializer.Deserialize<UpdateSysSettingResponse>(result, _jsonSerializerOptions);
+			if (response?.SaveResult is not null
+				&& response.SaveResult.TryGetValue(code, out bool perCodeOk)
+				&& perCodeOk) {
+				return true;
+			}
+			string errMsg = response?.ResponseStatus?.Message;
+			_logger.WriteError(
+				$"SysSettings with code: {code} is not updated. " +
+				(string.IsNullOrWhiteSpace(errMsg) ? "Platform reported a failed update." : errMsg));
+			return false;
 		} catch (JsonException) {
 			_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid response format.");
 			return false;
@@ -323,6 +384,17 @@ public class SysSettingsManager : ISysSettingsManager
 			};
 			_logger.WriteInfo(text);
 		}
+	}
+
+	public Guid? FindSchemaUIdByName(string schemaName) {
+		if (string.IsNullOrWhiteSpace(schemaName)) {
+			return null;
+		}
+		SysSchema sysSchema = AppDataContextFactory.GetAppDataContext(_dataProvider)
+			.Models<SysSchema>()
+			.Where(s => s.Name == schemaName)
+			.ToList().FirstOrDefault();
+		return sysSchema?.UId;
 	}
 
 	public List<SysSettings> GetAllSysSettingsWithValues() {
@@ -661,6 +733,27 @@ public sealed class Lookup : CreatioSysSetting
 
 }
 
+public sealed class CBinary : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public CBinary(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public CBinary(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "Binary";
+
+	#endregion
+
+}
+
 public abstract class CreatioSysSetting
 {
 
@@ -697,6 +790,9 @@ public abstract class CreatioSysSetting
 
 	[JsonPropertyName("value")]
 	public string Value { get; set; }
+
+	[JsonPropertyName("referenceSchemaUId")]
+	public Guid? ReferenceSchemaUId { get; set; }
 
 	#endregion
 

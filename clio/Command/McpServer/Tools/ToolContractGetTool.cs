@@ -327,7 +327,11 @@ internal static class ToolContractCatalog {
 			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate(),
 			[CreatePageBusinessRuleTool.BusinessRuleCreateToolName] = BuildPageBusinessRuleCreate(),
 			[SchemaNamePrefixTool.GetSchemaNamePrefixToolName] = BuildGetSchemaNamePrefix(),
-			[CompileCreatioTool.CompileCreatioToolName] = BuildCompileCreatio()
+			[CompileCreatioTool.CompileCreatioToolName] = BuildCompileCreatio(),
+			[SysSettingGetTool.GetSysSettingToolName] = BuildGetSysSetting(),
+			[SysSettingsListTool.ListSysSettingsToolName] = BuildListSysSettings(),
+			[SysSettingCreateTool.CreateSysSettingToolName] = BuildCreateSysSetting(),
+			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
@@ -367,7 +371,11 @@ internal static class ToolContractCatalog {
 		PageValidateTool.ToolName,
 		ApplicationDeleteTool.ToolName,
 		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
-		CompileCreatioTool.CompileCreatioToolName
+		CompileCreatioTool.CompileCreatioToolName,
+		SysSettingGetTool.GetSysSettingToolName,
+		SysSettingsListTool.ListSysSettingsToolName,
+		SysSettingCreateTool.CreateSysSettingToolName,
+		SysSettingUpdateTool.UpdateSysSettingToolName
 	];
 
 	internal static ToolContractGetResponse GetContracts(IReadOnlyList<string>? toolNames) {
@@ -3015,5 +3023,181 @@ internal static class ToolContractCatalog {
 				Field("execution-log-messages", ArrayType, "Structured log messages."),
 				Field("log-file-path", StringType, "Optional operation log path.")
 			]);
+	}
+
+	private const string SysSettingCodeFieldName = "code";
+	private const string SysSettingValueFieldName = "value";
+	private const string SysSettingValueTypeFieldName = "value-type-name";
+	private const string ExampleSysSettingCode = "MaxFileSize";
+	private const string ExampleSysSettingName = "Maximum file size";
+	private const string ExampleSysSettingValueType = "Integer";
+
+	private static ToolContractDefinition BuildGetSysSetting() {
+		return new ToolContractDefinition(
+			SysSettingGetTool.GetSysSettingToolName,
+			"Reads the All-Users default value of a Creatio system setting by code. Returns an empty value when the setting is not configured. Pair with list-sys-settings to discover codes.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, SysSettingCodeFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(SysSettingCodeFieldName, StringType, "Sys-setting code (e.g., 'SchemaNamePrefix').")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(SysSettingCodeFieldName, StringType, "Sys-setting code echoed from the request."),
+				Field(SysSettingValueFieldName, StringType, "Raw string value of the sys-setting. Empty string when not configured."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read a single sys-setting by code", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[SysSettingCodeFieldName] = "SchemaNamePrefix"
+				})
+			],
+			Flow(
+				[
+					SysSettingsListTool.ListSysSettingsToolName,
+					SysSettingGetTool.GetSysSettingToolName
+				],
+				"Discover available codes with list-sys-settings, then read a specific value with get-sys-setting."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildListSysSettings() {
+		return new ToolContractDefinition(
+			SysSettingsListTool.ListSysSettingsToolName,
+			"Lists Creatio system settings with their All-Users default values, value-type-name, and metadata. Binary-type settings are omitted to keep responses small — use get-sys-setting by code to read one.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("settings", ArrayType, "Sys-settings with code, name, value-type-name, value, is-cacheable, is-personal."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("List sys-settings for the configured environment", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				})
+			],
+			Flow(
+				[
+					SysSettingsListTool.ListSysSettingsToolName,
+					SysSettingUpdateTool.UpdateSysSettingToolName
+				],
+				"Discover an existing sys-setting before updating its value."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildCreateSysSetting() {
+		return new ToolContractDefinition(
+			SysSettingCreateTool.CreateSysSettingToolName,
+			"Creates a new Creatio system setting and optionally assigns an initial All-Users default value. " +
+			"Allowed value-type-name values match Creatio internal names: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, " +
+			"Boolean, DateTime, Date, Time, Integer, Money, Float, Binary, Lookup. " +
+			"Aliases: Currency = Money, Decimal = Float. For Lookup type, reference-schema-name is required.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, SysSettingCodeFieldName, "name", SysSettingValueTypeFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(SysSettingCodeFieldName, StringType, "Sys-setting code (unique)."),
+					Field("name", StringType, "Display name of the sys-setting."),
+					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Binary, Lookup. Aliases: Currency = Money, Decimal = Float."),
+					Field(SysSettingValueFieldName, StringType, "Optional initial All-Users default value applied via update-sys-setting after creation."),
+					Field("description", StringType, "Optional description text."),
+					Field("is-cacheable", BooleanType, "Whether the setting is cacheable. Defaults to true."),
+					Field("is-personal", BooleanType, "Whether the setting stores per-user values. Defaults to false.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(SysSettingCodeFieldName, StringType, "Sys-setting code echoed from the request."),
+				Field(SysSettingValueTypeFieldName, StringType, "Value-type-name applied to the created sys-setting."),
+				Field(SysSettingValueFieldName, StringType, "Applied initial value (null when no value was provided or assignment failed)."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Create a new integer sys-setting with an initial value", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[SysSettingCodeFieldName] = ExampleSysSettingCode,
+					["name"] = ExampleSysSettingName,
+					[SysSettingValueTypeFieldName] = ExampleSysSettingValueType,
+					[SysSettingValueFieldName] = "10485760"
+				})
+			],
+			Flow(
+				[
+					SysSettingCreateTool.CreateSysSettingToolName,
+					SysSettingUpdateTool.UpdateSysSettingToolName
+				],
+				"Create the sys-setting once, then update the value as it changes."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildUpdateSysSetting() {
+		return new ToolContractDefinition(
+			SysSettingUpdateTool.UpdateSysSettingToolName,
+			"Updates the All-Users default value of an existing Creatio system setting. The setting must already exist — use create-sys-setting first to register a new code.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, SysSettingCodeFieldName, SysSettingValueFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(SysSettingCodeFieldName, StringType, "Existing sys-setting code."),
+					Field(SysSettingValueFieldName, StringType, "New value. Booleans accept true/false, decimals/integers expect invariant culture, dates/times expect ISO 8601, Lookup expects a Guid or a display name."),
+					Field(SysSettingValueTypeFieldName, StringType, "Optional fallback value-type-name when the setting cannot be located on the target environment.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(SysSettingCodeFieldName, StringType, "Sys-setting code echoed from the request."),
+				Field(SysSettingValueFieldName, StringType, "Value read back from the environment after the update."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Update an existing sys-setting value", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[SysSettingCodeFieldName] = ExampleSysSettingCode,
+					[SysSettingValueFieldName] = "20971520"
+				})
+			],
+			Flow(
+				[
+					SysSettingsListTool.ListSysSettingsToolName,
+					SysSettingUpdateTool.UpdateSysSettingToolName
+				],
+				"Discover the existing sys-setting via list-sys-settings, then apply the new value."),
+			[],
+			[]);
 	}
 }

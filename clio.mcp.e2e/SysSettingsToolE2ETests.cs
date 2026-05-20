@@ -1,0 +1,333 @@
+using System.Threading;
+using System.Threading.Tasks;
+using Allure.NUnit;
+using Allure.NUnit.Attributes;
+using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
+using FluentAssertions;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
+
+namespace Clio.Mcp.E2E;
+
+[TestFixture]
+[AllureNUnit]
+[AllureFeature("sys-setting")]
+[NonParallelizable]
+public sealed class SysSettingsToolE2ETests {
+
+	private const string GetToolName = SysSettingGetTool.GetSysSettingToolName;
+	private const string ListToolName = SysSettingsListTool.ListSysSettingsToolName;
+	private const string CreateToolName = SysSettingCreateTool.CreateSysSettingToolName;
+	private const string UpdateToolName = SysSettingUpdateTool.UpdateSysSettingToolName;
+	private const string KnownPlatformSetting = "Maintainer";
+
+	#region Read-only tests
+
+	[Test]
+	[AllureTag(ListToolName)]
+	[AllureName("list-sys-settings returns advertised structured payload with at least one known setting")]
+	[AllureDescription("Starts the real clio MCP server, invokes list-sys-settings against the configured sandbox environment, and verifies the structured response advertises the known OOTB Maintainer setting.")]
+	public async Task ListSysSettings_Should_Return_Settings_Including_Known_Code() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(requireReachableEnvironment: true);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(
+			arrangeContext,
+			ListToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName
+			});
+		SysSettingsListResult response = EntitySchemaStructuredResultParser.Extract<SysSettingsListResult>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "list-sys-settings should return a structured success envelope for a reachable configured environment");
+		response.Success.Should().BeTrue(
+			because: "reading the sys-settings catalog should succeed when the environment is reachable");
+		response.Settings.Should().NotBeNullOrEmpty(
+			because: "every Creatio environment ships with multiple OOTB system settings");
+		response.Settings.Select(s => s.Code).Should().Contain(KnownPlatformSetting,
+			because: "the Maintainer sys-setting is part of the OOTB catalog and must be advertised");
+		response.Error.Should().BeNull(
+			because: "no error message should be present when the tool call succeeds");
+	}
+
+	[Test]
+	[AllureTag(GetToolName)]
+	[AllureName("get-sys-setting returns structured value for a known OOTB setting")]
+	[AllureDescription("Starts the real clio MCP server, invokes get-sys-setting for the OOTB Maintainer setting against the configured sandbox environment, and verifies the response carries the code and a non-empty value.")]
+	public async Task GetSysSetting_Should_Return_Value_For_Known_Setting() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(requireReachableEnvironment: true);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(
+			arrangeContext,
+			GetToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["code"] = KnownPlatformSetting
+			});
+		SysSettingGetResult response = EntitySchemaStructuredResultParser.Extract<SysSettingGetResult>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "get-sys-setting should return a structured success envelope for a known OOTB setting");
+		response.Success.Should().BeTrue(
+			because: "reading a configured OOTB setting from a reachable environment should succeed");
+		response.Code.Should().Be(KnownPlatformSetting,
+			because: "the response must echo the code that was requested");
+		response.Value.Should().NotBeNull(
+			because: "Maintainer is a Text setting and should resolve to a non-null string");
+		response.Error.Should().BeNull(
+			because: "no error message should be present when the tool call succeeds");
+	}
+
+	[Test]
+	[AllureTag(GetToolName)]
+	[AllureName("get-sys-setting rejects empty code with structured error")]
+	[AllureDescription("Invokes get-sys-setting with an empty code argument and verifies that the response reports a structured failure with an explicit error message and no leaked details.")]
+	public async Task GetSysSetting_Should_Report_Failure_When_Code_Is_Empty() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(requireReachableEnvironment: true);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(
+			arrangeContext,
+			GetToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["code"] = string.Empty
+			});
+		SysSettingGetResult response = EntitySchemaStructuredResultParser.Extract<SysSettingGetResult>(callResult);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an empty code must produce a structured failure rather than reaching the platform");
+		response.Error.Should().Contain("code is required",
+			because: "the error message should help the caller correct the argument shape");
+	}
+
+	#endregion
+
+	#region Destructive tests (opt-in)
+
+	[Test]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-sys-setting writes a Text sys-setting and applies the initial value")]
+	[AllureDescription("Starts the real clio MCP server, creates a uniquely-coded Text sys-setting with an initial value, and verifies the structured response reports success, value-type-name, and the assigned value.")]
+	public async Task CreateSysSetting_Text_Should_Apply_Initial_Value() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(
+			requireReachableEnvironment: true,
+			requireDestructiveOptIn: true);
+		string code = $"UsrMcpE2EText{Guid.NewGuid():N}"[..32];
+		string initial = "e2e-initial-value";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(
+			arrangeContext,
+			CreateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["code"] = code,
+				["name"] = code,
+				["value-type-name"] = "Text",
+				["value"] = initial
+			});
+		SysSettingCreateResult response = EntitySchemaStructuredResultParser.Extract<SysSettingCreateResult>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "creating a Text sys-setting against a reachable sandbox should succeed");
+		response.Success.Should().BeTrue(
+			because: "the platform should accept a new uniquely-coded Text setting");
+		response.Code.Should().Be(code,
+			because: "the response must echo the requested code");
+		response.ValueTypeName.Should().Be("Text",
+			because: "the response must echo the value-type-name passed by the caller");
+		response.Value.Should().Be(initial,
+			because: "the initial value should be persisted and read back from the platform");
+		response.Error.Should().BeNull();
+		response.Warning.Should().BeNull(
+			because: "a Text sys-setting with a valid value should not produce a partial-success warning");
+	}
+
+	[Test]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-sys-setting wires a Lookup reference schema by name")]
+	[AllureDescription("Creates a uniquely-coded Lookup sys-setting referencing the OOTB Contact entity schema and verifies the structured response reports success, Lookup value-type-name, and propagates the reference.")]
+	public async Task CreateSysSetting_Lookup_Should_Wire_Reference_Schema() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(
+			requireReachableEnvironment: true,
+			requireDestructiveOptIn: true);
+		string code = $"UsrMcpE2ELkp{Guid.NewGuid():N}"[..32];
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(
+			arrangeContext,
+			CreateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["code"] = code,
+				["name"] = code,
+				["value-type-name"] = "Lookup",
+				["reference-schema-name"] = "Contact"
+			});
+		SysSettingCreateResult response = EntitySchemaStructuredResultParser.Extract<SysSettingCreateResult>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue();
+		response.Success.Should().BeTrue(
+			because: "a Lookup sys-setting bound to an existing schema must be created successfully");
+		response.ValueTypeName.Should().Be("Lookup",
+			because: "the persisted type must match the requested Lookup value-type-name");
+		response.Error.Should().BeNull();
+	}
+
+	[Test]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-sys-setting rejects Lookup type without reference-schema-name")]
+	[AllureDescription("Invokes create-sys-setting with value-type-name=Lookup and no reference-schema-name. Verifies the structured failure explicitly names the missing argument and avoids a platform round-trip.")]
+	public async Task CreateSysSetting_Lookup_Should_Reject_Without_ReferenceSchema() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(
+			requireReachableEnvironment: true,
+			requireDestructiveOptIn: true);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(
+			arrangeContext,
+			CreateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["code"] = "UsrMcpE2EUnused",
+				["name"] = "UsrMcpE2EUnused",
+				["value-type-name"] = "Lookup"
+			});
+		SysSettingCreateResult response = EntitySchemaStructuredResultParser.Extract<SysSettingCreateResult>(callResult);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the tool must short-circuit Lookup creation when reference-schema-name is missing");
+		response.Error.Should().Contain("reference-schema-name",
+			because: "the error must explicitly name the missing argument so the caller can fix it");
+	}
+
+	[Test]
+	[AllureTag(UpdateToolName)]
+	[AllureName("update-sys-setting changes the value of a freshly-created Text setting")]
+	[AllureDescription("Creates a unique Text sys-setting with an initial value, then updates the value and verifies the structured response reports success and the readback matches.")]
+	public async Task UpdateSysSetting_Should_Change_Value_On_Existing_Setting() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(
+			requireReachableEnvironment: true,
+			requireDestructiveOptIn: true);
+		string code = $"UsrMcpE2EUpd{Guid.NewGuid():N}"[..32];
+		CallToolResult createResult = await CallToolAsync(
+			arrangeContext,
+			CreateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["code"] = code,
+				["name"] = code,
+				["value-type-name"] = "Text",
+				["value"] = "before"
+			});
+		SysSettingCreateResult createResponse =
+			EntitySchemaStructuredResultParser.Extract<SysSettingCreateResult>(createResult);
+		createResponse.Success.Should().BeTrue(
+			because: "the update scenario requires a successfully-created precondition setting");
+
+		// Act
+		CallToolResult updateResult = await CallToolAsync(
+			arrangeContext,
+			UpdateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["code"] = code,
+				["value"] = "after"
+			});
+		SysSettingUpdateResult updateResponse =
+			EntitySchemaStructuredResultParser.Extract<SysSettingUpdateResult>(updateResult);
+
+		// Assert
+		updateResult.IsError.Should().NotBeTrue();
+		updateResponse.Success.Should().BeTrue(
+			because: "updating an existing Text setting with a valid value should succeed");
+		updateResponse.Code.Should().Be(code);
+		updateResponse.Value.Should().Be("after",
+			because: "the readback should reflect the value applied by the update call");
+		updateResponse.Error.Should().BeNull();
+	}
+
+	#endregion
+
+	#region Helpers
+
+	private static async Task<CallToolResult> CallToolAsync(
+		ArrangeContext arrangeContext,
+		string toolName,
+		Dictionary<string, object?> args) {
+		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+		tools.Select(tool => tool.Name).Should().Contain(toolName,
+			because: $"the {toolName} tool must be advertised by the clio MCP server before the call can be executed");
+		return await arrangeContext.Session.CallToolAsync(
+			toolName,
+			new Dictionary<string, object?> {
+				["args"] = args
+			},
+			arrangeContext.CancellationTokenSource.Token);
+	}
+
+	private static async Task<ArrangeContext> ArrangeAsync(
+		bool requireReachableEnvironment,
+		bool requireDestructiveOptIn = false) {
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (requireDestructiveOptIn && !settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive sys-settings MCP end-to-end tests.");
+		}
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		string? environmentName = requireReachableEnvironment
+			? await ResolveReachableEnvironmentAsync(settings)
+			: settings.Sandbox.EnvironmentName;
+		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		return new ArrangeContext(session, cancellationTokenSource, environmentName);
+	}
+
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
+		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(configuredEnvironmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sys-settings MCP E2E tests.");
+		}
+		if (!await CanReachEnvironmentAsync(settings, configuredEnvironmentName!)) {
+			Assert.Ignore($"Sys-settings MCP E2E requires a reachable sandbox environment. '{configuredEnvironmentName}' was not reachable.");
+		}
+		return configuredEnvironmentName!;
+	}
+
+	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
+		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+			settings,
+			["ping-app", "-e", environmentName]);
+		return result.ExitCode == 0;
+	}
+
+	private sealed record ArrangeContext(
+		McpServerSession Session,
+		CancellationTokenSource CancellationTokenSource,
+		string? EnvironmentName) : IAsyncDisposable {
+		public async ValueTask DisposeAsync() {
+			await Session.DisposeAsync();
+			CancellationTokenSource.Dispose();
+		}
+	}
+
+	#endregion
+}
