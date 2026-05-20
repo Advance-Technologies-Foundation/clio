@@ -685,7 +685,7 @@ public sealed class ApplicationToolTests {
 				ApplicationName: "Codex App",
 				ApplicationCode: "UsrCodexApp",
 				ApplicationVersion: "1.0.0"));
-		enrichmentService.EnrichAsync(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default)
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default)
 			.Returns(new ApplicationDataForgeResult(
 				Used: true,
 				Health: new DataForgeHealthResult(true, true, true, true, "corr-id"),
@@ -729,7 +729,7 @@ public sealed class ApplicationToolTests {
 				request.OptionalTemplateData.UseExistingEntitySchema == true &&
 				request.OptionalTemplateData.UseAiContentGeneration == false &&
 				request.OptionalTemplateData.AppSectionDescription == "Section description"));
-		await enrichmentService.Received(1).EnrichAsync(
+		enrichmentService.Received(1).Enrich(
 			Arg.Is<ApplicationCreateArgs>(request =>
 				request.EnvironmentName == "sandbox" &&
 				request.Name == "Codex App" &&
@@ -944,7 +944,7 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Match("*optional-template-data-json*",
 			because: "the create tool should reject malformed template data before calling the backend service");
 		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
-		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
+		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
 	}
 
 	[Test]
@@ -977,7 +977,7 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Match("*scalar-only*",
 			because: "the failure should explain that localization maps are forbidden on create-app");
 		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
-		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
+		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
 	}
 
 	[Test]
@@ -1009,7 +1009,7 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Match("*useAiContentGeneration=true*",
 			because: "the create tool should match the core behavior that rejects AI-generated template content");
 		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
-		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
+		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
 	}
 
 	[Test]
@@ -1041,7 +1041,7 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Match("*useExistingEntitySchema=true*",
 			because: "the error message must tell the caller that entitySchemaName is only valid together with useExistingEntitySchema=true");
 		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
-		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
+		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
 	}
 
 	[Test]
@@ -1073,7 +1073,7 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Match("*entitySchemaName*required*",
 			because: "the error message must tell the caller that entitySchemaName is required when useExistingEntitySchema=true");
 		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
-		await enrichmentService.DidNotReceiveWithAnyArgs().EnrichAsync(default!, default!, default);
+		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
 	}
 
 	[Test]
@@ -1085,7 +1085,7 @@ public sealed class ApplicationToolTests {
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
 		applicationCreateService.CreateApplication("sandbox", Arg.Any<ApplicationCreateRequest>())
 			.Returns(_ => throw new InvalidOperationException("Template dependency failed."));
-		enrichmentService.EnrichAsync(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default)
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default)
 			.Returns(new ApplicationDataForgeResult(
 				Used: true,
 				Health: null,
@@ -1112,7 +1112,7 @@ public sealed class ApplicationToolTests {
 			because: "backend failures should now be returned as structured error payloads");
 		result.Error.Should().Match("*Template dependency failed*",
 			because: "the create error envelope should preserve the backend diagnostics");
-		await enrichmentService.Received(1).EnrichAsync(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default);
+		enrichmentService.Received(1).Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default);
 	}
 
 	[Test]
@@ -1596,7 +1596,7 @@ public sealed class ApplicationToolTests {
 				PackageName: "UsrCodexApp",
 				Entities: Array.Empty<ApplicationEntityInfoResult>(),
 				ApplicationId: Guid.NewGuid().ToString()));
-		enrichmentService.EnrichAsync(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
 			.Returns(new ApplicationDataForgeResult(
 				Used: false, Health: null, Status: null, Coverage: null,
 				Warnings: Array.Empty<string>(), ContextSummary: null));
@@ -1630,7 +1630,7 @@ public sealed class ApplicationToolTests {
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
 		applicationCreateService.CreateApplication(Arg.Any<string>(), Arg.Any<ApplicationCreateRequest>())
 			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
-		enrichmentService.EnrichAsync(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
 			.Returns(new ApplicationDataForgeResult(Used: false, Health: null, Status: null, Coverage: null,
 				Warnings: Array.Empty<string>(), ContextSummary: null));
 		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);

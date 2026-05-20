@@ -711,6 +711,31 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for Freedom UI page localizable strings.")]
+	public void PageSchemaResourcesGuidanceResource_Should_Return_Canonical_Resources_Guide() {
+		// Arrange
+		PageSchemaResourcesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the resources guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/page-schema-resources",
+			because: "the resource should expose a stable MCP URI for page localizable string guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the resources guide should be discoverable as plain text");
+		article.Text.Should().Contain("$Resources.Strings.<ResourceKey>",
+			because: "the guide should document the preferred reactive binding syntax");
+		article.Text.Should().Contain("#ResourceString(KeyName)#",
+			because: "the guide should document the macro syntax");
+		article.Text.Should().Contain("`resources` parameter",
+			because: "the guide should document how explicit resource entries are passed to page tools");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns validator guidance that keeps field validation separate from converters and handlers in clio MCP page editing.")]
 	public void PageSchemaValidatorsGuidanceResource_Should_Return_Canonical_Validator_Guide() {
 		// Arrange
@@ -1345,6 +1370,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should distinguish entity-level from page-level rules");
 		article.Text.Should().Contain("Page-level business rules",
 			because: "the guide should distinguish page-level from entity-level rules");
+		article.Text.Should().Contain("State-changing actions are one-way",
+			because: "the guide should warn that state-changing business-rule actions are directional");
+		article.Text.Should().Contain("explicit inverse business rule",
+			because: "the guide should instruct AI callers to model reversible state with an inverse rule");
 	}
 
 	[Test]

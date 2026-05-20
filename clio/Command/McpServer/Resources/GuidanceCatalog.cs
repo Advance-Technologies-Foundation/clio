@@ -50,6 +50,10 @@ internal static class GuidanceCatalog {
 				"page-schema-creatio-devkit-common",
 				"Canonical MCP guidance for using @creatio-devkit/common in Freedom UI page handlers validators and related frontend-source patterns.",
 				PageSchemaCreatioDevkitCommonGuidanceResource.Guide),
+			["page-schema-resources"] = Create(
+				"page-schema-resources",
+				"Canonical MCP guidance for Freedom UI page localizable strings: $Resources.Strings.* as the recommended binding, #ResourceString()# required for validator params (and conventional for grid captions), resources parameter usage, and common mistakes.",
+				PageSchemaResourcesGuidanceResource.Guide),
 			["page-schema-validators"] = Create(
 				"page-schema-validators",
 				"Canonical MCP guidance for creating and editing Freedom UI page validators inside raw page schema bodies.",
@@ -71,9 +75,13 @@ internal static class GuidanceCatalog {
 				"Canonical MCP guidance for Freedom UI business rules: entity-level and page-level declarative condition-action rules for field/element visibility, editability, required state, and value assignment.",
 				BusinessRulesGuidanceResource.Guide),
 			["business-rule-filters"] = Create(
-				"business-rule-filters",
-				"Canonical MCP guidance for the friendly-filter contract used by the apply-static-filter business-rule action of create-entity-business-rule.",
-				BusinessRuleFiltersGuidanceResource.Guide)
+					"business-rule-filters",
+					"Canonical MCP guidance for the friendly-filter contract used by the apply-static-filter business-rule action of create-entity-business-rule.",
+					BusinessRuleFiltersGuidanceResource.Guide),
+			["mobile-page-modification"] = Create(
+				"mobile-page-modification",
+				"Mobile-specific differences from the base page-modification guidance: plain JSON body format (no AMD), Scaffold root element rules, mobile component registry, naming conventions, and template hierarchy.",
+				MobilePageGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

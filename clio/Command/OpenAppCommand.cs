@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Runtime.InteropServices;
+using Clio;
 using Clio.Common;
 using Clio.UserEnvironment;
 using Clio.Utilities;
@@ -61,7 +62,7 @@ public class OpenAppCommand(
 			return 0;
 		}
 		catch (Exception e) {
-			Logger.WriteError(e.ToString());
+			Logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
 			return 1;
 		}
 	}

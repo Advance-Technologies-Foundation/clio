@@ -122,8 +122,12 @@ public sealed class ToolContractGetToolE2ETests {
 		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
 			.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "pages" &&
-				field.Description.Contains("get-page.raw.body", StringComparison.Ordinal),
-				because: "sync-pages should advertise raw.body as the source of page write payloads");
+				field.Description.Contains("get-page.raw.body", StringComparison.Ordinal) &&
+				field.Description.Contains("localizable string", StringComparison.Ordinal),
+				because: "sync-pages should advertise raw.body as the source of page write payloads and clarify resources as localizable strings");
+		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
+			.Description.Should().Contain("page-modification",
+				because: "sync-pages should route body and resource-payload edits through the general page modification guide");
 		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
 			.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "pages" &&
@@ -164,7 +168,6 @@ public sealed class ToolContractGetToolE2ETests {
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
 				["tool-names"] = new[] {
-					DataForgeTool.DataForgeHealthToolName,
 					DataForgeTool.DataForgeStatusToolName,
 					DataForgeTool.DataForgeFindTablesToolName,
 					DataForgeTool.DataForgeFindLookupsToolName,
@@ -191,10 +194,9 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "explicit lookup should still return Data Forge initialize for remediation workflows");
 		explicitResponse.Tools!.Select(tool => tool.Name).Should().Contain(DataForgeTool.DataForgeUpdateToolName,
 			because: "explicit lookup should still return Data Forge update for remediation workflows");
-		explicitResponse.Tools!.Single(tool => tool.Name == DataForgeTool.DataForgeHealthToolName)
-			.Defaults.Should().Contain(definition =>
-				definition.Name == "scope" && definition.Value == "use_enrichment",
-				because: "the explicit Data Forge contract should advertise the default OAuth scope");
+		explicitResponse.Tools.Should().OnlyContain(tool =>
+				tool.Description.Contains("Creatio platform version 10.0.0 or later"),
+			because: "Data Forge contracts should advertise the platform version requirement through the real MCP server");
 	}
 
 	[Test]
@@ -558,6 +560,11 @@ public sealed class ToolContractGetToolE2ETests {
 				validator.Context!.Contains("forward reference paths like LookupColumn.SourceColumn", StringComparison.Ordinal),
 			because: "the contract should advertise AttributeValue source support for Set values");
 		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "set-values-shape" &&
+				validator.Field == "rule.actions[*].items[*]" &&
+				validator.Context!.Contains("direct-field arithmetic expression", StringComparison.Ordinal),
+			because: "the real MCP server contract should advertise the simple direct-field formula scope");
+		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-constant" &&
 				validator.Field == "rule.actions[*].items[*].value.value" &&
 				validator.Context!.Contains("JSON number", StringComparison.Ordinal),
@@ -706,6 +713,10 @@ public sealed class ToolContractGetToolE2ETests {
 			}),
 			because: "list-pages should advertise a single update-page fallback sequence after discovery");
 		ToolContractDefinition pageGetContract = response.Tools!.Single(tool => tool.Name == PageGetTool.ToolName);
+		pageGetContract.Description.Should().Contain("page-modification",
+			because: "get-page should route planned body edits to the general page modification guide through get-tool-contract");
+		pageGetContract.Description.Should().NotContain("page-schema-resources",
+			because: "get-page should avoid surfacing localizable-string leaf guidance directly in the broad contract description");
 		pageGetContract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "raw" &&
 				field.Description.Contains("raw.body", StringComparison.Ordinal),

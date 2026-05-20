@@ -781,6 +781,100 @@ public sealed class PageSyncToolE2ETests {
 		}
 	}
 
+	[Test]
+	[Description("Rejects a mobile JSON body containing a 'converters' section when validate=true is requested.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects mobile body with 'converters' key when validate=true")]
+	[AllureDescription("Verifies that sync-pages returns a per-page validation failure for a mobile body containing the 'converters' key when validate mode is enabled.")]
+	public async Task PageSyncTool_Should_Reject_Mobile_Body_With_Converters_When_Validate_Is_True() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string mobileBodyWithConverters = """
+			{
+			  "viewConfigDiff": [],
+			  "converters": {}
+			}
+			""";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = "dev",
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = "UsrMobile_FormPage",
+							["body"] = mobileBodyWithConverters
+						}
+					},
+					["validate"] = true,
+					["skip-sampling"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "sync-pages mobile validation failures should be surfaced as structured tool results");
+
+		if (TryExtractFailure(callResult, out PageSyncResponse? response) && response is not null) {
+			response.Pages.Should().ContainSingle(
+				because: "one page was submitted");
+			PageSyncPageResult page = response.Pages[0];
+			page.Validation!.ContentOk.Should().BeFalse(
+				because: "a mobile body containing 'converters' must fail mobile content validation");
+		}
+	}
+
+	[Test]
+	[Description("Accepts a valid mobile JSON body through sync-pages without AMD marker checks.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages accepts a valid mobile JSON body")]
+	[AllureDescription("Verifies that sync-pages does not trigger AMD marker validation for plain-JSON mobile bodies — only mobile-specific validation runs.")]
+	public async Task PageSyncTool_Should_Accept_Valid_Mobile_Body_Without_AMD_Marker_Errors() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = "dev",
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = "UsrMobile_FormPage",
+							["body"] = mobileBody
+						}
+					},
+					["validate"] = true,
+					["skip-sampling"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid mobile body must not raise a protocol-level error");
+
+		if (TryExtractFailure(callResult, out PageSyncResponse? response) && response is not null) {
+			foreach (PageSyncPageResult page in response.Pages) {
+				if (page.Validation is not null) {
+					page.Validation.Errors.Should().NotContain(e => e.Contains("SCHEMA_"),
+						because: "AMD marker errors must not appear when the body is a mobile JSON object");
+				}
+			}
+		}
+	}
+
 	private sealed record ArrangeContext(
 		string RootDirectory,
 		string WorkspacePath,

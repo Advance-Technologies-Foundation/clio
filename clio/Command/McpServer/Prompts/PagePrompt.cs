@@ -19,6 +19,7 @@ public static class PagePrompt {
 		[Description("Optional Creatio environment name")] string? environmentName = null) =>
 		$"""
 		 For the canonical existing-app maintenance flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
+		 For any page-body modification, call `{GuidanceGetTool.ToolName}` with `name` set to `page-modification` before editing `raw.body`; follow its pre-edit checklist to route localizable strings, converters, handlers, validators, SDK calls, and business-rule requirements to specialized guides.
 		 If the page-body task edits `handlers`, you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-handlers` before proposing or applying changes, and you must not author handler changes until that guidance has been read.
 		 If the page-body task edits `validators`, you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-validators` before proposing or applying changes, and you must not author validator changes until that guidance has been read; never use handler signatures like `handler(request, next)` inside SCHEMA_VALIDATORS — validators must return a function that accepts a control argument, not a request/next pair.
 		 If the requirement is field-value validation such as max/min/length/range/regex, including when the threshold comes from a system setting or other async SDK read, treat it as `validators` work and read `page-schema-validators`, not `page-schema-handlers`.
@@ -36,7 +37,7 @@ public static class PagePrompt {
 		 Do not send bundle data back to page tools; only the content of `body.js` is the writable payload.
 		 When you need to edit the page, read `files.bodyFile`, modify it, and send the updated body through `{PageSyncTool.ToolName}` as the canonical page write path.
 		 Keep `{PageSyncTool.ToolName}` `validate` at its default `true`, and enable `verify` only when the workflow needs explicit server read-back inside the same tool call.
-		 Pass `resources` as a valid JSON object string when the edited body contains `#ResourceString(key)#` macros that need child-schema localizable strings; do not send a nested object payload there.
+		 Before passing `resources`, you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-resources`. The body containing `$Resources.Strings.*` or `#ResourceString(...)#` is NOT sufficient justification. The guide specifies both the decision algorithm (when to register vs skip) and the required payload shape.
 		 Use `{PageUpdateTool.ToolName}` only as a fallback for single-page dry-run or legacy save workflows.
 		 For standard data-bound form fields, bind `control` or `value` to the declared view-model attribute from `viewModelConfig` / `viewModelConfigDiff` and prefer datasource captions like `$Resources.Strings.PDS_UsrStatus`.
 		 If validator or handler logic moves to a different declared attribute for the same field, rebind the control to that same attribute. If the control is inherited from a parent schema and there is no local `viewConfigDiff` item for it yet, add one local `merge` for that control name. Do not infer correctness from naming patterns such as `$PDS_*`, and do not rely on `#ResourceString(Usr*_label)#` shortcuts for data-bound field captions.

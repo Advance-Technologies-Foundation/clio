@@ -1294,14 +1294,14 @@ Files: clio/Command/BuildDockerImageService.cs, clio/tpl/docker-templates/dev/Do
 Impact: Future bundled `dev` and `prod` builds should reuse a locally built base image under both Docker and nerdctl without failing on offline DNS/registry lookups for the bundled base tag.
 
 ## 2026-03-25 15:43 – Make bundled docker builds offline-safe under nerdctl
-Context: User asked for an end-to-end self-check after bundled ase and ZIP-based prod builds kept failing under Rancher Desktop 
+Context: User asked for an end-to-end self-check after bundled ase and ZIP-based prod builds kept failing under Rancher Desktop
 erdctl because BuildKit still tried registry lookups for local images.
-Decision: Removed the named docker-image:// base-image handoff for bundled templates, restored normal ARG BASE_IMAGE Dockerfiles for dev and prod, and taught BuildDockerImageService to materialize bundled base sources as exported rootfs tarballs (ase-rootfs.tar) when the selected container CLI is 
+Decision: Removed the named docker-image:// base-image handoff for bundled templates, restored normal ARG BASE_IMAGE Dockerfiles for dev and prod, and taught BuildDockerImageService to materialize bundled base sources as exported rootfs tarballs (ase-rootfs.tar) when the selected container CLI is
 erdctl.
-Discovery: Under this Windows/Rancher Desktop setup, 
+Discovery: Under this Windows/Rancher Desktop setup,
 erdctl build still resolves local tags and docker-image:// named contexts through registry metadata paths, but FROM scratch plus ADD <exported-rootfs>.tar / is fully local and works for both the bundled SDK base image and the reusable creatio-base image. The exact sequential self-check succeeded with clio-dev build-docker-image --template base --use-nerdctl and then clio-dev build-docker-image --template prod --from F:\CreatioBuilds\8.3.4\8.3.4.1971_StudioNet8_Softkey_PostgreSQL_ENU.zip.
 Files: clio/Command/BuildDockerImageService.cs, clio/tpl/docker-templates/base/Dockerfile, clio/tpl/docker-templates/dev/Dockerfile, clio/tpl/docker-templates/prod/Dockerfile, clio.tests/Command/BuildDockerImageServiceTests.cs, .codex/workspace-diary.md
-Impact: Future bundled base/dev/prod builds can reuse cached local images under 
+Impact: Future bundled base/dev/prod builds can reuse cached local images under
 erdctl without DNS access, and debugging this path no longer depends on BuildKit resolving custom local tags through a registry.
 
 ## 2026-03-25 16:39 – Cache and restore bundled base images across Docker CLIs
@@ -2168,7 +2168,7 @@ Decision: Root cause was CommandLineParser treating bool option with Default=tru
 Discovery: CommandLineParser cannot set a bool option to false via --flag false or --flag=false when Default=true. Must use string? with manual bool.Parse. Also added missing create-app-section and update-app-section entries to clio/Wiki/WikiAnchors.txt to fix VisibleCommands_ShouldHaveCanonicalArtifacts test.
 Files: clio/Command/ApplicationSectionCreateCommand.cs, clio/Wiki/WikiAnchors.txt
 Impact: --with-mobile-pages false now correctly prevents mobile page schema generation. 1921/1921 relevant tests pass; 3 pre-existing StopCommand failures unrelated to our work.
-  
+
 ## 2026-04-08 16:05 – Keep canonical application entity captions out of `Base object`
 Context: AI-driven app creation logs showed `application-create` returning the correct canonical main entity caption, but a later `application-get-info` after `schema-sync` could degrade that same entity to the generic `Base object` caption on `.NET Framework` environments.
 Decision: Narrowed the fix to `ApplicationInfoService` readback: pass the installed application display name into entity mapping and, for the canonical main entity only, use that display name when runtime metadata says `Base object` and the design caption cannot be read. Added regression/guard unit tests plus an MCP E2E scenario that mutates the created app through `schema-sync` before re-reading `application-get-info`.
@@ -3043,6 +3043,41 @@ Discovery: The tracked change is a local simplification only: removing the redun
 Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
 Impact: Future reviews can treat this edit as behavior-preserving unless new handler API patterns are added, in which case the focused schema validation tests are the fastest regression check.
 
+## 2026-04-27 14:45 - ENG-88603 Map invalid app archive to exit code 5
+Context: `install-app` returned exit code 1 when Creatio logged `Terrasoft.Common.InvalidGZipArchiveException` for a corrupted `.gz` application archive.
+Decision: Added a Clio-specific `InvalidGZipArchiveInstallException`, detect the server exception type in install responses/logs only after the install result is failed, and map it to exit code 5 in `InstallApplicationCommand`.
+Discovery: `install-app` is an alias of `install-application`; the MCP tool delegates to the command through `BaseTool`, so it preserves the command exit code without MCP contract changes.
+Files: clio/Package/BasePackageInstaller.cs, clio/Package/InvalidGZipArchiveInstallException.cs, clio/Command/InstallApplicationOptions.cs, clio.tests/Command/InstallApplicationCommandTests.cs, clio.tests/ApplicationInstallerTests.cs, clio/docs/commands/install-application.md, clio/help/en/install-application.txt, .github/skills/clio/references/commands-reference.md
+Impact: Future invalid archive installs from Creatio core can be recognized through the stable exception type and surfaced as the dedicated CLI exit code.
+
+## 2026-04-27 15:06 - Restrict invalid archive detection to current install log delta
+Context: Review found that a historical `InvalidGZipArchiveException` already present in the server install log could incorrectly map an unrelated failed install to exit code 5.
+Decision: Capture the install log baseline before posting the install request, start log streaming from that baseline, and search the invalid archive marker only in the current install log delta.
+Discovery: The structured `ErrorInfo` path still maps directly to the dedicated exception, while log-based detection now ignores stale entries that existed before the command started.
+Files: clio/Package/BasePackageInstaller.cs, clio.tests/ApplicationInstallerTests.cs
+Impact: Invalid archive exit-code mapping remains available for the screenshot scenario without being triggered by older accumulated install log entries.
+
+## 2026-04-27 21:54 - Scope invalid archive exception to application installs
+Context: Review found that invalid archive detection lived in `BasePackageInstaller`, which also serves package installs, while the requested exit-code mapping is for `install-app`.
+Decision: Added an opt-in protected flag in the base installer, enabled it only in `ApplicationInstaller`, and added a `PackageInstaller` regression test proving package installs keep the general failed-install behavior.
+Discovery: `BasePackageInstaller` can still share response/log detection helpers, but throwing `InvalidGZipArchiveInstallException` is now explicitly scoped to application installation.
+Files: clio/Package/BasePackageInstaller.cs, clio/Package/ApplicationInstaller.cs, clio.tests/PackageInstallerTests.cs
+Impact: `install-app` keeps exit code 5 for the new Creatio exception while `push-pkg` is not accidentally changed by the shared installer implementation.
+
+## 2026-04-28 09:30 - Cover structured invalid archive error info
+Context: Review requested explicit coverage for Creatio returning `InvalidGZipArchiveException` through structured response `ErrorInfo` instead of only the install log.
+Decision: Added an `ApplicationInstallerTests` regression that leaves the install log empty and verifies `errorInfo.errorCode` is enough to throw `InvalidGZipArchiveInstallException`.
+Discovery: The existing production detection already checks `ErrorInfo.ErrorCode`, `Message`, and `StackTrace`; no production change was needed for this path.
+Files: clio.tests/ApplicationInstallerTests.cs
+Impact: The exit-code mapping is now protected for both current-log and structured-response Creatio failure shapes.
+
+## 2026-04-30 09:05 - Guard null install log baseline
+Context: PR review noted that `GetInstallLog(...)` can return null and `GetLogDiff(initialInstallLog, completeInstallLog)` would dereference the null baseline.
+Decision: Coalesced install-log baselines and final reads to `string.Empty`, added a null guard inside `GetLogDiff`, and changed the log-based invalid archive test to start from a null baseline.
+Discovery: The existing response/log mapping remains unchanged, but the diffing path now handles successful-but-null log provider responses without falling into a generic `NullReferenceException`.
+Files: clio/Package/BasePackageInstaller.cs, clio.tests/ApplicationInstallerTests.cs
+Impact: The PR review concern is covered by code and regression test while preserving exit-code mapping behavior.
+
 ## 2026-04-24 16:56 – Remove page edit shortcut tools
 Context: ENG-88801 reproduced because `add-form-fields` consumed raw page bodies through an internal get-page path and bypassed the canonical editable `body.js` workflow.
 Decision: Removed `add-form-fields`, `add-list-columns`, their shared `PageBodyEditor`, and the silent `PageBodyNormalizer`; `get-page` now writes the fetched editable body unchanged.
@@ -3070,6 +3105,13 @@ Decision: Treat this as an `install-gate` command regression, not an environment
 Discovery: Manual `CreatioClient` login with `dev` settings succeeds, while the same client with bootstrap placeholder settings (`http://localhost`, empty credentials) reproduces the same stack. The regression came from the 8.1.0.2 DI cleanup changing `CreatePushPkgOptions` to resolve `ISettingsRepository`, which initializes `Program.Container` too early.
 Files: C:\Projects\clio\clio\Program.cs, C:\Projects\clio\clio\BindingsModule.cs, C:\Projects\clio\clio\Command\PushPackageCommand.cs
 Impact: Future fix should keep `CreateClioGatePkgOptions` from initializing the global bootstrap container before resolving `InstallGatePkgCommand`, or make `Resolve<T>` rebuild/scope the container when environment settings are later supplied.
+
+## 2026-05-15 19:08 - Documented push-workspace application installer option
+Context: User reported that `push-workspace` documentation was missing the `use-application-installer` option.
+Decision: Updated both command documentation surfaces to include `--use-application-installer`, and also synchronized the documented `--unlock` option and lowercase inherited `--environment` spelling with source.
+Discovery: `PushWorkspaceCommandOptions` already exposed `[Option("use-application-installer")]`; `clio/Commands.md` only links the command page and did not need an option-level update.
+Files: clio/help/en/push-workspace.txt, clio/docs/commands/push-workspace.md
+Impact: Users can now discover the ApplicationInstaller path from CLI help and GitHub command docs.
 
 ## 2026-04-30 18:35 - Fixed install-gate target environment resolution
 Context: Follow-up implementation for the `install-gate` failure introduced after the 8.1.0.2 DI cleanup.
@@ -3133,3 +3175,31 @@ Decision: Generated one static resource catalog/class for the 13 remaining skill
 Discovery: E2E MCP server processes can keep `clio/bin/Debug/net10.0/clio.dll` locked after tests; stopping only the matching `dotnet ... clio.dll mcp-server` processes clears the build lock.
 Files: clio/Command/McpServer/Resources/ComposableAppSkillGuidanceResources.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.tests/Command/McpServer/GuidanceGetToolTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
 Impact: MCP clients can now list/read all composable-app skill guides and references, and `get-guidance` resolves every top-level composable-app skill name.
+
+## 2026-05-14 13:30 - Mobile Freedom UI pages reference document
+Context: Research task to produce a single verified source-of-truth for AI agents working with mobile Freedom UI page schemas via clio MCP.
+Decision: Verified all claims against clio C# source, creatio-ui TypeScript source, CrtUIPlatform package schemas, Creatio Academy, and a live Creatio 8.x environment via MCP calls.
+Discovery: (1) update-page and sync-pages both reject mobile JSON bodies -- SchemaValidationService.ValidateMarkerIntegrity inside PageUpdateCommand.TryUpdatePage always runs and requires AMD section markers that mobile bodies do not have; validate=false in sync-pages bypasses only the outer MCP-level check, not this inner call. (2) get-page writes a correct body.js but its bundle.json and ownBodySummary are unreliable for mobile pages (bundle merger is AMD-marker-based). (3) The correct read/write pair for mobile pages is get-client-unit-schema + update-client-unit-schema. (4) Template hierarchy: BlankMobilePageTemplate and BaseMobileTemplate are parallel roots -- neither is parent of the other. (5) Mobile page visibility in the app requires creation through the app/section flow, not just schema existence.
+Files: spec/mobile-pages/mobile-pages-reference.md
+Impact: AI agents have a single accurate reference for mobile page schema identity, body format, tool limitations, and the correct clio MCP read/write workflow.
+
+## 2026-05-15 11:00 - Mobile Freedom UI page support implementation (Phases 1-6)
+Context: Implement spec/mobile-pages/mobile-pages-plan.md — make existing MCP page tools transparently handle mobile pages (schemaType=10, plain JSON bodies) without adding new tools.
+Decision: Used body.AsSpan().TrimStart().StartsWith(""{".AsSpan()) as the mobile detection strategy in IsLikelyMobileBody.
+Discovery: (1) PageUpdateCommand.TryUpdatePage's ValidateInput independently validates AMD markers — must also add IsLikelyMobileBody check there (returning null to bypass AMD checks). (2) PageSyncTool mobile rejection path does not populate ValidationResult — tests must check .Error string instead of .Validation properties. (3) SchemaValidationServiceTests.cs and PageSchemaBodyParserTests.cs had missing class closing braces after mobile tests were added. (4) Pre-existing Parse_Should_Map_Lowercase_Environment_Alias test failure (CommandLine ambiguous double-registration) is not caused by our changes.
+Files: clio/Command/PageSchemaBodyParser.cs, clio/Command/SchemaValidationService.cs, clio/Command/PageUpdateOptions.cs, clio/Command/PageModels.cs, clio/Command/PageListOptions.cs, clio/Command/PageGetOptions.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/PageValidateTool.cs, clio/Command/McpServer/Tools/ComponentInfoCatalog.cs, clio/Command/McpServer/Tools/ComponentInfoTool.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Data/MobileComponentRegistry.json, clio/Command/McpServer/Resources/MobilePageGuidanceResource.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio/Command/McpServer/Resources/PageCreationGuidanceResource.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.tests/Command/PageSchemaBodyParserTests.cs, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/McpServer/ValidatePageToolTests.cs, clio.mcp.e2e/PageValidateToolE2ETests.cs, clio.mcp.e2e/PageUpdateToolE2ETests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs
+Impact: update-page, sync-pages, validate-page, get-page, list-pages, get-component-info, and mobile-page-modification guidance now all support mobile pages transparently. 1846 unit tests pass.
+
+## 2026-05-14 23:08 – Diagnosed create-data-binding environment alias parser regression
+Context: User asked who broke `Parse_Should_Map_Lowercase_Environment_Alias`.
+Decision: Identified commit `a536a4df` (`fix(cli): rename camelCase/PascalCase options to kebab-case with backward-compat aliases`) by Vladimir as the regression source.
+Discovery: `CreateDataBindingOptions` already declared `[Option("environment")]` as a lowercase shim over inherited `EnvironmentOptions.Environment`; `a536a4df` renamed the inherited option from `[Option('e', "Environment")]` to `[Option('e', "environment")]`, creating duplicate `--environment` descriptors and causing CommandLineParser to throw `Sequence contains more than one matching element`.
+Files: clio/Command/CommandLineOptions.cs, clio/Command/DataBindingCommand.cs, clio.tests/Command/DataBindingCommandTests.cs
+Impact: Fix should remove or rename the command-specific `CreateDataBindingOptions.EnvironmentAlias` shim now that the shared inherited option is canonical lowercase, while preserving the inherited hidden `--Environment` alias.
+
+## 2026-05-14 23:11 – Fixed data-binding duplicate environment options
+Context: User asked to fix `Parse_Should_Map_Lowercase_Environment_Alias`.
+Decision: Removed command-local `[Option("environment")]` alias properties from file-first and DB-first data-binding option classes; the inherited `EnvironmentOptions.Environment` is now the only canonical lowercase descriptor, with inherited hidden `--Environment` still available for compatibility.
+Discovery: The same duplicate descriptor pattern existed in `create-data-binding-db`, `upsert-data-binding-row-db`, and `remove-data-binding-row-db`, so the fix covered those commands too.
+Files: clio/Command/DataBindingCommand.cs, clio/Command/DataBindingDbCommand.cs
+Impact: CommandLineParser no longer throws on `--environment` for data-binding commands, and the documented command/MCP contracts remain unchanged.

@@ -12,17 +12,41 @@ namespace Clio
 	[Verb("compressApp", Aliases = ["comp-app"],HelpText = "Compress application into zip file")]
 	internal class CompressAppOptions
 	{
-		[Option('s', "SourcePath", Required = true, HelpText = "Folder path to package repository")]
+		[Option('s', "source-path", Required = false, HelpText = "Folder path to package repository")]
 		public string RepositoryFolderPath { get; set; }
 
-		[Option('p', "Packages", Required = true)]
+		[Option("SourcePath", Required = false, Hidden = true, HelpText = "Alias for --source-path")]
+		public string RepositoryFolderPathAlias {
+			get => RepositoryFolderPath;
+			set { if (!string.IsNullOrEmpty(value)) RepositoryFolderPath = value; }
+		}
+
+		[Option('p', "packages", Required = false)]
 		public string Packages { get; set; }
 
-		[Option('d', "DestinationPath", Required = true, HelpText = "Destination folder path for gz files")]
+		[Option("Packages", Required = false, Hidden = true, HelpText = "Alias for --packages")]
+		public string PackagesAlias {
+			get => Packages;
+			set { if (!string.IsNullOrEmpty(value)) Packages = value; }
+		}
+
+		[Option('d', "destination-path", Required = false, HelpText = "Destination folder path for gz files")]
 		public string DestinationPath { get; set; }
-	
-		[Option("SkipPdb", Required = false, Default = true)]
+
+		[Option("DestinationPath", Required = false, Hidden = true, HelpText = "Alias for --destination-path")]
+		public string DestinationPathAlias {
+			get => DestinationPath;
+			set { if (!string.IsNullOrEmpty(value)) DestinationPath = value; }
+		}
+
+		[Option("skip-pdb", Required = false, Default = true)]
 		public bool SkipPdb { get; set; }
+
+		[Option("SkipPdb", Required = false, Hidden = true, HelpText = "Alias for --skip-pdb")]
+		public bool SkipPdbAlias {
+			get => SkipPdb;
+			set { if (value) SkipPdb = value; }
+		}
 
 		public IEnumerable<string> RootPackageNames =>  StringParser.ParseArray(Packages);
 	}

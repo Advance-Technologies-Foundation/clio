@@ -24,15 +24,33 @@ public class RestoreDbCommandOptions : EnvironmentOptions{
 		HelpText = "Disables reset password after restore")]
 	public bool DisableResetPassword { get; set; } = true;
 
-	[Option( "dbName", Required = false, HelpText = "dbName")]
+	[Option("db-name", Required = false, HelpText = "Database name")]
 	public string DbName { get; set; }
-	
-	[Option( "backupPath", Required = false, HelpText = "backup Path")]
+
+	[Option("dbName", Required = false, Hidden = true, HelpText = "Alias for --db-name")]
+	public string DbNameAlias {
+		get => DbName;
+		set { if (!string.IsNullOrEmpty(value)) DbName = value; }
+	}
+
+	[Option("backup-path", Required = false, HelpText = "Backup file path")]
 	public string BackupPath { get; set; }
 
-	[Option("dbServerName", Required = false, 
+	[Option("backupPath", Required = false, Hidden = true, HelpText = "Alias for --backup-path")]
+	public string BackupPathAlias {
+		get => BackupPath;
+		set { if (!string.IsNullOrEmpty(value)) BackupPath = value; }
+	}
+
+	[Option("db-server-name", Required = false,
 		HelpText = "Name of database server configuration from appsettings.json")]
 	public string DbServerName { get; set; }
+
+	[Option("dbServerName", Required = false, Hidden = true, HelpText = "Alias for --db-server-name")]
+	public string DbServerNameAlias {
+		get => DbServerName;
+		set { if (!string.IsNullOrEmpty(value)) DbServerName = value; }
+	}
 
 	[Option("drop-if-exists", Required = false, 
 		HelpText = "Automatically drops existing database if present without prompting")]

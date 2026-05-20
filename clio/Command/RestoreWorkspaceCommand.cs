@@ -17,18 +17,41 @@ namespace Clio.Command
 			AddBuildProps = true;
 		}
 
-		[Option( "IsNugetRestore", Required = false, HelpText = "True if you need to restore nugget package SDK", Default = true)]
+		[Option("is-nuget-restore", Required = false, HelpText = "True if you need to restore nugget package SDK")]
 		public bool? IsNugetRestore { get; set; }
 
+		[Option("IsNugetRestore", Required = false, Hidden = true, HelpText = "Alias for --is-nuget-restore")]
+		public bool? IsNugetRestoreAlias {
+			get => IsNugetRestore;
+			set { IsNugetRestore = value; }
+		}
 
-		[Option("IsCreateSolution", Required = false, HelpText = "True if you need to create the Solution", Default = true)]
+		[Option("is-create-solution", Required = false, HelpText = "True if you need to create the Solution")]
 		public bool? IsCreateSolution { get; set; }
 
-		[Option('a', "AppCode", Required = false, HelpText = "Application code")]
+		[Option("IsCreateSolution", Required = false, Hidden = true, HelpText = "Alias for --is-create-solution")]
+		public bool? IsCreateSolutionAlias {
+			get => IsCreateSolution;
+			set { IsCreateSolution = value; }
+		}
+
+		[Option('a', "app-code", Required = false, HelpText = "Application code")]
 		public string AppCode { get; set; }
 
-		[Option("AddBuildProps", Required = false, Default =true, HelpText = "Add build props for dll paths in the project file")]
+		[Option("AppCode", Required = false, Hidden = true, HelpText = "Alias for --app-code")]
+		public string AppCodeAlias {
+			get => AppCode;
+			set { if (!string.IsNullOrEmpty(value)) AppCode = value; }
+		}
+
+		[Option("add-build-props", Required = false, HelpText = "Add build props for dll paths in the project file")]
 		public bool AddBuildProps { get; set; }
+
+		[Option("AddBuildProps", Required = false, Hidden = true, HelpText = "Alias for --add-build-props")]
+		public bool AddBuildPropsAlias {
+			get => AddBuildProps;
+			set { if (value) AddBuildProps = value; }
+		}
 
 		
 	}

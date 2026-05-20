@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
@@ -218,7 +219,7 @@ internal class Program {
 	public static IAppUpdater _appUpdater;
 
 	private sealed record CommandSuggestionEntry(string CanonicalName, IReadOnlyList<string> SearchTerms);
-	private sealed record CommandSuggestionScore(string CanonicalName, int TokenOverlap, int EditDistance);
+	private sealed record CommandSuggestionScore(string CanonicalName, string DisplayName, int TokenOverlap, int EditDistance);
 
 	internal static IReadOnlyList<Type> GetCommandOptionTypes() => CommandOption;
 
@@ -715,7 +716,7 @@ internal class Program {
 			.Select(entry => BuildCommandSuggestionScore(requestedCommand, entry))
 			.OrderByDescending(score => score.TokenOverlap)
 			.ThenBy(score => score.EditDistance)
-			.ThenBy(score => score.CanonicalName, StringComparer.OrdinalIgnoreCase)
+			.ThenBy(score => score.DisplayName, StringComparer.OrdinalIgnoreCase)
 			.ToArray();
 		if (scores.Length == 0) {
 			return [];
@@ -730,7 +731,7 @@ internal class Program {
 		}
 		return relevantScores
 			.Take(CommandSuggestionLimit)
-			.Select(score => score.CanonicalName)
+			.Select(score => score.DisplayName)
 			.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
 			.ToArray();
 	}
@@ -741,6 +742,7 @@ internal class Program {
 		string comparableRequestedCommand = NormalizeComparableCommandName(requestedCommand);
 		int bestTokenOverlap = 0;
 		int bestEditDistance = int.MaxValue;
+		string bestSearchTerm = entry.CanonicalName;
 		foreach (string searchTerm in entry.SearchTerms) {
 			string normalizedSearchTerm = NormalizeComparableCommandName(searchTerm);
 			int tokenOverlap = CountTokenOverlap(requestedTokens, TokenizeCommandName(searchTerm));
@@ -750,9 +752,10 @@ internal class Program {
 			if (tokenOverlap > bestTokenOverlap || tokenOverlap == bestTokenOverlap && editDistance < bestEditDistance) {
 				bestTokenOverlap = tokenOverlap;
 				bestEditDistance = editDistance;
+				bestSearchTerm = searchTerm;
 			}
 		}
-		return new CommandSuggestionScore(entry.CanonicalName, bestTokenOverlap, bestEditDistance);
+		return new CommandSuggestionScore(entry.CanonicalName, bestSearchTerm, bestTokenOverlap, bestEditDistance);
 	}
 
 	private static int GetEffectiveEditDistance(string comparableRequestedCommand, string canonicalName, string searchTerm,
@@ -1132,7 +1135,9 @@ internal class Program {
 				appUpdater.UpdateInBackgroundAsync().GetAwaiter().GetResult();
 			} else {
 				ConsoleLogger.Instance.WriteWarning(
-					$"clio {latestVersion} is available. Run 'clio update' to update.");
+					RuntimeInformation.IsOSPlatform(OSPlatform.Windows) 
+						? $"clio {latestVersion} is available. Run 'dotnet tool update clio -g' to update." 
+						: $"clio {latestVersion} is available. Run 'clio update' to update.");
 			}
 		} catch {
 			// startup update check must never crash the tool

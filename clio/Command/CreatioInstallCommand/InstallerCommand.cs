@@ -107,20 +107,38 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	/// <summary>
 	/// Gets or sets the site name for the deployed application.
 	/// </summary>
-	[Option("SiteName", Required = false, HelpText = "SiteName")]
+	[Option("site-name", Required = false, HelpText = "SiteName")]
 	public string SiteName { get; set; }
+
+	[Option("SiteName", Required = false, Hidden = true, HelpText = "Alias for --site-name")]
+	public string SiteNameAlias {
+		get => SiteName;
+		set { if (!string.IsNullOrEmpty(value)) SiteName = value; }
+	}
 
 	/// <summary>
 	/// Gets or sets the site port for the deployed application.
 	/// </summary>
-	[Option("SitePort", Required = false, HelpText = "Site port")]
+	[Option("site-port", Required = false, HelpText = "Site port")]
 	public int SitePort { get; set; }
+
+	[Option("SitePort", Required = false, Hidden = true, HelpText = "Alias for --site-port")]
+	public int SitePortAlias {
+		get => SitePort;
+		set { if (value != 0) SitePort = value; }
+	}
 
 	/// <summary>
 	/// Gets or sets the path to the Creatio application zip archive.
 	/// </summary>
-	[Option("ZipFile", Required = false, HelpText = "Sets Zip File path")]
+	[Option("zip-file", Required = false, HelpText = "Sets Zip File path")]
 	public string ZipFile { get; set; }
+
+	[Option("ZipFile", Required = false, Hidden = true, HelpText = "Alias for --zip-file")]
+	public string ZipFileAlias {
+		get => ZipFile;
+		set { if (!string.IsNullOrEmpty(value)) ZipFile = value; }
+	}
 
 	/// <summary>
 	/// Gets or sets the deployment method: <c>auto</c>, <c>iis</c>, or <c>dotnet</c>.

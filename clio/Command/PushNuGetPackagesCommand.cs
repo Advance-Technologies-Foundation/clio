@@ -13,11 +13,23 @@ namespace Clio.Command
 		[Value(0, MetaName = "NugetPkgPath", Required = true, HelpText = "Nuget package file path")]
 		public string NugetPkgPath { get; set; }
 
-		[Option('k', "ApiKey", Required = true, HelpText = "The API key for the server")]
+		[Option('k', "api-key", Required = false, HelpText = "The API key for the server")]
 		public string ApiKey { get; set; }
 
-		[Option('s', "Source", Required = true, HelpText = "Specifies the server URL")]
+		[Option("ApiKey", Required = false, Hidden = true, HelpText = "Alias for --api-key")]
+		public string ApiKeyAlias {
+			get => ApiKey;
+			set { if (!string.IsNullOrEmpty(value)) ApiKey = value; }
+		}
+
+		[Option('s', "source", Required = false, HelpText = "Specifies the server URL")]
 		public string SourceUrl { get; set; }
+
+		[Option("Source", Required = false, Hidden = true, HelpText = "Alias for --source")]
+		public string SourceUrlAlias {
+			get => SourceUrl;
+			set { if (!string.IsNullOrEmpty(value)) SourceUrl = value; }
+		}
 
 	}
 

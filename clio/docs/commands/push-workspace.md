@@ -17,11 +17,17 @@ clio push-workspace [OPTIONS]
 ## Options
 
 ```bash
--e, --Environment <ENVIRONMENT_NAME>
+-e, --environment <ENVIRONMENT_NAME>
 Target environment name
 
 --skip-backup <true|false>
 Skip backup creation only when explicitly set to true
+
+--unlock
+Unlock workspace packages after installing the workspace
+
+--use-application-installer
+Use ApplicationInstaller instead of PackageInstaller for installation
 ```
 
 ## Examples
@@ -32,6 +38,9 @@ Push the current workspace to the dev environment
 
 clio push-workspace -e dev --skip-backup true
 Push the workspace without creating a backup package first
+
+clio push-workspace -e dev --use-application-installer
+Push the workspace using ApplicationInstaller
 ```
 
 ## See Also

@@ -109,7 +109,7 @@ public sealed class ApplicationCreateTool(
 			ValidateCreateArgs(args);
 			string effectiveTemplateCode = string.IsNullOrWhiteSpace(args.TemplateCode) ? "AppFreedomUI" : args.TemplateCode.Trim();
 			ApplicationOptionalTemplateData? optionalTemplateData = ApplicationToolHelper.ParseOptionalTemplateData(args.OptionalTemplateDataJson);
-			ApplicationDataForgeResult dataForge = await enrichmentService.EnrichAsync(
+			ApplicationDataForgeResult dataForge = enrichmentService.Enrich(
 				args,
 				optionalTemplateData,
 				CancellationToken.None);

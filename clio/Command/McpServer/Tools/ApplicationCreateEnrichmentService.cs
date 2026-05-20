@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -17,7 +16,7 @@ public interface IApplicationCreateEnrichmentService {
 	/// <param name="optionalTemplateData">Parsed optional template data.</param>
 	/// <param name="cancellationToken">Cancellation token.</param>
 	/// <returns>Structured Data Forge diagnostics and compact context summary.</returns>
-	Task<ApplicationDataForgeResult> EnrichAsync(
+	ApplicationDataForgeResult Enrich(
 		ApplicationCreateArgs args,
 		ApplicationOptionalTemplateData? optionalTemplateData,
 		CancellationToken cancellationToken = default);
@@ -29,7 +28,7 @@ public interface IApplicationCreateEnrichmentService {
 public sealed class ApplicationCreateEnrichmentService(IDataForgeEnrichmentBuilder enrichmentBuilder)
 	: IApplicationCreateEnrichmentService {
 	/// <inheritdoc />
-	public async Task<ApplicationDataForgeResult> EnrichAsync(
+	public ApplicationDataForgeResult Enrich(
 		ApplicationCreateArgs args,
 		ApplicationOptionalTemplateData? optionalTemplateData,
 		CancellationToken cancellationToken = default) {
@@ -49,7 +48,7 @@ public sealed class ApplicationCreateEnrichmentService(IDataForgeEnrichmentBuild
 			optionalTemplateData?.AppSectionDescription,
 			args.Name);
 
-		return await enrichmentBuilder.BuildAsync(
+		return enrichmentBuilder.Build(
 			new DataForgeEnrichmentRequest(
 				EnvironmentName: args.EnvironmentName,
 				RequirementSummary: requirementSummary,

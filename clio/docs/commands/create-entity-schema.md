@@ -69,7 +69,7 @@ OAuth client secret
 OAuth app URI
 --silent
 Use default behavior without user interaction
---restartEnvironment
+--restart-environment
 Restart environment after execute command
 --db-server-uri <VALUE>
 Db server uri

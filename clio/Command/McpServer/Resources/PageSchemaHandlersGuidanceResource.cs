@@ -69,6 +69,10 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | deployed page-body handler in `SCHEMA_HANDLERS` | `await request.$context.executeRequest(...)` | page-body handlers already work through the live view-model context and this is the default authoring API for page edits |
 		       - Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-creatio-devkit-common`.
 
+		       Server-side compilation
+		       - Handlers live in the Freedom UI page body, which is an AMD module served at runtime. After `update-page` or `sync-pages` your changes are live.
+		       - Do NOT call `compile-creatio` — it is for C# schema changes, not page-body JavaScript. Compilation forces a runtime reload, breaks the active session, and is never required as a follow-up to a page-body edit.
+
 		       NON-NEGOTIABLES
 		       - Use handler signatures like `async (request, next) => { ... }` only inside `SCHEMA_HANDLERS`.
 		       - `handlers` is an ARRAY, not an object.

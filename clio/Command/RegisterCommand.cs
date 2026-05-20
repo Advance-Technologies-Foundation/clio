@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO.Abstractions;
 using System.Runtime.InteropServices;
+using Clio;
 using Clio.Common;
 using CommandLine;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
@@ -144,7 +145,7 @@ public class RegisterCommand : Command<RegisterOptions>{
 			return 1;
 		}
 		catch (Exception e) {
-			_logger.WriteError(e.ToString());
+			_logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
 			return 1;
 		}
 	}

@@ -52,7 +52,7 @@ Entity-level rule creation must:
    - support multiple actions
    - support set value targets:
       - constant value (text, number, boolean, date/time)
-      - formula value using a simple direct-field arithmetic expression such as `(Field1 + Field2) / 2`
+      - formula value using a simple numeric direct-field arithmetic expression such as `(Field1 + Field2) / 2`
       - attribute value from a same-typed direct attribute or forward reference path such as `Lookup.Field`
    - support multiple targets per action
    - apply-static-filter action:
@@ -84,6 +84,7 @@ Entity-level rule creation must reject the request when:
 - a set value target uses a forward reference path
 - a referenced formula source attribute does not exist in the target entity scope
 - a formula source does not reference any entity attribute
+- a formula target or source attribute is not numeric
 - a formula uses a function call, comparison operator, string literal, or another expression shape outside the current arithmetic whitelist
 - an apply-static-filter action includes `items`
 - an apply-static-filter action omits `targetAttribute`

@@ -19,8 +19,14 @@ namespace Clio.Command {
 		/// <summary>
 		/// Gets or sets the optional report log path.
 		/// </summary>
-		[Option('r', "ReportPath", Required = false, HelpText = "Log file path")]
+		[Option('r', "report-path", Required = false, HelpText = "Log file path")]
 		public string ReportPath { get; set; }
+
+		[Option("ReportPath", Required = false, Hidden = true, HelpText = "Alias for --report-path")]
+		public string ReportPathAlias {
+			get => ReportPath;
+			set { if (!string.IsNullOrEmpty(value)) ReportPath = value; }
+		}
 	}
 
 	#endregion
@@ -48,6 +54,12 @@ namespace Clio.Command {
 	/// Installs an application package into a Creatio environment.
 	/// </summary>
 	public class InstallApplicationCommand : Command<InstallApplicationOptions> {
+		#region Constants: Private
+
+		private const int InvalidGZipArchiveExitCode = 5;
+
+		#endregion
+
 		#region Fields: Private
 
 		private readonly EnvironmentSettings _environmentSettings;
@@ -96,6 +108,10 @@ namespace Clio.Command {
 
 				_logger.WriteError("Error");
 				return 1;
+			}
+			catch (InvalidGZipArchiveInstallException exception) {
+				_logger.WriteError(exception.Message);
+				return InvalidGZipArchiveExitCode;
 			}
 			catch (Exception exception) {
 				_logger.WriteError(exception.ToString());

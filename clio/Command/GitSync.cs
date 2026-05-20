@@ -9,9 +9,15 @@ namespace Clio.Command
 	public class GitSyncOptions : EnvironmentNameOptions
 	{
 
-		[Option("Direction", Required = true, HelpText = "Sets sync direction")]
+		[Option("direction", Required = false, HelpText = "Sets sync direction")]
 		public string Direction {
 			get; set;
+		}
+
+		[Option("Direction", Required = false, Hidden = true, HelpText = "Alias for --direction")]
+		public string DirectionAlias {
+			get => Direction;
+			set { if (!string.IsNullOrEmpty(value)) Direction = value; }
 		}
 		
 	}

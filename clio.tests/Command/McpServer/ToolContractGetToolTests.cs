@@ -53,7 +53,6 @@ public sealed class ToolContractGetToolTests {
 				ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 				CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
 				CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
-				DataForgeTool.DataForgeHealthToolName,
 				DataForgeTool.DataForgeContextToolName,
 				PageSyncTool.ToolName,
 				PageUpdateTool.ToolName,
@@ -68,6 +67,37 @@ public sealed class ToolContractGetToolTests {
 			because: "destructive Data Forge maintenance tools should stay available only through explicit contract lookup rather than the default bootstrap set");
 		result.Tools!.Select(contract => contract.Name).Should().NotContain(ToolContractGetTool.ToolName,
 			because: "get-tool-contract should not include itself in the default returned contract set");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical compile-creatio contract with explicit preconditions and anti-patterns so callers can decide when compilation is required.")]
+	public void ToolContractGet_Should_Return_CompileCreatio_Contract_With_Preconditions_And_AntiPatterns() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			CompileCreatioTool.CompileCreatioToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "compile-creatio is part of the canonical executable contract surface");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(CompileCreatioTool.CompileCreatioToolName);
+		contract.Preconditions.Should().NotBeNullOrEmpty(
+			because: "the contract must spell out when compilation is actually required");
+		contract.Preconditions!.Should().Contain(precondition => precondition.Contains("set-fsm-mode", StringComparison.Ordinal),
+			because: "FSM-mode toggles are a canonical trigger for full compilation");
+		contract.Preconditions!.Should().Contain(precondition => precondition.Contains("C# schemas", StringComparison.Ordinal),
+			because: "C# schema changes are the primary precondition for package compilation");
+		contract.AntiPatterns.Should().NotBeNullOrEmpty(
+			because: "the contract must call out flows where compilation is never required");
+		contract.AntiPatterns!.Should().Contain(pattern => pattern.Pattern.Contains(PageUpdateTool.ToolName, StringComparison.Ordinal),
+			because: "page-body edits applied through update-page must never be followed by compile-creatio");
+		contract.AntiPatterns!.Should().Contain(pattern => pattern.Pattern.Contains(ApplicationCreateTool.ApplicationCreateToolName, StringComparison.Ordinal),
+			because: "create-app never requires a follow-up compilation");
 	}
 
 	[Test]
@@ -90,6 +120,7 @@ public sealed class ToolContractGetToolTests {
 			because: "guidance lookup should require the stable guide name");
 		contract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "name" &&
+				field.Description.Contains("page-modification", StringComparison.Ordinal) &&
 				field.Description.Contains("page-schema-handlers", StringComparison.Ordinal) &&
 				field.Description.Contains("page-schema-validators", StringComparison.Ordinal),
 			because: "the contract should advertise the stable guidance-name selector");
@@ -101,6 +132,10 @@ public sealed class ToolContractGetToolTests {
 			example.Arguments.TryGetValue("name", out object? value)
 			&& string.Equals(value?.ToString(), "page-schema-handlers", StringComparison.Ordinal)).Should().BeTrue(
 			because: "the contract should advertise the canonical handler guidance lookup example");
+		contract.Examples.Any(example =>
+			example.Arguments.TryGetValue("name", out object? value)
+			&& string.Equals(value?.ToString(), "page-modification", StringComparison.Ordinal)).Should().BeTrue(
+			because: "the contract should advertise the canonical general page modification guidance lookup example");
 	}
 
 	[Test]
@@ -555,7 +590,11 @@ public sealed class ToolContractGetToolTests {
 					PageGetTool.ToolName
 				}),
 				because: "list-pages should keep the legacy update-page fallback as a single-save sequence after discovery");
-			ToolContractDefinition pageGetContract = contracts.Single(contract => contract.Name == PageGetTool.ToolName);
+		ToolContractDefinition pageGetContract = contracts.Single(contract => contract.Name == PageGetTool.ToolName);
+		pageGetContract.Description.Should().Contain("page-modification",
+			because: "get-page should route planned body edits to the general page modification guide through the contract surface");
+		pageGetContract.Description.Should().NotContain("page-schema-resources",
+			because: "get-page should route through the general page-modification guide instead of a localizable-string leaf guide");
 		pageGetContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					PageListTool.ToolName,
@@ -565,6 +604,10 @@ public sealed class ToolContractGetToolTests {
 				},
 				because: "get-page should advertise sync-pages as the canonical save path after inspection");
 		ToolContractDefinition pageSyncContract = contracts.Single(contract => contract.Name == PageSyncTool.ToolName);
+		pageSyncContract.Description.Should().Contain("page-modification",
+			because: "sync-pages should route body and resource-payload edits through the general page modification guide");
+		pageSyncContract.Description.Should().NotContain("page-schema-resources",
+			because: "sync-pages should avoid surfacing localizable-string leaf guidance directly in the broad contract description");
 		pageSyncContract.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					PageListTool.ToolName,
@@ -594,8 +637,9 @@ public sealed class ToolContractGetToolTests {
 			because: "update-page should point callers back to the canonical sync-pages workflow");
 		pageSyncContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "pages" &&
-				field.Description.Contains("get-page.raw.body"),
-			because: "sync-pages should advertise raw.body as the source of page write payloads");
+				field.Description.Contains("get-page.raw.body") &&
+				field.Description.Contains("localizable string"),
+			because: "sync-pages should advertise raw.body as the source of page write payloads and clarify resources as localizable strings");
 		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "body" &&
 				field.Description.Contains("get-page.raw.body"),
@@ -1072,7 +1116,6 @@ public sealed class ToolContractGetToolTests {
 		// Arrange
 		ToolContractGetTool tool = new();
 		string[] requestedTools = [
-			DataForgeTool.DataForgeHealthToolName,
 			DataForgeTool.DataForgeStatusToolName,
 			DataForgeTool.DataForgeFindTablesToolName,
 			DataForgeTool.DataForgeFindLookupsToolName,
@@ -1101,10 +1144,26 @@ public sealed class ToolContractGetToolTests {
 				contract.Name == DataForgeTool.DataForgeUpdateToolName &&
 				contract.OutputContract.Fields.Any(field => field.Name == "status"),
 			because: "the maintenance update contract should remain available through explicit lookup");
+		result.Tools.Should().OnlyContain(contract =>
+				contract.Description.Contains("Creatio platform version 10.0.0 or later"),
+			because: "DataForge contracts should advertise the Creatio platform requirement");
 		result.Tools.Should().Contain(contract =>
-				contract.Name == DataForgeTool.DataForgeHealthToolName &&
-				contract.Defaults.Any(definition => definition.Name == "scope" && definition.Value == "use_enrichment"),
-			because: "Data Forge contracts should advertise the default OAuth scope through the canonical contract catalog");
+				contract.Name == DataForgeTool.DataForgeStatusToolName &&
+				contract.PreferredFlow != null &&
+				contract.PreferredFlow.Notes.Contains("whether Data Forge discovery is available"),
+			because: "the dataforge-status preferred flow should explain when to call it");
+		ToolContractDefinition columnsContract = result.Tools.Single(contract =>
+			contract.Name == DataForgeTool.DataForgeGetTableColumnsToolName);
+		columnsContract.Description.Should().Contain("logical columns of a Creatio table",
+			because: "dataforge-get-table-columns should advertise the caller-facing result");
+		columnsContract.Description.Should().Contain("lookup targets",
+			because: "column metadata includes reference-schema hints that callers use during modeling");
+		ToolContractDefinition contextContract = result.Tools.Single(contract =>
+			contract.Name == DataForgeTool.DataForgeContextToolName);
+		contextContract.Description.Should().Contain("compact Data Forge context package",
+			because: "dataforge-context should be framed as an aggregated planning result");
+		contextContract.Description.Should().Contain("similar tables, lookup matches, relation paths, table columns, and readiness status",
+			because: "the contract should list the planning artifacts the caller receives");
 	}
 
 	[Test]

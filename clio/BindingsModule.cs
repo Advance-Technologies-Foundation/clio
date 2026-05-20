@@ -242,6 +242,7 @@ public class BindingsModule {
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
 		services.AddTransient<IPageBundleBuilder, PageBundleBuilder>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
+		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
 		
 		// MCP Tools
 		services.AddTransient<PageListTool>();
@@ -280,10 +281,8 @@ public class BindingsModule {
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
-		services.AddHttpClient<IDataForgeClient, DataForgeClient>();
-		services.AddTransient<IDataForgeSysSettingDirectReader, DataForgeSysSettingDirectReader>();
-		services.AddSingleton<IDataForgeProxySafeExecutor, DataForgeProxySafeExecutor>();
-		services.AddTransient<IDataForgeConfigResolver, DataForgeConfigResolver>();
+		services.AddTransient<IDataForgePlatformVersionGuard, DataForgePlatformVersionGuard>();
+		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
 		services.AddTransient<IDataForgeMaintenanceClient, DataForgeMaintenanceClient>();
 		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();

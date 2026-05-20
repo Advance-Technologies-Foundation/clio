@@ -15,26 +15,68 @@
 	{
 		#region Properties: Public
 
-		[Option("InstallSqlScript", Required = false, HelpText = "Install sql script")]
+		[Option("install-sql-script", Required = false, HelpText = "Install sql script")]
 		public bool? InstallSqlScript { get; set; }
 
-		[Option("InstallPackageData", Required = false, HelpText = "Install package data")]
+		[Option("InstallSqlScript", Required = false, Hidden = true, HelpText = "Alias for --install-sql-script")]
+		public bool? InstallSqlScriptAlias {
+			get => InstallSqlScript;
+			set { InstallSqlScript = value; }
+		}
+
+		[Option("install-package-data", Required = false, HelpText = "Install package data")]
 		public bool? InstallPackageData { get; set; }
 
-		[Option("ContinueIfError", Required = false, HelpText = "Continue if error")]
+		[Option("InstallPackageData", Required = false, Hidden = true, HelpText = "Alias for --install-package-data")]
+		public bool? InstallPackageDataAlias {
+			get => InstallPackageData;
+			set { InstallPackageData = value; }
+		}
+
+		[Option("continue-if-error", Required = false, HelpText = "Continue if error")]
 		public bool? ContinueIfError { get; set; }
 
-		[Option("SkipConstraints", Required = false, HelpText = "Skip constraints")]
+		[Option("ContinueIfError", Required = false, Hidden = true, HelpText = "Alias for --continue-if-error")]
+		public bool? ContinueIfErrorAlias {
+			get => ContinueIfError;
+			set { ContinueIfError = value; }
+		}
+
+		[Option("skip-constraints", Required = false, HelpText = "Skip constraints")]
 		public bool? SkipConstraints { get; set; }
 
-		[Option("SkipValidateActions", Required = false, HelpText = "Skip validate actions")]
+		[Option("SkipConstraints", Required = false, Hidden = true, HelpText = "Alias for --skip-constraints")]
+		public bool? SkipConstraintsAlias {
+			get => SkipConstraints;
+			set { SkipConstraints = value; }
+		}
+
+		[Option("skip-validate-actions", Required = false, HelpText = "Skip validate actions")]
 		public bool? SkipValidateActions { get; set; }
 
-		[Option("ExecuteValidateActions", Required = false, HelpText = "Execute validate actions")]
+		[Option("SkipValidateActions", Required = false, Hidden = true, HelpText = "Alias for --skip-validate-actions")]
+		public bool? SkipValidateActionsAlias {
+			get => SkipValidateActions;
+			set { SkipValidateActions = value; }
+		}
+
+		[Option("execute-validate-actions", Required = false, HelpText = "Execute validate actions")]
 		public bool? ExecuteValidateActions { get; set; }
 
-		[Option("IsForceUpdateAllColumns", Required = false, HelpText = "Is force update all columns")]
+		[Option("ExecuteValidateActions", Required = false, Hidden = true, HelpText = "Alias for --execute-validate-actions")]
+		public bool? ExecuteValidateActionsAlias {
+			get => ExecuteValidateActions;
+			set { ExecuteValidateActions = value; }
+		}
+
+		[Option("is-force-update-all-columns", Required = false, HelpText = "Is force update all columns")]
 		public bool? IsForceUpdateAllColumns { get; set; }
+
+		[Option("IsForceUpdateAllColumns", Required = false, Hidden = true, HelpText = "Alias for --is-force-update-all-columns")]
+		public bool? IsForceUpdateAllColumnsAlias {
+			get => IsForceUpdateAllColumns;
+			set { IsForceUpdateAllColumns = value; }
+		}
 
 		[Option("id", Required = false, HelpText = "Marketplace application id")]
 		public IEnumerable<int> MarketplaceIds { get; set; }

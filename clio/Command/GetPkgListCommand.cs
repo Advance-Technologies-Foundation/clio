@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Clio;
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
@@ -16,12 +17,24 @@ namespace Clio.Command
 
 		#region Properties: Public
 
-		[Option('f', "Filter", Required = false, HelpText = "Contains name filter",
+		[Option('f', "filter", Required = false, HelpText = "Contains name filter",
 		Default = null)]
 		public string SearchPattern { get; set; } = string.Empty;
 
-		[Option('j', "Json", Required = false, Default = false, HelpText = "Returns response in json format")]
+		[Option("Filter", Required = false, Hidden = true, HelpText = "Alias for --filter")]
+		public string SearchPatternAlias {
+			get => SearchPattern;
+			set { if (!string.IsNullOrEmpty(value)) SearchPattern = value; }
+		}
+
+		[Option('j', "json", Required = false, HelpText = "Returns response in json format")]
 		public bool? Json { get; set; }
+
+		[Option("Json", Required = false, Hidden = true, HelpText = "Alias for --json")]
+		public bool? JsonAlias {
+			get => Json;
+			set { Json = value; }
+		}
 
 
 		#endregion
@@ -106,7 +119,7 @@ namespace Clio.Command
 			if (options.Json.HasValue && options.Json.Value) {
 				_logger.WriteInfo(_jsonResponseFormater.Format(e));
 			} else {
-				_logger.WriteInfo(e.ToString());
+				_logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
 			}
 		}
 
