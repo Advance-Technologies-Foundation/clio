@@ -34,11 +34,11 @@ public sealed class PageModificationGuidanceResource {
 		       | business logic, cross-field orchestration, async data loading, side effects | `page-schema-handlers` | Handlers are NOT the same as converters. |
 		       | required field, max length, format enforcement with error message | `page-schema-validators` | Validators write to viewModelConfigDiff, not viewConfigDiff. |
 		       | SDK service calls (SysSettingsService, HttpClientService, etc.) | `page-schema-creatio-devkit-common` | Correct import syntax and async patterns. |
-		       | body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter | `page-schema-resources` | Most resource registrations for DS-bound captions (e.g. `PDS_UsrStatus`) are unnecessary — the platform auto-provides them. Guidance specifies which keys must vs must-not be registered, and `$Resources.Strings.*` is rejected in validator params. |
+		       | body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter, OR your change adds/edits ANY user-visible string-like property (label, caption, title, tooltip, placeholder, description, button captions, tab/group titles, validator/dialog messages — examples, not exhaustive) | `page-schema-resources` | Every user-visible string must be a localizable-string binding, not an inline literal. Most resource registrations for DS-bound captions (e.g. `PDS_UsrStatus`) are unnecessary because the platform auto-provides them; guidance specifies which keys must vs must-not be registered, and `$Resources.Strings.*` is rejected in validator params. |
 
 		       STOP. Do NOT call get-component-info and pick a component type to solve a display transformation requirement until you have read `page-schema-converters` and confirmed the OOTB decision table does not cover your case. A common mistake is treating a display transformation as a component selection problem.
 
-		       STOP. Touching resources at all? Read `page-schema-resources` first. This covers any body that contains `$Resources.Strings.*` or `#ResourceString(...)#`, and any call that passes the `resources` parameter — no exceptions, no "simple cases".
+		       STOP. Touching resources at all? Read `page-schema-resources` first. This covers any body that contains `$Resources.Strings.*` or `#ResourceString(...)#`, any call that passes the `resources` parameter, AND any change that adds or modifies a user-visible string-like property — no exceptions, no "simple cases".
 
 		       Replacing-schema concept
 		       - When a Freedom UI designer saves changes to a page, Creatio creates a replacing schema in a "design package".
@@ -146,7 +146,7 @@ public sealed class PageModificationGuidanceResource {
 		                       "name": "UsrMyButton",
 		                       "values": {
 		                           "type": "crt.Button",
-		                           "caption": "My button",
+		                           "caption": "$Resources.Strings.UsrMyButton_caption",
 		                           "clicked": { "request": "usr.MyClickRequest" }
 		                       },
 		                       "parentName": "FilterGridContainer",
@@ -183,6 +183,7 @@ public sealed class PageModificationGuidanceResource {
 		       - `parentName` must match an existing container name from `bundle.viewConfig`.
 		       - `propertyName` is usually `items` for containers.
 		       - `index` is the insertion position within `parentName.items[]`.
+		       - User-visible string values inside `values` (`label`, `caption`, `title`, `tooltip`, `placeholder`, `description`, button captions, tab/group titles — examples, not an exhaustive list; the rule covers ANY string-like property the runtime renders to the user) MUST be authored as `$Resources.Strings.<Key>` bindings, not inline string literals. Read `page-schema-resources` first to decide whether the key requires explicit registration via the `resources` parameter (DS-bound attributes auto-provide the caption; custom keys must be registered).
 		       - For entity-bound FormPage data-entry fields, match the column DataValueType to the control: `ShortText`/`MediumText`/`LongText` → `crt.Input`; `Lookup` → `crt.ComboBox`; `Boolean` → `crt.Checkbox`; `DateTime`/`Date`/`Time` → `crt.DateTimePicker`; `Integer`/`Float`/`Money` → `crt.NumberInput`; `Email` → `crt.EmailInput`; `PhoneNumber` → `crt.PhoneInput`; `WebLink` → `crt.WebInput`. Use `get-component-info` for full insert examples. For display-only transformations (email as mailto link, phone as tel link) read `page-schema-converters` first — do not select a component type for display tasks.
 
 		       Canonical flow to add a Test button to Accounts_ListPage

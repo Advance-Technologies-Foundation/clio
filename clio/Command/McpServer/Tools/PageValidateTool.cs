@@ -3,12 +3,16 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
 [McpServerToolType]
-public sealed class PageValidateTool {
+public sealed class PageValidateTool(
+	IMobileComponentInfoCatalog mobileComponentCatalog,
+	IComponentInfoCatalog webComponentCatalog) {
 
 	internal const string ToolName = "validate-page";
 
@@ -21,19 +25,16 @@ public sealed class PageValidateTool {
 		"read get-guidance `page-schema-converters`, `page-schema-handlers`, or `page-schema-validators` before adding them. " +
 		"For mobile pages (plain JSON body starting with '{'): validates that disallowed constructs " +
 		"(validators, handlers, custom converters sections) are absent.")]
-	public PageValidateResponse ValidatePage(
+	public async Task<PageValidateResponse> ValidatePage(
 		[Description("Parameters: body (required); resources (optional)")]
-		[Required] PageValidateArgs args) {
+		[Required] PageValidateArgs args,
+		CancellationToken cancellationToken = default) {
 		if (PageSchemaTypeExtensions.FromBody(args.Body) == PageSchemaType.Mobile) {
-			SchemaValidationResult mobileResult = SchemaValidationService.ValidateMobileBody(args.Body);
+			PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
+				args.Body, mobileComponentCatalog, webComponentCatalog, cancellationToken).ConfigureAwait(false);
 			return new PageValidateResponse {
-				Valid = mobileResult.IsValid,
-				Validation = new PageSyncValidationResult {
-					MarkersOk = true,
-					JsSyntaxOk = true,
-					ContentOk = mobileResult.IsValid,
-					Errors = mobileResult.IsValid ? null : mobileResult.Errors
-				}
+				Valid = mobileResult.ContentOk,
+				Validation = mobileResult
 			};
 		}
 		PageSyncValidationResult result = Validate(args.Body, args.Resources);
@@ -72,7 +73,9 @@ public sealed class PageValidateTool {
 			ValidatorDecl: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateValidatorDeclarations(body)),
 			ValidatorFactoryShape: RunContentValidation(contentResult,
-				() => SchemaValidationService.ValidateCustomValidatorFactoryShape(body)));
+				() => SchemaValidationService.ValidateCustomValidatorFactoryShape(body)),
+			SchemaDeps: RunContentValidation(contentResult,
+				() => SchemaValidationService.ValidateSchemaDepsCompleteness(body)));
 
 	private static PageSyncValidationResult BuildResult(
 		SchemaValidationResult markerResult,
@@ -88,6 +91,7 @@ public sealed class PageValidateTool {
 		if (!content.Binding.IsValid) {
 			warnings.AddRange(content.Binding.Errors);
 		}
+		warnings.AddRange(content.SchemaDeps.Warnings);
 		bool contentOk = contentResult.IsValid && content.Field.IsValid && content.ConverterDecl.IsValid &&
 			content.ConverterFunctionShape.IsValid && content.HandlerStructure.IsValid &&
 			content.ValidatorDecl.IsValid && content.ValidatorFactoryShape.IsValid;
@@ -135,7 +139,8 @@ public sealed class PageValidateTool {
 		SchemaValidationResult ConverterFunctionShape,
 		SchemaValidationResult HandlerStructure,
 		SchemaValidationResult ValidatorDecl,
-		SchemaValidationResult ValidatorFactoryShape);
+		SchemaValidationResult ValidatorFactoryShape,
+		SchemaValidationResult SchemaDeps);
 }
 
 public sealed record PageValidateArgs(

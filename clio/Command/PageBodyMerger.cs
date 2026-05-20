@@ -38,7 +38,26 @@ internal static class PageBodyMerger {
 		if (string.IsNullOrWhiteSpace(incomingBody)) {
 			throw new InvalidOperationException("Incoming body is empty — pass the new viewConfigDiff/handlers fragment.");
 		}
+		return PageSchemaTypeExtensions.FromBody(currentBody) == PageSchemaType.Mobile
+			? MergeMobile(currentBody, incomingBody)
+			: MergeWeb(currentBody, incomingBody);
+	}
 
+	/// <summary>
+	/// Merges two web (AMD) page bodies using marker-based section replacement.
+	/// </summary>
+	private static string MergeWeb(string currentBody, string incomingBody) {
+		// Append-merge only supports the diff form. The full-config forms
+		// `viewModelConfig` / `modelConfig` may appear on root schemas but
+		// are not the default and are not handled here. Refuse rather than
+		// silently dropping the incoming diff because the matching `_DIFF`
+		// marker is missing from the current body.
+		if (ReadRawSection(currentBody, "SCHEMA_VIEW_MODEL_CONFIG") != null ||
+			ReadRawSection(currentBody, "SCHEMA_MODEL_CONFIG") != null) {
+			throw new InvalidOperationException(
+				"Web append merge does not support bodies that use the full 'SCHEMA_VIEW_MODEL_CONFIG' or 'SCHEMA_MODEL_CONFIG' form. " +
+				"Use 'replace' mode, or convert the body to the diff form (SCHEMA_VIEW_MODEL_CONFIG_DIFF / SCHEMA_MODEL_CONFIG_DIFF) before append.");
+		}
 		JArray mergedViewConfigDiff = MergeArrayByName(
 			ReadJsonArray(currentBody, "SCHEMA_VIEW_CONFIG_DIFF"),
 			ReadJsonArray(incomingBody, "SCHEMA_VIEW_CONFIG_DIFF"));
@@ -62,6 +81,53 @@ internal static class PageBodyMerger {
 		result = ReplaceSection(result, "SCHEMA_HANDLERS", mergedHandlers);
 		result = ReplaceSection(result, "SCHEMA_CONVERTERS", mergedConverters);
 		return result;
+	}
+
+	/// <summary>
+	/// Merges two mobile page bodies (plain JSON with top-level <c>viewConfigDiff</c>,
+	/// <c>viewModelConfigDiff</c>, and <c>modelConfigDiff</c> arrays).
+	/// </summary>
+	private static string MergeMobile(string currentBody, string incomingBody) {
+		JObject current;
+		JObject incoming;
+		try {
+			current = JObject.Parse(currentBody);
+		} catch (Exception ex) {
+			throw new InvalidOperationException(
+				$"Current mobile page body is not valid JSON: {ex.Message}", ex);
+		}
+		try {
+			incoming = JObject.Parse(incomingBody);
+		} catch (Exception ex) {
+			throw new InvalidOperationException(
+				$"Incoming mobile page body is not valid JSON: {ex.Message}", ex);
+		}
+
+		// Append-merge only supports the diff form. The full-config forms
+		// `viewModelConfig` / `modelConfig` may appear on root schemas but
+		// are not the default and are not handled here. Refuse rather than
+		// silently producing a body that mixes full-config and *Diff siblings.
+		if (current["viewModelConfig"] is JObject || current["modelConfig"] is JObject) {
+			throw new InvalidOperationException(
+				"Mobile append merge does not support bodies that use the full 'viewModelConfig' or 'modelConfig' form. " +
+				"Use 'replace' mode, or convert the body to the diff form (viewModelConfigDiff / modelConfigDiff) before append.");
+		}
+
+		JArray mergedViewConfigDiff = MergeArrayByName(
+			current["viewConfigDiff"] as JArray ?? new JArray(),
+			incoming["viewConfigDiff"] as JArray ?? new JArray());
+		JArray mergedViewModelConfigDiff = MergeArrayAppend(
+			current["viewModelConfigDiff"] as JArray ?? new JArray(),
+			incoming["viewModelConfigDiff"] as JArray ?? new JArray());
+		JArray mergedModelConfigDiff = MergeArrayAppend(
+			current["modelConfigDiff"] as JArray ?? new JArray(),
+			incoming["modelConfigDiff"] as JArray ?? new JArray());
+
+		current["viewConfigDiff"] = mergedViewConfigDiff;
+		current["viewModelConfigDiff"] = mergedViewModelConfigDiff;
+		current["modelConfigDiff"] = mergedModelConfigDiff;
+
+		return current.ToString(Newtonsoft.Json.Formatting.None);
 	}
 
 	/// <summary>
