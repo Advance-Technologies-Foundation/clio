@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Clio.Common;
 using Microsoft.Extensions.Logging;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
+using ILogger = Microsoft.Extensions.Logging.ILogger;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -142,7 +143,12 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 	private readonly IHttpClientFactory _httpClientFactory;
 	private readonly IComponentRegistryCacheStore _cacheStore;
 	private readonly IFileSystem _fileSystem;
-	private readonly ILogger<ComponentRegistryClient> _logger;
+	// Stored as the non-generic ILogger so the subclass (MobileComponentRegistryClient)
+	// can accept its own ILogger<MobileComponentRegistryClient> and forward it through
+	// the base ctor without violating Sonar S6672 ("logger should use enclosing type"
+	// on the subclass). DI resolves ILogger<T> instances at construction time; the
+	// generic category is preserved through the upcast.
+	private readonly ILogger _logger;
 	private readonly IWorkingDirectoriesProvider? _workingDirectoriesProvider;
 	private readonly string _cdnBaseUrl;
 	private readonly RegistryFlavor _flavor;
@@ -152,7 +158,7 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		IComponentRegistryCacheStore cacheStore,
 		IFileSystem fileSystem,
 		ILogger<ComponentRegistryClient> logger)
-		: this(httpClientFactory, cacheStore, fileSystem, logger, ResolveCdnBaseUrl(), RegistryFlavor.Web, workingDirectoriesProvider: null) {
+		: this(httpClientFactory, cacheStore, fileSystem, (ILogger)logger, ResolveCdnBaseUrl(), RegistryFlavor.Web, workingDirectoriesProvider: null) {
 	}
 
 	public ComponentRegistryClient(
@@ -162,6 +168,22 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		ILogger<ComponentRegistryClient> logger,
 		RegistryFlavor flavor,
 		IWorkingDirectoriesProvider? workingDirectoriesProvider)
+		: this(httpClientFactory, cacheStore, fileSystem, (ILogger)logger, ResolveCdnBaseUrl(), flavor, workingDirectoriesProvider) {
+	}
+
+	/// <summary>
+	/// Constructor used by subclasses (e.g. <see cref="MobileComponentRegistryClient"/>)
+	/// that carry their own typed <see cref="ILogger{TCategoryName}"/>. The logger is
+	/// upcast to the non-generic <see cref="ILogger"/> field — category info is
+	/// preserved through the runtime instance.
+	/// </summary>
+	protected ComponentRegistryClient(
+		IHttpClientFactory httpClientFactory,
+		IComponentRegistryCacheStore cacheStore,
+		IFileSystem fileSystem,
+		ILogger logger,
+		RegistryFlavor flavor,
+		IWorkingDirectoriesProvider workingDirectoriesProvider)
 		: this(httpClientFactory, cacheStore, fileSystem, logger, ResolveCdnBaseUrl(), flavor, workingDirectoriesProvider) {
 	}
 
@@ -171,14 +193,14 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		IFileSystem fileSystem,
 		ILogger<ComponentRegistryClient> logger,
 		string cdnBaseUrl)
-		: this(httpClientFactory, cacheStore, fileSystem, logger, cdnBaseUrl, RegistryFlavor.Web, workingDirectoriesProvider: null) {
+		: this(httpClientFactory, cacheStore, fileSystem, (ILogger)logger, cdnBaseUrl, RegistryFlavor.Web, workingDirectoriesProvider: null) {
 	}
 
 	internal ComponentRegistryClient(
 		IHttpClientFactory httpClientFactory,
 		IComponentRegistryCacheStore cacheStore,
 		IFileSystem fileSystem,
-		ILogger<ComponentRegistryClient> logger,
+		ILogger logger,
 		string cdnBaseUrl,
 		RegistryFlavor flavor,
 		IWorkingDirectoriesProvider? workingDirectoriesProvider) {
@@ -496,7 +518,7 @@ public sealed class MobileComponentRegistryClient : ComponentRegistryClient, IMo
 		IHttpClientFactory httpClientFactory,
 		IComponentRegistryCacheStore cacheStore,
 		IFileSystem fileSystem,
-		ILogger<ComponentRegistryClient> logger,
+		ILogger<MobileComponentRegistryClient> logger,
 		IWorkingDirectoriesProvider workingDirectoriesProvider)
 		: base(httpClientFactory, cacheStore, fileSystem, logger, RegistryFlavor.Mobile, workingDirectoriesProvider) {
 	}
