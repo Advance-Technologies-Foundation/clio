@@ -167,6 +167,57 @@ public sealed class ComponentInfoCommandTests {
 	}
 
 	[Test]
+	[Description("Wrapped-shape detail responses surface content.typeDefinitions on JSON output and render it under content.typeDefinitions: in --pretty — AI needs the named-type schemas to resolve the type names referenced in inputs/outputs.")]
+	public async Task Returns_Wrapped_Detail_With_TypeDefinitions() {
+		const string wrappedRegistry = """
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.WithTypes",
+		      "inputs": {
+		        "icon": { "type": "string | ButtonIcon" }
+		      },
+		      "content": {
+		        "typeDefinitions": {
+		          "ButtonIcon": { "type": "string", "values": ["close-icon", "edit-icon"] }
+		        }
+		      }
+		    }
+		  ]
+		}
+		""";
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(wrappedRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		// Act — JSON path
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.WithTypes" }, CancellationToken.None);
+		exit.Should().Be(0);
+
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Mode.Should().Be("detail");
+		parsed.Content.Should().NotBeNull(
+			because: "the CLI verb must surface content.typeDefinitions verbatim, not drop them");
+		parsed.Content!.TypeDefinitions.Should().NotBeNull();
+		parsed.Content.TypeDefinitions!.Should().ContainKey("ButtonIcon");
+
+		// Act — --pretty path on the same input
+		logger.Reset();
+		exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.WithTypes", Pretty = true }, CancellationToken.None);
+		exit.Should().Be(0);
+		logger.Captured.Should().Contain("content.typeDefinitions:",
+			because: "the --pretty renderer must label the typeDefinitions block so operators can read it");
+		logger.Captured.Should().Contain("ButtonIcon",
+			because: "each type-definition key must be listed by name");
+		logger.Captured.Should().Contain("close-icon",
+			because: "the compact JSON dump must surface the enum values from the producer schema");
+	}
+
+	[Test]
 	[Description("Wrapped-shape detail responses emit inputs/outputs in JSON and on the --pretty stdout block — the CLI verb shares the same bug surface as the MCP tool.")]
 	public async Task Returns_Wrapped_Detail_With_Inputs_And_Outputs() {
 		const string wrappedRegistry = """

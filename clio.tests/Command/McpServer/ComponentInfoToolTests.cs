@@ -667,6 +667,72 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("A wrapped-shape entry's content.typeDefinitions block is surfaced verbatim under response.content.typeDefinitions — AI needs it to resolve the type names referenced in inputs/outputs `type` strings.")]
+	public async Task ComponentInfoTool_Should_Surface_TypeDefinitions_Under_Content() {
+		const string registryJson = """
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.WithTypes",
+		      "inputs": {
+		        "icon": { "type": "string | ButtonIcon | ButtonAnimatedIcon" }
+		      },
+		      "content": {
+		        "typeDefinitions": {
+		          "ButtonIcon": {
+		            "type": "string",
+		            "values": ["close-icon", "edit-icon"]
+		          },
+		          "ButtonAnimatedIcon": {
+		            "fields": {
+		              "animationData": { "type": "() => Promise<any>" },
+		              "loop":          { "type": "boolean | number" }
+		            }
+		          }
+		        }
+		      }
+		    }
+		  ]
+		}
+		""";
+		ComponentInfoTool tool = new(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			StubPlatformVersionResolver.LatestFallback(),
+			new FakeDocsClient());
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.WithTypes");
+
+		response.Success.Should().BeTrue();
+		response.Mode.Should().Be("detail");
+		response.Content.Should().NotBeNull(
+			because: "the wrapped registry's content block must round-trip when typeDefinitions is present");
+		response.Content!.TypeDefinitions.Should().NotBeNull();
+		response.Content.TypeDefinitions!.Should().ContainKeys("ButtonIcon", "ButtonAnimatedIcon");
+
+		JsonElement buttonIcon = response.Content.TypeDefinitions["ButtonIcon"];
+		buttonIcon.GetProperty("type").GetString().Should().Be("string");
+		buttonIcon.GetProperty("values").EnumerateArray().Select(e => e.GetString())
+			.Should().BeEquivalentTo(new[] { "close-icon", "edit-icon" });
+
+		JsonElement animatedIcon = response.Content.TypeDefinitions["ButtonAnimatedIcon"];
+		animatedIcon.GetProperty("fields").GetProperty("loop").GetProperty("type").GetString()
+			.Should().Be("boolean | number");
+	}
+
+	[Test]
+	[Description("Entries without a content.typeDefinitions block omit response.content entirely (JsonIgnore strips it from the wire) — the response stays small for simple components.")]
+	public async Task ComponentInfoTool_Should_Omit_Content_When_No_TypeDefinitions() {
+		// crt.TabContainer in TestRegistryJson has no content block at all.
+		ComponentInfoTool tool = CreateTool();
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
+
+		response.Content.Should().BeNull(
+			because: "components without producer-side type definitions must not carry an empty content node");
+	}
+
+	[Test]
 	[Description("List-mode search matches wrapped-shape entries through inputs/outputs keys when the legacy descriptive fields are empty — without this the search filter would be useless on the new payload shape.")]
 	public async Task ComponentInfoTool_Should_Match_Search_Query_Against_Wrapped_Registry_Inputs() {
 		// Arrange — three components, two with inputs/outputs, one without. The search

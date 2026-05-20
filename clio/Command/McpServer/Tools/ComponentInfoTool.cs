@@ -157,8 +157,25 @@ public sealed class ComponentInfoTool(
 			Example = entry.Example,
 			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom,
-			Documentation = string.IsNullOrEmpty(documentation) ? null : documentation
+			Documentation = string.IsNullOrEmpty(documentation) ? null : documentation,
+			Content = BuildContentResponse(entry)
 		};
+	}
+
+	/// <summary>
+	/// Lifts the registry entry's <c>content</c> block into the wire shape exposed on
+	/// the detail response. Today this is just <c>typeDefinitions</c>; <c>docs</c> is
+	/// intentionally consumed at a different layer (the docs CDN/cache pipeline) and
+	/// surfaced as the flat <see cref="ComponentInfoResponse.Documentation"/> field.
+	/// Returns <c>null</c> when the entry has no surface-worthy content so the
+	/// JsonIgnore stripping keeps the wire shape small for simple components.
+	/// </summary>
+	private static ComponentContentResponse? BuildContentResponse(ComponentRegistryEntry entry) {
+		ComponentContent? content = entry.Content;
+		if (content?.TypeDefinitions is not { Count: > 0 } typeDefinitions) {
+			return null;
+		}
+		return new ComponentContentResponse { TypeDefinitions = typeDefinitions };
 	}
 
 	/// <summary>
@@ -348,6 +365,40 @@ public sealed class ComponentInfoResponse {
 	[JsonPropertyName("documentation")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Documentation { get; init; }
+
+	/// <summary>
+	/// Gets or sets the raw <c>content</c> block surfaced from the registry entry —
+	/// today this is just <see cref="ComponentContentResponse.TypeDefinitions"/>. The
+	/// nested shape mirrors the producer's payload 1:1 so AI can resolve the named
+	/// type references that appear in <c>inputs</c>/<c>outputs</c> <c>type</c> strings
+	/// (e.g. <c>"string | ButtonIcon | ButtonAnimatedIcon"</c>). The flat
+	/// <see cref="Documentation"/> field is derived from <c>content.docs[]</c>; raw
+	/// docs paths are intentionally not surfaced here.
+	/// </summary>
+	[JsonPropertyName("content")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public ComponentContentResponse? Content { get; init; }
+}
+
+/// <summary>
+/// Nested <c>content</c> block on a <see cref="ComponentInfoResponse"/> detail. Mirrors
+/// the producer's wire shape 1:1 — unknown sub-fields are intentionally not surfaced
+/// here, but the producer can add new ones to the underlying payload without breaking
+/// existing AI consumers.
+/// </summary>
+public sealed class ComponentContentResponse {
+	/// <summary>
+	/// Gets or sets the named type schemas referenced by the component's
+	/// <c>inputs</c>/<c>outputs</c> values. Each key is a TypeScript-like type name
+	/// (e.g. <c>"ButtonIcon"</c>, <c>"DataGridColumnDefinition"</c>); each value is a
+	/// forward-compatible <see cref="JsonElement"/> blob carrying the producer's
+	/// schema for that type (<c>fields</c>, <c>values</c>, <c>items</c>,
+	/// <c>required</c>, …). Omitted entirely when the registry entry has no
+	/// <c>content.typeDefinitions</c> block.
+	/// </summary>
+	[JsonPropertyName("typeDefinitions")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? TypeDefinitions { get; init; }
 }
 
 /// <summary>
@@ -472,6 +523,20 @@ public sealed class ComponentContent {
 	[JsonPropertyName("docs")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string>? Docs { get; init; }
+
+	/// <summary>
+	/// Gets or sets the named type schemas referenced by the component's <c>inputs</c>
+	/// and <c>outputs</c> values (e.g. <c>"ButtonIcon"</c>, <c>"DataGridColumnDefinition"</c>).
+	/// Each value carries the producer's TypeScript-like schema for the named type —
+	/// fields, allowed values, nested item shapes. Values are stored as
+	/// <see cref="JsonElement"/> so the producer can evolve the inner schema freely
+	/// (add <c>fields</c>, <c>values</c>, <c>items</c>, <c>required</c>, …) without a
+	/// coordinated clio release. Surfaced verbatim through
+	/// <c>ComponentInfoResponse.Content.TypeDefinitions</c>.
+	/// </summary>
+	[JsonPropertyName("typeDefinitions")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? TypeDefinitions { get; init; }
 }
 
 /// <summary>

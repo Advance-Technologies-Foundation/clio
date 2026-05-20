@@ -171,10 +171,44 @@ and `Tools/ComponentInfoTool.cs` surfaces both verbatim:
   inner schema is owned by the producer (`type`, `default`, `description`,
   `values`, `keyType`, `valueType`, `items`, `deprecated`, …) — clio
   stores them as `JsonElement` so a producer-side schema addition does
-  NOT require a coordinated clio release.
+  NOT require a coordinated clio release. Wrapped entries may also carry
+  a nested `content` block with `typeDefinitions` — see below.
 - **Legacy.** Older entries carry a single `properties` dictionary with a
   fixed clio-side POCO (`ComponentPropertyDefinition`). This shape still
   appears in the mobile catalog and in older per-version files.
+
+### Named type schemas (`content.typeDefinitions`)
+
+The `inputs`/`outputs` `type` strings on the wrapped shape can reference
+producer-defined type names (e.g. `"string | ButtonIcon | ButtonAnimatedIcon"`
+on `crt.Button.inputs.icon`, or `"DataGridColumnDefinition"` as the item
+type for `crt.DataGrid.inputs.columns`). Resolving these requires the
+producer's named-type schemas, which travel under the entry's
+`content.typeDefinitions` block:
+
+```jsonc
+"content": {
+  "typeDefinitions": {
+    "ButtonIcon": { "type": "string", "values": ["close-icon", "edit-icon", ...] },
+    "ButtonAnimatedIcon": {
+      "fields": {
+        "animationData": { "type": "() => Promise<any>" },
+        "loop":          { "type": "boolean | number" }
+      }
+    }
+  }
+}
+```
+
+`ComponentInfoTool` mirrors this 1:1 under `response.content.typeDefinitions`
+(not flattened to root — the nested shape matches the producer). Each value
+stays a `JsonElement` so the producer can add `required`, `default`, `items`,
+deeper `fields` nests, or wholly new schema shapes without a coordinated clio
+release. AI consumers should treat the dictionary as the authoritative
+schema source for any non-primitive `type` token referenced by `inputs` /
+`outputs`. The flat `documentation` field is derived from `content.docs[]`
+(fetched + concatenated); the raw `docs[]` paths are intentionally NOT
+surfaced on the response — only their resolved markdown.
 
 `CreateDetailResponse` populates `inputs`/`outputs` only when the
 underlying entry actually has them, and `properties` only when populated —

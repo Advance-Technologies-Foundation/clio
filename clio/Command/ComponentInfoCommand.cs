@@ -146,6 +146,10 @@ public sealed class ComponentInfoCommand {
 		ComponentRegistryEntry entry,
 		string? resolvedTargetVersion,
 		string? resolvedFrom) {
+		ComponentContentResponse contentResponse =
+			entry.Content?.TypeDefinitions is { Count: > 0 } typeDefinitions
+				? new ComponentContentResponse { TypeDefinitions = typeDefinitions }
+				: null;
 		return new ComponentInfoResponse {
 			Success = true,
 			Mode = "detail",
@@ -160,7 +164,8 @@ public sealed class ComponentInfoCommand {
 			TypicalChildren = entry.TypicalChildren.Count == 0 ? null : entry.TypicalChildren,
 			Example = entry.Example,
 			ResolvedTargetVersion = resolvedTargetVersion,
-			ResolvedFrom = resolvedFrom
+			ResolvedFrom = resolvedFrom,
+			Content = contentResponse
 		};
 	}
 

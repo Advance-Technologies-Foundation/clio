@@ -77,8 +77,30 @@ public static class ComponentInfoPrettyRenderer {
 		AppendProperties(sb, response.Properties);
 		AppendBindings(sb, "inputs", response.Inputs);
 		AppendBindings(sb, "outputs", response.Outputs);
+		AppendTypeDefinitions(sb, response.Content?.TypeDefinitions);
 		AppendExample(sb, response.Example);
 		AppendDocumentation(sb, response.Documentation);
+	}
+
+	/// <summary>
+	/// Renders the producer's named type schemas (e.g. <c>ButtonIcon</c>,
+	/// <c>DataGridColumnDefinition</c>) under a dedicated <c>content.typeDefinitions:</c>
+	/// header. Each entry shows the type name on its own line, then the producer's raw
+	/// schema indented under it as a compact one-line JSON blob. We intentionally do
+	/// NOT walk into <c>fields</c>/<c>values</c> here — type definitions are arbitrary
+	/// producer-defined schemas, and a one-line JSON gives the operator a stable
+	/// diff-friendly read regardless of how nested the schema gets.
+	/// </summary>
+	private static void AppendTypeDefinitions(StringBuilder sb, IReadOnlyDictionary<string, JsonElement>? typeDefinitions) {
+		if (typeDefinitions is null || typeDefinitions.Count == 0) {
+			return;
+		}
+		sb.AppendLine().AppendLine("content.typeDefinitions:");
+		int nameWidth = typeDefinitions.Keys.Max(key => key.Length);
+		foreach (KeyValuePair<string, JsonElement> definition in typeDefinitions) {
+			sb.Append("  ").Append(definition.Key.PadRight(nameWidth)).Append("  ")
+				.AppendLine(definition.Value.GetRawText());
+		}
 	}
 
 	private static void AppendProperties(StringBuilder sb, IReadOnlyDictionary<string, ComponentPropertyDefinition>? properties) {
