@@ -74,6 +74,32 @@ namespace Clio.Command
 			}
 		}
 
+		/// <summary>
+		/// Updates an existing sys-setting value. The provided <c>value-type-name</c> is used only as a
+		/// fallback when the setting type cannot be resolved on the target environment.
+		/// </summary>
+		public SysSettingUpdateResult TryUpdateSysSetting(UpdateSysSettingArgs args) {
+			try {
+				if (string.IsNullOrWhiteSpace(args.Code)) {
+					throw new ArgumentException("code is required.");
+				}
+				if (args.Value is null) {
+					throw new ArgumentException("value is required.");
+				}
+				string valueTypeName = string.IsNullOrWhiteSpace(args.ValueTypeName) ? "Text" : args.ValueTypeName;
+				bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, args.Value, valueTypeName);
+				if (!updated) {
+					return new SysSettingUpdateResult(false, args.Code, null,
+						"Failed to update sys-setting. The setting may not exist, or the value did not match the expected type.");
+				}
+				string readback = _sysSettingsManager.GetSysSettingValueByCode(args.Code);
+				return new SysSettingUpdateResult(true, args.Code, readback);
+			} catch (Exception ex) {
+				string message = CategorizeError(ex, "updating sys-setting");
+				return new SysSettingUpdateResult(false, args.Code, null, message);
+			}
+		}
+
 		public override int Execute(SysSettingsOptions opts) {
 			if(opts.IsGet) {
 				string value = _sysSettingsManager.GetSysSettingValueByCode(opts.Code);
@@ -155,32 +181,6 @@ namespace Clio.Command
 			} catch (Exception ex) {
 				string message = CategorizeError(ex, "creating sys-setting");
 				return new SysSettingCreateResult(false, args.Code, args.ValueTypeName, null, message);
-			}
-		}
-
-		/// <summary>
-		/// Updates an existing sys-setting value. The provided <c>value-type-name</c> is used only as a
-		/// fallback when the setting type cannot be resolved on the target environment.
-		/// </summary>
-		public SysSettingUpdateResult TryUpdateSysSetting(UpdateSysSettingArgs args) {
-			try {
-				if (string.IsNullOrWhiteSpace(args.Code)) {
-					throw new ArgumentException("code is required.");
-				}
-				if (args.Value is null) {
-					throw new ArgumentException("value is required.");
-				}
-				string valueTypeName = string.IsNullOrWhiteSpace(args.ValueTypeName) ? "Text" : args.ValueTypeName;
-				bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, args.Value, valueTypeName);
-				if (!updated) {
-					return new SysSettingUpdateResult(false, args.Code, null,
-						"Failed to update sys-setting. The setting may not exist, or the value did not match the expected type.");
-				}
-				string readback = _sysSettingsManager.GetSysSettingValueByCode(args.Code);
-				return new SysSettingUpdateResult(true, args.Code, readback);
-			} catch (Exception ex) {
-				string message = CategorizeError(ex, "updating sys-setting");
-				return new SysSettingUpdateResult(false, args.Code, null, message);
 			}
 		}
 
