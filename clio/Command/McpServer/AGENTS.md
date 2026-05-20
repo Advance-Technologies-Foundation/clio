@@ -177,6 +177,62 @@ and `Tools/ComponentInfoTool.cs` surfaces both verbatim:
   fixed clio-side POCO (`ComponentPropertyDefinition`). This shape still
   appears in the mobile catalog and in older per-version files.
 
+### Global content (`root.content.baseInputs` + `root.content.typeDefinitions`)
+
+The wrapped registry payload also carries a top-level `content` block —
+metadata shared across every component:
+
+- `root.content.baseInputs` — input keys every component inherits
+  (`classes`, `id`, `loading`, `name`, `shape`, `styles`, `tabIndex`,
+  `type`). Producer-side, these live once at root rather than being
+  duplicated on every entry.
+- `root.content.typeDefinitions` — global named-type schemas referenced
+  by per-component `inputs`/`outputs` `type` strings (e.g.
+  `RequestBindingConfig`, `CrtMenuItemViewElementConfig`,
+  `ViewElementConfig`, `LocalizableStringModel`).
+
+`ComponentInfoTool.CreateDetailResponse` merges both into the
+per-component surface before serialising:
+
+- `response.inputs` = `root.content.baseInputs` ∪ `entry.inputs` —
+  per-component overrides win on a key collision.
+- `response.content.typeDefinitions` = `root.content.typeDefinitions` ∪
+  `entry.content.typeDefinitions` — per-component overrides win.
+
+So an AI consumer reads a single flat per-component view without having
+to dereference globals separately. The merge is also exercised by
+`Live_Snapshot_Detail_Should_Merge_Global_Content_Into_Inputs_And_TypeDefinitions`
+in `ComponentRegistrySnapshotTests`.
+
+### Snapshot guard against silent data loss
+
+Every POCO on the registry deserialisation path carries an
+`[JsonExtensionData] UnmappedExtensions` dictionary: `ComponentRegistryEnvelope`,
+`RegistryGlobalContent`, `ComponentRegistryEntry`, `ComponentContent`. The
+guard test `ComponentRegistrySnapshotTests.Live_Registry_Snapshot_Should_Have_No_Unmapped_Fields`
+deserialises a pinned copy of
+`https://academy.creatio.com/api/mcp/latest/ComponentRegistry.json`
+(`clio.tests/Command/McpServer/Fixtures/ComponentRegistry.live-snapshot.json`)
+and asserts each `UnmappedExtensions` bucket is empty.
+
+If the producer ships a new field, this test fails — and the fix is to
+EITHER map the field onto a POCO property AND surface it through
+`CreateDetailResponse`, OR document an explicit reason it can stay on
+the bucket (and add an allowlist check in the test). Either way, the
+silent-drop pattern that motivated this section in the first place
+(`content.typeDefinitions`, `root.content.baseInputs`,
+`root.content.typeDefinitions` all went unnoticed for weeks) cannot
+recur unchecked.
+
+To refresh the snapshot after a deliberate producer-side change, from
+the repo root:
+
+```sh
+curl -s "https://academy.creatio.com/api/mcp/latest/ComponentRegistry.json" \
+  > clio.tests/Command/McpServer/Fixtures/ComponentRegistry.live-snapshot.json
+dotnet test --filter "FullyQualifiedName~ComponentRegistrySnapshot"
+```
+
 ### Named type schemas (`content.typeDefinitions`)
 
 The `inputs`/`outputs` `type` strings on the wrapped shape can reference

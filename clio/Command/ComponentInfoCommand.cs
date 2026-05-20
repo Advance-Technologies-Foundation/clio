@@ -129,7 +129,9 @@ public sealed class ComponentInfoCommand {
 
 		ComponentRegistryEntry? entry = _mobileCatalog.Find(componentType!);
 		if (entry is not null) {
-			return BuildDetail(entry, resolvedTargetVersion: null, resolvedFrom: null);
+			// Mobile catalog has no global envelope (no baseInputs / global
+			// typeDefinitions) — pass null so the merge logic is a no-op.
+			return BuildDetail(entry, resolvedTargetVersion: null, resolvedFrom: null, globalContent: null);
 		}
 
 		IReadOnlyList<ComponentRegistryEntry> suggestions = _mobileCatalog.Search(options.Search);
@@ -142,32 +144,21 @@ public sealed class ComponentInfoCommand {
 		};
 	}
 
+	/// <summary>
+	/// Builds the detail response for the CLI verb. Delegates to the MCP tool's
+	/// merger so both surfaces produce identical envelope-aware payloads —
+	/// baseInputs ∪ per-component inputs, global typeDefinitions ∪ per-component
+	/// typeDefinitions, per-component winning on key collision. The CLI never
+	/// fetches markdown documentation (the verb is not asynchronous over the docs
+	/// CDN); the documentation parameter is therefore always null here.
+	/// </summary>
 	private static ComponentInfoResponse BuildDetail(
 		ComponentRegistryEntry entry,
 		string? resolvedTargetVersion,
-		string? resolvedFrom) {
-		ComponentContentResponse contentResponse =
-			entry.Content?.TypeDefinitions is { Count: > 0 } typeDefinitions
-				? new ComponentContentResponse { TypeDefinitions = typeDefinitions }
-				: null;
-		return new ComponentInfoResponse {
-			Success = true,
-			Mode = "detail",
-			Count = 1,
-			ComponentType = entry.ComponentType,
-			Description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description,
-			Container = entry.Container ? true : null,
-			ParentTypes = entry.ParentTypes.Count == 0 ? null : entry.ParentTypes,
-			Properties = entry.Properties.Count == 0 ? null : entry.Properties,
-			Inputs = entry.Inputs is { Count: > 0 } ? entry.Inputs : null,
-			Outputs = entry.Outputs is { Count: > 0 } ? entry.Outputs : null,
-			TypicalChildren = entry.TypicalChildren.Count == 0 ? null : entry.TypicalChildren,
-			Example = entry.Example,
-			ResolvedTargetVersion = resolvedTargetVersion,
-			ResolvedFrom = resolvedFrom,
-			Content = contentResponse
-		};
-	}
+		string? resolvedFrom,
+		RegistryGlobalContent globalContent) =>
+		ComponentInfoTool.CreateDetailResponse(
+			entry, resolvedTargetVersion, resolvedFrom, documentation: null, globalContent);
 
 	private void Emit(ComponentInfoResponse response, bool pretty) {
 		string payload = pretty
@@ -235,7 +226,7 @@ public sealed class ComponentInfoCommand {
 		}
 
 		if (state.Lookup.TryGetValue(componentType!, out ComponentRegistryEntry entry)) {
-			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom);
+			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom, state.GlobalContent);
 		}
 
 		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, options.Search);

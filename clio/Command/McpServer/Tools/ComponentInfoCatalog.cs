@@ -74,11 +74,22 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	}
 
 	/// <summary>
+	/// Default deserialiser options for the registry payload. Case-insensitive (the
+	/// producer is camelCase but legacy localisations may slip in lower/upper case)
+	/// and lets <c>JsonExtensionData</c> buckets soak up any unmapped producer key,
+	/// so the snapshot guard test can detect them in CI rather than the deserialiser
+	/// crashing at runtime.
+	/// </summary>
+	internal static readonly JsonSerializerOptions DeserializerOptions = new() {
+		PropertyNameCaseInsensitive = true
+	};
+
+	/// <summary>
 	/// Parses a registry stream into the in-memory catalog state. Exposed for hermetic
 	/// tests and for callers that want to bypass the CDN/cache/embedded chain entirely.
 	/// Accepts both supported JSON shapes: a top-level array of
 	/// <see cref="ComponentRegistryEntry"/> (legacy CDN format) and an object wrapper
-	/// <c>{ "components": [...] }</c>.
+	/// <c>{ "components": [...], "content": {...} }</c>.
 	/// </summary>
 	public static ComponentCatalogState LoadFromStream(
 		Stream stream,
@@ -88,36 +99,58 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 			throw new ArgumentNullException(nameof(stream));
 		}
 
-		ComponentRegistryEntry[] rawEntries = DeserializeEntries(stream, "Component registry stream");
-		return BuildState(rawEntries, "Component registry stream", resolvedVersion, source);
+		(ComponentRegistryEntry[] rawEntries, RegistryGlobalContent? globalContent) =
+			DeserializeEnvelope(stream, "Component registry stream");
+		return BuildState(rawEntries, globalContent, "Component registry stream", resolvedVersion, source);
 	}
 
 	/// <summary>
-	/// Deserialises a component-registry payload. Supports the legacy top-level array
-	/// (<c>[{...}, {...}]</c>) and the wrapped object shape (<c>{ "components": [...] }</c>).
+	/// Deserialises a component-registry payload into entries + the global
+	/// <c>content</c> block (when present). Supports the legacy top-level array
+	/// (<c>[{...}, {...}]</c>) and the wrapped object shape
+	/// (<c>{ "components": [...], "content": {...} }</c>). The legacy shape returns
+	/// <c>null</c> global content — there is no envelope to carry it.
 	/// </summary>
-	internal static ComponentRegistryEntry[] DeserializeEntries(Stream stream, string sourceDescription) {
+	internal static (ComponentRegistryEntry[] Entries, RegistryGlobalContent? GlobalContent) DeserializeEnvelope(
+		Stream stream, string sourceDescription) {
 		using JsonDocument document = JsonDocument.Parse(stream);
-		JsonElement entriesElement = ExtractEntriesElement(document.RootElement, sourceDescription);
-		ComponentRegistryEntry[]? rawEntries = entriesElement.Deserialize<ComponentRegistryEntry[]>(
-			new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-		if (rawEntries is null || rawEntries.Length == 0) {
+		ComponentRegistryEntry[] entries;
+		RegistryGlobalContent? globalContent = null;
+
+		if (document.RootElement.ValueKind == JsonValueKind.Array) {
+			entries = document.RootElement.Deserialize<ComponentRegistryEntry[]>(DeserializerOptions)
+				?? throw new InvalidOperationException($"{sourceDescription} is empty or invalid.");
+		} else if (document.RootElement.ValueKind == JsonValueKind.Object) {
+			// The wrapped envelope requires a 'components' array. Reject early
+			// with the same diagnostic the legacy shape-validation produced so
+			// callers can keep pattern-matching on the error wording.
+			if (!document.RootElement.TryGetProperty("components", out JsonElement componentsArray)
+				|| componentsArray.ValueKind != JsonValueKind.Array) {
+				throw new InvalidOperationException(
+					$"{sourceDescription} must be either a JSON array of component entries or an object with a 'components' array.");
+			}
+			ComponentRegistryEnvelope envelope = document.RootElement.Deserialize<ComponentRegistryEnvelope>(DeserializerOptions)
+				?? throw new InvalidOperationException($"{sourceDescription} envelope was empty or invalid.");
+			entries = envelope.Components;
+			globalContent = envelope.Content;
+		} else {
+			throw new InvalidOperationException(
+				$"{sourceDescription} must be either a JSON array of component entries or an object with a 'components' array.");
+		}
+
+		if (entries is null || entries.Length == 0) {
 			throw new InvalidOperationException($"{sourceDescription} is empty or invalid.");
 		}
-		return rawEntries;
+		return (entries, globalContent);
 	}
 
-	private static JsonElement ExtractEntriesElement(JsonElement root, string sourceDescription) {
-		if (root.ValueKind == JsonValueKind.Array) {
-			return root;
-		}
-		if (root.ValueKind == JsonValueKind.Object
-			&& root.TryGetProperty("components", out JsonElement components)
-			&& components.ValueKind == JsonValueKind.Array) {
-			return components;
-		}
-		throw new InvalidOperationException(
-			$"{sourceDescription} must be either a JSON array of component entries or an object with a 'components' array.");
+	/// <summary>
+	/// Back-compat shim used by hermetic mobile-catalog tests that consume only the
+	/// entries (mobile registry has no global <c>content</c> block).
+	/// </summary>
+	internal static ComponentRegistryEntry[] DeserializeEntries(Stream stream, string sourceDescription) {
+		(ComponentRegistryEntry[] entries, _) = DeserializeEnvelope(stream, sourceDescription);
+		return entries;
 	}
 
 	private async Task<ComponentCatalogState> LoadCatalogStateAsync(string requestedVersion, CancellationToken cancellationToken) {
@@ -127,6 +160,17 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		}
 	}
 
+	/// <summary>
+	/// Overload that accepts pre-deserialised entries (legacy mobile path) and
+	/// builds the state without a global content block.
+	/// </summary>
+	internal static ComponentCatalogState BuildState(
+		ComponentRegistryEntry[] rawEntries,
+		string sourceDescription,
+		string resolvedVersion,
+		ComponentRegistrySource source) =>
+		BuildState(rawEntries, globalContent: null, sourceDescription, resolvedVersion, source);
+
 	private static string NormaliseVersion(string? requestedVersion) {
 		return string.IsNullOrWhiteSpace(requestedVersion)
 			? ComponentRegistryClient.LatestVersion
@@ -135,6 +179,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 
 	internal static ComponentCatalogState BuildState(
 		ComponentRegistryEntry[] rawEntries,
+		RegistryGlobalContent? globalContent,
 		string sourceDescription,
 		string resolvedVersion,
 		ComponentRegistrySource source) {
@@ -160,7 +205,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 
 		Dictionary<string, ComponentRegistryEntry> lookup = orderedEntries
 			.ToDictionary(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase);
-		return new ComponentCatalogState(orderedEntries, lookup, resolvedVersion, source);
+		return new ComponentCatalogState(orderedEntries, lookup, resolvedVersion, source, globalContent);
 	}
 }
 
@@ -252,8 +297,15 @@ public sealed class MobileComponentInfoCatalog : IMobileComponentInfoCatalog {
 /// <param name="Lookup">Case-insensitive map of componentType → entry.</param>
 /// <param name="ResolvedVersion">The version actually loaded; may differ from the requested version on fallback.</param>
 /// <param name="Source">Which tier of the fallback chain produced the bytes.</param>
+/// <param name="GlobalContent">
+/// Optional global <c>content</c> block from the wrapped envelope shape; carries
+/// the shared <c>baseInputs</c> and <c>typeDefinitions</c> producer metadata. Null
+/// for the legacy top-level-array shape and for the mobile catalog (which has no
+/// envelope).
+/// </param>
 public sealed record ComponentCatalogState(
 	IReadOnlyList<ComponentRegistryEntry> Entries,
 	IReadOnlyDictionary<string, ComponentRegistryEntry> Lookup,
 	string ResolvedVersion,
-	ComponentRegistrySource Source);
+	ComponentRegistrySource Source,
+	RegistryGlobalContent? GlobalContent = null);

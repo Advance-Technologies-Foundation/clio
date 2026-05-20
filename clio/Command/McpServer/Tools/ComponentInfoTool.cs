@@ -75,7 +75,7 @@ public sealed class ComponentInfoTool(
 
 		if (state.Lookup.TryGetValue(args.ComponentType.Trim(), out ComponentRegistryEntry? entry)) {
 			string? documentation = await LoadDocumentationAsync(entry, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
-			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom, documentation);
+			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalContent);
 		}
 
 		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, args.Search);
@@ -107,7 +107,8 @@ public sealed class ComponentInfoTool(
 			// Mobile catalog ships as static data without a CDN tier, so the docs
 			// pipeline is not consulted here even if a future mobile entry lists
 			// content.docs[]. Documentation is intentionally null for mobile.
-			return CreateDetailResponse(entry, resolvedTargetVersion: null, resolvedFrom: null, documentation: null);
+			// Mobile has no global envelope either — pass globalContent: null.
+			return CreateDetailResponse(entry, resolvedTargetVersion: null, resolvedFrom: null, documentation: null, globalContent: null);
 		}
 
 		IReadOnlyList<ComponentRegistryEntry> suggestions = mobileCatalog.Search(args.Search);
@@ -137,11 +138,14 @@ public sealed class ComponentInfoTool(
 		};
 	}
 
-	private static ComponentInfoResponse CreateDetailResponse(
+	internal static ComponentInfoResponse CreateDetailResponse(
 		ComponentRegistryEntry entry,
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
-		string? documentation) {
+		string? documentation,
+		RegistryGlobalContent? globalContent) {
+		IReadOnlyDictionary<string, JsonElement>? mergedInputs = MergeBindings(globalContent?.BaseInputs, entry.Inputs);
+		ComponentContentResponse? content = BuildContentResponse(entry, globalContent);
 		return new ComponentInfoResponse {
 			Success = true,
 			Mode = "detail",
@@ -151,31 +155,66 @@ public sealed class ComponentInfoTool(
 			Container = entry.Container ? true : null,
 			ParentTypes = entry.ParentTypes.Count == 0 ? null : entry.ParentTypes,
 			Properties = entry.Properties.Count == 0 ? null : entry.Properties,
-			Inputs = entry.Inputs is { Count: > 0 } ? entry.Inputs : null,
+			Inputs = mergedInputs,
 			Outputs = entry.Outputs is { Count: > 0 } ? entry.Outputs : null,
 			TypicalChildren = entry.TypicalChildren.Count == 0 ? null : entry.TypicalChildren,
 			Example = entry.Example,
 			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom,
 			Documentation = string.IsNullOrEmpty(documentation) ? null : documentation,
-			Content = BuildContentResponse(entry)
+			Content = content
 		};
 	}
 
 	/// <summary>
 	/// Lifts the registry entry's <c>content</c> block into the wire shape exposed on
-	/// the detail response. Today this is just <c>typeDefinitions</c>; <c>docs</c> is
-	/// intentionally consumed at a different layer (the docs CDN/cache pipeline) and
-	/// surfaced as the flat <see cref="ComponentInfoResponse.Documentation"/> field.
-	/// Returns <c>null</c> when the entry has no surface-worthy content so the
-	/// JsonIgnore stripping keeps the wire shape small for simple components.
+	/// the detail response, merging the producer's global <c>typeDefinitions</c> (from
+	/// the wrapped envelope) with the per-component <c>typeDefinitions</c>. The
+	/// per-component definition wins on a key collision — a component that re-defines
+	/// a global type has explicitly overridden it (rare but legitimate). Raw
+	/// <c>docs</c> paths are intentionally not surfaced here; the docs CDN/cache
+	/// pipeline consumes them and the result lands on
+	/// <see cref="ComponentInfoResponse.Documentation"/> instead.
 	/// </summary>
-	private static ComponentContentResponse? BuildContentResponse(ComponentRegistryEntry entry) {
-		ComponentContent? content = entry.Content;
-		if (content?.TypeDefinitions is not { Count: > 0 } typeDefinitions) {
+	private static ComponentContentResponse? BuildContentResponse(
+		ComponentRegistryEntry entry,
+		RegistryGlobalContent? globalContent) {
+		IReadOnlyDictionary<string, JsonElement>? perComponent = entry.Content?.TypeDefinitions;
+		IReadOnlyDictionary<string, JsonElement>? global = globalContent?.TypeDefinitions;
+		IReadOnlyDictionary<string, JsonElement>? merged = MergeBindings(global, perComponent);
+		return merged is null ? null : new ComponentContentResponse { TypeDefinitions = merged };
+	}
+
+	/// <summary>
+	/// Merges a global binding dictionary (lower priority) with a per-component
+	/// binding dictionary (higher priority). When both sides declare the same key,
+	/// the per-component value wins — a component that overrides a baseInput or
+	/// re-defines a global type has explicitly opted out of inheritance. Returns
+	/// <c>null</c> when both inputs are null/empty so the JsonIgnore strips the
+	/// field from the wire shape.
+	/// </summary>
+	internal static IReadOnlyDictionary<string, JsonElement>? MergeBindings(
+		IReadOnlyDictionary<string, JsonElement>? global,
+		IReadOnlyDictionary<string, JsonElement>? perComponent) {
+		bool globalEmpty = global is null || global.Count == 0;
+		bool localEmpty = perComponent is null || perComponent.Count == 0;
+		if (globalEmpty && localEmpty) {
 			return null;
 		}
-		return new ComponentContentResponse { TypeDefinitions = typeDefinitions };
+		if (globalEmpty) {
+			return perComponent;
+		}
+		if (localEmpty) {
+			return global;
+		}
+		Dictionary<string, JsonElement> merged = new(capacity: global!.Count + perComponent!.Count);
+		foreach (KeyValuePair<string, JsonElement> binding in global) {
+			merged[binding.Key] = binding.Value;
+		}
+		foreach (KeyValuePair<string, JsonElement> binding in perComponent) {
+			merged[binding.Key] = binding.Value;
+		}
+		return merged;
 	}
 
 	/// <summary>
@@ -504,6 +543,96 @@ public sealed class ComponentRegistryEntry {
 	[JsonPropertyName("content")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public ComponentContent? Content { get; init; }
+
+	/// <summary>
+	/// Captures any per-component field clio has not mapped yet (e.g. a future
+	/// <c>deprecated</c>/<c>stability</c>/<c>resources</c> producer addition). Always
+	/// expected to be empty against the live snapshot — the snapshot guard test
+	/// fails when this dictionary is non-empty. Goal: make silent data loss a CI
+	/// failure rather than a runtime mystery.
+	/// </summary>
+	[JsonExtensionData]
+	public IDictionary<string, JsonElement>? UnmappedExtensions { get; init; }
+}
+
+/// <summary>
+/// Root-level envelope of the wrapped registry shape. Top-level keys live here when
+/// the payload is an object rather than the legacy top-level array. Today the
+/// envelope carries:
+/// <list type="bullet">
+/// <item><c>components</c> — the per-component entries (the only field the legacy
+/// shape uses, lifted to top-level there).</item>
+/// <item><c>content</c> — global metadata shared across every component:
+/// <see cref="RegistryGlobalContent.BaseInputs"/> (the inherited input surface
+/// every component carries on top of its own <c>inputs</c>) and
+/// <see cref="RegistryGlobalContent.TypeDefinitions"/> (the named-type schemas
+/// referenced by every component's <c>inputs</c>/<c>outputs</c> <c>type</c>
+/// strings — e.g. <c>RequestBindingConfig</c>, <c>ViewElementConfig</c>).</item>
+/// </list>
+/// The deserialiser is strict over this envelope (see
+/// <c>ComponentInfoCatalog.SnapshotJsonOptions</c> + the snapshot guard test); any
+/// new producer field forces a coordinated decision — map it, or explicitly
+/// allowlist it via <see cref="UnmappedExtensions"/>.
+/// </summary>
+public sealed class ComponentRegistryEnvelope {
+	/// <summary>Per-component entries (the only required field).</summary>
+	[JsonPropertyName("components")]
+	public ComponentRegistryEntry[] Components { get; init; } = [];
+
+	/// <summary>Global content block shared across every component.</summary>
+	[JsonPropertyName("content")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public RegistryGlobalContent? Content { get; init; }
+
+	/// <summary>
+	/// Captures any top-level producer field clio has not mapped yet. Always
+	/// expected to be empty against the live snapshot — the
+	/// <c>Live_Registry_Snapshot_Should_Have_No_Unmapped_Fields</c> guard test
+	/// fails when this dictionary is non-empty. The bucket exists so deserialise
+	/// does NOT throw under strict mode; the test does the bookkeeping.
+	/// </summary>
+	[JsonExtensionData]
+	public IDictionary<string, JsonElement>? UnmappedExtensions { get; init; }
+}
+
+/// <summary>
+/// Global metadata block under <c>ComponentRegistry.json</c>'s <c>content</c> key.
+/// Shared by every component; merged into per-component data when surfaced on the
+/// detail response (per-component wins on a key collision).
+/// </summary>
+public sealed class RegistryGlobalContent {
+	/// <summary>
+	/// Inherited input surface every component carries. Each key is an input name
+	/// (e.g. <c>"classes"</c>, <c>"id"</c>, <c>"styles"</c>, <c>"tabIndex"</c>);
+	/// each value is the producer's schema for that input (same shape as
+	/// per-component <see cref="ComponentRegistryEntry.Inputs"/> values). Merged
+	/// into the detail response's <c>inputs</c> block so AI sees a single flat
+	/// surface — the per-component override wins when both sides declare the same
+	/// key.
+	/// </summary>
+	[JsonPropertyName("baseInputs")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? BaseInputs { get; init; }
+
+	/// <summary>
+	/// Global named-type schemas (e.g. <c>"RequestBindingConfig"</c>,
+	/// <c>"CrtMenuItemViewElementConfig"</c>, <c>"ViewElementConfig"</c>). Same
+	/// shape as per-component <see cref="ComponentContent.TypeDefinitions"/>;
+	/// merged into the detail response's <c>content.typeDefinitions</c> block so
+	/// AI does not need to dereference a second registry call to resolve a type
+	/// name referenced by the per-component schema.
+	/// </summary>
+	[JsonPropertyName("typeDefinitions")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? TypeDefinitions { get; init; }
+
+	/// <summary>
+	/// Strict-mode catch-all for any new producer key under
+	/// <c>root.content.*</c>. See <see cref="ComponentRegistryEnvelope.UnmappedExtensions"/>
+	/// for the same rationale.
+	/// </summary>
+	[JsonExtensionData]
+	public IDictionary<string, JsonElement>? UnmappedExtensions { get; init; }
 }
 
 /// <summary>
@@ -537,6 +666,13 @@ public sealed class ComponentContent {
 	[JsonPropertyName("typeDefinitions")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyDictionary<string, JsonElement>? TypeDefinitions { get; init; }
+
+	/// <summary>
+	/// Strict-mode catch-all for any new per-component <c>content.*</c> producer
+	/// key. Snapshot guard test fails when this is non-empty.
+	/// </summary>
+	[JsonExtensionData]
+	public IDictionary<string, JsonElement>? UnmappedExtensions { get; init; }
 }
 
 /// <summary>
