@@ -75,6 +75,9 @@ public sealed class LocalEsqFilterBuilderAggregationTests {
 			because: "FunctionType.Aggregation = 2");
 		left.GetProperty("aggregationType").GetInt32().Should().Be(1,
 			because: "AggregationType.Count = 1");
+		left.GetProperty("columnPath").GetString().Should().Be("[Order:Customer].Id",
+			because: "COUNT SubQuery columnPath must be navigated through the backward reference and " +
+				"target the child schema's primary key (Id) — bare '[Order:Customer]' resolves on the root schema");
 		left.GetProperty("className").GetString().Should().Be("Terrasoft.AggregationQueryExpression");
 		left.GetProperty("subFilters").GetProperty("filterType").GetInt32().Should().Be(6,
 			because: "subFilters is a nested FilterGroup against the child schema");
@@ -108,8 +111,9 @@ public sealed class LocalEsqFilterBuilderAggregationTests {
 		JsonElement left = backward.GetProperty("leftExpression");
 		left.GetProperty("aggregationType").GetInt32().Should().Be(2,
 			because: "AggregationType.Sum = 2");
-		left.GetProperty("columnPath").GetString().Should().Be("Total",
-			because: "SUM aggregates the explicit aggregationColumnPath, not the relationship column");
+		left.GetProperty("columnPath").GetString().Should().Be("[Order:Customer].Total",
+			because: "SUM SubQuery columnPath must be navigated through the backward reference: " +
+				"the platform parses columnPath relative to the root schema, so 'Total' alone resolves on Contact, not Order");
 		backward.GetProperty("rightExpression").GetProperty("parameter")
 			.GetProperty("dataValueType").GetInt32().Should().Be(5,
 				because: "SUM/AVG/MIN/MAX result materializes as Float");
@@ -137,12 +141,13 @@ public sealed class LocalEsqFilterBuilderAggregationTests {
 
 			string envelope = builder.ConvertToEsqFilter("Contact", root);
 			using JsonDocument doc = JsonDocument.Parse(envelope);
-			doc.RootElement.GetProperty("items")
+			JsonElement aggLeft = doc.RootElement.GetProperty("items")
 				.GetProperty("BackwardReferenceFilter_0")
-				.GetProperty("leftExpression")
-				.GetProperty("aggregationType")
-				.GetInt32().Should().Be(expected,
-					because: $"AggregationType.{token} numeric id from Terrasoft.Common");
+				.GetProperty("leftExpression");
+			aggLeft.GetProperty("aggregationType").GetInt32().Should().Be(expected,
+				because: $"AggregationType.{token} numeric id from Terrasoft.Common");
+			aggLeft.GetProperty("columnPath").GetString().Should().Be("[Order:Customer].Total",
+				because: $"{token} SubQuery columnPath must be navigated through the backward reference");
 		}
 	}
 

@@ -28,6 +28,11 @@ internal sealed class LocalEsqFilterConverter(
 			RegexOptions.Compiled | RegexOptions.CultureInvariant,
 			TimeSpan.FromMilliseconds(100));
 
+	// Default column used by COUNT aggregation when the caller does not supply an explicit
+	// AggregationColumnPath. All Creatio entity schemas inherit Id as their primary key,
+	// so "[Child:Column].Id" is a safe, universally valid aggregation target.
+	private const string PrimaryKeyColumnName = "Id";
+
 	public SerializableFilters BuildTopLevelGroup(StaticFilterGroup group, string rootSchemaName) {
 		ArgumentNullException.ThrowIfNull(group);
 		ArgumentException.ThrowIfNullOrWhiteSpace(rootSchemaName);
@@ -176,11 +181,17 @@ internal sealed class LocalEsqFilterConverter(
 		string aggregationType,
 		SerializableFilters subFilters) {
 		EsqAggregationType esqAggregation = MapAggregationType(aggregationType);
-		// COUNT aggregates over the relationship column itself; SUM/AVG/MIN/MAX use the explicit
-		// aggregationColumnPath provided by the caller.
-		string aggregationColumnPath = esqAggregation == EsqAggregationType.Count
-			? NormalizeColumnPath(brf.ReferenceColumnPath)
+		// Aggregation SubQuery columnPath must be a column path on the CHILD schema, navigated
+		// through the backward reference. The platform parses the path relative to the root
+		// schema, so we must prepend "[ChildSchema:Column]." to the aggregated column name —
+		// otherwise ESQ tries to resolve "[Opportunity:Account]" or "Amount" literally on the
+		// root schema and reports ItemNotFoundException. COUNT defaults to the child schema's
+		// primary key (Id); SUM/AVG/MIN/MAX use the caller-supplied AggregationColumnPath.
+		string referencePath = NormalizeColumnPath(brf.ReferenceColumnPath);
+		string aggregatedColumn = esqAggregation == EsqAggregationType.Count
+			? PrimaryKeyColumnName
 			: brf.AggregationColumnPath!;
+		string aggregationColumnPath = $"{referencePath}.{aggregatedColumn}";
 		// Result is numeric: use Integer for COUNT (record count) and Float for SUM/AVG/MIN/MAX.
 		EsqDataValueType valueType = esqAggregation == EsqAggregationType.Count
 			? EsqDataValueType.Integer
