@@ -106,7 +106,7 @@ public sealed class MobilePageGuidanceResource {
 		       ────────────────────────────────────────────────────────
 		       crt.Scaffold — do NOT re-insert
 		       ────────────────────────────────────────────────────────
-		       All four mobile templates already insert one crt.Scaffold.
+		       All five mobile templates already insert one crt.Scaffold.
 		       Your page inherits it. DO NOT add another Scaffold insert — it will create
 		       a duplicate root element.
 
