@@ -160,17 +160,6 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		}
 	}
 
-	/// <summary>
-	/// Overload that accepts pre-deserialised entries (legacy mobile path) and
-	/// builds the state without a global content block.
-	/// </summary>
-	internal static ComponentCatalogState BuildState(
-		ComponentRegistryEntry[] rawEntries,
-		string sourceDescription,
-		string resolvedVersion,
-		ComponentRegistrySource source) =>
-		BuildState(rawEntries, globalContent: null, sourceDescription, resolvedVersion, source);
-
 	private static string NormaliseVersion(string? requestedVersion) {
 		return string.IsNullOrWhiteSpace(requestedVersion)
 			? ComponentRegistryClient.LatestVersion
@@ -207,6 +196,19 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 			.ToDictionary(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase);
 		return new ComponentCatalogState(orderedEntries, lookup, resolvedVersion, source, globalContent);
 	}
+
+	/// <summary>
+	/// Overload that accepts pre-deserialised entries (legacy mobile path) and
+	/// builds the state without a global content block. Kept adjacent to the
+	/// canonical 5-arg overload above to keep the SonarCloud S4136 'overloads
+	/// should be adjacent' rule happy.
+	/// </summary>
+	internal static ComponentCatalogState BuildState(
+		ComponentRegistryEntry[] rawEntries,
+		string sourceDescription,
+		string resolvedVersion,
+		ComponentRegistrySource source) =>
+		BuildState(rawEntries, globalContent: null, sourceDescription, resolvedVersion, source);
 }
 
 /// <summary>

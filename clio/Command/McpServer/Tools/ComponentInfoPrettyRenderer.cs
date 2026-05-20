@@ -173,13 +173,17 @@ public static class ComponentInfoPrettyRenderer {
 		return property.GetString();
 	}
 
+	/// <summary>
+	/// Renders the <c>default</c> property of a binding value as a compact literal:
+	/// numbers / bools / null come through as their raw text; strings are wrapped in
+	/// quotes; complex shapes serialise to single-line JSON. Returns <c>null</c> when
+	/// the binding does not declare a default.
+	/// </summary>
 	private static string? GetBindingDefaultLiteral(JsonElement element) {
 		if (element.ValueKind != JsonValueKind.Object
 			|| !element.TryGetProperty("default", out JsonElement property)) {
 			return null;
 		}
-		// Compact representation. Numbers/bools/null come through as their raw text;
-		// strings are wrapped in quotes; complex shapes serialise to single-line JSON.
 		return property.ValueKind switch {
 			JsonValueKind.Null => "null",
 			JsonValueKind.True => "true",

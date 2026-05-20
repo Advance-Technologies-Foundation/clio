@@ -62,24 +62,48 @@ public static class ComponentInfoGrouping {
 			return false;
 		}
 		foreach (KeyValuePair<string, JsonElement> binding in bindings) {
-			if (ContainsCi(binding.Key, query)) {
+			if (BindingMatches(binding.Key, binding.Value, query)) {
 				return true;
 			}
-			if (binding.Value.ValueKind != JsonValueKind.Object) {
-				continue;
-			}
-			if (TryGetStringProperty(binding.Value, "type", out string? type) && ContainsCi(type, query)) {
+		}
+		return false;
+	}
+
+	/// <summary>
+	/// Returns <c>true</c> when a single binding entry matches the query — either
+	/// directly (key name) or through one of its well-known string fields
+	/// (<c>type</c>, <c>description</c>) or its enum <c>values</c> array.
+	/// </summary>
+	private static bool BindingMatches(string key, JsonElement value, string query) {
+		if (ContainsCi(key, query)) {
+			return true;
+		}
+		if (value.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		if (TryGetStringProperty(value, "type", out string? type) && ContainsCi(type, query)) {
+			return true;
+		}
+		if (TryGetStringProperty(value, "description", out string? description) && ContainsCi(description, query)) {
+			return true;
+		}
+		return EnumValuesMatch(value, query);
+	}
+
+	/// <summary>
+	/// Checks the binding's optional <c>values</c> enum array for a string match.
+	/// Non-string entries are skipped (the producer-side schema is occasionally
+	/// numeric — e.g. dataValueType enums on DataGrid columns — and those are not
+	/// searchable as text). Returns <c>false</c> when the binding has no
+	/// <c>values</c> array at all.
+	/// </summary>
+	private static bool EnumValuesMatch(JsonElement value, string query) {
+		if (!value.TryGetProperty("values", out JsonElement values) || values.ValueKind != JsonValueKind.Array) {
+			return false;
+		}
+		foreach (JsonElement enumValue in values.EnumerateArray()) {
+			if (enumValue.ValueKind == JsonValueKind.String && ContainsCi(enumValue.GetString(), query)) {
 				return true;
-			}
-			if (TryGetStringProperty(binding.Value, "description", out string? description) && ContainsCi(description, query)) {
-				return true;
-			}
-			if (binding.Value.TryGetProperty("values", out JsonElement values) && values.ValueKind == JsonValueKind.Array) {
-				foreach (JsonElement value in values.EnumerateArray()) {
-					if (value.ValueKind == JsonValueKind.String && ContainsCi(value.GetString(), query)) {
-						return true;
-					}
-				}
 			}
 		}
 		return false;
