@@ -83,7 +83,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	public static ComponentCatalogState LoadFromStream(
 		Stream stream,
 		string resolvedVersion = "latest",
-		ComponentRegistrySource source = ComponentRegistrySource.Embedded) {
+		ComponentRegistrySource source = ComponentRegistrySource.Cdn) {
 		if (stream is null) {
 			throw new ArgumentNullException(nameof(stream));
 		}
@@ -241,7 +241,7 @@ public sealed class MobileComponentInfoCatalog : IMobileComponentInfoCatalog {
 			rawEntries,
 			sourceDescription,
 			resolvedVersion: "mobile",
-			source: ComponentRegistrySource.Embedded);
+			source: ComponentRegistrySource.Local);
 	}
 }
 

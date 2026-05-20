@@ -49,11 +49,10 @@ public enum ComponentRegistrySource {
 	Cdn,
 	/// <summary>Returned bytes came from the on-disk cache (fresh or stale).</summary>
 	FileCache,
-	/// <summary>Returned bytes came from the embedded resource baked into clio.dll.</summary>
-	Embedded,
 	/// <summary>
 	/// Returned bytes came from a developer-supplied file pointed to by
-	/// <c>CLIO_COMPONENT_REGISTRY_LOCAL_FILE</c>. Highest-priority tier; never cached.
+	/// <c>CLIO_COMPONENT_REGISTRY_LOCAL_FILE</c>, or from a static file shipped
+	/// with the install (e.g. the mobile component catalog). Never cached.
 	/// </summary>
 	Local
 }
@@ -82,7 +81,6 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 
 	private readonly IHttpClientFactory _httpClientFactory;
 	private readonly IComponentRegistryCacheStore _cacheStore;
-	private readonly IEmbeddedRegistryReader _embeddedReader;
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger<ComponentRegistryClient> _logger;
 	private readonly string _cdnBaseUrl;
@@ -90,22 +88,19 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 	public ComponentRegistryClient(
 		IHttpClientFactory httpClientFactory,
 		IComponentRegistryCacheStore cacheStore,
-		IEmbeddedRegistryReader embeddedReader,
 		IFileSystem fileSystem,
 		ILogger<ComponentRegistryClient> logger)
-		: this(httpClientFactory, cacheStore, embeddedReader, fileSystem, logger, ResolveCdnBaseUrl()) {
+		: this(httpClientFactory, cacheStore, fileSystem, logger, ResolveCdnBaseUrl()) {
 	}
 
 	internal ComponentRegistryClient(
 		IHttpClientFactory httpClientFactory,
 		IComponentRegistryCacheStore cacheStore,
-		IEmbeddedRegistryReader embeddedReader,
 		IFileSystem fileSystem,
 		ILogger<ComponentRegistryClient> logger,
 		string cdnBaseUrl) {
 		_httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
 		_cacheStore = cacheStore ?? throw new ArgumentNullException(nameof(cacheStore));
-		_embeddedReader = embeddedReader ?? throw new ArgumentNullException(nameof(embeddedReader));
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_cdnBaseUrl = string.IsNullOrWhiteSpace(cdnBaseUrl) ? DefaultCdnBaseUrl : cdnBaseUrl;
@@ -177,14 +172,14 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 			}
 		}
 
-		// Tier 4: embedded snapshot baked into clio.dll. Always available unless the build is broken.
+		// Tier exhausted: both the requested version and the latest alias miss in both
+		// the file cache and on the CDN. There is no in-DLL snapshot to fall back to,
+		// so surface a clear error. ComponentInfoTool's catch-all turns this into a
+		// graceful MCP response that points the operator at the local-override env var.
 		_logger.LogWarning(
-			"component-registry source=embedded fallbackFrom={Requested} embeddedVersion={EmbeddedVersion}",
-			requestedVersion, _embeddedReader.EmbeddedVersion);
-		return new ComponentRegistryFetchResult(
-			_embeddedReader.OpenRegistryStream(),
-			_embeddedReader.EmbeddedVersion,
-			ComponentRegistrySource.Embedded);
+			"component-registry source=unavailable fallbackFrom={Requested} cdn={CdnBaseUrl}",
+			requestedVersion, _cdnBaseUrl);
+		throw new ComponentRegistryUnavailableException(requestedVersion, _cdnBaseUrl);
 	}
 
 	/// <inheritdoc />
@@ -353,4 +348,30 @@ public sealed class ComponentRegistryClient : IComponentRegistryClient {
 		Uri relativeUri = new($"{version}/{CdnRegistryFileName}", UriKind.Relative);
 		return new Uri(baseUri, relativeUri).AbsoluteUri;
 	}
+}
+
+/// <summary>
+/// Thrown when <see cref="ComponentRegistryClient.GetAsync"/> exhausts every tier in the
+/// fallback chain — neither the file cache nor the CDN can serve the requested version
+/// or the <c>latest</c> alias, and no <c>CLIO_COMPONENT_REGISTRY_LOCAL_FILE</c> override
+/// is set. <see cref="ComponentInfoTool"/>'s catch-all turns this into a graceful MCP
+/// response whose <c>error</c> field carries the same diagnostic, so AI agents see a
+/// clear actionable message instead of a hanging call.
+/// </summary>
+public sealed class ComponentRegistryUnavailableException : InvalidOperationException {
+	public ComponentRegistryUnavailableException(string requestedVersion, string cdnBaseUrl)
+		: base(BuildMessage(requestedVersion, cdnBaseUrl)) {
+		RequestedVersion = requestedVersion;
+		CdnBaseUrl = cdnBaseUrl;
+	}
+
+	/// <summary>The version that was originally requested when the chain ran out of tiers.</summary>
+	public string RequestedVersion { get; }
+
+	/// <summary>The CDN base URL that the client failed to reach.</summary>
+	public string CdnBaseUrl { get; }
+
+	private static string BuildMessage(string requestedVersion, string cdnBaseUrl) =>
+		$"Component registry version '{requestedVersion}' is unavailable: file cache is empty and the CDN at '{cdnBaseUrl}' could not be reached. " +
+		$"Set {ComponentRegistryClient.LocalFileEnvironmentVariable} to a local registry JSON for offline development, or retry once connectivity is restored.";
 }

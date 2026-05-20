@@ -67,12 +67,12 @@ PR [clio#595](https://github.com/Advance-Technologies-Foundation/clio/pull/595) 
                  ▼
          ┌─────────── clio ────────────┐
          │                              │
-         │  1) try CDN                  │
-         │  2) ~/.clio/cache/...        │
-         │  3) embedded snapshot in DLL │     ← built into clio.dll via
-         │                              │       MSBuild `dotnet pack` target
-         │  ──────────────────────────  │       that GETs latest.json at
-         │  ComponentInfoCatalog        │       build time
+         │  1) ~/.clio/cache/...        │  ← stale-while-revalidate
+         │  2) CDN                      │
+         │  (exhaustion → graceful      │
+         │   error via MCP response)    │
+         │                              │
+         │  ComponentInfoCatalog        │
          │  IPlatformVersionResolver    │
          │     (GetSysInfo via cliogate)│
          │  get-component-info MCP tool │
@@ -90,7 +90,7 @@ PR [clio#595](https://github.com/Advance-Technologies-Foundation/clio/pull/595) 
 - **Per-version delivery**: each GA-tag (`8.2.0`, `8.2.1`, `8.3.0`, …) gets its own file. No per-entry `availability` ranges — the file is the unit of versioning.
 - **JSON shape is drop-in compatible** with the current `ComponentRegistry.json` (top-level array of `ComponentRegistryEntry`). No wrapper, no `schemaVersion`, no `categories` (yet).
 - **No AI-side overrides in v1.** `creatio-ui` CI emits the full extracted set. Curation is a future stage if needed.
-- **Three-layer fallback in clio**: CDN → file cache (`~/.clio/cache/component-registry/`) → embedded snapshot in `clio.dll` (fetched at clio build time from CDN `latest.json` via MSBuild target; with a committed seed-snapshot for bootstrap and offline build).
+- **Two-layer fallback in clio**: file cache (`~/.clio/cache/component-registry/`) → CDN. When both miss, `ComponentInfoTool` returns a graceful MCP error response that points operators at the `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` developer override. (The previous in-DLL embedded snapshot tier was retired together with the seed file once the academy CDN went live.)
 - **Cache policy**: TTL 5min, **stale-while-revalidate** — expired cache is returned synchronously, refresh runs in the background. AI never blocks on the network. Worst-case freshness end-to-end is ~10 minutes (5min mirror + 5min TTL).
 - **Long-form documentation pipeline.** A component entry may list `content.docs[]` (e.g. `docs/data-grid.component.md`) — long-form markdown that lives next to the registry on the CDN. clio fetches those files lazily on detail requests through a two-tier `cache → CDN` chain (no embedded tier — docs are optional, a miss simply skips the file). Same 5-minute TTL + stale-while-revalidate. Producer-supplied paths are validated against a strict allow-list before any HTTP or filesystem touch.
 - **Version resolution in clio**: internal stack `explicit target-version > GetSysInfo > latest`. In v1 the MCP tool surface activates only the lower two rungs (Args unchanged); `explicit` is reserved for a future tool-surface bump.

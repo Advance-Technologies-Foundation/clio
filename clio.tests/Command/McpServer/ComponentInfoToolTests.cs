@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -418,56 +417,27 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
-	[Description("Catalog loaded through the embedded fallback exposes a non-empty surface.")]
-	public async Task ComponentInfoCatalog_Should_Load_From_Embedded_Resource() {
+	[Description("When the underlying client throws ComponentRegistryUnavailableException (cache + CDN both exhausted), the tool catch-all turns it into a graceful MCP error response that points operators at the local-override env var.")]
+	public async Task ComponentInfoTool_Should_Surface_Registry_Unavailable_As_Graceful_Error() {
 		// Arrange
-		ComponentInfoCatalog catalog = new(new EmbeddedFallbackRegistryClient());
+		ThrowingRegistryClient throwingClient = new(new ComponentRegistryUnavailableException("latest", "https://cdn.test/api/mcp/"));
+		ComponentInfoCatalog catalog = new(throwingClient);
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		ComponentInfoTool tool = new(
+			catalog,
+			mobileCatalog,
+			StubPlatformVersionResolver.LatestFallback(),
+			new FakeDocsClient());
 
 		// Act
-		IReadOnlyList<ComponentRegistryEntry> entries = await catalog.GetAllAsync("latest");
+		ComponentInfoResponse response = await tool.GetComponentInfo();
 
 		// Assert
-		entries.Should().NotBeEmpty(
-			because: "the embedded registry resource must ship with clio.dll");
-		// Count assertion deliberately loose: the curated catalog content is now
-		// produced by the academy CI pipeline and the embedded snapshot is whatever
-		// `latest/ComponentRegistry.json` looked like at clio build time. The shape
-		// (non-empty + a known canonical entry, see the next test) is the real
-		// invariant — the headcount is not.
-		entries.Count.Should().BeGreaterThan(0,
-			because: "the embedded snapshot must parse into at least one curated component");
-	}
-
-	[Test]
-	[Description("Embedded registry exposes a canonical Freedom UI component that AI flows depend on.")]
-	public async Task ComponentInfoCatalog_Embedded_Resource_Should_Expose_Canonical_Components() {
-		// Arrange
-		ComponentInfoCatalog catalog = new(new EmbeddedFallbackRegistryClient());
-
-		// Act / Assert — crt.Button is the smallest stable Freedom UI primitive and is
-		// expected to live in every catalog cut the producer has ever published. The
-		// broader canonical surface (TabContainer, MenuItem, …) is not asserted here
-		// because the producer is in the middle of repopulating the new wrapped
-		// registry shape (see PR clio#599 producer-side status); add those back once
-		// the catalog stabilises.
-		(await catalog.FindAsync("latest", "crt.Button")).Should().NotBeNull(
-			because: "Button is the canonical interactive primitive and must always be present");
-	}
-
-	[Test]
-	[Description("Both embedded resources required by the CDN-driven loader are present in the assembly.")]
-	public void Clio_Assembly_Should_Expose_Component_Registry_Embedded_Resources() {
-		// Arrange
-		Assembly clioAssembly = typeof(ComponentInfoCatalog).Assembly;
-
-		// Act
-		string[] resourceNames = clioAssembly.GetManifestResourceNames();
-
-		// Assert
-		resourceNames.Should().Contain("Clio.ComponentRegistry.ComponentRegistry.json",
-			because: "ResolveCdnSnapshot MSBuild target must embed the registry JSON resource");
-		resourceNames.Should().Contain("Clio.ComponentRegistry.embedded-metadata.json",
-			because: "ResolveCdnSnapshot MSBuild target must embed the provenance metadata resource");
+		response.Success.Should().BeFalse(
+			because: "the registry chain was exhausted — the response must signal failure to AI");
+		response.Error.Should().NotBeNull();
+		response.Error.Should().Contain("CLIO_COMPONENT_REGISTRY_LOCAL_FILE",
+			because: "the error must point operators at the documented offline override");
 	}
 
 	private static ComponentInfoTool CreateTool(IComponentRegistryDocsClient? docsClient = null) {
@@ -606,7 +576,7 @@ public sealed class ComponentInfoToolTests {
 			return Task.FromResult(new ComponentRegistryFetchResult(
 				new MemoryStream(_payload, writable: false),
 				requestedVersion,
-				ComponentRegistrySource.Embedded));
+				ComponentRegistrySource.Cdn));
 		}
 
 		public Task<bool> RefreshAsync(string version, CancellationToken cancellationToken = default) {
@@ -622,7 +592,7 @@ public sealed class ComponentInfoToolTests {
 			ComponentRegistryEntry[] entries = JsonSerializer.Deserialize<ComponentRegistryEntry[]>(
 				registryJson,
 				new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
-			_state = ComponentInfoCatalog.BuildState(entries, "In-memory mobile test catalog", "mobile", ComponentRegistrySource.Embedded);
+			_state = ComponentInfoCatalog.BuildState(entries, "In-memory mobile test catalog", "mobile", ComponentRegistrySource.Local);
 		}
 
 		public IReadOnlyList<ComponentRegistryEntry> GetAll() => _state.Entries;
@@ -688,15 +658,14 @@ public sealed class ComponentInfoToolTests {
 		}
 	}
 
-	/// <summary>Test double that exercises the real embedded resource in clio.dll.</summary>
-	private sealed class EmbeddedFallbackRegistryClient : IComponentRegistryClient {
-		private readonly IEmbeddedRegistryReader _reader = new EmbeddedRegistryReader();
-
+	/// <summary>
+	/// Test double that always throws a pre-built <see cref="ComponentRegistryUnavailableException"/>.
+	/// Used to verify that <see cref="ComponentInfoTool"/>'s catch-all converts the exception
+	/// into a graceful MCP response.
+	/// </summary>
+	private sealed class ThrowingRegistryClient(ComponentRegistryUnavailableException exception) : IComponentRegistryClient {
 		public Task<ComponentRegistryFetchResult> GetAsync(string requestedVersion, CancellationToken cancellationToken = default) {
-			return Task.FromResult(new ComponentRegistryFetchResult(
-				_reader.OpenRegistryStream(),
-				_reader.EmbeddedVersion,
-				ComponentRegistrySource.Embedded));
+			throw exception;
 		}
 
 		public Task<bool> RefreshAsync(string version, CancellationToken cancellationToken = default) {

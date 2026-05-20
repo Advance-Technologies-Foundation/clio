@@ -4,9 +4,8 @@
 
 ## 0. Target state of this part
 
-- clio reads the Freedom UI component catalog from **academy.creatio.com CDN over HTTPS**, with a layered fallback to a runtime file cache (`~/.clio/cache/component-registry/`) and an embedded snapshot in `clio.dll`.
-- The embedded snapshot is **fetched at clio build time** by an MSBuild `ResolveCdnSnapshot` target that GETs `https://academy.creatio.com/api/mcp/latest/ComponentRegistry.json`; on fetch failure it falls back to a committed seed file in the clio repo.
-- The current in-repo file [clio/Command/McpServer/Data/ComponentRegistry.json](../clio/Command/McpServer/Data/ComponentRegistry.json) is **renamed** to `ComponentRegistry.seed.json` (same content) — it is the bootstrap/offline-build fallback and is **not** loaded at runtime.
+- clio reads the Freedom UI component catalog from **academy.creatio.com CDN over HTTPS**, with a runtime file cache at `~/.clio/cache/component-registry/`. When both layers miss, the client throws `ComponentRegistryUnavailableException`; `ComponentInfoTool` returns a graceful MCP error response pointing operators at `CLIO_COMPONENT_REGISTRY_LOCAL_FILE`.
+- There is **no in-DLL embedded snapshot and no build-time MSBuild fetch**. The `Command/McpServer/Data/ComponentRegistry.seed.json` seed file, the `ResolveCdnSnapshot` MSBuild target, and the `IEmbeddedRegistryReader` machinery described in §3.3/§3.4 of this plan were prototyped, then retired once the academy CDN went live. The text in those sections is retained as historical context — do not implement it.
 - A new `IPlatformVersionResolver` probes `GetSysInfo` via cliogate to resolve the active environment's `CoreVersion`, then maps that to a CDN filename.
 - The MCP tool `get-component-info` keeps its existing `ComponentInfoArgs`. The `ComponentInfoResponse` gains two new fields: `resolvedTargetVersion` and `resolvedFrom` (`"environment"` | `"latest-fallback"`).
 - The legacy NuGet integration from PR #595 is **not** introduced. The composer-repo and the `Creatio.ComponentRegistry@0.1.0` package are slated for deletion (see § Legacy decommissioning).
@@ -41,7 +40,7 @@ clio runtime
          │   2. CDN(version) → cache → return
          │   3. cache(latest) → return
          │   4. CDN(latest) → cache → return
-         │   5. embedded snapshot in clio.dll → return
+         │   5. (exhausted) throw ComponentRegistryUnavailableException
          ▼
        ComponentInfoCatalog → MCP get-component-info
                               + ResolvedTargetVersion + ResolvedFrom in Response
@@ -55,13 +54,12 @@ Two CI pipelines total: creatio-ui Jenkins (git push to `static-files-mcp` on GA
 
 | File | Action |
 |---|---|
-| `clio/Command/McpServer/Data/ComponentRegistry.json` | **Rename** → `ComponentRegistry.seed.json`. Same content. No longer the runtime source; only the MSBuild fallback. |
-| `clio/clio.csproj` | Remove `<Content Include="Command\McpServer\Data\**">`. Add the `ResolveCdnSnapshot` MSBuild target + `<EmbeddedResource>` items pointing to `$(IntermediateOutputPath)`. Add a CDN base URL property. |
+| `clio/Command/McpServer/Data/ComponentRegistry.json` | **Removed.** The web registry now lives only on the academy CDN; the `Data` folder retains only the mobile catalog. (A `ComponentRegistry.seed.json` rename was prototyped here for an in-DLL fallback and then retired — see §3.3 below.) |
+| `clio/clio.csproj` | Remove `<Content Include="Command\McpServer\Data\**">`. The `ResolveCdnSnapshot` MSBuild target + `<EmbeddedResource>` items that were prototyped here have been retired — the assembly carries no registry payload. |
 | `clio/Command/McpServer/Tools/ComponentInfoCatalog.cs` | Rewrite: drop `IFileSystem` + `IWorkingDirectoriesProvider` deps; wire `IComponentRegistryClient` + `IPlatformVersionResolver`; per-`(env, version)` lazy cache; public `LoadFromStream(Stream)` static factory. Same fail-on-duplicate invariant. |
 | `clio/Command/McpServer/Tools/ComponentInfoTool.cs` | Plug `IPlatformVersionResolver` + `environmentName` from active env. Populate `ResolvedTargetVersion` + `ResolvedFrom` on every Response. |
-| `clio/Command/McpServer/Tools/ComponentRegistryClient.cs` | **New.** Orchestrator of CDN → cache → embedded fallback chain. |
+| `clio/Command/McpServer/Tools/ComponentRegistryClient.cs` | **New.** Orchestrator of the cache → CDN fallback chain. Throws `ComponentRegistryUnavailableException` when both tiers miss. |
 | `clio/Command/McpServer/Tools/ComponentRegistryCacheStore.cs` | **New.** File-cache I/O for `~/.clio/cache/component-registry/`. |
-| `clio/Command/McpServer/Tools/EmbeddedRegistryMarker.cs` | **New.** Marker class for `Assembly.GetManifestResourceStream`. |
 | `clio/Command/McpServer/Tools/PlatformVersionResolver.cs` | **New.** `IPlatformVersionResolver` impl over cliogate `GetSysInfo`. |
 | `clio/Command/McpServer/Resources/PageModificationGuidanceResource.cs` | Update wording: AI should read `resolvedTargetVersion` / `resolvedFrom`; explain `"latest-fallback"` semantics. |
 | `clio/Command/ComponentRegistryRefreshCommand.cs` | **New.** `clio component-registry refresh [--version <semver>] [--all]` CLI. |
@@ -244,7 +242,10 @@ public sealed class ComponentRegistryCacheStore(IFileSystem fileSystem, TimeProv
 }
 ```
 
-### 3.3 Embedded resource + marker
+### 3.3 Embedded resource + marker — **RETIRED**
+
+> **Note:** the snippet below describes the prototype embedded-snapshot tier that was retired together with the seed file and the MSBuild target after the academy CDN went live. Kept for historical reference only — do not implement.
+
 
 ```csharp
 namespace Clio.Command.McpServer.Tools;
@@ -282,7 +283,10 @@ public sealed class EmbeddedRegistryReader : IEmbeddedRegistryReader {
 }
 ```
 
-### 3.4 MSBuild `ResolveCdnSnapshot` target
+### 3.4 MSBuild `ResolveCdnSnapshot` target — **RETIRED**
+
+> **Note:** the MSBuild target sketch below describes the prototype build-time CDN-fetch flow that was retired with the seed file. Kept for historical reference only — do not implement.
+
 
 In `clio/clio.csproj`:
 
@@ -572,14 +576,12 @@ This proves the seed-fallback path of the MSBuild target works.
 
 ### 4.4 Acceptance criteria
 
-- [ ] `dotnet build` succeeds online (downloads `latest.json`).
-- [ ] `dotnet build` succeeds offline (falls back to seed-snapshot).
-- [ ] `dotnet test` passes 100% of new + adapted tests.
+- [ ] `dotnet build` succeeds without any CDN download or `ResolveCdnSnapshot` log line.
+- [ ] `dotnet test` passes 100% of new + adapted tests, including the new `GetAsync_Throws_When_Cache_Empty_And_Cdn_Down` exhaustion test.
 - [ ] `clio component-registry refresh` runs end-to-end against a live CDN (manual smoke).
 - [ ] `clio.mcp.e2e/ComponentInfoToolE2ETests` is green; Response includes `resolvedTargetVersion` + `resolvedFrom`.
-- [ ] The seed file at `Command/McpServer/Data/ComponentRegistry.seed.json` is byte-equal to the pre-migration `ComponentRegistry.json`.
-- [ ] The old path `Command/McpServer/Data/ComponentRegistry.json` is removed.
-- [ ] The csproj `<Content Include="Command\McpServer\Data\**">` block is removed.
+- [ ] The `Command/McpServer/Data/` folder contains only the mobile registry (no `ComponentRegistry.json`, no `ComponentRegistry.seed.json`).
+- [ ] The csproj `<Content Include="Command\McpServer\Data\**">` block is removed, together with the retired `ResolveCdnSnapshot` target and its `<EmbeddedResource>` items.
 - [ ] `PageModificationGuidanceResource` mentions `resolvedFrom` semantics.
 - [ ] `Program.cs` registers the new services.
 

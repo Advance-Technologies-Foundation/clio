@@ -14,7 +14,7 @@ The CDN at academy.creatio.com is the transport contract. The GitLab repository 
 4. **Per-version files, not per-entry availability.** Each GA-tag publishes a self-contained JSON file. clio selects the file matching the platform version of the target environment; it does not filter records inside a file.
 5. **JSON shape: drop-in compatible with the current in-repo `ComponentRegistry.json`** — top-level array of `ComponentRegistryEntry` objects. No wrapper, no `schemaVersion`, no `categories` block in v1.
 6. **No AI-side overrides in v1.** The CI emits the full extracted set. AI-team curation is a possible future stage.
-7. **clio consumes via HTTP**, with a three-layer fallback chain: CDN → file cache (`~/.clio/cache/component-registry/`) → embedded snapshot in `clio.dll`. The embedded snapshot is regenerated at clio build time by an MSBuild target that fetches `latest/ComponentRegistry.json` from the CDN.
+7. **clio consumes via HTTP**, with a two-layer fallback chain: file cache (`~/.clio/cache/component-registry/`) → CDN. When both layers miss, clio surfaces `ComponentRegistryUnavailableException`, which `ComponentInfoTool` turns into a graceful MCP error response pointing operators at the `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` developer override. There is no in-DLL embedded snapshot — that tier was retired together with the seed file once the academy CDN went live.
 8. **Cache policy: TTL 5min, stale-while-revalidate.** AI requests never block on the network — expired cache is returned synchronously while a background refresh runs. The short TTL keeps clio aligned with the 5-minute academy mirror cadence so a producer push lands in AI's hands within roughly 10 minutes worst-case.
 9. **Long-form documentation is a sibling pipeline.** A component entry may carry a `content.docs[]` array (e.g. `docs/data-grid.component.md`); the files live next to the registry under `/api/mcp/{version}/`. clio fetches them lazily on detail requests through a two-tier cache → CDN chain (no embedded tier — docs are optional, so a miss simply skips the file). The same 5-minute TTL + stale-while-revalidate apply. Path values from the producer are validated against a strict allow-list before any HTTP or filesystem activity.
 
@@ -64,13 +64,14 @@ The CDN at academy.creatio.com is the transport contract. The GitLab repository 
          ┌─────────── clio ────────────┐
          │                              │
          │  Fallback chain on resolve:  │
-         │    1. CDN GET                │
-         │    2. ~/.clio/cache/...      │  ← stale-while-revalidate
-         │    3. embedded snapshot      │  ← built into clio.dll via
-         │                              │     MSBuild ResolveCdnSnapshot
-         │                              │     target at `dotnet pack` time
-         │                              │     (committed seed snapshot for
-         │                              │     bootstrap and offline build)
+         │    1. ~/.clio/cache/...      │  ← stale-while-revalidate
+         │    2. CDN GET                │
+         │   exhausted → throw          │
+         │     ComponentRegistryUnavailableException
+         │     → graceful MCP error     │
+         │       (success: false,       │
+         │        error: "…set          │
+         │        CLIO_COMPONENT_REGISTRY_LOCAL_FILE…")
          │                              │
          │  ComponentInfoCatalog        │
          │  IPlatformVersionResolver    │
@@ -90,7 +91,7 @@ The CDN at academy.creatio.com is the transport contract. The GitLab repository 
 | **creatio-ui** | Platform-UI team | `@CrtViewElement` decorators, `*ViewConfig` interfaces, JSDoc metadata, the Jenkins extractor (planned), the git push step into `static-files-mcp` |
 | **`static-files-mcp` GitLab repo** (`gitdigital.creatio.com/academy/static-files-mcp`) | Academy team (write access shared with the producer job) | Storage of the per-version JSON files; review/history of every published payload via git |
 | **academy.creatio.com** infra | Academy team | The 5-minute mirror job that materialises the repository as the public CDN tree under `/api/mcp/`; uptime, cache headers, TLS |
-| **clio** | clio team | HTTP client, file cache, build-time-embedded snapshot, `IPlatformVersionResolver`, `ComponentInfoCatalog`, MCP tools, guidance resources |
+| **clio** | clio team | HTTP client, file cache, `IPlatformVersionResolver`, `ComponentInfoCatalog`, MCP tools, guidance resources |
 
 The CDN is **not a domain** in the architectural sense — it is a transport contract. The contract (URL pattern, JSON shape, freshness expectations) is described in [jenkins-pipeline-spec.md](jenkins-pipeline-spec.md), which now also covers the GitLab repository layout and the mirror cadence.
 
@@ -154,7 +155,7 @@ Stages:
 1. **Branch cut in creatio-ui.** Jenkins runs the extractor in baseline mode: AST walk → Jenkins artifact + preview diff vs the latest GA publication of the previous line. **No git push to `static-files-mcp`.** This catches extractor regressions and inconsistencies BEFORE GA.
 2. **Ongoing commits on the release branch up to GA.** The same Jenkins job re-runs and refreshes the artifact. The GitLab repository is not touched.
 3. **GA tag.** Extractor runs in release mode: AST walk + git push of `8.3.0/ComponentRegistry.json` into `static-files-mcp`. The `latest/ComponentRegistry.json` alias is updated **only if** `8.3.0` is the maximum semver-sorted GA published so far (protects against accidental backports overwriting `latest`). The academy mirror copies the new files into the public CDN tree within 5 minutes.
-4. **clio bump path.** None required — clio picks up the new file on the next 5min-TTL refresh (worst-case ~10 minutes end-to-end from the producer push, accounting for the mirror lag), with no PR in clio repo. To **bake the new version into the clio embedded fallback**, a clio release is built — the MSBuild fetch target embeds `latest/ComponentRegistry.json` at that moment.
+4. **clio bump path.** None required — clio picks up the new file on the next 5min-TTL refresh (worst-case ~10 minutes end-to-end from the producer push, accounting for the mirror lag), with no PR in clio repo.
 
 ## Failure-mode design
 
@@ -162,20 +163,18 @@ Architectural invariant: **each layer degrades independently; the consumer does 
 
 | Scenario | Behavior |
 |---|---|
-| academy.creatio.com unavailable | clio first try fails → falls back to file cache (stale-while-error, no upper bound on staleness) → if no cache, embedded snapshot. AI sees a valid catalog at all times. |
-| CDN returns 404 for a requested version | clio falls back to `latest/ComponentRegistry.json`, then to file cache, then to embedded. Logged with `source=embedded`. |
-| CDN returns malformed JSON | Parse fails → fall to next tier in the chain. The bad response is **not cached**. |
-| File cache is corrupted | Parse fails → fall to embedded snapshot. Cache file is deleted. |
-| Embedded snapshot missing in DLL | Hard fail at startup with a clear error message. (Embedded is built into clio.dll by MSBuild; absence means a broken clio build.) |
+| academy.creatio.com unavailable | clio first try uses the file cache (stale-while-error, no upper bound on staleness). If the cache is empty too → throw `ComponentRegistryUnavailableException` → graceful MCP error response. AI sees a valid catalog while the cache exists; once exhausted, it sees a clear actionable error pointing at `CLIO_COMPONENT_REGISTRY_LOCAL_FILE`. |
+| CDN returns 404 for a requested version | clio falls back to `latest/ComponentRegistry.json` (cache → CDN). If `latest` is also missing → graceful MCP error response. |
+| CDN returns malformed JSON | Parse fails → fall to the next tier in the chain. The bad response is **not cached**. |
+| File cache is corrupted | Parse fails → fall to the CDN tier. The bad cache entry is deleted. |
 | Stale cache (>5min) but CDN reachable | Return stale immediately, refresh in background — AI does not wait. |
 | Stale cache (>5min) and CDN down | Return stale anyway. Stale-while-error indefinitely until CDN recovers. |
-| MSBuild fetch step fails at clio build | Use committed seed-snapshot in repo as the embedded resource. Build still succeeds; embedded just freezes at the last successful seed update. |
 | `GetSysInfo` returns version > the freshest `latest/ComponentRegistry.json` on CDN | Use the `latest/ComponentRegistry.json` content with a warning logged. AI sees `resolvedFrom: "latest-fallback"`. |
 | Academy mirror lags behind a fresh git push | Up to ~5 minutes of staleness on the CDN. clio's 5min TTL means the very next refresh after the mirror catches up flips AI onto the new payload — total worst-case freshness is ~10 minutes end-to-end. |
 | `static-files-mcp` push succeeds but mirror job fails | The CDN keeps serving the last successfully-mirrored payload. Producer fix in the mirror job; the GitLab repository remains the canonical state. |
-| Schema breaking change (e.g. wrapper object instead of array) | Catalog parse fails everywhere → fall to embedded snapshot. clio team coordinates a release that handles both shapes. Shape change requires advance coordination per [jenkins-pipeline-spec.md](jenkins-pipeline-spec.md). |
+| Schema breaking change (e.g. wrapper object instead of array) | Catalog parse fails everywhere → graceful MCP error response on the affected request; subsequent valid payloads recover the chain on next refresh. Shape change requires advance coordination per [jenkins-pipeline-spec.md](jenkins-pipeline-spec.md). |
 
-No scenario touches the AI runtime UX. The architectural strength of the multi-layer fallback is that **every degraded mode still yields a catalog**.
+The architectural posture is: **every fresh request either returns a catalog or returns a clear error message**. The error-message path is what replaces the previous in-DLL embedded snapshot — it leaves the operator a concrete next step (`CLIO_COMPONENT_REGISTRY_LOCAL_FILE`) instead of silently shipping a stale baked-in payload.
 
 ## Comparison vs. the prior NuGet model
 
@@ -184,7 +183,7 @@ No scenario touches the AI runtime UX. The architectural strength of the multi-l
 | Domains | 3 (creatio-ui, composer-repo, clio) | 2 (creatio-ui, clio) |
 | Transport | NuGet via nuget.org (under ATF owner) | HTTPS CDN at academy.creatio.com |
 | Distribution latency | clio rebuild + bump PR + merge → hours | 5min TTL refresh + 5min mirror lag → ~10 minutes worst-case, no human action |
-| Offline runtime | Yes (embedded in NuGet pkg) | Yes (embedded in clio.dll via build-time fetch) |
+| Offline runtime | Yes (embedded in NuGet pkg) | Cached read survives a transient outage; cold-start without network requires `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` |
 | Per-version model | Per-entry `availability` ranges in a single bundle | Per-file (one CDN file per platform version) |
 | AI-side overrides | Owned by AI/clio team in composer-repo | Removed in v1 |
 | Schema versioning | `schemaVersion` field in NuGet pkg | None (shape is the contract; coordinated change required) |
@@ -266,8 +265,8 @@ Note: JSDoc `@since` / `@deprecated` parsing **is allowed in extractor output** 
 
 ## What NOT to do (anti-patterns)
 
-- **Do not commit a generated registry into the clio repo at runtime.** The runtime path is CDN → cache → embedded. The embedded snapshot IS committed (seed only), but it is the fallback floor, not the runtime source.
-- **Do not run the extractor at clio build time over `creatio-ui` checkouts.** clio does not have access to the platform monorepo. The embedded snapshot is fetched from the CDN, not re-extracted.
+- **Do not commit a generated registry into the clio repo.** The runtime path is cache → CDN. There is no committed snapshot; offline development uses `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` instead.
+- **Do not run the extractor at clio build time over `creatio-ui` checkouts.** clio does not have access to the platform monorepo and does not bake a registry payload into its assembly.
 - **Do not parse `*.api.md` as JSON.** The markdown rollup is intended for review, not for parsing.
 - **Do not store per-version snapshot files in the clio repo.** Only one committed seed file. Per-version files live on the CDN.
 - **Do not do decorator extraction via regex.** AST walk via `ts-morph`.
@@ -284,7 +283,6 @@ Note: JSDoc `@since` / `@deprecated` parsing **is allowed in extractor output** 
 - **Academy 5-minute mirror job** — academy-owned scheduled sync that materialises the repository as the public CDN tree under `/api/mcp/`.
 - **Jenkins pipeline-library** in creatio-ui — the `@Library('pipeline-library')` pattern is already in use.
 - **Nx monorepo** in creatio-ui — `nx.json`, `project.json` in each lib — the standard path for an extractor task. See [jenkins-pipeline-spec.md](jenkins-pipeline-spec.md) for the proposed `nx` target naming.
-- **MSBuild custom targets** in clio's csproj — used as the fetch-at-pack mechanism (`<Target Name="ResolveCdnSnapshot" BeforeTargets="…">`).
 
 ## Previously open questions, now closed by the CDN model
 
@@ -305,11 +303,9 @@ Note: JSDoc `@since` / `@deprecated` parsing **is allowed in extractor output** 
 
 ## Still to close (lower level)
 
-- **Bootstrap of the embedded fallback.** Before the first creatio-ui Jenkins job runs (and while the `static-files-mcp` repo is being primed manually), the CDN may not yet serve `latest/ComponentRegistry.json`. clio's MSBuild fetch target handles that: fall back to the committed seed-snapshot in repo. Documented in [implementation-plan-part1-cdn.md](implementation-plan-part1-cdn.md).
-- **Seed-snapshot refresh policy.** When and how does the committed seed file in the clio repo get refreshed once the CDN is live? Options: (a) manual periodic PR, (b) GitHub Action cron, (c) frozen at first-release-after-CDN-active. **Default for v1:** the seed file is committed once with the current curated 92 records and never refreshed by automation — only manually when an embedded baseline obviously stales. This is conservative; reviewable later.
 - **Schema change coordination.** If the JSON shape on the CDN needs to evolve (e.g., add `availability`), how do clio's existing clients handle it? **Default:** clio parses lenient (extra fields ignored). A breaking shape change (`array` → `object`) requires a coordinated multi-PR cycle and is out of scope for v1.
 - **CDN cache headers.** What `Cache-Control` does academy emit for these files? `max-age=300` matches clio's 5min TTL and the 5-minute mirror cadence; longer would force AI to wait extra ticks for a freshly mirrored payload. To be confirmed with the academy team.
-- **Telemetry contract.** What does clio log on each fetch (`source=cdn|cache|embedded`, latency, HTTP status)? Documented in [clio-target-structure.md](clio-target-structure.md).
+- **Telemetry contract.** What does clio log on each fetch (`source=cdn|cache|local|unavailable`, latency, HTTP status)? Documented in [clio-target-structure.md](clio-target-structure.md).
 
 ## Why a CDN-based approach beats committing the file in clio (the alternative we did not pick)
 

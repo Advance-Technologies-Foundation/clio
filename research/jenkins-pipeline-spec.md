@@ -329,16 +329,11 @@ Before upload, the pipeline MUST validate:
 
 A validation failure is a **build failure**. The publish step is skipped.
 
-## Bootstrap and offline-build implications for clio
+## Bootstrap implications for clio
 
-The clio build (`dotnet pack`) runs an MSBuild target that GETs `latest/ComponentRegistry.json` from the CDN. While the producer pipeline is being built up, the CDN may serve an empty `latest/` (404) or only a manually-primed payload. clio handles this via:
+clio does **not** fetch the CDN at build time and does not embed a snapshot into `clio.dll`. Runtime is a two-tier `~/.clio/cache/component-registry/` → CDN chain; when both miss, AI sees a graceful MCP error response pointing at the `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` developer override.
 
-- A committed seed-snapshot at `clio/Command/McpServer/Data/ComponentRegistry.seed.json` (the file moved/renamed from the current in-repo `ComponentRegistry.json`).
-- The MSBuild target falls back to the seed file when the CDN fetch fails.
-
-This means clio releases can ship before the Jenkins automation is live, and offline builds (CI runners without internet) continue to work — they just freeze the embedded snapshot at whatever the seed file is.
-
-Cross-team coordination: the creatio-ui team's "first push to `static-files-mcp`" milestone unblocks clio's MSBuild target picking up a fresh `latest/ComponentRegistry.json` automatically. Until that milestone, the `static-files-mcp` repository is primed manually for the GA versions that AI needs today (`8.3.4/...` and `latest/...` are already live), and clio's embedded snapshot tracks the seed file.
+Cross-team coordination: until the Jenkins automation lands, the `static-files-mcp` repository is primed manually for the GA versions AI needs today (`8.3.4/...` and `latest/...` are already live), and the academy mirror copies the change to the public CDN within ≤5 minutes. The "first automated push" milestone changes nothing on the clio side — there is no clio release tied to a seed refresh anymore.
 
 ## Failure modes (producer side)
 

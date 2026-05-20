@@ -75,31 +75,38 @@ When adding or updating an MCP tool, also review:
 
 The curated Freedom UI component catalog consumed by `get-component-info`
 no longer lives as a flat JSON file in the repo. Runtime resolution happens
-through a three-layer fallback chain implemented in
+through a two-layer fallback chain implemented in
 `Tools/ComponentRegistryClient.cs`:
 
-1. **CDN.** `https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json`
+1. **File cache.** `~/.clio/cache/component-registry/{version}.json` with a
+   5-minute TTL and a `{version}.meta.json` sidecar (ETag, Last-Modified, SHA-256).
+   The TTL is aligned with the 5-minute academy mirror cadence so producer
+   pushes reach AI within roughly 10 minutes worst-case. Cache hits return
+   synchronously; stale entries return immediately while a single background
+   refresh runs (stale-while-revalidate). AI requests never block on the network.
+2. **CDN.** `https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json`
    (override via `CLIO_COMPONENT_REGISTRY_CDN_BASE_URL` env var). The academy
    edge is a 5-minute mirror of the `static-files-mcp` GitLab repository
    (`gitdigital.creatio.com/academy/static-files-mcp`) where per-version files
    and the `latest/ComponentRegistry.json` alias are maintained by the
    producer-side CI (Jenkins job in `creatio-ui` is planned; files are added
    manually until then). Versions that have not been published yet return 404
-   and the chain falls through to the cache, the `latest` alias, and finally
-   the embedded snapshot — this is expected.
-2. **File cache.** `~/.clio/cache/component-registry/{version}.json` with a
-   5-minute TTL and a `{version}.meta.json` sidecar (ETag, Last-Modified, SHA-256).
-   The TTL is aligned with the 5-minute academy mirror cadence so producer
-   pushes reach AI within roughly 10 minutes worst-case. Cache hits return
-   synchronously; stale entries return immediately while a single background
-   refresh runs (stale-while-revalidate). AI requests never block on the network.
-3. **Embedded snapshot in `clio.dll`.** Manifest resources
-   `Clio.ComponentRegistry.ComponentRegistry.json` and
-   `Clio.ComponentRegistry.embedded-metadata.json` are produced at clio build
-   time by the `ResolveCdnSnapshot` MSBuild target — that target GETs the CDN
-   `latest/ComponentRegistry.json` and on failure copies
-   `Command/McpServer/Data/ComponentRegistry.seed.json` instead. So even an
-   offline `dotnet build` succeeds and ships a valid catalog inside the assembly.
+   and the chain falls through to the `latest` alias.
+
+Above the registry chain sits the developer-only override: when
+`CLIO_COMPONENT_REGISTRY_LOCAL_FILE` points at a JSON file on disk, that
+file is served directly and the cache/CDN tiers are skipped. The override
+is fail-fast (missing file throws) and never writes to the cache.
+
+When the chain runs out of tiers (the file cache is empty AND the CDN is
+unreachable AND no local override is set), `GetAsync` throws
+`ComponentRegistryUnavailableException`. `ComponentInfoTool`'s catch-all
+turns the exception into a graceful MCP response with `success: false`
+and an `error` field that points the operator at
+`CLIO_COMPONENT_REGISTRY_LOCAL_FILE` for offline development. There is no
+in-DLL snapshot — the previous `Command/McpServer/Data/ComponentRegistry.seed.json`
+seed file and the `ResolveCdnSnapshot` MSBuild target were retired once the
+academy CDN went live (see PR clio#599 history for the migration).
 
 The platform version is resolved per request by
 `Tools/PlatformVersionResolver.cs` via cliogate `GET /rest/CreatioApiGateway/GetSysInfo`,

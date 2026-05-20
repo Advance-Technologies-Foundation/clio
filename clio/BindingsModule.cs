@@ -253,7 +253,6 @@ public class BindingsModule {
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
 		services.AddTransient<IPageBundleBuilder, PageBundleBuilder>();
 		services.AddSingleton<TimeProvider>(TimeProvider.System);
-		services.AddSingleton<IEmbeddedRegistryReader, EmbeddedRegistryReader>();
 		services.AddSingleton<IComponentRegistryCacheStore, ComponentRegistryCacheStore>();
 		services.AddSingleton<IComponentRegistryDocsCacheStore, ComponentRegistryDocsCacheStore>();
 		services.AddSingleton<IComponentRegistryClient, ComponentRegistryClient>();

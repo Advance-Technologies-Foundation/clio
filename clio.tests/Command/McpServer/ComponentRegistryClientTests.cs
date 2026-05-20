@@ -101,23 +101,26 @@ public sealed class ComponentRegistryClientTests {
 	}
 
 	[Test]
-	[Description("When CDN returns 5xx repeatedly and no cache exists, the client falls back to the embedded snapshot.")]
-	public async Task GetAsync_Falls_Back_To_Embedded_When_Cdn_Down() {
+	[Description("When CDN returns 5xx repeatedly and no cache exists, the client surfaces ComponentRegistryUnavailableException with a message that points operators at the local-override env var.")]
+	public async Task GetAsync_Throws_When_Cache_Empty_And_Cdn_Down() {
 		// Arrange
 		FakeRegistryCacheStore cache = new();
 		FakeHttpHandler handler = new();
 		handler.EnqueueAlways(HttpStatusCode.InternalServerError, body: null);
-		FakeEmbeddedRegistryReader embedded = new(SamplePayload, "latest");
-		ComponentRegistryClient client = CreateClient(cache, handler, embedded);
+		ComponentRegistryClient client = CreateClient(cache, handler);
 
 		// Act
-		ComponentRegistryFetchResult result = await client.GetAsync("8.2.1");
+		System.Func<System.Threading.Tasks.Task> act = async () => await client.GetAsync("8.2.1");
 
 		// Assert
-		result.Source.Should().Be(ComponentRegistrySource.Embedded,
-			because: "after CDN exhaustion and empty cache the embedded snapshot is the final tier");
-		result.ResolvedVersion.Should().Be("latest",
-			because: "embedded snapshot carries its own version label baked at clio build time");
+		ComponentRegistryUnavailableException ex = (await act.Should().ThrowAsync<ComponentRegistryUnavailableException>(
+			because: "after CDN exhaustion + empty cache + no local override the chain has no tier left")).Which;
+		ex.Message.Should().Contain("CLIO_COMPONENT_REGISTRY_LOCAL_FILE",
+			because: "the message must guide the operator to the documented offline override");
+		ex.Message.Should().Contain(CdnBaseUrl,
+			because: "the message must surface the CDN base URL that the client could not reach");
+		ex.RequestedVersion.Should().Be("8.2.1");
+		ex.CdnBaseUrl.Should().Be(CdnBaseUrl);
 	}
 
 	[Test]
@@ -138,7 +141,7 @@ public sealed class ComponentRegistryClientTests {
 	}
 
 	[Test]
-	[Description("CLIO_COMPONENT_REGISTRY_LOCAL_FILE wins over cache, CDN, and embedded — and is never written to cache.")]
+	[Description("CLIO_COMPONENT_REGISTRY_LOCAL_FILE wins over the cache and the CDN — and is never written to cache.")]
 	public async Task GetAsync_Returns_Local_Override_When_Env_Var_Points_To_Existing_File() {
 		// Arrange
 		const string overridePath = "/tmp/local-override.json";
@@ -239,14 +242,11 @@ public sealed class ComponentRegistryClientTests {
 	private static ComponentRegistryClient CreateClient(
 		FakeRegistryCacheStore cache,
 		FakeHttpHandler handler,
-		IEmbeddedRegistryReader? embedded = null,
 		IFileSystem? fileSystem = null) {
-		embedded ??= new FakeEmbeddedRegistryReader(SamplePayload, "latest");
 		fileSystem ??= new MockFileSystem();
 		return new ComponentRegistryClient(
 			new FakeHttpClientFactory(handler),
 			cache,
-			embedded,
 			fileSystem,
 			NullLogger<ComponentRegistryClient>.Instance,
 			CdnBaseUrl);
@@ -320,11 +320,6 @@ public sealed class ComponentRegistryClientTests {
 			WrittenVersions.Add(version);
 			return Task.CompletedTask;
 		}
-	}
-
-	private sealed class FakeEmbeddedRegistryReader(string payload, string version) : IEmbeddedRegistryReader {
-		public Stream OpenRegistryStream() => new MemoryStream(Encoding.UTF8.GetBytes(payload), writable: false);
-		public string EmbeddedVersion => version;
 	}
 
 	private sealed class EnvironmentVariableScope : IDisposable {
