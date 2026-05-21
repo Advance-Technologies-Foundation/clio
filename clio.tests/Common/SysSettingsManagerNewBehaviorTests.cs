@@ -345,10 +345,71 @@ public class SysSettingsManagerNewBehaviorTests {
 	#region CBinary sanity
 
 	[Test]
+	[Description("CBinary subclass should report 'Binary' as its value-type-name for serialization parity with other typed settings.")]
 	public void CBinary_ExposesBinaryValueTypeName() {
 		CBinary sut = new("Name", "Code", value: null, isCacheable: true,
 			description: "", isPersonal: false);
-		sut.ValueTypeName.Should().Be("Binary");
+		sut.ValueTypeName.Should().Be("Binary",
+			because: "platform-side InsertSysSettingRequest expects the Creatio internal type name 'Binary' for binary settings");
+	}
+
+	#endregion
+
+	#region UpdateSysSetting — code validation & safe JSON encoding
+
+	[Test]
+	[Description("UpdateSysSetting must reject codes containing non-identifier characters before contacting the platform.")]
+	public void UpdateSysSetting_RejectsCode_WithInvalidIdentifierCharacters() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
+
+		bool result = sut.UpdateSysSetting("Usr\"Inject", "value");
+
+		result.Should().BeFalse(
+			because: "an agent-supplied code with a quote character could otherwise break the request JSON payload");
+		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("UpdateSysSetting must encode string values via JsonSerializer so quotes and control characters cannot corrupt the request body.")]
+	public void UpdateSysSetting_EscapesQuotesInValuePayload() {
+		DataProviderMock providerMock = SetupSysSettingsMock(Guid.NewGuid(), "UsrEscapeCode", "Text");
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		string capturedBody = null;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
+			.Returns("""{"saveResult":{"UsrEscapeCode":true},"success":false}""");
+		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
+
+		sut.UpdateSysSetting("UsrEscapeCode", "with \"quote\" and \\ slash").Should().BeTrue();
+
+		capturedBody.Should().NotBeNull();
+		capturedBody.Should().NotContain("\"quote\"",
+			because: "embedded quotes must be encoded by the serializer; leaving them literal would close the JSON value early");
+		capturedBody.Should().MatchRegex(@"(\\u0022|\\"")quote(\\u0022|\\"")",
+			because: "the serializer escapes inner quotes either as \\u0022 or \\\" depending on its encoder settings");
+		capturedBody.Should().Contain("\\\\ slash",
+			because: "backslashes must be JSON-escaped through JsonSerializer to avoid request corruption");
+	}
+
+	#endregion
+
+	#region GetSysSettingValueByCode — All-Users-only fallback
+
+	[Test]
+	[Description("GetSysSettingValueByCode must return empty when only personal-user values exist; falling back to a non-All-Users row would mislead callers expecting the global default.")]
+	public void GetSysSettingValueByCode_ReturnsEmpty_WhenOnlyPersonalValuesExist() {
+		Guid settingId = Guid.NewGuid();
+		DataProviderMock providerMock = SetupSysSettingsMock(settingId, "UsrPersonalOnly", "Text",
+			valueRow: new Dictionary<string, object> {
+				{ "SysAdminUnit", Guid.NewGuid() },
+				{ "TextValue", "personal-value" }
+			});
+		ISysSettingsManager sut = BuildSut(providerMock);
+
+		string value = sut.GetSysSettingValueByCode("UsrPersonalOnly");
+
+		value.Should().BeEmpty(
+			because: "the MCP get-sys-setting flow advertises the All-Users default; falling back to a personal row would leak another user's value");
 	}
 
 	#endregion

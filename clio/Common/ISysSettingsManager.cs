@@ -52,7 +52,7 @@ public interface ISysSettingsManager
 
 	Guid? FindSchemaUIdByName(string schemaName);
 
-	bool UpdateSysSetting(string code, object value, string valueTypeName = "");
+	bool UpdateSysSetting(string code, object value, string valueTypeName = "Text");
 
 	#endregion
 
@@ -188,6 +188,14 @@ public class SysSettingsManager : ISysSettingsManager
 
 	private const string LookupTypeName = "Lookup";
 
+	/// <summary>
+	/// Permitted characters in a sys-setting code: must start with a letter and contain
+	/// only ASCII letters, digits, or underscore. Mirrors Creatio platform constraints and
+	/// blocks malformed codes from reaching the DataService endpoint.
+	/// </summary>
+	private static readonly System.Text.RegularExpressions.Regex SysSettingCodeRegex
+		= new("^[A-Za-z][A-Za-z0-9_]*$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
 	private SysSettings GetSysSettingByCodeWithValues(string code){
 		SysSettings sysSetting = GetSysSettingByCode(code);
 		if (sysSetting is null) {
@@ -229,8 +237,7 @@ public class SysSettingsManager : ISysSettingsManager
 			return providerValue ?? string.Empty;
 		}
 		SysSettingsValue value = sysSetting.SysSettingsValues
-			.FirstOrDefault(v => v.SysAdminUnitId == AllUsersAdminUnitId)
-			?? sysSetting.SysSettingsValues.FirstOrDefault();
+			.FirstOrDefault(v => v.SysAdminUnitId == AllUsersAdminUnitId);
 		return value is null ? string.Empty : FormatTypedValue(sysSetting, value);
 	}
 
@@ -283,70 +290,76 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	public bool UpdateSysSetting(string code, object value, string valueTypeName = "Text"){
-		string requestData = string.Empty;
+		if (string.IsNullOrWhiteSpace(code) || !SysSettingCodeRegex.IsMatch(code)) {
+			_logger.WriteError(
+				$"SysSettings code '{code}' is not a valid Creatio identifier (must start with a letter and contain only letters, digits, or underscore).");
+			return false;
+		}
 		SysSettings sysSetting = GetSysSettingByCode(code);
 		string optionsType = sysSetting is not null
 			? sysSetting.ValueTypeName : valueTypeName;
+		object payloadValue;
 		if (optionsType.Contains("Text") || optionsType.Contains("Date") || optionsType.Contains("Time") || optionsType.Contains("Lookup")) {
-			if (optionsType == "Lookup") {
-				bool isGuid = Guid.TryParse(value.ToString(), out Guid id);
+			string stringValue = value?.ToString() ?? string.Empty;
+			if (optionsType == LookupTypeName) {
+				bool isGuid = Guid.TryParse(stringValue, out Guid id);
 				if (!isGuid) {
 					Guid referenceSchemaUIduid = sysSetting.ReferenceSchemaUIdId;
 					string entityName = GetSysSchemaNameByUid(referenceSchemaUIduid);
-					Guid entityId = GetEntityIdByDisplayValue(entityName, value.ToString());
-					value = entityId.ToString();
+					Guid entityId = GetEntityIdByDisplayValue(entityName, stringValue);
+					stringValue = entityId.ToString();
 				}
 				else {
-					value = id.ToString();
+					stringValue = id.ToString();
 				}
 			}
 			if (new[] { "Date", "DateTime", "Time" }.Contains(optionsType)) {
-				bool isDate = DateTime.TryParse(value.ToString(), CultureInfo.InvariantCulture, out DateTime dtValue);
+				bool isDate = DateTime.TryParse(stringValue, CultureInfo.InvariantCulture, out DateTime dtValue);
 				if (isDate) {
-					value = dtValue.ToString("yyyy-MM-ddTHH:mm:ss.fff");
+					stringValue = dtValue.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture);
 				}
 				else {
 					_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid date format.");
 					return false;
 				}
 			}
-			//Enclosed opts.Value in "", otherwise update fails for all text settings
-			requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + $"\"{code}\":\"{value}\"" + "}}";
-		} 
-		else {
-			if (optionsType.Contains("Boolean")) {
-				
-				bool isBool = bool.TryParse(value.ToString(), out bool boolValue);
-				if (isBool) {
-					value = boolValue.ToString().ToLower(CultureInfo.InvariantCulture);
-				}
-				else {
-					_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid boolean format.");
-					return false;
-				}
-			}
-
-			if (optionsType.Contains("Currency") || optionsType.Contains("Decimal")) {
-				bool isDecimal = decimal.TryParse(value.ToString(), CultureInfo.InvariantCulture, out decimal decimalValue);
-				if (isDecimal) {
-					value = decimalValue.ToString(CultureInfo.InvariantCulture);
-				}
-				else {
-					_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid decimal format.");
-					return false;
-				}
-			}
-			if (optionsType.Contains("Integer")) {
-				bool isInt = int.TryParse(value.ToString(), out int intValue);
-				if (isInt) {
-					value = intValue;
-				}
-				else {
-					_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid integer format.");
-				}
-			}
-			requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + $"\"{code}\":{value}" + "}}";
+			payloadValue = stringValue;
 		}
+		else if (optionsType.Contains("Boolean")) {
+			bool isBool = bool.TryParse(value?.ToString(), out bool boolValue);
+			if (!isBool) {
+				_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid boolean format.");
+				return false;
+			}
+			payloadValue = boolValue;
+		}
+		else if (optionsType.Contains("Currency") || optionsType.Contains("Decimal")) {
+			bool isDecimal = decimal.TryParse(value?.ToString(), NumberStyles.Number,
+				CultureInfo.InvariantCulture, out decimal decimalValue);
+			if (!isDecimal) {
+				_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid decimal format.");
+				return false;
+			}
+			payloadValue = decimalValue;
+		}
+		else if (optionsType.Contains("Integer")) {
+			bool isInt = int.TryParse(value?.ToString(), NumberStyles.Integer,
+				CultureInfo.InvariantCulture, out int intValue);
+			if (!isInt) {
+				_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid integer format.");
+				return false;
+			}
+			payloadValue = intValue;
+		}
+		else {
+			_logger.WriteError(
+				$"SysSettings with code: {code} is not updated. Unsupported value-type-name '{optionsType}'.");
+			return false;
+		}
+		string requestData = JsonSerializer.Serialize(new Dictionary<string, object> {
+			["isPersonal"] = false,
+			["sysSettingsValues"] = new Dictionary<string, object> { [code] = payloadValue }
+		}, _jsonSerializerOptions);
 		string postSysSettingsValuesUrl
 			= _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
 		try {
