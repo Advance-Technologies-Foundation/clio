@@ -23,7 +23,7 @@ internal static class BusinessRuleMetadataConverter {
 		BusinessRule rule,
 		string entitySchemaName) {
 		if (TryGetApplyFilterAction(rule, out ApplyFilterBusinessRuleAction? action)) {
-			return BuildApplyFilterRules(attributeMap, rule, entitySchemaName, action!);
+			return BuildApplyFilterRules(attributeMap, rule, action!);
 		}
 
 		return [ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName)];
@@ -328,7 +328,6 @@ internal static class BusinessRuleMetadataConverter {
 	private static IReadOnlyList<BusinessRuleMetadataDto> BuildApplyFilterRules(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule,
-		string entitySchemaName,
 		ApplyFilterBusinessRuleAction action) {
 		string normalizedTargetFilterPath = NormalizeRelativeFilterPath(action.TargetFilterPath);
 		string? normalizedSourceFilterPath = NormalizeOptionalRelativeFilterPath(action.SourceFilterPath);

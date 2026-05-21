@@ -40,20 +40,9 @@ internal static class BusinessRuleValidator {
 		if (rule.Actions is null || rule.Actions.Count == 0) {
 			throw new ArgumentException("rule.actions must contain at least one action.");
 		}
-		if (rule.Actions.Exists(action =>
-			    string.Equals(action?.ActionType, ApplyFilterActionTypeName, StringComparison.OrdinalIgnoreCase))
-			&& !isApplyFilterRule) {
-			throw new ArgumentException(
-				"apply-filter rules support exactly one action and cannot be combined with other entity business-rule actions.");
-		}
-		if (string.IsNullOrWhiteSpace(rule.Condition.LogicalOperation)) {
-			throw new ArgumentException("rule.condition.logicalOperation is required.");
-		}
 
-		if (!string.Equals(rule.Condition.LogicalOperation, "AND", StringComparison.OrdinalIgnoreCase)
-			&& !string.Equals(rule.Condition.LogicalOperation, "OR", StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException($"Unsupported rule.condition.logicalOperation '{rule.Condition.LogicalOperation}'. Use AND or OR.");
-		}
+		ValidateNoMixedApplyFilter(rule, isApplyFilterRule);
+		ValidateLogicalOperation(rule.Condition);
 
 		if (rule.Condition.Conditions is null) {
 			throw new ArgumentException("rule.condition.conditions is required.");
@@ -63,15 +52,47 @@ internal static class BusinessRuleValidator {
 			throw new ArgumentException("rule.condition.conditions must contain at least one condition.");
 		}
 
-		foreach (BusinessRuleCondition condition in rule.Condition.Conditions) {
+		ValidateAllConditions(rule.Condition.Conditions, attributeMap);
+		ValidateAllActions(rule.Actions, attributeMap, validateAction);
+	}
+
+	private static void ValidateNoMixedApplyFilter(BusinessRule rule, bool isApplyFilterRule) {
+		if (rule.Actions.Exists(action =>
+			    string.Equals(action?.ActionType, ApplyFilterActionTypeName, StringComparison.OrdinalIgnoreCase))
+			&& !isApplyFilterRule) {
+			throw new ArgumentException(
+				"apply-filter rules support exactly one action and cannot be combined with other entity business-rule actions.");
+		}
+	}
+
+	private static void ValidateLogicalOperation(BusinessRuleConditionGroup condition) {
+		if (string.IsNullOrWhiteSpace(condition.LogicalOperation)) {
+			throw new ArgumentException("rule.condition.logicalOperation is required.");
+		}
+
+		if (!string.Equals(condition.LogicalOperation, "AND", StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(condition.LogicalOperation, "OR", StringComparison.OrdinalIgnoreCase)) {
+			throw new ArgumentException($"Unsupported rule.condition.logicalOperation '{condition.LogicalOperation}'. Use AND or OR.");
+		}
+	}
+
+	private static void ValidateAllConditions(
+		List<BusinessRuleCondition> conditions,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		foreach (BusinessRuleCondition condition in conditions) {
 			if (condition is null) {
 				throw new ArgumentException("rule.condition.conditions[*] is required.");
 			}
 
 			ValidateCondition(condition, attributeMap);
 		}
+	}
 
-		foreach (BusinessRuleAction action in rule.Actions) {
+	private static void ValidateAllActions(
+		List<BusinessRuleAction> actions,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction) {
+		foreach (BusinessRuleAction action in actions) {
 			if (action is null) {
 				throw new ArgumentException("rule.actions[*].type is required.");
 			}
