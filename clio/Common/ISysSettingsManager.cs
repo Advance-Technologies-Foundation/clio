@@ -186,8 +186,16 @@ public class SysSettingsManager : ISysSettingsManager
 		string selectQueryUrl = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
 		string responseJson = _creatioClient.ExecutePostRequest(selectQueryUrl, requestBody.ToString(NewtonsoftJson.Formatting.None));
 		JObject json = JObject.Parse(responseJson);
-		string jsonPath = "$.rows[0].Id";
-		string id = (string)json.SelectToken(jsonPath);
+		JArray rows = json["rows"] as JArray;
+		if (rows is null || rows.Count == 0) {
+			return Guid.Empty;
+		}
+		if (rows.Count > 1) {
+			throw new InvalidOperationException(
+				$"Ambiguous lookup display value '{optsValue}' for entity '{entityName}': {rows.Count} rows match. " +
+				"Pass the record GUID instead of the display name to disambiguate.");
+		}
+		string id = (string)rows[0]["Id"];
 		bool isGuid = Guid.TryParse(id, out Guid value);
 		return isGuid ? value : Guid.Empty;
 	}

@@ -594,6 +594,38 @@ public class SysSettingsManagerNewBehaviorTests {
 	}
 
 	[Test]
+	[Description("When multiple lookup rows share a display name, GetEntityIdByDisplayValue must fail loudly with InvalidOperationException so the caller is told to disambiguate by GUID — silently picking rows[0] would write the wrong record.")]
+	public void UpdateSysSetting_LookupDisplayName_RejectsAmbiguousMatches() {
+		Guid settingId = Guid.NewGuid();
+		Guid refSchemaUId = Guid.NewGuid();
+		DataProviderMock providerMock = new();
+		providerMock.MockItems("SysSettings").Returns(new List<Dictionary<string, object>> {
+			new() {
+				{ "Id", settingId }, { "Code", "UsrLookupCode" }, { "Name", "UsrLookupCode" },
+				{ "ValueTypeName", "Lookup" }, { "Description", "" },
+				{ "IsCacheable", true }, { "IsPersonal", false }, { "IsSSPAvailable", false },
+				{ "ReferenceSchemaUId", refSchemaUId }
+			}
+		});
+		providerMock.MockItems("SysSchema").Returns(new List<Dictionary<string, object>> {
+			new() { { "Id", Guid.NewGuid() }, { "UId", refSchemaUId }, { "Name", "UsrPhoneFormat" } }
+		});
+		providerMock.MockItems("SysSettingsValue").Returns(new List<Dictionary<string, object>>());
+
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("""{"rows":[{"Id":"11111111-1111-1111-1111-111111111111"},{"Id":"22222222-2222-2222-2222-222222222222"}]}""");
+		SysSettingsManager sut = BuildSutWithStubbedTemplate(providerMock, applicationClient,
+			SelectIdByDisplayValueTemplate);
+
+		System.Action act = () => sut.UpdateSysSetting("UsrLookupCode", "Duplicated display", "Lookup");
+
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*Ambiguous lookup display value*",
+				because: "multi-row matches are non-deterministic — silently picking rows[0] would set the sys-setting to the wrong record");
+	}
+
+	[Test]
 	[Description("If the SelectQuery template ever drops the expected parameter path, GetEntityIdByDisplayValue must fail loudly instead of silently sending a request with the un-replaced placeholder.")]
 	public void UpdateSysSetting_LookupDisplayName_FailsLoud_WhenTemplateMissesParameterPath() {
 		Guid settingId = Guid.NewGuid();

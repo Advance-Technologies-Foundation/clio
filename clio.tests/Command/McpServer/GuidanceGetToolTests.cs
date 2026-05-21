@@ -443,5 +443,13 @@ public sealed class GuidanceGetToolTests {
 			because: "the guide must explain how Lookup display names resolve to GUIDs server-side");
 		result.Article.Text.Should().Contain("Binary",
 			because: "the guide must explain Binary's exclusion from the advertised surface");
+		result.Article.Text.Should().Contain("named JSON arguments",
+			because: "the guide must explicitly tell agents that the MCP tools take named JSON args, not positional CLI args, so copy/paste of placeholder syntax does not break the call");
+		result.Article.Text.Should().Contain("ambiguous matches",
+			because: "the guide must document that multi-row display-name resolution is rejected and recommend GUID disambiguation");
+		result.Article.Text.Should().Contain("escapes the value safely",
+			because: "the guide must promise a behavioral escape guarantee instead of leaking the System.Text.Json implementation detail to agents");
+		result.Article.Text.Should().Contain("shell-execution tool",
+			because: "the CLI anti-pattern must be tool-agnostic (Bash/run_in_terminal/execution_subagent) rather than naming one specific shell tool");
 	}
 }
