@@ -265,6 +265,19 @@ public class SysSettingsManager : ISysSettingsManager
 		return value is null ? string.Empty : FormatTypedValue(sysSetting, value);
 	}
 
+	public T GetSysSettingValueByCode<T>(string code){
+		string val = GetSysSettingValueByCode(code);
+		return typeof(T) switch {
+			_ when typeof(T) == typeof(string) => (T)(object)val,
+			_ when typeof(T) == typeof(int) => (T)ConvertToInt(val),
+			_ when typeof(T) == typeof(decimal) => (T)ConvertToDecimal(val),
+			_ when typeof(T) == typeof(bool) => (T)ConvertToBool(val),
+			_ when typeof(T) == typeof(DateTime) => (T)ConvertToDateTime(val),
+			_ when typeof(T) == typeof(Guid) => (T)ConvertToGuid(val),
+			_ => throw new ArgumentOutOfRangeException()
+		};
+	}
+
 	/// <summary>
 	/// Returns the All-Users default value of a sys-setting (never a personal/current-user override).
 	/// This is the contract the MCP get-sys-setting tool advertises; legacy
@@ -279,19 +292,6 @@ public class SysSettingsManager : ISysSettingsManager
 		SysSettingsValue value = sysSetting.SysSettingsValues
 			.FirstOrDefault(v => v.SysAdminUnitId == AllUsersAdminUnitId);
 		return value is null ? string.Empty : FormatTypedValue(sysSetting, value);
-	}
-
-	public T GetSysSettingValueByCode<T>(string code){
-		string val = GetSysSettingValueByCode(code);
-		return typeof(T) switch {
-			_ when typeof(T) == typeof(string) => (T)(object)val,
-			_ when typeof(T) == typeof(int) => (T)ConvertToInt(val),
-			_ when typeof(T) == typeof(decimal) => (T)ConvertToDecimal(val),
-			_ when typeof(T) == typeof(bool) => (T)ConvertToBool(val),
-			_ when typeof(T) == typeof(DateTime) => (T)ConvertToDateTime(val),
-			_ when typeof(T) == typeof(Guid) => (T)ConvertToGuid(val),
-			_ => throw new ArgumentOutOfRangeException()
-		};
 	}
 
 	public InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
