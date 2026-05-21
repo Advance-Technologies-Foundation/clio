@@ -3094,7 +3094,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildListSysSettings() {
 		return new ToolContractDefinition(
 			SysSettingsListTool.ListSysSettingsToolName,
-			"Lists Creatio system settings with their All-Users default values, value-type-name, and metadata. Binary-type settings are omitted to keep responses small — use get-sys-setting by code to read one.",
+			"Lists Creatio system settings with their All-Users default values, value-type-name, and metadata. Binary-type settings are excluded — Binary read/write is not exposed through this MCP tool set and needs the dedicated upload/download flow.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
@@ -3132,15 +3132,16 @@ internal static class ToolContractCatalog {
 			SysSettingCreateTool.CreateSysSettingToolName,
 			"Creates a new Creatio system setting and optionally assigns an initial All-Users default value. " +
 			"Allowed value-type-name values match Creatio internal names: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, " +
-			"Boolean, DateTime, Date, Time, Integer, Money, Float, Binary, Lookup. " +
-			"Aliases: Currency = Money, Decimal = Float. For Lookup type, reference-schema-name is required.",
+			"Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. " +
+			"Aliases: Currency = Money, Decimal = Float. Binary sys-settings are not exposed through this tool set. " +
+			"For Lookup type, reference-schema-name is required.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, SysSettingCodeFieldName, "name", SysSettingValueTypeFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(SysSettingCodeFieldName, StringType, "Sys-setting code (unique)."),
 					Field("name", StringType, "Display name of the sys-setting."),
-					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Binary, Lookup. Aliases: Currency = Money, Decimal = Float."),
+					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. Aliases: Currency = Money, Decimal = Float. Binary is not exposed by this tool set."),
 					Field(SysSettingValueFieldName, StringType, "Optional initial All-Users default value applied via update-sys-setting after creation."),
 					Field("description", StringType, "Optional description text."),
 					Field("is-cacheable", BooleanType, "Whether the setting is cacheable. Defaults to true."),

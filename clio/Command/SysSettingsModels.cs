@@ -53,7 +53,7 @@ public sealed record CreateSysSettingArgs(
 	[property: Required]
 	string Name,
 	[property: JsonPropertyName("value-type-name")]
-	[property: Description("Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Binary, Lookup. Aliases: Currency = Money, Decimal = Float.")]
+	[property: Description("Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. Aliases: Currency = Money, Decimal = Float. Binary sys-settings are not exposed by this tool set — they need a dedicated upload flow.")]
 	[property: Required]
 	string ValueTypeName,
 	[property: JsonPropertyName("value")]

@@ -38,10 +38,15 @@ namespace Clio.Command
 
 		private const string LookupTypeName = "Lookup";
 
+		// Binary is intentionally excluded from the MCP create/update surface: the
+		// platform's PostSysSettingsValues endpoint is scalar-only, and the
+		// SysSettingsValue model does not expose a BinaryValue column, so get-sys-setting
+		// cannot read a binary value back either. Binary sys-settings need a dedicated
+		// upload/download path that is out of scope for this PR.
 		private static readonly string[] SupportedValueTypeNames = [
 			"Text", "ShortText", "MediumText", "LongText", "SecureText", "MaxSizeText",
 			"Boolean", "DateTime", "Date", "Time", "Integer",
-			"Money", "Float", "Binary", LookupTypeName,
+			"Money", "Float", LookupTypeName,
 			"Currency", "Decimal"
 		];
 
@@ -136,11 +141,15 @@ namespace Clio.Command
 
 		/// <summary>
 		/// Returns the catalog of sys-settings on the target environment with code, display name, value-type, default value, and cacheable/personal flags.
+		/// Binary-type settings are excluded from the result — Binary read/write is not exposed through this MCP tool set
+		/// (no BinaryValue column in SysSettingsValue and PostSysSettingsValues is scalar-only), so listing them would be misleading.
 		/// </summary>
 		public SysSettingsListResult TryListSysSettings(ListSysSettingsArgs args) {
 			try {
 				List<SysSettings> settings = _sysSettingsManager.GetAllSysSettingsWithValues();
-				SysSettingItem[] items = settings.Select(setting => new SysSettingItem(
+				SysSettingItem[] items = settings
+					.Where(setting => !string.Equals(setting.ValueTypeName, "Binary", StringComparison.Ordinal))
+					.Select(setting => new SysSettingItem(
 						setting.Code,
 						setting.Name,
 						setting.ValueTypeName,

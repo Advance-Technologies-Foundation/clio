@@ -27,7 +27,7 @@ public static class SysSettingPrompt {
 		[Description("Display name of the sys-setting")]
 		string name,
 		[Required]
-		[Description("Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Binary, Lookup. Aliases: Currency=Money, Decimal=Float")]
+		[Description("Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. Aliases: Currency=Money, Decimal=Float. Binary is not exposed by this tool set.")]
 		string valueTypeName,
 		[Description("Optional initial All-Users default value")]
 		string value = null,
@@ -40,8 +40,9 @@ public static class SysSettingPrompt {
 		 on environment `{environmentName}` with display name `{name}` and value type `{valueTypeName}`.
 		 Pass `environment-name`, `code`, `name`, and `value-type-name` exactly as provided. The `value-type-name`
 		 must be a Creatio internal name: `Text`, `ShortText`, `MediumText`, `LongText`, `SecureText`,
-		 `MaxSizeText`, `Boolean`, `DateTime`, `Date`, `Time`, `Integer`, `Money`, `Float`, `Binary`, `Lookup`.
-		 Aliases `Currency` and `Decimal` map to `Money` and `Float` respectively.
+		 `MaxSizeText`, `Boolean`, `DateTime`, `Date`, `Time`, `Integer`, `Money`, `Float`, `Lookup`.
+		 Aliases `Currency` and `Decimal` map to `Money` and `Float` respectively. `Binary` is not exposed by this
+		 tool set — binary sys-settings need a dedicated upload flow that lives outside MCP.
 		 For `Lookup` settings, `reference-schema-name` is required and must reference an entity schema that exists
 		 on the target environment (e.g. `Contact`, `UsrPhoneFormat`). For non-Lookup settings, omit it.
 		 When the caller supplies an initial value, pass it via `value`; clio then invokes
@@ -87,11 +88,10 @@ public static class SysSettingPrompt {
 		$"""
 		 Use clio mcp server `{SysSettingsListTool.ListSysSettingsToolName}` to discover sys-settings on
 		 environment `{environmentName}`. The response includes code, display name, value-type-name, default
-		 value, and the cacheable/personal flags for every setting. Binary-type settings are omitted from the
-		 list to keep the payload small — read those individually with
-		 `{SysSettingGetTool.GetSysSettingToolName}` when needed. Use this catalog before
-		 `{SysSettingGetTool.GetSysSettingToolName}` or `{SysSettingUpdateTool.UpdateSysSettingToolName}` when the
-		 exact setting code is unknown.
+		 value, and the cacheable/personal flags for every setting. Binary-type settings are excluded from the
+		 list — Binary read/write is not exposed through this MCP tool set and needs the dedicated upload/download flow.
+		 Use this catalog before `{SysSettingGetTool.GetSysSettingToolName}` or
+		 `{SysSettingUpdateTool.UpdateSysSettingToolName}` when the exact setting code is unknown.
 		 """;
 
 	/// <summary>

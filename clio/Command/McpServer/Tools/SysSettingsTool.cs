@@ -44,7 +44,7 @@ public sealed class SysSettingsListTool(IToolCommandResolver commandResolver) {
 	[McpServerTool(Name = ListSysSettingsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[Description("Lists Creatio system settings with their All-Users default values. " +
-	             "Binary-type settings are omitted from the list to keep responses small — use get-sys-setting by code to read one. " +
+	             "Binary-type settings are excluded from the list — Binary read/write is not exposed through this MCP tool set and needs the dedicated upload/download flow. " +
 	             "Useful to discover settings before calling get-sys-setting or update-sys-setting.")]
 	public SysSettingsListResult ListSysSettings(
 		[Description("Parameters: environment-name (required)")]
@@ -75,8 +75,9 @@ public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver) {
 	[Description("Creates a new Creatio system setting and optionally assigns an initial value. " +
 	             "Allowed value-type-name values match Creatio internal names: Text, ShortText (Text 50), " +
 	             "MediumText (Text 250), LongText (Text 500), SecureText (Encrypted string), MaxSizeText (Unlimited), " +
-	             "Boolean, DateTime, Date, Time, Integer, Money (Currency), Float (Decimal), Binary (BLOB), Lookup. " +
+	             "Boolean, DateTime, Date, Time, Integer, Money (Currency), Float (Decimal), Lookup. " +
 	             "Aliases accepted: Currency = Money, Decimal = Float. " +
+	             "Binary sys-settings are not exposed through this tool set — they need a dedicated upload flow. " +
 	             "For Lookup type, reference-schema-name is required.")]
 	public SysSettingCreateResult CreateSysSetting(
 		[Description("Parameters: environment-name, code, name, value-type-name (required); value, description, is-cacheable, is-personal (optional)")]

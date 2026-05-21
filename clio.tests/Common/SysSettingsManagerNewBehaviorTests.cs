@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
+using Clio.Command;
 using Clio.Common;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
@@ -423,6 +424,40 @@ public class SysSettingsManagerNewBehaviorTests {
 			because: "the serializer escapes inner quotes either as \\u0022 or \\\" depending on its encoder settings");
 		capturedBody.Should().Contain("\\\\ slash",
 			because: "backslashes must be JSON-escaped through JsonSerializer to avoid request corruption");
+	}
+
+	#endregion
+
+	#region TryListSysSettings — Binary filter
+
+	[Test]
+	[Description("TryListSysSettings filters Binary-type settings out of the response because read/write for Binary is not exposed through the MCP tool set.")]
+	public void TryListSysSettings_Filters_Binary_Settings() {
+		DataProviderMock providerMock = new();
+		providerMock.MockItems("SysSettings").Returns(new List<Dictionary<string, object>> {
+			new() {
+				{ "Id", Guid.NewGuid() }, { "Code", "UsrPlainText" }, { "Name", "Plain" },
+				{ "ValueTypeName", "Text" }, { "Description", "" },
+				{ "IsCacheable", true }, { "IsPersonal", false }, { "IsSSPAvailable", false }
+			},
+			new() {
+				{ "Id", Guid.NewGuid() }, { "Code", "UsrBlob" }, { "Name", "Blob" },
+				{ "ValueTypeName", "Binary" }, { "Description", "" },
+				{ "IsCacheable", true }, { "IsPersonal", false }, { "IsSSPAvailable", false }
+			}
+		});
+		providerMock.MockItems("SysSettingsValue").Returns(new List<Dictionary<string, object>>());
+		ISysSettingsManager managerForTryList = BuildSut(providerMock);
+		SysSettingsCommand command = new(managerForTryList, Substitute.For<ILogger>());
+
+		SysSettingsListResult result = command.TryListSysSettings(new ListSysSettingsArgs("local"));
+
+		result.Success.Should().BeTrue(
+			because: "list-sys-settings completes normally; Binary is excluded silently, not as an error");
+		result.Settings.Should().HaveCount(1,
+			because: "of the two seeded settings, only the non-Binary one should be returned");
+		result.Settings[0].Code.Should().Be("UsrPlainText",
+			because: "Binary entries are dropped from the result while non-Binary entries pass through unchanged");
 	}
 
 	#endregion

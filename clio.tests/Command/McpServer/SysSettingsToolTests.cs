@@ -181,6 +181,22 @@ public sealed class SysSettingsToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("create-sys-setting refuses Binary value-type-name because PostSysSettingsValues is scalar-only and there is no BinaryValue read column to round-trip through.")]
+	public void CreateSysSetting_Should_Reject_Binary_Value_Type() {
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		SysSettingCreateTool tool = new(BuildResolver(manager));
+
+		SysSettingCreateResult result = tool.CreateSysSetting(
+			new CreateSysSettingArgs("local", "UsrBinCode", "Binary setting", "Binary"));
+
+		result.Success.Should().BeFalse(
+			because: "Binary is intentionally excluded from the MCP-advertised surface — it needs a dedicated upload/download flow that is out of scope for this tool set");
+		result.Error.Should().Contain("Unsupported value-type-name",
+			because: "Binary is no longer in the SupportedValueTypeNames whitelist so the standard refusal message applies");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("create-sys-setting maps UnauthorizedAccessException raised during environment resolution to an 'Authentication error' diagnostic.")]
 	public void CreateSysSetting_Should_Categorize_Authentication_Errors() {
 		SysSettingCreateTool tool = new(BuildResolverThatThrows(new UnauthorizedAccessException("Forbidden")));
