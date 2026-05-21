@@ -146,6 +146,7 @@ public sealed class PageModificationGuidanceResource {
 		                       "name": "UsrMyButton",
 		                       "values": {
 		                           "type": "crt.Button",
+		                           "visible": true,
 		                           "caption": "$Resources.Strings.UsrMyButton_caption",
 		                           "clicked": { "request": "usr.MyClickRequest" }
 		                       },
@@ -183,6 +184,7 @@ public sealed class PageModificationGuidanceResource {
 		       - `parentName` must match an existing container name from `bundle.viewConfig`.
 		       - `propertyName` is usually `items` for containers.
 		       - `index` is the insertion position within `parentName.items[]`.
+		       - `visible` is a view-engine property, not a component-specific one. It can appear in the `values` object of ANY view element alongside `type` and element-specific properties. Accepts `true`, `false`, or a binding expression (e.g. `"$SomeAttr | crt.InvertBooleanValue"`). Applies equally to web and mobile.
 		       - User-visible string values inside `values` (`label`, `caption`, `title`, `tooltip`, `placeholder`, `description`, button captions, tab/group titles — examples, not an exhaustive list; the rule covers ANY string-like property the runtime renders to the user) MUST be authored as `$Resources.Strings.<Key>` bindings, not inline string literals. Read `page-schema-resources` first to decide whether the key requires explicit registration via the `resources` parameter (DS-bound attributes auto-provide the caption; custom keys must be registered).
 		       - For entity-bound FormPage data-entry fields, match the column DataValueType to the control: `ShortText`/`MediumText`/`LongText` → `crt.Input`; `Lookup` → `crt.ComboBox`; `Boolean` → `crt.Checkbox`; `DateTime`/`Date`/`Time` → `crt.DateTimePicker`; `Integer`/`Float`/`Money` → `crt.NumberInput`; `Email` → `crt.EmailInput`; `PhoneNumber` → `crt.PhoneInput`; `WebLink` → `crt.WebInput`. Use `get-component-info` for full insert examples. For display-only transformations (email as mailto link, phone as tel link) read `page-schema-converters` first — do not select a component type for display tasks.
 

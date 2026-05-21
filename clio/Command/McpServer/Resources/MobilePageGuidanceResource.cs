@@ -27,15 +27,37 @@ public sealed class MobilePageGuidanceResource {
 		       Applying web page patterns to mobile pages will cause broken schemas or silent no-ops.
 
 		       ─────────────────────────────────────────────────────────────
-		       PRE-EDIT CHECKLIST APPLICABILITY (web guide → mobile)
+		       WHAT CARRIES OVER FROM THE WEB `page-modification` GUIDE
 		       ─────────────────────────────────────────────────────────────
-		       The web `page-modification` PRE-EDIT GUIDANCE CHECKLIST partially applies on mobile:
-		         APPLIES IN FULL: `page-schema-resources`, entity-level `business-rules` (`create-entity-business-rule`).
-		         PARTIAL:  `page-schema-converters` — read for concept; on mobile only the inline OOTB binding form (see OOTB list below) or a reference to a custom converter that already exists in a remote module is valid. The page body itself must not declare a `converters` section.
-		         PARTIAL:  `page-schema-handlers` — read for concept; on mobile, handlers can only be referenced if they already exist in a remote module and the user explicitly asks for them. The page body itself must not declare a `handlers` section.
-		         DOES NOT APPLY: `page-schema-validators`, `page-schema-creatio-devkit-common` — validators are not supported on mobile at all (not even OOTB), and the devkit-common AMD dependency does not exist on mobile.
+		       Read the web guide for the mechanics; this table tells you which sections to apply, skip, or treat with a mobile-specific twist. Anything not listed here is web-only.
+
+		       | Web-guide section | On mobile |
+		       | --- | --- |
+		       | PRE-EDIT GUIDANCE CHECKLIST: `page-schema-resources`, entity-level `business-rules` (`create-entity-business-rule`) | Applies |
+		       | PRE-EDIT: `page-schema-converters` | Concept only — page body must not declare a `converters` section; reference OOTB converters inline (see below) or an already-existing custom converter in a remote module |
+		       | PRE-EDIT: `page-schema-handlers` | Concept only — page body must not declare a `handlers` section; only reference an already-existing remote handler when the user explicitly asks |
+		       | PRE-EDIT: `page-schema-validators`, `page-schema-creatio-devkit-common` | Does NOT apply — no validator support on mobile (even OOTB), no devkit-common AMD dependency |
+		       | Replacing-schema concept, Design-package resolution, Virtual package materialization | Applies in full — same backend; `page.designPackageUId` / `page.willCreateReplacingInDesignPackage` are returned for mobile pages too |
+		       | Canonical page modification flow (list-pages → get-page → edit → update-page → verify) | Applies in full |
+		       | `update-page optional-properties`, `update-page verify` flag, `sync-pages optional-properties` | Applies in full — identical semantics |
+		       | Known limitations (fail-closed design-package resolution on writes, best-effort fallback on reads) | Applies in full |
+		       | `bundle.json` shape and `jq` recipes | Applies, with one caveat: `handlers` / `converters` / `validators` source strings are always empty (`'[]'` / `'{}'`) because mobile bodies do not author these sections |
+		       | Rules for viewConfigDiff: `operation`, `name`, `parentName`, `propertyName`, `index`, view-engine `visible` property, user-visible string → `$Resources.Strings.*` rule | Applies in full |
+		       | Rules for viewConfigDiff: FormPage `DataValueType → component` mapping (web component registry) | Does NOT apply — use `get-component-info schema-type: "mobile"` instead. Notably Boolean maps to `crt.Toggle` on mobile, not `crt.Checkbox` |
+		       | Finding a container for a new component (`parentName`) | Applies in full — same `bundle.containers` lookup; common mobile container types: `crt.Scaffold` (root), `crt.GridContainer`, `crt.FlexContainer`, `crt.TabPanel`, `crt.TabContainer`, `crt.ExpansionPanel` |
+		       | update-page write modes (`replace` / `append`) — including the "do NOT resend `raw.body`" CRITICAL warning and the `ownBodySummary.viewConfigDiffOperations > 0 → use append` rule of thumb | Applies, with mobile-specific merge rules and AMD-marker exception — see WRITE MODES section below |
 
 		       If a web guide tells you to add a section this mobile guide forbids (validators / inline handlers or converters declared in the page body / AMD deps), the mobile rule wins.
+
+		       ─────────────────────────────────
+		       WRITE MODES (mobile specifics)
+		       ─────────────────────────────────
+		       Append mode IS supported on mobile (see `MergeMobile` in PageBodyMerger.cs). Compared to web append:
+		         - `viewConfigDiff` — concat + dedupe by `name` (incoming wins, same as web).
+		         - `viewModelConfigDiff` and `modelConfigDiff` — plain concat (no dedupe — there is no key to dedupe on).
+		         - `handlers` / `converters` / `validators` merge rules from web DO NOT APPLY (those sections are absent from mobile bodies).
+		         - An incoming body that uses the full `viewModelConfig` or `modelConfig` form (instead of the `*Diff` form) is rejected — use replace mode in that case.
+		         - AMD MARKERS DO NOT APPLY: append takes a plain JSON fragment containing whichever of the three top-level `*Diff` arrays you want to merge; missing keys are skipped.
 
 		       ─────────────────────────────────
 		       BODY FORMAT — plain JSON, not AMD
@@ -301,12 +323,7 @@ public sealed class MobilePageGuidanceResource {
 		       └── BaseMobileListTemplate   — list/section pages (adds search, FAB, HeaderContainer, crt.List)
 		       BlankMobilePageTemplate      — standalone bare Scaffold, no parent, no content
 
-		       All five templates already provide crt.Scaffold — do NOT insert another one.
-
-		       ─────────────────────────────────────────────────────────────
-		       SAVE WORKFLOW
-		       ─────────────────────────────────────────────────────────────
-		       Identical to web pages. Use update-page and sync-pages — they auto-detect mobile JSON bodies.
+		       `list-page-templates schema-type=mobile` returns 4 selectable templates (the abstract `BaseMobileTemplate` shown above is a parent only, not user-selectable). All of them already provide `crt.Scaffold` — do NOT insert another one.
 		       """
 	};
 
