@@ -99,6 +99,8 @@ namespace CreatioModel
 					case "ShortText":
 					case "LongText":
 					case "Text":
+					case "MaxSizeText":
+					case "SecureText":
 						return sysSettingsValue.TextValue;
 					case "Integer":
 						return sysSettingsValue.IntegerValue.ToString();
@@ -111,6 +113,7 @@ namespace CreatioModel
 					case "Float":
 					case "Decimal":
 					case "Currency":
+					case "Money":
 						return sysSettingsValue.FloatValue.ToString(CultureInfo.InvariantCulture);
 					case "Lookup":
 						return sysSettingsValue.GuidValue.ToString();
