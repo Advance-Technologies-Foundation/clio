@@ -206,6 +206,7 @@ internal static class ToolContractCatalog {
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
 	private const string DryRunFieldName = "dry-run";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
+	private const string EntitySchemaNameFieldName = "entity-schema-name";
 	private const string EnvironmentNameFieldName = "environment-name";
 	private const string ErrorFieldName = "error";
 	private const string ExampleEnvironmentName = "local";
@@ -224,6 +225,7 @@ internal static class ToolContractCatalog {
 	private const string PackageNameFieldName = "package-name";
 	private const string PasswordFieldName = "password";
 	private const string PagesFieldName = "pages";
+	private const string PageSchemaNameFieldName = "page-schema-name";
 	private const string ParentSchemaNameFieldName = "parent-schema-name";
 	private const string ParameterScope = "parameter";
 	private const string QueryCorrelationIdentifierDescription = "Query correlation identifier when available.";
@@ -262,10 +264,6 @@ internal static class ToolContractCatalog {
 	private const string SectionCodeFieldName = "section-code";
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
-	private const string EnvironmentNameCamelFieldName = "environmentName";
-	private const string PackageNameCamelFieldName = "packageName";
-	private const string EntitySchemaNameCamelFieldName = "entitySchemaName";
-	private const string PageSchemaNameCamelFieldName = "pageSchemaName";
 	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
@@ -1316,11 +1314,11 @@ internal static class ToolContractCatalog {
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
 			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, and Set values actions from constants, formulas, or attributes.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, EntitySchemaNameCamelFieldName, RuleFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, EntitySchemaNameFieldName, RuleFieldName],
 				[
-					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PackageNameCamelFieldName, StringType, "Target package name."),
-					Field(EntitySchemaNameCamelFieldName, StringType, "Target entity schema name."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType, "Target package name."),
+					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name."),
 					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age.")
 				],
 				Validators: [
@@ -1416,11 +1414,11 @@ internal static class ToolContractCatalog {
 			CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
 			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements using datasource-bound page attributes and constants.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, PageSchemaNameCamelFieldName, RuleFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RuleFieldName],
 				[
-					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PackageNameCamelFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
-					Field(PageSchemaNameCamelFieldName, StringType, "Target Freedom UI page schema name."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
+					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
 					Field(RuleFieldName, ObjectType, "Structured page business-rule definition with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
 				],
 				Validators: [
@@ -1544,7 +1542,7 @@ internal static class ToolContractCatalog {
 		string actionType,
 		object[] actionItems,
 		object? constantValue = null) =>
-		BusinessRuleExample(summary, EntitySchemaNameCamelFieldName, entitySchemaName, caption, leftPath,
+		BusinessRuleExample(summary, EntitySchemaNameFieldName, entitySchemaName, caption, leftPath,
 			comparisonType, actionType, actionItems, constantValue);
 
 	private static Dictionary<string, object?> BusinessRuleSetValueItem(string path, object value) {
@@ -1595,7 +1593,7 @@ internal static class ToolContractCatalog {
 		string actionType,
 		object[] actionItems,
 		object? constantValue = null) =>
-		BusinessRuleExample(summary, PageSchemaNameCamelFieldName, pageSchemaName, caption, leftPath,
+		BusinessRuleExample(summary, PageSchemaNameFieldName, pageSchemaName, caption, leftPath,
 			comparisonType, actionType, actionItems, constantValue);
 
 	private static ToolContractExample BusinessRuleExample(
@@ -1623,8 +1621,8 @@ internal static class ToolContractCatalog {
 		}
 
 		return Example(summary, new Dictionary<string, object?> {
-			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
-			[PackageNameCamelFieldName] = ExamplePackageName,
+			[EnvironmentNameFieldName] = ExampleEnvironmentName,
+			[PackageNameFieldName] = ExamplePackageName,
 			[schemaFieldName] = schemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = caption,
@@ -1646,9 +1644,9 @@ internal static class ToolContractCatalog {
 
 	private static ToolContractExample PageBusinessRuleAttributeComparisonExample() {
 		return Example("Hide a warning when two datasource-bound page attributes match", new Dictionary<string, object?> {
-			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
-			[PackageNameCamelFieldName] = ExamplePackageName,
-			[PageSchemaNameCamelFieldName] = ExampleOrderPageSchemaName,
+			[EnvironmentNameFieldName] = ExampleEnvironmentName,
+			[PackageNameFieldName] = ExamplePackageName,
+			[PageSchemaNameFieldName] = ExampleOrderPageSchemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = "Hide warning when planned and actual dates match",
 				["condition"] = new Dictionary<string, object?> {
