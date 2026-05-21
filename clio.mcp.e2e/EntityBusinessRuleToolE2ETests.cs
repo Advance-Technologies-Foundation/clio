@@ -41,6 +41,8 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		JsonElement inputSchema = JsonSerializer.SerializeToElement(tool.ProtocolTool.InputSchema);
 		JsonElement actionSchema = inputSchema
 			.GetProperty("properties")
+			.GetProperty("args")
+			.GetProperty("properties")
 			.GetProperty("rule")
 			.GetProperty("properties")
 			.GetProperty("actions")
@@ -78,10 +80,12 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["environmentName"] = invalidEnvironmentName,
-				["packageName"] = "UsrPkg",
-				["entitySchemaName"] = "UsrOrder",
-				["rule"] = CreateSetValuesRule()
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["entity-schema-name"] = "UsrOrder",
+					["rule"] = CreateSetValuesRule()
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
@@ -119,10 +123,12 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["environmentName"] = environmentName,
-				["packageName"] = packageName,
-				["entitySchemaName"] = "Contact",
-				["rule"] = CreateContactEntityRule(caption)
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["entity-schema-name"] = "Contact",
+					["rule"] = CreateContactEntityRule(caption)
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
