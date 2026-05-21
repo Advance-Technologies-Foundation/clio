@@ -28,6 +28,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Prefer `list-pages -> get-page -> sync-pages -> get-page` as the canonical page workflow, including single-page saves when the caller wants the clio-advertised path.
 			       - Read before write, and read back after mutations when the tool or workflow allows it.
 			       - For canonical data-binding workflow selection, call `get-guidance` with `name` set to `data-bindings`.
+			       - For seeding, listing, or updating Creatio system settings (sys-settings), call `get-guidance` with `name` set to `sys-settings`.
 			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
 
 			       Discover the target app

@@ -9,6 +9,7 @@ using ATF.Repository.Providers;
 using CreatioModel;
 using DocumentFormat.OpenXml.Office2010.Excel;
 using Newtonsoft.Json.Linq;
+using NewtonsoftJson = Newtonsoft.Json;
 using Terrasoft.Core;
 using static CreatioModel.SysSettings;
 using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
@@ -46,10 +47,27 @@ public interface ISysSettingsManager
 	/// </remarks>
 	T GetSysSettingValueByCode<T>(string code);
 
-	SysSettingsManager.InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
-		bool cached = true, string description = "", bool valueForCurrentUser = false);
+	/// <summary>
+	/// Returns the All-Users default value of a sys-setting (never a personal/current-user override),
+	/// matching the contract advertised by the MCP get-sys-setting tool.
+	/// </summary>
+	string GetAllUsersDefaultByCode(string code);
 
-	bool UpdateSysSetting(string code, object value, string valueTypeName = "");
+	/// <summary>
+	/// Returns the All-Users default value and the resolved value-type-name of a sys-setting in a single
+	/// model lookup. Callers that need to apply type-aware policy (for example masking SecureText values
+	/// before surfacing them to MCP clients) should prefer this method over <see cref="GetAllUsersDefaultByCode"/>
+	/// to avoid a second round-trip. Returns an empty value and a null type name when the setting is unknown.
+	/// </summary>
+	(string Value, string ValueTypeName) GetAllUsersDefaultWithType(string code);
+
+	SysSettingsManager.InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
+		bool cached = true, string description = "", bool valueForCurrentUser = false,
+		Guid? referenceSchemaUId = null);
+
+	Guid? FindSchemaUIdByName(string schemaName);
+
+	bool UpdateSysSetting(string code, object value, string valueTypeName = "Text");
 
 	#endregion
 
@@ -79,6 +97,8 @@ public class SysSettingsManager : ISysSettingsManager
 	};
 
 	private sealed record UpdateSysSettingResponse(
+		[property: JsonPropertyName("saveResult")] Dictionary<string, bool> SaveResult,
+		[property: JsonPropertyName("rowsAffected")] int RowsAffected,
 		[property: JsonPropertyName("success")] bool Success,
 		[property: JsonPropertyName("responseStatus")] ResponseStatus ResponseStatus);
 
@@ -148,15 +168,34 @@ public class SysSettingsManager : ISysSettingsManager
 		string jsonFilePath = _abstractionsFileSystem.Path.Join(
 			_workingDirectoriesProvider.TemplateDirectory, "dataservice-requests", "selectIdByDisplayValue.json");
 
+		// Parse the template as a JObject and assign caller-supplied values via property access
+		// so Newtonsoft handles JSON escaping. Raw string-replacement of {{diplayvalue}} previously
+		// let agent-supplied display names break out of the JSON string literal.
 		string jsonContent = _filesystem.ReadAllText(jsonFilePath);
-		jsonContent = jsonContent.Replace("{{rootSchemaName}}", entityName);
-		jsonContent = jsonContent.Replace("{{diplayvalue}}", optsValue);
+		JObject requestBody = JObject.Parse(jsonContent);
+		requestBody["rootSchemaName"] = entityName;
+		const string parameterPath = "$.filters.items['8caf69f4-9583-4e77-86c0-716c07ce4ec7'].rightExpression.parameter";
+		JToken parameter = requestBody.SelectToken(parameterPath);
+		if (parameter is not JObject parameterObj) {
+			throw new InvalidOperationException(
+				$"selectIdByDisplayValue.json template is malformed: expected JObject at '{parameterPath}'. " +
+				"The template structure changed and the caller-supplied display value cannot be assigned safely.");
+		}
+		parameterObj["value"] = optsValue;
 
 		string selectQueryUrl = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
-		string responseJson = _creatioClient.ExecutePostRequest(selectQueryUrl, jsonContent);
+		string responseJson = _creatioClient.ExecutePostRequest(selectQueryUrl, requestBody.ToString(NewtonsoftJson.Formatting.None));
 		JObject json = JObject.Parse(responseJson);
-		string jsonPath = "$.rows[0].Id";
-		string id = (string)json.SelectToken(jsonPath);
+		JArray rows = json["rows"] as JArray;
+		if (rows is null || rows.Count == 0) {
+			return Guid.Empty;
+		}
+		if (rows.Count > 1) {
+			throw new InvalidOperationException(
+				$"Ambiguous lookup display value '{optsValue}' for entity '{entityName}': {rows.Count} rows match. " +
+				"Pass the record GUID instead of the display name to disambiguate.");
+		}
+		string id = (string)rows[0]["Id"];
 		bool isGuid = Guid.TryParse(id, out Guid value);
 		return isGuid ? value : Guid.Empty;
 	}
@@ -179,12 +218,67 @@ public class SysSettingsManager : ISysSettingsManager
 		return sysSetting;
 	}
 
+	private static readonly Guid AllUsersAdminUnitId = new("a29a3ba5-4b0d-de11-9a51-005056c00008");
+
+	private const string LookupTypeName = "Lookup";
+
+	private static readonly TimeSpan SysSettingCodeRegexTimeout = TimeSpan.FromSeconds(1);
+
+	/// <summary>
+	/// Permitted characters in a sys-setting code: must start with a letter and contain
+	/// only ASCII letters, digits, or underscore. Mirrors Creatio platform constraints and
+	/// blocks malformed codes from reaching the DataService endpoint. The pattern is linear
+	/// (no backtracking); the explicit 1-second timeout matches the convention used by other
+	/// helpers in this assembly and protects against engine-side regressions and pathological inputs.
+	/// </summary>
+	private static readonly System.Text.RegularExpressions.Regex SysSettingCodeRegex
+		= new("^[A-Za-z][A-Za-z0-9_]*$",
+			System.Text.RegularExpressions.RegexOptions.Compiled,
+			SysSettingCodeRegexTimeout);
+
+	private SysSettings GetSysSettingByCodeWithValues(string code){
+		SysSettings sysSetting = GetSysSettingByCode(code);
+		if (sysSetting is null) {
+			return null;
+		}
+		List<SysSettingsValue> values = AppDataContextFactory.GetAppDataContext(_dataProvider)
+			.Models<SysSettingsValue>()
+			.Where(v => v.SysSettingsId == sysSetting.Id)
+			.ToList();
+		sysSetting.SysSettingsValues = values;
+		return sysSetting;
+	}
+
+	private static string FormatTypedValue(SysSettings sysSetting, SysSettingsValue value){
+		return sysSetting.ValueTypeName switch {
+			"Boolean" => value.BooleanValue.ToString().ToLowerInvariant(),
+			"Integer" => value.IntegerValue.ToString(CultureInfo.InvariantCulture),
+			"Float" or "Money" or "Decimal" or "Currency"
+				=> value.FloatValue.ToString(CultureInfo.InvariantCulture),
+			"Date" => value.DateTimeValue.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+			"Time" => value.DateTimeValue.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
+			"DateTime" => value.DateTimeValue.ToString("o", CultureInfo.InvariantCulture),
+			LookupTypeName => value.GuidValue.ToString(),
+			_ => value.TextValue ?? string.Empty
+		};
+	}
+
 	#endregion
 
 	#region Methods: Public
 
 	public string GetSysSettingValueByCode(string code){
-		return _dataProvider.GetSysSettingValue<string>(code) ?? string.Empty;
+		string providerValue = _dataProvider.GetSysSettingValue<string>(code);
+		if (!string.IsNullOrEmpty(providerValue)) {
+			return providerValue;
+		}
+		SysSettings sysSetting = GetSysSettingByCodeWithValues(code);
+		if (sysSetting?.SysSettingsValues is null || sysSetting.SysSettingsValues.Count == 0) {
+			return providerValue ?? string.Empty;
+		}
+		SysSettingsValue value = sysSetting.SysSettingsValues
+			.FirstOrDefault(v => v.SysAdminUnitId == AllUsersAdminUnitId);
+		return value is null ? string.Empty : FormatTypedValue(sysSetting, value);
 	}
 
 	public T GetSysSettingValueByCode<T>(string code){
@@ -200,9 +294,34 @@ public class SysSettingsManager : ISysSettingsManager
 		};
 	}
 
+	/// <summary>
+	/// Returns the All-Users default value of a sys-setting (never a personal/current-user override).
+	/// This is the contract the MCP get-sys-setting tool advertises; legacy
+	/// <see cref="GetSysSettingValueByCode(string)"/> short-circuits through the data provider which
+	/// can resolve a per-user value via the cliogate endpoint and would contradict that contract.
+	/// </summary>
+	public string GetAllUsersDefaultByCode(string code) => GetAllUsersDefaultWithType(code).Value;
+
+	/// <inheritdoc cref="ISysSettingsManager.GetAllUsersDefaultWithType" />
+	public (string Value, string ValueTypeName) GetAllUsersDefaultWithType(string code) {
+		SysSettings sysSetting = GetSysSettingByCodeWithValues(code);
+		if (sysSetting is null) {
+			return (string.Empty, null);
+		}
+		if (sysSetting.SysSettingsValues is null || sysSetting.SysSettingsValues.Count == 0) {
+			return (string.Empty, sysSetting.ValueTypeName);
+		}
+		SysSettingsValue value = sysSetting.SysSettingsValues
+			.FirstOrDefault(v => v.SysAdminUnitId == AllUsersAdminUnitId);
+		return value is null
+			? (string.Empty, sysSetting.ValueTypeName)
+			: (FormatTypedValue(sysSetting, value), sysSetting.ValueTypeName);
+	}
+
 	public InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
-		bool cached = true, string description = "", bool valueForCurrentUser = false){
-		
+		bool cached = true, string description = "", bool valueForCurrentUser = false,
+		Guid? referenceSchemaUId = null){
+
 		CreatioSysSetting sysSetting = valueTypeName switch {
 			"Text" => new TextSetting(name, code, null, cached, description, valueForCurrentUser),
 			"ShortText" => new ShortText(name, code, null, cached, description, valueForCurrentUser),
@@ -215,13 +334,18 @@ public class SysSettingsManager : ISysSettingsManager
 			"Date" => new CDate(name, code, null, cached, description, valueForCurrentUser),
 			"Time" => new CTime(name, code, null, cached, description, valueForCurrentUser),
 			"Integer" => new CInteger(name, code, null, cached, description, valueForCurrentUser),
-			"Currency" => new CCurrency(name, code, null, cached, description, valueForCurrentUser),
-			"Decimal" => new CDecimal(name, code, null, cached, description, valueForCurrentUser),
-			"Lookup" => new Lookup(name, code, null, cached, description, valueForCurrentUser),
+			"Money" or "Currency" => new CCurrency(name, code, null, cached, description, valueForCurrentUser),
+			"Float" or "Decimal" => new CDecimal(name, code, null, cached, description, valueForCurrentUser),
+			"Binary" => new CBinary(name, code, null, cached, description, valueForCurrentUser),
+			LookupTypeName => new Lookup(name, code, null, cached, description, valueForCurrentUser),
 			var _ => throw new ArgumentOutOfRangeException(nameof(valueTypeName), valueTypeName,
 				"Unsupported SysSettingType, Allowed values (Text, ShortText, MediumText, LongText, SecureText, " +
-				"MaxSizeText, Boolean, DateTime, Date, Time, Integer, Currency, Decimal, Lookup)")
+				"MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Binary, Lookup). " +
+				"Aliases: Currency = Money, Decimal = Float.")
 		};
+		if (referenceSchemaUId.HasValue && referenceSchemaUId.Value != Guid.Empty) {
+			sysSetting.ReferenceSchemaUId = referenceSchemaUId.Value;
+		}
 		string json = sysSetting.ToString();
 		const string endpoint = "DataService/json/SyncReply/InsertSysSettingRequest";
 		string url = _serviceUrlBuilder.Build(endpoint);
@@ -230,81 +354,98 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	public bool UpdateSysSetting(string code, object value, string valueTypeName = "Text"){
-		string requestData = string.Empty;
+		if (string.IsNullOrWhiteSpace(code) || !SysSettingCodeRegex.IsMatch(code)) {
+			_logger.WriteError(
+				$"SysSettings code '{code}' is not a valid Creatio identifier (must start with a letter and contain only letters, digits, or underscore).");
+			return false;
+		}
 		SysSettings sysSetting = GetSysSettingByCode(code);
 		string optionsType = sysSetting is not null
 			? sysSetting.ValueTypeName : valueTypeName;
+		object payloadValue;
 		if (optionsType.Contains("Text") || optionsType.Contains("Date") || optionsType.Contains("Time") || optionsType.Contains("Lookup")) {
-			if (optionsType == "Lookup") {
-				bool isGuid = Guid.TryParse(value.ToString(), out Guid id);
+			string stringValue = value?.ToString() ?? string.Empty;
+			if (optionsType == LookupTypeName) {
+				bool isGuid = Guid.TryParse(stringValue, out Guid id);
 				if (!isGuid) {
 					Guid referenceSchemaUIduid = sysSetting.ReferenceSchemaUIdId;
 					string entityName = GetSysSchemaNameByUid(referenceSchemaUIduid);
-					Guid entityId = GetEntityIdByDisplayValue(entityName, value.ToString());
-					value = entityId.ToString();
+					Guid entityId = GetEntityIdByDisplayValue(entityName, stringValue);
+					stringValue = entityId.ToString();
 				}
 				else {
-					value = id.ToString();
+					stringValue = id.ToString();
 				}
 			}
 			if (new[] { "Date", "DateTime", "Time" }.Contains(optionsType)) {
-				bool isDate = DateTime.TryParse(value.ToString(), CultureInfo.InvariantCulture, out DateTime dtValue);
+				bool isDate = DateTime.TryParse(stringValue, CultureInfo.InvariantCulture, out DateTime dtValue);
 				if (isDate) {
-					value = dtValue.ToString("yyyy-MM-ddTHH:mm:ss.fff");
+					stringValue = dtValue.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture);
 				}
 				else {
 					_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid date format.");
 					return false;
 				}
 			}
-			//Enclosed opts.Value in "", otherwise update fails for all text settings
-			requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + $"\"{code}\":\"{value}\"" + "}}";
-		} 
-		else {
-			if (optionsType.Contains("Boolean")) {
-				
-				bool isBool = bool.TryParse(value.ToString(), out bool boolValue);
-				if (isBool) {
-					value = boolValue.ToString().ToLower(CultureInfo.InvariantCulture);
-				}
-				else {
-					_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid boolean format.");
-					return false;
-				}
-			}
-
-			if (optionsType.Contains("Currency") || optionsType.Contains("Decimal")) {
-				bool isDecimal = decimal.TryParse(value.ToString(), CultureInfo.InvariantCulture, out decimal decimalValue);
-				if (isDecimal) {
-					value = decimalValue.ToString(CultureInfo.InvariantCulture);
-				}
-				else {
-					_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid decimal format.");
-					return false;
-				}
-			}
-			if (optionsType.Contains("Integer")) {
-				bool isInt = int.TryParse(value.ToString(), out int intValue);
-				if (isInt) {
-					value = intValue;
-				}
-				else {
-					_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid integer format.");
-				}
-			}
-			requestData = "{\"isPersonal\":false,\"sysSettingsValues\":{" + $"\"{code}\":{value}" + "}}";
+			payloadValue = stringValue;
 		}
+		else if (optionsType.Contains("Boolean")) {
+			bool isBool = bool.TryParse(value?.ToString(), out bool boolValue);
+			if (!isBool) {
+				_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid boolean format.");
+				return false;
+			}
+			payloadValue = boolValue;
+		}
+		else if (optionsType.Contains("Currency") || optionsType.Contains("Decimal")
+			|| optionsType.Contains("Money") || optionsType.Contains("Float")) {
+			bool isDecimal = decimal.TryParse(value?.ToString(), NumberStyles.Number,
+				CultureInfo.InvariantCulture, out decimal decimalValue);
+			if (!isDecimal) {
+				_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid decimal format.");
+				return false;
+			}
+			payloadValue = decimalValue;
+		}
+		else if (optionsType.Contains("Integer")) {
+			bool isInt = int.TryParse(value?.ToString(), NumberStyles.Integer,
+				CultureInfo.InvariantCulture, out int intValue);
+			if (!isInt) {
+				_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid integer format.");
+				return false;
+			}
+			payloadValue = intValue;
+		}
+		else {
+			_logger.WriteError(
+				$"SysSettings with code: {code} is not updated. Unsupported value-type-name '{optionsType}'.");
+			return false;
+		}
+		string requestData = JsonSerializer.Serialize(new Dictionary<string, object> {
+			["isPersonal"] = false,
+			["sysSettingsValues"] = new Dictionary<string, object> { [code] = payloadValue }
+		}, _jsonSerializerOptions);
 		string postSysSettingsValuesUrl
 			= _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
 		try {
-			
+
 			string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
 			if (string.IsNullOrWhiteSpace(result)) {
 				_logger.WriteError($"SysSettings with code: {code} is not updated. Empty response received.");
 				return false;
 			}
-			string afterUpdateValue = GetSysSettingValueByCode(code).TrimStart('"').TrimEnd('"');
-			return afterUpdateValue.Equals(value.ToString(), StringComparison.OrdinalIgnoreCase);
+			UpdateSysSettingResponse response =
+				JsonSerializer.Deserialize<UpdateSysSettingResponse>(result, _jsonSerializerOptions);
+			if (response?.SaveResult is not null
+				&& response.SaveResult.TryGetValue(code, out bool perCodeOk)
+				&& perCodeOk) {
+				return true;
+			}
+			string errMsg = response?.ResponseStatus?.Message;
+			_logger.WriteError(
+				$"SysSettings with code: {code} is not updated. " +
+				(string.IsNullOrWhiteSpace(errMsg) ? "Platform reported a failed update." : errMsg));
+			return false;
 		} catch (JsonException) {
 			_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid response format.");
 			return false;
@@ -323,6 +464,17 @@ public class SysSettingsManager : ISysSettingsManager
 			};
 			_logger.WriteInfo(text);
 		}
+	}
+
+	public Guid? FindSchemaUIdByName(string schemaName) {
+		if (string.IsNullOrWhiteSpace(schemaName)) {
+			return null;
+		}
+		SysSchema sysSchema = AppDataContextFactory.GetAppDataContext(_dataProvider)
+			.Models<SysSchema>()
+			.Where(s => s.Name == schemaName)
+			.AsEnumerable().FirstOrDefault();
+		return sysSchema?.UId;
 	}
 
 	public List<SysSettings> GetAllSysSettingsWithValues() {
@@ -661,6 +813,27 @@ public sealed class Lookup : CreatioSysSetting
 
 }
 
+public sealed class CBinary : CreatioSysSetting
+{
+
+	#region Constructors: Public
+
+	public CBinary(string name, string code, string value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	public CBinary(string name, string code, object value, bool isCacheable, string description, bool isPersonal)
+		: base(name, code, value, isCacheable, description, isPersonal){ }
+
+	#endregion
+
+	#region Properties: Public
+
+	public override string ValueTypeName => "Binary";
+
+	#endregion
+
+}
+
 public abstract class CreatioSysSetting
 {
 
@@ -697,6 +870,9 @@ public abstract class CreatioSysSetting
 
 	[JsonPropertyName("value")]
 	public string Value { get; set; }
+
+	[JsonPropertyName("referenceSchemaUId")]
+	public Guid? ReferenceSchemaUId { get; set; }
 
 	#endregion
 
