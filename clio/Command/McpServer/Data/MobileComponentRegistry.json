@@ -334,7 +334,7 @@
       "name": "DetailsPanel",
       "values": {
         "type": "crt.ExpansionPanel",
-        "title": "Details",
+        "title": "$Resources.Strings.DetailsPanel_title",
         "expanded": true,
         "items": []
       },
@@ -380,7 +380,7 @@
       "name": "TitleLabel",
       "values": {
         "type": "crt.Label",
-        "caption": "Title"
+        "caption": "$Resources.Strings.TitleLabel_caption"
       },
       "parentName": "Scaffold",
       "propertyName": "items",
@@ -440,7 +440,7 @@
       "name": "SaveButton",
       "values": {
         "type": "crt.Button",
-        "caption": "Save",
+        "caption": "$Resources.Strings.SaveButton_caption",
         "clicked": {
           "request": "crt.SaveRecordRequest"
         }

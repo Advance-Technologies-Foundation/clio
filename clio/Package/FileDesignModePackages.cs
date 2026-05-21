@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 
 namespace Clio.Package
@@ -16,9 +17,31 @@ namespace Clio.Package
 
 		void LoadPackagesToDb();
 
+		/// <summary>
+		/// Remotely toggles the <c>terrasoft/fileDesignMode</c> flag in the IIS host's
+		/// Web.config via the cliogate <c>SetFileDesignMode</c> endpoint. IIS auto-recycles
+		/// the AppPool on the file change, so the new flag becomes active without an explicit
+		/// restart call. Used by macOS/Linux clients targeting .NET Framework Creatio.
+		/// </summary>
+		/// <param name="isFileDesignMode">Target state of the FSM flag.</param>
+		/// <returns>
+		/// Result describing whether the toggle was performed and the previous/new values.
+		/// <see cref="SetFileDesignModeResult.EndpointAvailable"/> is false when the cliogate
+		/// version on the server does not yet expose the endpoint.
+		/// </returns>
+		SetFileDesignModeResult SetFileDesignMode(bool isFileDesignMode);
+
 		#endregion
 
 	}
+
+	public sealed record SetFileDesignModeResult(
+		bool EndpointAvailable,
+		bool Success,
+		string PreviousFileDesignMode,
+		string NewFileDesignMode,
+		string WebConfigPath,
+		string ErrorMessage);
 
 	#endregion
 
@@ -44,6 +67,7 @@ namespace Clio.Package
 		private readonly string _loadPackagesToFileSystemUrl;
 		private readonly string _loadPackagesToDbUrl;
 		private readonly string _getIsFileDesignModeUrl;
+		private readonly string _setFileDesignModeUrl;
 
 		#endregion
 
@@ -64,6 +88,8 @@ namespace Clio.Package
 				.Build("/ServiceModel/AppInstallerService.svc/LoadPackagesToDB");
 			_getIsFileDesignModeUrl = serviceUrlBuilder
 				.Build("/ServiceModel/WorkspaceExplorerService.svc/GetIsFileDesignMode");
+			_setFileDesignModeUrl = serviceUrlBuilder
+				.Build("/rest/CreatioApiGateway/SetFileDesignMode");
 		}
 
 		#endregion
@@ -117,6 +143,67 @@ namespace Clio.Package
 		public void LoadPackagesToFileSystem() => LoadPackagesToStorage(_loadPackagesToFileSystemUrl, "file system");
 
 		public void LoadPackagesToDb() => LoadPackagesToStorage(_loadPackagesToDbUrl, "database");
+
+		public SetFileDesignModeResult SetFileDesignMode(bool isFileDesignMode) {
+			string payload = "{\"isFileDesignMode\":" + (isFileDesignMode ? "true" : "false") + "}";
+			string rawResponse;
+			try {
+				rawResponse = _applicationClient.ExecutePostRequest(_setFileDesignModeUrl, payload,
+					Timeout.Infinite, retryCount: 1, delaySec: delayBetweenRetryAttemptsSec);
+			} catch (Exception ex) {
+				string message = ex.Message ?? string.Empty;
+				bool isNotFound = message.IndexOf("404", StringComparison.Ordinal) >= 0
+					|| message.IndexOf("Endpoint not found", StringComparison.OrdinalIgnoreCase) >= 0
+					|| message.IndexOf("Method not allowed", StringComparison.OrdinalIgnoreCase) >= 0;
+				return new SetFileDesignModeResult(
+					EndpointAvailable: !isNotFound,
+					Success: false,
+					PreviousFileDesignMode: null,
+					NewFileDesignMode: null,
+					WebConfigPath: null,
+					ErrorMessage: ex.Message);
+			}
+
+			if (string.IsNullOrWhiteSpace(rawResponse)
+				|| rawResponse.IndexOf("Endpoint not found", StringComparison.OrdinalIgnoreCase) >= 0
+				|| rawResponse.TrimStart().StartsWith("<", StringComparison.Ordinal)) {
+				return new SetFileDesignModeResult(
+					EndpointAvailable: false,
+					Success: false,
+					PreviousFileDesignMode: null,
+					NewFileDesignMode: null,
+					WebConfigPath: null,
+					ErrorMessage: "cliogate SetFileDesignMode endpoint is not available on this server (upgrade cliogate).");
+			}
+
+			SetFileDesignModeResponse parsed;
+			try {
+				parsed = _jsonConverter.DeserializeObject<SetFileDesignModeResponse>(rawResponse);
+			} catch (Exception ex) {
+				return new SetFileDesignModeResult(
+					EndpointAvailable: true,
+					Success: false,
+					PreviousFileDesignMode: null,
+					NewFileDesignMode: null,
+					WebConfigPath: null,
+					ErrorMessage: "Could not parse cliogate SetFileDesignMode response: " + ex.Message);
+			}
+
+			string errorMessage = null;
+			if (!parsed.Success) {
+				errorMessage = parsed.ErrorInfo != null
+					? parsed.ErrorInfo.Message
+					: "Unknown error from cliogate.";
+			}
+
+			return new SetFileDesignModeResult(
+				EndpointAvailable: true,
+				Success: parsed.Success,
+				PreviousFileDesignMode: parsed.PreviousFileDesignMode,
+				NewFileDesignMode: parsed.NewFileDesignMode,
+				WebConfigPath: parsed.WebConfigPath,
+				ErrorMessage: errorMessage);
+		}
 
 		#endregion
 
