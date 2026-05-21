@@ -3527,6 +3527,22 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("PageBodyMerger mobile: merged body is indented JSON, not a single minified line")]
+	public void PageBodyMerger_Mobile_Should_Return_Indented_Json() {
+		string currentBody = "{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"size\":\"large\"}}],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"NewButton\",\"values\":{\"type\":\"crt.Button\"}}],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("\n",
+			because: "the merged mobile body must be indented JSON so that subsequent get-page writes produce a readable body.js");
+		merged.Should().NotBe(merged.ReplaceLineEndings("").Replace(" ", ""),
+			because: "a minified single-line output would make the saved body.js unreadable in source control");
+		JObject.Parse(merged)["viewConfigDiff"].Should().NotBeNull(
+			because: "the output must still be valid JSON regardless of formatting");
+	}
+
+	[Test]
 	[Description("PageBodyMerger web: full-form 'SCHEMA_VIEW_MODEL_CONFIG' marker on the current body is rejected by append merge")]
 	public void PageBodyMerger_Web_Should_Throw_When_Current_Uses_Full_ViewModelConfig_Marker() {
 		string currentBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +

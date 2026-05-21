@@ -127,7 +127,7 @@ internal static class PageBodyMerger {
 		current["viewModelConfigDiff"] = mergedViewModelConfigDiff;
 		current["modelConfigDiff"] = mergedModelConfigDiff;
 
-		return current.ToString(Newtonsoft.Json.Formatting.None);
+		return current.ToString(Newtonsoft.Json.Formatting.Indented);
 	}
 
 	/// <summary>
