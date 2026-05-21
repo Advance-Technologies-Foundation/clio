@@ -40,6 +40,7 @@ public sealed class MobilePageGuidanceResource {
 		       | Replacing-schema concept, Design-package resolution, Virtual package materialization | Applies in full — same backend; `page.designPackageUId` / `page.willCreateReplacingInDesignPackage` are returned for mobile pages too |
 		       | Canonical page modification flow (list-pages → get-page → edit → update-page → verify) | Applies in full |
 		       | `update-page optional-properties`, `update-page verify` flag, `sync-pages optional-properties` | Applies in full — identical semantics |
+		       | Body formatting (match existing indentation, do not reformat existing code) | Applies in full — mobile JSON bodies are also saved verbatim; match the indentation style already present in the page |
 		       | Known limitations (fail-closed design-package resolution on writes, best-effort fallback on reads) | Applies in full |
 		       | `bundle.json` shape and `jq` recipes | Applies, with one caveat: `handlers` / `converters` / `validators` source strings are always empty (`'[]'` / `'{}'`) because mobile bodies do not author these sections |
 		       | Rules for viewConfigDiff: `operation`, `name`, `parentName`, `propertyName`, `index`, view-engine `visible` property, user-visible string → `$Resources.Strings.*` rule | Applies in full |
@@ -142,9 +143,18 @@ public sealed class MobilePageGuidanceResource {
 		       The mobile designer disables multi-data-source. Define only one data source in modelConfigDiff.
 
 		       ─────────────────────────────────────────────────────────────
-		       COMPONENT REGISTRY — mobile components are separate
+		       COMPONENT REGISTRY — MOBILE COMPONENTS ONLY (CRITICAL)
 		       ─────────────────────────────────────────────────────────────
-		       Before inserting a component, confirm it exists in the mobile registry:
+		       ONLY components registered in the MOBILE registry can be used on a mobile page.
+		       Web components WILL NOT WORK on mobile — they are not loaded by the mobile runtime
+		       and will result in a broken page (blank slot, runtime error, or silent no-op).
+		       This is a hard platform boundary, not a styling difference:
+		         - Mobile and web have separate component registries and separate runtimes.
+		         - A component name that exists on web (e.g. `crt.Checkbox`, `crt.DataGrid`)
+		           is NOT automatically available on mobile even if it sounds generic.
+		         - Do NOT copy `type` values from a web page body into a mobile page body.
+
+		       MANDATORY before inserting any component into a mobile page:
 		         get-component-info schema-type: "mobile"
 
 		       Key mobile-specific types:

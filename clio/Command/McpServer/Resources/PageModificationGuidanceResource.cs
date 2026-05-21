@@ -118,6 +118,13 @@ public sealed class PageModificationGuidanceResource {
 		       - Verify is best-effort: if the read-back fails, the update response still reports `success: true`.
 		       - Use `verify: true` when you need page metadata (schema name, package, UId) in the same call as the save.
 
+		       Body formatting
+		       - clio does NOT normalize or re-indent page bodies — the string you pass is saved verbatim.
+		       - When adding new content, match the indentation style already present in the page body (tabs, 2 spaces, 4 spaces, etc.).
+		       - Do NOT reformat existing code returned by `get-page`. Preserve original whitespace and only modify targeted sections.
+		       - Single-line or dense JSON/JS in newly authored content is unacceptable: it blocks human review and produces unreadable diffs.
+		       - If the page body is empty or brand-new (no existing style to match), default to tab indentation.
+
 		       sync-pages optional-properties
 		       - Each page entry in `sync-pages` also accepts `optional-properties` with the same JSON array semantics.
 		       - Applies per-page; different pages in the same sync call may carry different optional-properties.

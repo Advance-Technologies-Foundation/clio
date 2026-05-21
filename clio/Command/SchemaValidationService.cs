@@ -21,6 +21,28 @@ public static class SchemaValidationService
 	private const string ValidatorsPropertyName = "validators";
 	private const string ParamsPropertyName = "params";
 	private const string TypePropertyName = "type";
+	private const string ViewConfigDiffPropertyName = "viewConfigDiff";
+	private const string ViewModelConfigDiffPropertyName = "viewModelConfigDiff";
+	private const string ModelConfigDiffPropertyName = "modelConfigDiff";
+	private const string ViewModelConfigPropertyName = "viewModelConfig";
+	private const string ModelConfigPropertyName = "modelConfig";
+
+	private static readonly string[] DiffPropertyNames = {
+		ViewConfigDiffPropertyName, ViewModelConfigDiffPropertyName, ModelConfigDiffPropertyName
+	};
+
+	private static readonly string[] ConfigPropertyNames = {
+		ViewModelConfigPropertyName, ModelConfigPropertyName
+	};
+
+	private static readonly HashSet<string> AllowedMobileRootProperties = new(StringComparer.Ordinal) {
+		ViewConfigDiffPropertyName, ViewModelConfigDiffPropertyName, ModelConfigDiffPropertyName,
+		ViewModelConfigPropertyName, ModelConfigPropertyName
+	};
+
+	private static readonly HashSet<string> DisallowedMobileRootProperties = new(StringComparer.Ordinal) {
+		"validators", "converters", "handlers"
+	};
 
 
 	public static readonly string[] RequiredMarkerNames = {
@@ -139,8 +161,42 @@ public static class SchemaValidationService
 				result.IsValid = false;
 				result.Errors.Add("Mobile pages do not support handlers. Remove the 'handlers' section.");
 			}
+			ValidateMobileDiffArrayProperties(document.RootElement, result);
+			ValidateMobileConfigObjectProperties(document.RootElement, result);
+			ValidateMobileNoUnknownRootProperties(document.RootElement, result);
 		}
 		return result;
+	}
+
+	private static void ValidateMobileDiffArrayProperties(JsonElement root, SchemaValidationResult result) {
+		foreach (string name in DiffPropertyNames) {
+			if (root.TryGetProperty(name, out JsonElement value) && value.ValueKind != JsonValueKind.Array) {
+				result.IsValid = false;
+				result.Errors.Add($"'{name}' must be a JSON array, but got {value.ValueKind}.");
+			}
+		}
+	}
+
+	private static void ValidateMobileConfigObjectProperties(JsonElement root, SchemaValidationResult result) {
+		foreach (string name in ConfigPropertyNames) {
+			if (root.TryGetProperty(name, out JsonElement value) && value.ValueKind != JsonValueKind.Object) {
+				result.IsValid = false;
+				result.Errors.Add($"'{name}' must be a JSON object, but got {value.ValueKind}.");
+			}
+		}
+	}
+
+	private static void ValidateMobileNoUnknownRootProperties(JsonElement root, SchemaValidationResult result) {
+		foreach (JsonProperty property in root.EnumerateObject()) {
+			if (AllowedMobileRootProperties.Contains(property.Name) ||
+				DisallowedMobileRootProperties.Contains(property.Name)) {
+				continue;
+			}
+			result.IsValid = false;
+			result.Errors.Add(
+				$"Unknown root property '{property.Name}'. " +
+				$"Mobile page bodies may only contain: {string.Join(", ", AllowedMobileRootProperties)}.");
+		}
 	}
 
 	/// <summary>
@@ -182,7 +238,7 @@ public static class SchemaValidationService
 	}
 
 	private static void ScanMobileAttributeValidatorsFromDiff(JsonElement root, SchemaValidationResult result) {
-		if (!root.TryGetProperty("viewModelConfigDiff", out JsonElement diff) ||
+		if (!root.TryGetProperty(ViewModelConfigDiffPropertyName, out JsonElement diff) ||
 			diff.ValueKind != JsonValueKind.Array) {
 			return;
 		}
@@ -204,7 +260,7 @@ public static class SchemaValidationService
 	}
 
 	private static void ScanMobileAttributeValidatorsFromConfig(JsonElement root, SchemaValidationResult result) {
-		if (!root.TryGetProperty("viewModelConfig", out JsonElement config) ||
+		if (!root.TryGetProperty(ViewModelConfigPropertyName, out JsonElement config) ||
 			config.ValueKind != JsonValueKind.Object) {
 			return;
 		}
@@ -263,7 +319,7 @@ public static class SchemaValidationService
 			return result; // JSON errors reported by ValidateMobileBody
 		}
 		using (document) {
-			if (!document.RootElement.TryGetProperty("viewConfigDiff", out JsonElement vcd) ||
+			if (!document.RootElement.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement vcd) ||
 				vcd.ValueKind != JsonValueKind.Array) {
 				return result;
 			}
@@ -278,6 +334,7 @@ public static class SchemaValidationService
 				if (webOnlyTypes.Contains(type)) {
 					result.Warnings.Add(
 						$"Component type '{type}' exists in the web registry but not in the mobile registry. " +
+						"Do NOT use web-only or unknown components on a mobile page without explicit approval from the user. " +
 						"If this is a custom mobile component with the same type name, ignore this warning; " +
 						"otherwise use get-component-info to find a supported mobile alternative.");
 				}
@@ -307,7 +364,7 @@ public static class SchemaValidationService
 			return result;
 		}
 		using (document) {
-			if (!document.RootElement.TryGetProperty("viewConfigDiff", out JsonElement vcd) ||
+			if (!document.RootElement.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement vcd) ||
 				vcd.ValueKind != JsonValueKind.Array) {
 				return result;
 			}
@@ -444,8 +501,8 @@ public static class SchemaValidationService
 
 	private static HashSet<string> CollectMobileViewModelAttributes(JsonElement root) {
 		var attributes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		CollectMobileAttributesFrom(root, "viewModelConfigDiff", isArray: true, attributes);
-		CollectMobileAttributesFrom(root, "viewModelConfig", isArray: false, attributes);
+		CollectMobileAttributesFrom(root, ViewModelConfigDiffPropertyName, isArray: true, attributes);
+		CollectMobileAttributesFrom(root, ViewModelConfigPropertyName, isArray: false, attributes);
 		return attributes;
 	}
 
@@ -490,7 +547,7 @@ public static class SchemaValidationService
 
 	private static HashSet<string> CollectMobileViewBindings(JsonElement root) {
 		var bindings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		if (!root.TryGetProperty("viewConfigDiff", out JsonElement vcd) ||
+		if (!root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement vcd) ||
 			vcd.ValueKind != JsonValueKind.Array) {
 			return bindings;
 		}
@@ -843,10 +900,10 @@ public static class SchemaValidationService
 			if (root.ValueKind != JsonValueKind.Object) {
 				return modelPaths;
 			}
-			CollectMobileModelPathsFromDiff(root, "viewModelConfigDiff", modelPaths);
-			CollectMobileModelPathsFromDiff(root, "modelConfigDiff", modelPaths);
-			CollectMobileModelPathsFromConfig(root, "viewModelConfig", modelPaths);
-			CollectMobileModelPathsFromConfig(root, "modelConfig", modelPaths);
+			CollectMobileModelPathsFromDiff(root, ViewModelConfigDiffPropertyName, modelPaths);
+			CollectMobileModelPathsFromDiff(root, ModelConfigDiffPropertyName, modelPaths);
+			CollectMobileModelPathsFromConfig(root, ViewModelConfigPropertyName, modelPaths);
+			CollectMobileModelPathsFromConfig(root, ModelConfigPropertyName, modelPaths);
 		}
 		return modelPaths;
 	}
@@ -904,7 +961,7 @@ public static class SchemaValidationService
 		if (element.ValueKind == JsonValueKind.Object) {
 			foreach (JsonProperty property in element.EnumerateObject()) {
 				if (property.Value.ValueKind == JsonValueKind.Object &&
-					property.Value.TryGetProperty("modelConfig", out JsonElement modelConfig) &&
+					property.Value.TryGetProperty(ModelConfigPropertyName, out JsonElement modelConfig) &&
 					modelConfig.TryGetProperty("path", out JsonElement pathElement) &&
 					pathElement.ValueKind == JsonValueKind.String) {
 					string? path = pathElement.GetString();
@@ -2313,7 +2370,7 @@ public static class SchemaValidationService
 
 	private static void CollectPathsFromElement(JsonElement element, HashSet<string> paths) {
 		if (element.ValueKind == JsonValueKind.Object) {
-			if (element.TryGetProperty("modelConfig", out var mc) &&
+			if (element.TryGetProperty(ModelConfigPropertyName, out var mc) &&
 			    mc.TryGetProperty("path", out var pathEl) &&
 			    pathEl.ValueKind == JsonValueKind.String) {
 				paths.Add(pathEl.GetString());

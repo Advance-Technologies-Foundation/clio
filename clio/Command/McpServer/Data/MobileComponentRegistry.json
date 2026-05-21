@@ -1443,8 +1443,9 @@
   {
     "componentType": "crt.List",
     "category": "interactive",
-    "description": "Scrollable record list. Used in list/section pages.",
-    "container": false,
+    "description": "Scrollable record list bound to a data source. The designer inserts a companion crt.ListItem child into the itemLayout property. Requires a viewModelConfigDiff attribute (isCollection: true, modelConfig.path pointing to the data source) and a modelConfigDiff data source entry (crt.EntityDataSource with scope 'viewElement').",
+    "container": true,
+    "childPropertyName": "itemLayout",
     "properties": {
       "type": {
         "type": "string",
@@ -1453,15 +1454,21 @@
       },
       "items": {
         "type": "string",
-        "description": "Data property attribute for the record collection, typically '$Items'."
+        "required": true,
+        "description": "Binding to the collection attribute, e.g. '$Items'."
       },
       "itemLayout": {
         "type": "object",
-        "description": "Item layout template (crt.ListItem config)."
+        "description": "Container property for a crt.ListItem child. In the insert diff the value is an empty object {}; the crt.ListItem is inserted as a separate viewConfigDiff operation with parentName pointing to this List and propertyName 'itemLayout'."
+      },
+      "itemPadding": {
+        "type": "object",
+        "description": "Padding around each list item. Shape: { top, bottom, left, right } with values 'none' | 'extra-small' | 'small' | 'medium' | 'large' or a number.",
+        "default": { "top": "medium", "bottom": "medium", "left": "medium", "right": "medium" }
       },
       "itemSelected": {
         "type": "object",
-        "description": "Request descriptor fired when an item is selected."
+        "description": "Request descriptor fired when an item is selected, e.g. { request: 'crt.OpenPageRequest' }."
       },
       "scrollable": {
         "type": "boolean",
@@ -1479,17 +1486,83 @@
     },
     "example": {
       "operation": "insert",
-      "name": "RecordList",
+      "name": "List1",
       "values": {
         "type": "crt.List",
         "items": "$Items",
-        "itemSelected": {
-          "request": "crt.OpenPageRequest"
-        },
-        "scrollable": true
+        "scrollable": true,
+        "itemLayout": {},
+        "itemPadding": {
+          "left": "medium",
+          "right": "medium",
+          "top": "medium",
+          "bottom": "medium"
+        }
       },
-      "parentName": "Scaffold",
+      "parentName": "GeneralInfoTab",
       "propertyName": "items",
+      "index": 1
+    }
+  },
+  {
+    "componentType": "crt.ListItem",
+    "category": "child-only",
+    "description": "Item layout template inserted as a child of crt.List via propertyName 'itemLayout'. Defines the title, subtitle, body columns, and icon for each row in the list. Body items are objects with a 'value' binding (e.g. { \"value\": \"$DataSource_ColumnName\" }); they render as labeled fields automatically.",
+    "container": false,
+    "parentTypes": ["crt.List"],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.ListItem."
+      },
+      "title": {
+        "type": "string",
+        "description": "Binding to the primary display column, e.g. '$List1DS_Name'. Maps to the 'Title column' setting in the designer."
+      },
+      "subtitles": {
+        "type": "array",
+        "description": "Array of subtitle descriptors. Each entry is a LabeledStateProperty object.",
+        "default": []
+      },
+      "body": {
+        "type": "array",
+        "description": "Array of body field objects. Each item: { \"value\": \"$DataSource_Column\" }. Maps to the 'Columns' section in the designer."
+      },
+      "icon": {
+        "type": "string",
+        "description": "Binding to an image column or null. Maps to the 'Image' setting in the designer."
+      },
+      "iconSize": {
+        "type": "string",
+        "description": "Size of the icon. Accepted values: 'small' | 'medium' | 'large'."
+      },
+      "showEmptyValues": {
+        "type": "boolean",
+        "default": true,
+        "description": "Whether to display rows for body fields that have empty values."
+      },
+      "actions": {
+        "type": "array",
+        "description": "Array of action button configs shown on the list item."
+      }
+    },
+    "example": {
+      "operation": "insert",
+      "name": "ListItem1",
+      "values": {
+        "type": "crt.ListItem",
+        "subtitles": [],
+        "body": [
+          { "value": "$List1DS_Account" },
+          { "value": "$List1DS_Email" }
+        ],
+        "showEmptyValues": true,
+        "title": "$List1DS_Name",
+        "icon": null
+      },
+      "parentName": "List1",
+      "propertyName": "itemLayout",
       "index": 0
     }
   },

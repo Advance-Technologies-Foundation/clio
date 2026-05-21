@@ -2877,6 +2877,163 @@ public sealed class SchemaValidationServiceTests
 		result.Errors.Should().NotBeEmpty("because the JSON parse error should be reported");
 	}
 
+	[Test]
+	[Description("Rejects a mobile body where a diff property is not a JSON array.")]
+	[TestCase("viewConfigDiff")]
+	[TestCase("viewModelConfigDiff")]
+	[TestCase("modelConfigDiff")]
+	public void ValidateMobileBody_WhenDiffPropertyIsNotArray_ReturnsError(string propertyName) {
+		// Arrange
+		string body = $$"""{ "{{propertyName}}": {} }""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse($"because '{propertyName}' must be a JSON array");
+		result.Errors.Should().Contain(e => e.Contains(propertyName) && e.Contains("array"),
+			$"because the error must identify '{propertyName}' and the expected type");
+	}
+
+	[Test]
+	[Description("Accepts a mobile body where diff properties are valid JSON arrays.")]
+	public void ValidateMobileBody_WhenDiffPropertiesAreArrays_ReturnsValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "viewModelConfigDiff": [],
+		                "modelConfigDiff": []
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because all diff properties are valid JSON arrays");
+		result.Errors.Should().BeEmpty("because no validation errors should be raised");
+	}
+
+	[Test]
+	[Description("Rejects a mobile body where viewModelConfig is not a JSON object.")]
+	public void ValidateMobileBody_WhenViewModelConfigIsNotObject_ReturnsError() {
+		// Arrange
+		string body = """{ "viewModelConfig": [] }""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because 'viewModelConfig' must be a JSON object");
+		result.Errors.Should().Contain(e => e.Contains("viewModelConfig") && e.Contains("object"),
+			"because the error must identify 'viewModelConfig' and the expected type");
+	}
+
+	[Test]
+	[Description("Rejects a mobile body where modelConfig is not a JSON object.")]
+	public void ValidateMobileBody_WhenModelConfigIsNotObject_ReturnsError() {
+		// Arrange
+		string body = """{ "modelConfig": "string" }""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because 'modelConfig' must be a JSON object");
+		result.Errors.Should().Contain(e => e.Contains("modelConfig") && e.Contains("object"),
+			"because the error must identify 'modelConfig' and the expected type");
+	}
+
+	[Test]
+	[Description("Accepts a mobile body where viewModelConfig and modelConfig are valid JSON objects.")]
+	public void ValidateMobileBody_WhenConfigPropertiesAreObjects_ReturnsValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "viewModelConfig": { "attributes": {} },
+		                "modelConfig": { "dataSources": {} }
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because config properties are valid JSON objects");
+		result.Errors.Should().BeEmpty("because no validation errors should be raised");
+	}
+
+	[Test]
+	[Description("Reports multiple errors when both diff and config properties have wrong types.")]
+	public void ValidateMobileBody_WhenMultiplePropertiesHaveWrongType_ReportsAllErrors() {
+		// Arrange
+		string body = """{ "viewConfigDiff": {}, "viewModelConfig": [] }""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because both properties have invalid types");
+		result.Errors.Should().HaveCount(2,
+			"because each property with the wrong type should produce a distinct error");
+	}
+
+	[Test]
+	[Description("Rejects a mobile body that contains an unknown root property.")]
+	public void ValidateMobileBody_WhenUnknownRootProperty_ReturnsError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "customProperty": true
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because 'customProperty' is not an allowed mobile root property");
+		result.Errors.Should().ContainSingle(e => e.Contains("customProperty") && e.Contains("Unknown"),
+			"because the error must identify the unknown property");
+	}
+
+	[Test]
+	[Description("Does not double-report disallowed keys (validators, handlers, converters) as unknown properties.")]
+	public void ValidateMobileBody_WhenDisallowedKeyPresent_DoesNotDoubleReport() {
+		// Arrange
+		string body = """{ "viewConfigDiff": [], "validators": {} }""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because 'validators' is disallowed on mobile");
+		result.Errors.Should().HaveCount(1,
+			"because 'validators' should only be reported once by the disallowed-key check, not also by the unknown-property check");
+	}
+
+	[Test]
+	[Description("Reports both disallowed and unknown properties without cross-contamination.")]
+	public void ValidateMobileBody_WhenBothDisallowedAndUnknownProperties_ReportsSeparateErrors() {
+		// Arrange
+		string body = """{ "viewConfigDiff": [], "handlers": [], "foo": 42 }""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because both disallowed and unknown properties are present");
+		result.Errors.Should().HaveCount(2,
+			"because 'handlers' gets one error and 'foo' gets one error");
+		result.Errors.Should().Contain(e => e.Contains("handlers"),
+			"because 'handlers' should be reported as disallowed");
+		result.Errors.Should().Contain(e => e.Contains("foo") && e.Contains("Unknown"),
+			"because 'foo' should be reported as unknown");
+	}
+
         #endregion
 
 	#region ValidateMobileNoValidatorReferences
