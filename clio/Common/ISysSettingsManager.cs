@@ -333,7 +333,8 @@ public class SysSettingsManager : ISysSettingsManager
 			}
 			payloadValue = boolValue;
 		}
-		else if (optionsType.Contains("Currency") || optionsType.Contains("Decimal")) {
+		else if (optionsType.Contains("Currency") || optionsType.Contains("Decimal")
+			|| optionsType.Contains("Money") || optionsType.Contains("Float")) {
 			bool isDecimal = decimal.TryParse(value?.ToString(), NumberStyles.Number,
 				CultureInfo.InvariantCulture, out decimal decimalValue);
 			if (!isDecimal) {

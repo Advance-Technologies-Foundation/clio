@@ -393,6 +393,42 @@ public class SysSettingsManagerNewBehaviorTests {
 
 	#endregion
 
+	#region UpdateSysSetting — Money / Float numeric branches
+
+	[Test]
+	[Description("Money is the new Creatio internal alias for Currency and must accept decimal values on the update path.")]
+	public void UpdateSysSetting_MoneyType_SerializesDecimalValue() {
+		DataProviderMock providerMock = SetupSysSettingsMock(Guid.NewGuid(), "UsrMoneyCode", "Money");
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		string capturedBody = null;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
+			.Returns("""{"saveResult":{"UsrMoneyCode":true},"success":false}""");
+		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
+
+		sut.UpdateSysSetting("UsrMoneyCode", "19.95").Should().BeTrue(
+			because: "Money settings reuse the decimal serialization branch alongside Currency/Decimal/Float");
+		capturedBody.Should().Contain("\"UsrMoneyCode\":19.95",
+			because: "decimal payloads are emitted as JSON numbers, not strings");
+	}
+
+	[Test]
+	[Description("Float is the new Creatio internal alias for Decimal and must accept decimal values on the update path.")]
+	public void UpdateSysSetting_FloatType_SerializesDecimalValue() {
+		DataProviderMock providerMock = SetupSysSettingsMock(Guid.NewGuid(), "UsrFloatCode", "Float");
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		string capturedBody = null;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBody = b))
+			.Returns("""{"saveResult":{"UsrFloatCode":true},"success":false}""");
+		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
+
+		sut.UpdateSysSetting("UsrFloatCode", "3.14").Should().BeTrue(
+			because: "Float settings reuse the decimal serialization branch alongside Currency/Decimal/Money");
+		capturedBody.Should().Contain("\"UsrFloatCode\":3.14",
+			because: "decimal payloads are emitted as JSON numbers, not strings");
+	}
+
+	#endregion
+
 	#region GetSysSettingValueByCode — All-Users-only fallback
 
 	[Test]
