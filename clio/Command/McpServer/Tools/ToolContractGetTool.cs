@@ -1631,9 +1631,9 @@ internal static class ToolContractCatalog {
 		}
 
 		return Example(summary, new Dictionary<string, object?> {
-			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
-			[PackageNameCamelFieldName] = ExamplePackageName,
-			[EntitySchemaNameCamelFieldName] = entitySchemaName,
+			[EnvironmentNameFieldName] = ExampleEnvironmentName,
+			[PackageNameFieldName] = ExamplePackageName,
+			[EntitySchemaNameFieldName] = entitySchemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = caption,
 				["condition"] = new Dictionary<string, object?> {

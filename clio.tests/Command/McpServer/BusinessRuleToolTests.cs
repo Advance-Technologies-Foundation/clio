@@ -500,7 +500,7 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		BusinessRuleToolPayload? payloadArgs = JsonSerializer.Deserialize<BusinessRuleToolPayload>(payload);
+		CreateEntityBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleArgs>(payload);
 
 		// Assert
 		payloadArgs.Should().NotBeNull(
