@@ -661,6 +661,40 @@ public class SysSettingsManagerNewBehaviorTests {
 			because: "the All-Users-only path must return the All-Users row formatted by the same FormatTypedValue used elsewhere");
 	}
 
+	[Test]
+	[Description("GetAllUsersDefaultWithType returns the resolved value-type-name alongside the All-Users value so callers (specifically the MCP tool layer) can apply type-aware policy like SecureText masking without a second round-trip.")]
+	public void GetAllUsersDefaultWithType_ReturnsValueAndType_WhenAllUsersRowExists() {
+		Guid settingId = Guid.NewGuid();
+		DataProviderMock providerMock = SetupSysSettingsMock(settingId, "UsrSecretCode", "SecureText",
+			valueRow: new Dictionary<string, object> {
+				{ "SysAdminUnit", AllUsersAdminUnitId },
+				{ "TextValue", "ENCRYPTED_BASE64" }
+			});
+		ISysSettingsManager sut = BuildSut(providerMock);
+
+		(string value, string typeName) = sut.GetAllUsersDefaultWithType("UsrSecretCode");
+
+		value.Should().Be("ENCRYPTED_BASE64",
+			because: "the manager returns the raw stored value; masking is applied by the tool layer that consumes this method");
+		typeName.Should().Be("SecureText",
+			because: "the resolved value-type-name must accompany the value so the tool layer can decide whether to mask");
+	}
+
+	[Test]
+	[Description("GetAllUsersDefaultWithType returns empty value and null type-name for unknown codes, so the tool layer treats them as 'no value' without misclassifying the type.")]
+	public void GetAllUsersDefaultWithType_ReturnsEmptyValueAndNullType_WhenSettingMissing() {
+		DataProviderMock providerMock = new();
+		providerMock.MockItems("SysSettings").Returns(new List<Dictionary<string, object>>());
+		ISysSettingsManager sut = BuildSut(providerMock);
+
+		(string value, string typeName) = sut.GetAllUsersDefaultWithType("UsrMissing");
+
+		value.Should().BeEmpty(
+			because: "an unknown code should surface as empty value, not as a magic sentinel");
+		typeName.Should().BeNull(
+			because: "no setting → no type — the tool layer must be able to short-circuit before applying type-specific policy");
+	}
+
 	#endregion
 
 	#region UpdateSysSetting — Money / Float numeric branches

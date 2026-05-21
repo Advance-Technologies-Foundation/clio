@@ -53,6 +53,14 @@ public interface ISysSettingsManager
 	/// </summary>
 	string GetAllUsersDefaultByCode(string code);
 
+	/// <summary>
+	/// Returns the All-Users default value and the resolved value-type-name of a sys-setting in a single
+	/// model lookup. Callers that need to apply type-aware policy (for example masking SecureText values
+	/// before surfacing them to MCP clients) should prefer this method over <see cref="GetAllUsersDefaultByCode"/>
+	/// to avoid a second round-trip. Returns an empty value and a null type name when the setting is unknown.
+	/// </summary>
+	(string Value, string ValueTypeName) GetAllUsersDefaultWithType(string code);
+
 	SysSettingsManager.InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
 		bool cached = true, string description = "", bool valueForCurrentUser = false,
 		Guid? referenceSchemaUId = null);
@@ -284,14 +292,22 @@ public class SysSettingsManager : ISysSettingsManager
 	/// <see cref="GetSysSettingValueByCode(string)"/> short-circuits through the data provider which
 	/// can resolve a per-user value via the cliogate endpoint and would contradict that contract.
 	/// </summary>
-	public string GetAllUsersDefaultByCode(string code){
+	public string GetAllUsersDefaultByCode(string code) => GetAllUsersDefaultWithType(code).Value;
+
+	/// <inheritdoc cref="ISysSettingsManager.GetAllUsersDefaultWithType" />
+	public (string Value, string ValueTypeName) GetAllUsersDefaultWithType(string code) {
 		SysSettings sysSetting = GetSysSettingByCodeWithValues(code);
-		if (sysSetting?.SysSettingsValues is null || sysSetting.SysSettingsValues.Count == 0) {
-			return string.Empty;
+		if (sysSetting is null) {
+			return (string.Empty, null);
+		}
+		if (sysSetting.SysSettingsValues is null || sysSetting.SysSettingsValues.Count == 0) {
+			return (string.Empty, sysSetting.ValueTypeName);
 		}
 		SysSettingsValue value = sysSetting.SysSettingsValues
 			.FirstOrDefault(v => v.SysAdminUnitId == AllUsersAdminUnitId);
-		return value is null ? string.Empty : FormatTypedValue(sysSetting, value);
+		return value is null
+			? (string.Empty, sysSetting.ValueTypeName)
+			: (FormatTypedValue(sysSetting, value), sysSetting.ValueTypeName);
 	}
 
 	public InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,

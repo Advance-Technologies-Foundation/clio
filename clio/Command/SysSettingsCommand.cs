@@ -97,8 +97,9 @@ namespace Clio.Command
 					return new SysSettingUpdateResult(false, args.Code, null,
 						"Failed to update sys-setting. The setting may not exist, or the value did not match the expected type.");
 				}
-				string readback = _sysSettingsManager.GetAllUsersDefaultByCode(args.Code);
-				return new SysSettingUpdateResult(true, args.Code, readback);
+				(string readback, string readbackType) = _sysSettingsManager.GetAllUsersDefaultWithType(args.Code);
+				string maskedReadback = ApplySecureTextMask(readbackType, readback);
+				return new SysSettingUpdateResult(true, args.Code, maskedReadback);
 			} catch (Exception ex) {
 				string message = CategorizeError(ex, "updating sys-setting");
 				return new SysSettingUpdateResult(false, args.Code, null, message);
@@ -124,18 +125,20 @@ namespace Clio.Command
 
 		/// <summary>
 		/// Reads the All-Users default value of a sys-setting by code and returns a structured result.
-		/// Routes through <see cref="ISysSettingsManager.GetAllUsersDefaultByCode"/> rather than the legacy
-		/// provider-first method so a per-user override never leaks into the MCP response, matching the
-		/// "All-Users default" contract this tool advertises. Categorizes network, authentication, and
-		/// validation failures into a non-throwing error envelope for MCP callers.
+		/// Routes through <see cref="ISysSettingsManager.GetAllUsersDefaultWithType"/> so the resolved
+		/// value-type-name is available alongside the value; SecureText values are masked before they
+		/// leave the manager so this read path does not bypass the masking applied by list-sys-settings.
+		/// Categorizes network, authentication, and validation failures into a non-throwing error
+		/// envelope for MCP callers.
 		/// </summary>
 		public SysSettingGetResult TryGetSysSetting(GetSysSettingArgs args) {
 			try {
 				if (string.IsNullOrWhiteSpace(args.Code)) {
 					throw new ArgumentException("code is required.");
 				}
-				string value = _sysSettingsManager.GetAllUsersDefaultByCode(args.Code);
-				return new SysSettingGetResult(true, args.Code, value ?? string.Empty);
+				(string value, string typeName) = _sysSettingsManager.GetAllUsersDefaultWithType(args.Code);
+				string maskedValue = ApplySecureTextMask(typeName, value ?? string.Empty);
+				return new SysSettingGetResult(true, args.Code, maskedValue);
 			} catch (Exception ex) {
 				string message = CategorizeError(ex, "reading sys-setting");
 				return new SysSettingGetResult(false, args.Code, string.Empty, message);
@@ -147,6 +150,22 @@ namespace Clio.Command
 		// VwSysSetting.GetDefaultValue returns this sentinel when no SysSettingsValue row is found
 		// for a setting. Treat it as "unconfigured" rather than "real value to mask".
 		private const string DefValueUnconfiguredSentinel = "undefined";
+
+		/// <summary>
+		/// Centralized SecureText masking applied to every value the MCP sys-setting surface surfaces:
+		/// list-sys-settings catalog rows, get-sys-setting reads, and the readback values returned by
+		/// update-sys-setting / create-sys-setting after the write succeeds. Without this helper the
+		/// get/update/create read paths would expose ciphertext through the structured response and
+		/// bypass the masking that list-sys-settings already applies.
+		/// </summary>
+		private static string ApplySecureTextMask(string valueTypeName, string rawValue) {
+			if (!string.Equals(valueTypeName, SecureTextValueTypeName, StringComparison.Ordinal)) {
+				return rawValue;
+			}
+			bool isUnconfigured = string.IsNullOrEmpty(rawValue)
+				|| string.Equals(rawValue, DefValueUnconfiguredSentinel, StringComparison.Ordinal);
+			return isUnconfigured ? string.Empty : MaskedSecureValuePlaceholder;
+		}
 
 		/// <summary>
 		/// Returns the catalog of sys-settings on the target environment with code, display name, value-type, default value, and cacheable/personal flags.
@@ -175,14 +194,8 @@ namespace Clio.Command
 			}
 		}
 
-		private static string MaskSecureValue(SysSettings setting) {
-			if (!string.Equals(setting.ValueTypeName, SecureTextValueTypeName, StringComparison.Ordinal)) {
-				return setting.DefValue;
-			}
-			bool isUnconfigured = string.IsNullOrEmpty(setting.DefValue)
-				|| string.Equals(setting.DefValue, DefValueUnconfiguredSentinel, StringComparison.Ordinal);
-			return isUnconfigured ? string.Empty : MaskedSecureValuePlaceholder;
-		}
+		private static string MaskSecureValue(SysSettings setting) =>
+			ApplySecureTextMask(setting.ValueTypeName, setting.DefValue);
 
 		/// <summary>
 		/// Creates a new sys-setting with the supplied metadata. For <c>Lookup</c> settings resolves the
@@ -259,7 +272,8 @@ namespace Clio.Command
 					Warning: "Sys-setting was created, but the initial value could not be applied.");
 			}
 			string assignedValue = _sysSettingsManager.GetAllUsersDefaultByCode(args.Code);
-			return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, assignedValue);
+			string maskedAssignedValue = ApplySecureTextMask(args.ValueTypeName, assignedValue);
+			return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, maskedAssignedValue);
 		}
 
 		internal static string CategorizeError(Exception ex, string operationLabel) {

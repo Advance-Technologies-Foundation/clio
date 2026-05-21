@@ -43,7 +43,7 @@ public sealed class SysSettingsToolTests {
 	[Description("get-sys-setting returns the All-Users default value resolved through the typed model path when the requested code exists on the environment.")]
 	public void GetSysSetting_Should_Return_AllUsers_Default_Value_From_Environment() {
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
-		manager.GetAllUsersDefaultByCode("MaxFileSize").Returns("10485760");
+		manager.GetAllUsersDefaultWithType("MaxFileSize").Returns(("10485760", "Integer"));
 		SysSettingGetTool tool = new(BuildResolver(manager));
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "MaxFileSize"));
@@ -53,11 +53,44 @@ public sealed class SysSettingsToolTests {
 		result.Code.Should().Be("MaxFileSize",
 			because: "the response must echo the code that was requested for traceability");
 		result.Value.Should().Be("10485760",
-			because: "the tool surfaces the manager's All-Users default value verbatim");
+			because: "the tool surfaces the manager's All-Users default value verbatim for non-sensitive types");
 		result.Error.Should().BeNull(
 			because: "a successful read must not populate the error envelope");
-		manager.Received(1).GetAllUsersDefaultByCode("MaxFileSize");
+		manager.Received(1).GetAllUsersDefaultWithType("MaxFileSize");
 		manager.DidNotReceive().GetSysSettingValueByCode(Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-sys-setting masks SecureText values so the direct read path does not bypass the masking applied by list-sys-settings.")]
+	public void GetSysSetting_Should_Mask_SecureText_Value() {
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllUsersDefaultWithType("UsrApiSecret")
+			.Returns(("ENCRYPTED_CIPHERTEXT_BASE64", "SecureText"));
+		SysSettingGetTool tool = new(BuildResolver(manager));
+
+		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "UsrApiSecret"));
+
+		result.Success.Should().BeTrue(
+			because: "the read itself succeeds — only the value surface needs to be sanitized");
+		result.Value.Should().Be("***",
+			because: "SecureText values must be masked on every MCP read path or the masking policy on list-sys-settings is trivially bypassable");
+		result.Error.Should().BeNull(
+			because: "masking is a transparent presentation rule, not an error condition");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-sys-setting returns an empty value for SecureText settings that have no All-Users row, distinguishing 'has secret' from 'no secret' without leaking either way.")]
+	public void GetSysSetting_Should_Return_Empty_For_Unconfigured_SecureText() {
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllUsersDefaultWithType("UsrEmptySecret").Returns((string.Empty, "SecureText"));
+		SysSettingGetTool tool = new(BuildResolver(manager));
+
+		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "UsrEmptySecret"));
+
+		result.Value.Should().BeEmpty(
+			because: "an unconfigured SecureText must surface as empty, not as the mask placeholder, so callers can tell whether a secret is present");
 	}
 
 	[Test]
@@ -65,7 +98,7 @@ public sealed class SysSettingsToolTests {
 	[Description("get-sys-setting returns an empty value (without surfacing an error) when the All-Users-only manager path reports no configured value.")]
 	public void GetSysSetting_Should_Return_Empty_When_Setting_Is_Not_Configured() {
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
-		manager.GetAllUsersDefaultByCode("UnknownCode").Returns(string.Empty);
+		manager.GetAllUsersDefaultWithType("UnknownCode").Returns((string.Empty, (string)null));
 		SysSettingGetTool tool = new(BuildResolver(manager));
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "UnknownCode"));
@@ -210,6 +243,30 @@ public sealed class SysSettingsToolTests {
 			because: "the CategorizeError fallback maps UnauthorizedAccessException to the canonical 'Authentication error' message");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("create-sys-setting masks the readback value for SecureText so the structured response does not echo the freshly-written secret back to the caller in clear.")]
+	public void CreateSysSetting_Should_Mask_SecureText_Readback() {
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.InsertSysSetting(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Any<bool>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Guid?>())
+			.Returns(new SysSettingsManager.InsertSysSettingResponse(
+				new SysSettingsManager.ResponseStatus(string.Empty, string.Empty, Array.Empty<object>()),
+				Guid.NewGuid(), 1, false, true));
+		manager.UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>()).Returns(true);
+		manager.GetAllUsersDefaultByCode("UsrApiSecret").Returns("ENCRYPTED_CIPHERTEXT_BASE64");
+		SysSettingCreateTool tool = new(BuildResolver(manager));
+
+		SysSettingCreateResult result = tool.CreateSysSetting(
+			new CreateSysSettingArgs("local", "UsrApiSecret", "API secret", "SecureText", Value: "plaintext"));
+
+		result.Success.Should().BeTrue(
+			because: "the create itself succeeds — only the readback value surface needs to be sanitized");
+		result.Value.Should().Be("***",
+			because: "create-sys-setting must not echo the freshly-stored SecureText back in clear or it bypasses the masking policy");
+	}
+
 	#endregion
 
 	#region update-sys-setting
@@ -251,6 +308,25 @@ public sealed class SysSettingsToolTests {
 			because: "an unreachable environment must surface a failure envelope, not propagate the raw exception");
 		result.Error.Should().Be("Network error updating sys-setting.",
 			because: "the CategorizeError fallback maps HttpRequestException to the canonical 'Network error' message");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("update-sys-setting masks the readback value for SecureText so the response does not echo the just-written secret back to the caller in clear.")]
+	public void UpdateSysSetting_Should_Mask_SecureText_Readback() {
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.UpdateSysSetting("UsrApiSecret", Arg.Any<object>(), Arg.Any<string>()).Returns(true);
+		manager.GetAllUsersDefaultWithType("UsrApiSecret")
+			.Returns(("ENCRYPTED_CIPHERTEXT_BASE64", "SecureText"));
+		SysSettingUpdateTool tool = new(BuildResolver(manager));
+
+		SysSettingUpdateResult result = tool.UpdateSysSetting(
+			new UpdateSysSettingArgs("local", "UsrApiSecret", "plaintext", "SecureText"));
+
+		result.Success.Should().BeTrue(
+			because: "the update itself succeeds — only the readback value surface needs to be sanitized");
+		result.Value.Should().Be("***",
+			because: "update-sys-setting must not echo the freshly-stored SecureText back in clear or it bypasses the masking policy");
 	}
 
 	#endregion
