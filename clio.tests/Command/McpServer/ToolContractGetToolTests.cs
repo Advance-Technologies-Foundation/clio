@@ -1313,4 +1313,44 @@ public sealed class ToolContractGetToolTests {
 		result.Error.Message.Should().Contain("tool-names",
 			because: "the error should point to the canonical valid args");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical create-sys-setting contract with reference-schema-name as an input field and warning in the output envelope.")]
+	public void ToolContractGet_Should_Return_CreateSysSetting_Contract_With_ReferenceSchemaName_And_Warning() {
+		ToolContractGetTool tool = new();
+
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			SysSettingCreateTool.CreateSysSettingToolName
+		]));
+
+		result.Success.Should().BeTrue(
+			because: "create-sys-setting is part of the executable clio MCP contract surface");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "reference-schema-name",
+			because: "the contract must advertise reference-schema-name so contract-driven clients can discover the Lookup creation path");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "warning",
+			because: "the contract must advertise the optional partial-success warning that the tool actually returns when the row is created but the initial value cannot be applied");
+		contract.InputSchema.Properties.Select(field => field.Name).Should().NotContain("Binary",
+			because: "Binary is intentionally excluded from the advertised value-type-name surface");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical list-sys-settings contract documenting Binary exclusion in its description.")]
+	public void ToolContractGet_Should_Return_ListSysSettings_Contract_With_Binary_Exclusion_Note() {
+		ToolContractGetTool tool = new();
+
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			SysSettingsListTool.ListSysSettingsToolName
+		]));
+
+		result.Success.Should().BeTrue(
+			because: "list-sys-settings is part of the executable clio MCP contract surface");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Description.Should().Contain("Binary",
+			because: "the description must call out Binary exclusion so contract-driven clients understand why those entries are absent");
+		contract.Description.Should().Contain("excluded",
+			because: "the description must clarify Binary is not just hidden, but unsupported through this tool set");
+	}
 }

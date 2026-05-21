@@ -3157,7 +3157,8 @@ internal static class ToolContractCatalog {
 				Field(SysSettingCodeFieldName, StringType, "Sys-setting code echoed from the request."),
 				Field(SysSettingValueTypeFieldName, StringType, "Value-type-name applied to the created sys-setting."),
 				Field(SysSettingValueFieldName, StringType, "Applied initial value (null when no value was provided or assignment failed)."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription)
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("warning", StringType, "Optional partial-success warning. Populated when the row was created but the initial value could not be applied; null on a fully successful or fully failed create.")
 			),
 			CommonErrorContract,
 			[],

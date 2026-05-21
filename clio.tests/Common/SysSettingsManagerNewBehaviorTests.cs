@@ -428,6 +428,45 @@ public class SysSettingsManagerNewBehaviorTests {
 
 	#endregion
 
+	#region TryListSysSettings — SecureText masking
+
+	[Test]
+	[Description("TryListSysSettings masks SecureText values to a placeholder so the catalog response cannot be used to harvest stored secrets.")]
+	public void TryListSysSettings_Masks_SecureText_Values() {
+		Guid settingId = Guid.NewGuid();
+		DataProviderMock providerMock = SetupSysSettingsMock(settingId, "UsrApiSecret", "SecureText",
+			valueRow: new Dictionary<string, object> {
+				{ "SysAdminUnit", AllUsersAdminUnitId },
+				{ "TextValue", "ENCRYPTED_BASE64_CIPHERTEXT_PAYLOAD" }
+			});
+		ISysSettingsManager managerForTryList = BuildSut(providerMock);
+		SysSettingsCommand command = new(managerForTryList, Substitute.For<ILogger>());
+
+		SysSettingsListResult result = command.TryListSysSettings(new ListSysSettingsArgs("local"));
+
+		result.Success.Should().BeTrue();
+		result.Settings.Should().ContainSingle(item => item.Code == "UsrApiSecret")
+			.Which.Value.Should().Be("***",
+				because: "SecureText values must be masked in the catalog response so callers cannot harvest stored secrets through list-sys-settings");
+	}
+
+	[Test]
+	[Description("TryListSysSettings returns an empty value (not a mask placeholder) for SecureText settings that have no stored value yet, so the caller can still distinguish 'has secret' from 'no secret'.")]
+	public void TryListSysSettings_Returns_Empty_For_Unconfigured_SecureText() {
+		Guid settingId = Guid.NewGuid();
+		DataProviderMock providerMock = SetupSysSettingsMock(settingId, "UsrEmptySecret", "SecureText", valueRow: null);
+		ISysSettingsManager managerForTryList = BuildSut(providerMock);
+		SysSettingsCommand command = new(managerForTryList, Substitute.For<ILogger>());
+
+		SysSettingsListResult result = command.TryListSysSettings(new ListSysSettingsArgs("local"));
+
+		result.Settings.Should().ContainSingle(item => item.Code == "UsrEmptySecret")
+			.Which.Value.Should().BeEmpty(
+				because: "unconfigured SecureText settings should expose an empty value, not a misleading mask placeholder");
+	}
+
+	#endregion
+
 	#region TryListSysSettings — Binary filter
 
 	[Test]
@@ -458,6 +497,168 @@ public class SysSettingsManagerNewBehaviorTests {
 			because: "of the two seeded settings, only the non-Binary one should be returned");
 		result.Settings[0].Code.Should().Be("UsrPlainText",
 			because: "Binary entries are dropped from the result while non-Binary entries pass through unchanged");
+	}
+
+	#endregion
+
+	#region GetEntityIdByDisplayValue — safe JSON encoding
+
+	private const string SelectIdByDisplayValueTemplate = """
+		{
+		  "rootSchemaName": "{{rootSchemaName}}",
+		  "filters": {
+		    "isEnabled": true,
+		    "trimDateTimeParameterToDate": false,
+		    "filterType": 6,
+		    "logicalOperation": 0,
+		    "items": {
+		      "8caf69f4-9583-4e77-86c0-716c07ce4ec7": {
+		        "filterType": 1,
+		        "comparisonType": 3,
+		        "isEnabled": true,
+		        "trimDateTimeParameterToDate": false,
+		        "leftExpression": { "expressionType": 1, "functionType": 1, "macrosType": 35 },
+		        "isAggregative": false,
+		        "dataValueType": 1,
+		        "rightExpression": {
+		          "expressionType": 2,
+		          "parameter": { "dataValueType": 1, "value": "{{diplayvalue}}", "className": "Terrasoft.Parameter" },
+		          "className": "Terrasoft.ParameterExpression"
+		        },
+		        "className": "Terrasoft.CompareFilter"
+		      }
+		    }
+		  },
+		  "useLocalization": true,
+		  "columns": { "items": { "Id": { "expression": { "expressionType": 0, "columnPath": "Id" } } } }
+		}
+		""";
+
+	private static SysSettingsManager BuildSutWithStubbedTemplate(IDataProvider dataProvider,
+		IApplicationClient applicationClient, string templateContent) {
+		BindingsModule bm = new(FileSystem);
+		IServiceProvider container = bm.Register(EnvironmentSettings);
+		IFileSystem filesystem = Substitute.For<IFileSystem>();
+		filesystem.ReadAllText(Arg.Any<string>()).Returns(templateContent);
+		return new SysSettingsManager(
+			applicationClient,
+			container.GetRequiredService<IServiceUrlBuilder>(),
+			dataProvider,
+			container.GetRequiredService<IWorkingDirectoriesProvider>(),
+			filesystem,
+			FileSystem,
+			Substitute.For<ILogger>());
+	}
+
+	[Test]
+	[Description("Lookup display-name resolution must JSON-encode caller-supplied values through Newtonsoft so quotes/backslashes cannot break out of the SelectQuery JSON string literal.")]
+	public void UpdateSysSetting_LookupDisplayName_EscapesQuotesAndBackslashesInSelectQuery() {
+		Guid settingId = Guid.NewGuid();
+		Guid refSchemaUId = Guid.NewGuid();
+		Guid resolvedId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+		DataProviderMock providerMock = new();
+		providerMock.MockItems("SysSettings").Returns(new List<Dictionary<string, object>> {
+			new() {
+				{ "Id", settingId }, { "Code", "UsrLookupCode" }, { "Name", "UsrLookupCode" },
+				{ "ValueTypeName", "Lookup" }, { "Description", "" },
+				{ "IsCacheable", true }, { "IsPersonal", false }, { "IsSSPAvailable", false },
+				{ "ReferenceSchemaUId", refSchemaUId }
+			}
+		});
+		providerMock.MockItems("SysSchema").Returns(new List<Dictionary<string, object>> {
+			new() { { "Id", Guid.NewGuid() }, { "UId", refSchemaUId }, { "Name", "UsrPhoneFormat" } }
+		});
+		providerMock.MockItems("SysSettingsValue").Returns(new List<Dictionary<string, object>>());
+
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		List<string> capturedBodies = [];
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(b => capturedBodies.Add(b)))
+			.Returns(_ => capturedBodies.Count == 1
+				? $$"""{"rows":[{"Id":"{{resolvedId}}"}]}"""
+				: """{"saveResult":{"UsrLookupCode":true},"success":false}""");
+		SysSettingsManager sut = BuildSutWithStubbedTemplate(providerMock, applicationClient,
+			SelectIdByDisplayValueTemplate);
+
+		sut.UpdateSysSetting("UsrLookupCode", "Display \"name\" with \\slash", "Lookup")
+			.Should().BeTrue(
+				because: "after the display name resolves through SelectQuery the per-code update should succeed end-to-end");
+
+		capturedBodies.Should().HaveCountGreaterOrEqualTo(1,
+			because: "Lookup display-name resolution issues a SelectQuery request before the value update");
+		capturedBodies[0].Should().Contain("\\\"name\\\"",
+			because: "Newtonsoft JSON encoding must escape inner quotes inside the SelectQuery body");
+		capturedBodies[0].Should().Contain("\\\\slash",
+			because: "Newtonsoft JSON encoding must escape backslashes inside the SelectQuery body");
+		capturedBodies[0].Should().NotContain("{{diplayvalue}}",
+			because: "the templating placeholder must be replaced, never sent literally to the platform");
+	}
+
+	[Test]
+	[Description("If the SelectQuery template ever drops the expected parameter path, GetEntityIdByDisplayValue must fail loudly instead of silently sending a request with the un-replaced placeholder.")]
+	public void UpdateSysSetting_LookupDisplayName_FailsLoud_WhenTemplateMissesParameterPath() {
+		Guid settingId = Guid.NewGuid();
+		Guid refSchemaUId = Guid.NewGuid();
+		DataProviderMock providerMock = new();
+		providerMock.MockItems("SysSettings").Returns(new List<Dictionary<string, object>> {
+			new() {
+				{ "Id", settingId }, { "Code", "UsrLookupCode" }, { "Name", "UsrLookupCode" },
+				{ "ValueTypeName", "Lookup" }, { "Description", "" },
+				{ "IsCacheable", true }, { "IsPersonal", false }, { "IsSSPAvailable", false },
+				{ "ReferenceSchemaUId", refSchemaUId }
+			}
+		});
+		providerMock.MockItems("SysSchema").Returns(new List<Dictionary<string, object>> {
+			new() { { "Id", Guid.NewGuid() }, { "UId", refSchemaUId }, { "Name", "UsrPhoneFormat" } }
+		});
+		providerMock.MockItems("SysSettingsValue").Returns(new List<Dictionary<string, object>>());
+
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		SysSettingsManager sut = BuildSutWithStubbedTemplate(providerMock, applicationClient,
+			templateContent: """{"rootSchemaName":"{{rootSchemaName}}","filters":{"items":{}}}""");
+
+		System.Action act = () => sut.UpdateSysSetting("UsrLookupCode", "AnyDisplay", "Lookup");
+
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*template is malformed*",
+				because: "a missing parameter path must surface immediately so a malformed template cannot send an injection-vulnerable placeholder request");
+	}
+
+	#endregion
+
+	#region GetAllUsersDefaultByCode — explicit All-Users-only read
+
+	[Test]
+	[Description("GetAllUsersDefaultByCode returns empty when only personal-user rows exist, so the MCP get-sys-setting contract never leaks another user's value.")]
+	public void GetAllUsersDefaultByCode_ReturnsEmpty_WhenOnlyPersonalValuesExist() {
+		Guid settingId = Guid.NewGuid();
+		DataProviderMock providerMock = SetupSysSettingsMock(settingId, "UsrAllUsersOnly", "Text",
+			valueRow: new Dictionary<string, object> {
+				{ "SysAdminUnit", Guid.NewGuid() },
+				{ "TextValue", "personal-value" }
+			});
+		ISysSettingsManager sut = BuildSut(providerMock);
+
+		string value = sut.GetAllUsersDefaultByCode("UsrAllUsersOnly");
+
+		value.Should().BeEmpty(
+			because: "GetAllUsersDefaultByCode must skip rows belonging to specific users so the MCP contract holds even when a per-user override exists");
+	}
+
+	[Test]
+	[Description("GetAllUsersDefaultByCode returns the All-Users row's formatted value when present.")]
+	public void GetAllUsersDefaultByCode_ReturnsAllUsersValue_WhenAllUsersRowExists() {
+		Guid settingId = Guid.NewGuid();
+		DataProviderMock providerMock = SetupSysSettingsMock(settingId, "UsrPlain", "Text",
+			valueRow: new Dictionary<string, object> {
+				{ "SysAdminUnit", AllUsersAdminUnitId },
+				{ "TextValue", "all-users-value" }
+			});
+		ISysSettingsManager sut = BuildSut(providerMock);
+
+		string value = sut.GetAllUsersDefaultByCode("UsrPlain");
+
+		value.Should().Be("all-users-value",
+			because: "the All-Users-only path must return the All-Users row formatted by the same FormatTypedValue used elsewhere");
 	}
 
 	#endregion

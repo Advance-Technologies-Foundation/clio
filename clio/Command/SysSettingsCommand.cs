@@ -97,7 +97,7 @@ namespace Clio.Command
 					return new SysSettingUpdateResult(false, args.Code, null,
 						"Failed to update sys-setting. The setting may not exist, or the value did not match the expected type.");
 				}
-				string readback = _sysSettingsManager.GetSysSettingValueByCode(args.Code);
+				string readback = _sysSettingsManager.GetAllUsersDefaultByCode(args.Code);
 				return new SysSettingUpdateResult(true, args.Code, readback);
 			} catch (Exception ex) {
 				string message = CategorizeError(ex, "updating sys-setting");
@@ -123,15 +123,18 @@ namespace Clio.Command
 		}
 
 		/// <summary>
-		/// Reads a single sys-setting value by code and returns a structured result. Categorizes network,
-		/// authentication, and validation failures into a non-throwing error envelope for MCP callers.
+		/// Reads the All-Users default value of a sys-setting by code and returns a structured result.
+		/// Routes through <see cref="ISysSettingsManager.GetAllUsersDefaultByCode"/> rather than the legacy
+		/// provider-first method so a per-user override never leaks into the MCP response, matching the
+		/// "All-Users default" contract this tool advertises. Categorizes network, authentication, and
+		/// validation failures into a non-throwing error envelope for MCP callers.
 		/// </summary>
 		public SysSettingGetResult TryGetSysSetting(GetSysSettingArgs args) {
 			try {
 				if (string.IsNullOrWhiteSpace(args.Code)) {
 					throw new ArgumentException("code is required.");
 				}
-				string value = _sysSettingsManager.GetSysSettingValueByCode(args.Code);
+				string value = _sysSettingsManager.GetAllUsersDefaultByCode(args.Code);
 				return new SysSettingGetResult(true, args.Code, value ?? string.Empty);
 			} catch (Exception ex) {
 				string message = CategorizeError(ex, "reading sys-setting");
@@ -139,10 +142,18 @@ namespace Clio.Command
 			}
 		}
 
+		private const string SecureTextValueTypeName = "SecureText";
+		private const string MaskedSecureValuePlaceholder = "***";
+		// VwSysSetting.GetDefaultValue returns this sentinel when no SysSettingsValue row is found
+		// for a setting. Treat it as "unconfigured" rather than "real value to mask".
+		private const string DefValueUnconfiguredSentinel = "undefined";
+
 		/// <summary>
 		/// Returns the catalog of sys-settings on the target environment with code, display name, value-type, default value, and cacheable/personal flags.
 		/// Binary-type settings are excluded from the result — Binary read/write is not exposed through this MCP tool set
 		/// (no BinaryValue column in SysSettingsValue and PostSysSettingsValues is scalar-only), so listing them would be misleading.
+		/// SecureText values are masked: the metadata row is returned but the actual stored secret is replaced with a placeholder
+		/// so the catalog cannot be used to harvest secrets.
 		/// </summary>
 		public SysSettingsListResult TryListSysSettings(ListSysSettingsArgs args) {
 			try {
@@ -153,7 +164,7 @@ namespace Clio.Command
 						setting.Code,
 						setting.Name,
 						setting.ValueTypeName,
-						setting.DefValue,
+						MaskSecureValue(setting),
 						setting.IsCacheable,
 						setting.IsPersonal))
 					.ToArray();
@@ -162,6 +173,15 @@ namespace Clio.Command
 				string message = CategorizeError(ex, "listing sys-settings");
 				return new SysSettingsListResult(false, Array.Empty<SysSettingItem>(), message);
 			}
+		}
+
+		private static string MaskSecureValue(SysSettings setting) {
+			if (!string.Equals(setting.ValueTypeName, SecureTextValueTypeName, StringComparison.Ordinal)) {
+				return setting.DefValue;
+			}
+			bool isUnconfigured = string.IsNullOrEmpty(setting.DefValue)
+				|| string.Equals(setting.DefValue, DefValueUnconfiguredSentinel, StringComparison.Ordinal);
+			return isUnconfigured ? string.Empty : MaskedSecureValuePlaceholder;
 		}
 
 		/// <summary>
@@ -238,7 +258,7 @@ namespace Clio.Command
 					Error: null,
 					Warning: "Sys-setting was created, but the initial value could not be applied.");
 			}
-			string assignedValue = _sysSettingsManager.GetSysSettingValueByCode(args.Code);
+			string assignedValue = _sysSettingsManager.GetAllUsersDefaultByCode(args.Code);
 			return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, assignedValue);
 		}
 

@@ -9,6 +9,7 @@ using ATF.Repository.Providers;
 using CreatioModel;
 using DocumentFormat.OpenXml.Office2010.Excel;
 using Newtonsoft.Json.Linq;
+using NewtonsoftJson = Newtonsoft.Json;
 using Terrasoft.Core;
 using static CreatioModel.SysSettings;
 using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
@@ -45,6 +46,12 @@ public interface ISysSettingsManager
 	///     If the value cannot be converted to the specified type, an InvalidCastException will be thrown.
 	/// </remarks>
 	T GetSysSettingValueByCode<T>(string code);
+
+	/// <summary>
+	/// Returns the All-Users default value of a sys-setting (never a personal/current-user override),
+	/// matching the contract advertised by the MCP get-sys-setting tool.
+	/// </summary>
+	string GetAllUsersDefaultByCode(string code);
 
 	SysSettingsManager.InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
 		bool cached = true, string description = "", bool valueForCurrentUser = false,
@@ -153,12 +160,23 @@ public class SysSettingsManager : ISysSettingsManager
 		string jsonFilePath = _abstractionsFileSystem.Path.Join(
 			_workingDirectoriesProvider.TemplateDirectory, "dataservice-requests", "selectIdByDisplayValue.json");
 
+		// Parse the template as a JObject and assign caller-supplied values via property access
+		// so Newtonsoft handles JSON escaping. Raw string-replacement of {{diplayvalue}} previously
+		// let agent-supplied display names break out of the JSON string literal.
 		string jsonContent = _filesystem.ReadAllText(jsonFilePath);
-		jsonContent = jsonContent.Replace("{{rootSchemaName}}", entityName);
-		jsonContent = jsonContent.Replace("{{diplayvalue}}", optsValue);
+		JObject requestBody = JObject.Parse(jsonContent);
+		requestBody["rootSchemaName"] = entityName;
+		const string parameterPath = "$.filters.items['8caf69f4-9583-4e77-86c0-716c07ce4ec7'].rightExpression.parameter";
+		JToken parameter = requestBody.SelectToken(parameterPath);
+		if (parameter is not JObject parameterObj) {
+			throw new InvalidOperationException(
+				$"selectIdByDisplayValue.json template is malformed: expected JObject at '{parameterPath}'. " +
+				"The template structure changed and the caller-supplied display value cannot be assigned safely.");
+		}
+		parameterObj["value"] = optsValue;
 
 		string selectQueryUrl = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
-		string responseJson = _creatioClient.ExecutePostRequest(selectQueryUrl, jsonContent);
+		string responseJson = _creatioClient.ExecutePostRequest(selectQueryUrl, requestBody.ToString(NewtonsoftJson.Formatting.None));
 		JObject json = JObject.Parse(responseJson);
 		string jsonPath = "$.rows[0].Id";
 		string id = (string)json.SelectToken(jsonPath);
@@ -241,6 +259,22 @@ public class SysSettingsManager : ISysSettingsManager
 		SysSettings sysSetting = GetSysSettingByCodeWithValues(code);
 		if (sysSetting?.SysSettingsValues is null || sysSetting.SysSettingsValues.Count == 0) {
 			return providerValue ?? string.Empty;
+		}
+		SysSettingsValue value = sysSetting.SysSettingsValues
+			.FirstOrDefault(v => v.SysAdminUnitId == AllUsersAdminUnitId);
+		return value is null ? string.Empty : FormatTypedValue(sysSetting, value);
+	}
+
+	/// <summary>
+	/// Returns the All-Users default value of a sys-setting (never a personal/current-user override).
+	/// This is the contract the MCP get-sys-setting tool advertises; legacy
+	/// <see cref="GetSysSettingValueByCode(string)"/> short-circuits through the data provider which
+	/// can resolve a per-user value via the cliogate endpoint and would contradict that contract.
+	/// </summary>
+	public string GetAllUsersDefaultByCode(string code){
+		SysSettings sysSetting = GetSysSettingByCodeWithValues(code);
+		if (sysSetting?.SysSettingsValues is null || sysSetting.SysSettingsValues.Count == 0) {
+			return string.Empty;
 		}
 		SysSettingsValue value = sysSetting.SysSettingsValues
 			.FirstOrDefault(v => v.SysAdminUnitId == AllUsersAdminUnitId);

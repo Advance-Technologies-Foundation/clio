@@ -31,6 +31,7 @@ public sealed class SysSettingsToolE2ETests {
 	[AllureTag(ListToolName)]
 	[AllureName("list-sys-settings returns advertised structured payload with at least one known setting")]
 	[AllureDescription("Starts the real clio MCP server, invokes list-sys-settings against the configured sandbox environment, and verifies the structured response advertises the known OOTB Maintainer setting.")]
+	[Description("Starts the real clio MCP server, invokes list-sys-settings against the configured sandbox environment, and verifies the structured response advertises the known OOTB Maintainer setting.")]
 	public async Task ListSysSettings_Should_Return_Settings_Including_Known_Code() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync(requireReachableEnvironment: true);
@@ -61,6 +62,7 @@ public sealed class SysSettingsToolE2ETests {
 	[AllureTag(GetToolName)]
 	[AllureName("get-sys-setting returns structured value for a known OOTB setting")]
 	[AllureDescription("Starts the real clio MCP server, invokes get-sys-setting for the OOTB Maintainer setting against the configured sandbox environment, and verifies the response carries the code and a non-empty value.")]
+	[Description("Starts the real clio MCP server, invokes get-sys-setting for the OOTB Maintainer setting against the configured sandbox environment, and verifies the response carries the code and a non-empty value.")]
 	public async Task GetSysSetting_Should_Return_Value_For_Known_Setting() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync(requireReachableEnvironment: true);
@@ -92,6 +94,7 @@ public sealed class SysSettingsToolE2ETests {
 	[AllureTag(GetToolName)]
 	[AllureName("get-sys-setting rejects empty code with structured error")]
 	[AllureDescription("Invokes get-sys-setting with an empty code argument and verifies that the response reports a structured failure with an explicit error message and no leaked details.")]
+	[Description("Invokes get-sys-setting with an empty code argument and verifies that the response reports a structured failure with an explicit error message and no leaked details.")]
 	public async Task GetSysSetting_Should_Report_Failure_When_Code_Is_Empty() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync(requireReachableEnvironment: true);
@@ -121,6 +124,7 @@ public sealed class SysSettingsToolE2ETests {
 	[AllureTag(CreateToolName)]
 	[AllureName("create-sys-setting writes a Text sys-setting and applies the initial value")]
 	[AllureDescription("Starts the real clio MCP server, creates a uniquely-coded Text sys-setting with an initial value, and verifies the structured response reports success, value-type-name, and the assigned value.")]
+	[Description("Starts the real clio MCP server, creates a uniquely-coded Text sys-setting with an initial value, and verifies the structured response reports success, value-type-name, and the assigned value.")]
 	public async Task CreateSysSetting_Text_Should_Apply_Initial_Value() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync(
@@ -162,6 +166,7 @@ public sealed class SysSettingsToolE2ETests {
 	[AllureTag(CreateToolName)]
 	[AllureName("create-sys-setting wires a Lookup reference schema by name")]
 	[AllureDescription("Creates a uniquely-coded Lookup sys-setting referencing the OOTB Contact entity schema and verifies the structured response reports success, Lookup value-type-name, and propagates the reference.")]
+	[Description("Creates a uniquely-coded Lookup sys-setting referencing the OOTB Contact entity schema and verifies the structured response reports success, Lookup value-type-name, and propagates the reference.")]
 	public async Task CreateSysSetting_Lookup_Should_Wire_Reference_Schema() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync(
@@ -195,6 +200,7 @@ public sealed class SysSettingsToolE2ETests {
 	[AllureTag(CreateToolName)]
 	[AllureName("create-sys-setting rejects Lookup type without reference-schema-name")]
 	[AllureDescription("Invokes create-sys-setting with value-type-name=Lookup and no reference-schema-name. Verifies the structured failure explicitly names the missing argument and avoids a platform round-trip.")]
+	[Description("Invokes create-sys-setting with value-type-name=Lookup and no reference-schema-name. Verifies the structured failure explicitly names the missing argument and avoids a platform round-trip.")]
 	public async Task CreateSysSetting_Lookup_Should_Reject_Without_ReferenceSchema() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync(
@@ -224,6 +230,7 @@ public sealed class SysSettingsToolE2ETests {
 	[AllureTag(UpdateToolName)]
 	[AllureName("update-sys-setting changes the value of a freshly-created Text setting")]
 	[AllureDescription("Creates a unique Text sys-setting with an initial value, then updates the value and verifies the structured response reports success and the readback matches.")]
+	[Description("Creates a unique Text sys-setting with an initial value, then updates the value and verifies the structured response reports success and the readback matches.")]
 	public async Task UpdateSysSetting_Should_Change_Value_On_Existing_Setting() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync(

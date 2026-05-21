@@ -40,32 +40,32 @@ public sealed class SysSettingsToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("get-sys-setting returns the value reported by the data provider when the requested code resolves on the environment.")]
-	public void GetSysSetting_Should_Return_Value_From_Environment() {
-		IDataProvider dataProvider = Substitute.For<IDataProvider>();
-		dataProvider.GetSysSettingValue<string>("MaxFileSize").Returns("10485760");
-		SysSettingsManager manager = new(dataProvider);
+	[Description("get-sys-setting returns the All-Users default value resolved through the typed model path when the requested code exists on the environment.")]
+	public void GetSysSetting_Should_Return_AllUsers_Default_Value_From_Environment() {
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllUsersDefaultByCode("MaxFileSize").Returns("10485760");
 		SysSettingGetTool tool = new(BuildResolver(manager));
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "MaxFileSize"));
 
 		result.Success.Should().BeTrue(
-			because: "the data provider resolved the requested code, so the tool reports a structured success envelope");
+			because: "the manager resolved the requested code via the All-Users-only path, so the tool reports a structured success envelope");
 		result.Code.Should().Be("MaxFileSize",
 			because: "the response must echo the code that was requested for traceability");
 		result.Value.Should().Be("10485760",
-			because: "the tool surfaces the provider's value verbatim without re-formatting Text settings");
+			because: "the tool surfaces the manager's All-Users default value verbatim");
 		result.Error.Should().BeNull(
 			because: "a successful read must not populate the error envelope");
+		manager.Received(1).GetAllUsersDefaultByCode("MaxFileSize");
+		manager.DidNotReceive().GetSysSettingValueByCode(Arg.Any<string>());
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("get-sys-setting returns an empty value (without surfacing an error) when the setting is unknown or unconfigured.")]
+	[Description("get-sys-setting returns an empty value (without surfacing an error) when the All-Users-only manager path reports no configured value.")]
 	public void GetSysSetting_Should_Return_Empty_When_Setting_Is_Not_Configured() {
-		IDataProvider dataProvider = Substitute.For<IDataProvider>();
-		dataProvider.GetSysSettingValue<string>("UnknownCode").Returns((string)null);
-		SysSettingsManager manager = new(dataProvider);
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllUsersDefaultByCode("UnknownCode").Returns(string.Empty);
 		SysSettingGetTool tool = new(BuildResolver(manager));
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "UnknownCode"));
