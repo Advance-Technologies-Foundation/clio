@@ -188,13 +188,19 @@ public class SysSettingsManager : ISysSettingsManager
 
 	private const string LookupTypeName = "Lookup";
 
+	private static readonly TimeSpan SysSettingCodeRegexTimeout = TimeSpan.FromSeconds(1);
+
 	/// <summary>
 	/// Permitted characters in a sys-setting code: must start with a letter and contain
 	/// only ASCII letters, digits, or underscore. Mirrors Creatio platform constraints and
-	/// blocks malformed codes from reaching the DataService endpoint.
+	/// blocks malformed codes from reaching the DataService endpoint. The pattern is linear
+	/// (no backtracking); the explicit 1-second timeout matches the convention used by other
+	/// helpers in this assembly and protects against engine-side regressions and pathological inputs.
 	/// </summary>
 	private static readonly System.Text.RegularExpressions.Regex SysSettingCodeRegex
-		= new("^[A-Za-z][A-Za-z0-9_]*$", System.Text.RegularExpressions.RegexOptions.Compiled);
+		= new("^[A-Za-z][A-Za-z0-9_]*$",
+			System.Text.RegularExpressions.RegexOptions.Compiled,
+			SysSettingCodeRegexTimeout);
 
 	private SysSettings GetSysSettingByCodeWithValues(string code){
 		SysSettings sysSetting = GetSysSettingByCode(code);
