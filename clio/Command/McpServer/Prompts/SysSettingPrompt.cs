@@ -33,10 +33,6 @@ public static class SysSettingPrompt {
 		string value = null,
 		[Description("Optional description text")]
 		string description = null,
-		[Description("Whether the setting is cacheable. Defaults to true")]
-		bool? isCacheable = null,
-		[Description("Whether the setting stores per-user values. Defaults to false")]
-		bool? isPersonal = null,
 		[Description("Entity schema name for the lookup target. Required when value-type-name is 'Lookup'")]
 		string referenceSchemaName = null) =>
 		$"""
