@@ -518,7 +518,7 @@ public sealed class ToolContractGetToolE2ETests {
 		response.Success.Should().BeTrue(
 			because: "the new business-rule mutation tool should be discoverable through tool-contract-get");
 		ToolContractDefinition contract = response.Tools!.Single();
-		contract.InputSchema.Required.Should().Contain(["environmentName", "packageName", "entitySchemaName", "rule"],
+		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "entity-schema-name", "rule"],
 			because: "entity-business-rule creation requires environment package entity and rule payload");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 
@@ -645,7 +645,7 @@ public sealed class ToolContractGetToolE2ETests {
 		response.Success.Should().BeTrue(
 			because: "the page business-rule mutation tool should be discoverable through tool-contract-get");
 		ToolContractDefinition contract = response.Tools!.Single();
-		contract.InputSchema.Required.Should().Contain(["environmentName", "packageName", "pageSchemaName", "rule"],
+		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "page-schema-name", "rule"],
 			because: "page-business-rule creation requires environment package page and rule payload");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&

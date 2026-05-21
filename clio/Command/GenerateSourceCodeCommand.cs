@@ -22,6 +22,8 @@ public class GenerateSourceCodeOptions : RemoteCommandOptions
 	[Option('b', "background", Required = false, Default = false,
 		HelpText = "Run source code generation in background (matches UI behaviour for generate-all)")]
 	public bool Background { get; set; }
+	
+	
 
 }
 
@@ -53,6 +55,8 @@ public class GenerateSourceCodeCommand : RemoteCommand<GenerateSourceCodeOptions
 
 	public override int Execute(GenerateSourceCodeOptions options) {
 		_options = options;
+		Logger.WriteWarning("This command may take a while to complete, please wait...");
+		Logger.WriteWarning("Clio will timeout if the operation takes more than 60 minutes. You can adjust the timeout using --timeout option.");
 		return base.Execute(options);
 	}
 
