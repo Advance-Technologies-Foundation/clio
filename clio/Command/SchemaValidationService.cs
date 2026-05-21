@@ -187,14 +187,14 @@ public static class SchemaValidationService
 	}
 
 	private static void ValidateMobileNoUnknownRootProperties(JsonElement root, SchemaValidationResult result) {
-		foreach (JsonProperty property in root.EnumerateObject()) {
-			if (AllowedMobileRootProperties.Contains(property.Name) ||
-				DisallowedMobileRootProperties.Contains(property.Name)) {
+		foreach (string propertyName in root.EnumerateObject().Select(property => property.Name)) {
+			if (AllowedMobileRootProperties.Contains(propertyName) ||
+				DisallowedMobileRootProperties.Contains(propertyName)) {
 				continue;
 			}
 			result.IsValid = false;
 			result.Errors.Add(
-				$"Unknown root property '{property.Name}'. " +
+				$"Unknown root property '{propertyName}'. " +
 				$"Mobile page bodies may only contain: {string.Join(", ", AllowedMobileRootProperties)}.");
 		}
 	}
