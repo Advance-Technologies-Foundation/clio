@@ -3144,7 +3144,8 @@ internal static class ToolContractCatalog {
 					Field(SysSettingValueFieldName, StringType, "Optional initial All-Users default value applied via update-sys-setting after creation."),
 					Field("description", StringType, "Optional description text."),
 					Field("is-cacheable", BooleanType, "Whether the setting is cacheable. Defaults to true."),
-					Field("is-personal", BooleanType, "Whether the setting stores per-user values. Defaults to false.")
+					Field("is-personal", BooleanType, "Whether the setting stores per-user values. Defaults to false."),
+					Field(ReferenceSchemaNameFieldName, StringType, "Entity schema name for the lookup target. Required when value-type-name is 'Lookup' (e.g., 'Contact', 'UsrPhoneFormat').")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,

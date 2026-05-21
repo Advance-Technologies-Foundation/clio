@@ -88,6 +88,7 @@ public class SysSettingsManagerNewBehaviorTests {
 	#region GetSysSettingValueByCode — provider-first / model fallback
 
 	[Test]
+	[Description("Provider-first ordering: when the data provider already exposes a non-empty value, it is returned without consulting the typed model fallback.")]
 	public void GetSysSettingValueByCode_PrefersProviderValue_WhenProviderReturnsNonEmpty() {
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		dataProvider.GetSysSettingValue<string>("MyText").Returns("provider-value");
@@ -98,6 +99,7 @@ public class SysSettingsManagerNewBehaviorTests {
 	}
 
 	[Test]
+	[Description("Typed model fallback: Boolean settings round-trip through SysSettingsValue.BooleanValue formatted as lower-case 'true' / 'false'.")]
 	public void GetSysSettingValueByCode_FallsBackToModel_ForBoolean() {
 		Guid id = Guid.NewGuid();
 		DataProviderMock providerMock = SetupSysSettingsMock(id, "MyBool", "Boolean",
@@ -109,16 +111,19 @@ public class SysSettingsManagerNewBehaviorTests {
 	}
 
 	[Test]
+	[Description("Typed model fallback: Integer settings round-trip through SysSettingsValue.IntegerValue formatted with InvariantCulture.")]
 	public void GetSysSettingValueByCode_FallsBackToModel_ForInteger() {
 		Guid id = Guid.NewGuid();
 		DataProviderMock providerMock = SetupSysSettingsMock(id, "MyInt", "Integer",
 			new() { { "IntegerValue", 42 } });
 		ISysSettingsManager sut = BuildSut(providerMock);
 
-		sut.GetSysSettingValueByCode("MyInt").Should().Be("42");
+		sut.GetSysSettingValueByCode("MyInt").Should().Be("42",
+			because: "Integer values are emitted via InvariantCulture, with no thousands separator or culture-specific suffix");
 	}
 
 	[Test]
+	[Description("Typed model fallback: Float / Money / Decimal / Currency settings reuse the FloatValue column and InvariantCulture formatting.")]
 	public void GetSysSettingValueByCode_FallsBackToModel_ForFloat() {
 		Guid id = Guid.NewGuid();
 		DataProviderMock providerMock = SetupSysSettingsMock(id, "MyFloat", "Float",
@@ -130,36 +135,43 @@ public class SysSettingsManagerNewBehaviorTests {
 	}
 
 	[Test]
+	[Description("Typed model fallback: Money is the canonical Creatio alias for Currency and must reuse the FloatValue formatting path.")]
 	public void GetSysSettingValueByCode_FallsBackToModel_ForMoney() {
 		Guid id = Guid.NewGuid();
 		DataProviderMock providerMock = SetupSysSettingsMock(id, "MyMoney", "Money",
 			new() { { "FloatValue", 1500.5m } });
 		ISysSettingsManager sut = BuildSut(providerMock);
 
-		sut.GetSysSettingValueByCode("MyMoney").Should().Be("1500.5");
+		sut.GetSysSettingValueByCode("MyMoney").Should().Be("1500.5",
+			because: "Money is treated as Float on the read side and InvariantCulture renders the decimal separator as a period");
 	}
 
 	[Test]
+	[Description("Typed model fallback: Date settings format DateTimeValue as 'yyyy-MM-dd' under InvariantCulture.")]
 	public void GetSysSettingValueByCode_FallsBackToModel_ForDate() {
 		Guid id = Guid.NewGuid();
 		DataProviderMock providerMock = SetupSysSettingsMock(id, "MyDate", "Date",
 			new() { { "DateTimeValue", new DateTime(2026, 1, 15) } });
 		ISysSettingsManager sut = BuildSut(providerMock);
 
-		sut.GetSysSettingValueByCode("MyDate").Should().Be("2026-01-15");
+		sut.GetSysSettingValueByCode("MyDate").Should().Be("2026-01-15",
+			because: "Date formatting uses 'yyyy-MM-dd' under InvariantCulture so the wire representation is stable across locales");
 	}
 
 	[Test]
+	[Description("Typed model fallback: Time settings format DateTimeValue as 'HH:mm:ss' under InvariantCulture.")]
 	public void GetSysSettingValueByCode_FallsBackToModel_ForTime() {
 		Guid id = Guid.NewGuid();
 		DataProviderMock providerMock = SetupSysSettingsMock(id, "MyTime", "Time",
 			new() { { "DateTimeValue", new DateTime(1900, 1, 1, 14, 30, 0) } });
 		ISysSettingsManager sut = BuildSut(providerMock);
 
-		sut.GetSysSettingValueByCode("MyTime").Should().Be("14:30:00");
+		sut.GetSysSettingValueByCode("MyTime").Should().Be("14:30:00",
+			because: "Time formatting uses 'HH:mm:ss' under InvariantCulture so the wire representation is stable across locales");
 	}
 
 	[Test]
+	[Description("Typed model fallback: DateTime settings format DateTimeValue with the round-trip 'o' specifier so Kind information is preserved.")]
 	public void GetSysSettingValueByCode_FallsBackToModel_ForDateTime() {
 		Guid id = Guid.NewGuid();
 		DataProviderMock providerMock = SetupSysSettingsMock(id, "MyDt", "DateTime",
@@ -171,6 +183,7 @@ public class SysSettingsManagerNewBehaviorTests {
 	}
 
 	[Test]
+	[Description("Typed model fallback: Lookup settings expose the GUID stored in SysSettingsValue.GuidValue.")]
 	public void GetSysSettingValueByCode_FallsBackToModel_ForLookup() {
 		Guid id = Guid.NewGuid();
 		Guid guidValue = new("2cfdcf5d-744b-4e0a-b6d0-fbd905fea8ed");
@@ -178,10 +191,12 @@ public class SysSettingsManagerNewBehaviorTests {
 			new() { { "GuidValue", guidValue } });
 		ISysSettingsManager sut = BuildSut(providerMock);
 
-		sut.GetSysSettingValueByCode("MyLookup").Should().Be(guidValue.ToString());
+		sut.GetSysSettingValueByCode("MyLookup").Should().Be(guidValue.ToString(),
+			because: "Lookup values surface as the underlying GUID; the platform stores the foreign-key on SysSettingsValue.GuidValue");
 	}
 
 	[Test]
+	[Description("When a setting exists but has no SysSettingsValue rows, the manager returns an empty string rather than throwing.")]
 	public void GetSysSettingValueByCode_ReturnsEmpty_WhenNoValueRowExists() {
 		Guid id = Guid.NewGuid();
 		DataProviderMock providerMock = SetupSysSettingsMock(id, "EmptyInt", "Integer", valueRow: null);
@@ -196,6 +211,7 @@ public class SysSettingsManagerNewBehaviorTests {
 	#region FindSchemaUIdByName
 
 	[Test]
+	[Description("FindSchemaUIdByName resolves a schema name to its UId via the data provider's SysSchema model.")]
 	public void FindSchemaUIdByName_ReturnsUId_WhenSchemaExists() {
 		DataProviderMock providerMock = new();
 		Guid expectedUId = Guid.NewGuid();
@@ -210,25 +226,32 @@ public class SysSettingsManagerNewBehaviorTests {
 
 		Guid? actual = sut.FindSchemaUIdByName("UsrPhoneFormat");
 
-		actual.Should().Be(expectedUId);
+		actual.Should().Be(expectedUId,
+			because: "FindSchemaUIdByName resolves the schema UId via SysSchema model and must return the value stored in UId");
 	}
 
 	[Test]
+	[Description("FindSchemaUIdByName returns null (rather than throwing) when no SysSchema row matches the requested name.")]
 	public void FindSchemaUIdByName_ReturnsNull_WhenSchemaMissing() {
 		DataProviderMock providerMock = new();
 		providerMock.MockItems("SysSchema").Returns(new List<Dictionary<string, object>>());
 		ISysSettingsManager sut = BuildSut(providerMock);
 
-		sut.FindSchemaUIdByName("Nonexistent").Should().BeNull();
+		sut.FindSchemaUIdByName("Nonexistent").Should().BeNull(
+			because: "the lookup helper must return null (not throw) for codes that resolve to no SysSchema row");
 	}
 
 	[Test]
+	[Description("FindSchemaUIdByName treats an empty / whitespace name as a missing lookup and returns null without contacting the provider.")]
 	public void FindSchemaUIdByName_ReturnsNull_ForBlankInput() {
 		ISysSettingsManager sut = BuildSut(new DataProviderMock());
 
-		sut.FindSchemaUIdByName(null).Should().BeNull();
-		sut.FindSchemaUIdByName(string.Empty).Should().BeNull();
-		sut.FindSchemaUIdByName("   ").Should().BeNull();
+		sut.FindSchemaUIdByName(null).Should().BeNull(
+			because: "a null name is invalid input and the helper short-circuits without contacting the provider");
+		sut.FindSchemaUIdByName(string.Empty).Should().BeNull(
+			because: "an empty name is invalid input and the helper short-circuits without contacting the provider");
+		sut.FindSchemaUIdByName("   ").Should().BeNull(
+			because: "a whitespace-only name is invalid input and the helper short-circuits without contacting the provider");
 	}
 
 	#endregion
@@ -239,6 +262,7 @@ public class SysSettingsManagerNewBehaviorTests {
 		"""{"responseStatus":{"ErrorCode":"","Message":"","Errors":[]},"id":"acf40078-ba48-4285-9f3b-44ebafa28cac","rowsAffected":1,"nextPrcElReady":false,"success":true}""";
 
 	[Test]
+	[Description("Insert serializes the supplied referenceSchemaUId into the JSON payload so the platform creates a Lookup setting bound to the chosen entity schema.")]
 	public void InsertSysSetting_SerializesReferenceSchemaUId_WhenProvidedForLookup() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		string capturedBody = null;
@@ -251,13 +275,16 @@ public class SysSettingsManagerNewBehaviorTests {
 		sut.InsertSysSetting("Lookup Setting", "UsrLookupSetting", "Lookup",
 			referenceSchemaUId: refUId);
 
-		capturedBody.Should().NotBeNull();
+		capturedBody.Should().NotBeNull(
+			because: "the platform request must be issued and its body captured for inspection");
 		capturedBody.Should().Contain("\"referenceSchemaUId\":\"b80eb7bb-193c-4bb2-ad51-e0beb1670278\"",
 			because: "Lookup sys-settings must carry the reference schema UId so the picker can render");
-		capturedBody.Should().Contain("\"valueTypeName\":\"Lookup\"");
+		capturedBody.Should().Contain("\"valueTypeName\":\"Lookup\"",
+			because: "the platform expects the Creatio internal type name 'Lookup' on the wire");
 	}
 
 	[Test]
+	[Description("Insert omits the referenceSchemaUId from the JSON payload when null or Guid.Empty so non-Lookup settings do not declare an unintended reference.")]
 	public void InsertSysSetting_OmitsReferenceSchemaUId_WhenNotProvided() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		string capturedBody = null;
@@ -277,6 +304,7 @@ public class SysSettingsManagerNewBehaviorTests {
 	[TestCase("Binary", "Binary")]
 	[TestCase("Currency", "Money")]
 	[TestCase("Decimal", "Float")]
+	[Description("Insert accepts the legacy aliases Currency and Decimal and maps them to the canonical Creatio internal names Money and Float on the wire.")]
 	public void InsertSysSetting_MapsTypeAliasesToCreatioInternalNames(string input, string expected) {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		string capturedBody = null;
@@ -296,6 +324,7 @@ public class SysSettingsManagerNewBehaviorTests {
 	#region UpdateSysSetting — saveResult parsing
 
 	[Test]
+	[Description("Update parses the saveResult dictionary by code instead of relying on the unreliable top-level success flag — a per-code true means the value landed.")]
 	public void UpdateSysSetting_ReturnsTrue_WhenSaveResultReportsSuccessForCode() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
@@ -308,6 +337,7 @@ public class SysSettingsManagerNewBehaviorTests {
 	}
 
 	[Test]
+	[Description("Update returns false when the platform reports saveResult[code] = false, surfacing the platform's error message when available.")]
 	public void UpdateSysSetting_ReturnsFalse_WhenSaveResultReportsFailureForCode() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
@@ -315,10 +345,12 @@ public class SysSettingsManagerNewBehaviorTests {
 				"""{"saveResult":{"UsrAny":false},"rowsAffected":-1,"nextPrcElReady":false,"success":false,"responseStatus":{"ErrorCode":"","Message":"denied","Errors":[]}}""");
 		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
 
-		sut.UpdateSysSetting("UsrAny", "value").Should().BeFalse();
+		sut.UpdateSysSetting("UsrAny", "value").Should().BeFalse(
+			because: "a per-code saveResult of false means the platform actively rejected the value");
 	}
 
 	[Test]
+	[Description("Update returns false when the saveResult payload does not contain the requested code — the platform did not acknowledge the per-code outcome.")]
 	public void UpdateSysSetting_ReturnsFalse_WhenSaveResultMissingForCode() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
@@ -331,13 +363,15 @@ public class SysSettingsManagerNewBehaviorTests {
 	}
 
 	[Test]
+	[Description("Update returns false when the platform returns an empty response body so the caller does not infer success from a missing acknowledgement.")]
 	public void UpdateSysSetting_ReturnsFalse_WhenResponseIsEmpty() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(string.Empty);
 		ISysSettingsManager sut = BuildSut(new DataProviderMock(), applicationClient);
 
-		sut.UpdateSysSetting("UsrAny", "value").Should().BeFalse();
+		sut.UpdateSysSetting("UsrAny", "value").Should().BeFalse(
+			because: "an empty response body means the platform did not acknowledge the request and the caller must not infer success");
 	}
 
 	#endregion
