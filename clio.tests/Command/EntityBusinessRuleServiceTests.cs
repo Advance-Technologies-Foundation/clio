@@ -312,6 +312,38 @@ public sealed class EntityBusinessRuleServiceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects apply-filter requests that omit the condition list before any remote schema or add-on calls run.")]
+	public void Create_Should_Reject_ApplyFilter_With_Null_Condition_List() {
+		// Arrange
+		EntityBusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			new BusinessRule(
+				"Filter city by country",
+				new BusinessRuleConditionGroup("AND", null!),
+				[
+					new ApplyFilterBusinessRuleAction(
+						"City",
+						"Country",
+						"Country",
+						null,
+						clearValue: true,
+						populateValue: false)
+				]));
+
+		// Act
+		Action act = () => _service.Create(request);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.condition.conditions is required.",
+				because: "apply-filter may omit condition items, but the service should still reject payloads that omit the conditions collection itself");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Preserves the user-authored parent condition when saving the Supervisor-created ninja apply-filter regression scenario.")]
 	public void Create_Should_Persist_ApplyFilter_Parent_Condition_For_Supervisor_Created_Ninja() {
 		// Arrange

@@ -98,7 +98,7 @@ internal static class BusinessRuleMetadataConverter {
 			TypeName = BusinessRuleGroupConditionTypeName,
 			UId = Guid.NewGuid().ToString(),
 			LogicalOperation = string.Equals(group.LogicalOperation, "OR", StringComparison.OrdinalIgnoreCase) ? LogicalOr : LogicalAnd,
-			Conditions = group.Conditions
+			Conditions = (group.Conditions ?? [])
 				.Select(condition => BuildCondition(attributeMap, condition, includeAttributeReferenceSchemaName))
 				.ToList()
 		};
@@ -505,7 +505,7 @@ internal static class BusinessRuleMetadataConverter {
 	private static List<BusinessRuleTriggerMetadataDto> BuildApplyFilterParentTriggers(
 		BusinessRule rule,
 		ApplyFilterBusinessRuleAction action) {
-		List<BusinessRuleTriggerMetadataDto> triggers = rule.Condition.Conditions
+		List<BusinessRuleTriggerMetadataDto> triggers = (rule.Condition.Conditions ?? [])
 			.SelectMany(EnumerateTriggerNames)
 			.Append(action.Source)
 			.Distinct(StringComparer.OrdinalIgnoreCase)

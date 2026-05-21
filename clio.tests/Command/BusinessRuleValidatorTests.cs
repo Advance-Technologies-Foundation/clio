@@ -888,6 +888,40 @@ public sealed class BusinessRuleValidatorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects apply-filter rules when the condition group omits the conditions list instead of supplying an empty array.")]
+	public void Validate_Should_Reject_ApplyFilter_With_Null_Condition_List() {
+		// Arrange
+		BusinessRule rule = new(
+			"Filter city by country",
+			new BusinessRuleConditionGroup("AND", null!),
+			[
+				new ApplyFilterBusinessRuleAction(
+					"City",
+					"Country.TimeZone",
+					"Country",
+					"TimeZone",
+					clearValue: true,
+					populateValue: false)
+			]);
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["City"] = new("City", "Lookup", "City"),
+				["City.Country.TimeZone"] = new("City.Country.TimeZone", "Lookup", "TimeZone"),
+				["Country"] = new("Country", "Lookup", "Country"),
+				["Country.TimeZone"] = new("Country.TimeZone", "Lookup", "TimeZone")
+			};
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, attributeMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.condition.conditions is required.",
+				because: "apply-filter may use an empty condition list, but the conditions collection itself must still be present");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects apply-filter rules that combine the lookup-filter action with any other entity action.")]
 	public void Validate_Should_Reject_ApplyFilter_Combined_With_Other_Action() {
 		// Arrange

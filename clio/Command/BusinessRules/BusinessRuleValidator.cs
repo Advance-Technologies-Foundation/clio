@@ -55,11 +55,15 @@ internal static class BusinessRuleValidator {
 			throw new ArgumentException($"Unsupported rule.condition.logicalOperation '{rule.Condition.LogicalOperation}'. Use AND or OR.");
 		}
 
-		if (!isApplyFilterRule && (rule.Condition.Conditions is null || rule.Condition.Conditions.Count == 0)) {
+		if (rule.Condition.Conditions is null) {
+			throw new ArgumentException("rule.condition.conditions is required.");
+		}
+
+		if (!isApplyFilterRule && rule.Condition.Conditions.Count == 0) {
 			throw new ArgumentException("rule.condition.conditions must contain at least one condition.");
 		}
 
-		foreach (BusinessRuleCondition condition in rule.Condition.Conditions ?? []) {
+		foreach (BusinessRuleCondition condition in rule.Condition.Conditions) {
 			if (condition is null) {
 				throw new ArgumentException("rule.condition.conditions[*] is required.");
 			}
