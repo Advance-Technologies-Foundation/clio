@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.ComponentModel.DataAnnotations;
 using Clio;
 using Clio.Command;
@@ -66,7 +67,12 @@ public sealed class BusinessRuleToolTests {
 			]);
 
 		// Act
-		CommandExecutionResult result = tool.BusinessRuleCreate("dev", "UsrPkg", "UsrOrder", rule);
+		CommandExecutionResult result = tool.BusinessRuleCreate(new CreateEntityBusinessRuleArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			EntitySchemaName = "UsrOrder",
+			Rule = rule
+		});
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -119,7 +125,12 @@ public sealed class BusinessRuleToolTests {
 			]);
 
 		// Act
-		CommandExecutionResult result = tool.BusinessRuleCreate("dev", "UsrPkg", "UsrOrder", rule);
+		CommandExecutionResult result = tool.BusinessRuleCreate(new CreateEntityBusinessRuleArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			EntitySchemaName = "UsrOrder",
+			Rule = rule
+		});
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -134,30 +145,56 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Marks each top-level create-entity-business-rule MCP parameter as required so the MCP contract advertises the direct tool shape clearly.")]
-	[TestCase("environmentName")]
-	[TestCase("packageName")]
-	[TestCase("entitySchemaName")]
-	[TestCase("rule")]
-	public void BusinessRuleCreate_Should_Expose_Required_Top_Level_Parameters(string parameterName) {
+	[Description("Marks create-entity-business-rule as a single required args wrapper so runtime calls use the same shape as other clio MCP tools.")]
+	public void BusinessRuleCreate_Should_Expose_Required_Args_Wrapper() {
 		// Arrange
 		ParameterInfo parameter = typeof(CreateEntityBusinessRuleTool)
 			.GetMethod(nameof(CreateEntityBusinessRuleTool.BusinessRuleCreate))!
 			.GetParameters()
-			.Single(candidate => candidate.Name == parameterName);
+			.Single();
 
 		// Act
 		object[] requiredAttributes = parameter.GetCustomAttributes(typeof(RequiredAttribute), inherit: false);
 
 		// Assert
+		parameter.Name.Should().Be("args",
+			because: "the runtime MCP schema should require the standard args wrapper instead of flat top-level fields");
+		parameter.ParameterType.Should().Be(typeof(CreateEntityBusinessRuleArgs),
+			because: "the wrapper type should own the business-rule input fields and their JSON names");
 		requiredAttributes.Should().ContainSingle(
-			because: "the MCP tool should expose direct required parameters instead of a single outer args envelope");
+			because: "the MCP tool should require the args wrapper");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Deserializes the direct-parameter business-rule payload and preserves lookup constants as string GUID values.")]
-	public void BusinessRuleCreate_Should_Deserialize_Direct_Parameter_Payload_With_Lookup_Value_Expression() {
+	[Description("Exposes kebab-case required fields inside the create-entity-business-rule args wrapper.")]
+	[TestCase(nameof(CreateEntityBusinessRuleArgs.EnvironmentName), "environment-name")]
+	[TestCase(nameof(CreateEntityBusinessRuleArgs.PackageName), "package-name")]
+	[TestCase(nameof(CreateEntityBusinessRuleArgs.EntitySchemaName), "entity-schema-name")]
+	[TestCase(nameof(CreateEntityBusinessRuleArgs.Rule), "rule")]
+	public void BusinessRuleCreateArgs_Should_Expose_Required_Kebab_Case_Fields(
+		string propertyName,
+		string jsonName) {
+		// Arrange
+		PropertyInfo property = typeof(CreateEntityBusinessRuleArgs).GetProperty(propertyName)!;
+
+		// Act
+		string actualJsonName = property.GetCustomAttributes(typeof(JsonPropertyNameAttribute), inherit: false)
+			.Cast<JsonPropertyNameAttribute>()
+			.Single()
+			.Name;
+
+		// Assert
+		actualJsonName.Should().Be(jsonName,
+			because: "business-rule tool args should follow the same kebab-case MCP field convention as other clio tools");
+		property.GetCustomAttributes(typeof(RequiredAttribute), inherit: false).Should().ContainSingle(
+			because: "all entity business-rule creation fields are mandatory inside the args wrapper");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Deserializes the args-wrapper business-rule payload and preserves lookup constants as string GUID values.")]
+	public void BusinessRuleCreate_Should_Deserialize_Args_Wrapper_Payload_With_Lookup_Value_Expression() {
 		// Arrange
 		string payload = """
 		{
@@ -193,11 +230,11 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		BusinessRuleToolPayload? payloadArgs = JsonSerializer.Deserialize<BusinessRuleToolPayload>(payload);
+		CreateEntityBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleArgs>(payload);
 
 		// Assert
 		payloadArgs.Should().NotBeNull(
-			because: "the direct-parameter business-rule payload should deserialize from JSON");
+			because: "the args-wrapper business-rule payload should deserialize from JSON");
 		BusinessRule rule = payloadArgs!.Rule.ToBusinessRule();
 		rule.Condition.Conditions[0].LeftExpression.Type.Should().Be("AttributeValue",
 			because: "path-based operands should preserve the AttributeValue type");
@@ -289,7 +326,7 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		BusinessRuleToolPayload? payloadArgs = JsonSerializer.Deserialize<BusinessRuleToolPayload>(payload);
+		CreateEntityBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleArgs>(payload);
 
 		// Assert
 		payloadArgs.Should().NotBeNull(
@@ -357,7 +394,7 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		BusinessRuleToolPayload? payloadArgs = JsonSerializer.Deserialize<BusinessRuleToolPayload>(payload);
+		CreateEntityBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleArgs>(payload);
 
 		// Assert
 		payloadArgs.Should().NotBeNull(
@@ -417,7 +454,7 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		BusinessRuleToolPayload? payloadArgs = JsonSerializer.Deserialize<BusinessRuleToolPayload>(payload);
+		CreateEntityBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleArgs>(payload);
 
 		// Assert
 		payloadArgs.Should().NotBeNull(
@@ -520,7 +557,7 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		BusinessRuleToolPayload? payloadArgs = JsonSerializer.Deserialize<BusinessRuleToolPayload>(payload);
+		CreateEntityBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleArgs>(payload);
 
 		// Assert
 		payloadArgs.Should().NotBeNull(
@@ -586,7 +623,12 @@ public sealed class BusinessRuleToolTests {
 		CreateEntityBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.BusinessRuleCreate("dev", "UsrPkg", "UsrOrder", null!);
+		CommandExecutionResult result = tool.BusinessRuleCreate(new CreateEntityBusinessRuleArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			EntitySchemaName = "UsrOrder",
+			Rule = null!
+		});
 
 		// Assert
 		result.ExitCode.Should().Be(1,
@@ -645,7 +687,12 @@ public sealed class BusinessRuleToolTests {
 			]);
 
 		// Act
-		CommandExecutionResult result = tool.BusinessRuleCreate("dev", "UsrPkg", "UsrCase_FormPage", rule);
+		CommandExecutionResult result = tool.BusinessRuleCreate(new CreatePageBusinessRuleArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			PageSchemaName = "UsrCase_FormPage",
+			Rule = rule
+		});
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -693,7 +740,12 @@ public sealed class BusinessRuleToolTests {
 			]);
 
 		// Act
-		CommandExecutionResult result = tool.BusinessRuleCreate("dev", "UsrPkg", "UsrCase_FormPage", rule);
+		CommandExecutionResult result = tool.BusinessRuleCreate(new CreatePageBusinessRuleArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			PageSchemaName = "UsrCase_FormPage",
+			Rule = rule
+		});
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -735,7 +787,12 @@ public sealed class BusinessRuleToolTests {
 			]);
 
 		// Act
-		CommandExecutionResult result = tool.BusinessRuleCreate("dev", "UsrPkg", "UsrCase_FormPage", rule);
+		CommandExecutionResult result = tool.BusinessRuleCreate(new CreatePageBusinessRuleArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			PageSchemaName = "UsrCase_FormPage",
+			Rule = rule
+		});
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -748,24 +805,50 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Marks each top-level create-page-business-rule MCP parameter as required so the MCP contract advertises the direct tool shape clearly.")]
-	[TestCase("environmentName")]
-	[TestCase("packageName")]
-	[TestCase("pageSchemaName")]
-	[TestCase("rule")]
-	public void PageBusinessRuleCreate_Should_Expose_Required_Top_Level_Parameters(string parameterName) {
+	[Description("Marks create-page-business-rule as a single required args wrapper so runtime calls use the same shape as other clio MCP tools.")]
+	public void PageBusinessRuleCreate_Should_Expose_Required_Args_Wrapper() {
 		// Arrange
 		ParameterInfo parameter = typeof(CreatePageBusinessRuleTool)
 			.GetMethod(nameof(CreatePageBusinessRuleTool.BusinessRuleCreate))!
 			.GetParameters()
-			.Single(candidate => candidate.Name == parameterName);
+			.Single();
 
 		// Act
 		object[] requiredAttributes = parameter.GetCustomAttributes(typeof(RequiredAttribute), inherit: false);
 
 		// Assert
+		parameter.Name.Should().Be("args",
+			because: "the runtime MCP schema should require the standard args wrapper instead of flat top-level fields");
+		parameter.ParameterType.Should().Be(typeof(CreatePageBusinessRuleArgs),
+			because: "the wrapper type should own the page business-rule input fields and their JSON names");
 		requiredAttributes.Should().ContainSingle(
-			because: "the MCP tool should expose direct required parameters instead of a single outer args envelope");
+			because: "the MCP tool should require the args wrapper");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Exposes kebab-case required fields inside the create-page-business-rule args wrapper.")]
+	[TestCase(nameof(CreatePageBusinessRuleArgs.EnvironmentName), "environment-name")]
+	[TestCase(nameof(CreatePageBusinessRuleArgs.PackageName), "package-name")]
+	[TestCase(nameof(CreatePageBusinessRuleArgs.PageSchemaName), "page-schema-name")]
+	[TestCase(nameof(CreatePageBusinessRuleArgs.Rule), "rule")]
+	public void PageBusinessRuleCreateArgs_Should_Expose_Required_Kebab_Case_Fields(
+		string propertyName,
+		string jsonName) {
+		// Arrange
+		PropertyInfo property = typeof(CreatePageBusinessRuleArgs).GetProperty(propertyName)!;
+
+		// Act
+		string actualJsonName = property.GetCustomAttributes(typeof(JsonPropertyNameAttribute), inherit: false)
+			.Cast<JsonPropertyNameAttribute>()
+			.Single()
+			.Name;
+
+		// Assert
+		actualJsonName.Should().Be(jsonName,
+			because: "page business-rule tool args should follow the same kebab-case MCP field convention as other clio tools");
+		property.GetCustomAttributes(typeof(RequiredAttribute), inherit: false).Should().ContainSingle(
+			because: "all page business-rule creation fields are mandatory inside the args wrapper");
 	}
 
 	[Test]
@@ -823,7 +906,7 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		PageBusinessRuleToolPayload? payloadArgs = JsonSerializer.Deserialize<PageBusinessRuleToolPayload>(payload);
+		CreatePageBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreatePageBusinessRuleArgs>(payload);
 
 		// Assert
 		payloadArgs.Should().NotBeNull(
@@ -945,7 +1028,12 @@ public sealed class BusinessRuleToolTests {
 		CreatePageBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.BusinessRuleCreate("dev", "UsrPkg", "UsrCase_FormPage", null!);
+		CommandExecutionResult result = tool.BusinessRuleCreate(new CreatePageBusinessRuleArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			PageSchemaName = "UsrCase_FormPage",
+			Rule = null!
+		});
 
 		// Assert
 		result.ExitCode.Should().Be(1,
@@ -955,16 +1043,5 @@ public sealed class BusinessRuleToolTests {
 		service.DidNotReceiveWithAnyArgs().Create(default!);
 	}
 
-	private sealed record BusinessRuleToolPayload(
-		[property: System.Text.Json.Serialization.JsonPropertyName("environment-name")] string EnvironmentName,
-		[property: System.Text.Json.Serialization.JsonPropertyName("package-name")] string PackageName,
-		[property: System.Text.Json.Serialization.JsonPropertyName("entity-schema-name")] string EntitySchemaName,
-		[property: System.Text.Json.Serialization.JsonPropertyName("rule")] EntityBusinessRuleMcpContract Rule);
-
-	private sealed record PageBusinessRuleToolPayload(
-		[property: System.Text.Json.Serialization.JsonPropertyName("environment-name")] string EnvironmentName,
-		[property: System.Text.Json.Serialization.JsonPropertyName("package-name")] string PackageName,
-		[property: System.Text.Json.Serialization.JsonPropertyName("page-schema-name")] string PageSchemaName,
-		[property: System.Text.Json.Serialization.JsonPropertyName("rule")] PageBusinessRuleMcpContract Rule);
 }
 

@@ -43,6 +43,8 @@ public sealed class PageBusinessRuleToolE2ETests {
 		JsonElement inputSchema = JsonSerializer.SerializeToElement(tool.ProtocolTool.InputSchema);
 		JsonElement anyOf = inputSchema
 			.GetProperty("properties")
+			.GetProperty("args")
+			.GetProperty("properties")
 			.GetProperty("rule")
 			.GetProperty("properties")
 			.GetProperty("actions")
@@ -75,10 +77,12 @@ public sealed class PageBusinessRuleToolE2ETests {
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["environmentName"] = invalidEnvironmentName,
-				["packageName"] = "UsrPkg",
-				["pageSchemaName"] = "UsrCase_FormPage",
-				["rule"] = CreateShowElementRule()
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["page-schema-name"] = "UsrCase_FormPage",
+					["rule"] = CreateShowElementRule()
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
@@ -120,10 +124,12 @@ public sealed class PageBusinessRuleToolE2ETests {
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["environmentName"] = environmentName,
-				["packageName"] = packageName,
-				["pageSchemaName"] = target.PageSchemaName,
-				["rule"] = CreateContactPageRule(target, caption)
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["page-schema-name"] = target.PageSchemaName,
+					["rule"] = CreateContactPageRule(target, caption)
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);

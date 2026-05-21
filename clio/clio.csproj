@@ -9,7 +9,7 @@
 		<PackageTags>cli ATF clio creatio</PackageTags>
 		<NeutralLanguage>en</NeutralLanguage>
 		<!-- Fallback for environments without git tags; overridden by SetVersionFromGitTag target or CI /p:AssemblyVersion -->
-		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.1.0.28</AssemblyVersion>
+		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.1.0.30</AssemblyVersion>
 		<FileVersion Condition="'$(FileVersion)' == ''">$(AssemblyVersion)</FileVersion>
 		<Version Condition="'$(Version)' == ''">$(AssemblyVersion)</Version>
 		<Description>CLI interface for Creatio</Description>
@@ -36,7 +36,7 @@
 		<PlatformTarget>AnyCPU</PlatformTarget>
 		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
 	</PropertyGroup>
-	
+
 	<ItemGroup>
 		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
 			<_Parameter1>clio.tests</_Parameter1>
@@ -72,12 +72,12 @@
 		<Content Include="cliogate\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
-		
+
 		<Compile Remove="Wiki\**" />
 		<Content Include="Wiki\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
-		
+
 		<Compile Remove="help\**"/>
 		<Content Include="help\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -92,7 +92,7 @@
 		<Content Include="Command\McpServer\Data\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
-		
+
 	</ItemGroup>
 
 	<Choose>
@@ -100,14 +100,14 @@
 			<ItemGroup>
 				<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/>
 
-				<!-- 
-				 Warning NU1903 : Package 'System.Security.Cryptography.Xml' 
-				 10.0.5 has a known high severity vulnerability, 
+				<!--
+				 Warning NU1903 : Package 'System.Security.Cryptography.Xml'
+				 10.0.5 has a known high severity vulnerability,
 				 https://github.com/advisories/GHSA-37gx-xxp4-5rgx
-				 
-				 Temporary workaround: pin to 10.0.6 which contains the fix, 
+
+				 Temporary workaround: pin to 10.0.6 which contains the fix,
 				 but doesn't have a CVE published yet.
-				 
+
 				 Offending package Powershell.SDK
 				-->
 				<PackageReference Include="System.Security.Cryptography.Xml" />
@@ -126,7 +126,7 @@
 		                  OutputItemType="Analyzer"
 		                  ReferenceOutputAssembly="false" />
 	</ItemGroup>
-	
+
 	<ItemGroup Label="Centrally Managed Package Versions">
 		<PackageReference Include="creatio.client" />
 		<PackageReference Include="ATF.Repository" />
@@ -160,7 +160,7 @@
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" />
 		<PackageReference Include="Microsoft.Data.SqlClient" />
 	</ItemGroup>
-	
+
 	<ItemGroup>
 	  <Folder Include="tpl\workspace\.codex\skills\" />
 	</ItemGroup>
