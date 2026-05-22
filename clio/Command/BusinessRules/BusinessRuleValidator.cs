@@ -541,6 +541,10 @@ internal static class BusinessRuleValidator {
 			applyFilterAction.Target,
 			applyFilterAction.TargetFilterPath,
 			"rule.actions[*].targetFilterPath");
+		EnsureLookupDescriptor(
+			leftDescriptor,
+			leftDescriptor.Path,
+			"rule.actions[*].targetFilterPath");
 
 		BusinessRuleAttributeDescriptor rightDescriptor = string.IsNullOrWhiteSpace(applyFilterAction.SourceFilterPath)
 			? sourceDescriptor
@@ -549,6 +553,12 @@ internal static class BusinessRuleValidator {
 				applyFilterAction.Source,
 				applyFilterAction.SourceFilterPath,
 				"rule.actions[*].sourceFilterPath");
+		if (!string.IsNullOrWhiteSpace(applyFilterAction.SourceFilterPath)) {
+			EnsureLookupDescriptor(
+				rightDescriptor,
+				rightDescriptor.Path,
+				"rule.actions[*].sourceFilterPath");
+		}
 
 		ValidateCompatibleDescriptors(leftDescriptor, rightDescriptor);
 

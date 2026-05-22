@@ -77,6 +77,18 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				"populateValue"
 			],
 			because: "apply-filter should advertise its dedicated lookup-filter payload fields through the runtime schema");
+		applyFilterSchema.GetProperty("properties").GetProperty("targetFilterPath").GetProperty("description").GetString()
+			.Should().Contain("Lookup",
+				because: "runtime MCP schema should describe targetFilterPath as a lookup-valued path");
+		applyFilterSchema.GetProperty("properties").GetProperty("targetFilterPath").GetProperty("description").GetString()
+			.Should().Contain("not Guid",
+				because: "runtime MCP schema should explicitly reject Guid-valued targetFilterPath paths");
+		applyFilterSchema.GetProperty("properties").GetProperty("sourceFilterPath").GetProperty("description").GetString()
+			.Should().Contain("Lookup",
+				because: "runtime MCP schema should describe sourceFilterPath as a lookup-valued path");
+		applyFilterSchema.GetProperty("properties").GetProperty("sourceFilterPath").GetProperty("description").GetString()
+			.Should().Contain("not Guid",
+				because: "runtime MCP schema should explicitly reject Guid-valued sourceFilterPath paths");
 	}
 
 	[Test]

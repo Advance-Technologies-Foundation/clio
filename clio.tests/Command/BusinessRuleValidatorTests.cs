@@ -982,6 +982,74 @@ public sealed class BusinessRuleValidatorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects apply-filter when targetFilterPath resolves to Guid instead of Lookup.")]
+	public void Validate_Should_Reject_ApplyFilter_When_TargetFilterPath_Is_Guid() {
+		// Arrange
+		BusinessRule rule = new(
+			"Invalid target filter path",
+			new BusinessRuleConditionGroup("AND", []),
+			[
+				new ApplyFilterBusinessRuleAction(
+					"City",
+					"CountryId",
+					"Country",
+					"Id",
+					clearValue: true,
+					populateValue: false)
+			]);
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["City"] = new("City", "Lookup", "City"),
+				["City.CountryId"] = new("City.CountryId", "Guid", null),
+				["Country"] = new("Country", "Lookup", "Country"),
+				["Country.Id"] = new("Country.Id", "Guid", null)
+			};
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, attributeMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Attribute 'City.CountryId' in rule.actions[*].targetFilterPath must be a Lookup.",
+				because: "apply-filter targetFilterPath must resolve to a lookup attribute and should reject Guid paths");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects apply-filter when sourceFilterPath resolves to Guid instead of Lookup.")]
+	public void Validate_Should_Reject_ApplyFilter_When_SourceFilterPath_Is_Guid() {
+		// Arrange
+		BusinessRule rule = new(
+			"Invalid source filter path",
+			new BusinessRuleConditionGroup("AND", []),
+			[
+				new ApplyFilterBusinessRuleAction(
+					"City",
+					"Country",
+					"Country",
+					"Id",
+					clearValue: true,
+					populateValue: false)
+			]);
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["City"] = new("City", "Lookup", "City"),
+				["City.Country"] = new("City.Country", "Lookup", "Country"),
+				["Country"] = new("Country", "Lookup", "Country"),
+				["Country.Id"] = new("Country.Id", "Guid", null)
+			};
+
+		// Act
+		Action act = () => BusinessRuleValidator.Validate(rule, attributeMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Attribute 'Country.Id' in rule.actions[*].sourceFilterPath must be a Lookup.",
+				because: "apply-filter sourceFilterPath must resolve to a lookup attribute and should reject Guid paths");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects conditions that omit the right expression payload.")]
 	public void Validate_Should_Reject_Missing_Right_Expression() {
 		// Arrange

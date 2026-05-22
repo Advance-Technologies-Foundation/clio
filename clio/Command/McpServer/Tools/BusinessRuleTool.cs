@@ -277,7 +277,7 @@ public sealed record EntityApplyFilterBusinessRuleActionMcpContract : EntityBusi
 	/// Gets the path inside the target lookup schema used for filtering.
 	/// </summary>
 	[JsonPropertyName("targetFilterPath")]
-	[Description("Path inside the target lookup schema used for filtering, for example Country or Country.TimeZone.")]
+	[Description("Lookup-valued path inside the target lookup schema used for filtering. Must resolve to a Lookup attribute, not Guid, for example Country or Country.TimeZone")]
 	[Required]
 	public string TargetFilterPath { get; init; } = string.Empty;
 
@@ -293,7 +293,7 @@ public sealed record EntityApplyFilterBusinessRuleActionMcpContract : EntityBusi
 	/// Gets the optional path inside the source lookup schema used on the right side of the filter comparison.
 	/// </summary>
 	[JsonPropertyName("sourceFilterPath")]
-	[Description("Optional path inside the source lookup schema used on the right side of the filter comparison.")]
+	[Description("Optional lookup-valued path inside the source lookup schema used on the right side of the filter comparison. Must resolve to a Lookup attribute, not Guid.")]
 	public string? SourceFilterPath { get; init; }
 
 	/// <summary>

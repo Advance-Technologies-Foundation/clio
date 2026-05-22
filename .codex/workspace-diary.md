@@ -3246,6 +3246,13 @@ Discovery: The loss happened only in the `apply-filter` special-case path inside
 Files: clio/Command/BusinessRules/BusinessRuleMetadataConverter.cs, clio.tests/Command/BusinessRuleMetadataConverterTests.cs, clio.tests/Command/EntityBusinessRuleServiceTests.cs, .codex/workspace-diary.md
 Impact: `apply-filter` parent rules now preserve user semantics such as `CreatedBy == Supervisor`, while child clear/populate rules remain UI-shaped and independent from the parent condition.
 
+## 2026-05-22 10:44 – Apply-filter lookup-only filter paths
+Context: Follow-up validator tightening after clarifying that `targetFilterPath` and `sourceFilterPath` must resolve to lookup attributes, not plain GUID columns.
+Decision: Added explicit `Lookup` validation for resolved relative filter paths in `BusinessRuleValidator` instead of relying only on left/right type compatibility.
+Discovery: Without a dedicated lookup guard, `Guid` paths like `Country.Id` could pass validation if both sides resolved to the same scalar type, even though apply-filter semantics require lookup-valued comparisons.
+Files: clio/Command/BusinessRules/BusinessRuleValidator.cs, clio.tests/Command/BusinessRuleValidatorTests.cs, .codex/workspace-diary.md
+Impact: `apply-filter` now rejects `Guid`-typed `targetFilterPath` and `sourceFilterPath` deterministically before metadata generation.
+
 ## 2026-05-21 10:37 – Apply-filter null-condition guard and live E2E readback
 Context: Follow-up PR review fixes for ENG-88577 flagged that `apply-filter` incorrectly accepted `rule.condition.conditions = null` and lacked real MCP end-to-end persistence coverage.
 Decision: Tightened validation so all rules require a non-null `conditions` collection while `apply-filter` alone still permits an empty list, and added defensive converter null coalescing plus a dedicated destructive MCP E2E/readback assertion for the persisted parent/child apply-filter rule family.
