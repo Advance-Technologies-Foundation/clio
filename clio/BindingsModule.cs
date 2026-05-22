@@ -207,6 +207,8 @@ public class BindingsModule {
 		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
 		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();
 		services.AddTransient<IBusinessRuleFormulaValidationService, BusinessRuleFormulaValidationService>();
+		services.AddTransient<IBusinessRuleLookupReferenceValidator, BusinessRuleLookupReferenceValidator>();
+		services.AddTransient<IBusinessRuleValidator, BusinessRuleValidator>();
 		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
 		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
 		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
@@ -214,6 +216,7 @@ public class BindingsModule {
 		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();
 		services.AddTransient<IPageBusinessRuleAttributeProvider, PageBusinessRuleAttributeProvider>();
 		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
+		services.AddTransient<IPageBusinessRuleValidator, PageBusinessRuleValidator>();
 		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
 		services.AddTransient<CreatePageBusinessRuleCommand>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
@@ -301,6 +304,7 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeMaintenanceClient, DataForgeMaintenanceClient>();
 		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
+		services.AddTransient<ODataReadTool>();
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<PingAppCommand>();

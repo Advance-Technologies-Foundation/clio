@@ -305,6 +305,7 @@ internal static class ToolContractCatalog {
 			[DataForgeTool.DataForgeContextToolName] = BuildDataForgeContext(),
 			[DataForgeTool.DataForgeInitializeToolName] = BuildDataForgeInitialize(),
 			[DataForgeTool.DataForgeUpdateToolName] = BuildDataForgeUpdate(),
+			[ODataReadTool.ToolName] = BuildODataRead(),
 			[SchemaSyncTool.ToolName] = BuildSchemaSync(),
 			[PageSyncTool.ToolName] = BuildPageSync(),
 			[PageListTool.ToolName] = BuildPageList(),
@@ -354,6 +355,7 @@ internal static class ToolContractCatalog {
 		DataForgeTool.DataForgeGetRelationsToolName,
 		DataForgeTool.DataForgeGetTableColumnsToolName,
 		DataForgeTool.DataForgeContextToolName,
+		ODataReadTool.ToolName,
 		SchemaSyncTool.ToolName,
 		PageSyncTool.ToolName,
 		PageListTool.ToolName,
@@ -1172,6 +1174,76 @@ internal static class ToolContractCatalog {
 			});
 	}
 
+	private static ToolContractDefinition BuildODataRead() {
+		return new ToolContractDefinition(
+			ODataReadTool.ToolName,
+			"Reads Creatio records through OData v4. Use this to query records, resolve lookup primary values, verify records by Id, or inspect selected fields.",
+			new ToolInputSchemaContract(
+				["entity", EnvironmentNameFieldName],
+				[
+					Field("entity", StringType, "Creatio OData entity set name, usually the referenced lookup schema name such as Contact, Account, or a custom lookup schema."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field("filter", StringType, "Raw OData $filter clause. GUID values are unquoted, for example Id eq 8ecab4a1-0ca3-4515-9399-efe0a19390bd. String values use single quotes, for example Name eq 'In Progress'."),
+					Field("select", ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
+					Field("expand", ArrayType, "Navigation properties to expand."),
+					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
+					Field("top", NumberType, "Maximum number of records to return, 1-1000. Default: 25.")
+				],
+				Validators: [
+					new ToolContractValidator("query-shape", "invalid-filter", "filter",
+						Context: "Use OData v4 syntax. For lookup resolution, query the lookup schema by display value first, for example Name eq 'In Progress', select Id and Name, and then use the returned Id where a lookup primary value is required."),
+					new ToolContractValidator("limit", "invalid-top", "top",
+						Context: "top must be between 1 and 1000; omitted or out-of-range values default to 25.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, "Whether the OData read succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("count", NumberType, "Number of records returned."),
+				Field("value", ArrayType, "OData value array or single entity response."),
+				Field("next-link", StringType, "OData next-link URL when more records are available.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Resolve a lookup row by display value", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					["entity"] = ExampleTaskStatusSchemaName,
+					["filter"] = "Name eq 'In Progress'",
+					["select"] = new[] { "Id", "Name" },
+					["top"] = 5
+				}),
+				Example("Verify a known lookup row exists by Id", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					["entity"] = "Contact",
+					["filter"] = $"Id eq {ExampleLookupValueId}",
+					["select"] = new[] { "Id" },
+					["top"] = 1
+				}),
+				Example("Query records with multiple fields and ordering", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					["entity"] = "Contact",
+					["select"] = new[] { "Id", "Name", "AccountId" },
+					["order-by"] = "Name asc",
+					["top"] = 10
+				})
+			],
+			Flow([ODataReadTool.ToolName], "Use when exact Creatio record values are needed from OData, including lookup primary values, record verification, filtered reads, or ordered record lists."),
+			[
+				Flow(
+					[DataForgeTool.DataForgeFindTablesToolName, DataForgeTool.DataForgeGetTableColumnsToolName, ODataReadTool.ToolName],
+					"Use when the entity name or column names are unknown and DataForge is available."),
+				Flow(
+					[FindEntitySchemaTool.FindEntitySchemaToolName, GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName, ODataReadTool.ToolName],
+					"Alternative discovery path: use find-entity-schema to locate the schema by name, then get-entity-schema-properties to inspect its columns, then query.")
+			],
+			[]);
+	}
+
 	private static ToolContractDefinition BuildDataForgeContract(DataForgeContractDescriptor descriptor) {
 		return new ToolContractDefinition(
 			descriptor.ToolName,
@@ -1320,14 +1392,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildEntityBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, and Set values actions from constants, formulas, or attributes.",
+			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, and Set values actions from constants, formulas, or attributes. Read get-guidance business-rules and this get-tool-contract entry before calling.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, EntitySchemaNameFieldName, RuleFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age.")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, Time, and Lookup targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -1336,9 +1408,11 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rule.actions[*].items[*]",
 						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }, { type: Formula, expression }, or { type: AttributeValue, path }. Formula expression must be a string using a simple numeric direct-field arithmetic expression, for example Field1 + Field2. Formula target and source attributes must be numeric; date/time arithmetic is not supported. AttributeValue source paths may be direct columns or forward reference paths like LookupColumn.SourceColumn; the final source attribute and target attribute must have the same data value type. Formula functions, comparison operators, and string literals are not supported in formula scope."),
 					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rule.actions[*].items[*].value.value",
-						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, and ISO 8601 time strings with timezone suffix for Time targets."),
+						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, ISO 8601 time strings with timezone suffix for Time targets, and GUID string constants for Lookup targets."),
 					new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rule.actions[*].items[*].value.expression",
-						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against a numeric arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct numeric source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column.")
+						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against a numeric arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct numeric source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column."),
+					new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.actions[*].items[*].value.value",
+						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} to resolve or verify the lookup record Id before calling create-entity-business-rule.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -1372,7 +1446,8 @@ internal static class ToolContractCatalog {
 						BusinessRuleSetValueItem("UsrCompleted", true),
 						BusinessRuleSetValueItem("UsrStartDate", "2025-01-01"),
 						BusinessRuleSetValueItem("UsrPlannedOn", "2025-01-01T00:00:00Z"),
-						BusinessRuleSetValueItem("UsrReminderTime", "12:00:00+02:00")
+						BusinessRuleSetValueItem("UsrReminderTime", "12:00:00+02:00"),
+						BusinessRuleSetValueItem("UsrOwner", ExampleLookupValueId)
 					]),
 				BusinessRuleExample("Create a Set values rule with a formula that sums two number fields",
 					"UsrTask", "Calculate total effort when name is filled", "Name", "is-filled-in",
@@ -1389,9 +1464,11 @@ internal static class ToolContractCatalog {
 				[
 					ApplicationGetListTool.ApplicationGetListToolName,
 					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ToolContractGetTool.ToolName,
+					GuidanceGetTool.ToolName,
 					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				],
-				"When the application exists and the entity is a part of it. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
+				"When the application exists and the entity is a part of it. Read the business-rules guidance and the create-entity-business-rule contract before calling the mutation tool. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
 			[
 				Flow(
 					[
@@ -1400,9 +1477,10 @@ internal static class ToolContractCatalog {
 						FindEntitySchemaTool.FindEntitySchemaToolName,
 						DataForgeTool.DataForgeFindTablesToolName,
 						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+						ODataReadTool.ToolName,
 						CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 					],
-					"When the application exists but the entity is not a part of it. Find entity using find-entity or dataforge-find-tables tool and create business rule for this entity in the application."),
+					"When the application exists but the entity is not a part of it. Find entity using find-entity or dataforge-find-tables. Use odata-read before rule creation when lookup constants must be resolved to real record Ids."),
 				Flow(
 					[
 						ApplicationCreateTool.ApplicationCreateToolName,
@@ -1414,13 +1492,19 @@ internal static class ToolContractCatalog {
 					"When application does not exist yet. Suggest user to create new empty application and create business rule there."),
 
 			],
-			[]);
+			[],
+			null,
+			[
+				"Call get-guidance with name business-rules before calling create-entity-business-rule.",
+				"Call get-tool-contract for create-entity-business-rule before building the final payload.",
+				"When any lookup condition or lookup set-values constant is needed, call odata-read first and use an existing record Id."
+			]);
 	}
 
 	private static ToolContractDefinition BuildPageBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements using datasource-bound page attributes and constants.",
+			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements using datasource-bound page attributes and constants. Read get-guidance business-rules and this get-tool-contract entry before calling.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RuleFieldName],
 				[
@@ -1504,24 +1588,32 @@ internal static class ToolContractCatalog {
 				[
 					PageListTool.ToolName,
 					PageGetTool.ToolName,
+					ToolContractGetTool.ToolName,
+					GuidanceGetTool.ToolName,
 					CreatePageBusinessRuleTool.BusinessRuleCreateToolName
 				],
-				"Use list-pages or application discovery to choose the page, call get-page to inspect bundle.viewConfig and bundle.viewModelConfig.attributes, then create the page rule. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
+				"Use list-pages or application discovery to choose the page, call get-page to inspect bundle.viewConfig and bundle.viewModelConfig.attributes, then read the business-rules guidance and create-page-business-rule contract before creating the page rule. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
 			[
 				Flow(
 					[
 						ApplicationGetListTool.ApplicationGetListToolName,
 						ApplicationGetInfoTool.ApplicationGetInfoToolName,
 						PageGetTool.ToolName,
+						ODataReadTool.ToolName,
 						CreatePageBusinessRuleTool.BusinessRuleCreateToolName
 					],
-					"When the target page belongs to a known application, inspect the application first and then fetch the page bundle before creating the rule.")
+					"When the target page belongs to a known application, inspect the application first and then fetch the page bundle before creating the rule. Use odata-read before rule creation when lookup constants must be resolved to real record Ids.")
 			],
 			[],
 			[
 				new ToolAntiPattern(
 					"Using datasource paths like PDS.Priority in rule.condition.conditions[*].leftExpression.path.",
 					"Page business rules use declared view-model attribute names from bundle.viewModelConfig.attributes so the generated metadata and triggers match the page runtime.")
+			],
+			[
+				"Call get-guidance with name business-rules before calling create-page-business-rule.",
+				"Call get-tool-contract for create-page-business-rule before building the final payload.",
+				"When any lookup condition constant is needed, call odata-read first and use an existing record Id."
 			]);
 	}
 
@@ -1538,7 +1630,9 @@ internal static class ToolContractCatalog {
 			new ToolContractValidator("comparison-family", "unsupported-equality-operands", "rule.condition.conditions[*]",
 				Context: "equal and not-equal are not supported when the left attribute data value type is RichText or Image. Use is-filled-in or is-not-filled-in for those attributes."),
 			new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
-				Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm').")
+				Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm')."),
+			new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.condition.conditions[*].rightExpression.value",
+				Context: $"Lookup constants must be GUID strings for existing records in the attribute reference schema. Use {ODataReadTool.ToolName} to resolve or verify the lookup record Id before calling the business-rule creation tool.")
 		];
 
 	private static ToolContractExample BusinessRuleExample(

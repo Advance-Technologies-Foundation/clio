@@ -36,6 +36,9 @@ public sealed class BusinessRulesGuidanceResource {
 		       - It consists of a CONDITION GROUP (AND/OR of field-value comparisons) and one or more ACTIONS that fire when the condition is met.
 		       - Business rules are created via dedicated MCP tools, not by editing page schema bodies or writing JavaScript.
 
+		       Required MCP contract check
+		       - Before creating or modifying business rules (calling `create-entity-business-rule`, `create-page-business-rule`, etc) call `get-tool-contract` to get more information about contract and see examples.
+
 		       State-changing actions are one-way
 		       - Actions that change field or element state (visibility, editability, or required state) apply only when their condition is met.
 		       - A business rule does not automatically roll back state or apply the inverse action when its condition stops matching.
@@ -64,18 +67,15 @@ public sealed class BusinessRulesGuidanceResource {
 		       - If the requirement is display-only value transformation → use a CONVERTER.
 		       - When in doubt, prefer business rules over handlers for simple conditional visibility/editability/required logic.
 
-		       Condition group structure
-		       - A condition group has a `logicalOperation` (AND or OR) and a list of condition items.
-		       - Each condition item specifies: `attributeName` (entity column or page attribute), `comparisonType` (e.g., Equal, NotEqual, IsNotNull, IsNull, Greater, Less, GreaterOrEqual, LessOrEqual, Contain, NotContain, StartWith, NotStartWith, EndWith, NotEndWith), and `value` (the comparison value, can be null for IsNull/IsNotNull).
-		       - For lookup columns, use the lookup record Id (Guid) as the comparison value, and set `type` to "Guid". For boolean columns, use `true` or `false` string. For other types, use string representation.
-
 		       Workflow
-		       1. Read entity schema columns with `get-entity-schema-column-properties` or page structure with `get-page`.
-		       2. Determine whether the rule is entity-level or page-level.
-		       3. For state-changing requirements, decide whether the state must also return through an explicit inverse rule.
-		       4. Build the condition group and actions.
-		       5. Call `create-entity-business-rule` or `create-page-business-rule`.
-		       6. Verify by checking the entity or page on the environment.
+		       1. Call `get-tool-contract` for `create-entity-business-rule` or `create-page-business-rule`.
+		       2. Read entity schema columns with `get-entity-schema-column-properties` or page structure with `get-page`.
+		       3. Determine whether the rule is entity-level or page-level.
+		       4. For state-changing requirements, decide whether the state must also return through an explicit inverse rule.
+		       5. Resolve every lookup condition value and lookup set-values constant with `odata-read`. Example lookup read by display value: `odata-read` with entity `Contact`, filter `Name eq 'John Best'`, select `["Id","Name"]`, top `5`.
+		       6. Build the condition group and actions.
+		       7. Call `create-entity-business-rule` or `create-page-business-rule`.
+		       8. Verify by checking the entity or page on the environment.
 
 		       Common mistakes to avoid
 		       - Do NOT add visibility/editability/required toggling logic in SCHEMA_HANDLERS — use business rules.
@@ -83,6 +83,8 @@ public sealed class BusinessRulesGuidanceResource {
 		       - Do NOT write `$context.enableAttribute()`/`$context.disableAttribute()` handlers when a business rule suffices.
 		       - Do NOT duplicate entity-level rules on every page. If the rule applies to the entity globally, create it at the entity level.
 		       - Do NOT assume a state-changing business rule automatically reverses itself. Use an explicit inverse rule when both directions are required.
+		       - Do NOT call a business-rule creation tool before reading its `get-tool-contract` entry.
+		       - Do NOT use random GUIDs for lookup constants. Resolve or verify them with `odata-read`.
 		       """
 	};
 }

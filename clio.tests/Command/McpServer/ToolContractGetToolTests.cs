@@ -54,6 +54,7 @@ public sealed class ToolContractGetToolTests {
 				CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
 				CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
 				DataForgeTool.DataForgeContextToolName,
+				ODataReadTool.ToolName,
 				PageSyncTool.ToolName,
 				PageUpdateTool.ToolName,
 				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
@@ -187,6 +188,11 @@ public sealed class ToolContractGetToolTests {
 				validator.Context!.Contains("timezone suffix", StringComparison.Ordinal),
 			because: "the contract should explicitly require timezone-aware DateTime and Time constants");
 		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "lookup-record" &&
+				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Context!.Contains(ODataReadTool.ToolName, StringComparison.Ordinal),
+			because: "the contract should tell callers to resolve lookup condition constants with odata-read");
+		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rule.actions[*].type",
 			because: "the contract should validate target-architecture action type fields");
@@ -203,13 +209,18 @@ public sealed class ToolContractGetToolTests {
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-constant" &&
 				validator.Field == "rule.actions[*].items[*].value.value" &&
-				validator.Context!.Contains("JSON number", StringComparison.Ordinal),
-			because: "the contract should document typed constant payloads for set-values");
+				validator.Context!.Contains("GUID string constants for Lookup targets", StringComparison.Ordinal),
+			because: "the contract should document typed constant payloads for set-values including lookup targets");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-formula" &&
 				validator.Field == "rule.actions[*].items[*].value.expression" &&
 				validator.Context!.Contains("ExpressionService.svc/Validate", StringComparison.Ordinal),
 			because: "the contract should document remote formula validation after expression-schema translation");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "lookup-record" &&
+				validator.Field == "rule.actions[*].items[*].value.value" &&
+				validator.Context!.Contains(ODataReadTool.ToolName, StringComparison.Ordinal),
+			because: "the contract should tell callers to resolve lookup set-values constants with odata-read");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-shape" &&
 				validator.Context!.Contains("direct-field arithmetic expression", StringComparison.Ordinal),
@@ -245,6 +256,8 @@ public sealed class ToolContractGetToolTests {
 				new[] {
 					ApplicationGetListTool.ApplicationGetListToolName,
 					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ToolContractGetTool.ToolName,
+					GuidanceGetTool.ToolName,
 					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				},
 				because: "the contract should advertise app discovery before business-rule creation when the entity belongs to an existing app");
@@ -255,6 +268,7 @@ public sealed class ToolContractGetToolTests {
 					FindEntitySchemaTool.FindEntitySchemaToolName,
 					DataForgeTool.DataForgeFindTablesToolName,
 					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+					ODataReadTool.ToolName,
 					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				}),
 			because: "the contract should advertise entity discovery through find-entity or Data Forge when the entity is not part of the app context");
@@ -347,7 +361,7 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract should show a timezone-aware Time constant example for coding agents");
 		bool hasSetValuesExample = contract.Examples.Any(HasSetValuesConstantExample);
 		hasSetValuesExample.Should().BeTrue(
-			because: "the contract should include a set-values example with text number boolean Date DateTime and Time constants");
+			because: "the contract should include a set-values example with text number boolean Date DateTime Time and lookup constants");
 		bool hasSetValuesFormulaExample = contract.Examples.Any(HasSetValuesFormulaExample);
 		hasSetValuesFormulaExample.Should().BeTrue(
 			because: "the contract should include a set-values formula example using direct field names");
@@ -409,12 +423,19 @@ public sealed class ToolContractGetToolTests {
 				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
 				validator.Context!.Contains("timezone suffix", StringComparison.Ordinal),
 			because: "page rules share the DateTime and Time constant timezone requirement");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "lookup-record" &&
+				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Context!.Contains(ODataReadTool.ToolName, StringComparison.Ordinal),
+			because: "page rules should tell callers to resolve lookup condition constants with odata-read");
 		contract.OutputContract.Kind.Should().Be("command-execution-result",
 			because: "create-page-business-rule returns the standard command execution result payload");
 		contract.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					PageListTool.ToolName,
 					PageGetTool.ToolName,
+					ToolContractGetTool.ToolName,
+					GuidanceGetTool.ToolName,
 					CreatePageBusinessRuleTool.BusinessRuleCreateToolName
 				},
 				because: "the contract should require page discovery before rule creation");
@@ -468,7 +489,8 @@ public sealed class ToolContractGetToolTests {
 			&& values.Contains(true)
 			&& values.Contains("2025-01-01")
 			&& values.Contains("12:00:00+02:00")
-			&& values.Contains("2025-01-01T00:00:00Z");
+			&& values.Contains("2025-01-01T00:00:00Z")
+			&& values.Contains("00000000-0000-0000-0000-000000000001");
 	}
 
 	private static bool HasSetValuesFormulaExample(ToolContractExample example) {
@@ -1164,6 +1186,38 @@ public sealed class ToolContractGetToolTests {
 			because: "dataforge-context should be framed as an aggregated planning result");
 		contextContract.Description.Should().Contain("similar tables, lookup matches, relation paths, table columns, and readiness status",
 			because: "the contract should list the planning artifacts the caller receives");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the universal odata-read contract for querying Creatio records.")]
+	public void ToolContractGet_Should_Return_OData_Read_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ODataReadTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "odata-read should be discoverable through get-tool-contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.InputSchema.Required.Should().Contain("entity",
+			because: "odata-read needs the target OData entity set");
+		contract.Description.Should().Contain("query records",
+			because: "the contract should describe odata-read as a general Creatio record query tool");
+		contract.Description.Should().NotContain("business rule", StringComparison.OrdinalIgnoreCase,
+			because: "odata-read is universal and must not be framed as a business-rule-only helper");
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "filter",
+			because: "records are commonly queried through an OData filter");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "value",
+			because: "odata-read returns the OData value array");
+		contract.Examples.Should().Contain(example => example.Summary.Contains("display value", StringComparison.Ordinal),
+			because: "the contract should show how to find a lookup row by primary display value");
+		contract.Examples.Should().Contain(example => example.Summary.Contains("exists by Id", StringComparison.Ordinal),
+			because: "the contract should show how to verify a known lookup id");
 	}
 
 	[Test]

@@ -286,7 +286,8 @@ public sealed class BusinessRuleMetadataConverterTests {
 			CreateColumn("Completed", 12),
 			CreateColumn("StartDate", 8),
 			CreateColumn("ReminderTime", 9),
-			CreateColumn("PlannedOn", 7));
+			CreateColumn("PlannedOn", 7),
+			CreateColumn("Owner", 10, "Contact"));
 		BusinessRule rule = new(
 			"Populate defaults",
 			new BusinessRuleConditionGroup(
@@ -317,7 +318,10 @@ public sealed class BusinessRuleMetadataConverterTests {
 							new BusinessRuleExpression("Const", null, Json("13:45:00+02:00"))),
 						new(
 							new BusinessRuleExpression("AttributeValue", "PlannedOn", null),
-							new BusinessRuleExpression("Const", null, Json("2025-01-15T13:45:00+02:00")))
+							new BusinessRuleExpression("Const", null, Json("2025-01-15T13:45:00+02:00"))),
+						new(
+							new BusinessRuleExpression("AttributeValue", "Owner", null),
+							new BusinessRuleExpression("Const", null, Json("11111111-1111-1111-1111-111111111111")))
 					})
 			]);
 
@@ -332,7 +336,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			because: "set-values actions should persist assignment items instead of a comma-separated target list");
 		List<BusinessRuleSetValueItemMetadataDto> items = (List<BusinessRuleSetValueItemMetadataDto>)action.Items!;
 		JsonElement serializedItems = JsonSerializer.SerializeToElement(items, BusinessRuleConstants.JsonOptions);
-		items.Should().HaveCount(6,
+		items.Should().HaveCount(7,
 			because: "every set-values assignment should become a separate persisted item");
 		items[0].TypeName.Should().Be(BusinessRuleConstants.BusinessRuleSetValueItemTypeName,
 			because: "each item should use the core BusinessRuleSetValueItem metadata type");
@@ -370,6 +374,12 @@ public sealed class BusinessRuleMetadataConverterTests {
 			because: "DateTime constants should inherit the DateTime target column type");
 		serializedItems[5].GetProperty("value").GetProperty("value").GetString().Should().Be("2025-01-15T11:45:00Z",
 			because: "DateTime constants should be normalized to UTC before serialization");
+		items[6].Value.DataValueTypeName.Should().Be("Lookup",
+			because: "lookup constants should inherit the Lookup target column type");
+		items[6].Value.ReferenceSchemaName.Should().Be("Contact",
+			because: "lookup set-values constants should keep the target reference schema name");
+		serializedItems[6].GetProperty("value").GetProperty("value").GetString().Should().Be("11111111-1111-1111-1111-111111111111",
+			because: "lookup set-values constants should persist the raw lookup record id");
 	}
 
 	[Test]

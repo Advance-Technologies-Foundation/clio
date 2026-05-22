@@ -19,6 +19,7 @@ public sealed class EntityBusinessRuleServiceTests {
 	private IApplicationPackageListProvider _applicationPackageListProvider = null!;
 	private IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient = null!;
 	private IBusinessRuleFormulaValidationService _formulaValidationService = null!;
+	private IBusinessRuleLookupReferenceValidator _lookupReferenceValidator = null!;
 	private EntityBusinessRuleService _service = null!;
 	private AddonSchemaDto? _savedAddonSchema;
 
@@ -29,6 +30,7 @@ public sealed class EntityBusinessRuleServiceTests {
 		_entitySchemaDesignerClient = Substitute.For<IRemoteEntitySchemaDesignerClient>();
 		_applicationPackageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_formulaValidationService = Substitute.For<IBusinessRuleFormulaValidationService>();
+		_lookupReferenceValidator = Substitute.For<IBusinessRuleLookupReferenceValidator>();
 		_applicationPackageListProvider.GetPackages().Returns(new[] {
 			new PackageInfo(new PackageDescriptor {
 				Name = "UsrPkg",
@@ -49,7 +51,8 @@ public sealed class EntityBusinessRuleServiceTests {
 			new BusinessRulePackageResolver(_applicationPackageListProvider),
 			new EntityBusinessRuleAttributeProvider(new EntityBusinessRuleSchemaProvider(_entitySchemaDesignerClient)),
 			new BusinessRuleAddonService(_addonSchemaDesignerClient),
-			_formulaValidationService);
+			_formulaValidationService,
+			new BusinessRuleValidator(_lookupReferenceValidator));
 	}
 
 	[TestCase("", "UsrOrder", true, "package-name is required.")]
@@ -165,6 +168,63 @@ public sealed class EntityBusinessRuleServiceTests {
 		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
 		_addonSchemaDesignerClient.Received(1).ResetClientScriptCache();
 		_addonSchemaDesignerClient.Received(1).BuildConfiguration();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Validates lookup constants before formula validation and add-on metadata mutation.")]
+	public void Create_Should_Validate_Lookup_Constants_Before_Saving_Addon_Metadata() {
+		// Arrange
+		EntityBusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			CreateRule(actions: [
+				new SetValuesBusinessRuleAction(
+					new List<BusinessRuleSetValueItem> {
+						new(
+							new BusinessRuleExpression("AttributeValue", "Owner", null),
+							new BusinessRuleExpression("Const", null,
+								JsonSerializer.Deserialize<JsonElement>("\"11111111-1111-1111-1111-111111111111\"")))
+					})
+			]));
+
+		// Act
+		BusinessRuleCreateResult result = _service.Create(request);
+
+		// Assert
+		result.RuleName.Should().StartWith("BusinessRule_",
+			because: "successful lookup validation should allow rule creation to continue");
+		_lookupReferenceValidator.Received(1).Validate(
+			request.Rule,
+			Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>());
+		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Stops before formula validation or add-on metadata mutation when a lookup constant points to a missing record.")]
+	public void Create_Should_Not_Save_Addon_Metadata_When_Lookup_Validation_Fails() {
+		// Arrange
+		_lookupReferenceValidator
+			.When(validator => validator.Validate(
+				Arg.Any<BusinessRule>(),
+				Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>()))
+			.Do(_ => throw new ArgumentException("Lookup record was not found."));
+		EntityBusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			CreateRule());
+
+		// Act
+		Action act = () => _service.Create(request);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Lookup record was not found.",
+				because: "invalid lookup references must stop before destructive add-on writes");
+		_formulaValidationService.DidNotReceiveWithAnyArgs().Validate(default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}
 
 	[Test]

@@ -10,19 +10,51 @@ namespace Clio.Command.BusinessRules;
 /// <summary>
 /// Validates a business-rule definition.
 /// </summary>
-internal static class BusinessRuleValidator {
+internal interface IBusinessRuleValidator {
+	/// <summary>
+	/// Validates an entity business-rule definition against entity column metadata.
+	/// </summary>
+	/// <param name="rule">Business rule to validate.</param>
+	/// <param name="columnMap">Entity columns keyed by column name.</param>
+	void Validate(
+		BusinessRule rule,
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap);
 
-	internal static void Validate(
+	/// <summary>
+	/// Validates an entity business-rule definition against business-rule attributes.
+	/// </summary>
+	/// <param name="rule">Business rule to validate.</param>
+	/// <param name="attributeMap">Business-rule attributes keyed by payload path.</param>
+	void Validate(
+		BusinessRule rule,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap);
+
+	/// <summary>
+	/// Validates a business-rule definition with a custom action validator.
+	/// </summary>
+	/// <param name="rule">Business rule to validate.</param>
+	/// <param name="attributeMap">Business-rule attributes keyed by payload path.</param>
+	/// <param name="validateAction">Action validator for the rule scope.</param>
+	void Validate(
+		BusinessRule rule,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction);
+}
+
+internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidator lookupReferenceValidator)
+	: IBusinessRuleValidator {
+
+	public void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap) =>
 		Validate(rule, BuildAttributeDescriptorMap(columnMap));
 
-	internal static void Validate(
+	public void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) =>
 		Validate(rule, attributeMap, ValidateEntityAction);
 
-	internal static void Validate(
+	public void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction) {
@@ -67,6 +99,8 @@ internal static class BusinessRuleValidator {
 
 			validateAction(action, attributeMap);
 		}
+
+		lookupReferenceValidator.Validate(rule, attributeMap);
 	}
 
 	private static void ValidateCondition(
@@ -235,6 +269,11 @@ internal static class BusinessRuleValidator {
 	}
 
 	private static Action<JsonElement> ResolveSetValueConstantValidator(string targetDataValueTypeName) {
+		if (string.Equals(targetDataValueTypeName, "Lookup", StringComparison.Ordinal)) {
+			return value => ValidateGuidString(value,
+				"rule.actions[*].items[*].value.value must be a GUID string when the target attribute is a Lookup.");
+		}
+
 		if (string.Equals(targetDataValueTypeName, "Boolean", StringComparison.Ordinal)) {
 			return ValidateBooleanSetValueConstant;
 		}

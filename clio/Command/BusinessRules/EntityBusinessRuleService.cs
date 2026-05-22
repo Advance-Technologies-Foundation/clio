@@ -31,7 +31,8 @@ internal sealed class EntityBusinessRuleService(
 	IBusinessRulePackageResolver packageResolver,
 	IEntityBusinessRuleAttributeProvider attributeProvider,
 	IBusinessRuleAddonService businessRuleAddonService,
-	IBusinessRuleFormulaValidationService formulaValidationService)
+	IBusinessRuleFormulaValidationService formulaValidationService,
+	IBusinessRuleValidator businessRuleValidator)
 	: IEntityBusinessRuleService {
 
 	public BusinessRuleCreateResult Create(EntityBusinessRuleCreateRequest request) {
@@ -42,7 +43,7 @@ internal sealed class EntityBusinessRuleService(
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
 			request.EntitySchemaName,
 			packageUId);
-		BusinessRuleValidator.Validate(request.Rule, attributeContext.Attributes);
+		businessRuleValidator.Validate(request.Rule, attributeContext.Attributes);
 		ValidateFormulas(attributeContext.EntitySchema.Name, attributeContext.Attributes, request.Rule);
 
 		BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToMetadata(

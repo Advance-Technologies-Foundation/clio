@@ -201,6 +201,41 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract returns universal odata-read contract")]
+	public async Task ToolContractGet_Should_Advertise_OData_Read_Contract() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] {
+					ODataReadTool.ToolName
+				}
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "odata-read should be discoverable through the real MCP server contract tool");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.InputSchema.Required.Should().Contain("entity",
+			because: "odata-read requires the OData entity set name");
+		contract.Description.Should().Contain("query records",
+			because: "the contract should describe odata-read as a general Creatio record query tool");
+		contract.Description.Should().NotContain("business rule", StringComparison.OrdinalIgnoreCase,
+			because: "odata-read is universal and must not be framed as a business-rule-only helper");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "value",
+			because: "the real MCP contract should expose the OData value payload");
+		contract.Examples.Should().Contain(example => example.Summary.Contains("display value", StringComparison.Ordinal),
+			because: "the contract should show lookup resolution by display value");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises check-settings-health bootstrap diagnostics contract")]
 	public async Task ToolContractGet_Should_Advertise_Settings_Health_Contract() {
 		// Arrange
@@ -551,6 +586,11 @@ public sealed class ToolContractGetToolE2ETests {
 				validator.Context!.Contains("timezone suffix", StringComparison.Ordinal),
 			because: "the contract should require timezone-aware DateTime and Time constants");
 		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "lookup-record" &&
+				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Context!.Contains(ODataReadTool.ToolName, StringComparison.Ordinal),
+			because: "the contract should advertise odata-read lookup validation for condition constants");
+		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rule.actions[*].type",
 			because: "the contract should advertise the target architecture action field");
@@ -567,13 +607,18 @@ public sealed class ToolContractGetToolE2ETests {
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-constant" &&
 				validator.Field == "rule.actions[*].items[*].value.value" &&
-				validator.Context!.Contains("JSON number", StringComparison.Ordinal),
-			because: "the contract should document typed constant payloads for Set values");
+				validator.Context!.Contains("GUID string constants for Lookup targets", StringComparison.Ordinal),
+			because: "the contract should document typed constant payloads for Set values including lookup targets");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-formula" &&
 				validator.Field == "rule.actions[*].items[*].value.expression" &&
 				validator.Context!.Contains("ExpressionService.svc/Validate", StringComparison.Ordinal),
 			because: "the contract should document formula payloads for Set values");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "lookup-record" &&
+				validator.Field == "rule.actions[*].items[*].value.value" &&
+				validator.Context!.Contains(ODataReadTool.ToolName, StringComparison.Ordinal),
+			because: "the contract should advertise odata-read lookup validation for set-values constants");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rule.condition.conditions[*].comparisonType" &&
@@ -597,6 +642,15 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "contract-driven clients should detect command failures from the exit code");
 		contract.OutputContract.FailureSignals.Should().NotContain("success == false",
 			because: "create-entity-business-rule does not emit a success field");
+		contract.PreferredFlow.Tools.Should().Equal(
+			[
+				ApplicationGetListTool.ApplicationGetListToolName,
+				ApplicationGetInfoTool.ApplicationGetInfoToolName,
+				ToolContractGetTool.ToolName,
+				GuidanceGetTool.ToolName,
+				CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
+			],
+			because: "entity business-rule creation should read the exact contract and guidance before mutation");
 		bool hasUnaryExample = contract.Examples.Any(example =>
 			string.Equals(example.Summary, "Create a readonly rule when a text field is filled in", StringComparison.Ordinal));
 		hasUnaryExample.Should().BeTrue(
@@ -662,13 +716,20 @@ public sealed class ToolContractGetToolE2ETests {
 				validator.Field == "rule.actions[*].items" &&
 				validator.Context!.Contains("recursive get-page bundle.viewConfig", StringComparison.Ordinal),
 			because: "the contract should point callers to recursive page element discovery");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "lookup-record" &&
+				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Context!.Contains(ODataReadTool.ToolName, StringComparison.Ordinal),
+			because: "the page contract should advertise odata-read lookup validation for condition constants");
 		contract.PreferredFlow.Tools.Should().Equal(
 			[
 				PageListTool.ToolName,
 				PageGetTool.ToolName,
+				ToolContractGetTool.ToolName,
+				GuidanceGetTool.ToolName,
 				CreatePageBusinessRuleTool.BusinessRuleCreateToolName
 			],
-			because: "page business-rule creation should be preceded by page list/get discovery");
+			because: "page business-rule creation should inspect the page and read guidance plus the exact contract before mutation");
 		contract.OutputContract.Kind.Should().Be("command-execution-result",
 			because: "create-page-business-rule returns the standard command execution result payload");
 	}
