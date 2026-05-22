@@ -30,6 +30,13 @@ public class RestoreDbTool(
 	internal const string ModeDbCredentials = "db-credentials";
 	internal const string ModeLocalServer = "local-server";
 
+	/// <summary>Legacy MCP tool name retained for prompt and e2e documentation surfaces. The capability now lives on <c>restore-db</c> with <c>mode=environment</c>.</summary>
+	internal const string RestoreDbByEnvironmentToolName = "restore-db-by-environment";
+	/// <summary>Legacy MCP tool name retained for prompt and e2e documentation surfaces. The capability now lives on <c>restore-db</c> with <c>mode=db-credentials</c>.</summary>
+	internal const string RestoreDbByCredentialsToolName = "restore-db-by-credentials";
+	/// <summary>Legacy MCP tool name retained for prompt and e2e documentation surfaces. The capability now lives on <c>restore-db</c> with <c>mode=local-server</c>.</summary>
+	internal const string RestoreDbToLocalServerToolName = "restore-db-to-local-server";
+
 	[McpServerTool(Name = RestoreDbToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Restores a database. mode='environment' restores via a configured clio environment; mode='db-credentials' restores using explicit database server URI + credentials; mode='local-server' restores to a configured local DB server. Returns the temp database-operation log path.")]
 	public CommandExecutionResult Restore(

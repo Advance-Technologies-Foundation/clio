@@ -21,6 +21,13 @@ public class LinkFromRepositoryTool(
 	internal const string ModeByPkgPath = "by-pkg-path";
 	internal const string ModeUnlocked = "unlocked";
 
+	/// <summary>Legacy MCP tool name retained for prompt and e2e documentation surfaces. The capability now lives on <c>link-from-repository</c> with <c>mode=by-env</c>.</summary>
+	internal const string LinkFromRepositoryByEnvironmentToolName = "link-from-repository-by-environment";
+	/// <summary>Legacy MCP tool name retained for prompt and e2e documentation surfaces. The capability now lives on <c>link-from-repository</c> with <c>mode=by-pkg-path</c>.</summary>
+	internal const string LinkFromRepositoryByEnvPackagePathToolName = "link-from-repository-by-env-package-path";
+	/// <summary>Legacy MCP tool name retained for prompt and e2e documentation surfaces. The capability now lives on <c>link-from-repository</c> with <c>mode=unlocked</c>.</summary>
+	internal const string LinkFromRepositoryUnlockedToolName = "link-from-repository-unlocked";
+
 	[McpServerTool(Name = LinkFromRepositoryToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Links repository package content into a Creatio environment. mode='by-env' resolves the target via a registered environment name; mode='by-pkg-path' uses an explicit environment package directory; mode='unlocked' queries the site for unlocked packages and links only those.")]
 	public CommandExecutionResult LinkFromRepository(

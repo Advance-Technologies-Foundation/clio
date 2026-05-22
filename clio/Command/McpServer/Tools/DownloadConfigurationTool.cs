@@ -24,6 +24,11 @@ public class DownloadConfigurationTool(
 	internal const string SourceEnvironment = "environment";
 	internal const string SourceBuild = "build";
 
+	/// <summary>Legacy MCP tool name retained for prompt and e2e documentation surfaces. The capability now lives on <c>download-configuration</c> with <c>source=environment</c>.</summary>
+	internal const string DownloadConfigurationByEnvironmentToolName = "download-configuration-by-environment";
+	/// <summary>Legacy MCP tool name retained for prompt and e2e documentation surfaces. The capability now lives on <c>download-configuration</c> with <c>source=build</c>.</summary>
+	internal const string DownloadConfigurationByBuildToolName = "download-configuration-by-build";
+
 	[McpServerTool(Name = DownloadConfigurationToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[Description("Downloads Creatio configuration into the workspace `.application` folder. source='environment' uses a registered environment name; source='build' uses a Creatio zip file or extracted directory.")]
 	public CommandExecutionResult DownloadConfiguration(

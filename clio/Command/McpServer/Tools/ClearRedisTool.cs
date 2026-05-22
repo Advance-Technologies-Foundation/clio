@@ -16,6 +16,11 @@ public class ClearRedisTool(
 	internal const string ModeEnvironment = "environment";
 	internal const string ModeCredentials = "credentials";
 
+	/// <summary>Legacy MCP tool name retained for prompt and e2e documentation surfaces. The capability now lives on <c>clear-redis-db</c> with <c>mode=environment</c>.</summary>
+	internal const string ClearRedisByEnvironmentName = "clear-redis-db-by-environment";
+	/// <summary>Legacy MCP tool name retained for prompt and e2e documentation surfaces. The capability now lives on <c>clear-redis-db</c> with <c>mode=credentials</c>.</summary>
+	internal const string ClearRedisByCredentialsToolName = "clear-redis-db-by-credentials";
+
 	[McpServerTool(Name = ClearRedisToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Empties the Redis database used by a Creatio instance. Use mode='environment' with environment-name to target a registered environment; use mode='credentials' with url+login+password.")]
 	public CommandExecutionResult ClearRedis(

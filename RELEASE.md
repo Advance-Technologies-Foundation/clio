@@ -138,3 +138,66 @@ EOF
 - **cliogate проект** остается без изменений версионирования
 - **Только clio пакет** получает версию из тега релиза
 - При локальной разработке используется версия по умолчанию `8.0.1.42`
+
+## Breaking changes — MCP tool consolidation (ENG-90312)
+
+This release consolidates 30 legacy MCP tool names behind 11 mode-discriminated tools. The CLI verbs are unaffected; only the MCP `tools/list` surface changed. Every legacy tool name disappears from the registry — clients must migrate to the new names and payload shapes.
+
+### Migration table
+
+| Legacy MCP tool | New MCP tool | Discriminator argument | Example payload |
+|---|---|---|---|
+| `StopAllCreatio` | `stop-all-creatio` | — (removed; canonical kebab-case name kept) | `{}` |
+| `restart-by-environmentName` | `restart-creatio` | `mode=environment` | `{"mode":"environment","environment-name":"dev"}` |
+| `restart-by-environment-name` | `restart-creatio` | `mode=environment` | `{"mode":"environment","environment-name":"dev"}` |
+| `restart-by-credentials` | `restart-creatio` | `mode=credentials` | `{"mode":"credentials","url":"http://localhost:5000","login":"Supervisor","password":"...","is-net-core":true}` |
+| `clear-redis-db-by-environment` | `clear-redis-db` | `mode=environment` | `{"mode":"environment","environment-name":"dev"}` |
+| `clear-redis-db-by-credentials` | `clear-redis-db` | `mode=credentials` | `{"mode":"credentials","url":"http://localhost:5000","login":"Supervisor","password":"..."}` |
+| `restore-db-by-environment` | `restore-db` | `mode=environment` | `{"mode":"environment","environment-name":"sandbox","backup-path":"C:\\backups\\db.backup"}` |
+| `restore-db-by-credentials` | `restore-db` | `mode=db-credentials` | `{"mode":"db-credentials","db-server-uri":"mssql://localhost:1433","db-user":"sa","db-password":"...","backup-path":"C:\\backups\\db.bak","db-name":"sandbox_db"}` |
+| `restore-db-to-local-server` | `restore-db` | `mode=local-server` | `{"mode":"local-server","db-server-name":"local-sql","backup-path":"C:\\backups\\db.bak","db-name":"sandbox_db"}` |
+| `download-configuration-by-environment` | `download-configuration` | `source=environment` | `{"source":"environment","workspace-path":"C:\\workspace","environment-name":"dev"}` |
+| `download-configuration-by-build` | `download-configuration` | `source=build` | `{"source":"build","workspace-path":"C:\\workspace","build-path":"C:\\creatio.zip"}` |
+| `link-from-repository-by-environment` | `link-from-repository` | `mode=by-env` | `{"mode":"by-env","repo-path":"C:\\Repo","environment-name":"dev","packages":"PkgA,PkgB"}` |
+| `link-from-repository-by-env-package-path` | `link-from-repository` | `mode=by-pkg-path` | `{"mode":"by-pkg-path","repo-path":"C:\\Repo","env-pkg-path":"C:\\Creatio\\Terrasoft.Configuration\\Pkg","packages":"*"}` |
+| `link-from-repository-unlocked` | `link-from-repository` | `mode=unlocked` | `{"mode":"unlocked","repo-path":"C:\\Repo","environment-name":"dev"}` |
+| `create-schema` (source-code) | `create-schema` | `schema-type=source-code` | `{"schema-type":"source-code","schema-name":"UsrMyHelper","package-name":"UsrPkg","environment-name":"dev"}` |
+| `create-entity-schema` | `create-schema` | `schema-type=entity` | `{"schema-type":"entity","schema-name":"UsrVehicle","package-name":"UsrPkg","environment-name":"dev","title-localizations":{"en-US":"Vehicle"}}` |
+| `create-lookup` | `create-schema` | `schema-type=lookup` | `{"schema-type":"lookup","schema-name":"UsrOrderStatus","package-name":"UsrPkg","environment-name":"dev","title-localizations":{"en-US":"Order status"}}` |
+| `create-client-unit-schema` | `create-schema` | `schema-type=client-unit` | `{"schema-type":"client-unit","schema-name":"UsrUtils","package-name":"UsrPkg","environment-name":"dev"}` |
+| `create-sql-schema` | `create-schema` | `schema-type=sql` | `{"schema-type":"sql","schema-name":"UsrSql","package-name":"UsrPkg","environment-name":"dev"}` |
+| `update-schema` (source-code) | `update-schema` | `schema-type=source-code` | `{"schema-type":"source-code","schema-name":"UsrMyHelper","body":"...","environment-name":"dev"}` |
+| `update-entity-schema` | `update-schema` | `schema-type=entity` | `{"schema-type":"entity","schema-name":"UsrVehicle","package-name":"UsrPkg","environment-name":"dev","operations":[{"action":"add","column-name":"UsrColour","type":"ShortText","title-localizations":{"en-US":"Colour"}}]}` |
+| `update-client-unit-schema` | `update-schema` | `schema-type=client-unit` | `{"schema-type":"client-unit","schema-name":"UsrUtils","body":"...","environment-name":"dev"}` |
+| `update-sql-schema` | `update-schema` | `schema-type=sql` | `{"schema-type":"sql","schema-name":"UsrSql","body":"...","environment-name":"dev"}` |
+| `get-schema` (source-code) | `get-schema` | `schema-type=source-code` | `{"schema-type":"source-code","schema-name":"UsrMyHelper","environment-name":"dev"}` |
+| `get-entity-schema-properties` | `get-schema` | `schema-type=entity` | `{"schema-type":"entity","schema-name":"UsrVehicle","package-name":"UsrPkg","environment-name":"dev"}` |
+| `get-entity-schema-column-properties` | `get-schema` | `schema-type=entity` + `column` | `{"schema-type":"entity","schema-name":"UsrVehicle","package-name":"UsrPkg","environment-name":"dev","column":"UsrColour"}` |
+| `get-client-unit-schema` | `get-schema` | `schema-type=client-unit` | `{"schema-type":"client-unit","schema-name":"UsrUtils","environment-name":"dev"}` |
+| `get-sql-schema` | `get-schema` | `schema-type=sql` | `{"schema-type":"sql","schema-name":"UsrSql","environment-name":"dev"}` |
+| `find-entity-schema` | `list-schemas` | `schema-type=entity` | `{"schema-type":"entity","environment-name":"dev","search-pattern":"Order"}` |
+| `list-apps` | `apps` | — (omit id/code to list) | `{"environment-name":"dev"}` |
+| `get-app-info` | `apps` | id or code | `{"environment-name":"dev","code":"UsrMyApp"}` |
+| `get-sys-setting` | `sys-setting` | code | `{"environment-name":"dev","code":"SchemaNamePrefix"}` |
+| `list-sys-settings` | `sys-setting` | — (omit code) | `{"environment-name":"dev"}` |
+| `create-sys-setting` | `upsert-sys-setting` | — (creates if missing) | `{"environment-name":"dev","code":"UsrFoo","value-type-name":"Text","value":"bar"}` |
+| `update-sys-setting` | `upsert-sys-setting` | — (updates if exists) | `{"environment-name":"dev","code":"UsrFoo","value":"baz"}` |
+| `dataforge-find-tables` | `dataforge-find` | `kind=tables` | `{"environment-name":"dev","kind":"tables","query":"Order"}` |
+| `dataforge-find-lookups` | `dataforge-find` | `kind=lookups` | `{"environment-name":"dev","kind":"lookups","query":"Status"}` |
+| `add-data-binding-row` | `data-binding-row` | `action=add` | `{"action":"add","package-name":"UsrPkg","binding-name":"UsrBinding","workspace-path":"C:\\Workspace","values":"{}"}` |
+| `remove-data-binding-row` | `data-binding-row` | `action=remove` | `{"action":"remove","package-name":"UsrPkg","binding-name":"UsrBinding","workspace-path":"C:\\Workspace","key-value":"..."}` |
+| `upsert-data-binding-row-db` | `data-binding-row-db` | `action=upsert` | `{"action":"upsert","environment-name":"dev","package-name":"UsrPkg","binding-name":"UsrBinding","values":"{}"}` |
+| `remove-data-binding-row-db` | `data-binding-row-db` | `action=remove` | `{"action":"remove","environment-name":"dev","package-name":"UsrPkg","binding-name":"UsrBinding","key-value":"..."}` |
+| `create-app-section` | `app-section` | `action=create` | `{"action":"create","environment-name":"dev","application-code":"UsrApp","caption":"Orders"}` |
+| `update-app-section` | `app-section` | `action=update` | `{"action":"update","environment-name":"dev","application-code":"UsrApp","section-code":"UsrOrders","caption":"Renamed"}` |
+| `delete-app-section` | `app-section` | `action=delete` | `{"action":"delete","environment-name":"dev","application-code":"UsrApp","section-code":"UsrOrders"}` |
+| `list-app-sections` | `app-section` | `action=list` | `{"action":"list","environment-name":"dev","application-code":"UsrApp"}` |
+| `pkg-to-file-system` | `pkg-mode` | `target=file-system` | `{"target":"file-system","environment-name":"dev"}` |
+| `pkg-to-db` | `pkg-mode` | `target=db` | `{"target":"db","environment-name":"dev"}` |
+
+### Notes
+
+- CLI verbs (`clio restart`, `clio clear-redis-db`, `clio restore-db`, etc.) are unchanged. The consolidation only affects the MCP `tools/list` surface served by `clio mcp-server`.
+- The new consolidated tools validate the discriminator argument and the per-mode required fields before invoking the underlying command, so AI agents get explicit "mode='X' requires field Y" errors instead of silent fallback paths.
+- Final MCP tool count after consolidation: **75** (down from 105). The budget ratchet is enforced by `clio.tests/Command/McpServer/McpToolBudgetTests.cs`.
+- Hotfix tools (`unlock-for-hotfix`, `finish-hotfix`) and skills tools (`install-skills`, `update-skill`, `delete-skill`) were deferred — they are listed as out-of-scope in ENG-90312's spec.
