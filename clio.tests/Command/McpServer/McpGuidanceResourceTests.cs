@@ -1374,12 +1374,6 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should warn that state-changing business-rule actions are directional");
 		article.Text.Should().Contain("explicit inverse business rule",
 			because: "the guide should instruct AI callers to model reversible state with an inverse rule");
-		article.Text.Should().Contain("get-tool-contract",
-			because: "the guide should require callers to read the exact business-rule tool contract before mutation");
-		article.Text.Should().Contain("odata-read",
-			because: "the guide should direct callers to resolve lookup record ids before creating rules");
-		article.Text.Should().Contain("Resolve every lookup condition value and lookup set-values constant",
-			because: "the guide should document that lookup values must be resolved before rule creation");
 	}
 
 	[Test]

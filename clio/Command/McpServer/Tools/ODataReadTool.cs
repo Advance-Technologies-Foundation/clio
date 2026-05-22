@@ -23,9 +23,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Query Creatio records via OData v4. " +
-		"Supports structured filters (filters), $select, $expand, $orderby, and $top. " +
-		"GUID fields in Id-suffixed columns are unquoted automatically. " +
-		"String fields are single-quoted automatically. " +
+		"Supports filters, select, expand, order by and top. " +
 		"Call get-tool-contract for odata-read to see usage examples and discovery workflow hints.")]
 	public ODataReadResponse Read(
 		[Description("Parameters: entity, environment-name (required); filters, select, expand, order-by, top (optional).")]
@@ -222,9 +220,9 @@ public sealed record ODataReadArgs {
 	[Description(
 		"Structured filter (alternative or addition to raw filter). " +
 		"all conditions join with AND; any conditions join with OR. " +
-		"GUID values in Id-suffixed fields are automatically unquoted; strings are single-quoted. " +
+		"GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted; strings are single-quoted. " +
 		"in array expands to OR-joined equality clauses. " +
-		"Example: { \"all\": [{ \"field\": \"AccountId\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }")]
+		"Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }")]
 	public ODataFilters? Filters { get; init; }
 
 	/// <summary>Registered clio environment name.</summary>
@@ -273,7 +271,7 @@ public sealed record ODataReadResponse(
 public sealed record ODataFilterCondition {
 	/// <summary>OData field name to filter on.</summary>
 	[JsonPropertyName("field")]
-	[Description("OData field name. Id-suffixed fields such as AccountId, StatusId receive automatic GUID unquoting.")]
+	[Description("OData field name. Id-suffixed fields and navigation paths ending in Id, such as Id, Account/Id, receive automatic GUID unquoting.")]
 	[Required]
 	public required string Field { get; init; }
 
@@ -284,7 +282,7 @@ public sealed record ODataFilterCondition {
 
 	/// <summary>Value to compare against.</summary>
 	[JsonPropertyName("value")]
-	[Description("Comparison value. GUIDs in Id-suffixed fields are automatically unquoted. Strings get single-quoted. Numbers and booleans are unquoted.")]
+	[Description("Comparison value. GUIDs in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Strings get single-quoted. Numbers and booleans are unquoted.")]
 	public JsonElement? Value { get; init; }
 
 	/// <summary>Array of values for in-list OR expansion.</summary>

@@ -1183,8 +1183,7 @@ internal static class ToolContractCatalog {
 				[
 					Field("entity", StringType, "Creatio OData entity set name, usually the referenced lookup schema name such as Contact, Account, or a custom lookup schema."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field("filter", StringType, "Raw OData $filter clause. GUID values are unquoted, for example Id eq 8ecab4a1-0ca3-4515-9399-efe0a19390bd. String values use single quotes, for example Name eq 'In Progress'."),
-					Field("filters", ObjectType, "Structured filter (alternative or addition to raw filter). all conditions join with AND; any conditions join with OR. GUID values in Id-suffixed fields are automatically unquoted. Example: { \"all\": [{ \"field\": \"AccountId\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
+					Field("filters", ObjectType, "Structured filter. all conditions join with AND; any conditions join with OR. GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Use lookup traversal paths such as Account/Id when filtering records by lookup primary value. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
 					Field("select", ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
 					Field("expand", ArrayType, "Navigation properties to expand."),
 					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
@@ -1238,19 +1237,30 @@ internal static class ToolContractCatalog {
 					["order-by"] = "Name asc",
 					["top"] = 10
 				}),
-				Example("Query contacts using structured filters with automatic GUID quoting", new Dictionary<string, object?> {
+				Example("Query records where a text field contains a value", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					["entity"] = "Account",
+					["filters"] = new Dictionary<string, object?> {
+						["all"] = new object[] {
+							new Dictionary<string, object?> { ["field"] = "Name", ["op"] = "contains", ["value"] = "Acme" }
+						}
+					},
+					["select"] = new[] { "Id", "Name" },
+					["top"] = 10
+				}),
+				Example("Query contacts by account lookup using structured filters", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					["entity"] = "Contact",
 					["filters"] = new Dictionary<string, object?> {
 						["all"] = new object[] {
 							new Dictionary<string, object?> {
-								["field"] = "AccountId",
+								["field"] = "Account/Id",
 								["op"] = "eq",
 								["value"] = ExampleLookupValueId
 							}
 						}
 					},
-					["select"] = new[] { "Id", "Name", "AccountId" },
+					["select"] = new[] { "Id", "Name" },
 					["top"] = 10
 				})
 			],
@@ -1434,7 +1444,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rule.actions[*].items[*].value.expression",
 						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against a numeric arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct numeric source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column."),
 					new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.actions[*].items[*].value.value",
-						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} to resolve or verify the lookup record Id before calling create-entity-business-rule.")
+						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} structured filters to resolve or verify the lookup record Id before calling create-entity-business-rule; when filtering records by a lookup value, use traversal paths such as Account/Id.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -1502,7 +1512,7 @@ internal static class ToolContractCatalog {
 						ODataReadTool.ToolName,
 						CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 					],
-					"When the application exists but the entity is not a part of it. Find entity using find-entity or dataforge-find-tables. Use odata-read before rule creation when lookup constants must be resolved to real record Ids."),
+					"When the application exists but the entity is not a part of it. Find entity using find-entity or dataforge-find-tables. Use odata-read structured filters before rule creation when lookup constants must be resolved to real record Ids; filter records by lookup values with traversal paths such as Account/Id."),
 				Flow(
 					[
 						ApplicationCreateTool.ApplicationCreateToolName,
@@ -1624,7 +1634,7 @@ internal static class ToolContractCatalog {
 						ODataReadTool.ToolName,
 						CreatePageBusinessRuleTool.BusinessRuleCreateToolName
 					],
-					"When the target page belongs to a known application, inspect the application first and then fetch the page bundle before creating the rule. Use odata-read before rule creation when lookup constants must be resolved to real record Ids.")
+					"When the target page belongs to a known application, inspect the application first and then fetch the page bundle before creating the rule. Use odata-read structured filters before rule creation when lookup constants must be resolved to real record Ids; filter records by lookup values with traversal paths such as Account/Id.")
 			],
 			[],
 			[
@@ -1635,7 +1645,7 @@ internal static class ToolContractCatalog {
 			[
 				"Call get-guidance with name business-rules before calling create-page-business-rule.",
 				"Call get-tool-contract for create-page-business-rule before building the final payload.",
-				"When any lookup condition constant is needed, call odata-read first and use an existing record Id."
+				"When any lookup condition constant is needed, call odata-read first and use an existing record Id. When filtering records by a lookup value, use structured filters with a traversal path such as Account/Id."
 			]);
 	}
 
@@ -1654,7 +1664,7 @@ internal static class ToolContractCatalog {
 			new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
 				Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm')."),
 			new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.condition.conditions[*].rightExpression.value",
-				Context: $"Lookup constants must be GUID strings for existing records in the attribute reference schema. Use {ODataReadTool.ToolName} to resolve or verify the lookup record Id before calling the business-rule creation tool.")
+				Context: $"Lookup constants must be GUID strings for existing records in the attribute reference schema. Use {ODataReadTool.ToolName} structured filters to resolve or verify the lookup record Id before calling the business-rule creation tool; when filtering records by a lookup value, use traversal paths such as Account/Id.")
 		];
 
 	private static ToolContractExample BusinessRuleExample(

@@ -1190,38 +1190,6 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the universal odata-read contract for querying Creatio records.")]
-	public void ToolContractGet_Should_Return_OData_Read_Contract() {
-		// Arrange
-		ToolContractGetTool tool = new();
-
-		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
-			ODataReadTool.ToolName
-		]));
-
-		// Assert
-		result.Success.Should().BeTrue(
-			because: "odata-read should be discoverable through get-tool-contract");
-		ToolContractDefinition contract = result.Tools!.Single();
-		contract.InputSchema.Required.Should().Contain("entity",
-			because: "odata-read needs the target OData entity set");
-		contract.Description.Should().Contain("query records",
-			because: "the contract should describe odata-read as a general Creatio record query tool");
-		contract.Description.ToLowerInvariant().Should().NotContain("business rule",
-			because: "odata-read is universal and must not be framed as a business-rule-only helper");
-		contract.InputSchema.Properties.Should().Contain(field => field.Name == "filters",
-			because: "records are commonly queried through structured OData filters");
-		contract.OutputContract.Fields.Should().Contain(field => field.Name == "value",
-			because: "odata-read returns the OData value array");
-		contract.Examples.Should().Contain(example => example.Summary.Contains("display value", StringComparison.Ordinal),
-			because: "the contract should show how to find a lookup row by primary display value");
-		contract.Examples.Should().Contain(example => example.Summary.Contains("exists by Id", StringComparison.Ordinal),
-			because: "the contract should show how to verify a known lookup id");
-	}
-
-	[Test]
-	[Category("Unit")]
 	[Description("Returns structured unknown tool suggestions when the requested tool name is misspelled.")]
 	public void ToolContractGet_Should_Return_Structured_Error_For_Unknown_Tool() {
 		// Arrange

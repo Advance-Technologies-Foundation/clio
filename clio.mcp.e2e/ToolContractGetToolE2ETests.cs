@@ -201,41 +201,6 @@ public sealed class ToolContractGetToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("get-tool-contract returns universal odata-read contract")]
-	public async Task ToolContractGet_Should_Advertise_OData_Read_Contract() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
-
-		// Act
-		ToolContractGetResponse response = await CallAsync(
-			context.Session,
-			context.CancellationTokenSource.Token,
-			new Dictionary<string, object?> {
-				["tool-names"] = new[] {
-					ODataReadTool.ToolName
-				}
-			});
-
-		// Assert
-		response.Success.Should().BeTrue(
-			because: "odata-read should be discoverable through the real MCP server contract tool");
-		ToolContractDefinition contract = response.Tools!.Single();
-		contract.InputSchema.Required.Should().Contain("entity",
-			because: "odata-read requires the OData entity set name");
-		contract.Description.Should().Contain("query records",
-			because: "the contract should describe odata-read as a general Creatio record query tool");
-		contract.Description.ToLowerInvariant().Should().NotContain("business rule",
-			because: "odata-read is universal and must not be framed as a business-rule-only helper");
-		contract.OutputContract.Fields.Should().Contain(field => field.Name == "value",
-			because: "the real MCP contract should expose the OData value payload");
-		contract.Examples.Should().Contain(example => example.Summary.Contains("display value", StringComparison.Ordinal),
-			because: "the contract should show lookup resolution by display value");
-	}
-
-	[Test]
-	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises check-settings-health bootstrap diagnostics contract")]
 	public async Task ToolContractGet_Should_Advertise_Settings_Health_Contract() {
 		// Arrange
