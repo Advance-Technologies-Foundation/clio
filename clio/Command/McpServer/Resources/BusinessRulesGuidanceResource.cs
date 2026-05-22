@@ -49,6 +49,7 @@ public sealed class BusinessRulesGuidanceResource {
 		          - Supported actions: make-editable, make-read-only, make-required, make-optional, set-values, apply-filter.
 		          - Use when the rule should apply everywhere the entity is used, regardless of which page displays it.
 		          - `apply-filter` targets one lookup field, compares it to one source lookup field, and may auto-generate child clear/populate rules.
+		          - When the requirement sounds like a standard dependent lookup UX, prefer `populateValue=true` by default unless the user explicitly asks for one-way filtering only or the selected source/target path shape makes populate unsupported.
 
 		       2. Page-level business rules
 		          - Scope: operate on page elements (UI controls from viewConfig) and page attributes (from viewModelConfig).
@@ -78,6 +79,7 @@ public sealed class BusinessRulesGuidanceResource {
 		       3. For state-changing requirements, decide whether the state must also return through an explicit inverse rule.
 		       4. Build the condition group and actions.
 		          - For `apply-filter`, use an empty condition group and put the lookup-filter configuration into the action payload.
+		          - If the user did not specify otherwise and the scenario is a normal dependent lookup, default `populateValue` to `true` so the reverse helper child rule is generated too.
 		       5. Call `create-entity-business-rule` or `create-page-business-rule`.
 		       6. Verify by checking the entity or page on the environment.
 

@@ -307,7 +307,7 @@ public sealed record EntityApplyFilterBusinessRuleActionMcpContract : EntityBusi
 	/// Gets a value indicating whether the source lookup should be populated from the chosen target value.
 	/// </summary>
 	[JsonPropertyName("populateValue")]
-	[Description("When true, populates the source lookup from the chosen target lookup value.")]
+	[Description("When true, populates the source lookup from the chosen target lookup value. Prefer true by default for standard dependent-lookup scenarios unless the user explicitly wants one-way filtering only.")]
 	public bool PopulateValue { get; init; }
 
 	internal override BusinessRuleAction ToBusinessRuleAction() => new ApplyFilterBusinessRuleAction(
