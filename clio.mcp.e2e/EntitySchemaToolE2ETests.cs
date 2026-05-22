@@ -39,12 +39,13 @@ namespace Clio.Mcp.E2E;
 public sealed class EntitySchemaToolE2ETests {
 	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
 	private const string TextDefaultSettingCode = "UsrEntitySchemaE2EDefaultText";
-	private const string CreateToolName = CreateEntitySchemaTool.CreateEntitySchemaToolName;
-	private const string CreateLookupToolName = CreateLookupTool.CreateLookupToolName;
-	private const string UpdateToolName = UpdateEntitySchemaTool.UpdateEntitySchemaToolName;
-	private const string ReadSchemaToolName = GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName;
-	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
+	private const string CreateToolName = SchemaCreateTool.ToolName;
+	private const string CreateLookupToolName = SchemaCreateTool.ToolName;
+	private const string UpdateToolName = SchemaUpdateTool.ToolName;
+	private const string ReadSchemaToolName = GetSchemaTool.ToolName;
+	private const string ReadColumnToolName = GetSchemaTool.ToolName;
 	private const string ModifyToolName = ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName;
+	private const string ListSchemasToolName = SchemaListTool.ToolName;
 
 	[Test]
 	[Description("Creates a remote entity schema, reads its structured properties, adds, modifies, and removes a column, and verifies the structured readbacks through the real MCP server.")]
@@ -981,12 +982,13 @@ public sealed class EntitySchemaToolE2ETests {
 		IReadOnlyList<Dictionary<string, object?>>? columns = null) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(CreateToolName,
-			because: "the create-entity-schema MCP tool must be advertised before the end-to-end call can be executed");
+			because: "the consolidated create-schema MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			CreateToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["schema-type"] = SchemaCreateTool.SchemaTypeEntity,
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["schema-name"] = schemaName,
@@ -1006,12 +1008,13 @@ public sealed class EntitySchemaToolE2ETests {
 		IReadOnlyList<Dictionary<string, object?>>? columns = null) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(CreateLookupToolName,
-			because: "the create-lookup MCP tool must be advertised before the end-to-end call can be executed");
+			because: "the consolidated create-schema MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			CreateLookupToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["schema-type"] = SchemaCreateTool.SchemaTypeLookup,
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["schema-name"] = schemaName,
@@ -1030,10 +1033,11 @@ public sealed class EntitySchemaToolE2ETests {
 		string? searchPattern = null,
 		string? uid = null) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(FindEntitySchemaTool.FindEntitySchemaToolName,
-			because: "the find-entity-schema MCP tool must be advertised before the end-to-end call can be executed");
+		tools.Select(tool => tool.Name).Should().Contain(ListSchemasToolName,
+			because: "the consolidated list-schemas MCP tool must be advertised before the end-to-end call can be executed");
 
 		Dictionary<string, object?> args = new() {
+			["schema-type"] = SchemaCreateTool.SchemaTypeEntity,
 			["environment-name"] = environmentName
 		};
 		if (schemaName != null) args["schema-name"] = schemaName;
@@ -1041,7 +1045,7 @@ public sealed class EntitySchemaToolE2ETests {
 		if (uid != null) args["uid"] = uid;
 
 		return await session.CallToolAsync(
-			FindEntitySchemaTool.FindEntitySchemaToolName,
+			ListSchemasToolName,
 			new Dictionary<string, object?> { ["args"] = args },
 			cancellationToken);
 	}
@@ -1054,12 +1058,13 @@ public sealed class EntitySchemaToolE2ETests {
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(ReadSchemaToolName,
-			because: "the get-entity-schema-properties MCP tool must be advertised before the end-to-end call can be executed");
+			because: "the consolidated get-schema MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			ReadSchemaToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["schema-type"] = SchemaCreateTool.SchemaTypeEntity,
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["schema-name"] = schemaName
@@ -1077,16 +1082,17 @@ public sealed class EntitySchemaToolE2ETests {
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(ReadColumnToolName,
-			because: "the get-entity-schema-column-properties MCP tool must be advertised before the end-to-end call can be executed");
+			because: "the consolidated get-schema MCP tool (with column arg) must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			ReadColumnToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["schema-type"] = SchemaCreateTool.SchemaTypeEntity,
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["schema-name"] = schemaName,
-					["column-name"] = columnName
+					["column"] = columnName
 				}
 			},
 			cancellationToken);
@@ -1151,12 +1157,13 @@ public sealed class EntitySchemaToolE2ETests {
 		IReadOnlyList<Dictionary<string, object?>> operations) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(UpdateToolName,
-			because: "the update-entity-schema MCP tool must be advertised before the end-to-end call can be executed");
+			because: "the consolidated update-schema MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			UpdateToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["schema-type"] = SchemaCreateTool.SchemaTypeEntity,
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["schema-name"] = schemaName,

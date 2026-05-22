@@ -19,8 +19,8 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [NonParallelizable]
 public sealed class ApplicationSectionMaintenanceToolE2ETests {
-	private const string SectionListToolName = ApplicationSectionGetListTool.ApplicationSectionGetListToolName;
-	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
+	private const string SectionListToolName = AppSectionTool.ToolName;
+	private const string SectionDeleteToolName = AppSectionTool.ToolName;
 
 	[Test]
 	[Description("Advertises list-app-sections in the MCP tool list so callers can discover the installed-app section discovery tool.")]
@@ -63,6 +63,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			SectionListToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["action"] = AppSectionTool.ActionList,
 					["environment-name"] = invalidEnvironmentName,
 					["application-code"] = "UsrMissingApp"
 				}
@@ -99,6 +100,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			SectionListToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["action"] = AppSectionTool.ActionList,
 					["environment-name"] = environmentName
 				}
 			},
@@ -137,6 +139,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			SectionListToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["action"] = AppSectionTool.ActionList,
 					["environment-name"] = environmentName,
 					["application-code"] = installedApplication.Code
 				}
@@ -202,6 +205,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			SectionDeleteToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["action"] = AppSectionTool.ActionDelete,
 					["environment-name"] = invalidEnvironmentName,
 					["application-code"] = "UsrMissingApp",
 					["section-code"] = "UsrMissingSection"
@@ -239,6 +243,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			SectionDeleteToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["action"] = AppSectionTool.ActionDelete,
 					["environment-name"] = environmentName,
 					["application-code"] = "UsrOrdersApp"
 				}

@@ -20,14 +20,13 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("clear-redis-db")]
 public sealed class ClearRedisToolE2ETests {
-	private const string EnvironmentToolName = ClearRedisTool.ClearRedisByEnvironmentName;
-	private const string CredentialsToolName = ClearRedisTool.ClearRedisByCredentialsToolName;
+	private const string ToolName = ClearRedisTool.ClearRedisToolName;
 	private string? _seedKey;
 	private SandboxEnvironmentContext? _sandboxContext;
 
 	[Test]
-	[AllureTag(EnvironmentToolName)]
-	[AllureDescription("Starts the real clio MCP server, invokes clear-redis against a configured sandbox environment, and verifies the seeded Redis key is removed.")]
+	[AllureTag(ToolName)]
+	[AllureDescription("Starts the real clio MCP server, invokes clear-redis-db with mode='environment' against a configured sandbox environment, and verifies the seeded Redis key is removed.")]
 	[AllureName("Clear Redis Tool removes seeded key from sandbox environment")]
 	public async Task ClearRedis_Should_Remove_Seeded_Key_When_Invoked_Through_Mcp() {
 		// Arrange
@@ -45,8 +44,8 @@ public sealed class ClearRedisToolE2ETests {
 	}
 
 	[Test]
-	[AllureTag(EnvironmentToolName)]
-	[AllureDescription("Invokes clear-redis with a non-existent environment name and verifies that the MCP result reports a failure with human-readable diagnostics.")]
+	[AllureTag(ToolName)]
+	[AllureDescription("Invokes clear-redis-db with mode='environment' and a non-existent environment name; verifies the MCP result reports a failure with human-readable diagnostics.")]
 	[AllureName("Clear Redis Tool reports invalid environment name failures")]
 	public async Task ClearRedis_Should_Report_Failure_When_Environment_Name_Is_Invalid() {
 		// Arrange
@@ -64,8 +63,8 @@ public sealed class ClearRedisToolE2ETests {
 	}
 
 	[Test]
-	[AllureTag(CredentialsToolName)]
-	[AllureDescription("Starts the real clio MCP server, invokes clear-redis-by-credentials with the registered sandbox URL and credentials, and verifies the seeded Redis key is removed.")]
+	[AllureTag(ToolName)]
+	[AllureDescription("Starts the real clio MCP server, invokes clear-redis-db with mode='credentials' using the registered sandbox URL and credentials, and verifies the seeded Redis key is removed.")]
 	[AllureName("Clear Redis Tool removes seeded key by explicit credentials")]
 	public async Task ClearRedisByCredentials_Should_Remove_Seeded_Key_When_Invoked_Through_Mcp() {
 		// Arrange
@@ -82,8 +81,8 @@ public sealed class ClearRedisToolE2ETests {
 	}
 
 	[Test]
-	[AllureTag(CredentialsToolName)]
-	[AllureDescription("Invokes clear-redis-by-credentials with an invalid URL and verifies that the MCP result reports a failure with human-readable diagnostics.")]
+	[AllureTag(ToolName)]
+	[AllureDescription("Invokes clear-redis-db with mode='credentials' and an invalid URL; verifies the MCP result reports a failure with human-readable diagnostics.")]
 	[AllureName("Clear Redis Tool reports invalid URL failures")]
 	public async Task ClearRedisByCredentials_Should_Report_Failure_When_Url_Is_Invalid() {
 		// Arrange
@@ -128,54 +127,60 @@ public sealed class ClearRedisToolE2ETests {
 		return new ClearRedisArrangeContext(_sandboxContext, _seedKey, redis, session, cancellationTokenSource);
 	}
 
-	[AllureStep("Act by invoking clear-redis through MCP")]
-	[AllureDescription("Act by discovering the clear-redis MCP tool and invoking it with the configured sandbox environment name")]
+	[AllureStep("Act by invoking clear-redis-db through MCP")]
+	[AllureDescription("Act by discovering the clear-redis-db MCP tool and invoking it with mode='environment' and the configured sandbox environment name")]
 	private static async Task<ClearRedisActResult> ActAsync(ClearRedisArrangeContext arrangeContext) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(EnvironmentToolName,
-			because: "the sandbox test path depends on the environment-name clear-redis tool being advertised by the MCP server");
+		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+			because: "the sandbox test path depends on the consolidated clear-redis-db tool being advertised by the MCP server");
 
 		return await ActWithEnvironmentNameAsync(arrangeContext, arrangeContext.SandboxContext.EnvironmentName);
 	}
 
-	[AllureStep("Act by invoking clear-redis with invalid environment name")]
-	[AllureDescription("Act by invoking the environment-name clear-redis MCP tool with an environment key that is not registered in clio")]
+	[AllureStep("Act by invoking clear-redis-db with mode='environment'")]
+	[AllureDescription("Act by invoking the consolidated clear-redis-db MCP tool with mode='environment' and the supplied environment name")]
 	private static async Task<ClearRedisActResult> ActWithEnvironmentNameAsync(
 		ClearRedisArrangeContext arrangeContext,
 		string environmentName) {
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			EnvironmentToolName,
+			ToolName,
 			new Dictionary<string, object?> {
-				["environmentName"] = environmentName
+				["args"] = new Dictionary<string, object?> {
+					["mode"] = ClearRedisTool.ModeEnvironment,
+					["environment-name"] = environmentName
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 		return new ClearRedisActResult(callResult, execution);
 	}
 
-	[AllureStep("Act by invoking clear-redis with explicit credentials")]
-	[AllureDescription("Act by invoking the credentials clear-redis MCP tool with the registered sandbox URL and credentials")]
+	[AllureStep("Act by invoking clear-redis-db with mode='credentials'")]
+	[AllureDescription("Act by invoking the consolidated clear-redis-db MCP tool with mode='credentials' and the registered sandbox URL and credentials")]
 	private static async Task<ClearRedisActResult> ActWithCredentialsAsync(
 		ClearRedisArrangeContext arrangeContext,
 		string password,
 		string? url = null,
 		bool? isNetCore = null) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(CredentialsToolName,
-			because: "the credentials clear-redis tool must be advertised by the MCP server for credentials-path end-to-end coverage");
+		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+			because: "the consolidated clear-redis-db tool must be advertised by the MCP server for the credentials-path end-to-end coverage");
 
-		Dictionary<string, object?> arguments = new() {
+		Dictionary<string, object?> argsObject = new() {
+			["mode"] = ClearRedisTool.ModeCredentials,
 			["url"] = url ?? arrangeContext.SandboxContext.Uri,
-			["userName"] = arrangeContext.SandboxContext.Login,
+			["login"] = arrangeContext.SandboxContext.Login,
 			["password"] = password
 		};
 		if (isNetCore.HasValue) {
-			arguments["isNetCore"] = isNetCore.Value;
+			argsObject["is-net-core"] = isNetCore.Value;
 		}
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			CredentialsToolName,
-			arguments,
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = argsObject
+			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 		return new ClearRedisActResult(callResult, execution);
@@ -242,7 +247,7 @@ public sealed class ClearRedisToolE2ETests {
 		combinedOutput.Should().NotBeNullOrWhiteSpace(
 			because: "failed clear-redis execution should provide diagnostics that explain why the environment lookup failed");
 		combinedOutput.Should().MatchRegex(
-			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found|clear-redis-by-environment|error occurred invoking)",
+			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found|clear-redis-db|error occurred invoking)",
 			because: "the failure log should help a human understand that the request failed, even when the MCP server surfaces a top-level tool invocation error instead of the underlying environment lookup message");
 	}
 
@@ -267,7 +272,7 @@ public sealed class ClearRedisToolE2ETests {
 		combinedOutput.Should().NotBeNullOrWhiteSpace(
 			because: "failed credentials-based clear-redis execution should provide diagnostics that explain why the URL could not be reached");
 		combinedOutput.Should().MatchRegex(
-			"(?is)(clear-redis-by-credentials|error occurred invoking|connection|refused|could not be reached|actively refused)",
+			"(?is)(clear-redis-db|error occurred invoking|connection|refused|could not be reached|actively refused)",
 			because: "the failure log should help a human understand that the credentials-based request failed because the target URL was invalid");
 	}
 

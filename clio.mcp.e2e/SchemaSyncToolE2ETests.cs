@@ -30,8 +30,8 @@ namespace Clio.Mcp.E2E;
 public sealed class SchemaSyncToolE2ETests {
 
 	private const string ToolName = SchemaSyncTool.ToolName;
-	private const string ReadSchemaToolName = GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName;
-	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
+	private const string ReadSchemaToolName = GetSchemaTool.ToolName;
+	private const string ReadColumnToolName = GetSchemaTool.ToolName;
 	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
 
 	[Test]
@@ -564,12 +564,13 @@ public sealed class SchemaSyncToolE2ETests {
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(ReadSchemaToolName,
-			because: "the get-entity-schema-properties MCP tool must be advertised before readback verification");
+			because: "the consolidated get-schema MCP tool must be advertised before readback verification");
 
 		CallToolResult callResult = await session.CallToolAsync(
 			ReadSchemaToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["schema-type"] = SchemaCreateTool.SchemaTypeEntity,
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["schema-name"] = schemaName
@@ -588,16 +589,17 @@ public sealed class SchemaSyncToolE2ETests {
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(ReadColumnToolName,
-			because: "the get-entity-schema-column-properties MCP tool must be advertised before column readback verification");
+			because: "the consolidated get-schema MCP tool (with column arg) must be advertised before column readback verification");
 
 		CallToolResult callResult = await session.CallToolAsync(
 			ReadColumnToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["schema-type"] = SchemaCreateTool.SchemaTypeEntity,
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["schema-name"] = schemaName,
-					["column-name"] = columnName
+					["column"] = columnName
 				}
 			},
 			cancellationToken);

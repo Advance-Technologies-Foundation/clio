@@ -19,8 +19,8 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [NonParallelizable]
 public sealed class ApplicationSectionToolE2ETests {
-	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
-	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
+	private const string SectionCreateToolName = AppSectionTool.ToolName;
+	private const string SectionDeleteToolName = AppSectionTool.ToolName;
 
 	[Test]
 	[Description("Advertises create-app-section in the MCP tool list so callers can discover the existing-app section creation tool.")]
@@ -63,6 +63,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			SectionCreateToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["action"] = AppSectionTool.ActionCreate,
 					["environment-name"] = invalidEnvironmentName,
 					["application-code"] = "UsrMissingApp",
 					["caption"] = "Orders"
@@ -103,6 +104,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			SectionCreateToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["action"] = AppSectionTool.ActionCreate,
 					["environment-name"] = environmentName,
 					["caption"] = "Orders"
 				}
@@ -138,6 +140,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			SectionCreateToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["action"] = AppSectionTool.ActionCreate,
 					["environment-name"] = environmentName,
 					["application-code"] = "UsrOrdersApp"
 				}
@@ -173,6 +176,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			SectionCreateToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["action"] = AppSectionTool.ActionCreate,
 					["environment-name"] = environmentName,
 					["application-code"] = "UsrOrdersApp",
 					["caption"] = "Orders",
@@ -219,6 +223,7 @@ public sealed class ApplicationSectionToolE2ETests {
 				SectionCreateToolName,
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
+						["action"] = AppSectionTool.ActionCreate,
 						["environment-name"] = environmentName,
 						["application-code"] = applicationCode,
 						["caption"] = caption
@@ -248,6 +253,7 @@ public sealed class ApplicationSectionToolE2ETests {
 						SectionDeleteToolName,
 						new Dictionary<string, object?> {
 							["args"] = new Dictionary<string, object?> {
+								["action"] = AppSectionTool.ActionDelete,
 								["environment-name"] = environmentName,
 								["application-code"] = applicationCode,
 								["section-code"] = createdSectionCode
@@ -288,6 +294,7 @@ public sealed class ApplicationSectionToolE2ETests {
 				SectionCreateToolName,
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
+						["action"] = AppSectionTool.ActionCreate,
 						["environment-name"] = environmentName,
 						["application-code"] = applicationCode,
 						["caption"] = caption,
@@ -318,6 +325,7 @@ public sealed class ApplicationSectionToolE2ETests {
 						SectionDeleteToolName,
 						new Dictionary<string, object?> {
 							["args"] = new Dictionary<string, object?> {
+								["action"] = AppSectionTool.ActionDelete,
 								["environment-name"] = environmentName,
 								["application-code"] = applicationCode,
 								["section-code"] = createdSectionCode

@@ -21,8 +21,7 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class DataBindingToolE2ETests {
 	private const string CreateToolName = CreateDataBindingTool.CreateDataBindingToolName;
-	private const string AddRowToolName = AddDataBindingRowTool.AddDataBindingRowToolName;
-	private const string RemoveRowToolName = RemoveDataBindingRowTool.RemoveDataBindingRowToolName;
+	private const string RowToolName = DataBindingRowTool.ToolName;
 
 	[Test]
 	[Description("Creates a workspace and package with the real clio CLI, invokes create-data-binding through MCP for the built-in SysSettings template without a Creatio environment, and verifies the descriptor and data files are generated with an auto-created GUID primary key.")]
@@ -86,8 +85,7 @@ public sealed class DataBindingToolE2ETests {
 	[Test]
 	[Description("Creates a templated binding through MCP without Creatio, then adds and removes a row through MCP, and verifies the resulting file mutations on disk.")]
 	[AllureTag(CreateToolName)]
-	[AllureTag(AddRowToolName)]
-	[AllureTag(RemoveRowToolName)]
+	[AllureTag(RowToolName)]
 	[AllureName("Add and remove data-binding row updates local binding files")]
 	[AllureDescription("Uses the real clio MCP server to create a binding from the built-in SysSettings template, add a row, remove the same row, and verify the expected data.json mutations plus user-visible command diagnostics.")]
 	public async Task AddAndRemoveDataBindingRow_Should_Mutate_Files() {
@@ -107,8 +105,9 @@ public sealed class DataBindingToolE2ETests {
 		// Act
 		CommandExecutionActResult addResult = await ActCommandAsync(
 			arrangeContext,
-			AddRowToolName,
+			RowToolName,
 			new Dictionary<string, object?> {
+				["action"] = DataBindingRowTool.ActionAdd,
 				["package-name"] = arrangeContext.PackageName,
 				["binding-name"] = "SysSettings",
 				["workspace-path"] = arrangeContext.WorkspacePath,
@@ -156,8 +155,9 @@ public sealed class DataBindingToolE2ETests {
 			because: "add-data-binding-row should generate a GUID primary key for the appended row when the payload omits it");
 		CommandExecutionActResult removeResult = await ActCommandAsync(
 			arrangeContext,
-			RemoveRowToolName,
+			RowToolName,
 			new Dictionary<string, object?> {
+				["action"] = DataBindingRowTool.ActionRemove,
 				["package-name"] = arrangeContext.PackageName,
 				["binding-name"] = "SysSettings",
 				["workspace-path"] = arrangeContext.WorkspacePath,

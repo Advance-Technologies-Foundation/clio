@@ -25,8 +25,7 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class DataBindingDbToolE2ETests {
 	private const string CreateDbToolName = CreateDataBindingDbTool.CreateDataBindingDbToolName;
-	private const string UpsertRowDbToolName = UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName;
-	private const string RemoveRowDbToolName = RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName;
+	private const string RowDbToolName = DataBindingRowDbTool.ToolName;
 
 	[Test]
 	[Description("Advertises all three DB-first data-binding MCP tools in the server tool list so callers can discover and invoke them.")]
@@ -44,10 +43,8 @@ public sealed class DataBindingDbToolE2ETests {
 		// Assert
 		toolNames.Should().Contain(CreateDbToolName,
 			because: "create-data-binding-db must be advertised so MCP clients can discover it");
-		toolNames.Should().Contain(UpsertRowDbToolName,
-			because: "upsert-data-binding-row-db must be advertised so MCP clients can discover it");
-		toolNames.Should().Contain(RemoveRowDbToolName,
-			because: "remove-data-binding-row-db must be advertised so MCP clients can discover it");
+		toolNames.Should().Contain(RowDbToolName,
+			because: "the consolidated data-binding-row-db tool must be advertised so MCP clients can discover both upsert and remove actions");
 	}
 
 	[Test]
@@ -107,10 +104,10 @@ public sealed class DataBindingDbToolE2ETests {
 	}
 
 	[Test]
-	[Description("Fails upsert-data-binding-row-db through MCP with exit code 1 when environment-name is empty, matching the command-layer validation guard.")]
-	[AllureTag(UpsertRowDbToolName)]
+	[Description("Fails the consolidated data-binding-row-db (action='upsert') tool through MCP with exit code 1 when environment-name is empty, matching the command-layer validation guard.")]
+	[AllureTag(RowDbToolName)]
 	[AllureName("Upsert DB-first row without environment fails with exit code 1")]
-	[AllureDescription("Uses the real clio MCP server to invoke upsert-data-binding-row-db without an environment-name and verifies that the tool returns exit code 1 with an error message.")]
+	[AllureDescription("Uses the real clio MCP server to invoke data-binding-row-db with action='upsert' without an environment-name and verifies that the tool returns exit code 1 with an error message.")]
 	public async Task UpsertDataBindingRowDb_Should_Fail_Without_Environment() {
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
@@ -118,8 +115,9 @@ public sealed class DataBindingDbToolE2ETests {
 		// Act
 		CommandExecutionActResult result = await ActCommandAsync(
 			arrangeContext,
-			UpsertRowDbToolName,
+			RowDbToolName,
 			new Dictionary<string, object?> {
+				["action"] = DataBindingRowDbTool.ActionUpsert,
 				["environment-name"] = string.Empty,
 				["package-name"] = arrangeContext.PackageName,
 				["binding-name"] = "UsrMissingBinding",
@@ -129,16 +127,16 @@ public sealed class DataBindingDbToolE2ETests {
 		// Assert
 		AssertToolCallSucceeded(result);
 		AssertCommandExitCode(result, 1,
-			"upsert-data-binding-row-db must reject empty environment-name with exit code 1");
+			"data-binding-row-db (action='upsert') must reject empty environment-name with exit code 1");
 		AssertIncludesErrorMessage(result,
-			"upsert-data-binding-row-db should emit a human-readable validation error when environment-name is empty");
+			"data-binding-row-db (action='upsert') should emit a human-readable validation error when environment-name is empty");
 	}
 
 	[Test]
-	[Description("Fails remove-data-binding-row-db through MCP with exit code 1 when environment-name is empty, matching the command-layer validation guard.")]
-	[AllureTag(RemoveRowDbToolName)]
+	[Description("Fails the consolidated data-binding-row-db (action='remove') tool through MCP with exit code 1 when environment-name is empty, matching the command-layer validation guard.")]
+	[AllureTag(RowDbToolName)]
 	[AllureName("Remove DB-first row without environment fails with exit code 1")]
-	[AllureDescription("Uses the real clio MCP server to invoke remove-data-binding-row-db without an environment-name and verifies that the tool returns exit code 1 with an error message.")]
+	[AllureDescription("Uses the real clio MCP server to invoke data-binding-row-db with action='remove' without an environment-name and verifies that the tool returns exit code 1 with an error message.")]
 	public async Task RemoveDataBindingRowDb_Should_Fail_Without_Environment() {
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
@@ -146,8 +144,9 @@ public sealed class DataBindingDbToolE2ETests {
 		// Act
 		CommandExecutionActResult result = await ActCommandAsync(
 			arrangeContext,
-			RemoveRowDbToolName,
+			RowDbToolName,
 			new Dictionary<string, object?> {
+				["action"] = DataBindingRowDbTool.ActionRemove,
 				["environment-name"] = string.Empty,
 				["package-name"] = arrangeContext.PackageName,
 				["binding-name"] = "UsrMissingBinding",
@@ -157,9 +156,9 @@ public sealed class DataBindingDbToolE2ETests {
 		// Assert
 		AssertToolCallSucceeded(result);
 		AssertCommandExitCode(result, 1,
-			"remove-data-binding-row-db must reject empty environment-name with exit code 1");
+			"data-binding-row-db (action='remove') must reject empty environment-name with exit code 1");
 		AssertIncludesErrorMessage(result,
-			"remove-data-binding-row-db should emit a human-readable validation error when environment-name is empty");
+			"data-binding-row-db (action='remove') should emit a human-readable validation error when environment-name is empty");
 	}
 
 	[Test]
@@ -182,41 +181,41 @@ public sealed class DataBindingDbToolE2ETests {
 	}
 
 	[Test]
-	[Description("Returns a top-level invocation error when upsert-data-binding-row-db receives a non-object args payload.")]
-	[AllureTag(UpsertRowDbToolName)]
-	[AllureName("Upsert DB-first row rejects malformed MCP envelope")]
-	[AllureDescription("Uses the real clio MCP server to invoke upsert-data-binding-row-db with args set to a string and verifies the MCP server rejects the malformed transport envelope before tool execution starts.")]
+	[Description("Returns a top-level invocation error when the consolidated data-binding-row-db tool receives a non-object args payload.")]
+	[AllureTag(RowDbToolName)]
+	[AllureName("data-binding-row-db rejects malformed MCP envelope (string args)")]
+	[AllureDescription("Uses the real clio MCP server to invoke data-binding-row-db with args set to a string and verifies the MCP server rejects the malformed transport envelope before tool execution starts.")]
 	public async Task UpsertDataBindingRowDb_Should_Return_Invocation_Error_When_Args_Have_Invalid_Type() {
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
 
 		// Act
 		ModelContextProtocol.Protocol.CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			UpsertRowDbToolName,
+			RowDbToolName,
 			new Dictionary<string, object?> { ["args"] = "invalid" },
 			arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		AssertInvocationFailure(callResult, UpsertRowDbToolName);
+		AssertInvocationFailure(callResult, RowDbToolName);
 	}
 
 	[Test]
-	[Description("Returns a top-level invocation error when remove-data-binding-row-db is called without the MCP args wrapper.")]
-	[AllureTag(RemoveRowDbToolName)]
-	[AllureName("Remove DB-first row rejects malformed MCP envelope")]
-	[AllureDescription("Uses the real clio MCP server to invoke remove-data-binding-row-db without the args wrapper and verifies the MCP server rejects the malformed transport envelope before tool execution starts.")]
+	[Description("Returns a top-level invocation error when the consolidated data-binding-row-db tool is called without the MCP args wrapper.")]
+	[AllureTag(RowDbToolName)]
+	[AllureName("data-binding-row-db rejects malformed MCP envelope (missing args)")]
+	[AllureDescription("Uses the real clio MCP server to invoke data-binding-row-db without the args wrapper and verifies the MCP server rejects the malformed transport envelope before tool execution starts.")]
 	public async Task RemoveDataBindingRowDb_Should_Return_Invocation_Error_When_Args_Wrapper_Is_Missing() {
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
 
 		// Act
 		ModelContextProtocol.Protocol.CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			RemoveRowDbToolName,
+			RowDbToolName,
 			new Dictionary<string, object?>(),
 			arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		AssertInvocationFailure(callResult, RemoveRowDbToolName);
+		AssertInvocationFailure(callResult, RowDbToolName);
 	}
 
 	[Test]

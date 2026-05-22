@@ -20,14 +20,13 @@ namespace Clio.Mcp.E2E;
 [AllureFeature("download-configuration")]
 [NonParallelizable]
 public sealed class DownloadConfigurationToolE2ETests {
-	private const string EnvironmentToolName = DownloadConfigurationTool.DownloadConfigurationByEnvironmentToolName;
-	private const string BuildToolName = DownloadConfigurationTool.DownloadConfigurationByBuildToolName;
+	private const string ToolName = DownloadConfigurationTool.DownloadConfigurationToolName;
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes download-configuration-by-build against a synthetic extracted Creatio directory, and verifies that the workspace `.application` content is created.")]
-	[AllureTag(BuildToolName)]
+	[Description("Starts the real clio MCP server, invokes download-configuration with source='build' against a synthetic extracted Creatio directory, and verifies that the workspace `.application` content is created.")]
+	[AllureTag(ToolName)]
 	[AllureName("Download configuration by build populates workspace application folders")]
-	[AllureDescription("Uses the real clio MCP server to call download-configuration-by-build with a temporary workspace and extracted Creatio directory, then verifies copied root assemblies, configuration DLLs, and package content.")]
+	[AllureDescription("Uses the real clio MCP server to call download-configuration with source='build' against a temporary workspace and extracted Creatio directory, then verifies copied root assemblies, configuration DLLs, and package content.")]
 	public async Task DownloadConfigurationByBuild_Should_Populate_Workspace_Application_Content() {
 		// Arrange
 		await using DownloadConfigurationArrangeContext arrangeContext = await ArrangeBuildAsync();
@@ -43,10 +42,10 @@ public sealed class DownloadConfigurationToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes download-configuration-by-environment with a missing environment name, and verifies that MCP reports a readable failure without mutating the workspace.")]
-	[AllureTag(EnvironmentToolName)]
+	[Description("Starts the real clio MCP server, invokes download-configuration with source='environment' and a missing environment name, and verifies that MCP reports a readable failure without mutating the workspace.")]
+	[AllureTag(ToolName)]
 	[AllureName("Download configuration by environment reports unknown environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call download-configuration-by-environment with a guaranteed-missing environment name and verifies the resolver failure plus the absence of downloaded workspace artifacts.")]
+	[AllureDescription("Uses the real clio MCP server to call download-configuration with source='environment' against a guaranteed-missing environment name and verifies the resolver failure plus the absence of downloaded workspace artifacts.")]
 	public async Task DownloadConfigurationByEnvironment_Should_Report_Invalid_Environment() {
 		// Arrange
 		await using DownloadConfigurationArrangeContext arrangeContext = await ArrangeEnvironmentFailureAsync();
@@ -93,16 +92,17 @@ public sealed class DownloadConfigurationToolE2ETests {
 		return new DownloadConfigurationArrangeContext(rootDirectory, workspacePath, null, session, cancellationTokenSource, environmentName);
 	}
 
-	[AllureStep("Act by invoking download-configuration-by-build through MCP")]
+	[AllureStep("Act by invoking download-configuration with source='build'")]
 	private static async Task<DownloadConfigurationActResult> ActBuildAsync(DownloadConfigurationArrangeContext arrangeContext) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(BuildToolName,
-			because: "the build-based dconf MCP tool must be advertised before the end-to-end call can be executed");
+		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+			because: "the consolidated download-configuration MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			BuildToolName,
+			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["source"] = DownloadConfigurationTool.SourceBuild,
 					["build-path"] = arrangeContext.BuildPath,
 					["workspace-path"] = arrangeContext.WorkspacePath
 				}
@@ -113,16 +113,17 @@ public sealed class DownloadConfigurationToolE2ETests {
 		return new DownloadConfigurationActResult(callResult, execution);
 	}
 
-	[AllureStep("Act by invoking download-configuration-by-environment through MCP")]
+	[AllureStep("Act by invoking download-configuration with source='environment'")]
 	private static async Task<DownloadConfigurationActResult> ActEnvironmentFailureAsync(DownloadConfigurationArrangeContext arrangeContext) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(EnvironmentToolName,
-			because: "the environment-based dconf MCP tool must be advertised before the end-to-end call can be executed");
+		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+			because: "the consolidated download-configuration MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			EnvironmentToolName,
+			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["source"] = DownloadConfigurationTool.SourceEnvironment,
 					["environment-name"] = arrangeContext.EnvironmentName,
 					["workspace-path"] = arrangeContext.WorkspacePath
 				}
@@ -195,7 +196,7 @@ public sealed class DownloadConfigurationToolE2ETests {
 		combinedOutput.Should().NotBeNullOrWhiteSpace(
 			because: "failed environment execution should explain why the call was rejected");
 		combinedOutput.Should().MatchRegex(
-			$"(?is)({Regex.Escape(environmentName)}.*not found|an error occurred invoking '{Regex.Escape(EnvironmentToolName)}')",
+			$"(?is)({Regex.Escape(environmentName)}.*not found|an error occurred invoking '{Regex.Escape(ToolName)}')",
 			because: "the failure should either identify the missing environment directly or include the MCP invocation wrapper");
 	}
 

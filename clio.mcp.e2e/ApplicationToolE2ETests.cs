@@ -23,8 +23,9 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [NonParallelizable]
 public sealed class ApplicationToolE2ETests {
-	private const string ListToolName = ApplicationGetListTool.ApplicationGetListToolName;
-	private const string InfoToolName = ApplicationGetInfoTool.ApplicationGetInfoToolName;
+	private const string AppsToolName = AppsTool.ToolName;
+	private const string ListToolName = AppsTool.ToolName;
+	private const string InfoToolName = AppsTool.ToolName;
 	private const string CreateToolName = ApplicationCreateTool.ApplicationCreateToolName;
 	private const string DeleteToolName = ApplicationDeleteTool.ToolName;
 	private const string SchemaSyncToolName = SchemaSyncTool.ToolName;
@@ -188,30 +189,30 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes get-app-info without identifiers, and verifies that a structured error envelope explains the exactly-one rule.")]
-	[AllureFeature(InfoToolName)]
-	[AllureTag(InfoToolName)]
-	[AllureName("Application get info rejects missing identifiers")]
-	[AllureDescription("Uses the real clio MCP server to call get-app-info without id or code and verifies that the tool returns a structured error envelope with clear exactly-one validation guidance.")]
-	public async Task ApplicationGetInfo_Should_Reject_Missing_Identifiers() {
+	[Description("Starts the real clio MCP server, invokes apps without identifiers, and verifies that the consolidated tool returns the installed application list (instead of a get-app-info envelope).")]
+	[AllureFeature(AppsToolName)]
+	[AllureTag(AppsToolName)]
+	[AllureName("Apps without id or code returns the installed application list")]
+	[AllureDescription("Uses the real clio MCP server to call apps without id or code and verifies that the consolidated tool falls back to the list payload instead of an info envelope (replaces the legacy 'get-app-info rejects missing identifiers' contract).")]
+	public async Task ApplicationApps_Should_Return_List_When_No_Identifier_Provided() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
 		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(2));
 
 		// Act
-		ApplicationContextResponseEnvelope result = await ActInfoFailureAsync(
+		ApplicationListActResult listResult = await ActListAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName,
-			id: null,
-			code: null);
+			arrangeContext.EnvironmentName);
 
 		// Assert
-		result.Success.Should().BeFalse(
-			because: "get-app-info should return a structured error envelope when neither identifier is provided");
-		result.Error.Should().MatchRegex("(?is)(exactly one|id or code)",
-			because: "the failure should explain the exact-one identifier rule with the canonical selector names");
+		listResult.CallResult.IsError.Should().NotBeTrue(
+			because: $"apps without id or code should return a normal list payload. Actual result: {DescribeCallResult(listResult.CallResult)}");
+		listResult.Result.Success.Should().BeTrue(
+			because: "the consolidated apps tool should fall back to the list contract when no identifier is supplied");
+		listResult.Result.Applications.Should().NotBeNull(
+			because: "apps must always return the applications collection in list mode so MCP clients can handle empty and populated environments uniformly");
 	}
 
 	[Test]
@@ -845,11 +846,11 @@ public sealed class ApplicationToolE2ETests {
 		CancellationToken cancellationToken,
 		string environmentName) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ListToolName,
-			because: "the list-apps MCP tool must be advertised before the end-to-end call can be executed");
+		tools.Select(tool => tool.Name).Should().Contain(AppsToolName,
+			because: "the consolidated apps MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
-			ListToolName,
+			AppsToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = environmentName
@@ -865,8 +866,8 @@ public sealed class ApplicationToolE2ETests {
 		string? id,
 		string? code) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(InfoToolName,
-			because: "the get-app-info MCP tool must be advertised before the end-to-end call can be executed");
+		tools.Select(tool => tool.Name).Should().Contain(AppsToolName,
+			because: "the consolidated apps MCP tool must be advertised before the end-to-end call can be executed");
 
 		Dictionary<string, object?> args = new() {
 			["environment-name"] = environmentName
@@ -880,7 +881,7 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		return await session.CallToolAsync(
-			InfoToolName,
+			AppsToolName,
 			new Dictionary<string, object?> {
 				["args"] = args
 			},

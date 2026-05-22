@@ -241,7 +241,7 @@ public sealed class PageGetToolE2ETests {
 		CancellationToken cancellationToken,
 		string environmentName) {
 		CallToolResult callResult = await session.CallToolAsync(
-			ApplicationGetListTool.ApplicationGetListToolName,
+			AppsTool.ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = environmentName

@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [NonParallelizable]
 public sealed class ApplicationSectionUpdateToolE2ETests {
-	private const string SectionUpdateToolName = ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName;
+	private const string SectionUpdateToolName = AppSectionTool.ToolName;
 
 	[Test]
 	[Description("Advertises update-app-section in the MCP tool list so callers can discover the existing-section update tool.")]
@@ -62,6 +62,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			SectionUpdateToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["action"] = AppSectionTool.ActionUpdate,
 					["environment-name"] = invalidEnvironmentName,
 					["application-code"] = "UsrMissingApp",
 					["section-code"] = "UsrMissingSection",
@@ -100,6 +101,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			SectionUpdateToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["action"] = AppSectionTool.ActionUpdate,
 					["environment-name"] = environmentName,
 					["application-code"] = "UsrOrdersApp",
 					["section-code"] = "UsrOrders"
@@ -136,6 +138,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			SectionUpdateToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["action"] = AppSectionTool.ActionUpdate,
 					["environment-name"] = environmentName,
 					["section-code"] = "UsrOrders",
 					["caption"] = "Orders"
@@ -172,6 +175,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			SectionUpdateToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["action"] = AppSectionTool.ActionUpdate,
 					["environment-name"] = environmentName,
 					["application-code"] = "UsrOrdersApp",
 					["caption"] = "Orders"
@@ -208,6 +212,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			SectionUpdateToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["action"] = AppSectionTool.ActionUpdate,
 					["environment-name"] = environmentName,
 					["application-code"] = "UsrOrdersApp",
 					["section-code"] = "UsrOrders",

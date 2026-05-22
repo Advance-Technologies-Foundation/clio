@@ -19,8 +19,7 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class DataForgeToolE2ETests {
 	private const string StatusToolName = DataForgeTool.DataForgeStatusToolName;
-	private const string FindTablesToolName = DataForgeTool.DataForgeFindTablesToolName;
-	private const string FindLookupsToolName = DataForgeTool.DataForgeFindLookupsToolName;
+	private const string FindToolName = DataForgeTool.DataForgeFindToolName;
 	private const string GetRelationsToolName = DataForgeTool.DataForgeGetRelationsToolName;
 	private const string ColumnsToolName = DataForgeTool.DataForgeGetTableColumnsToolName;
 	private const string ContextToolName = DataForgeTool.DataForgeContextToolName;
@@ -109,10 +108,10 @@ public sealed class DataForgeToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes dataforge-find-tables with a Contact-style query against the configured sandbox environment, and verifies the structured table search response succeeds.")]
-	[AllureTag(FindTablesToolName)]
-	[AllureName("DataForge find-tables returns table matches for Contact-style terms")]
-	[AllureDescription("Uses the real clio MCP server to call dataforge-find-tables for a Contact-style query against the configured reachable sandbox environment and verifies that the structured response includes at least one named table match.")]
+	[Description("Starts the real clio MCP server, invokes the consolidated dataforge-find tool with kind='tables' and a Contact-style query against the configured sandbox environment, and verifies the structured table search response succeeds.")]
+	[AllureTag(FindToolName)]
+	[AllureName("DataForge find (kind='tables') returns table matches for Contact-style terms")]
+	[AllureDescription("Uses the real clio MCP server to call dataforge-find with kind='tables' for a Contact-style query against the configured reachable sandbox environment and verifies that the structured response includes at least one named table match.")]
 	public async Task DataForgeFindTables_Should_Return_Table_Matches() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -122,8 +121,9 @@ public sealed class DataForgeToolE2ETests {
 		// Act
 		CallToolResult callResult = await CallToolAsync(
 			arrangeContext,
-			FindTablesToolName,
+			FindToolName,
 			new Dictionary<string, object?> {
+				["kind"] = DataForgeTool.DataForgeFindKindTables,
 				["environment-name"] = arrangeContext.EnvironmentName,
 				["query"] = "contact"
 			});
@@ -131,7 +131,7 @@ public sealed class DataForgeToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "dataforge-find-tables should return a structured success payload for a reachable configured environment");
+			because: "dataforge-find (kind='tables') should return a structured success payload for a reachable configured environment");
 		response.Success.Should().BeTrue(
 			because: "table similarity searches should succeed for a valid environment and non-empty query");
 		response.SimilarTables.Should().Contain(table => !string.IsNullOrWhiteSpace(table.Name),
@@ -139,10 +139,10 @@ public sealed class DataForgeToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes dataforge-find-lookups against the configured sandbox environment, and verifies the structured lookup search response succeeds.")]
-	[AllureTag(FindLookupsToolName)]
-	[AllureName("DataForge find-lookups returns a structured lookup response")]
-	[AllureDescription("Uses the real clio MCP server to call dataforge-find-lookups against the configured reachable sandbox environment and verifies that the tool returns a structured successful payload instead of an MCP invocation error.")]
+	[Description("Starts the real clio MCP server, invokes the consolidated dataforge-find tool with kind='lookups' against the configured sandbox environment, and verifies the structured lookup search response succeeds.")]
+	[AllureTag(FindToolName)]
+	[AllureName("DataForge find (kind='lookups') returns a structured lookup response")]
+	[AllureDescription("Uses the real clio MCP server to call dataforge-find with kind='lookups' against the configured reachable sandbox environment and verifies that the tool returns a structured successful payload instead of an MCP invocation error.")]
 	public async Task DataForgeFindLookups_Should_Return_Structured_Response() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -152,8 +152,9 @@ public sealed class DataForgeToolE2ETests {
 		// Act
 		CallToolResult callResult = await CallToolAsync(
 			arrangeContext,
-			FindLookupsToolName,
+			FindToolName,
 			new Dictionary<string, object?> {
+				["kind"] = DataForgeTool.DataForgeFindKindLookups,
 				["environment-name"] = arrangeContext.EnvironmentName,
 				["query"] = "industry"
 			});
@@ -161,7 +162,7 @@ public sealed class DataForgeToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "dataforge-find-lookups should return a structured success payload for a reachable configured environment");
+			because: "dataforge-find (kind='lookups') should return a structured success payload for a reachable configured environment");
 		response.Success.Should().BeTrue(
 			because: "lookup similarity searches should succeed for a valid environment and non-empty query");
 		response.SimilarLookups.Should().NotBeNull(

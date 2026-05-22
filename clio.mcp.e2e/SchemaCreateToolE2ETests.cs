@@ -46,6 +46,7 @@ public sealed class SchemaCreateToolE2ETests {
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["schema-type"] = SchemaCreateTool.SchemaTypeSourceCode,
 					["schema-name"] = "UsrMissingHelper",
 					["package-name"] = "Custom",
 					["environment-name"] = invalidEnvironmentName
@@ -73,6 +74,7 @@ public sealed class SchemaCreateToolE2ETests {
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["schema-type"] = SchemaCreateTool.SchemaTypeSourceCode,
 					["schema-name"] = "1BadName",
 					["package-name"] = "Custom",
 					["environment-name"] = $"noop-{Guid.NewGuid():N}"
@@ -103,6 +105,7 @@ public sealed class SchemaCreateToolE2ETests {
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["schema-type"] = SchemaCreateTool.SchemaTypeSourceCode,
 					["schema-name"] = schemaName,
 					["package-name"] = packageName,
 					["caption"] = "E2E test helper",
@@ -138,6 +141,7 @@ public sealed class SchemaCreateToolE2ETests {
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["schema-type"] = SchemaCreateTool.SchemaTypeSourceCode,
 					["schema-name"] = schemaName,
 					["package-name"] = packageName,
 					["environment-name"] = environmentName
@@ -151,6 +155,7 @@ public sealed class SchemaCreateToolE2ETests {
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["schema-type"] = SchemaCreateTool.SchemaTypeSourceCode,
 					["schema-name"] = schemaName,
 					["package-name"] = packageName,
 					["environment-name"] = environmentName

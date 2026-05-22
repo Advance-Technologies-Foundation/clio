@@ -20,12 +20,11 @@ namespace Clio.Mcp.E2E;
 [AllureFeature("link-from-repository")]
 [NonParallelizable]
 public sealed class LinkFromRepositoryToolE2ETests {
-	private const string EnvironmentToolName = LinkFromRepositoryTool.LinkFromRepositoryByEnvironmentToolName;
-	private const string EnvPkgPathToolName = LinkFromRepositoryTool.LinkFromRepositoryByEnvPackagePathToolName;
+	private const string ToolName = LinkFromRepositoryTool.LinkFromRepositoryToolName;
 
 	[Test]
 	[Description("Starts the real clio MCP server, invokes the direct-path link-from-repository tool against a temporary repository and Creatio package folder, and verifies the package directory becomes a symbolic link.")]
-	[AllureTag(EnvPkgPathToolName)]
+	[AllureTag(ToolName)]
 	[AllureName("Link From Repository tool links package by explicit environment package path")]
 	[AllureDescription("Uses the real clio MCP server to link a repository package into a temporary Creatio package folder and verifies the resulting symbolic link points to the repository package content.")]
 	public async Task LinkFromRepositoryByEnvPackagePath_Should_Create_Symbolic_Link() {
@@ -46,7 +45,7 @@ public sealed class LinkFromRepositoryToolE2ETests {
 
 	[Test]
 	[Description("Starts the real clio MCP server, invokes the direct-path link-from-repository tool with a comma-separated package list, and verifies that each requested package directory becomes a symbolic link.")]
-	[AllureTag(EnvPkgPathToolName)]
+	[AllureTag(ToolName)]
 	[AllureName("Link From Repository tool links multiple requested packages")]
 	[AllureDescription("Uses the real clio MCP server to link two repository packages through a comma-separated selector and verifies both target package directories become symbolic links to repository content.")]
 	public async Task LinkFromRepositoryByEnvPackagePath_Should_Link_Multiple_Packages() {
@@ -69,7 +68,7 @@ public sealed class LinkFromRepositoryToolE2ETests {
 
 	[Test]
 	[Description("Starts the real clio MCP server, invokes the direct-path link-from-repository tool with the wildcard selector, and verifies that all repository packages are linked into the target package directory.")]
-	[AllureTag(EnvPkgPathToolName)]
+	[AllureTag(ToolName)]
 	[AllureName("Link From Repository tool links all packages with wildcard selector")]
 	[AllureDescription("Uses the real clio MCP server to link all repository packages with `*` and verifies that each seeded package directory becomes a symbolic link to repository content.")]
 	public async Task LinkFromRepositoryByEnvPackagePath_Should_Link_All_Packages_When_Using_Wildcard() {
@@ -92,7 +91,7 @@ public sealed class LinkFromRepositoryToolE2ETests {
 
 	[Test]
 	[Description("Starts the real clio MCP server, invokes the environment-name link-from-repository tool with an invalid environment key, and verifies that the result reports failure with human-readable diagnostics.")]
-	[AllureTag(EnvironmentToolName)]
+	[AllureTag(ToolName)]
 	[AllureName("Link From Repository tool reports invalid environment failures")]
 	[AllureDescription("Uses the real clio MCP server to call the environment-name link-from-repository tool with a non-existent environment key and verifies failure diagnostics.")]
 	public async Task LinkFromRepositoryByEnvironment_Should_Report_Failure_When_Environment_Is_Invalid() {
@@ -113,7 +112,7 @@ public sealed class LinkFromRepositoryToolE2ETests {
 
 	[Test]
 	[Description("Starts the real clio MCP server, invokes the direct-path link-from-repository tool with a package name that does not exist in the temporary repository, and verifies that the result reports failure without creating a link.")]
-	[AllureTag(EnvPkgPathToolName)]
+	[AllureTag(ToolName)]
 	[AllureName("Link From Repository tool reports missing repository package failures")]
 	[AllureDescription("Uses the real clio MCP server to call the direct-path link-from-repository tool with an unknown package name and verifies failure diagnostics plus absence of the linked package directory.")]
 	public async Task LinkFromRepositoryByEnvPackagePath_Should_Report_Failure_When_Package_Is_Missing() {
@@ -131,12 +130,11 @@ public sealed class LinkFromRepositoryToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, lists tools, and verifies that both link-from-repository MCP endpoints are advertised as destructive.")]
-	[AllureTag(EnvironmentToolName)]
-	[AllureTag(EnvPkgPathToolName)]
-	[AllureName("Link From Repository tools advertise destructive metadata")]
-	[AllureDescription("Uses the real clio MCP server tool discovery response to verify that both link-from-repository MCP tools expose the destructive hint required for client-side safety policies.")]
-	public async Task LinkFromRepository_Tools_Should_Be_Advertised_As_Destructive() {
+	[Description("Starts the real clio MCP server, lists tools, and verifies that the consolidated link-from-repository MCP tool is advertised as destructive.")]
+	[AllureTag(ToolName)]
+	[AllureName("Link From Repository tool advertises destructive metadata")]
+	[AllureDescription("Uses the real clio MCP server tool discovery response to verify that the consolidated link-from-repository MCP tool exposes the destructive hint required for client-side safety policies.")]
+	public async Task LinkFromRepository_Tool_Should_Be_Advertised_As_Destructive() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
@@ -146,8 +144,7 @@ public sealed class LinkFromRepositoryToolE2ETests {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
 
 		// Assert
-		AssertToolIsAdvertisedAsDestructive(tools, EnvironmentToolName);
-		AssertToolIsAdvertisedAsDestructive(tools, EnvPkgPathToolName);
+		AssertToolIsAdvertisedAsDestructive(tools, ToolName);
 	}
 
 	[AllureStep("Arrange link-from-repository MCP sandbox")]
@@ -189,21 +186,24 @@ public sealed class LinkFromRepositoryToolE2ETests {
 			cancellationTokenSource);
 	}
 
-	[AllureStep("Act by invoking link-from-repository by explicit environment package path")]
-	[AllureDescription("Act by discovering the direct-path MCP tool and invoking it with the arranged package root and repository root")]
+	[AllureStep("Act by invoking link-from-repository with mode='by-pkg-path'")]
+	[AllureDescription("Act by discovering the consolidated link-from-repository MCP tool and invoking it with mode='by-pkg-path', the arranged package root, and repository root")]
 	private static async Task<LinkFromRepositoryActResult> ActByEnvPackagePathAsync(
 		LinkFromRepositoryArrangeContext arrangeContext,
 		string packages) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(EnvPkgPathToolName,
-			because: "the direct-path link-from-repository tool must be advertised before the end-to-end call can be executed");
+		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+			because: "the consolidated link-from-repository MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			EnvPkgPathToolName,
+			ToolName,
 			new Dictionary<string, object?> {
-				["envPkgPath"] = arrangeContext.EnvironmentPackagesPath,
-				["repoPath"] = arrangeContext.RepositoryRootPath,
-				["packages"] = packages
+				["args"] = new Dictionary<string, object?> {
+					["mode"] = LinkFromRepositoryTool.ModeByPkgPath,
+					["env-pkg-path"] = arrangeContext.EnvironmentPackagesPath,
+					["repo-path"] = arrangeContext.RepositoryRootPath,
+					["packages"] = packages
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 
@@ -211,22 +211,25 @@ public sealed class LinkFromRepositoryToolE2ETests {
 		return new LinkFromRepositoryActResult(callResult, execution);
 	}
 
-	[AllureStep("Act by invoking link-from-repository by environment name")]
-	[AllureDescription("Act by discovering the environment-name MCP tool and invoking it with a requested environment key and the arranged repository root")]
+	[AllureStep("Act by invoking link-from-repository with mode='by-env'")]
+	[AllureDescription("Act by discovering the consolidated link-from-repository MCP tool and invoking it with mode='by-env', a requested environment key, and the arranged repository root")]
 	private static async Task<LinkFromRepositoryActResult> ActByEnvironmentAsync(
 		LinkFromRepositoryArrangeContext arrangeContext,
 		string environmentName,
 		string packages) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(EnvironmentToolName,
-			because: "the environment-name link-from-repository tool must be advertised before the end-to-end call can be executed");
+		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+			because: "the consolidated link-from-repository MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			EnvironmentToolName,
+			ToolName,
 			new Dictionary<string, object?> {
-				["environmentName"] = environmentName,
-				["repoPath"] = arrangeContext.RepositoryRootPath,
-				["packages"] = packages
+				["args"] = new Dictionary<string, object?> {
+					["mode"] = LinkFromRepositoryTool.ModeByEnv,
+					["environment-name"] = environmentName,
+					["repo-path"] = arrangeContext.RepositoryRootPath,
+					["packages"] = packages
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 
