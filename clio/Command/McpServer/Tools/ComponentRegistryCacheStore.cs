@@ -23,12 +23,19 @@ public interface IComponentRegistryCacheStore {
 	/// <param name="cancellationToken">Cancellation token.</param>
 	Task<ComponentRegistryCacheReadResult?> TryReadAsync(string version, CancellationToken cancellationToken = default);
 
-	/// <summary>Atomically writes a payload and its provenance sidecar to the cache directory.</summary>
+	/// <summary>
+	/// Atomically writes a payload and its provenance sidecar to the cache directory.
+	/// The <paramref name="sourceUrl"/> is recorded verbatim in the metadata's
+	/// <c>SourceUrl</c> field so diagnostics reflect the actual URL the writer
+	/// fetched from — including <c>CLIO_COMPONENT_REGISTRY_CDN_BASE_URL</c> overrides
+	/// and the flavor-specific registry filename (review #4 on PR #599).
+	/// </summary>
 	Task WriteAsync(
 		string version,
 		byte[] payload,
 		EntityTagHeaderValue? etag,
 		DateTimeOffset? lastModified,
+		string sourceUrl,
 		CancellationToken cancellationToken = default);
 }
 
@@ -114,6 +121,7 @@ public sealed class ComponentRegistryCacheStore : IComponentRegistryCacheStore {
 		byte[] payload,
 		EntityTagHeaderValue? etag,
 		DateTimeOffset? lastModified,
+		string sourceUrl,
 		CancellationToken cancellationToken = default) {
 		if (payload is null) {
 			throw new ArgumentNullException(nameof(payload));
@@ -121,14 +129,19 @@ public sealed class ComponentRegistryCacheStore : IComponentRegistryCacheStore {
 
 		_fileSystem.Directory.CreateDirectory(_root);
 		(string jsonPath, string metaPath) = GetPaths(version);
-		string tmpJsonPath = jsonPath + ".tmp";
-		string tmpMetaPath = metaPath + ".tmp";
+		// Unique tmp suffix per writer so concurrent refreshes for the same
+		// version (across flavors via different cache-store instances, or two
+		// in-flight stale-refresh threads on the same instance) cannot collide
+		// on the same tmp file — mirrors the docs-cache fix in review #3.
+		string tmpSuffix = ".tmp." + Guid.NewGuid().ToString("N");
+		string tmpJsonPath = jsonPath + tmpSuffix;
+		string tmpMetaPath = metaPath + tmpSuffix;
 
 		DateTimeOffset fetchedAt = _timeProvider.GetUtcNow();
 		ComponentRegistryCacheMetadata metadata = new(
 			FetchedAt: fetchedAt,
 			ExpiresAt: fetchedAt + EntryTtl,
-			SourceUrl: $"https://academy.creatio.com/api/mcp/{version}/ComponentRegistry.json",
+			SourceUrl: sourceUrl,
 			Etag: etag?.Tag,
 			LastModified: lastModified,
 			ContentSha256: Convert.ToHexString(SHA256.HashData(payload)));

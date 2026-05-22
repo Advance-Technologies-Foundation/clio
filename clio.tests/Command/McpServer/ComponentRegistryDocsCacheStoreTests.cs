@@ -36,7 +36,8 @@ public sealed class ComponentRegistryDocsCacheStoreTests {
 
 		await store.WriteAsync("8.2.1", "docs/sample.md", payload,
 			EntityTagHeaderValue.Parse("\"abc\""),
-			DateTimeOffset.Parse("2026-05-13T09:30:00Z"));
+			DateTimeOffset.Parse("2026-05-13T09:30:00Z"),
+			cdnBaseUrl: "https://academy.creatio.com/api/mcp/");
 		ComponentRegistryDocsCacheReadResult? read = await store.TryReadAsync("8.2.1", "docs/sample.md");
 
 		read.Should().NotBeNull(because: "a just-written cache entry must be retrievable");
@@ -52,7 +53,7 @@ public sealed class ComponentRegistryDocsCacheStoreTests {
 		FakeTimeProvider clock = new();
 		clock.SetUtcNow(DateTimeOffset.Parse("2026-05-13T10:00:00Z"));
 		ComponentRegistryDocsCacheStore store = CreateStore(fileSystem, clock);
-		await store.WriteAsync("latest", "docs/sample.md", Encoding.UTF8.GetBytes(SamplePayload), etag: null, lastModified: null);
+		await store.WriteAsync("latest", "docs/sample.md", Encoding.UTF8.GetBytes(SamplePayload), etag: null, lastModified: null, cdnBaseUrl: "https://academy.creatio.com/api/mcp/");
 
 		clock.Advance(TimeSpan.FromMinutes(6));
 		ComponentRegistryDocsCacheReadResult? read = await store.TryReadAsync("latest", "docs/sample.md");
@@ -69,7 +70,7 @@ public sealed class ComponentRegistryDocsCacheStoreTests {
 		MockFileSystem fileSystem = new();
 		ComponentRegistryDocsCacheStore store = CreateStore(fileSystem, new FakeTimeProvider());
 
-		await store.WriteAsync("8.2.1", maliciousPath, Encoding.UTF8.GetBytes(SamplePayload), etag: null, lastModified: null);
+		await store.WriteAsync("8.2.1", maliciousPath, Encoding.UTF8.GetBytes(SamplePayload), etag: null, lastModified: null, cdnBaseUrl: "https://academy.creatio.com/api/mcp/");
 		ComponentRegistryDocsCacheReadResult? read = await store.TryReadAsync("8.2.1", maliciousPath);
 
 		read.Should().BeNull(because: "the path validator must reject traversal attempts before any I/O");
@@ -83,7 +84,7 @@ public sealed class ComponentRegistryDocsCacheStoreTests {
 		MockFileSystem fileSystem = new();
 		ComponentRegistryDocsCacheStore store = new(fileSystem, new FakeTimeProvider(), "/cache");
 
-		await store.WriteAsync("8.2.1", "docs/widgets/data-grid.component.md", Encoding.UTF8.GetBytes(SamplePayload), etag: null, lastModified: null);
+		await store.WriteAsync("8.2.1", "docs/widgets/data-grid.component.md", Encoding.UTF8.GetBytes(SamplePayload), etag: null, lastModified: null, cdnBaseUrl: "https://academy.creatio.com/api/mcp/");
 
 		fileSystem.File.Exists("/cache/8.2.1/docs/widgets/data-grid.component.md").Should().BeTrue(
 			because: "the cache layout mirrors the docs/ namespace inside the version directory");

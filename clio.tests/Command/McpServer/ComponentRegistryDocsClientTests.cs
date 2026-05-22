@@ -160,10 +160,16 @@ public sealed class ComponentRegistryDocsClientTests {
 				DateTimeOffset.UtcNow.AddMinutes(entry.IsFresh ? 4 : -1)));
 		}
 
-		public Task WriteAsync(string version, string docPath, byte[] payload, EntityTagHeaderValue? etag, DateTimeOffset? lastModified, CancellationToken cancellationToken = default) {
+		public Task WriteAsync(string version, string docPath, byte[] payload, EntityTagHeaderValue? etag, DateTimeOffset? lastModified, string cdnBaseUrl, CancellationToken cancellationToken = default) {
 			_entries[(version, docPath)] = (payload, IsFresh: true);
 			Written[(version, docPath)] = payload;
+			WrittenBaseUrls[(version, docPath)] = cdnBaseUrl;
 			return Task.CompletedTask;
 		}
+
+		// Records the CDN base URL the client passed to WriteAsync so tests can
+		// assert that override env vars (CLIO_COMPONENT_REGISTRY_CDN_BASE_URL)
+		// surface verbatim in cache metadata SourceUrl.
+		public Dictionary<(string Version, string DocPath), string> WrittenBaseUrls { get; } = new();
 	}
 }

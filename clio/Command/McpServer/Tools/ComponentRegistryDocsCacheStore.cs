@@ -28,13 +28,20 @@ public interface IComponentRegistryDocsCacheStore {
 		string docPath,
 		CancellationToken cancellationToken = default);
 
-	/// <summary>Atomically writes a payload and its provenance sidecar to the cache directory.</summary>
+	/// <summary>
+	/// Atomically writes a payload and its provenance sidecar to the cache directory.
+	/// The <paramref name="cdnBaseUrl"/> is recorded verbatim in the metadata's
+	/// <c>SourceUrl</c> so diagnostics show the URL the writer actually fetched from
+	/// (honors the <c>CLIO_COMPONENT_REGISTRY_CDN_BASE_URL</c> override; review #4 on
+	/// PR #599).
+	/// </summary>
 	Task WriteAsync(
 		string version,
 		string docPath,
 		byte[] payload,
 		EntityTagHeaderValue? etag,
 		DateTimeOffset? lastModified,
+		string cdnBaseUrl,
 		CancellationToken cancellationToken = default);
 }
 
@@ -117,6 +124,7 @@ public sealed class ComponentRegistryDocsCacheStore : IComponentRegistryDocsCach
 		byte[] payload,
 		EntityTagHeaderValue? etag,
 		DateTimeOffset? lastModified,
+		string cdnBaseUrl,
 		CancellationToken cancellationToken = default) {
 		ArgumentNullException.ThrowIfNull(payload);
 		if (!TryGetPaths(version, docPath, out string mdPath, out string metaPath)) {
@@ -130,14 +138,21 @@ public sealed class ComponentRegistryDocsCacheStore : IComponentRegistryDocsCach
 			_fileSystem.Directory.CreateDirectory(targetDir);
 		}
 
-		string tmpMdPath = mdPath + ".tmp";
-		string tmpMetaPath = metaPath + ".tmp";
+		// Unique tmp suffix per writer: two concurrent refreshes of the same
+		// docPath (e.g. two MCP sessions calling get-component-info on the same
+		// component within seconds) would otherwise collide on a shared
+		// `.tmp` file or on the atomic move — review #3 on PR #599. The Guid
+		// suffix keeps tmp writes independent; the final atomic move into
+		// place is naturally last-writer-wins on the target.
+		string tmpSuffix = ".tmp." + Guid.NewGuid().ToString("N");
+		string tmpMdPath = mdPath + tmpSuffix;
+		string tmpMetaPath = metaPath + tmpSuffix;
 
 		DateTimeOffset fetchedAt = _timeProvider.GetUtcNow();
 		ComponentRegistryDocsCacheMetadata metadata = new(
 			FetchedAt: fetchedAt,
 			ExpiresAt: fetchedAt + EntryTtl,
-			SourceUrl: $"https://academy.creatio.com/api/mcp/{version}/{docPath}",
+			SourceUrl: BuildSourceUrl(cdnBaseUrl, version, docPath),
 			Etag: etag?.Tag,
 			LastModified: lastModified,
 			ContentSha256: Convert.ToHexString(SHA256.HashData(payload)));
@@ -149,6 +164,19 @@ public sealed class ComponentRegistryDocsCacheStore : IComponentRegistryDocsCach
 		// Move payload first so a reader never sees stale meta + new payload.
 		_fileSystem.File.Move(tmpMdPath, mdPath, overwrite: true);
 		_fileSystem.File.Move(tmpMetaPath, metaPath, overwrite: true);
+	}
+
+	/// <summary>
+	/// Composes the metadata <c>SourceUrl</c> from the actual CDN base URL the
+	/// writer used, so the sidecar reflects reality when
+	/// <c>CLIO_COMPONENT_REGISTRY_CDN_BASE_URL</c> points at staging/QA — review #4
+	/// on PR #599. Tolerates a missing trailing slash on the base URL.
+	/// </summary>
+	private static string BuildSourceUrl(string cdnBaseUrl, string version, string docPath) {
+		string normalisedBase = string.IsNullOrEmpty(cdnBaseUrl)
+			? "https://academy.creatio.com/api/mcp/"
+			: (cdnBaseUrl.EndsWith('/') ? cdnBaseUrl : cdnBaseUrl + "/");
+		return $"{normalisedBase}{version}/{docPath}";
 	}
 
 	/// <summary>

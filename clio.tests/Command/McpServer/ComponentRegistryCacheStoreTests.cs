@@ -42,7 +42,7 @@ public sealed class ComponentRegistryCacheStoreTests {
 		byte[] payload = Encoding.UTF8.GetBytes(SamplePayloadJson);
 
 		// Act
-		await store.WriteAsync("8.2.1", payload, EntityTagHeaderValue.Parse("\"abc\""), DateTimeOffset.Parse("2026-05-13T09:30:00Z"));
+		await store.WriteAsync("8.2.1", payload, EntityTagHeaderValue.Parse("\"abc\""), DateTimeOffset.Parse("2026-05-13T09:30:00Z"), sourceUrl: "https://academy.creatio.com/api/mcp/8.2.1/ComponentRegistry.json");
 		ComponentRegistryCacheReadResult? read = await store.TryReadAsync("8.2.1");
 
 		// Assert
@@ -61,7 +61,7 @@ public sealed class ComponentRegistryCacheStoreTests {
 		FakeTimeProvider clock = new();
 		clock.SetUtcNow(DateTimeOffset.Parse("2026-05-13T10:00:00Z"));
 		ComponentRegistryCacheStore store = CreateStore(fileSystem, clock);
-		await store.WriteAsync("latest", Encoding.UTF8.GetBytes(SamplePayloadJson), etag: null, lastModified: null);
+		await store.WriteAsync("latest", Encoding.UTF8.GetBytes(SamplePayloadJson), etag: null, lastModified: null, sourceUrl: "https://academy.creatio.com/api/mcp/latest/ComponentRegistry.json");
 
 		// Act
 		clock.Advance(TimeSpan.FromMinutes(6));
@@ -106,7 +106,7 @@ public sealed class ComponentRegistryCacheStoreTests {
 		// path, would escape the cache root. The sanitiser strips the separators (and any other
 		// non-alphanumeric / non-dot / non-dash / non-underscore characters), keeping the
 		// resulting file under the cache root.
-		await store.WriteAsync("../etc/passwd", Encoding.UTF8.GetBytes(SamplePayloadJson), etag: null, lastModified: null);
+		await store.WriteAsync("../etc/passwd", Encoding.UTF8.GetBytes(SamplePayloadJson), etag: null, lastModified: null, sourceUrl: "https://academy.creatio.com/api/mcp/../etc/passwd/ComponentRegistry.json");
 
 		// Assert
 		fileSystem.File.Exists($"{root}/..etcpasswd.json").Should().BeTrue(

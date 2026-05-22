@@ -102,8 +102,10 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 	}
 
 	private async Task<byte[]?> TryFetchFromCdnAsync(string version, string normalisedDocPath, CancellationToken cancellationToken) {
+		// HttpClient.Timeout is configured once in BindingsModule via
+		// AddHttpClient(HttpClientName).ConfigureHttpClient(...) — same shared
+		// timeout the registry client uses (no per-call mutation; review #1).
 		HttpClient http = _httpClientFactory.CreateClient(HttpClientName);
-		http.Timeout = CdnFetchTimeout;
 		string url = BuildCdnUrl(version, normalisedDocPath);
 
 		for (int attempt = 1; attempt <= CdnFetchAttempts; attempt++) {
@@ -141,6 +143,7 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 					payload,
 					response.Headers.ETag,
 					response.Content.Headers.LastModified,
+					_cdnBaseUrl,
 					cancellationToken).ConfigureAwait(false);
 				_logger.LogInformation(
 					"component-registry-docs source=cdn version={Version} path={Path} status={Status} attempt={Attempt} bytes={Bytes}",
@@ -188,11 +191,19 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 		public static FetchAttemptResult TransientFailure { get; } = new(Payload: null, ShouldRetry: true);
 	}
 
+	// Per-(version, docPath) dedup of in-flight background refreshes. A single
+	// `get-component-info` call fans out into N stale doc reads; without this
+	// guard, two MCP sessions hitting the same component within seconds could
+	// schedule overlapping refreshes that race on the same cache file — review
+	// #3 on PR #599. The Lazy<Task> ensures the work runs exactly once per key
+	// while it is in flight; the entry is removed when the task completes so a
+	// future stale read after the next TTL boundary can schedule again.
+	private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Task>> _inFlightRefreshes
+		= new(StringComparer.Ordinal);
+
 	private void ScheduleBackgroundRefresh(string version, string normalisedDocPath) {
-		// Fire-and-forget. Per-request background refresh is acceptable here because
-		// docs are fetched lazily (one request → at most a handful of docs) so there is
-		// no thundering-herd risk to gate against.
-		_ = Task.Run(async () => {
+		string key = $"{version}|{normalisedDocPath}";
+		Lazy<Task> lazy = _inFlightRefreshes.GetOrAdd(key, _ => new Lazy<Task>(() => Task.Run(async () => {
 			try {
 				using CancellationTokenSource cts = new(TimeSpan.FromMinutes(2));
 				await TryFetchFromCdnAsync(version, normalisedDocPath, cts.Token).ConfigureAwait(false);
@@ -200,8 +211,11 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 				_logger.LogInformation(ex,
 					"component-registry-docs background-refresh-failed version={Version} path={Path}",
 					version, normalisedDocPath);
+			} finally {
+				_inFlightRefreshes.TryRemove(key, out Lazy<Task>? _);
 			}
-		});
+		})));
+		_ = lazy.Value;
 	}
 
 	private static string ResolveCdnBaseUrl() {

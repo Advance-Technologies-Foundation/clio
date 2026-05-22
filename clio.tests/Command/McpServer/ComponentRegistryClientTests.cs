@@ -315,11 +315,17 @@ public sealed class ComponentRegistryClientTests {
 				DateTimeOffset.UtcNow.AddHours(entry.IsFresh ? 23 : -1)));
 		}
 
-		public Task WriteAsync(string version, byte[] payload, System.Net.Http.Headers.EntityTagHeaderValue? etag, DateTimeOffset? lastModified, CancellationToken cancellationToken = default) {
+		public Task WriteAsync(string version, byte[] payload, System.Net.Http.Headers.EntityTagHeaderValue? etag, DateTimeOffset? lastModified, string sourceUrl, CancellationToken cancellationToken = default) {
 			_entries[version] = (payload, IsFresh: true);
 			WrittenVersions.Add(version);
+			WrittenSourceUrls[version] = sourceUrl;
 			return Task.CompletedTask;
 		}
+
+		// Captures the SourceUrl the registry client passes to WriteAsync so tests
+		// can assert that an override env var (CLIO_COMPONENT_REGISTRY_CDN_BASE_URL)
+		// + flavor selection both surface verbatim in cache metadata.
+		public Dictionary<string, string> WrittenSourceUrls { get; } = new();
 	}
 
 	private sealed class EnvironmentVariableScope : IDisposable {

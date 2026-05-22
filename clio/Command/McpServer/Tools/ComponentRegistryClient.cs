@@ -138,7 +138,17 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 	internal const int CdnFetchAttempts = 3;
 	internal static readonly TimeSpan CdnFetchTimeout = TimeSpan.FromSeconds(30);
 
-	private static readonly SemaphoreSlim BackgroundRefreshGate = new(initialCount: 1, maxCount: 1);
+	// Per-(flavor, version) semaphores: a single process-wide gate would serialise
+	// web + mobile background refreshes (and refreshes for `latest` vs a pinned
+	// GA-version) artificially — review #2 on PR #599. Keyed lookup avoids that
+	// while still de-duplicating concurrent refreshes for the same flavor+version.
+	private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>
+		BackgroundRefreshGates = new(StringComparer.Ordinal);
+
+	private SemaphoreSlim GetBackgroundRefreshGate(string version) {
+		string key = $"{_flavor.DisplayName}|{version}";
+		return BackgroundRefreshGates.GetOrAdd(key, _ => new SemaphoreSlim(initialCount: 1, maxCount: 1));
+	}
 
 	private readonly IHttpClientFactory _httpClientFactory;
 	private readonly IComponentRegistryCacheStore _cacheStore;
@@ -315,8 +325,12 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 	}
 
 	private async Task<Stream?> TryFetchFromCdnAsync(string version, CancellationToken cancellationToken) {
+		// HttpClient.Timeout is configured once in BindingsModule via
+		// AddHttpClient(HttpClientName).ConfigureHttpClient(...). Mutating Timeout
+		// here would (a) waste a setter call per request, (b) be a latent race if
+		// the named client ever became shared, and (c) throw `InvalidOperationException`
+		// after the instance had been used.
 		HttpClient http = _httpClientFactory.CreateClient(HttpClientName);
-		http.Timeout = CdnFetchTimeout;
 		// CDN URL layout: {base}{version}/ComponentRegistry.json — the version is a directory
 		// containing the fixed-name registry file (matches the layout in the static-files-mcp
 		// GitLab repo that the academy edge mirrors every 5 minutes).
@@ -345,7 +359,7 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 				.ConfigureAwait(false);
 
 			if ((int)response.StatusCode is >= 200 and < 300) {
-				Stream payloadStream = await CacheAndReturnStreamAsync(response, version, attempt, cancellationToken).ConfigureAwait(false);
+				Stream payloadStream = await CacheAndReturnStreamAsync(response, version, url, attempt, cancellationToken).ConfigureAwait(false);
 				return FetchAttemptResult.Success(payloadStream);
 			}
 
@@ -375,13 +389,17 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		}
 	}
 
-	private async Task<Stream> CacheAndReturnStreamAsync(HttpResponseMessage response, string version, int attempt, CancellationToken cancellationToken) {
+	private async Task<Stream> CacheAndReturnStreamAsync(HttpResponseMessage response, string version, string sourceUrl, int attempt, CancellationToken cancellationToken) {
 		byte[] payload = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+		// `sourceUrl` is the actual URL the writer fetched from, so the metadata
+		// sidecar reflects flavor + override (`CLIO_COMPONENT_REGISTRY_CDN_BASE_URL`)
+		// instead of a hard-coded production URL — review #4 on PR #599.
 		await _cacheStore.WriteAsync(
 			version,
 			payload,
 			response.Headers.ETag,
 			response.Content.Headers.LastModified,
+			sourceUrl,
 			cancellationToken).ConfigureAwait(false);
 		_logger.LogInformation(
 			"component-registry source=cdn version={Version} status={Status} attempt={Attempt} bytes={Bytes}",
@@ -406,10 +424,12 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 	}
 
 	private void ScheduleBackgroundRefresh(string version) {
-		// Fire-and-forget. We gate concurrency with a single semaphore so a flurry of stale
-		// reads does not produce a thundering herd of background CDN fetches.
+		// Fire-and-forget. The gate is keyed by (flavor, version) so a flurry of
+		// stale reads on `web:latest` is de-duplicated without blocking a parallel
+		// stale read on `mobile:latest` (or on a pinned GA version).
+		SemaphoreSlim gate = GetBackgroundRefreshGate(version);
 		_ = Task.Run(async () => {
-			if (!await BackgroundRefreshGate.WaitAsync(0).ConfigureAwait(false)) {
+			if (!await gate.WaitAsync(0).ConfigureAwait(false)) {
 				return;
 			}
 			try {
@@ -417,9 +437,10 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 				await TryFetchFromCdnAsync(version, cts.Token).ConfigureAwait(false);
 			} catch (Exception ex) {
 				_logger.LogInformation(ex,
-					"component-registry background-refresh-failed version={Version}", version);
+					"component-registry background-refresh-failed flavor={Flavor} version={Version}",
+					_flavor.DisplayName, version);
 			} finally {
-				BackgroundRefreshGate.Release();
+				gate.Release();
 			}
 		});
 	}

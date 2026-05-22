@@ -104,6 +104,12 @@ public class BindingsModule {
 		services.AddTransient<IContainerRegistryCredentialProvider, ContainerRegistryCredentialProvider>();
 		services.AddHttpClient();
 		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
+		// Named HttpClient for the component-registry CDN + docs pipelines. Timeout is
+		// configured once here so callers never mutate HttpClient.Timeout after construction
+		// (avoids `InvalidOperationException` on reused instances and races on a shared
+		// mutable property — see code-review #1 on PR #599).
+		services.AddHttpClient(ComponentRegistryClient.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = ComponentRegistryClient.CdnFetchTimeout);
 		
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
