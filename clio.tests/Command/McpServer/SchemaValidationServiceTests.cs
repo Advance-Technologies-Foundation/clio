@@ -860,8 +860,24 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Label referencing $Resources.Strings.KEY for a DS-bound attribute does not warn when KEY is absent — the platform auto-provides it")]
+	[Description("Label using attribute-name resource key for a DS-bound attribute does not warn when the key is absent from resources — the platform auto-provides captions under the attribute name")]
 	public void ValidateStandardFieldBindings_LabelResourceKeyMissingButDsBound_ReturnsNoWarning() {
+		string body = BuildDiffBackedPageBody(
+			"[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\",\"control\":\"$UsrName\"}}]",
+			"[{\"operation\":\"merge\",\"values\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(
+			body,
+			new Dictionary<string, string> { ["PDS_UsrRequesterName"] = "Requester Name" });
+
+		result.IsValid.Should().BeTrue("because DS-bound caption keys are auto-provided by the platform under the view-model attribute name");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().BeEmpty("because the label key equals the DS-bound attribute name and the platform auto-provides the caption");
+	}
+
+	[Test]
+	[Description("Label using path-with-underscores resource key warns when the key is missing from resources and is not the auto-provided attribute-name form")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyIsPathWithUnderscoresAndMissing_ReturnsWarning() {
 		string body = BuildDiffBackedPageBody(
 			"[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.PDS_UsrName\",\"control\":\"$UsrName\"}}]",
 			"[{\"operation\":\"merge\",\"values\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
@@ -870,9 +886,26 @@ public sealed class SchemaValidationServiceTests
 			body,
 			new Dictionary<string, string> { ["PDS_UsrRequesterName"] = "Requester Name" });
 
-		result.IsValid.Should().BeTrue("because DS-bound caption keys are auto-provided by the platform");
+		result.IsValid.Should().BeTrue("because a missing label resource is a recoverable warning, not a hard failure");
 		result.Errors.Should().BeEmpty();
-		result.Warnings.Should().BeEmpty("because the label matches the DS-bound attribute and the platform auto-provides it");
+		result.Warnings.Should().ContainSingle(w => w.Contains("PDS_UsrName") && w.Contains("render blank"),
+			"because the platform auto-provides captions under the attribute name 'UsrName', not under the path-with-underscores form 'PDS_UsrName'");
+	}
+
+	[Test]
+	[Description("Label using a sibling DS-bound attribute name that shares the same model path as the control does not warn — the platform auto-provides the caption under every attribute name bound to that path")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyIsSiblingAttributeOnSameDsPath_ReturnsNoWarning() {
+		string body = BuildDiffBackedPageBody(
+			"[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrNameAlias\",\"control\":\"$UsrName\"}}]",
+			"[{\"operation\":\"merge\",\"values\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}},\"UsrNameAlias\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(
+			body,
+			new Dictionary<string, string> { ["SomeUnrelatedKey"] = "value" });
+
+		result.IsValid.Should().BeTrue("because the resource key matches a sibling attribute bound to the same DS path");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().BeEmpty("because the platform auto-provides captions under every view-model attribute name sharing the control's DS path");
 	}
 
 	[Test]

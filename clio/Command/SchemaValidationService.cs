@@ -1100,9 +1100,7 @@ public static class SchemaValidationService
 		    TryGetReactiveResourceKey(labelExpression, out string resourceBindingKey) &&
 		    ctx.ExplicitResources != null &&
 		    !ctx.ExplicitResources.ContainsKey(resourceBindingKey) &&
-		    !(ctx.ModelPaths.TryGetValue(resourceBindingKey, out string dsPath) && dsPath.Contains('.')) &&
-		    !(TryResolvePreferredLabelBinding(ctx.ModelPaths, bindingAttribute, out string dsLabelBinding) &&
-		      string.Equals(labelExpression, dsLabelBinding, StringComparison.Ordinal))) {
+		    !IsAutoProvidedLabelResourceKey(resourceBindingKey, bindingAttribute, ctx.ModelPaths)) {
 			ctx.Result.Warnings.Add(
 				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{resourceBindingKey}' is not in the provided resources — the label will render blank.");
 		}
@@ -1123,26 +1121,48 @@ public static class SchemaValidationService
 			$"Standard field '{fieldDisplayName}' uses custom resource key '{resourceKey}'. Prefer auto-provided label '{preferredLabel}' for data-bound fields.");
 	}
 
+	/// <summary>
+	/// Resolves the canonical auto-provided label binding for a DS-bound control. Used to suggest
+	/// the preferred label in validator error/warning messages. The platform auto-provides the
+	/// caption resource under the view-model attribute name (not the model-path-with-underscores),
+	/// so the suggestion is always <c>$Resources.Strings.&lt;bindingAttribute&gt;</c> when the
+	/// control's binding attribute has a DS-bound <c>modelConfig.path</c>.
+	/// </summary>
 	private static bool TryResolvePreferredLabelBinding(
 		IReadOnlyDictionary<string, string> modelPaths,
 		string bindingAttribute,
 		out string preferredLabelBinding) {
 		preferredLabelBinding = string.Empty;
-		if (!string.IsNullOrWhiteSpace(bindingAttribute) &&
-		    modelPaths.TryGetValue(bindingAttribute, out string modelPath) &&
-		    modelPath.Contains('.')) {
-			string expectedBinding = BuildExpectedBinding(modelPath);
-			preferredLabelBinding = $"$Resources.Strings.{expectedBinding[1..]}";
-			return true;
+		if (string.IsNullOrWhiteSpace(bindingAttribute)) {
+			return false;
 		}
-		foreach (var (_, path) in modelPaths) {
-			string expected = BuildExpectedBinding(path);
-			if (string.Equals("$" + bindingAttribute, expected, StringComparison.OrdinalIgnoreCase)) {
-				preferredLabelBinding = $"$Resources.Strings.{bindingAttribute}";
-				return true;
-			}
+		if (!modelPaths.TryGetValue(bindingAttribute, out string modelPath) || !modelPath.Contains('.')) {
+			return false;
 		}
-		return false;
+		preferredLabelBinding = $"$Resources.Strings.{bindingAttribute}";
+		return true;
+	}
+
+	/// <summary>
+	/// Returns <c>true</c> when <paramref name="resourceKey"/> matches an auto-provided DS
+	/// caption resource for the control's binding attribute. The platform auto-provides
+	/// captions for every view-model attribute that has a DS-bound <c>modelConfig.path</c>,
+	/// keyed by the attribute name. If multiple view-model attributes share the same
+	/// <c>modelConfig.path</c>, the caption is auto-provided under each of their names —
+	/// so any of those names is an acceptable label resource key.
+	/// </summary>
+	private static bool IsAutoProvidedLabelResourceKey(
+		string resourceKey,
+		string bindingAttribute,
+		IReadOnlyDictionary<string, string> modelPaths) {
+		if (string.IsNullOrWhiteSpace(resourceKey) || string.IsNullOrWhiteSpace(bindingAttribute)) {
+			return false;
+		}
+		if (!modelPaths.TryGetValue(bindingAttribute, out string bindingPath) || !bindingPath.Contains('.')) {
+			return false;
+		}
+		return modelPaths.TryGetValue(resourceKey, out string keyPath) &&
+		       string.Equals(keyPath, bindingPath, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static bool TryGetBindingAttribute(
