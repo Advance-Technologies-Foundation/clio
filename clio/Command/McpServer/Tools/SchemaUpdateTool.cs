@@ -128,52 +128,41 @@ public sealed class SchemaUpdateTool {
 }
 
 /// <summary>
-/// Consolidated arguments for the <c>update-schema</c> MCP tool.
+/// Consolidated arguments for the <c>update-schema</c> MCP tool. Fields specific to update operations
+/// (body/body-file/dry-run/operations) are interleaved with shared schema selectors so the wire shape
+/// stays flat for clients while keeping per-tool definitions discoverable.
 /// </summary>
 public sealed record SchemaUpdateArgs(
-	[property: JsonPropertyName("schema-type")]
-	[property: Description("Discriminator: 'source-code' | 'entity' | 'client-unit' | 'sql'. Selects the update flavor and required fields.")]
-	[property: Required]
+	[property: JsonPropertyName("schema-type"), Description("Discriminator: 'source-code' | 'entity' | 'client-unit' | 'sql'. Selects the update flavor and required fields."), Required]
 	string SchemaType,
 
-	[property: JsonPropertyName("schema-name")]
-	[property: Description("Schema name to update. Required for every schema-type.")]
-	[property: Required]
-	string? SchemaName = null,
-
-	[property: JsonPropertyName("package-name")]
-	[property: Description("Required when schema-type='entity'. Package on the target environment that owns the schema.")]
-	string? PackageName = null,
-
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name. Required for schema-type='entity'.")]
-	string? EnvironmentName = null,
-
-	[property: JsonPropertyName("body")]
-	[property: Description("Replacement body for schema-type=source-code/client-unit/sql. Optional when body-file is provided.")]
+	[property: JsonPropertyName("body"), Description("Replacement body for schema-type=source-code/client-unit/sql. Optional when body-file is provided.")]
 	string? Body = null,
 
-	[property: JsonPropertyName("body-file")]
-	[property: Description("Absolute path to a file whose contents replace the schema body. Recommended for large bodies. Takes precedence over body.")]
+	[property: JsonPropertyName("schema-name"), Description("Schema name to update. Required for every schema-type."), Required]
+	string? SchemaName = null,
+
+	[property: JsonPropertyName("body-file"), Description("Absolute path to a file whose contents replace the schema body. Recommended for large bodies. Takes precedence over body.")]
 	string? BodyFile = null,
 
-	[property: JsonPropertyName("dry-run")]
-	[property: Description("If true (schema-type=source-code/client-unit/sql), validate and resolve the schema without saving. Default: false.")]
+	[property: JsonPropertyName("package-name"), Description("Required when schema-type='entity'. Package on the target environment that owns the schema.")]
+	string? PackageName = null,
+
+	[property: JsonPropertyName("dry-run"), Description("If true (schema-type=source-code/client-unit/sql), validate and resolve the schema without saving. Default: false.")]
 	bool? DryRun = null,
 
-	[property: JsonPropertyName("operations")]
-	[property: Description("Required when schema-type='entity'. Batch column operations to apply in order.")]
+	[property: JsonPropertyName("environment-name"), Description("Registered clio environment name. Required for schema-type='entity'.")]
+	string? EnvironmentName = null,
+
+	[property: JsonPropertyName("operations"), Description("Required when schema-type='entity'. Batch column operations to apply in order.")]
 	IEnumerable<UpdateEntitySchemaOperationArgs>? Operations = null,
 
-	[property: JsonPropertyName("uri")]
-	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
+	[property: JsonPropertyName("uri"), Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
 	string? Uri = null,
 
-	[property: JsonPropertyName("login")]
-	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
+	[property: JsonPropertyName("login"), Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
 	string? Login = null,
 
-	[property: JsonPropertyName("password")]
-	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
+	[property: JsonPropertyName("password"), Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
 	string? Password = null
 );

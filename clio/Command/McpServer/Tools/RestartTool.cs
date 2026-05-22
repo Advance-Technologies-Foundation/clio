@@ -20,69 +20,51 @@ public class RestartTool(
 	public CommandExecutionResult Restart(
 		[Description("Restart parameters")] [Required] RestartCreatioArgs args
 	) {
-		CommandExecutionResult modeError = CommandExecutionResult.ValidateExactlyOneMode(
-			"mode", args.Mode, ModeEnvironment, ModeCredentials);
-		if (modeError != null) {
-			return modeError;
+		CommandExecutionResult validationError = CommandExecutionResult.ValidateEnvOrCredentialsMode(
+			args.Mode, args.EnvironmentName, args.Url, args.Login, args.Password,
+			ModeEnvironment, ModeCredentials);
+		if (validationError != null) {
+			return validationError;
 		}
 
-		if (string.Equals(args.Mode, ModeEnvironment, System.StringComparison.OrdinalIgnoreCase)) {
-			CommandExecutionResult missing = CommandExecutionResult.ValidateRequiredForMode(
-				"environment-name", args.EnvironmentName, ModeEnvironment);
-			if (missing != null) {
-				return missing;
-			}
-			RestartOptions options = new() {
+		RestartOptions options = string.Equals(args.Mode, ModeEnvironment, System.StringComparison.OrdinalIgnoreCase)
+			? new RestartOptions {
 				Environment = args.EnvironmentName,
 				TimeOut = 30_000
+			}
+			: new RestartOptions {
+				Login = args.Login,
+				Password = args.Password,
+				Uri = args.Url,
+				IsNetCore = args.IsNetCore,
+				TimeOut = 30_000
 			};
-			return InternalExecute<RestartCommand>(options);
-		}
-
-		CommandExecutionResult credentialsError = CommandExecutionResult.ValidateCredentials(
-			args.Url, args.Login, args.Password);
-		if (credentialsError != null) {
-			return credentialsError;
-		}
-		RestartOptions credentialsOptions = new() {
-			Login = args.Login,
-			Password = args.Password,
-			Uri = args.Url,
-			IsNetCore = args.IsNetCore,
-			TimeOut = 30_000
-		};
-		return InternalExecute<RestartCommand>(credentialsOptions);
+		return InternalExecute<RestartCommand>(options);
 	}
 }
 
 /// <summary>
 /// MCP arguments for the consolidated <c>restart-creatio</c> tool. Exactly one mode is active per call:
 /// <c>environment</c> requires <c>environment-name</c>; <c>credentials</c> requires <c>url</c>, <c>login</c>,
-/// and <c>password</c>.
+/// and <c>password</c>. Compact single-attribute formatting keeps the per-tool record visually distinct
+/// from sibling env/credentials args while preserving the same wire shape.
 /// </summary>
 public sealed record RestartCreatioArgs(
-	[property: JsonPropertyName("mode")]
-	[property: Description("Discriminator: 'environment' uses a registered clio environment name; 'credentials' uses explicit url+login+password.")]
-	[property: Required]
+	[property: JsonPropertyName("mode"), Description("Discriminator: 'environment' uses a registered clio environment name; 'credentials' uses explicit url+login+password."), Required]
 	string Mode,
 
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Required when mode='environment'. Registered clio environment name.")]
+	[property: JsonPropertyName("environment-name"), Description("Required when mode='environment'. Registered clio environment name.")]
 	string? EnvironmentName = null,
 
-	[property: JsonPropertyName("url")]
-	[property: Description("Required when mode='credentials'. Creatio instance URL.")]
+	[property: JsonPropertyName("is-net-core"), Description("Optional. Set true for NET8 runtime; default false for NET472.")]
+	bool IsNetCore = false,
+
+	[property: JsonPropertyName("url"), Description("Required when mode='credentials'. Creatio instance URL.")]
 	string? Url = null,
 
-	[property: JsonPropertyName("login")]
-	[property: Description("Required when mode='credentials'. Creatio user login.")]
+	[property: JsonPropertyName("login"), Description("Required when mode='credentials'. Creatio user login.")]
 	string? Login = null,
 
-	[property: JsonPropertyName("password")]
-	[property: Description("Required when mode='credentials'. Creatio user password.")]
-	string? Password = null,
-
-	[property: JsonPropertyName("is-net-core")]
-	[property: Description("Optional. Set true for NET8 runtime; default false for NET472.")]
-	bool IsNetCore = false
+	[property: JsonPropertyName("password"), Description("Required when mode='credentials'. Creatio user password.")]
+	string? Password = null
 );

@@ -77,6 +77,24 @@ public record CommandExecutionResult(
 	}
 
 	/// <summary>
+	/// Combined mode-dispatch validator for tools that accept either a registered environment name or an
+	/// explicit url+login+password credentials block. Returns a failure when the discriminator is missing
+	/// or required fields for the active branch are absent; returns <c>null</c> when the request is valid.
+	/// </summary>
+	public static CommandExecutionResult ValidateEnvOrCredentialsMode(
+		string mode, string environmentName, string url, string login, string password,
+		string envMode, string credentialsMode) {
+		CommandExecutionResult modeError = ValidateExactlyOneMode("mode", mode, envMode, credentialsMode);
+		if (modeError != null) {
+			return modeError;
+		}
+		if (string.Equals(mode, envMode, StringComparison.OrdinalIgnoreCase)) {
+			return ValidateRequiredForMode("environment-name", environmentName, envMode);
+		}
+		return ValidateCredentials(url, login, password);
+	}
+
+	/// <summary>
 	/// Creates a failed <see cref="CommandExecutionResult"/> with full exception details
 	/// including inner exception chain, preserving diagnostic information for debugging.
 	/// </summary>

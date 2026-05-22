@@ -26,38 +26,26 @@ public class ClearRedisTool(
 	public CommandExecutionResult ClearRedis(
 		[Description("Clear-redis parameters")] [Required] ClearRedisDbArgs args
 	) {
-		CommandExecutionResult modeError = CommandExecutionResult.ValidateExactlyOneMode(
-			"mode", args.Mode, ModeEnvironment, ModeCredentials);
-		if (modeError != null) {
-			return modeError;
+		CommandExecutionResult validationError = CommandExecutionResult.ValidateEnvOrCredentialsMode(
+			args.Mode, args.EnvironmentName, args.Url, args.Login, args.Password,
+			ModeEnvironment, ModeCredentials);
+		if (validationError != null) {
+			return validationError;
 		}
 
-		if (string.Equals(args.Mode, ModeEnvironment, StringComparison.OrdinalIgnoreCase)) {
-			CommandExecutionResult missing = CommandExecutionResult.ValidateRequiredForMode(
-				"environment-name", args.EnvironmentName, ModeEnvironment);
-			if (missing != null) {
-				return missing;
-			}
-			ClearRedisOptions options = new() {
+		ClearRedisOptions options = string.Equals(args.Mode, ModeEnvironment, StringComparison.OrdinalIgnoreCase)
+			? new ClearRedisOptions {
 				Environment = args.EnvironmentName,
 				TimeOut = 30_000
+			}
+			: new ClearRedisOptions {
+				Login = args.Login,
+				Password = args.Password,
+				Uri = args.Url,
+				IsNetCore = args.IsNetCore,
+				TimeOut = 30_000
 			};
-			return InternalExecute<RedisCommand>(options);
-		}
-
-		CommandExecutionResult credentialsError = CommandExecutionResult.ValidateCredentials(
-			args.Url, args.Login, args.Password);
-		if (credentialsError != null) {
-			return credentialsError;
-		}
-		ClearRedisOptions credentialsOptions = new() {
-			Login = args.Login,
-			Password = args.Password,
-			Uri = args.Url,
-			IsNetCore = args.IsNetCore,
-			TimeOut = 30_000
-		};
-		return InternalExecute<RedisCommand>(credentialsOptions);
+		return InternalExecute<RedisCommand>(options);
 	}
 }
 
