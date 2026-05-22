@@ -14,7 +14,7 @@ public static class LinkFromRepositoryPrompt {
 	/// <summary>
 	/// Builds a prompt for linking repository packages by registered environment name.
 	/// </summary>
-	[McpServerPrompt(Name = LinkFromRepositoryTool.LinkFromRepositoryByEnvironmentToolName),
+	[McpServerPrompt(Name = "link-from-repository-by-env"),
 	 Description("Prompt to link repository packages by registered environment name")]
 	public static string LinkFromRepositoryByEnvironment(
 		[Required]
@@ -27,7 +27,7 @@ public static class LinkFromRepositoryPrompt {
 		[Description("Packages to link")]
 		string packages) =>
 		$"""
-		 Use clio mcp server `{LinkFromRepositoryTool.LinkFromRepositoryByEnvironmentToolName}` to link repository package content
+		 Call `{LinkFromRepositoryTool.LinkFromRepositoryToolName}` with `mode={LinkFromRepositoryTool.ModeByEnv}` to link repository package content
 		 into the Creatio package directory for registered environment `{environmentName}`.
 		 Use repository path `{repoPath}` and package selector `{packages}` exactly as provided.
 		 """;
@@ -35,7 +35,7 @@ public static class LinkFromRepositoryPrompt {
 	/// <summary>
 	/// Builds a prompt for linking repository packages by explicit environment package path.
 	/// </summary>
-	[McpServerPrompt(Name = LinkFromRepositoryTool.LinkFromRepositoryByEnvPackagePathToolName),
+	[McpServerPrompt(Name = "link-from-repository-by-pkg-path"),
 	 Description("Prompt to link repository packages by explicit environment package path")]
 	public static string LinkFromRepositoryByEnvPackagePath(
 		[Required]
@@ -48,7 +48,7 @@ public static class LinkFromRepositoryPrompt {
 		[Description("Packages to link")]
 		string packages) =>
 		$"""
-		 Use clio mcp server `{LinkFromRepositoryTool.LinkFromRepositoryByEnvPackagePathToolName}` to link repository package content
+		 Call `{LinkFromRepositoryTool.LinkFromRepositoryToolName}` with `mode={LinkFromRepositoryTool.ModeByPkgPath}` to link repository package content
 		 into the Creatio package directory at `{envPkgPath}`.
 		 Use repository path `{repoPath}` and package selector `{packages}` exactly as provided.
 		 """;

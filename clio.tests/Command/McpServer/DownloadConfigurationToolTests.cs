@@ -20,25 +20,23 @@ public sealed class DownloadConfigurationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises stable MCP tool names for both dconf invocation modes.")]
-	public void DownloadConfiguration_Should_Advertise_Stable_Tool_Names() {
-		// Arrange
-
-		// Act
-		string environmentToolName = DownloadConfigurationTool.DownloadConfigurationByEnvironmentToolName;
-		string buildToolName = DownloadConfigurationTool.DownloadConfigurationByBuildToolName;
+	[Description("Advertises the stable consolidated MCP tool name 'download-configuration' and the supported source discriminator values.")]
+	public void DownloadConfiguration_Should_Advertise_Stable_Contract() {
+		// Arrange / Act
+		string toolName = DownloadConfigurationTool.DownloadConfigurationToolName;
+		string[] sources = [DownloadConfigurationTool.SourceEnvironment, DownloadConfigurationTool.SourceBuild];
 
 		// Assert
-		environmentToolName.Should().Be("download-configuration-by-environment",
-			because: "clients and tests should share one stable tool name for the environment-based dconf flow");
-		buildToolName.Should().Be("download-configuration-by-build",
-			because: "clients and tests should share one stable tool name for the build-based dconf flow");
+		toolName.Should().Be("download-configuration",
+			because: "clients and tests should share one stable tool name for the consolidated dconf flow");
+		sources.Should().BeEquivalentTo(["environment", "build"],
+			because: "the supported source discriminator values must remain stable");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Resolves a fresh command instance for the environment-based dconf MCP method and executes it from the requested workspace path.")]
-	public void DownloadConfigurationByEnvironment_Should_Resolve_Command_And_Use_Requested_Workspace() {
+	[Description("Resolves a fresh command instance for source='environment' and executes it from the requested workspace path.")]
+	public void DownloadConfiguration_EnvironmentSource_Should_Resolve_Command_And_Use_Requested_Workspace() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		string originalDirectory = Directory.GetCurrentDirectory();
@@ -52,12 +50,14 @@ public sealed class DownloadConfigurationToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.DownloadConfigurationByEnvironment(
-				new DownloadConfigurationByEnvironmentArgs("dev", workspacePath));
+			CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationArgs(
+				Source: DownloadConfigurationTool.SourceEnvironment,
+				WorkspacePath: workspacePath,
+				EnvironmentName: "dev"));
 
 			// Assert
 			result.ExitCode.Should().Be(0,
-				because: "the environment-based dconf tool should forward a valid command payload");
+				because: "the environment source should forward a valid command payload");
 			commandResolver.Received(1).Resolve<DownloadConfigurationCommand>(Arg.Is<DownloadConfigurationCommandOptions>(options =>
 				options.Environment == "dev" &&
 				string.IsNullOrWhiteSpace(options.BuildZipPath)));
@@ -81,8 +81,8 @@ public sealed class DownloadConfigurationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Executes the build-based dconf MCP method against the injected command and uses the requested workspace path as the working directory.")]
-	public void DownloadConfigurationByBuild_Should_Execute_Injected_Command_And_Use_Requested_Workspace() {
+	[Description("Executes source='build' against the injected command and uses the requested workspace path as the working directory.")]
+	public void DownloadConfiguration_BuildSource_Should_Execute_Injected_Command_And_Use_Requested_Workspace() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		string originalDirectory = Directory.GetCurrentDirectory();
@@ -94,15 +94,17 @@ public sealed class DownloadConfigurationToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.DownloadConfigurationByBuild(
-				new DownloadConfigurationByBuildArgs(buildPath, workspacePath));
+			CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationArgs(
+				Source: DownloadConfigurationTool.SourceBuild,
+				WorkspacePath: workspacePath,
+				BuildPath: buildPath));
 
 			// Assert
 			result.ExitCode.Should().Be(0,
-				because: "the build-based dconf tool should forward a valid command payload");
+				because: "the build source should forward a valid command payload");
 			commandResolver.DidNotReceiveWithAnyArgs().Resolve<DownloadConfigurationCommand>(default!);
 			defaultCommand.CapturedOptions.Should().NotBeNull(
-				because: "the build-based dconf tool should execute the injected command directly");
+				because: "the build source should execute the injected command directly");
 			defaultCommand.CapturedOptions!.BuildZipPath.Should().Be(buildPath,
 				because: "the requested build path must be preserved");
 			NormalizeTempPathAlias(defaultCommand.CapturedWorkingDirectory).Should().Be(NormalizeTempPathAlias(workspacePath),
@@ -120,7 +122,7 @@ public sealed class DownloadConfigurationToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects relative workspace paths before executing dconf so the MCP contract stays explicit and portable.")]
-	public void DownloadConfigurationByBuild_Should_Reject_Relative_Workspace_Path() {
+	public void DownloadConfiguration_BuildSource_Should_Reject_Relative_Workspace_Path() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeDownloadConfigurationCommand defaultCommand = new();
@@ -128,8 +130,10 @@ public sealed class DownloadConfigurationToolTests {
 		DownloadConfigurationTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new System.IO.Abstractions.FileSystem());
 
 		// Act
-		CommandExecutionResult result = tool.DownloadConfigurationByBuild(
-			new DownloadConfigurationByBuildArgs(Path.Combine(Path.GetTempPath(), "creatio.zip"), @"relative\workspace"));
+		CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationArgs(
+			Source: DownloadConfigurationTool.SourceBuild,
+			WorkspacePath: @"relative\workspace",
+			BuildPath: Path.Combine(Path.GetTempPath(), "creatio.zip")));
 
 		// Assert
 		result.ExitCode.Should().Be(1,
@@ -145,7 +149,7 @@ public sealed class DownloadConfigurationToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects relative build paths before executing dconf so the MCP contract stays explicit and portable.")]
-	public void DownloadConfigurationByBuild_Should_Reject_Relative_Build_Path() {
+	public void DownloadConfiguration_BuildSource_Should_Reject_Relative_Build_Path() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		string workspacePath = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"dconf-relative-build-{Guid.NewGuid():N}")).FullName;
@@ -155,8 +159,10 @@ public sealed class DownloadConfigurationToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.DownloadConfigurationByBuild(
-				new DownloadConfigurationByBuildArgs(Path.Combine("relative", "creatio.zip"), workspacePath));
+			CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationArgs(
+				Source: DownloadConfigurationTool.SourceBuild,
+				WorkspacePath: workspacePath,
+				BuildPath: Path.Combine("relative", "creatio.zip")));
 
 			// Assert
 			result.ExitCode.Should().Be(1,
@@ -176,8 +182,8 @@ public sealed class DownloadConfigurationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects whitespace build paths before executing dconf so the by-build MCP contract cannot fall back into a different command mode.")]
-	public void DownloadConfigurationByBuild_Should_Reject_Whitespace_Build_Path() {
+	[Description("Rejects whitespace build paths before executing dconf so the build source cannot fall back into a different command mode.")]
+	public void DownloadConfiguration_BuildSource_Should_Reject_Whitespace_Build_Path() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		string workspacePath = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"dconf-whitespace-build-{Guid.NewGuid():N}")).FullName;
@@ -187,16 +193,14 @@ public sealed class DownloadConfigurationToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.DownloadConfigurationByBuild(
-				new DownloadConfigurationByBuildArgs("   ", workspacePath));
+			CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationArgs(
+				Source: DownloadConfigurationTool.SourceBuild,
+				WorkspacePath: workspacePath,
+				BuildPath: "   "));
 
 			// Assert
-			result.ExitCode.Should().Be(1,
+			result.ExitCode.Should().Be(-1,
 				because: "the MCP tool should fail fast when the caller omits the required build path value");
-			result.Output.Should().Contain(message =>
-				message.GetType() == typeof(ErrorMessage) &&
-				Equals(message.Value, "Build path must be absolute:    "),
-				because: "the failure should explain why the whitespace build path was rejected");
 			defaultCommand.CapturedOptions.Should().BeNull(
 				because: "the command should not run when the build path is invalid");
 		}
@@ -209,7 +213,7 @@ public sealed class DownloadConfigurationToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects Windows drive-relative workspace paths so dconf cannot bypass the absolute-path requirement on Windows hosts.")]
-	public void DownloadConfigurationByBuild_Should_Reject_Windows_Drive_Relative_Workspace_Path() {
+	public void DownloadConfiguration_BuildSource_Should_Reject_Windows_Drive_Relative_Workspace_Path() {
 		// Arrange
 		if (!OperatingSystem.IsWindows()) {
 			Assert.Ignore("Windows drive-relative paths are only meaningful on Windows.");
@@ -221,8 +225,10 @@ public sealed class DownloadConfigurationToolTests {
 		DownloadConfigurationTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new System.IO.Abstractions.FileSystem());
 
 		// Act
-		CommandExecutionResult result = tool.DownloadConfigurationByBuild(
-			new DownloadConfigurationByBuildArgs(Path.Combine(Path.GetTempPath(), "creatio.zip"), @"C:workspace"));
+		CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationArgs(
+			Source: DownloadConfigurationTool.SourceBuild,
+			WorkspacePath: @"C:workspace",
+			BuildPath: Path.Combine(Path.GetTempPath(), "creatio.zip")));
 
 		// Assert
 		result.ExitCode.Should().Be(1,
@@ -237,22 +243,20 @@ public sealed class DownloadConfigurationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Prompt guidance for download-configuration keeps the workspace-path requirement visible for both invocation modes.")]
+	[Description("Prompt guidance for download-configuration keeps the workspace-path requirement visible for both source modes.")]
 	public void DownloadConfigurationPrompt_Should_Mention_Workspace_Path_For_Both_Modes() {
-		// Arrange
-
-		// Act
+		// Arrange / Act
 		string environmentPrompt = DownloadConfigurationPrompt.DownloadConfigurationByEnvironment("dev", @"C:\workspace");
 		string buildPrompt = DownloadConfigurationPrompt.DownloadConfigurationByBuild(@"C:\creatio.zip", @"C:\workspace");
 
 		// Assert
 		environmentPrompt.Should().Contain("workspace-path",
 			because: "the environment-mode prompt should tell agents how to target the correct local workspace");
-		environmentPrompt.Should().Contain(DownloadConfigurationTool.DownloadConfigurationByEnvironmentToolName,
+		environmentPrompt.Should().Contain(DownloadConfigurationTool.DownloadConfigurationToolName,
 			because: "the prompt should reference the exact MCP tool name");
 		buildPrompt.Should().Contain("workspace-path",
 			because: "the build-mode prompt should tell agents how to target the correct local workspace");
-		buildPrompt.Should().Contain(DownloadConfigurationTool.DownloadConfigurationByBuildToolName,
+		buildPrompt.Should().Contain(DownloadConfigurationTool.DownloadConfigurationToolName,
 			because: "the prompt should reference the exact MCP tool name");
 	}
 

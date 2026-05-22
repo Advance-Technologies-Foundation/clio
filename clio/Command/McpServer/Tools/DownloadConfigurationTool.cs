@@ -9,7 +9,7 @@ using IFileSystem = System.IO.Abstractions.IFileSystem;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tools for downloading workspace configuration with the <c>dconf</c> command.
+/// MCP tool for downloading workspace configuration with the <c>dconf</c> command.
 /// </summary>
 public class DownloadConfigurationTool(
 	DownloadConfigurationCommand command,
@@ -20,41 +20,45 @@ public class DownloadConfigurationTool(
 
 	private static readonly object WorkspaceExecutionLock = new();
 
-	internal const string DownloadConfigurationByEnvironmentToolName = "download-configuration-by-environment";
-	internal const string DownloadConfigurationByBuildToolName = "download-configuration-by-build";
+	internal const string DownloadConfigurationToolName = "download-configuration";
+	internal const string SourceEnvironment = "environment";
+	internal const string SourceBuild = "build";
 
-	/// <summary>
-	/// Downloads Creatio configuration into the specified local workspace from a registered environment.
-	/// </summary>
-	[McpServerTool(Name = DownloadConfigurationByEnvironmentToolName, ReadOnly = false, Destructive = false,
-		Idempotent = false, OpenWorld = false)]
-	[Description("Downloads Creatio configuration into the workspace `.application` folder from a registered environment name")]
-	public CommandExecutionResult DownloadConfigurationByEnvironment(
-		[Description("Download-configuration parameters")] [Required] DownloadConfigurationByEnvironmentArgs args
+	[McpServerTool(Name = DownloadConfigurationToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[Description("Downloads Creatio configuration into the workspace `.application` folder. source='environment' uses a registered environment name; source='build' uses a Creatio zip file or extracted directory.")]
+	public CommandExecutionResult DownloadConfiguration(
+		[Description("Download-configuration parameters")] [Required] DownloadConfigurationArgs args
 	) {
-		DownloadConfigurationCommandOptions options = new() {
-			Environment = args.EnvironmentName
-		};
-		return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute<DownloadConfigurationCommand>(options));
-	}
+		CommandExecutionResult sourceError = CommandExecutionResult.ValidateExactlyOneMode(
+			"source", args.Source, SourceEnvironment, SourceBuild);
+		if (sourceError != null) {
+			return sourceError;
+		}
 
-	/// <summary>
-	/// Downloads Creatio configuration into the specified local workspace from a zip file or extracted build directory.
-	/// </summary>
-	[McpServerTool(Name = DownloadConfigurationByBuildToolName, ReadOnly = false, Destructive = false,
-		Idempotent = false, OpenWorld = false)]
-	[Description("Downloads Creatio configuration into the workspace `.application` folder from a Creatio zip file or extracted directory")]
-	public CommandExecutionResult DownloadConfigurationByBuild(
-		[Description("Download-configuration parameters")] [Required] DownloadConfigurationByBuildArgs args
-	) {
+		if (string.Equals(args.Source, SourceEnvironment, StringComparison.OrdinalIgnoreCase)) {
+			CommandExecutionResult missing = CommandExecutionResult.ValidateRequiredForMode(
+				"environment-name", args.EnvironmentName, SourceEnvironment);
+			if (missing != null) {
+				return missing;
+			}
+			DownloadConfigurationCommandOptions options = new() {
+				Environment = args.EnvironmentName
+			};
+			return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute<DownloadConfigurationCommand>(options));
+		}
+
+		CommandExecutionResult missingBuild = CommandExecutionResult.ValidateRequiredForMode(
+			"build-path", args.BuildPath, SourceBuild);
+		if (missingBuild != null) {
+			return missingBuild;
+		}
 		if (!IsAbsolutePath(args.BuildPath)) {
 			return CreateFailureResult($"Build path must be absolute: {args.BuildPath}");
 		}
-
-		DownloadConfigurationCommandOptions options = new() {
+		DownloadConfigurationCommandOptions buildOptions = new() {
 			BuildZipPath = args.BuildPath
 		};
-		return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute(options));
+		return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute(buildOptions));
 	}
 
 	private static CommandExecutionResult CreateFailureResult(string message) =>
@@ -99,31 +103,25 @@ public class DownloadConfigurationTool(
 }
 
 /// <summary>
-/// MCP arguments for downloading configuration from a registered environment.
+/// MCP arguments for the consolidated <c>download-configuration</c> tool.
+/// Exactly one source is active per call: <c>environment</c> or <c>build</c>.
 /// </summary>
-public sealed record DownloadConfigurationByEnvironmentArgs(
+public sealed record DownloadConfigurationArgs(
+	[property: JsonPropertyName("source")]
+	[property: Description("Discriminator: 'environment' uses a registered clio environment name; 'build' uses a local Creatio zip file or extracted directory.")]
+	[property: Required]
+	string Source,
+
+	[property: JsonPropertyName("workspace-path")]
+	[property: Description("Absolute path to the local workspace that should receive the `.application` content.")]
+	[property: Required]
+	string WorkspacePath,
+
 	[property: JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name")]
-	[Required]
-	string EnvironmentName,
+	[property: Description("Required when source='environment'. Registered clio environment name.")]
+	string? EnvironmentName = null,
 
-	[property: JsonPropertyName("workspace-path")]
-	[Description("Absolute path to the local workspace that should receive the `.application` content")]
-	[Required]
-	string WorkspacePath
-);
-
-/// <summary>
-/// MCP arguments for downloading configuration from a local build artifact or extracted directory.
-/// </summary>
-public sealed record DownloadConfigurationByBuildArgs(
 	[property: JsonPropertyName("build-path")]
-	[Description("Absolute path to the Creatio zip file or extracted directory")]
-	[Required]
-	string BuildPath,
-
-	[property: JsonPropertyName("workspace-path")]
-	[Description("Absolute path to the local workspace that should receive the `.application` content")]
-	[Required]
-	string WorkspacePath
+	[property: Description("Required when source='build'. Absolute path to the Creatio zip file or extracted directory.")]
+	string? BuildPath = null
 );

@@ -1,5 +1,7 @@
+using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -13,75 +15,127 @@ public class LinkFromRepositoryTool(
 	ILogger logger)
 	: BaseTool<Link4RepoOptions>(command, logger) {
 
-	internal const string LinkFromRepositoryByEnvironmentToolName = "link-from-repository-by-environment";
-	internal const string LinkFromRepositoryByEnvPackagePathToolName = "link-from-repository-by-env-package-path";
-	internal const string LinkFromRepositoryUnlockedToolName = "link-from-repository-unlocked";
+	internal const string LinkFromRepositoryToolName = "link-from-repository";
 
-	/// <summary>
-	/// Links repository packages into a Creatio environment resolved by registered environment name.
-	/// </summary>
-	[McpServerTool(Name = LinkFromRepositoryByEnvironmentToolName, ReadOnly = false, Destructive = true,
-		Idempotent = false, OpenWorld = false)]
-	[Description("Links repository package content into a Creatio environment package directory resolved by registered environment name")]
-	public CommandExecutionResult LinkFromRepositoryByEnvironment(
-		[Description("Registered clio environment name")] [Required] string environmentName,
-		[Description("Path to the package repository folder")] [Required] string repoPath,
-		[Description("Packages to link: `*` for all packages or a comma-separated package list")] [Required] string packages,
-		[Description("Print a summary of what would happen without executing any mutations")] bool? dryRun = null,
-		[Description("Skip the automatic preparation step (Maintainer check, unlock, 2fs)")] bool? skipPreparation = null
+	internal const string ModeByEnv = "by-env";
+	internal const string ModeByPkgPath = "by-pkg-path";
+	internal const string ModeUnlocked = "unlocked";
+
+	[McpServerTool(Name = LinkFromRepositoryToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	[Description("Links repository package content into a Creatio environment. mode='by-env' resolves the target via a registered environment name; mode='by-pkg-path' uses an explicit environment package directory; mode='unlocked' queries the site for unlocked packages and links only those.")]
+	public CommandExecutionResult LinkFromRepository(
+		[Description("Link-from-repository parameters")] [Required] LinkFromRepositoryArgs args
 	) {
+		CommandExecutionResult modeError = CommandExecutionResult.ValidateExactlyOneMode(
+			"mode", args.Mode, ModeByEnv, ModeByPkgPath, ModeUnlocked);
+		if (modeError != null) {
+			return modeError;
+		}
+
+		CommandExecutionResult missingRepo = CommandExecutionResult.ValidateRequiredForMode(
+			"repo-path", args.RepoPath, args.Mode);
+		if (missingRepo != null) {
+			return missingRepo;
+		}
+
+		if (string.Equals(args.Mode, ModeByEnv, StringComparison.OrdinalIgnoreCase)) {
+			return LinkByEnvironment(args);
+		}
+		if (string.Equals(args.Mode, ModeByPkgPath, StringComparison.OrdinalIgnoreCase)) {
+			return LinkByPackagePath(args);
+		}
+		return LinkUnlocked(args);
+	}
+
+	private CommandExecutionResult LinkByEnvironment(LinkFromRepositoryArgs args) {
+		CommandExecutionResult missingEnv = CommandExecutionResult.ValidateRequiredForMode(
+			"environment-name", args.EnvironmentName, ModeByEnv);
+		if (missingEnv != null) {
+			return missingEnv;
+		}
+		CommandExecutionResult missingPackages = CommandExecutionResult.ValidateRequiredForMode(
+			"packages", args.Packages, ModeByEnv);
+		if (missingPackages != null) {
+			return missingPackages;
+		}
 		Link4RepoOptions options = new() {
-			Environment = environmentName,
-			RepoPath = repoPath,
-			Packages = packages,
-			DryRun = dryRun ?? false,
-			SkipPreparation = skipPreparation ?? false
+			Environment = args.EnvironmentName,
+			RepoPath = args.RepoPath,
+			Packages = args.Packages,
+			DryRun = args.DryRun ?? false,
+			SkipPreparation = args.SkipPreparation ?? false
 		};
 		return InternalExecute(options);
 	}
 
-	/// <summary>
-	/// Links repository packages into a Creatio environment package directory resolved by explicit package path.
-	/// </summary>
-	[McpServerTool(Name = LinkFromRepositoryByEnvPackagePathToolName, ReadOnly = false, Destructive = true,
-		Idempotent = false, OpenWorld = false)]
-	[Description("Links repository package content into a Creatio environment package directory resolved by explicit environment package path")]
-	public CommandExecutionResult LinkFromRepositoryByEnvPackagePath(
-		[Description("Path to the target Creatio environment package directory")] [Required] string envPkgPath,
-		[Description("Path to the package repository folder")] [Required] string repoPath,
-		[Description("Packages to link: `*` for all packages or a comma-separated package list")] [Required] string packages,
-		[Description("Print a summary of what would happen without executing any mutations")] bool? dryRun = null,
-		[Description("Skip the automatic preparation step (Maintainer check, unlock, 2fs)")] bool? skipPreparation = null
-	) {
+	private CommandExecutionResult LinkByPackagePath(LinkFromRepositoryArgs args) {
+		CommandExecutionResult missingPath = CommandExecutionResult.ValidateRequiredForMode(
+			"env-pkg-path", args.EnvPkgPath, ModeByPkgPath);
+		if (missingPath != null) {
+			return missingPath;
+		}
+		CommandExecutionResult missingPackages = CommandExecutionResult.ValidateRequiredForMode(
+			"packages", args.Packages, ModeByPkgPath);
+		if (missingPackages != null) {
+			return missingPackages;
+		}
 		Link4RepoOptions options = new() {
-			EnvPkgPath = envPkgPath,
-			RepoPath = repoPath,
-			Packages = packages,
-			DryRun = dryRun ?? false,
-			SkipPreparation = skipPreparation ?? false
+			EnvPkgPath = args.EnvPkgPath,
+			RepoPath = args.RepoPath,
+			Packages = args.Packages,
+			DryRun = args.DryRun ?? false,
+			SkipPreparation = args.SkipPreparation ?? false
 		};
 		return InternalExecute(options);
 	}
 
-	/// <summary>
-	/// Queries the Creatio site for unlocked packages and links them from the repository.
-	/// Supports both flat repo structure (PackageName/) and versioned PackageStore (PackageName/branch/version/).
-	/// </summary>
-	[McpServerTool(Name = LinkFromRepositoryUnlockedToolName, ReadOnly = false, Destructive = true,
-		Idempotent = false, OpenWorld = false)]
-	[Description("Queries the Creatio site for unlocked packages and links only those from the repository. " +
-		"Supports flat (repo/PackageName/) and versioned (repo/PackageName/branch/version/) repo structures.")]
-	public CommandExecutionResult LinkFromRepositoryUnlocked(
-		[Description("Registered clio environment name (required for API connection to query unlocked packages)")] [Required] string environmentName,
-		[Description("Path to the package repository folder")] [Required] string repoPath,
-		[Description("Print a summary of what would happen without executing any mutations")] bool? dryRun = null
-	) {
+	private CommandExecutionResult LinkUnlocked(LinkFromRepositoryArgs args) {
+		CommandExecutionResult missingEnv = CommandExecutionResult.ValidateRequiredForMode(
+			"environment-name", args.EnvironmentName, ModeUnlocked);
+		if (missingEnv != null) {
+			return missingEnv;
+		}
 		Link4RepoOptions options = new() {
-			Environment = environmentName,
-			RepoPath = repoPath,
+			Environment = args.EnvironmentName,
+			RepoPath = args.RepoPath,
 			Unlocked = true,
-			DryRun = dryRun ?? false
+			DryRun = args.DryRun ?? false
 		};
 		return InternalExecute(options);
 	}
 }
+
+/// <summary>
+/// MCP arguments for the consolidated <c>link-from-repository</c> tool.
+/// </summary>
+public sealed record LinkFromRepositoryArgs(
+	[property: JsonPropertyName("mode")]
+	[property: Description("Discriminator: 'by-env' resolves the target Creatio package directory via a registered environment; 'by-pkg-path' takes the package directory explicitly; 'unlocked' queries the site for unlocked packages and links only those.")]
+	[property: Required]
+	string Mode,
+
+	[property: JsonPropertyName("repo-path")]
+	[property: Description("Path to the package repository folder. Required in every mode.")]
+	[property: Required]
+	string RepoPath,
+
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Required when mode='by-env' or mode='unlocked'. Registered clio environment name.")]
+	string? EnvironmentName = null,
+
+	[property: JsonPropertyName("env-pkg-path")]
+	[property: Description("Required when mode='by-pkg-path'. Absolute path to the target Creatio environment package directory.")]
+	string? EnvPkgPath = null,
+
+	[property: JsonPropertyName("packages")]
+	[property: Description("Required when mode='by-env' or mode='by-pkg-path'. Packages to link: '*' for all packages or a comma-separated list.")]
+	string? Packages = null,
+
+	[property: JsonPropertyName("dry-run")]
+	[property: Description("Print a summary of what would happen without executing any mutations.")]
+	bool? DryRun = null,
+
+	[property: JsonPropertyName("skip-preparation")]
+	[property: Description("Skip the automatic preparation step (Maintainer check, unlock, 2fs). Honored in mode='by-env' and mode='by-pkg-path'.")]
+	bool? SkipPreparation = null
+);

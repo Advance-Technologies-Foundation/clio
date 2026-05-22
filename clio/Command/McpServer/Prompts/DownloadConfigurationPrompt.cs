@@ -1,11 +1,12 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using Clio.Command.McpServer.Tools;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Prompts;
 
 /// <summary>
-/// Prompt helpers for download-configuration MCP tools.
+/// Prompt helpers for the download-configuration MCP tool.
 /// </summary>
 [McpServerPromptType, Description("Prompts for downloading Creatio configuration into a local workspace")]
 public static class DownloadConfigurationPrompt {
@@ -13,7 +14,7 @@ public static class DownloadConfigurationPrompt {
 	/// <summary>
 	/// Builds a prompt that downloads configuration from a registered environment into a workspace.
 	/// </summary>
-	[McpServerPrompt(Name = "download-configuration-by-environment"),
+	[McpServerPrompt(Name = "download-configuration-from-environment"),
 	 Description("Prompt to download configuration from a registered environment")]
 	public static string DownloadConfigurationByEnvironment(
 		[Required] [Description("Registered clio environment name")]
@@ -21,7 +22,7 @@ public static class DownloadConfigurationPrompt {
 		[Required] [Description("Absolute path to the local workspace")]
 		string workspacePath) =>
 		$"""
-		 Use clio mcp server `{Tools.DownloadConfigurationTool.DownloadConfigurationByEnvironmentToolName}` to
+		 Call `{DownloadConfigurationTool.DownloadConfigurationToolName}` with `source={DownloadConfigurationTool.SourceEnvironment}` to
 		 download Creatio configuration from registered environment `{environmentName}` into the workspace at
 		 `{workspacePath}`.
 		 Pass `workspace-path` exactly as provided so the tool writes into that workspace's `.application`
@@ -31,7 +32,7 @@ public static class DownloadConfigurationPrompt {
 	/// <summary>
 	/// Builds a prompt that downloads configuration from a local build path into a workspace.
 	/// </summary>
-	[McpServerPrompt(Name = "download-configuration-by-build"),
+	[McpServerPrompt(Name = "download-configuration-from-build"),
 	 Description("Prompt to download configuration from a Creatio build path")]
 	public static string DownloadConfigurationByBuild(
 		[Required] [Description("Absolute path to the Creatio zip file or extracted directory")]
@@ -39,7 +40,7 @@ public static class DownloadConfigurationPrompt {
 		[Required] [Description("Absolute path to the local workspace")]
 		string workspacePath) =>
 		$"""
-		 Use clio mcp server `{Tools.DownloadConfigurationTool.DownloadConfigurationByBuildToolName}` to
+		 Call `{DownloadConfigurationTool.DownloadConfigurationToolName}` with `source={DownloadConfigurationTool.SourceBuild}` to
 		 download Creatio configuration from build path `{buildPath}` into the workspace at `{workspacePath}`.
 		 Pass `workspace-path` exactly as provided so the tool writes into that workspace's `.application`
 		 folder.

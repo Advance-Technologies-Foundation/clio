@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.Text.Json.Serialization;
 using Clio.Common;
 
@@ -31,6 +32,32 @@ public record CommandExecutionResult(
 	/// </summary>
 	public static CommandExecutionResult FromError(string message) =>
 		new(-1, [new ErrorMessage(message)]);
+
+	/// <summary>
+	/// Validates that a mode/discriminator value is non-empty and matches one of the allowed values
+	/// (case-insensitive). Returns a failed result with an explicit list of allowed values, or
+	/// <c>null</c> when the value is valid.
+	/// </summary>
+	public static CommandExecutionResult ValidateExactlyOneMode(string fieldName, string actual, params string[] allowed) {
+		if (string.IsNullOrWhiteSpace(actual)) {
+			return FromError($"{fieldName} is required. Allowed values: {string.Join(", ", allowed)}.");
+		}
+		if (!allowed.Contains(actual, StringComparer.OrdinalIgnoreCase)) {
+			return FromError($"{fieldName} must be one of: {string.Join(", ", allowed)}. Got: '{actual}'.");
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Validates that <paramref name="value"/> is non-empty when <paramref name="mode"/> is the active
+	/// discriminator. Used inside consolidated tools to enforce per-mode required fields.
+	/// </summary>
+	public static CommandExecutionResult ValidateRequiredForMode(string fieldName, string value, string mode) {
+		if (string.IsNullOrWhiteSpace(value)) {
+			return FromError($"{fieldName} is required when mode='{mode}' and cannot be empty.");
+		}
+		return null;
+	}
 
 	/// <summary>
 	/// Validates that url, userName and password are non-empty.
