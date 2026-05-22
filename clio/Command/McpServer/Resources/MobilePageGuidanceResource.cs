@@ -25,10 +25,16 @@ public sealed class MobilePageGuidanceResource {
 		       CALL THIS GUIDE BEFORE EDITING ANY MOBILE PAGE BODY
 		       Mobile pages (schemaType=10) have fundamentally different rules from web pages.
 		       Applying web page patterns to mobile pages will cause broken schemas or silent no-ops.
+		       In the worst case the page becomes unrenderable and will not open at all.
 
 		       ─────────────────────────────────────────────────────────────
 		       WHAT CARRIES OVER FROM THE WEB `page-modification` GUIDE
 		       ─────────────────────────────────────────────────────────────
+		       PRECEDENCE: If anything in the web guide conflicts with this mobile guide,
+		       the mobile guide wins — unconditionally. Treat the web guide as a mechanics
+		       reference only; never copy a web page body, AMD wrapper, section name, or
+		       component `type` value into a mobile page.
+
 		       Read the web guide for the mechanics; this table tells you which sections to apply, skip, or treat with a mobile-specific twist. Anything not listed here is web-only.
 
 		       | Web-guide section | On mobile |
@@ -49,6 +55,35 @@ public sealed class MobilePageGuidanceResource {
 		       | update-page write modes (`replace` / `append`) — including the "do NOT resend `raw.body`" CRITICAL warning and the `ownBodySummary.viewConfigDiffOperations > 0 → use append` rule of thumb | Applies, with mobile-specific merge rules and AMD-marker exception — see WRITE MODES section below |
 
 		       If a web guide tells you to add a section this mobile guide forbids (validators / inline handlers or converters declared in the page body / AMD deps), the mobile rule wins.
+
+		       ─────────────────────────────────────────────────────────────
+		       WHEN A REQUEST CANNOT BE IMPLEMENTED ON MOBILE — NO INVENTION RULE
+		       ─────────────────────────────────────────────────────────────
+		       If the user asks for behavior that this guide forbids or that the mobile
+		       runtime does not support, STOP and tell the user. Do NOT silently substitute,
+		       approximate, or fabricate to make the request "work on paper".
+
+		       Specifically, NEVER:
+		         - Invent a `crt.*` component, request, or converter name that is not listed
+		           in this guide or returned by `get-component-info schema-type: "mobile"`.
+		         - Use a `crt.*` value that exists on web "because it sounds reasonable" —
+		           if it is not in the mobile component/request/converter catalogue, treat
+		           it as not implemented.
+		         - Author a `handlers` / `converters` / `validators` section in the body to
+		           emulate a missing feature.
+		         - Add a second data source in `modelConfigDiff` to work around the
+		           one-data-source-per-page constraint.
+		         - Add a `crt.Scaffold` insert to "make the layout match" a web template.
+
+		       Instead, report the limitation explicitly to the user. Use this shape:
+		         - What was requested.
+		         - Why mobile cannot do it (cite the rule: e.g. "validators are not supported
+		           on mobile", "crt.DataGrid is web-only", "page body must not declare
+		           handlers", "only one data source per page").
+		         - The closest supported alternative, if any (e.g. entity-level business rule
+		           via `create-entity-business-rule`, an OOTB converter from the allowed list,
+		           a remote handler the user must implement separately and reference by name).
+		         - Stop and ask the user how to proceed before writing the body.
 
 		       ─────────────────────────────────
 		       WRITE MODES (mobile specifics)
