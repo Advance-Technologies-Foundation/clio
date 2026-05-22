@@ -513,7 +513,7 @@ public abstract record EntitySchemaCreateArgsBase(
 	string PackageName,
 
 	[property: JsonPropertyName("schema-name")]
-	[property: Description("Entity schema name. Maximum length is 22 characters. " +
+	[property: Description("Entity schema name. " +
 		"Must use the active SchemaNamePrefix as prefix (e.g. 'UsrAlpha' when prefix is 'Usr', 'MyPrefixAlpha' when prefix is 'MyPrefix'). " +
 		"When `schema-name-prefix` is empty, use no prefix (plain PascalCase, e.g. 'Alpha'). " +
 		"Read the prefix from the `schema-name-prefix` field returned by `get-app-info`, " +
