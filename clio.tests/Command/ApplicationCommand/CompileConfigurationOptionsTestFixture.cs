@@ -1,4 +1,5 @@
-﻿using System.Threading;
+﻿using System;
+using System.Threading;
 using Clio.Command;
 using FluentAssertions;
 using NUnit.Framework;
@@ -27,7 +28,7 @@ public class CompileConfigurationOptionsTestFixture {
 		CompileConfigurationOptions options = new();
 
 		//Assert
-		options.TimeOut.Should().Be(Timeout.Infinite);
+		options.TimeOut.Should().Be((int)TimeSpan.FromMinutes(60).TotalMilliseconds);
 	}
 
 	[Test]

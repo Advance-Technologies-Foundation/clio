@@ -17,7 +17,7 @@ public sealed class AppModelingGuidanceResource {
 	/// Returns the canonical guidance article for DB-first app creation, schema modeling, and page workflows.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "app-modeling-guidance")]
-	[Description("Returns canonical MCP guidance for Creatio application modeling, schema design, and page-editing workflows.")]
+	[Description("Returns canonical MCP guidance for Creatio application modeling, schema design, and page modification workflows.")]
 	public ResourceContents GetGuide() => Guide;
 
 	internal static readonly TextResourceContents Guide = new() {
@@ -32,6 +32,7 @@ public sealed class AppModelingGuidanceResource {
 			       - Newer design tools use kebab-case JSON argument names such as `environment-name`, `package-name`, and `schema-name`.
 			       - For existing-app minimal edits, call `get-guidance` with `name` set to `existing-app-maintenance`.
 			       - For canonical data-binding workflow selection, call `get-guidance` with `name` set to `data-bindings`.
+			       - For seeding or reading Creatio system settings (sys-settings), call `get-guidance` with `name` set to `sys-settings`.
 			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
 
 			       Discovery before invocation

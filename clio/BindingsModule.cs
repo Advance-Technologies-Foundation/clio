@@ -288,6 +288,10 @@ public class BindingsModule {
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<DataForgeTool>();
+		services.AddTransient<SysSettingGetTool>();
+		services.AddTransient<SysSettingsListTool>();
+		services.AddTransient<SysSettingCreateTool>();
+		services.AddTransient<SysSettingUpdateTool>();
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();

@@ -199,11 +199,14 @@ internal static class ToolContractCatalog {
 	private const string ApplicationIdFieldName = "application-id";
 	private const string ArrayType = "array";
 	private const string BindingNameFieldName = "binding-name";
+	private const string BooleanFalseLiteral = "false";
 	private const string BooleanType = "boolean";
 	private const string ColumnNameFieldName = "column-name";
 	private const string ColumnsFieldName = "columns";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
+	private const string DryRunFieldName = "dry-run";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
+	private const string EntitySchemaNameFieldName = "entity-schema-name";
 	private const string EnvironmentNameFieldName = "environment-name";
 	private const string ErrorFieldName = "error";
 	private const string ExampleEnvironmentName = "local";
@@ -222,6 +225,7 @@ internal static class ToolContractCatalog {
 	private const string PackageNameFieldName = "package-name";
 	private const string PasswordFieldName = "password";
 	private const string PagesFieldName = "pages";
+	private const string PageSchemaNameFieldName = "page-schema-name";
 	private const string ParentSchemaNameFieldName = "parent-schema-name";
 	private const string ParameterScope = "parameter";
 	private const string QueryCorrelationIdentifierDescription = "Query correlation identifier when available.";
@@ -233,6 +237,7 @@ internal static class ToolContractCatalog {
 	private const string SelectorIdFieldName = "id";
 	private const string SchemaNameFieldName = "schema-name";
 	private const string ResourcesFieldName = "resources";
+	private const string SkipSamplingFieldName = "skip-sampling";
 	private const string StringType = "string";
 	private const string StatusFieldName = "status";
 	private const string SuccessFalseSignal = "success == false";
@@ -259,15 +264,12 @@ internal static class ToolContractCatalog {
 	private const string SectionCodeFieldName = "section-code";
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
-	private const string EnvironmentNameCamelFieldName = "environmentName";
-	private const string PackageNameCamelFieldName = "packageName";
-	private const string EntitySchemaNameCamelFieldName = "entitySchemaName";
-	private const string PageSchemaNameCamelFieldName = "pageSchemaName";
 	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
 	private const string MakeRequiredActionTypeName = "make-required";
 	private const string ValuesFieldName = "values";
+	private const string VerifyFieldName = "verify";
 	private const string BindingNameDescription = "Binding name.";
 	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
 	private const string WorkspacePathFieldName = "workspace-path";
@@ -327,7 +329,11 @@ internal static class ToolContractCatalog {
 			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate(),
 			[CreatePageBusinessRuleTool.BusinessRuleCreateToolName] = BuildPageBusinessRuleCreate(),
 			[SchemaNamePrefixTool.GetSchemaNamePrefixToolName] = BuildGetSchemaNamePrefix(),
-			[CompileCreatioTool.CompileCreatioToolName] = BuildCompileCreatio()
+			[CompileCreatioTool.CompileCreatioToolName] = BuildCompileCreatio(),
+			[SysSettingGetTool.GetSysSettingToolName] = BuildGetSysSetting(),
+			[SysSettingsListTool.ListSysSettingsToolName] = BuildListSysSettings(),
+			[SysSettingCreateTool.CreateSysSettingToolName] = BuildCreateSysSetting(),
+			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
@@ -367,7 +373,11 @@ internal static class ToolContractCatalog {
 		PageValidateTool.ToolName,
 		ApplicationDeleteTool.ToolName,
 		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
-		CompileCreatioTool.CompileCreatioToolName
+		CompileCreatioTool.CompileCreatioToolName,
+		SysSettingGetTool.GetSysSettingToolName,
+		SysSettingsListTool.ListSysSettingsToolName,
+		SysSettingCreateTool.CreateSysSettingToolName,
+		SysSettingUpdateTool.UpdateSysSettingToolName
 	];
 
 	internal static ToolContractGetResponse GetContracts(IReadOnlyList<string>? toolNames) {
@@ -569,13 +579,13 @@ internal static class ToolContractCatalog {
 			ApplicationCreateTool.ApplicationCreateToolName,
 			"Creates a Creatio application and returns installed application identity plus the created application context envelope and Data Forge enrichment diagnostics.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, "name", "code", TemplateCodeFieldName, IconBackgroundFieldName],
+				[EnvironmentNameFieldName, "name", "code", TemplateCodeFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field("name", StringType, "Application display name."),
 					Field("code", StringType, "Application code (business-meaningful part; SchemaNamePrefix is auto-applied by clio)."),
 					Field(TemplateCodeFieldName, StringType, "Technical template code such as AppFreedomUI."),
-					Field(IconBackgroundFieldName, StringType, "Hex color string in #RRGGBB format."),
+					Field(IconBackgroundFieldName, StringType, "Optional hex color in #RRGGBB format from the Freedom UI palette. A random palette color is assigned when omitted."),
 					Field(DescriptionFieldName, StringType, "Optional application description."),
 					Field(IconIdFieldName, StringType, "Optional icon GUID or 'auto'."),
 					Field("client-type-id", StringType, "Optional client type identifier."),
@@ -1310,14 +1320,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildEntityBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, and Set values actions from constants, formulas, or attributes.",
+			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, Set values actions from constants, formulas, or attributes, and dynamic apply-filter lookup actions.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, EntitySchemaNameCamelFieldName, RuleFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, EntitySchemaNameFieldName, RuleFieldName],
 				[
-					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PackageNameCamelFieldName, StringType, "Target package name."),
-					Field(EntitySchemaNameCamelFieldName, StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age.")
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType, "Target package name."),
+					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name."),
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -1328,7 +1338,11 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rule.actions[*].items[*].value.value",
 						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, and ISO 8601 time strings with timezone suffix for Time targets."),
 					new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rule.actions[*].items[*].value.expression",
-						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against a numeric arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct numeric source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column.")
+						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against a numeric arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct numeric source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column."),
+					new ToolContractValidator("apply-filter-shape", "invalid-apply-filter-action", "rule.actions[*]",
+						Context: "When rule.actions[*].type is apply-filter, provide target, targetFilterPath, source, optional sourceFilterPath, clearValue, and populateValue. Target and source must be direct lookup attributes on the root entity. targetFilterPath and sourceFilterPath resolve inside the referenced lookup schemas and must themselves resolve to Lookup attributes, not Guid columns. apply-filter rules support exactly one action and may use an empty condition group."),
+					new ToolContractValidator("apply-filter-lookup", "unsupported-apply-filter-lookup", "rule.actions[*].target",
+						Context: "apply-filter only supports lookup targets and lookup sources. The final targetFilterPath and source/sourceFilterPath endpoints must both resolve to Lookup attributes that reference the same schema; Guid endpoints are not supported. If sourceFilterPath is provided, populateValue must be false.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -1373,7 +1387,27 @@ internal static class ToolContractCatalog {
 					"UsrTask", "Copy creator age when name changes", "Name", "is-filled-in",
 					"set-values", [
 						BusinessRuleAttributeSetValueItem("UsrCreatorAge", "CreatedBy.Age")
-					])
+					]),
+				ApplyFilterBusinessRuleExample(
+					"Create a dynamic lookup filter that limits City by Country",
+					"UsrAddress",
+					"Filter city by selected country",
+					"City",
+					"Country",
+					"Country",
+					null,
+					true,
+					true),
+				ApplyFilterBusinessRuleExample(
+					"Create a dynamic lookup filter that compares deep lookup paths",
+					"UsrAddress",
+					"Filter city by country time zone",
+					"City",
+					"Country.TimeZone",
+					"Country",
+					"TimeZone",
+					true,
+					false)
 			],
 			Flow(
 				[
@@ -1412,11 +1446,11 @@ internal static class ToolContractCatalog {
 			CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
 			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements using datasource-bound page attributes and constants.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameCamelFieldName, PackageNameCamelFieldName, PageSchemaNameCamelFieldName, RuleFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RuleFieldName],
 				[
-					Field(EnvironmentNameCamelFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PackageNameCamelFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
-					Field(PageSchemaNameCamelFieldName, StringType, "Target Freedom UI page schema name."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
+					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
 					Field(RuleFieldName, ObjectType, "Structured page business-rule definition with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
 				],
 				Validators: [
@@ -1540,8 +1574,10 @@ internal static class ToolContractCatalog {
 		string actionType,
 		object[] actionItems,
 		object? constantValue = null) =>
-		BusinessRuleExample(summary, EntitySchemaNameCamelFieldName, entitySchemaName, caption, leftPath,
+		BusinessRuleExample(summary, EntitySchemaNameFieldName, entitySchemaName, caption, leftPath,
 			comparisonType, actionType, actionItems, constantValue);
+
+	private const string BusinessRuleValueKey = "value";
 
 	private static Dictionary<string, object?> BusinessRuleSetValueItem(string path, object value) {
 		return new Dictionary<string, object?> {
@@ -1562,7 +1598,7 @@ internal static class ToolContractCatalog {
 				["type"] = "AttributeValue",
 				["path"] = path
 			},
-			["value"] = new Dictionary<string, object?> {
+			[BusinessRuleValueKey] = new Dictionary<string, object?> {
 				["type"] = "Formula",
 				["expression"] = formula
 			}
@@ -1575,11 +1611,48 @@ internal static class ToolContractCatalog {
 				["type"] = "AttributeValue",
 				["path"] = path
 			},
-			["value"] = new Dictionary<string, object?> {
+			[BusinessRuleValueKey] = new Dictionary<string, object?> {
 				["type"] = "AttributeValue",
 				["path"] = sourcePath
 			}
 		};
+	}
+
+	private static ToolContractExample ApplyFilterBusinessRuleExample(
+		string summary,
+		string entitySchemaName,
+		string caption,
+		string target,
+		string targetFilterPath,
+		string source,
+		string? sourceFilterPath,
+		bool clearValue,
+		bool populateValue) {
+		Dictionary<string, object?> action = new() {
+			["type"] = BusinessRuleConstants.ApplyFilterActionTypeName,
+			["target"] = target,
+			["targetFilterPath"] = targetFilterPath,
+			["source"] = source,
+			["clearValue"] = clearValue,
+			["populateValue"] = populateValue
+		};
+		if (!string.IsNullOrWhiteSpace(sourceFilterPath)) {
+			action["sourceFilterPath"] = sourceFilterPath;
+		}
+
+		return Example(summary, new Dictionary<string, object?> {
+			[EnvironmentNameFieldName] = ExampleEnvironmentName,
+			[PackageNameFieldName] = ExamplePackageName,
+			[EntitySchemaNameFieldName] = entitySchemaName,
+			[RuleFieldName] = new Dictionary<string, object?> {
+				["caption"] = caption,
+				["condition"] = new Dictionary<string, object?> {
+					["logicalOperation"] = "AND",
+					["conditions"] = System.Array.Empty<object>()
+				},
+				["actions"] = new object[] { action }
+			}
+		});
 	}
 
 	private static ToolContractExample PageBusinessRuleExample(
@@ -1591,7 +1664,7 @@ internal static class ToolContractCatalog {
 		string actionType,
 		object[] actionItems,
 		object? constantValue = null) =>
-		BusinessRuleExample(summary, PageSchemaNameCamelFieldName, pageSchemaName, caption, leftPath,
+		BusinessRuleExample(summary, PageSchemaNameFieldName, pageSchemaName, caption, leftPath,
 			comparisonType, actionType, actionItems, constantValue);
 
 	private static ToolContractExample BusinessRuleExample(
@@ -1614,13 +1687,13 @@ internal static class ToolContractCatalog {
 		if (constantValue is not null) {
 			condition["rightExpression"] = new Dictionary<string, object?> {
 				["type"] = "Const",
-				["value"] = constantValue
+				[BusinessRuleValueKey] = constantValue
 			};
 		}
 
 		return Example(summary, new Dictionary<string, object?> {
-			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
-			[PackageNameCamelFieldName] = ExamplePackageName,
+			[EnvironmentNameFieldName] = ExampleEnvironmentName,
+			[PackageNameFieldName] = ExamplePackageName,
 			[schemaFieldName] = schemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = caption,
@@ -1642,9 +1715,9 @@ internal static class ToolContractCatalog {
 
 	private static ToolContractExample PageBusinessRuleAttributeComparisonExample() {
 		return Example("Hide a warning when two datasource-bound page attributes match", new Dictionary<string, object?> {
-			[EnvironmentNameCamelFieldName] = ExampleEnvironmentName,
-			[PackageNameCamelFieldName] = ExamplePackageName,
-			[PageSchemaNameCamelFieldName] = ExampleOrderPageSchemaName,
+			[EnvironmentNameFieldName] = ExampleEnvironmentName,
+			[PackageNameFieldName] = ExamplePackageName,
+			[PageSchemaNameFieldName] = ExampleOrderPageSchemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = "Hide warning when planned and actual dates match",
 				["condition"] = new Dictionary<string, object?> {
@@ -1752,9 +1825,10 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance."),
+					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance. Each page item also accepts `optional-properties` (JSON array of {key, value} merged into schema optionalProperties)."),
 					Field("validate", BooleanType, "Run client-side validation before save."),
-					Field("verify", BooleanType, "Read the page back after save.")
+					Field(VerifyFieldName, BooleanType, "Read the page back after save."),
+					Field(SkipSamplingFieldName, BooleanType, "If true, skip the AI semantic review before saving each page.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1768,7 +1842,8 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				Default("validate", "true", "Client-side validation is enabled by default."),
-				Default("verify", "false", "Read-back verification is optional and disabled by default.")
+				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default."),
+				Default(SkipSamplingFieldName, BooleanFalseLiteral, "AI semantic review runs by default; set true to skip.")
 			],
 			[
 				Example("Validate and save one page body copied from get-page raw.body", new Dictionary<string, object?> {
@@ -1777,7 +1852,7 @@ internal static class ToolContractCatalog {
 						new Dictionary<string, object?> {
 							[SchemaNameFieldName] = "UsrTaskApp_FormPage",
 							["body"] = "/* raw.body returned by get-page */ define(...)",
-							[ResourcesFieldName] = "{\"PDS_Name\":\"Title\"}"
+							[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}"
 						}
 					},
 					["validate"] = true
@@ -2503,12 +2578,19 @@ internal static class ToolContractCatalog {
 			PageUpdateTool.ToolName,
 			"Fallback single-page save path for a full Freedom UI page body copied from `get-page.raw.body` when the workflow explicitly requires dry-run or legacy save behavior.",
 			new ToolInputSchemaContract(
-				[SchemaNameFieldName, "body"],
+				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
-					Field("body", StringType, "Full page body with all marker pairs. Reuse `get-page.raw.body` rather than `bundle` or `bundle.viewConfig`."),
-					Field("dry-run", BooleanType, "Validate without saving."),
-					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance.")),
+					Field("body", StringType, "Full page body with all marker pairs. Reuse `get-page.raw.body` rather than `bundle` or `bundle.viewConfig`. Either `body` or `body-file` must be provided."),
+					Field("body-file", StringType, "Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping."),
+					Field(DryRunFieldName, BooleanType, "Validate without saving."),
+					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
+					Field("optional-properties", StringType, "JSON array of {key, value} objects merged into schema optionalProperties (e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]')."),
+					Field(SkipSamplingFieldName, BooleanType, "If true, skip the AI semantic review before saving."),
+					Field(VerifyFieldName, BooleanType, "If true, read the page back after saving and return its metadata. Best-effort \u2014 verify failure does not fail the update."),
+					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries dedupe by `name` (incoming wins), handlers dedupe by `request`."),
+					Field("target-package-uid", StringType, "Explicit target package UId for the replacing schema. Overrides automatic design-package resolution."),
+					Field("target-schema-uid", StringType, "Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -2526,15 +2608,20 @@ internal static class ToolContractCatalog {
 			[
 				SchemaNameParameterAlias(),
 				EnvironmentNameParameterAlias(),
-				Alias(ParameterScope, "dry-run", "dryRun", RejectedStatus, "Use 'dry-run' instead of 'dryRun'.")
+				Alias(ParameterScope, DryRunFieldName, "dryRun", RejectedStatus, "Use 'dry-run' instead of 'dryRun'.")
 			],
-			[],
+			[
+				Default(DryRunFieldName, BooleanFalseLiteral, "Saves by default; pass true to validate without writing."),
+				Default(SkipSamplingFieldName, BooleanFalseLiteral, "AI semantic review runs by default; set true to skip."),
+				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default."),
+				Default("mode", "replace", "Body is written verbatim by default; pass 'append' to merge with the existing body.")
+			],
 			[
 				Example("Dry-run validate one page body copied from get-page raw.body", new Dictionary<string, object?> {
 					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
 					["body"] = "/* raw.body returned by get-page */ define(...)",
 					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}",
-					["dry-run"] = true,
+					[DryRunFieldName] = true,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
@@ -3015,5 +3102,184 @@ internal static class ToolContractCatalog {
 				Field("execution-log-messages", ArrayType, "Structured log messages."),
 				Field("log-file-path", StringType, "Optional operation log path.")
 			]);
+	}
+
+	private const string SysSettingCodeFieldName = "code";
+	private const string SysSettingValueFieldName = "value";
+	private const string SysSettingValueTypeFieldName = "value-type-name";
+	private const string ExampleSysSettingCode = "MaxFileSize";
+	private const string ExampleSysSettingName = "Maximum file size";
+	private const string ExampleSysSettingValueType = "Integer";
+
+	private static ToolContractDefinition BuildGetSysSetting() {
+		return new ToolContractDefinition(
+			SysSettingGetTool.GetSysSettingToolName,
+			"Reads the All-Users default value of a Creatio system setting by code. Returns an empty value when the setting is not configured. Pair with list-sys-settings to discover codes.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, SysSettingCodeFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(SysSettingCodeFieldName, StringType, "Sys-setting code (e.g., 'SchemaNamePrefix').")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(SysSettingCodeFieldName, StringType, "Sys-setting code echoed from the request."),
+				Field(SysSettingValueFieldName, StringType, "Raw string value of the sys-setting. Empty string when not configured."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read a single sys-setting by code", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[SysSettingCodeFieldName] = "SchemaNamePrefix"
+				})
+			],
+			Flow(
+				[
+					SysSettingsListTool.ListSysSettingsToolName,
+					SysSettingGetTool.GetSysSettingToolName
+				],
+				"Discover available codes with list-sys-settings, then read a specific value with get-sys-setting."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildListSysSettings() {
+		return new ToolContractDefinition(
+			SysSettingsListTool.ListSysSettingsToolName,
+			"Lists Creatio system settings with their All-Users default values, value-type-name, and metadata. Binary-type settings are excluded — Binary read/write is not exposed through this MCP tool set and needs the dedicated upload/download flow.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("settings", ArrayType, "Sys-settings with code, name, value-type-name, value, is-cacheable, is-personal."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("List sys-settings for the configured environment", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				})
+			],
+			Flow(
+				[
+					SysSettingsListTool.ListSysSettingsToolName,
+					SysSettingUpdateTool.UpdateSysSettingToolName
+				],
+				"Discover an existing sys-setting before updating its value."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildCreateSysSetting() {
+		return new ToolContractDefinition(
+			SysSettingCreateTool.CreateSysSettingToolName,
+			"Creates a new Creatio system setting and optionally assigns an initial All-Users default value. " +
+			"Allowed value-type-name values match Creatio internal names: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, " +
+			"Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. " +
+			"Aliases: Currency = Money, Decimal = Float. Binary sys-settings are not exposed through this tool set. " +
+			"For Lookup type, reference-schema-name is required.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, SysSettingCodeFieldName, "name", SysSettingValueTypeFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(SysSettingCodeFieldName, StringType, "Sys-setting code (unique)."),
+					Field("name", StringType, "Display name of the sys-setting."),
+					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. Aliases: Currency = Money, Decimal = Float. Binary is not exposed by this tool set."),
+					Field(SysSettingValueFieldName, StringType, "Optional initial All-Users default value applied via update-sys-setting after creation."),
+					Field("description", StringType, "Optional description text."),
+					Field("is-cacheable", BooleanType, "Whether the setting is cacheable. Defaults to true."),
+					Field("is-personal", BooleanType, "Whether the setting stores per-user values. Defaults to false."),
+					Field(ReferenceSchemaNameFieldName, StringType, "Entity schema name for the lookup target. Required when value-type-name is 'Lookup' (e.g., 'Contact', 'UsrPhoneFormat').")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(SysSettingCodeFieldName, StringType, "Sys-setting code echoed from the request."),
+				Field(SysSettingValueTypeFieldName, StringType, "Value-type-name applied to the created sys-setting."),
+				Field(SysSettingValueFieldName, StringType, "Applied initial value (null when no value was provided or assignment failed)."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("warning", StringType, "Optional partial-success warning. Populated when the row was created but the initial value could not be applied; null on a fully successful or fully failed create.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Create a new integer sys-setting with an initial value", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[SysSettingCodeFieldName] = ExampleSysSettingCode,
+					["name"] = ExampleSysSettingName,
+					[SysSettingValueTypeFieldName] = ExampleSysSettingValueType,
+					[SysSettingValueFieldName] = "10485760"
+				})
+			],
+			Flow(
+				[
+					SysSettingCreateTool.CreateSysSettingToolName,
+					SysSettingUpdateTool.UpdateSysSettingToolName
+				],
+				"Create the sys-setting once, then update the value as it changes."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildUpdateSysSetting() {
+		return new ToolContractDefinition(
+			SysSettingUpdateTool.UpdateSysSettingToolName,
+			"Updates the All-Users default value of an existing Creatio system setting. The setting must already exist — use create-sys-setting first to register a new code.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, SysSettingCodeFieldName, SysSettingValueFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(SysSettingCodeFieldName, StringType, "Existing sys-setting code."),
+					Field(SysSettingValueFieldName, StringType, "New value. Booleans accept true/false, decimals/integers expect invariant culture, dates/times expect ISO 8601, Lookup expects a Guid or a display name."),
+					Field(SysSettingValueTypeFieldName, StringType, "Optional fallback value-type-name when the setting cannot be located on the target environment.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(SysSettingCodeFieldName, StringType, "Sys-setting code echoed from the request."),
+				Field(SysSettingValueFieldName, StringType, "Value read back from the environment after the update."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Update an existing sys-setting value", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[SysSettingCodeFieldName] = ExampleSysSettingCode,
+					[SysSettingValueFieldName] = "20971520"
+				})
+			],
+			Flow(
+				[
+					SysSettingsListTool.ListSysSettingsToolName,
+					SysSettingUpdateTool.UpdateSysSettingToolName
+				],
+				"Discover the existing sys-setting via list-sys-settings, then apply the new value."),
+			[],
+			[]);
 	}
 }

@@ -1,21 +1,25 @@
 namespace Clio.Tests.Command;
 
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "Command")]
-public sealed class PageCreateCommandTests {
+public sealed class PageCreateCommandTests
+{
 	private const string TestBase = "http://test";
 	private const string TemplateUId = "f691e828-0b36-42a7-898f-c337e9af67d0";
 	private const string TemplateName = "BlankPageTemplate";
 	private const string SelectQueryUrl = TestBase + "/DataService/json/SyncReply/SelectQuery";
 	private const string SaveSchemaUrl = TestBase + "/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema";
+	private const string GetSchemaUrl = TestBase + "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema";
 	private const string PackageUId = "aa000000-0000-0000-0000-000000000001";
 
 	private IApplicationClient _applicationClient;
@@ -32,6 +36,14 @@ public sealed class PageCreateCommandTests {
 		_logger = Substitute.For<ILogger>();
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema").Returns(SaveSchemaUrl);
+		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>())
+			.Returns("""
+				{"success": true, "schema": {"localizableStrings": [
+					{"name": "DefaultPageTitle", "values": [{"cultureName": "en-US", "value": "Page title"}]},
+					{"name": "SaveButton", "values": [{"cultureName": "en-US", "value": "Save"}]}
+				]}}
+				""");
 		_catalog.FindTemplate(TemplateName).Returns(new PageTemplateInfo {
 			UId = TemplateUId,
 			Name = TemplateName,
@@ -163,7 +175,40 @@ public sealed class PageCreateCommandTests {
 		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
 			Arg.Is<string>(s => s.Contains(TemplateUId)
 				&& s.Contains("\"extendParent\":false")
-				&& s.Contains("\"group\":\"Page\"")));
+				&& s.Contains("\"group\":\"Page\"")
+				&& s.Contains("\"DefaultPageTitle\"")
+				&& s.Contains("\"SaveButton\"")));
+		_applicationClient.Received(1).ExecutePostRequest(GetSchemaUrl,
+			Arg.Is<string>(s => s.Contains(TemplateUId) && s.Contains("\"useFullHierarchy\":false")));
+	}
+
+	[Test]
+	public void TryCreatePage_Copies_Template_Localizable_Strings_To_SaveSchema_Payload() {
+		Queue<string> selectResponses = new([
+			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
+			"""{"success": true, "rows": []}"""
+		]);
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns(_ => selectResponses.Dequeue());
+		_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>())
+			.Returns("""{"success": true}""");
+		string savePayload = null;
+		_applicationClient.When(client => client.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>()))
+			.Do(call => savePayload = call.ArgAt<string>(1));
+		PageCreateOptions options = new() {
+			SchemaName = "UsrDemo_FormPage",
+			Template = TemplateName,
+			PackageName = "Custom",
+			Caption = "Demo page"
+		};
+
+		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
+
+		result.Should().BeTrue(response.Error);
+		JArray localizableStrings = (JArray)JObject.Parse(savePayload)["localizableStrings"];
+		localizableStrings.Select(item => item["name"]!.ToString())
+			.Should().BeEquivalentTo(["DefaultPageTitle", "SaveButton"],
+				because: "SaveSchema deletes schema-level strings omitted from the request, so create-page must seed template resources");
 	}
 
 	[Test]

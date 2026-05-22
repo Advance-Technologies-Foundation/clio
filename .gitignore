@@ -231,3 +231,4 @@ These files are used on local dev environment only
 .claude/worktrees/
 .mcp.json
 .serena
+.clio-pages/

@@ -16,7 +16,7 @@ internal static class GuidanceCatalog {
 		Dictionary<string, GuidanceCatalogEntry> entries = new(StringComparer.OrdinalIgnoreCase) {
 			["app-modeling"] = Create(
 				"app-modeling",
-				"Canonical MCP guidance for Creatio application modeling, schema design, and page-editing workflows.",
+				"Canonical MCP guidance for Creatio application modeling, schema design, and page modification workflows.",
 				AppModelingGuidanceResource.Guide),
 			["data-bindings"] = Create(
 				"data-bindings",
@@ -77,7 +77,11 @@ internal static class GuidanceCatalog {
 			["mobile-page-modification"] = Create(
 				"mobile-page-modification",
 				"Mobile-specific differences from the base page-modification guidance: plain JSON body format (no AMD), Scaffold root element rules, mobile component registry, naming conventions, and template hierarchy.",
-				MobilePageGuidanceResource.Guide)
+				MobilePageGuidanceResource.Guide),
+			["sys-settings"] = Create(
+				"sys-settings",
+				"Canonical MCP guidance for the Creatio sys-settings CRU surface: tool order, supported value-type-names and aliases, Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary exclusion.",
+				SysSettingsGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {
