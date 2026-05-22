@@ -173,9 +173,14 @@ public sealed class ComponentRegistryDocsCacheStore : IComponentRegistryDocsCach
 	/// on PR #599. Tolerates a missing trailing slash on the base URL.
 	/// </summary>
 	private static string BuildSourceUrl(string cdnBaseUrl, string version, string docPath) {
-		string normalisedBase = string.IsNullOrEmpty(cdnBaseUrl)
-			? "https://academy.creatio.com/api/mcp/"
-			: (cdnBaseUrl.EndsWith('/') ? cdnBaseUrl : cdnBaseUrl + "/");
+		string normalisedBase;
+		if (string.IsNullOrEmpty(cdnBaseUrl)) {
+			normalisedBase = "https://academy.creatio.com/api/mcp/";
+		} else if (cdnBaseUrl.EndsWith('/')) {
+			normalisedBase = cdnBaseUrl;
+		} else {
+			normalisedBase = cdnBaseUrl + "/";
+		}
 		return $"{normalisedBase}{version}/{docPath}";
 	}
 

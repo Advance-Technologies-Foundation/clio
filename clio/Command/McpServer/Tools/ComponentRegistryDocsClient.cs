@@ -203,7 +203,7 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 
 	private void ScheduleBackgroundRefresh(string version, string normalisedDocPath) {
 		string key = $"{version}|{normalisedDocPath}";
-		Lazy<Task> lazy = _inFlightRefreshes.GetOrAdd(key, _ => new Lazy<Task>(() => Task.Run(async () => {
+		Lazy<Task> lazy = _inFlightRefreshes.GetOrAdd(key, k => new Lazy<Task>(() => Task.Run(async () => {
 			try {
 				using CancellationTokenSource cts = new(TimeSpan.FromMinutes(2));
 				await TryFetchFromCdnAsync(version, normalisedDocPath, cts.Token).ConfigureAwait(false);
@@ -212,7 +212,7 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 					"component-registry-docs background-refresh-failed version={Version} path={Path}",
 					version, normalisedDocPath);
 			} finally {
-				_inFlightRefreshes.TryRemove(key, out Lazy<Task>? _);
+				_inFlightRefreshes.TryRemove(k, out Lazy<Task>? _);
 			}
 		})));
 		_ = lazy.Value;
