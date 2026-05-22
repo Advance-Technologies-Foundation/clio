@@ -1,36 +1,36 @@
-# Clio MCP — інвентаризація інструментів
+# Clio MCP — tools inventory
 
-Зафіксований стан на 2026-05-22 (гілка `research/mcp-components-cdn`).
+Snapshot captured on 2026-05-22 (branch `research/mcp-components-cdn`).
 
-## Підсумкові цифри
+## Headline numbers
 
-- **105 реєстрацій** `[McpServerTool(Name=…)]` у 61 файлі під [clio/Command/McpServer/Tools/](../clio/Command/McpServer/Tools)
-- **104 унікальних публічних імен** (1 — `StopAllCreatio` — явний deprecated PascalCase alias)
-- **2 deprecated-аліаси для legacy-клієнтів** (`StopAllCreatio`, `restart-by-environmentName`)
-- Реєстрація — через `WithToolsFromAssembly` у [clio/BindingsModule.cs:548](../clio/BindingsModule.cs#L548); список MCP-tool'ів атрибутно-керований, явного реєстру немає.
+- **105 `[McpServerTool(Name=…)]` registrations** across 61 files under [clio/Command/McpServer/Tools/](../clio/Command/McpServer/Tools)
+- **104 unique public tool names** (one — `StopAllCreatio` — is an explicit deprecated PascalCase alias)
+- **2 deprecated aliases** preserved for legacy clients (`StopAllCreatio`, `restart-by-environmentName`)
+- Tools are registered automatically via `WithToolsFromAssembly` in [clio/BindingsModule.cs:548](../clio/BindingsModule.cs#L548); the tool list is attribute-driven, there is no explicit registry.
 
-## Таймлайн появи
+## Timeline
 
-| Місяць | Додано | Хто | Коментар |
+| Month | Added | Lead author | Comment |
 |---|---|---|---|
-| 2026-03 | 51 | переважно Kyryl Krylov (46) | вибух у перші 4 тижні: основа MCP — start/stop/restart, workspace, схеми, data binding, redis, FSM |
-| 2026-04 | 47 | Alex Kravchuk (36), Tetiana Moshon (8), Dmytro Baranovskyi, Vladimir, d-krestov | два «великі» PR: `#527` (18 інструментів — naming + sections + apps) та `#549` (14 — schema/page/SQL) |
-| 2026-05 | 7 | Artem Kulykov (4 sys-settings), Marharyta Dymytrova, Dmytro Baranovskyi, Vladimir | темп різко впав |
+| 2026-03 | 51 | mostly Kyryl Krylov (46) | scaffold burst in the first four weeks: lifecycle (start/stop/restart), workspace, schemas, data binding, redis, FSM |
+| 2026-04 | 47 | Alex Kravchuk (36), Tetiana Moshon (8), Dmytro Baranovskyi, Vladimir, d-krestov | two batch PRs: `#527` (18 tools — naming + sections + apps) and `#549` (14 — schema/page/SQL) |
+| 2026-05 | 7 | Artem Kulykov (4 sys-settings), Marharyta Dymytrova, Dmytro Baranovskyi, Vladimir | cadence dropped sharply |
 
-### Розподіл за авторами
+### Authors
 
-| Автор | Tools | Перший внесок | Основний фокус |
+| Author | Tools | First contribution | Focus area |
 |---|---|---|---|
-| Kyryl Krylov / k.krylov | 46 | 2026-03-03 | каркас MCP, lifecycle, schemas, packages, redis, restore-db, FSM, skills |
-| Alex Kravchuk / Alexandr | 41 | 2026-03-20 | apps/sections, pages, schemas-generic, SQL-schemas, client unit, hotfix, naming-фіксери |
-| Tetiana Moshon | 8 | 2026-04-10 | DataForge (cluster `dataforge-*`) |
+| Kyryl Krylov / k.krylov | 46 | 2026-03-03 | MCP scaffolding, lifecycle, schemas, packages, redis, restore-db, FSM, skills |
+| Alex Kravchuk / Alexandr | 41 | 2026-03-20 | apps/sections, pages, generic/SQL/client-unit schemas, hotfix, naming fixes |
+| Tetiana Moshon | 8 | 2026-04-10 | DataForge (the `dataforge-*` cluster) |
 | Artem Kulykov | 4 | 2026-05-20 | system settings CRUD |
 | Dmytro Baranovskyi | 2 | 2026-04-15 | business rules |
 | Vladimir | 2 | 2026-04-09 | link-from-repository-unlocked, generate-source-code |
 | Marharyta Dymytrova | 1 | 2026-05-04 | get-schema-name-prefix |
 | d-krestov | 1 | 2026-04-20 | get-guidance |
 
-### Найбільші «масові» PR/комміти
+### Largest batch PRs / commits
 
 | Tools | Subject |
 |---|---|
@@ -43,9 +43,9 @@
 | 5 | Eng 87085 adac clio (#476) |
 | 4 | feat(mcp): add SysSettings CRU support for AI agents (ENG-88957) |
 
-## Категорії інструментів
+## Tools by category
 
-Категорізація — за призначенням, не за файлом. У дужках — кількість.
+Categorised by purpose, not by source file. Count in parentheses.
 
 ### App lifecycle (16)
 start-creatio, stop-creatio, **stop-all-creatio**, ~~StopAllCreatio~~ (deprecated alias),
@@ -63,7 +63,7 @@ unlock-for-hotfix, finish-hotfix,
 download-configuration-by-environment, download-configuration-by-build,
 compile-creatio, get-fsm-mode, set-fsm-mode
 
-### Apps / Sections (8) — усі з одного PR #527
+### Apps / Sections (8) — all from PR #527
 create-app, list-apps, get-app-info, delete-app,
 create-app-section, update-app-section, delete-app-section, list-app-sections
 
@@ -89,13 +89,13 @@ create-sql-schema, get-sql-schema, update-sql-schema, install-sql-schema
 create-data-binding, add-data-binding-row, remove-data-binding-row,
 create-data-binding-db, upsert-data-binding-row-db, remove-data-binding-row-db
 
-### System settings (4) — новинка від 2026-05-20
+### System settings (4) — new as of 2026-05-20
 create-sys-setting, get-sys-setting, update-sys-setting, list-sys-settings
 
 ### Business rules (2)
 create-entity-business-rule, create-page-business-rule
 
-### Data Forge (8) — окремий кластер від Tetiana
+### Data Forge (8) — distinct cluster from Tetiana
 dataforge-status, dataforge-context, dataforge-initialize, dataforge-update,
 dataforge-find-tables, dataforge-find-lookups, dataforge-get-relations, dataforge-get-table-columns
 
@@ -110,10 +110,10 @@ restore-db-by-credentials, restore-db-by-environment, restore-db-to-local-server
 get-guidance, get-component-info, get-tool-contract,
 install-skills, update-skill, delete-skill
 
-## Систематичні проблеми, які впадають в око
+## Systemic issues that stand out
 
-### 1. Подвоєння `*-by-credentials` / `*-by-environment`
-Послідовно зустрічається у 5 категоріях: restart, clear-redis, restore-db, download-configuration, link-from-repository. Кожна пара робить те саме, але одна бере `environmentName`, інша — кортеж `(url, login, password, isNetCore?)`.
+### 1. `*-by-credentials` / `*-by-environment` doubling
+The pattern recurs across five categories: restart, clear-redis, restore-db, download-configuration, link-from-repository. Each pair performs the same operation but one takes `environmentName`, the other takes the `(url, login, password, isNetCore?)` tuple.
 
 - restart-by-credentials + restart-by-environment-name (+ legacy camelCase)
 - clear-redis-db-by-credentials + clear-redis-db-by-environment
@@ -121,45 +121,40 @@ install-skills, update-skill, delete-skill
 - download-configuration-by-environment + download-configuration-by-build
 - link-from-repository-by-environment + link-from-repository-by-env-package-path + link-from-repository-unlocked
 
-→ ~10–12 інструментів зі ~5 «логічних» операцій. Один tool з опційними параметрами вирішив би це.
+→ ~10–12 tools covering ~5 logical operations. One tool with optional parameters would replace each pair.
 
-### 2. Schema-сім'я фрагментована
-Окремі реєстрації для **generic / entity / client-unit / sql** — у сумі 21 інструмент, з повторюваним патерном `create / get / update / delete / sync / list`. Може бути одна сім'я `*-schema` з типом схеми як параметром.
+### 2. Schema family is fragmented
+Separate registrations for **generic / entity / client-unit / sql** — 21 tools in total, with a repeating `create / get / update / delete / sync / list` pattern. A single `*-schema` family with the schema type as a parameter would cover the same surface.
 
-### 3. Deprecated-aліаси все ще зареєстровані
+### 3. Deprecated aliases still registered
 - `StopAllCreatio` (PascalCase) → `stop-all-creatio`
 - `restart-by-environmentName` → `restart-by-environment-name`
 
-Обидва позначені `[Deprecated:…]` в Description, але рахуються як окремі MCP-tools у lookup і збільшують шум для AI.
+Both are marked `[Deprecated:…]` in their Description, but they still count as separate MCP tools at lookup time and add noise for the AI agent.
 
-### 4. Один файл — кілька великих інструментів
-- [EntitySchemaTool.cs](../clio/Command/McpServer/Tools/EntitySchemaTool.cs) — 7 інструментів, 37 KB
-- [ApplicationTool.cs](../clio/Command/McpServer/Tools/ApplicationTool.cs) — 8 інструментів, 16 KB
-- [DataForgeTool.cs](../clio/Command/McpServer/Tools/DataForgeTool.cs) — 8 інструментів, 13 KB
-- [BusinessRuleTool.cs](../clio/Command/McpServer/Tools/BusinessRuleTool.cs) — 2 інструменти, 16 KB
-- [ToolContractGetTool.cs](../clio/Command/McpServer/Tools/ToolContractGetTool.cs) — 1 інструмент, **154 KB** (?!)
+### 4. One file hosts multiple large tools
+- [EntitySchemaTool.cs](../clio/Command/McpServer/Tools/EntitySchemaTool.cs) — 7 tools, 37 KB
+- [ApplicationTool.cs](../clio/Command/McpServer/Tools/ApplicationTool.cs) — 8 tools, 16 KB
+- [DataForgeTool.cs](../clio/Command/McpServer/Tools/DataForgeTool.cs) — 8 tools, 13 KB
+- [BusinessRuleTool.cs](../clio/Command/McpServer/Tools/BusinessRuleTool.cs) — 2 tools, 16 KB
+- [ToolContractGetTool.cs](../clio/Command/McpServer/Tools/ToolContractGetTool.cs) — 1 tool, **154 KB** (worth a closer look)
 
-### 5. AGENTS.md живе поруч
-[clio/Command/McpServer/AGENTS.md](../clio/Command/McpServer/AGENTS.md) — 17 KB інструкцій для агентів-розробників. Це сигнал, що в команди сформована неявна культура «one tool ↔ one schema attribute», яку варто закріпити явним каталогом і політикою на введення нових інструментів.
+### 5. AGENTS.md lives next door
+[clio/Command/McpServer/AGENTS.md](../clio/Command/McpServer/AGENTS.md) — 17 KB of guidance for developer agents. This signals the team has formed an implicit "one tool ↔ one schema attribute" culture worth codifying as an explicit catalogue plus a policy that gates the introduction of new tools.
 
-## Дані-першоджерело
+## Source data
 
-- [/tmp/clio-mcp-tools-map.tsv](file:///tmp/clio-mcp-tools-map.tsv) — tool ↔ file ↔ line
-- [/tmp/clio-mcp-tool-history.tsv](file:///tmp/clio-mcp-tool-history.tsv) — tool ↔ commit ↔ author ↔ date ↔ subject
+- `/tmp/clio-mcp-tools-map.tsv` — tool ↔ file ↔ line
+- `/tmp/clio-mcp-tool-history.tsv` — tool ↔ commit ↔ author ↔ date ↔ subject
 
-Команди для повторного збирання:
+Regeneration outline:
 ```bash
-# Map tool→file (handles scope-local `const string ToolName`)
-python3 -c "$(cat <<'PY'
-import os, re, glob
-…
-PY
-)"
+# Map tool → file (scope-aware `const string ToolName` resolution)
+python3 scope_aware_extractor.py
 
-# History (first appearance per tool)
-for tool in …; do
+# First-appearance commit per tool name
+for tool in <names>; do
   git log --reverse -S"$tool" --pretty=format:"%h|%an|%ad|%s" --date=short \
     -- clio/Command/McpServer/Tools/ | head -1
 done
 ```
-(повні скрипти у журналі обговорення цього дослідження)
