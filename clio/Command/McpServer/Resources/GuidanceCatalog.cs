@@ -16,7 +16,7 @@ internal static class GuidanceCatalog {
 		Dictionary<string, GuidanceCatalogEntry> entries = new(StringComparer.OrdinalIgnoreCase) {
 			["app-modeling"] = Create(
 				"app-modeling",
-				"Canonical MCP guidance for Creatio application modeling, schema design, and page-editing workflows.",
+				"Canonical MCP guidance for Creatio application modeling, schema design, and page modification workflows.",
 				AppModelingGuidanceResource.Guide),
 			["data-bindings"] = Create(
 				"data-bindings",

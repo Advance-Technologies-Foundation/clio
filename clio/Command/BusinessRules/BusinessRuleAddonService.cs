@@ -13,7 +13,7 @@ internal interface IBusinessRuleAddonService {
 	BusinessRuleCreateResult AppendRule(
 		AddonGetRequestDto request,
 		BusinessRule rule,
-		BusinessRuleMetadataDto createdRule);
+		IReadOnlyList<BusinessRuleMetadataDto> createdRules);
 }
 
 internal sealed class BusinessRuleAddonService(
@@ -23,14 +23,23 @@ internal sealed class BusinessRuleAddonService(
 	public BusinessRuleCreateResult AppendRule(
 		AddonGetRequestDto request,
 		BusinessRule rule,
-		BusinessRuleMetadataDto createdRule) {
+		IReadOnlyList<BusinessRuleMetadataDto> createdRules) {
+		ArgumentNullException.ThrowIfNull(createdRules);
+		if (createdRules.Count == 0) {
+			throw new ArgumentException("At least one generated business rule is required.", nameof(createdRules));
+		}
+
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(request);
 		JsonObject metadata = ParseMetadata(schema.MetaData);
 		JsonArray rules = GetOrCreateRules(metadata);
 		List<AddonResourceDto> resources = NormalizeResourceKeys(schema.Resources.ToList());
 
-		rules.Add(SerializeCreatedRule(createdRule));
-		UpsertCaptionResource(resources, createdRule.UId, rule.Caption.Trim());
+		foreach (BusinessRuleMetadataDto createdRule in createdRules) {
+			rules.Add(SerializeCreatedRule(createdRule));
+			if (!string.IsNullOrWhiteSpace(createdRule.Caption)) {
+				UpsertCaptionResource(resources, createdRule.UId, createdRule.Caption.Trim());
+			}
+		}
 
 		schema.MetaData = metadata.ToJsonString(JsonOptions);
 		schema.Resources = resources;
@@ -46,7 +55,7 @@ internal sealed class BusinessRuleAddonService(
 		// their next startup via the /api/ClientCache/Hashes hash comparison.
 		addonSchemaDesignerClient.BuildConfiguration();
 
-		return new BusinessRuleCreateResult(createdRule.Name);
+		return new BusinessRuleCreateResult(createdRules[0].Name);
 	}
 
 	private static JsonObject ParseMetadata(string? metaData) {

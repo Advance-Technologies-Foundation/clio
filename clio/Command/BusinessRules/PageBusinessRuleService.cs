@@ -50,7 +50,7 @@ internal sealed class PageBusinessRuleService(
 		return businessRuleAddonService.AppendRule(
 			BuildAddonSchemaRequest(pageContext, packageUId),
 			request.Rule,
-			createdRule);
+			[createdRule]);
 	}
 
 	private static void ValidateCreateRequest(PageBusinessRuleCreateRequest request) {

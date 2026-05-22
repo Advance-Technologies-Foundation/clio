@@ -27,7 +27,7 @@ public sealed class BusinessRulesGuidanceResource {
 		       clio MCP business rules guide
 
 		       Scope
-		       - Use this guide whenever the requirement involves conditional field/element visibility, editability, required state, or auto-assignment based on another field's value.
+		       - Use this guide whenever the requirement involves conditional field/element visibility, editability, required state, auto-assignment based on another field's value, or lookup filtering.
 		       - Business rules are SEPARATE first-class artifacts in Creatio Freedom UI. They are NOT implemented as page JavaScript code, handlers, validators, or converters.
 		       - Do NOT write JavaScript handler or validator code to implement business-rule behavior. Use the dedicated MCP tools instead.
 
@@ -46,8 +46,10 @@ public sealed class BusinessRulesGuidanceResource {
 		       1. Entity-level business rules
 		          - Scope: operate on entity schema attributes (columns).
 		          - Tool: `create-entity-business-rule`
-		          - Supported actions: make-editable, make-read-only, make-required, make-optional, set-values.
+		          - Supported actions: make-editable, make-read-only, make-required, make-optional, set-values, apply-filter.
 		          - Use when the rule should apply everywhere the entity is used, regardless of which page displays it.
+		          - `apply-filter` targets one lookup field, compares it to one source lookup field, and may auto-generate child clear/populate rules.
+		          - When the requirement sounds like a standard dependent lookup UX, prefer `populateValue=true` by default unless the user explicitly asks for one-way filtering only or the selected source/target path shape makes populate unsupported.
 
 		       2. Page-level business rules
 		          - Scope: operate on page elements (UI controls from viewConfig) and page attributes (from viewModelConfig).
@@ -59,6 +61,7 @@ public sealed class BusinessRulesGuidanceResource {
 		       Decision tree — when to use business rules vs handlers/validators
 		       - If the requirement is "when field X equals Y, then hide/show/enable/disable/require/unrequire field Z" → use a BUSINESS RULE.
 		       - If the requirement is "when field X equals Y, set field Z to value W" → use an ENTITY BUSINESS RULE with set-values action.
+		       - If the requirement is "filter lookup A by lookup B or by a path inside lookup B" → use an ENTITY BUSINESS RULE with apply-filter action.
 		       - If the requirement is field-value format validation (length, regex, range) → use a VALIDATOR, not a business rule.
 		       - If the requirement is cross-field orchestration with side effects (API calls, process launch, data loading) → use a HANDLER.
 		       - If the requirement is display-only value transformation → use a CONVERTER.
@@ -68,12 +71,15 @@ public sealed class BusinessRulesGuidanceResource {
 		       - A condition group has a `logicalOperation` (AND or OR) and a list of condition items.
 		       - Each condition item specifies: `attributeName` (entity column or page attribute), `comparisonType` (e.g., Equal, NotEqual, IsNotNull, IsNull, Greater, Less, GreaterOrEqual, LessOrEqual, Contain, NotContain, StartWith, NotStartWith, EndWith, NotEndWith), and `value` (the comparison value, can be null for IsNull/IsNotNull).
 		       - For lookup columns, use the lookup record Id (Guid) as the comparison value, and set `type` to "Guid". For boolean columns, use `true` or `false` string. For other types, use string representation.
+		       - `apply-filter` is the exception: it still uses the outer business-rule wrapper, but the actionable logic is expressed inside the action itself, so the condition group may be empty.
 
 		       Workflow
 		       1. Read entity schema columns with `get-entity-schema-column-properties` or page structure with `get-page`.
 		       2. Determine whether the rule is entity-level or page-level.
 		       3. For state-changing requirements, decide whether the state must also return through an explicit inverse rule.
 		       4. Build the condition group and actions.
+		          - For `apply-filter`, use an empty condition group and put the lookup-filter configuration into the action payload.
+		          - If the user did not specify otherwise and the scenario is a normal dependent lookup, default `populateValue` to `true` so the reverse helper child rule is generated too.
 		       5. Call `create-entity-business-rule` or `create-page-business-rule`.
 		       6. Verify by checking the entity or page on the environment.
 
@@ -83,6 +89,9 @@ public sealed class BusinessRulesGuidanceResource {
 		       - Do NOT write `$context.enableAttribute()`/`$context.disableAttribute()` handlers when a business rule suffices.
 		       - Do NOT duplicate entity-level rules on every page. If the rule applies to the entity globally, create it at the entity level.
 		       - Do NOT assume a state-changing business rule automatically reverses itself. Use an explicit inverse rule when both directions are required.
+		       - Do NOT use `apply-filter` on non-lookup targets or non-lookup sources.
+		       - Do NOT use `targetFilterPath` or `sourceFilterPath` that resolve to scalar `Guid` columns such as `Lookup.Id`; those paths must resolve to Lookup attributes.
+		       - Do NOT set `populateValue=true` together with `sourceFilterPath`; current platform behavior does not support that combination cleanly.
 		       """
 	};
 }
