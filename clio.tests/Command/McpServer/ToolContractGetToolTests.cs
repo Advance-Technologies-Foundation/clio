@@ -1208,10 +1208,10 @@ public sealed class ToolContractGetToolTests {
 			because: "odata-read needs the target OData entity set");
 		contract.Description.Should().Contain("query records",
 			because: "the contract should describe odata-read as a general Creatio record query tool");
-		contract.Description.Should().NotContain("business rule", StringComparison.OrdinalIgnoreCase,
+		contract.Description.ToLowerInvariant().Should().NotContain("business rule",
 			because: "odata-read is universal and must not be framed as a business-rule-only helper");
-		contract.InputSchema.Properties.Should().Contain(field => field.Name == "filter",
-			because: "records are commonly queried through an OData filter");
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "filters",
+			because: "records are commonly queried through structured OData filters");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "value",
 			because: "odata-read returns the OData value array");
 		contract.Examples.Should().Contain(example => example.Summary.Contains("display value", StringComparison.Ordinal),

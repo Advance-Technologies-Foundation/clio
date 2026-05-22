@@ -1184,14 +1184,13 @@ internal static class ToolContractCatalog {
 					Field("entity", StringType, "Creatio OData entity set name, usually the referenced lookup schema name such as Contact, Account, or a custom lookup schema."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field("filter", StringType, "Raw OData $filter clause. GUID values are unquoted, for example Id eq 8ecab4a1-0ca3-4515-9399-efe0a19390bd. String values use single quotes, for example Name eq 'In Progress'."),
+					Field("filters", ObjectType, "Structured filter (alternative or addition to raw filter). all conditions join with AND; any conditions join with OR. GUID values in Id-suffixed fields are automatically unquoted. Example: { \"all\": [{ \"field\": \"AccountId\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
 					Field("select", ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
 					Field("expand", ArrayType, "Navigation properties to expand."),
 					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
 					Field("top", NumberType, "Maximum number of records to return, 1-1000. Default: 25.")
 				],
 				Validators: [
-					new ToolContractValidator("query-shape", "invalid-filter", "filter",
-						Context: "Use OData v4 syntax. For lookup resolution, query the lookup schema by display value first, for example Name eq 'In Progress', select Id and Name, and then use the returned Id where a lookup primary value is required."),
 					new ToolContractValidator("limit", "invalid-top", "top",
 						Context: "top must be between 1 and 1000; omitted or out-of-range values default to 25.")
 				]),
@@ -1213,14 +1212,22 @@ internal static class ToolContractCatalog {
 				Example("Resolve a lookup row by display value", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					["entity"] = ExampleTaskStatusSchemaName,
-					["filter"] = "Name eq 'In Progress'",
+					["filters"] = new Dictionary<string, object?> {
+						["all"] = new object[] {
+							new Dictionary<string, object?> { ["field"] = "Name", ["op"] = "eq", ["value"] = "In Progress" }
+						}
+					},
 					["select"] = new[] { "Id", "Name" },
 					["top"] = 5
 				}),
 				Example("Verify a known lookup row exists by Id", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					["entity"] = "Contact",
-					["filter"] = $"Id eq {ExampleLookupValueId}",
+					["filters"] = new Dictionary<string, object?> {
+						["all"] = new object[] {
+							new Dictionary<string, object?> { ["field"] = "Id", ["op"] = "eq", ["value"] = ExampleLookupValueId }
+						}
+					},
 					["select"] = new[] { "Id" },
 					["top"] = 1
 				}),
@@ -1229,6 +1236,21 @@ internal static class ToolContractCatalog {
 					["entity"] = "Contact",
 					["select"] = new[] { "Id", "Name", "AccountId" },
 					["order-by"] = "Name asc",
+					["top"] = 10
+				}),
+				Example("Query contacts using structured filters with automatic GUID quoting", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					["entity"] = "Contact",
+					["filters"] = new Dictionary<string, object?> {
+						["all"] = new object[] {
+							new Dictionary<string, object?> {
+								["field"] = "AccountId",
+								["op"] = "eq",
+								["value"] = ExampleLookupValueId
+							}
+						}
+					},
+					["select"] = new[] { "Id", "Name", "AccountId" },
 					["top"] = 10
 				})
 			],

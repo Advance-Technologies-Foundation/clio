@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
@@ -21,13 +23,12 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Query Creatio records via OData v4. " +
-		"Supports $filter, $select, $expand, $orderby, and $top. " +
-		"When using $filter with $select, always include filtered fields in select. " +
-		"GUID fields use no quotes: AccountId eq 8ecab4a1-0ca3-4515-9399-efe0a19390bd. " +
-		"String fields use single quotes: Name eq 'Acme'. " +
+		"Supports structured filters (filters), $select, $expand, $orderby, and $top. " +
+		"GUID fields in Id-suffixed columns are unquoted automatically. " +
+		"String fields are single-quoted automatically. " +
 		"Call get-tool-contract for odata-read to see usage examples and discovery workflow hints.")]
 	public ODataReadResponse Read(
-		[Description("Parameters: entity, environment-name (required); filter, select, expand, order-by, top (optional).")]
+		[Description("Parameters: entity, environment-name (required); filters, select, expand, order-by, top (optional).")]
 		[Required]
 		ODataReadArgs args) {
 		try {
@@ -50,11 +51,92 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		}
 	}
 
+	private static readonly Regex GuidPattern = new(
+		@"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+		RegexOptions.Compiled);
+
+	private static bool IsGuid(string s) => GuidPattern.IsMatch(s);
+
+	private static bool IsIdish(string field) {
+		int slash = field.LastIndexOf('/');
+		string lastSegment = slash >= 0 ? field[(slash + 1)..] : field;
+		return lastSegment.EndsWith("Id", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static string LiteralFor(string field, JsonElement value) =>
+		value.ValueKind switch {
+			JsonValueKind.Null => "null",
+			JsonValueKind.Number => value.GetRawText(),
+			JsonValueKind.True => "true",
+			JsonValueKind.False => "false",
+			JsonValueKind.String => IsGuid(value.GetString()!) && IsIdish(field)
+				? value.GetString()!
+				: $"'{value.GetString()!.Replace("'", "''")}'",
+			_ => $"'{value.GetRawText().Replace("'", "''")}'" ,
+		};
+
+	private static string? BuildCondition(ODataFilterCondition c) {
+		if (string.IsNullOrWhiteSpace(c.Field)) {
+			return null;
+		}
+		string field = c.Field;
+		if (c.InValues.HasValue && c.InValues.Value.ValueKind == JsonValueKind.Array) {
+			List<string> inParts = c.InValues.Value.EnumerateArray()
+				.Select(v => $"{field} eq {LiteralFor(field, v)}")
+				.ToList();
+			return inParts.Count == 0 ? null
+				: inParts.Count == 1 ? inParts[0]
+				: $"({string.Join(" or ", inParts)})";
+		}
+		if (!c.Value.HasValue) {
+			return null;
+		}
+		string op = string.IsNullOrWhiteSpace(c.Op) ? "eq" : c.Op;
+		JsonElement val = c.Value.Value;
+		if (op is "contains" or "startswith" or "endswith") {
+			return $"{op}({field},{LiteralFor(field, val)})";
+		}
+		if (val.ValueKind == JsonValueKind.Null && op is "eq" or "ne") {
+			return $"{field} {op} null";
+		}
+		return $"{field} {op} {LiteralFor(field, val)}";
+	}
+
+	private static string? BuildFilterFromStructured(ODataFilters filters) {
+		var andParts = new List<string>();
+		var orParts = new List<string>();
+		if (filters.All is not null) {
+			foreach (ODataFilterCondition c in filters.All) {
+				string? s = BuildCondition(c);
+				if (s is not null) {
+					andParts.Add(s);
+				}
+			}
+		}
+		if (filters.Any is not null) {
+			foreach (ODataFilterCondition c in filters.Any) {
+				string? s = BuildCondition(c);
+				if (s is not null) {
+					orParts.Add(s);
+				}
+			}
+		}
+		var parts = new List<string>();
+		if (andParts.Count > 0) {
+			parts.Add(andParts.Count > 1 ? $"({string.Join(" and ", andParts)})" : andParts[0]);
+		}
+		if (orParts.Count > 0) {
+			parts.Add(orParts.Count > 1 ? $"({string.Join(" or ", orParts)})" : orParts[0]);
+		}
+		return parts.Count > 0 ? string.Join(" and ", parts) : null;
+	}
+
 	private static string BuildQueryString(ODataReadArgs args) {
 		var parts = new List<string>();
 
-		if (!string.IsNullOrWhiteSpace(args.Filter)) {
-			parts.Add($"$filter={Uri.EscapeDataString(args.Filter!.Trim())}");
+		string? effectiveFilter = args.Filters is not null ? BuildFilterFromStructured(args.Filters) : null;
+		if (effectiveFilter is not null) {
+			parts.Add($"$filter={Uri.EscapeDataString(effectiveFilter)}");
 		}
 
 		if (args.Select is { Length: > 0 }) {
@@ -91,7 +173,8 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			// Single-entity response (no value wrapper)
 			return new ODataReadResponse(true, null, 1, root.Clone(), null);
 		} catch (Exception ex) {
-			return ODataReadResponse.Failure($"Failed to parse OData response: {ex.Message}");
+			string preview = string.IsNullOrWhiteSpace(json) ? "<empty>" : json.Length > 500 ? json[..500] + "…" : json;
+			return ODataReadResponse.Failure($"Failed to parse OData response: {ex.Message} | Response: {preview}");
 		}
 	}
 
@@ -106,16 +189,6 @@ public sealed record ODataReadArgs {
 	[Description("Creatio OData entity set name (e.g., Contact, Account, Activity). Call dataforge-find-tables to discover available names.")]
 	[Required]
 	public required string Entity { get; init; }
-
-	/// <summary>Raw OData $filter clause.</summary>
-	[JsonPropertyName("filter")]
-	[Description(
-		"OData $filter clause. " +
-		"GUID fields (Id, AccountId, etc.): no quotes — AccountId eq 8ecab4a1-0ca3-4515-9399-efe0a19390bd. " +
-		"String fields: single quotes — Name eq 'Acme'. " +
-		"Operators: eq, ne, gt, ge, lt, le, and, or, not, contains, startswith, endswith. " +
-		"When $select is also set, include all filtered fields in select.")]
-	public string? Filter { get; init; }
 
 	/// <summary>Fields to return ($select).</summary>
 	[JsonPropertyName("select")]
@@ -143,6 +216,16 @@ public sealed record ODataReadArgs {
 	[JsonPropertyName("top")]
 	[Description("Maximum number of records to return. Range: 1–1000. Default: 25.")]
 	public int? Top { get; init; }
+
+	/// <summary>Structured filter (alternative or addition to raw filter).</summary>
+	[JsonPropertyName("filters")]
+	[Description(
+		"Structured filter (alternative or addition to raw filter). " +
+		"all conditions join with AND; any conditions join with OR. " +
+		"GUID values in Id-suffixed fields are automatically unquoted; strings are single-quoted. " +
+		"in array expands to OR-joined equality clauses. " +
+		"Example: { \"all\": [{ \"field\": \"AccountId\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }")]
+	public ODataFilters? Filters { get; init; }
 
 	/// <summary>Registered clio environment name.</summary>
 	[JsonPropertyName("environment-name")]
@@ -182,4 +265,45 @@ public sealed record ODataReadResponse(
 	/// <summary>Creates a failure response.</summary>
 	public static ODataReadResponse Failure(string message) =>
 		new(false, message, null, null);
+}
+
+/// <summary>
+/// A single condition in a structured OData filter.
+/// </summary>
+public sealed record ODataFilterCondition {
+	/// <summary>OData field name to filter on.</summary>
+	[JsonPropertyName("field")]
+	[Description("OData field name. Id-suffixed fields such as AccountId, StatusId receive automatic GUID unquoting.")]
+	[Required]
+	public required string Field { get; init; }
+
+	/// <summary>Comparison operator.</summary>
+	[JsonPropertyName("op")]
+	[Description("Comparison operator: eq, ne, gt, ge, lt, le, contains, startswith, endswith. Default: eq.")]
+	public string? Op { get; init; }
+
+	/// <summary>Value to compare against.</summary>
+	[JsonPropertyName("value")]
+	[Description("Comparison value. GUIDs in Id-suffixed fields are automatically unquoted. Strings get single-quoted. Numbers and booleans are unquoted.")]
+	public JsonElement? Value { get; init; }
+
+	/// <summary>Array of values for in-list OR expansion.</summary>
+	[JsonPropertyName("in")]
+	[Description("Array of values that expand to OR-joined equality clauses: field eq v1 or field eq v2.")]
+	public JsonElement? InValues { get; init; }
+}
+
+/// <summary>
+/// Structured filter object for <see cref="ODataReadArgs.Filters"/>.
+/// </summary>
+public sealed record ODataFilters {
+	/// <summary>Conditions joined with AND.</summary>
+	[JsonPropertyName("all")]
+	[Description("Conditions that must ALL match (AND-joined).")]
+	public ODataFilterCondition[]? All { get; init; }
+
+	/// <summary>Conditions joined with OR.</summary>
+	[JsonPropertyName("any")]
+	[Description("Conditions where ANY must match (OR-joined).")]
+	public ODataFilterCondition[]? Any { get; init; }
 }

@@ -226,7 +226,7 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "odata-read requires the OData entity set name");
 		contract.Description.Should().Contain("query records",
 			because: "the contract should describe odata-read as a general Creatio record query tool");
-		contract.Description.Should().NotContain("business rule", StringComparison.OrdinalIgnoreCase,
+		contract.Description.ToLowerInvariant().Should().NotContain("business rule",
 			because: "odata-read is universal and must not be framed as a business-rule-only helper");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "value",
 			because: "the real MCP contract should expose the OData value payload");
