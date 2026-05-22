@@ -12,21 +12,12 @@ namespace Clio.Command.McpServer.Tools;
 /// utilities, Freedom UI pages, etc.) via <c>ClientUnitSchemaDesignerService</c>,
 /// bypassing Freedom UI-specific marker/bundle validation performed by <see cref="PageUpdateTool"/>.
 /// </summary>
-[McpServerToolType]
 public sealed class ClientUnitSchemaUpdateTool(
 	ClientUnitSchemaUpdateCommand command,
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 	: BaseTool<ClientUnitSchemaUpdateOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "update-client-unit-schema";
-
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description(
-		"Update the raw body of any client unit schema (classic 7x JS mixins/modules/utilities or Freedom UI) " +
-		"without Freedom UI bundle/marker validation. Use when the target is not a Freedom UI page schema, e.g. 'NetworkUtilities'. " +
-		"Provide the body inline via `body` or, for large bodies, as an absolute file path via `body-file`. " +
-		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public ClientUnitSchemaUpdateResponse UpdateSchema(
 		[Description("Parameters: schema-name (required); one of body or body-file (required); dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]

@@ -7,17 +7,12 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
-[McpServerToolType]
 public sealed class ClientUnitSchemaCreateTool(
 	ClientUnitSchemaCreateCommand command,
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 	: BaseTool<ClientUnitSchemaCreateOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "create-client-unit-schema";
-
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-	[Description("Create a new JavaScript (ClientUnit) schema on a remote Creatio environment. Use this for utility/helper JS modules — not Freedom UI pages (use create-page for those). Prefer `environment-name`; keep direct connection args only for bootstrap flows.")]
 	public ClientUnitSchemaCreateResponse CreateClientUnitSchema(
 		[Description("Parameters: schema-name, package-name (required); caption, description (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] ClientUnitSchemaCreateArgs args) {

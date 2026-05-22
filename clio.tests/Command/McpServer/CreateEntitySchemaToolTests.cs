@@ -85,12 +85,12 @@ public class CreateEntitySchemaToolTests {
 	}
 
 	[Test]
-	[Description("Marks create-entity-schema as destructive because it mutates a remote Creatio package.")]
+	[Description("Marks the consolidated create-schema MCP entrypoint as destructive because every dispatch (including entity/lookup) mutates remote state.")]
 	[Category("Unit")]
-	public async Task CreateEntitySchema_Should_Be_Marked_As_Destructive() {
+	public void CreateSchema_Should_Be_Marked_As_Destructive() {
 		// Arrange
-		System.Reflection.MethodInfo method = typeof(CreateEntitySchemaTool)
-			.GetMethod(nameof(CreateEntitySchemaTool.CreateEntitySchema))!;
+		System.Reflection.MethodInfo method = typeof(SchemaCreateTool)
+			.GetMethod(nameof(SchemaCreateTool.Create))!;
 		McpServerToolAttribute attribute = method
 			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
 			.Cast<McpServerToolAttribute>()
@@ -101,7 +101,7 @@ public class CreateEntitySchemaToolTests {
 
 		// Assert
 		destructive.Should().BeTrue(
-			because: "creating a remote entity schema changes the target package state");
+			because: "the consolidated create-schema MCP entrypoint dispatches to create flows that all mutate the target environment");
 	}
 
 	[Test]

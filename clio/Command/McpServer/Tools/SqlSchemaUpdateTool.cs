@@ -7,20 +7,12 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
-[McpServerToolType]
 public sealed class SqlSchemaUpdateTool(
 	SqlSchemaUpdateCommand command,
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 	: BaseTool<SqlSchemaUpdateOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "update-sql-schema";
-
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description(
-		"Update the body of a SQL script schema on a remote Creatio environment via ScriptSchemaDesignerService. " +
-		"Provide the body inline via `body` or, for large bodies, as an absolute file path via `body-file`. " +
-		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public SqlSchemaUpdateResponse UpdateSchema(
 		[Description("Parameters: schema-name (required); one of body or body-file (required); dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]

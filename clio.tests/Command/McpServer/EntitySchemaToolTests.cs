@@ -743,39 +743,26 @@ public sealed class EntitySchemaToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Marks the entity schema read tools as read-only and the mutating tools as destructive.")]
-	[TestCase(typeof(CreateEntitySchemaTool), nameof(CreateEntitySchemaTool.CreateEntitySchema), false, true)]
-	[TestCase(typeof(CreateLookupTool), nameof(CreateLookupTool.CreateLookup), false, true)]
-	[TestCase(typeof(UpdateEntitySchemaTool), nameof(UpdateEntitySchemaTool.UpdateEntitySchema), false, true)]
-	[TestCase(typeof(GetEntitySchemaPropertiesTool), nameof(GetEntitySchemaPropertiesTool.GetEntitySchemaProperties), true, false)]
-	[TestCase(typeof(GetEntitySchemaColumnPropertiesTool), nameof(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnProperties), true, false)]
-	[TestCase(typeof(ModifyEntitySchemaColumnTool), nameof(ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumn), false, true)]
-	public void EntitySchemaTools_Should_Advertise_Safety_Metadata(
-		System.Type toolType,
-		string methodName,
-		bool readOnly,
-		bool destructive) {
+	[Description("Marks the modify-entity-schema-column tool (the only entity-specific MCP entry point that survived consolidation) as destructive.")]
+	public void ModifyEntitySchemaColumn_Should_Advertise_Destructive_Metadata() {
 		// Arrange
-		System.Reflection.MethodInfo method = toolType.GetMethod(methodName)!;
+		System.Reflection.MethodInfo method = typeof(ModifyEntitySchemaColumnTool)
+			.GetMethod(nameof(ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumn))!;
 		McpServerToolAttribute attribute = method
 			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
 			.Cast<McpServerToolAttribute>()
 			.Single();
 
-		// Act
-		bool actualReadOnly = attribute.ReadOnly;
-		bool actualDestructive = attribute.Destructive;
-
 		// Assert
-		actualReadOnly.Should().Be(readOnly,
-			because: "the tool metadata should distinguish read-only and mutating entity schema operations");
-		actualDestructive.Should().Be(destructive,
-			because: "the tool metadata should warn clients before mutating remote schema state");
+		attribute.Destructive.Should().BeTrue(
+			because: "modifying an entity schema column mutates remote schema state and clients should treat it as destructive");
+		attribute.ReadOnly.Should().BeFalse(
+			because: "modify-entity-schema-column mutates state and must not be marked read-only");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Prompt guidance for entity schema tools references the exact production tool names and argument shapes.")]
+	[Description("Prompt guidance for entity schema tools references the consolidated create-schema/update-schema/get-schema tool surface plus the surviving modify-entity-schema-column entry.")]
 	public void EntitySchemaPrompt_Should_Reference_Production_Tool_Names() {
 		// Arrange
 
@@ -788,18 +775,20 @@ public sealed class EntitySchemaToolTests {
 		string modifyPrompt = EntitySchemaPrompt.ModifyEntitySchemaColumn("UsrPkg", "UsrVehicle", "modify", "Name", "dev");
 
 		// Assert
-		createPrompt.Should().Contain(CreateEntitySchemaTool.CreateEntitySchemaToolName,
-			because: "create prompt guidance should reference the exact production tool name");
+		createPrompt.Should().Contain(SchemaCreateTool.ToolName,
+			because: "create prompt guidance should reference the consolidated create-schema tool name");
+		createPrompt.Should().Contain("schema-type=" + SchemaCreateTool.SchemaTypeEntity,
+			because: "create prompt guidance should mention the entity schema-type discriminator value");
 		createPrompt.Should().Contain("canonical clio MCP",
 			because: "create prompt guidance should position the tool inside the neutral clio MCP contract instead of ADAC framing");
 		createPrompt.Should().NotContain("ADAC",
 			because: "create prompt guidance should no longer describe the entity-schema surface as ADAC-specific");
-		lookupPrompt.Should().Contain(CreateLookupTool.CreateLookupToolName,
-			because: "lookup prompt guidance should reference the exact production tool name");
+		lookupPrompt.Should().Contain(SchemaCreateTool.ToolName,
+			because: "lookup prompt guidance should reference the consolidated create-schema tool name");
+		lookupPrompt.Should().Contain("schema-type=" + SchemaCreateTool.SchemaTypeLookup,
+			because: "lookup prompt guidance should mention the lookup schema-type discriminator value");
 		lookupPrompt.Should().Contain("Lookups",
 			because: "lookup prompt guidance should mention automatic registration in the standard Lookups section");
-		lookupPrompt.Should().Contain(GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
-			because: "lookup prompt guidance should direct callers to the canonical post-create verification path");
 		lookupPrompt.Should().Contain("`Name`",
 			because: "lookup prompt guidance should explain the inherited display-field contract for BaseLookup");
 		lookupPrompt.Should().Contain(GuidanceGetTool.ToolName,
@@ -807,7 +796,7 @@ public sealed class EntitySchemaToolTests {
 		lookupPrompt.Should().Contain("app-modeling",
 			because: "lookup prompt guidance should identify the exact guidance name callers must pass to the guidance tool");
 		updatePrompt.Should().Contain(UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
-			because: "batch update prompt guidance should reference the exact production tool name");
+			because: "batch update prompt guidance should reference the documented production tool name");
 		updatePrompt.Should().Contain("title-localizations",
 			because: "batch update prompt guidance should instruct callers to use localization maps");
 		updatePrompt.Should().Contain("schema default",

@@ -7,20 +7,12 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
-[McpServerToolType]
 public sealed class SqlSchemaCreateTool(
 	SqlSchemaCreateCommand command,
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 	: BaseTool<SqlSchemaCreateOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "create-sql-schema";
-
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-	[Description(
-		"Create a new SQL script schema on a remote Creatio environment via ScriptSchemaDesignerService. " +
-		"The schema is saved directly to the server — no local workspace files are created. " +
-		"Prefer `environment-name`; keep direct connection args only for bootstrap flows.")]
 	public SqlSchemaCreateResponse CreateSchema(
 		[Description("Parameters: schema-name, package-name (required); caption, description (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]

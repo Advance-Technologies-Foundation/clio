@@ -275,6 +275,7 @@ public class BindingsModule {
 		services.AddTransient<SchemaCreateTool>();
 		services.AddTransient<SchemaUpdateTool>();
 		services.AddTransient<GetSchemaTool>();
+		services.AddTransient<SchemaListTool>();
 		services.AddTransient<ClientUnitSchemaCreateTool>();
 		services.AddTransient<ClientUnitSchemaUpdateTool>();
 		services.AddTransient<GetClientUnitSchemaTool>();
@@ -283,6 +284,13 @@ public class BindingsModule {
 		services.AddTransient<SqlSchemaUpdateTool>();
 		services.AddTransient<SqlSchemaInstallTool>();
 		services.AddTransient<DeleteSchemaTool>();
+		services.AddTransient<CreateEntitySchemaTool>();
+		services.AddTransient<CreateLookupTool>();
+		services.AddTransient<UpdateEntitySchemaTool>();
+		services.AddTransient<GetEntitySchemaPropertiesTool>();
+		services.AddTransient<FindEntitySchemaTool>();
+		services.AddTransient<GetEntitySchemaColumnPropertiesTool>();
+		services.AddTransient<ModifyEntitySchemaColumnTool>();
 		services.AddTransient<PageSyncTool>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();

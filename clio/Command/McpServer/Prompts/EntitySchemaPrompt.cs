@@ -14,8 +14,8 @@ public static class EntitySchemaPrompt {
 	/// <summary>
 	/// Builds a prompt that directs the agent to create a remote entity schema through MCP.
 	/// </summary>
-	[McpServerPrompt(Name = CreateEntitySchemaTool.CreateEntitySchemaToolName),
-		Description("Prompt to create a remote entity schema")]
+	[McpServerPrompt(Name = "create-entity-schema"),
+		Description("Prompt to create a remote entity schema via create-schema")]
 	public static string CreateEntitySchema(
 		[Required]
 		[Description("Target package name")]
@@ -34,7 +34,7 @@ public static class EntitySchemaPrompt {
 		[Description("Whether to create a replacement schema")]
 		bool extendParent = false) =>
 		$"""
-		 Use clio mcp server `{CreateEntitySchemaTool.CreateEntitySchemaToolName}` to create entity schema
+		 Use clio mcp server `{SchemaCreateTool.ToolName}` with `schema-type={SchemaCreateTool.SchemaTypeEntity}` to create entity schema
 		 `{schemaName}` in package `{packageName}` for environment `{environmentName}` with title `{title}`.
 		 Send schema captions only through `title-localizations`, for example
 		 `title-localizations.en-US = <title>`. Do not send legacy scalar `title`.
@@ -47,7 +47,7 @@ public static class EntitySchemaPrompt {
 		 `Encrypted` / `Password` can be used as aliases for `SecureText`, and `EmailAddress`,
 		 `EmailAddress` can be used as an alias for `Email`. For `Lookup` columns,
 		 provide `reference-schema-name`. Current clio entity-schema tools are part of the canonical clio MCP
-		 contract, so keep using `create-entity-schema` instead of frontend-only names like `entity.create`.
+		 contract, so keep using `create-schema` with `schema-type=entity` instead of frontend-only names like `entity.create`.
 		 For broader app-modeling guardrails, call `{GuidanceGetTool.ToolName}` with `name` set to `app-modeling`.
 		 When the caller needs richer metadata, each `columns` item can also include `required`,
 		 `default-value-config`, legacy shorthand `default-value-source` / `default-value`, and frontend-style
@@ -66,8 +66,8 @@ public static class EntitySchemaPrompt {
 	/// <summary>
 	/// Builds a prompt that directs the agent to create a remote lookup schema through MCP.
 	/// </summary>
-[McpServerPrompt(Name = CreateLookupTool.CreateLookupToolName),
-		Description("Prompt to create a remote lookup schema")]
+[McpServerPrompt(Name = "create-lookup"),
+		Description("Prompt to create a remote lookup schema via create-schema")]
 	public static string CreateLookup(
 		[Required]
 		[Description("Target package name")]
@@ -82,7 +82,7 @@ public static class EntitySchemaPrompt {
 		[Description("Creatio environment name")]
 		string environmentName) =>
 		$"""
-		 Use clio mcp server `{CreateLookupTool.CreateLookupToolName}` to create lookup schema
+		 Use clio mcp server `{SchemaCreateTool.ToolName}` with `schema-type={SchemaCreateTool.SchemaTypeLookup}` to create lookup schema
 		 `{schemaName}` in package `{packageName}` for environment `{environmentName}` with title `{title}`.
 		 Send schema captions only through `title-localizations`, for example
 		 `title-localizations.en-US = <title>`. Do not send legacy scalar `title`.

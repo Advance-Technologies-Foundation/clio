@@ -7,20 +7,12 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
-[McpServerToolType]
 public sealed class GetClientUnitSchemaTool(
 	GetClientUnitSchemaCommand command,
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 	: BaseTool<GetClientUnitSchemaOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "get-client-unit-schema";
-
-	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description(
-		"Read the JavaScript body and metadata of a client unit schema from a remote Creatio environment. " +
-		"Use before update-client-unit-schema to inspect current content. " +
-		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public GetClientUnitSchemaResponse GetSchema(
 		[Description("Parameters: schema-name (required); output-file (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]

@@ -22,21 +22,12 @@ public sealed class CreateEntitySchemaTool(
 	ISchemaEnrichmentService? enrichmentService = null)
 	: BaseTool<CreateEntitySchemaOptions>(command, logger, commandResolver) {
 
+	/// <summary>
+	/// Legacy MCP tool name retained for the documentation surface served by ToolContractGetTool.
+	/// The actual MCP entry point now lives on <see cref="SchemaCreateTool"/> with <c>schema-type=entity</c>.
+	/// </summary>
 	internal const string CreateEntitySchemaToolName = "create-entity-schema";
 
-	/// <summary>
-	/// Creates a remote entity schema in a package on the requested Creatio environment.
-	/// </summary>
-	[McpServerTool(Name = CreateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("""
-				 Creates a remote entity schema in an existing Creatio package through EntitySchemaDesignerService.
-				 
-				 Use this when the schema should be created directly on the target environment instead of generating
-				 local source files. The package must already exist on the target environment.
-				 
-				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.
-				 """)]
 	public async Task<CommandExecutionResult> CreateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to BaseEntity unless extend-parent is true), extend-parent (optional, requires parent-schema-name when true)")] [Required] CreateEntitySchemaArgs args
 	) {
@@ -130,7 +121,12 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 	private readonly IToolCommandResolver _commandResolver;
 	private readonly ISchemaEnrichmentService? _enrichmentService;
 
+	/// <summary>
+	/// Legacy MCP tool name retained for the documentation surface served by ToolContractGetTool.
+	/// The actual MCP entry point now lives on <see cref="SchemaCreateTool"/> with <c>schema-type=lookup</c>.
+	/// </summary>
 	internal const string CreateLookupToolName = "create-lookup";
+
 	private const string BaseLookupParentSchemaName = "BaseLookup";
 
 	public CreateLookupTool(
@@ -144,18 +140,6 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 		_enrichmentService = enrichmentService;
 	}
 
-	/// <summary>
-	/// Creates a remote lookup schema in a package on the requested Creatio environment.
-	/// </summary>
-	[McpServerTool(Name = CreateLookupToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("""
-				 Creates a remote lookup schema in an existing Creatio package through EntitySchemaDesignerService.
-				 
-				 The schema always inherits from BaseLookup. Use this when the caller explicitly requested a lookup
-				 entity instead of a generic entity schema. BaseLookup already provides Name and Description, so do
-				 not send them as custom columns.
-				 """)]
 	public async Task<CommandExecutionResult> CreateLookup(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns (optional)")] [Required] CreateLookupArgs args
 	) {
@@ -226,15 +210,12 @@ public sealed class UpdateEntitySchemaTool(
 	ISchemaEnrichmentService? enrichmentService = null)
 	: BaseTool<UpdateEntitySchemaOptions>(command, logger, commandResolver) {
 
+	/// <summary>
+	/// Legacy MCP tool name retained for the documentation surface served by ToolContractGetTool.
+	/// The actual MCP entry point now lives on <see cref="SchemaUpdateTool"/> with <c>schema-type=entity</c>.
+	/// </summary>
 	internal const string UpdateEntitySchemaToolName = "update-entity-schema";
 
-	/// <summary>
-	/// Applies a batch of add/modify/remove column operations to a remote entity schema.
-	/// </summary>
-	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema. " +
-		"Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.")]
 	public async Task<CommandExecutionResult> UpdateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, operations (all required)")] [Required] UpdateEntitySchemaArgs args) {
 		ApplicationDataForgeResult? dataForge = null;
@@ -344,14 +325,12 @@ public sealed class GetEntitySchemaPropertiesTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<GetEntitySchemaPropertiesOptions>(command, logger, commandResolver) {
 
+	/// <summary>
+	/// Legacy MCP tool name retained for the documentation surface served by ToolContractGetTool.
+	/// The actual MCP entry point now lives on <see cref="GetSchemaTool"/> with <c>schema-type=entity</c>.
+	/// </summary>
 	internal const string GetEntitySchemaPropertiesToolName = "get-entity-schema-properties";
 
-	/// <summary>
-	/// Returns structured properties for a remote entity schema.
-	/// </summary>
-	[McpServerTool(Name = GetEntitySchemaPropertiesToolName, ReadOnly = true, Destructive = false, Idempotent = true,
-		OpenWorld = false)]
-	[Description("Returns structured properties for the specified remote Creatio entity schema.")]
 	public EntitySchemaPropertiesInfo GetEntitySchemaProperties(
 		[Description("Parameters: environment-name, package-name, schema-name (all required)")] [Required] GetEntitySchemaPropertiesArgs args) {
 		GetEntitySchemaPropertiesOptions options = new() {
@@ -374,18 +353,12 @@ public sealed class FindEntitySchemaTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<FindEntitySchemaOptions>(command, logger, commandResolver) {
 
+	/// <summary>
+	/// Legacy MCP tool name retained for the documentation surface served by ToolContractGetTool.
+	/// The actual MCP entry point now lives on <see cref="SchemaListTool"/> with <c>schema-type=entity</c>.
+	/// </summary>
 	internal const string FindEntitySchemaToolName = "find-entity-schema";
 
-	/// <summary>
-	/// Finds entity schemas by exact name, substring pattern, or UId.
-	/// </summary>
-	[McpServerTool(Name = FindEntitySchemaToolName, ReadOnly = true, Destructive = false, Idempotent = true,
-		OpenWorld = false)]
-	[Description(
-		"Searches for entity schemas in a Creatio environment without needing to know the package name. "
-		+ "Returns schema name, package, maintainer, and parent schema for each match. "
-		+ "Use the returned 'package-name' field directly for follow-up MCP calls. "
-		+ "Use 'schema-name' for exact lookup, 'search-pattern' for substring search, or 'uid' for Guid lookup.")]
 	public IReadOnlyList<EntitySchemaSearchResult> FindEntitySchema(
 		[Description(
 			"Parameters: environment-name (required); exactly one of schema-name (exact match), "
@@ -410,14 +383,12 @@ public sealed class GetEntitySchemaColumnPropertiesTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<GetEntitySchemaColumnPropertiesOptions>(command, logger, commandResolver) {
 
+	/// <summary>
+	/// Legacy MCP tool name retained for the documentation surface served by ToolContractGetTool.
+	/// The capability now lives on <see cref="GetSchemaTool"/> with <c>schema-type=entity</c> and a non-empty <c>column</c>.
+	/// </summary>
 	internal const string GetEntitySchemaColumnPropertiesToolName = "get-entity-schema-column-properties";
 
-	/// <summary>
-	/// Returns structured properties for a remote entity schema column.
-	/// </summary>
-	[McpServerTool(Name = GetEntitySchemaColumnPropertiesToolName, ReadOnly = true, Destructive = false,
-		Idempotent = true, OpenWorld = false)]
-	[Description("Returns structured properties for the specified remote Creatio entity schema column.")]
 	public EntitySchemaColumnPropertiesInfo GetEntitySchemaColumnProperties(
 		[Description("Parameters: environment-name, package-name, schema-name, column-name (all required)")] [Required]
 		GetEntitySchemaColumnPropertiesArgs args) {

@@ -7,20 +7,12 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
-[McpServerToolType]
 public sealed class SqlSchemaGetTool(
 	SqlSchemaGetCommand command,
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 	: BaseTool<SqlSchemaGetOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "get-sql-schema";
-
-	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description(
-		"Read the body and metadata of a SQL script schema from a remote Creatio environment. " +
-		"Use before update-sql-schema to inspect current content. " +
-		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public SqlSchemaGetResponse GetSchema(
 		[Description("Parameters: schema-name (required); output-file (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]
