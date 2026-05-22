@@ -443,7 +443,7 @@ Good MCP-level candidates:
 - application modeling rules tied directly to tool behavior, especially that `create-app` typically returns the canonical main entity for single-record-type apps
 - lookup modeling rules tied directly to `create-lookup`, especially `BaseLookup` inheritance, inherited `Name` / `Description`, and `Name` as the display field
 - default-value semantics that are tool-domain specific, such as seed rows not satisfying a `defaults to X` requirement without explicit schema or UI defaults
-- page-editing workflow guidance tied to MCP tools, for example `get-tool-contract` -> `list-pages` -> `get-page` -> `component-info` -> `update-page` or `sync-pages`
+- page modification workflow guidance tied to MCP tools, for example `get-tool-contract` -> `list-pages` -> `get-page` -> `component-info` -> `update-page` or `sync-pages`
 
 Guidance that should stay outside clio MCP:
 
