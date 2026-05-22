@@ -291,7 +291,15 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"""
-				/**SCHEMA_HANDLERS*/[{ handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							handler: async (request, next) => {
+								await next?.handle(request);
+							}
+						}
+					]
+				/**SCHEMA_HANDLERS*/
 			""");
 
 		// Act
@@ -331,7 +339,17 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"""
-				/**SCHEMA_HANDLERS*/[{ request: true, handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: true,
+							handler:
+								async (request, next) => {
+									await next?.handle(request);
+								}
+						}
+					]
+				/**SCHEMA_HANDLERS*/
 			""");
 
 		// Act
@@ -378,7 +396,17 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"""
-				/**SCHEMA_HANDLERS*/[{ request: `crt.${suffix}`, handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: `crt.${suffix}`,
+							handler:
+								async (request, next) => {
+									await next?.handle(request);
+								}
+						}
+					]
+				/**SCHEMA_HANDLERS*/
 			""");
 
 		// Act
@@ -398,7 +426,17 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"""
-				/**SCHEMA_HANDLERS*/[{ request: `crt.HandleViewModelInitRequest`, handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: `crt.HandleViewModelInitRequest`,
+							handler:
+								async (request, next) => {
+									await next?.handle(request);
+								}
+						}
+					]
+				/**SCHEMA_HANDLERS*/
 			""");
 
 		// Act
@@ -418,7 +456,14 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"""
-				/**SCHEMA_HANDLERS*/[{ request: "crt.HandleViewModelInitRequest", handler: true }]/**SCHEMA_HANDLERS*/
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler: true
+						}
+					]
+				/**SCHEMA_HANDLERS*/
 			""");
 
 		// Act
@@ -438,7 +483,14 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"""
-				/**SCHEMA_HANDLERS*/[{ request: "crt.HandleViewModelInitRequest", handler: "not a function =>" }]/**SCHEMA_HANDLERS*/
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler: "not a function =>"
+						}
+					]
+				/**SCHEMA_HANDLERS*/
 			""");
 
 		// Act
@@ -458,7 +510,14 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"""
-				/**SCHEMA_HANDLERS*/[{ request: "crt.HandleViewModelInitRequest", handler: { nested: () => {} } }]/**SCHEMA_HANDLERS*/
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler: { nested: () => {} }
+						}
+					]
+				/**SCHEMA_HANDLERS*/
 			""");
 
 		// Act
@@ -478,7 +537,14 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"""
-				/**SCHEMA_HANDLERS*/[{ request: "crt.HandleViewModelInitRequest", handler: /=>/ }]/**SCHEMA_HANDLERS*/
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler: /=>/
+						}
+					]
+				/**SCHEMA_HANDLERS*/
 			""");
 
 		// Act
@@ -751,7 +817,13 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidFormPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			"""
-				/**SCHEMA_CONVERTERS*/{ "usr.ToUpperCase": function(value) { return value?.toUpperCase() ?? ""; } }/**SCHEMA_CONVERTERS*/
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.ToUpperCase": function(value) {
+							return value?.toUpperCase() ?? "";
+						}
+					}
+				/**SCHEMA_CONVERTERS*/
 			""");
 		var result = SchemaValidationService.ValidateMarkerContent(body);
 
@@ -1159,7 +1231,12 @@ public sealed class SchemaValidationServiceTests
 					{
 						"operation":"insert",
 						"name":"UsrName",
-						"values":{"type":"crt.Input","label":"$Resources.Strings.UsrName","control":"$UsrName"}
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.UsrName",
+								"control":"$UsrName"
+							}
 					}
 				]
 			""",
@@ -1267,7 +1344,12 @@ public sealed class SchemaValidationServiceTests
 					{
 						"operation":"insert",
 						"name":"UsrLabel",
-						"values":{"type":"crt.Input","label":"$Resources.Strings.UsrLabel","control":"$UsrLabel"}
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.UsrLabel",
+								"control":"$UsrLabel"
+							}
 					}
 				]
 			""",
@@ -1405,7 +1487,12 @@ public sealed class SchemaValidationServiceTests
 				{
 					"operation":"insert",
 					"name":"UsrName",
-					"values":{"type":"crt.Input","label":"$Resources.Strings.UsrName","control":"$UsrName"}
+					"values":
+						{
+							"type":"crt.Input",
+							"label":"$Resources.Strings.UsrName",
+							"control":"$UsrName"
+						}
 				}
 			]
 		""";
@@ -1476,7 +1563,12 @@ public sealed class SchemaValidationServiceTests
 				{
 					"operation":"insert",
 					"name":"UsrName",
-					"values":{"type":"crt.Input","label":"$Resources.Strings.UsrName","control":"$UsrName"}
+					"values":
+						{
+							"type":"crt.Input",
+							"label":"$Resources.Strings.UsrName",
+							"control":"$UsrName"
+						}
 				}
 			]
 		""";
@@ -1615,13 +1707,39 @@ public sealed class SchemaValidationServiceTests
 
 	private static string BuildDiffBackedPageBody(string viewConfigDiff, string viewModelConfigDiff) {
 		return $$"""
-			define("TestPage", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/{{viewConfigDiff}}/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{{viewModelConfigDiff}}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });
+			define(
+				"TestPage",
+				/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+				function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{
+					return {
+						viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/{{viewConfigDiff}}/**SCHEMA_VIEW_CONFIG_DIFF*/,
+						viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{{viewModelConfigDiff}}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,
+						modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,
+						handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,
+						converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,
+						validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+					};
+				}
+			);
 			""";
 	}
 
 	private static string BuildStaticViewModelConfigPageBody(string viewConfigDiff, string viewModelConfig, string? handlers = null) {
 		return $$"""
-			define("TestPage", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/{{viewConfigDiff}}/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{{viewModelConfig}}/**SCHEMA_VIEW_MODEL_CONFIG*/, modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/, handlers: /**SCHEMA_HANDLERS*/{{handlers ?? "[]"}}/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });
+			define(
+				"TestPage",
+				/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+				function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{
+					return {
+						viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/{{viewConfigDiff}}/**SCHEMA_VIEW_CONFIG_DIFF*/,
+						viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{{viewModelConfig}}/**SCHEMA_VIEW_MODEL_CONFIG*/,
+						modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/,
+						handlers: /**SCHEMA_HANDLERS*/{{handlers ?? "[]"}}/**SCHEMA_HANDLERS*/,
+						converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,
+						validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+					};
+				}
+			);
 			""";
 	}
 
@@ -1634,7 +1752,12 @@ public sealed class SchemaValidationServiceTests
 				{
 					"operation":"insert",
 					"name":"UsrName",
-					"values":{"type":"crt.Input","label":"$Resources.Strings.UsrName","control":"$UsrName"}
+					"values":
+						{
+							"type":"crt.Input",
+							"label":"$Resources.Strings.UsrName",
+							"control":"$UsrName"
+						}
 				}
 			]
 		""";
@@ -1647,7 +1770,11 @@ public sealed class SchemaValidationServiceTests
 							"modelConfig":{"path":"PDS.UsrName"},
 							"validators":
 								{
-									"UpperCase": {"type":"usr.UpperCaseValidator","params":{"message":"Must be uppercase"}}
+									"UpperCase":
+										{
+											"type":"usr.UpperCaseValidator",
+											"params":{"message":"Must be uppercase"}
+										}
 								}
 						}
 				}
@@ -1752,7 +1879,12 @@ public sealed class SchemaValidationServiceTests
 				{
 					"operation":"insert",
 					"name":"UsrName",
-					"values":{"type":"crt.Input","label":"$Resources.Strings.UsrName","control":"$UsrName"}
+					"values":
+						{
+							"type":"crt.Input",
+							"label":"$Resources.Strings.UsrName",
+							"control":"$UsrName"
+						}
 				}
 			]
 		""";
@@ -1763,7 +1895,11 @@ public sealed class SchemaValidationServiceTests
 						"modelConfig":{"path":"PDS.UsrName"},
 						"validators":
 							{
-								"UpperCase": {"type":"usr.UpperCaseValidator","params":{"message":"Must be uppercase"}}
+								"UpperCase":
+									{
+										"type":"usr.UpperCaseValidator",
+										"params":{"message":"Must be uppercase"}
+									}
 							}
 					}
 				}
@@ -1906,7 +2042,14 @@ public sealed class SchemaValidationServiceTests
 			]
 		""";
 		string viewModelConfig = """
-			{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{}}}}
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":{}
+					}
+				}
+			}
 		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
@@ -2123,7 +2266,13 @@ public sealed class SchemaValidationServiceTests
 						{
 							"UsrName": {
 								"modelConfig":{"path":"PDS.UsrName"},
-								"validators":{"Upper":{"type":"usr.Upper","params":{"message":"$Resources.Strings.UsrMsg"}}}
+								"validators":
+									{
+										"Upper": {
+											"type":"usr.Upper",
+											"params":{"message":"$Resources.Strings.UsrMsg"}
+										}
+									}
 							}
 						}
 				}
@@ -2153,7 +2302,13 @@ public sealed class SchemaValidationServiceTests
 					"values":
 						{
 							"UsrPseudoHandler": {
-								"validators": {"Upper":{"type":"usr.Upper","params":{"message":"$Resources.Strings.UsrMsg"}}}
+								"validators":
+									{
+										"Upper": {
+											"type":"usr.Upper",
+											"params":{"message":"$Resources.Strings.UsrMsg"}
+										}
+									}
 							}
 						}
 				}
@@ -2183,7 +2338,13 @@ public sealed class SchemaValidationServiceTests
 					"values":
 						{
 							"UsrPseudoHandler": {
-								"validators": {"Upper":{"type":"usr.Upper","params":{"message":"$Resources.Strings.UsrMsg"}}}
+								"validators":
+									{
+										"Upper": {
+											"type":"usr.Upper",
+											"params":{"message":"$Resources.Strings.UsrMsg"}
+										}
+									}
 							}
 						}
 				}
@@ -2212,7 +2373,13 @@ public sealed class SchemaValidationServiceTests
 					"values":
 						{
 							"UsrName": {
-								"validators": {"Upper":{"type":"usr.Upper","params":{"message":"$Resources.Strings.UsrMsg"}}}
+								"validators":
+									{
+										"Upper": {
+											"type":"usr.Upper",
+											"params":{"message":"$Resources.Strings.UsrMsg"}
+										}
+									}
 							}
 						}
 				}
@@ -2240,7 +2407,11 @@ public sealed class SchemaValidationServiceTests
 					"operation":"merge",
 					"values":
 						{
-							"UsrPseudoHandler": {"request":"usr.DoSomething","params":{"message":"$Resources.Strings.UsrMsg"}}
+							"UsrPseudoHandler":
+								{
+									"request":"usr.DoSomething",
+									"params":{"message":"$Resources.Strings.UsrMsg"}
+								}
 						}
 				}
 			]
@@ -2512,7 +2683,11 @@ public sealed class SchemaValidationServiceTests
 						"modelConfig":{"path":"PDS.UsrName"},
 						"validators":
 							{
-								"Required": {"type":"crt.Required","params":{"message":"#ResourceString(UsrRequired)#"}}
+								"Required":
+									{
+										"type":"crt.Required",
+										"params":{"message":"#ResourceString(UsrRequired)#"}
+									}
 							}
 					}
 				}
@@ -2549,7 +2724,11 @@ public sealed class SchemaValidationServiceTests
 						"modelConfig":{"path":"PDS.UsrName"},
 						"validators":
 							{
-								"NoParams": {"type":"usr.NoParamsValidator","params":{"message":"#ResourceString(UsrMsg)#"}}
+								"NoParams":
+									{
+										"type":"usr.NoParamsValidator",
+										"params":{"message":"#ResourceString(UsrMsg)#"}
+									}
 							}
 					}
 				}
@@ -2601,7 +2780,11 @@ public sealed class SchemaValidationServiceTests
 						"modelConfig":{"path":"PDS.UsrName"},
 						"validators":
 							{
-								"NoParams": {"type":"usr.NoParamsValidator","params":{"message":"#ResourceString(UsrMsg)#"}}
+								"NoParams":
+									{
+										"type":"usr.NoParamsValidator",
+										"params":{"message":"#ResourceString(UsrMsg)#"}
+									}
 							}
 					}
 				}
@@ -2612,7 +2795,11 @@ public sealed class SchemaValidationServiceTests
 			"""
 				/**SCHEMA_VALIDATORS*/
 					{
-						"usr.NoParamsValidator": {"validator":function(){return function(){return null;};},"async":false}
+						"usr.NoParamsValidator":
+							{
+								"validator":function(){return function(){return null;};},
+								"async":false
+							}
 					}
 				/**SCHEMA_VALIDATORS*/
 			""");
@@ -3211,7 +3398,13 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			"""
-				/**SCHEMA_CONVERTERS*/{ "usr.ToUpperCase": function(value) { return value?.toUpperCase() ?? ''; } }/**SCHEMA_CONVERTERS*/
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.ToUpperCase": function(value) {
+							return value?.toUpperCase() ?? '';
+						}
+					}
+				/**SCHEMA_CONVERTERS*/
 			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeTrue("because 'usr.ToUpperCase' has the required VendorPrefix.Name dot-format");
@@ -3224,7 +3417,11 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			"""
-				/**SCHEMA_CONVERTERS*/{ "usr.FormatPhone": async (value) => { return value; } }/**SCHEMA_CONVERTERS*/
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.FormatPhone": async (value) => { return value; }
+					}
+				/**SCHEMA_CONVERTERS*/
 			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeTrue("because 'usr.FormatPhone' has the required dot-format");
@@ -3237,7 +3434,11 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			"""
-				/**SCHEMA_CONVERTERS*/{ "UsrPhoneCallConverter": function(value) { return value; } }/**SCHEMA_CONVERTERS*/
+				/**SCHEMA_CONVERTERS*/
+					{
+						"UsrPhoneCallConverter": function(value) { return value; }
+					}
+				/**SCHEMA_CONVERTERS*/
 			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeFalse("because 'UsrPhoneCallConverter' is missing the required dot separator");
@@ -3273,7 +3474,11 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			"""
-				/**SCHEMA_CONVERTERS*/{ "crt.SomeConverter": function(value) { return value; } }/**SCHEMA_CONVERTERS*/
+				/**SCHEMA_CONVERTERS*/
+					{
+						"crt.SomeConverter": function(value) { return value; }
+					}
+				/**SCHEMA_CONVERTERS*/
 			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeTrue(
@@ -3624,7 +3829,12 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
 			"""
-				/**SCHEMA_VALIDATORS*/{ "usr.GoodValidator": { params: [] }, "BadValidator": { params: [] } }/**SCHEMA_VALIDATORS*/
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.GoodValidator": { params: [] },
+						"BadValidator": { params: [] }
+					}
+				/**SCHEMA_VALIDATORS*/
 			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(body);
 		result.IsValid.Should().BeFalse("because 'BadValidator' lacks a dot");
@@ -3791,7 +4001,10 @@ public sealed class SchemaValidationServiceTests
 				/**SCHEMA_VALIDATORS*/
 					{
 						"usr.AsyncValidator": {
-							"validator":async function(config){return async function(control){return null;};},
+							"validator":
+								async function(config){
+									return async function(control){return null;};
+								},
 							"params":[{"name":"message"}],
 							"async":true
 						}
@@ -3910,7 +4123,13 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
 			"""
-				/**SCHEMA_VALIDATORS*/{"BadName":{validator:function(c){return function(x){return null;};}}}/**SCHEMA_VALIDATORS*/
+				/**SCHEMA_VALIDATORS*/
+					{
+						"BadName": {
+							validator: function(c){return function(x){return null;};}
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
 			""");
 
 		// Act
@@ -3961,7 +4180,11 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
 			"""
-				/**SCHEMA_VALIDATORS*/{"usr.MyValidator":{fn:function(c){return function(x){return null;};}}}/**SCHEMA_VALIDATORS*/
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.MyValidator": {fn:function(c){return function(x){return null;};}}
+					}
+				/**SCHEMA_VALIDATORS*/
 			""");
 
 		// Act
@@ -3980,7 +4203,11 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
 			"""
-				/**SCHEMA_VALIDATORS*/{"usr.NoBody":{params:[{"name":"message"}],async:false}}/**SCHEMA_VALIDATORS*/
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.NoBody": {params:[{"name":"message"}],async:false}
+					}
+				/**SCHEMA_VALIDATORS*/
 			""");
 
 		// Act
@@ -4071,7 +4298,11 @@ public sealed class SchemaValidationServiceTests
 			"""
 				/**SCHEMA_VALIDATORS*/
 					{
-						"usr.FlatArrowValidator": {validator:(control) => null,params:[{"name":"message"}]}
+						"usr.FlatArrowValidator":
+							{
+								validator:(control) => null,
+								params:[{"name":"message"}]
+							}
 					}
 				/**SCHEMA_VALIDATORS*/
 			""");
@@ -4148,7 +4379,13 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			"""
-				/**SCHEMA_CONVERTERS*/{"usr.ToUpperCase":function(value){return value && value.toUpperCase();}}/**SCHEMA_CONVERTERS*/
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.ToUpperCase": function(value){
+							return value && value.toUpperCase();
+						}
+					}
+				/**SCHEMA_CONVERTERS*/
 			""");
 
 		// Act
@@ -4166,7 +4403,11 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			"""
-				/**SCHEMA_CONVERTERS*/{"usr.ToCallDisplay":(value) => value ? "Call: " + value : ""}/**SCHEMA_CONVERTERS*/
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.ToCallDisplay": (value) => value ? "Call: " + value : ""
+					}
+				/**SCHEMA_CONVERTERS*/
 			""");
 
 		// Act
@@ -4184,7 +4425,11 @@ public sealed class SchemaValidationServiceTests
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			"""
-				/**SCHEMA_CONVERTERS*/{"usr.FormatPhone":async function(value){return value;}}/**SCHEMA_CONVERTERS*/
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.FormatPhone": async function(value){return value;}
+					}
+				/**SCHEMA_CONVERTERS*/
 			""");
 
 		// Act
@@ -5095,10 +5340,23 @@ public sealed class SchemaValidationServiceTests
 		string body = """
 		              {
 		                "viewConfigDiff": [
-		                  {"operation":"merge","name":"UsrName","values":{"type":"crt.Input","label":"$Resources.Strings.UsrName","control":"$UsrName"}}
+		                  {
+		                  	"operation":"merge",
+		                  	"name":"UsrName",
+		                  	"values":
+		                  		{
+		                  			"type":"crt.Input",
+		                  			"label":"$Resources.Strings.UsrName",
+		                  			"control":"$UsrName"
+		                  		}
+		                  }
 		                ],
 		                "viewModelConfigDiff": [
-		                  {"operation":"merge","path":["attributes"],"values":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}}
+		                  {
+		                  	"operation":"merge",
+		                  	"path":["attributes"],
+		                  	"values":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}
+		                  }
 		                ]
 		              }
 		              """;
@@ -5118,10 +5376,23 @@ public sealed class SchemaValidationServiceTests
 		string body = """
 		              {
 		                "viewConfigDiff": [
-		                  {"operation":"merge","name":"UsrName","values":{"type":"crt.Input","label":"$Resources.Strings.PDS_UsrName","control":"$UsrName"}}
+		                  {
+		                  	"operation":"merge",
+		                  	"name":"UsrName",
+		                  	"values":
+		                  		{
+		                  			"type":"crt.Input",
+		                  			"label":"$Resources.Strings.PDS_UsrName",
+		                  			"control":"$UsrName"
+		                  		}
+		                  }
 		                ],
 		                "viewModelConfigDiff": [
-		                  {"operation":"merge","path":["attributes"],"values":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}}
+		                  {
+		                  	"operation":"merge",
+		                  	"path":["attributes"],
+		                  	"values":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}
+		                  }
 		                ]
 		              }
 		              """;
@@ -5142,10 +5413,27 @@ public sealed class SchemaValidationServiceTests
 		string body = """
 		              {
 		                "viewConfigDiff": [
-		                  {"operation":"merge","name":"UsrName","values":{"type":"crt.Input","label":"$Resources.Strings.UsrNameAlias","control":"$UsrName"}}
+		                  {
+		                  	"operation":"merge",
+		                  	"name":"UsrName",
+		                  	"values":
+		                  		{
+		                  			"type":"crt.Input",
+		                  			"label":"$Resources.Strings.UsrNameAlias",
+		                  			"control":"$UsrName"
+		                  		}
+		                  }
 		                ],
 		                "viewModelConfigDiff": [
-		                  {"operation":"merge","path":["attributes"],"values":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}},"UsrNameAlias":{"modelConfig":{"path":"PDS.UsrName"}}}}
+		                  {
+		                  	"operation":"merge",
+		                  	"path":["attributes"],
+		                  	"values":
+		                  		{
+		                  			"UsrName":{"modelConfig":{"path":"PDS.UsrName"}},
+		                  			"UsrNameAlias":{"modelConfig":{"path":"PDS.UsrName"}}
+		                  		}
+		                  }
 		                ]
 		              }
 		              """;
