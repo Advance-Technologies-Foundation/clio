@@ -75,8 +75,9 @@ public sealed class PageUpdateTool(
 
 	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(PageUpdateOptions options) {
 		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
+			SchemaValidationService.TryParseResources(options.Resources, out Dictionary<string, string>? mobileResources, out _);
 			PageSyncValidationResult mobileResult = MobilePageValidation.Run(
-				options.Body, mobileComponentCatalog, webComponentCatalog);
+				options.Body, mobileComponentCatalog, webComponentCatalog, mobileResources);
 			if (!mobileResult.ContentOk) {
 				return (new PageUpdateResponse {
 					Success = false,

@@ -97,7 +97,8 @@ public static class SchemaValidationService
 	/// <param name="webOnlyTypes">Component types that exist in the web registry but not mobile.</param>
 	/// <returns>A tuple of blocking errors and non-blocking warnings.</returns>
 	public static (List<string> Errors, List<string> Warnings) ValidateMobilePage(
-		string body, IReadOnlySet<string> allowedMobileTypes, IReadOnlySet<string> webOnlyTypes) {
+		string body, IReadOnlySet<string> allowedMobileTypes, IReadOnlySet<string> webOnlyTypes,
+		IReadOnlyDictionary<string, string>? explicitResources = null) {
 		var errors = new List<string>();
 		var warnings = new List<string>();
 
@@ -115,6 +116,10 @@ public static class SchemaValidationService
 
 		SchemaValidationResult bindingResult = ValidateMobileFieldBindings(body);
 		if (!bindingResult.IsValid) errors.AddRange(bindingResult.Errors);
+
+		SchemaValidationResult labelBindingResult = ValidateMobileStandardFieldBindings(body, explicitResources);
+		if (!labelBindingResult.IsValid) errors.AddRange(labelBindingResult.Errors);
+		warnings.AddRange(labelBindingResult.Warnings);
 
 		return (errors, warnings);
 	}
@@ -437,7 +442,56 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
-	/// Validates that <c>SCHEMA_DEPS</c> includes <c>@creatio-devkit/common</c> when
+	/// Validates label/resource bindings on standard field components in a mobile page body.
+	/// Mirrors <see cref="ValidateStandardFieldBindings"/> for the web flow, but operates on
+	/// the plain-JSON mobile schema instead of marker-delimited JavaScript: it reads
+	/// <c>viewConfigDiff</c> / <c>viewModelConfigDiff</c> directly from the JSON root.
+	/// Mobile pages do not support handlers, so the control-vs-handler attribute cross-check
+	/// is skipped (the handler-writes set is empty).
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <param name="explicitResources">Optional explicit resources dictionary used to suppress
+	/// "label will render blank" warnings when a resource key is provided explicitly.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> with warnings for labels whose resource key is
+	/// neither explicitly provided nor auto-provided by the platform via a DS-bound attribute.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileStandardFieldBindings(
+		string body,
+		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind != JsonValueKind.Object) {
+				return result;
+			}
+			if (!root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff)) {
+				return result;
+			}
+			Dictionary<string, string> modelPaths = CollectMobileViewModelPaths(body);
+			HashSet<string> declaredAttributes = CollectMobileViewModelAttributes(root);
+			var ctx = new FieldValidationContext(
+				declaredAttributes,
+				modelPaths,
+				explicitResources,
+				new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+				result);
+			ValidateFieldComponents(viewConfigDiff, in ctx);
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
 	/// the handler bodies reference the SDK argument injected through <c>SCHEMA_ARGS</c>.
 	/// </summary>
 	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema.</param>
