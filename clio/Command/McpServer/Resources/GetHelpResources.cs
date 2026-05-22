@@ -21,7 +21,6 @@ public class GetHelpResources(IFileSystem fileSystem){
 			["show-webApp-list"] = "show-web-app-list",
 			["restart-by-environment"] = RestartWebAppCommand,
 			["restart-by-environment-name"] = RestartWebAppCommand,
-			["restart-by-environmentName"] = RestartWebAppCommand,
 			["restart-by-credentials"] = RestartWebAppCommand,
 			["clear-redis-by-environment"] = ClearRedisDbCommand,
 			["clear-redis-db-by-environment"] = ClearRedisDbCommand,
@@ -30,7 +29,6 @@ public class GetHelpResources(IFileSystem fileSystem){
 			["start-creatio"] = "start",
 			["stop-creatio"] = "stop",
 			["stop-all-creatio"] = "stop",
-			["StopAllCreatio"] = "stop",
 			["unlock-for-hotfix"] = "pkg-hotfix",
 			["finish-hotfix"] = "pkg-hotfix"
 		};
