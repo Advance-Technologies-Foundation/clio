@@ -39,7 +39,7 @@ public sealed class MobilePageGuidanceResource {
 
 		       | Web-guide section | On mobile |
 		       | --- | --- |
-		       | PRE-EDIT GUIDANCE CHECKLIST: `page-schema-resources`, entity-level `business-rules` (`create-entity-business-rule`) | Applies |
+		       | PRE-EDIT GUIDANCE CHECKLIST: `page-schema-resources`, entity-level `business-rules` (`create-entity-business-rule`), page-level `business-rules` (`create-page-business-rule`) | Applies with mobile-specific limits |
 		       | PRE-EDIT: `page-schema-converters` | Concept only — page body must not declare a `converters` section; reference OOTB converters inline (see below) or an already-existing custom converter in a remote module |
 		       | PRE-EDIT: `page-schema-handlers` | Concept only — page body must not declare a `handlers` section; only reference an already-existing remote handler when the user explicitly asks |
 		       | PRE-EDIT: `page-schema-validators`, `page-schema-creatio-devkit-common` | Does NOT apply — no validator support on mobile (even OOTB), no devkit-common AMD dependency |
@@ -55,6 +55,18 @@ public sealed class MobilePageGuidanceResource {
 		       | update-page write modes (`replace` / `append`) — including the "do NOT resend `raw.body`" CRITICAL warning and the `ownBodySummary.viewConfigDiffOperations > 0 → use append` rule of thumb | Applies, with mobile-specific merge rules and AMD-marker exception — see WRITE MODES section below |
 
 		       If a web guide tells you to add a section this mobile guide forbids (validators / inline handlers or converters declared in the page body / AMD deps), the mobile rule wins.
+
+		       ─────────────────────────────────────────────────────────────
+		       BUSINESS RULES — mobile support boundary
+		       ─────────────────────────────────────────────────────────────
+		       Mobile Freedom UI pages do support business rules, but the mobile designer/runtime expose only a
+		       limited set of conditions and actions. Read `business-rules` for rule semantics; this guide adds
+		       only the mobile-specific boundary:
+		         - Use `create-page-business-rule` for UI state changes on one mobile page.
+		         - Use `create-entity-business-rule` when the rule should apply everywhere the entity is used,
+		           or when the user needs validation-like enforcement that mobile page bodies cannot provide.
+		         - Business rules are separate artifacts. Do not implement business-rule logic in the mobile page
+		           body itself. Use `get-page` first when you need page attribute or element names for a page-level rule.
 
 		       ─────────────────────────────────────────────────────────────
 		       WHEN A REQUEST CANNOT BE IMPLEMENTED ON MOBILE — NO INVENTION RULE
@@ -218,6 +230,41 @@ public sealed class MobilePageGuidanceResource {
 		           }
 		         }
 		       Breakpoints: "small" (phone portrait), "medium" (landscape/tablet portrait), "large" (tablet landscape).
+
+		       ─────────────────────────────────────────────────────────────
+		       FIELD GROUPING IN CONTAINERS (mobile layout convention)
+		       ─────────────────────────────────────────────────────────────
+		       On mobile pages, fields MUST be grouped inside crt.GridContainer instances
+		       with the "primary" color. This gives each field group a visually distinct
+		       card-like surface that matches the native mobile design language.
+
+		       Default field container pattern:
+		         {
+		           "operation": "insert",
+		           "name": "<GroupName>Container",
+		           "values": {
+		             "type": "crt.GridContainer",
+		             "columns": "1fr",
+		             "color": "primary",
+		             "borderRadius": "medium",
+		             "padding": { "top": "medium", "right": "medium", "bottom": "medium", "left": "medium" },
+		             "items": []
+		           },
+		           "parentName": "GeneralTabContainer",
+		           "propertyName": "items",
+		           "index": 0
+		         }
+
+		       Rules:
+		         - Always set "color": "primary" on field-group containers (not "default").
+		         - If the page bundle already provides containers with "color": "primary"
+		           (visible in the existing viewConfigDiff from `get-page`), reuse them as
+		           field parents instead of inserting new ones.
+		         - Group logically related fields together in one container.
+		         - Use separate containers for distinct field groups (e.g. general info,
+		           communication details, address fields).
+		         - Insert individual field components as children of these containers, NOT
+		           directly into the Scaffold items.
 
 		       ─────────────────────────────────────────────────────────────
 		       REQUESTS AVAILABLE ON MOBILE

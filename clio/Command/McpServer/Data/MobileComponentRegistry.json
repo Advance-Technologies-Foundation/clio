@@ -62,7 +62,7 @@
   {
     "componentType": "crt.GridContainer",
     "category": "containers",
-    "description": "CSS-grid layout container. Supports the 'adaptive' property for per-breakpoint column overrides (small/medium/large).",
+    "description": "CSS-grid layout container. Supports the 'adaptive' property for per-breakpoint column overrides (small/medium/large). When used as a field-group container, always set \"color\": \"primary\" to provide the standard card-like surface.",
     "container": true,
     "properties": {
       "type": {
@@ -116,7 +116,7 @@
           "default",
           "primary"
         ],
-        "description": "Background color. Use 'primary' for profile/area highlight."
+        "description": "Background color. Accepts preset names ('default', 'primary') or any hex color string (e.g. '#523838'). Use 'primary' for field-group containers by convention."
       }
     },
     "example": {
@@ -125,6 +125,7 @@
       "values": {
         "type": "crt.GridContainer",
         "columns": "1fr",
+        "color": "primary",
         "adaptive": {
           "small": {
             "columns": "1fr"
