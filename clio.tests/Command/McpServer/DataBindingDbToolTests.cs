@@ -94,30 +94,17 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Marks every DB-first data-binding MCP method as destructive so MCP clients can enforce safety checks before remote DB mutations.")]
-	[TestCase(nameof(CreateDataBindingDbTool.CreateDataBindingDb))]
-	[TestCase(nameof(UpsertDataBindingRowDbTool.UpsertDataBindingRowDb))]
-	[TestCase(nameof(RemoveDataBindingRowDbTool.RemoveDataBindingRowDb))]
-	public void DataBindingDbTools_Should_Be_Marked_As_Destructive(string methodName) {
-		// Arrange
-		Type toolType = methodName switch {
-			nameof(CreateDataBindingDbTool.CreateDataBindingDb) => typeof(CreateDataBindingDbTool),
-			nameof(UpsertDataBindingRowDbTool.UpsertDataBindingRowDb) => typeof(UpsertDataBindingRowDbTool),
-			nameof(RemoveDataBindingRowDbTool.RemoveDataBindingRowDb) => typeof(RemoveDataBindingRowDbTool),
-			_ => throw new InvalidOperationException($"Unsupported method: {methodName}")
-		};
+	[Description("Marks the surviving DB-first data-binding MCP entry points as destructive; upsert/remove are folded into the consolidated data-binding-row-db tool.")]
+	[TestCase(typeof(CreateDataBindingDbTool), nameof(CreateDataBindingDbTool.CreateDataBindingDb))]
+	[TestCase(typeof(DataBindingRowDbTool), nameof(DataBindingRowDbTool.Apply))]
+	public void DataBindingDbTools_Should_Be_Marked_As_Destructive(Type toolType, string methodName) {
 		System.Reflection.MethodInfo method = toolType.GetMethod(methodName)!;
 		McpServerToolAttribute attribute = method
 			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
 			.Cast<McpServerToolAttribute>()
 			.Single();
-
-		// Act
-		bool destructive = attribute.Destructive;
-
-		// Assert
-		destructive.Should().BeTrue(
-			because: "all DB-first data-binding tools mutate a remote Creatio database");
+		attribute.Destructive.Should().BeTrue(
+			because: "DB-first data-binding tools mutate a remote Creatio database and must be advertised as destructive");
 	}
 
 	[Test]

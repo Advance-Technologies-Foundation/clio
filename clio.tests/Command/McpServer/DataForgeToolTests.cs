@@ -212,24 +212,20 @@ public sealed class DataForgeToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Marks read tools as read-only and maintenance tools as mutating in MCP metadata.")]
+	[Description("Marks read tools as read-only and maintenance tools as mutating in MCP metadata. FindTables/FindLookups are folded into the consolidated `Find` entry point.")]
 	[TestCase(nameof(DataForgeTool.GetStatus), true, false)]
-	[TestCase(nameof(DataForgeTool.FindTables), true, false)]
-	[TestCase(nameof(DataForgeTool.FindLookups), true, false)]
+	[TestCase(nameof(DataForgeTool.Find), true, false)]
 	[TestCase(nameof(DataForgeTool.GetRelations), true, false)]
 	[TestCase(nameof(DataForgeTool.GetTableColumns), true, false)]
 	[TestCase(nameof(DataForgeTool.GetContext), true, false)]
 	[TestCase(nameof(DataForgeTool.Initialize), false, true)]
 	[TestCase(nameof(DataForgeTool.Update), false, true)]
 	public void DataForgeTools_Should_Advertise_Safety_Metadata(string methodName, bool readOnly, bool destructive) {
-		// Arrange
 		System.Reflection.MethodInfo method = typeof(DataForgeTool).GetMethod(methodName)!;
 		McpServerToolAttribute attribute = method
 			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
 			.Cast<McpServerToolAttribute>()
 			.Single();
-
-		// Assert
 		attribute.ReadOnly.Should().Be(readOnly,
 			because: "MCP metadata must advertise the correct read-only flag for each Data Forge tool");
 		attribute.Destructive.Should().Be(destructive,

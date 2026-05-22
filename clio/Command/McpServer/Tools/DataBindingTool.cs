@@ -47,11 +47,9 @@ public class CreateDataBindingTool(
 /// </summary>
 public class AddDataBindingRowTool(AddDataBindingRowCommand command, ILogger logger)
 	: BaseTool<AddDataBindingRowOptions>(command, logger) {
+	/// <summary>Legacy MCP tool name retained for ToolContractGetTool documentation; the entry now lives on <see cref="DataBindingRowTool"/>.</summary>
 	internal const string AddDataBindingRowToolName = "add-data-binding-row";
 
-	[McpServerTool(Name = AddDataBindingRowToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Adds or replaces a row in an existing local package data binding.")]
 	public CommandExecutionResult AddDataBindingRow(
 		[Description("add-data-binding-row parameters")]
 		[Required]
@@ -72,11 +70,9 @@ public class AddDataBindingRowTool(AddDataBindingRowCommand command, ILogger log
 /// </summary>
 public class RemoveDataBindingRowTool(RemoveDataBindingRowCommand command, ILogger logger)
 	: BaseTool<RemoveDataBindingRowOptions>(command, logger) {
+	/// <summary>Legacy MCP tool name retained for ToolContractGetTool documentation; the entry now lives on <see cref="DataBindingRowTool"/>.</summary>
 	internal const string RemoveDataBindingRowToolName = "remove-data-binding-row";
 
-	[McpServerTool(Name = RemoveDataBindingRowToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Removes a row from an existing local package data binding by primary-key value.")]
 	public CommandExecutionResult RemoveDataBindingRow(
 		[Description("remove-data-binding-row parameters")]
 		[Required]

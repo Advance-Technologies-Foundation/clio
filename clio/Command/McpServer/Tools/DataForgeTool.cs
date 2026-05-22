@@ -18,6 +18,7 @@ public sealed class DataForgeTool(
 	IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
 	IToolCommandResolver commandResolver) {
 	internal const string DataForgeStatusToolName = "dataforge-status";
+	internal const string DataForgeFindToolName = "dataforge-find";
 	internal const string DataForgeFindTablesToolName = "dataforge-find-tables";
 	internal const string DataForgeFindLookupsToolName = "dataforge-find-lookups";
 	internal const string DataForgeGetRelationsToolName = "dataforge-get-relations";
@@ -25,6 +26,35 @@ public sealed class DataForgeTool(
 	internal const string DataForgeContextToolName = "dataforge-context";
 	internal const string DataForgeInitializeToolName = "dataforge-initialize";
 	internal const string DataForgeUpdateToolName = "dataforge-update";
+
+	internal const string DataForgeFindKindTables = "tables";
+	internal const string DataForgeFindKindLookups = "lookups";
+
+	[McpServerTool(Name = DataForgeFindToolName, ReadOnly = true, Destructive = false, Idempotent = true,
+		OpenWorld = false)]
+	[Description("Consolidated DataForge search. kind='tables' finds Creatio tables that semantically match a business concept; kind='lookups' finds lookup values and schemas matching a requested business value. " + PlatformRequirementDescription)]
+	public object Find(
+		[Description("Parameters: kind (required: 'tables' or 'lookups'), query (required); optional limit; optional schema-name (kind='lookups' only); environment-name (required).")]
+		[Required] DataForgeFindArgs args) {
+		if (string.Equals(args.Kind, DataForgeFindKindTables, StringComparison.OrdinalIgnoreCase)) {
+			return FindTables(new DataForgeFindTablesArgs(args.Query, args.Limit) {
+				EnvironmentName = args.EnvironmentName
+			});
+		}
+		if (string.Equals(args.Kind, DataForgeFindKindLookups, StringComparison.OrdinalIgnoreCase)) {
+			return FindLookups(new DataForgeFindLookupsArgs(args.Query, args.SchemaName, args.Limit) {
+				EnvironmentName = args.EnvironmentName
+			});
+		}
+		return new DataForgeFindTablesResponse(
+			false,
+			SourceName,
+			string.Empty,
+			[],
+			new DataForgeErrorResult("validation_error",
+				$"kind must be '{DataForgeFindKindTables}' or '{DataForgeFindKindLookups}'. Got: '{args.Kind}'."),
+			[]);
+	}
 
 	private const string SourceName = "clio+dataforge-service";
 	private const string PlatformRequirementDescription =
@@ -55,9 +85,6 @@ public sealed class DataForgeTool(
 		}
 	}
 
-	[McpServerTool(Name = DataForgeFindTablesToolName, ReadOnly = true, Destructive = false, Idempotent = true,
-		OpenWorld = false)]
-	[Description("Finds existing Creatio tables that semantically match a business concept, so callers can reuse or compare schemas before creating new ones. " + PlatformRequirementDescription)]
 	public DataForgeFindTablesResponse FindTables(
 		[Description("Parameters: query (required), optional limit, environment-name (required).")]
 		[Required]
@@ -80,9 +107,6 @@ public sealed class DataForgeTool(
 		}
 	}
 
-	[McpServerTool(Name = DataForgeFindLookupsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
-		OpenWorld = false)]
-	[Description("Finds lookup values and lookup schemas that match a requested business value, useful for resolving lookup references before writing data bindings. " + PlatformRequirementDescription)]
 	public DataForgeFindLookupsResponse FindLookups(
 		[Description("Parameters: query (required), optional schema-name, optional limit, environment-name (required).")]
 		[Required]
@@ -293,6 +317,22 @@ public abstract record DataForgeConnectionArgsBase {
 public sealed record DataForgeStatusArgs : DataForgeConnectionArgsBase;
 
 public sealed record DataForgeMaintenanceArgs : DataForgeConnectionArgsBase;
+
+public sealed record DataForgeFindArgs(
+	[property: JsonPropertyName("kind")]
+	[property: Description("Discriminator: 'tables' searches Creatio tables; 'lookups' searches lookup values and schemas.")]
+	[property: Required]
+	string Kind,
+	[property: JsonPropertyName("query")]
+	[property: Description("Free-text query.")]
+	[property: Required]
+	string? Query,
+	[property: JsonPropertyName("schema-name")]
+	[property: Description("Optional schema name, honored only when kind='lookups'.")]
+	string? SchemaName = null,
+	[property: JsonPropertyName("limit")]
+	[property: Description("Optional result limit.")]
+	int? Limit = null) : DataForgeConnectionArgsBase;
 
 public sealed record DataForgeFindTablesArgs(
 	[property: JsonPropertyName("query")] string? Query,

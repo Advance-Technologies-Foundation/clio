@@ -272,6 +272,14 @@ public class BindingsModule {
 		services.AddTransient<PageUpdateTool>();
 		services.AddTransient<PageCreateTool>();
 		services.AddTransient<PageTemplatesListTool>();
+		services.AddTransient<AppsTool>();
+		services.AddTransient<AppSectionTool>();
+		services.AddTransient<AddDataBindingRowTool>();
+		services.AddTransient<RemoveDataBindingRowTool>();
+		services.AddTransient<UpsertDataBindingRowDbTool>();
+		services.AddTransient<RemoveDataBindingRowDbTool>();
+		services.AddTransient<DataBindingRowTool>();
+		services.AddTransient<DataBindingRowDbTool>();
 		services.AddTransient<SchemaCreateTool>();
 		services.AddTransient<SchemaUpdateTool>();
 		services.AddTransient<GetSchemaTool>();

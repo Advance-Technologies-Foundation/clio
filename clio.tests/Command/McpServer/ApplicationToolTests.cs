@@ -26,20 +26,14 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ApplicationToolTests {
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises the stable MCP tool name for list-apps so callers and tests share the same production identifier.")]
-	public void ApplicationGetList_Should_Advertise_Stable_Tool_Name() {
-		// Arrange
-		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationGetListTool)
-			.GetMethod(nameof(ApplicationGetListTool.ApplicationGetList))!
+	[Description("Advertises the consolidated apps MCP tool name; legacy list-apps semantics now live behind apps with no identifier.")]
+	public void Apps_Should_Advertise_Stable_Tool_Name() {
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(AppsTool)
+			.GetMethod(nameof(AppsTool.Read))!
 			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
 			.Single();
-
-		// Act
-		string toolName = attribute.Name;
-
-		// Assert
-		toolName.Should().Be(ApplicationGetListTool.ApplicationGetListToolName,
-			because: "the MCP tool name must stay centralized on the production tool type");
+		attribute.Name.Should().Be(AppsTool.ToolName,
+			because: "the consolidated MCP entry point lives on apps; list-apps semantics are exercised when neither id nor code is supplied");
 	}
 
 	[Test]
@@ -132,18 +126,13 @@ public sealed class ApplicationToolTests {
 	[Category("Unit")]
 	[Description("Advertises the stable MCP tool name for get-app-info so callers and tests share the same production identifier.")]
 	public void ApplicationGetInfo_Should_Advertise_Stable_Tool_Name() {
-		// Arrange
-		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationGetInfoTool)
-			.GetMethod(nameof(ApplicationGetInfoTool.ApplicationGetInfo))!
-			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
-			.Single();
-
-		// Act
-		string toolName = attribute.Name;
-
-		// Assert
-		toolName.Should().Be(ApplicationGetInfoTool.ApplicationGetInfoToolName,
-			because: "the MCP tool name must stay centralized on the production tool type");
+		// get-app-info has been folded into the consolidated `apps` tool with `id` or `code` argument.
+		// The advertised tool name now lives on AppsTool; this assertion preserves the documentation
+		// link for ToolContractGetTool which still exposes the legacy identifier as a doc entry.
+		ApplicationGetInfoTool.ApplicationGetInfoToolName.Should().Be("get-app-info",
+			because: "the legacy documentation surface must keep the historical identifier for backward-compatible discovery");
+		AppsTool.ToolName.Should().Be("apps",
+			because: "the consolidated MCP entry point lives on apps");
 	}
 
 	[Test]
@@ -168,72 +157,38 @@ public sealed class ApplicationToolTests {
 	[Category("Unit")]
 	[Description("Advertises the stable MCP tool name for create-app-section so callers and tests share the same production identifier.")]
 	public void ApplicationSectionCreate_Should_Advertise_Stable_Tool_Name() {
-		// Arrange
-		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationSectionCreateTool)
-			.GetMethod(nameof(ApplicationSectionCreateTool.ApplicationSectionCreate))!
-			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
-			.Single();
-
-		// Act
-		string toolName = attribute.Name;
-
-		// Assert
-		toolName.Should().Be(ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
-			because: "the MCP tool name must stay centralized on the production tool type");
+		// Legacy documentation surface. Production MCP entry point is now AppSectionTool with action='create'.
+		ApplicationSectionCreateTool.ApplicationSectionCreateToolName.Should().Be("create-app-section",
+			because: "the legacy documentation surface must keep the historical identifier for backward-compatible discovery");
+		AppSectionTool.ToolName.Should().Be("app-section");
+		AppSectionTool.ActionCreate.Should().Be("create");
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises the stable MCP tool name for update-app-section so callers and tests share the same production identifier.")]
 	public void ApplicationSectionUpdate_Should_Advertise_Stable_Tool_Name() {
-		// Arrange
-		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationSectionUpdateTool)
-			.GetMethod(nameof(ApplicationSectionUpdateTool.ApplicationSectionUpdate))!
-			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
-			.Single();
-
-		// Act
-		string toolName = attribute.Name;
-
-		// Assert
-		toolName.Should().Be(ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
-			because: "the MCP tool name must stay centralized on the production tool type");
+		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName.Should().Be("update-app-section",
+			because: "the legacy documentation surface must keep the historical identifier for backward-compatible discovery");
+		AppSectionTool.ActionUpdate.Should().Be("update");
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises the stable MCP tool name for delete-app-section so callers and tests share the same production identifier.")]
 	public void ApplicationSectionDelete_Should_Advertise_Stable_Tool_Name() {
-		// Arrange
-		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationSectionDeleteTool)
-			.GetMethod(nameof(ApplicationSectionDeleteTool.ApplicationSectionDelete))!
-			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
-			.Single();
-
-		// Act
-		string toolName = attribute.Name;
-
-		// Assert
-		toolName.Should().Be(ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
-			because: "the MCP tool name must stay centralized on the production tool type");
+		ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName.Should().Be("delete-app-section",
+			because: "the legacy documentation surface must keep the historical identifier for backward-compatible discovery");
+		AppSectionTool.ActionDelete.Should().Be("delete");
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises the stable MCP tool name for list-app-sections so callers and tests share the same production identifier.")]
 	public void ApplicationSectionGetList_Should_Advertise_Stable_Tool_Name() {
-		// Arrange
-		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationSectionGetListTool)
-			.GetMethod(nameof(ApplicationSectionGetListTool.ApplicationSectionGetList))!
-			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
-			.Single();
-
-		// Act
-		string toolName = attribute.Name;
-
-		// Assert
-		toolName.Should().Be(ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
-			because: "the MCP tool name must stay centralized on the production tool type");
+		ApplicationSectionGetListTool.ApplicationSectionGetListToolName.Should().Be("list-app-sections",
+			because: "the legacy documentation surface must keep the historical identifier for backward-compatible discovery");
+		AppSectionTool.ActionList.Should().Be("list");
 	}
 
 	[Test]

@@ -12,20 +12,14 @@ namespace Clio.Command.McpServer.Tools;
 /// <summary>
 /// MCP tool surface for installed-application discovery.
 /// </summary>
-[McpServerToolType]
 public sealed class ApplicationGetListTool(IApplicationListService applicationListService) {
 
 	/// <summary>
-	/// Stable MCP tool name for listing installed applications.
+	/// Legacy MCP tool name retained for the documentation surface served by ToolContractGetTool.
+	/// The capability now lives on <see cref="AppsTool"/> with empty identifier arguments.
 	/// </summary>
 	internal const string ApplicationGetListToolName = "list-apps";
 
-	/// <summary>
-	/// Returns installed applications from the requested Creatio environment as structured JSON.
-	/// </summary>
-	[McpServerTool(Name = ApplicationGetListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
-		OpenWorld = false)]
-	[Description("Gets list of all applications from Creatio through backend MCP.")]
 	public ApplicationListResponse ApplicationGetList(
 		[Description("Parameters: environment-name (required)")]
 		[Required]
@@ -48,19 +42,13 @@ public sealed class ApplicationGetListTool(IApplicationListService applicationLi
 /// <summary>
 /// MCP tool surface for application context reads.
 /// </summary>
-[McpServerToolType]
 public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationInfoService) {
 	/// <summary>
-	/// Stable MCP tool name for reading structured application info.
+	/// Legacy MCP tool name retained for the documentation surface served by ToolContractGetTool.
+	/// The capability now lives on <see cref="AppsTool"/> with an id or code argument.
 	/// </summary>
 	internal const string ApplicationGetInfoToolName = "get-app-info";
 
-	/// <summary>
-	/// Returns primary package and runtime entity metadata for an installed application.
-	/// </summary>
-	[McpServerTool(Name = ApplicationGetInfoToolName, ReadOnly = true, Destructive = false, Idempotent = true,
-		OpenWorld = false)]
-	[Description("Gets application information from Creatio through backend MCP. Returns installed application identity plus package and entity context.")]
 	public ApplicationContextResponse ApplicationGetInfo(
 		[Description("Parameters: environment-name (required), id or code (exactly one required)")]
 		[Required]
@@ -171,19 +159,10 @@ public sealed class ApplicationCreateTool(
 /// <summary>
 /// MCP tool surface for creating a section inside an existing application.
 /// </summary>
-[McpServerToolType]
 public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateService applicationSectionCreateService) {
-	/// <summary>
-	/// Stable MCP tool name for creating sections in existing Creatio applications.
-	/// </summary>
+	/// <summary>Legacy MCP tool name retained for ToolContractGetTool documentation; entry now lives on <see cref="AppSectionTool"/>.</summary>
 	internal const string ApplicationSectionCreateToolName = "create-app-section";
 
-	/// <summary>
-	/// Creates a section in an existing Creatio application and returns structured readback data.
-	/// </summary>
-	[McpServerTool(Name = ApplicationSectionCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, and page readback data.")]
 	public async Task<ApplicationSectionContextResponse> ApplicationSectionCreate(
 		[Description("Parameters: environment-name, application-code, caption (required); description, entity-schema-name, icon-background, with-mobile-pages (optional)")]
 		[Required]
@@ -234,19 +213,10 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 /// <summary>
 /// MCP tool surface for updating metadata of a section inside an existing application.
 /// </summary>
-[McpServerToolType]
 public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateService applicationSectionUpdateService) {
-	/// <summary>
-	/// Stable MCP tool name for updating sections in existing Creatio applications.
-	/// </summary>
+	/// <summary>Legacy MCP tool name retained for ToolContractGetTool documentation; entry now lives on <see cref="AppSectionTool"/>.</summary>
 	internal const string ApplicationSectionUpdateToolName = "update-app-section";
 
-	/// <summary>
-	/// Updates metadata of a section in an existing Creatio application and returns structured before and after readback data.
-	/// </summary>
-	[McpServerTool(Name = ApplicationSectionUpdateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Updates metadata of a section inside an existing application in Creatio through backend MCP and returns structured section readback data before and after the update.")]
 	public async Task<ApplicationSectionUpdateContextResponse> ApplicationSectionUpdate(
 		[Description("Parameters: environment-name, application-code, section-code (required); caption, description, icon-id, icon-background (optional partial update fields)")]
 		[Required]
@@ -305,19 +275,10 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 /// <summary>
 /// MCP tool surface for deleting a section from an existing application.
 /// </summary>
-[McpServerToolType]
 public sealed class ApplicationSectionDeleteTool(IApplicationSectionDeleteService applicationSectionDeleteService) {
-	/// <summary>
-	/// Stable MCP tool name for deleting sections from existing Creatio applications.
-	/// </summary>
+	/// <summary>Legacy MCP tool name retained for ToolContractGetTool documentation; entry now lives on <see cref="AppSectionTool"/>.</summary>
 	internal const string ApplicationSectionDeleteToolName = "delete-app-section";
 
-	/// <summary>
-	/// Deletes a section from an existing Creatio application and returns structured readback of the deleted section.
-	/// </summary>
-	[McpServerTool(Name = ApplicationSectionDeleteToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Deletes a section from an existing application in Creatio through backend MCP and returns structured deleted-section readback data.")]
 	public ApplicationSectionDeleteContextResponse ApplicationSectionDelete(
 		[Description("Parameters: environment-name, application-code, section-code (all required)")]
 		[Required]
@@ -350,19 +311,10 @@ public sealed class ApplicationSectionDeleteTool(IApplicationSectionDeleteServic
 /// <summary>
 /// MCP tool surface for listing sections of an existing Creatio application.
 /// </summary>
-[McpServerToolType]
 public sealed class ApplicationSectionGetListTool(IApplicationSectionGetListService applicationSectionGetListService) {
-	/// <summary>
-	/// Stable MCP tool name for listing sections of existing Creatio applications.
-	/// </summary>
+	/// <summary>Legacy MCP tool name retained for ToolContractGetTool documentation; entry now lives on <see cref="AppSectionTool"/>.</summary>
 	internal const string ApplicationSectionGetListToolName = "list-app-sections";
 
-	/// <summary>
-	/// Returns all sections of an existing Creatio application.
-	/// </summary>
-	[McpServerTool(Name = ApplicationSectionGetListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
-		OpenWorld = false)]
-	[Description("Gets the list of sections inside an existing application in Creatio through backend MCP and returns structured section list data.")]
 	public ApplicationSectionListContextResponse ApplicationSectionGetList(
 		[Description("Parameters: environment-name, application-code (both required)")]
 		[Required]

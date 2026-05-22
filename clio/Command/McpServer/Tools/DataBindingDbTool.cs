@@ -42,11 +42,9 @@ public class UpsertDataBindingRowDbTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 	: BaseTool<UpsertDataBindingRowDbOptions>(command, logger, commandResolver) {
+	/// <summary>Legacy MCP tool name retained for ToolContractGetTool documentation; the entry now lives on <see cref="DataBindingRowDbTool"/>.</summary>
 	internal const string UpsertDataBindingRowDbToolName = "upsert-data-binding-row-db";
 
-	[McpServerTool(Name = UpsertDataBindingRowDbToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Upserts a single row in a remote DB-first data binding.")]
 	public CommandExecutionResult UpsertDataBindingRowDb(
 		[Description("Parameters: environment-name, package-name, binding-name, values (all required)")]
 		[Required]
@@ -69,11 +67,9 @@ public class RemoveDataBindingRowDbTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 	: BaseTool<RemoveDataBindingRowDbOptions>(command, logger, commandResolver) {
+	/// <summary>Legacy MCP tool name retained for ToolContractGetTool documentation; the entry now lives on <see cref="DataBindingRowDbTool"/>.</summary>
 	internal const string RemoveDataBindingRowDbToolName = "remove-data-binding-row-db";
 
-	[McpServerTool(Name = RemoveDataBindingRowDbToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Removes a row from a remote DB-first data binding by primary-key value, and deletes the package schema data record when no bound rows remain.")]
 	public CommandExecutionResult RemoveDataBindingRowDb(
 		[Description("Parameters: environment-name, package-name, binding-name, key-value (all required)")]
 		[Required]

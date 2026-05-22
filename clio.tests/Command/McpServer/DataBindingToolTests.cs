@@ -143,30 +143,17 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Marks every data-binding MCP method as destructive so MCP clients can enforce safety checks before local file mutations.")]
-	[TestCase(nameof(CreateDataBindingTool.CreateDataBinding))]
-	[TestCase(nameof(AddDataBindingRowTool.AddDataBindingRow))]
-	[TestCase(nameof(RemoveDataBindingRowTool.RemoveDataBindingRow))]
-	public void DataBinding_Methods_Should_Be_Marked_As_Destructive(string methodName) {
-		// Arrange
-		Type toolType = methodName switch {
-			nameof(CreateDataBindingTool.CreateDataBinding) => typeof(CreateDataBindingTool),
-			nameof(AddDataBindingRowTool.AddDataBindingRow) => typeof(AddDataBindingRowTool),
-			nameof(RemoveDataBindingRowTool.RemoveDataBindingRow) => typeof(RemoveDataBindingRowTool),
-			var _ => throw new InvalidOperationException($"Unsupported method name: {methodName}")
-		};
+	[Description("Marks the surviving data-binding MCP entry points as destructive; add/remove are folded into the consolidated data-binding-row tool.")]
+	[TestCase(typeof(CreateDataBindingTool), nameof(CreateDataBindingTool.CreateDataBinding))]
+	[TestCase(typeof(DataBindingRowTool), nameof(DataBindingRowTool.Apply))]
+	public void DataBinding_Methods_Should_Be_Marked_As_Destructive(Type toolType, string methodName) {
 		System.Reflection.MethodInfo method = toolType.GetMethod(methodName)!;
 		McpServerToolAttribute attribute = method
 			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
 			.Cast<McpServerToolAttribute>()
 			.Single();
-
-		// Act
-		bool destructive = attribute.Destructive;
-
-		// Assert
-		destructive.Should().BeTrue(
-			because: "all data-binding tools create or modify local package files");
+		attribute.Destructive.Should().BeTrue(
+			because: "data-binding tools create or modify package files and must be advertised as destructive");
 	}
 
 	[Test]
