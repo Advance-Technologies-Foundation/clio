@@ -49,9 +49,12 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		}
 	}
 
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
 	private static readonly Regex GuidPattern = new(
 		@"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-		RegexOptions.Compiled);
+		RegexOptions.Compiled,
+		RegexTimeout);
 
 	private static bool IsGuid(string s) => GuidPattern.IsMatch(s);
 
@@ -70,8 +73,27 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			JsonValueKind.String => IsGuid(value.GetString()!) && IsIdish(field)
 				? value.GetString()!
 				: $"'{value.GetString()!.Replace("'", "''")}'",
-			_ => $"'{value.GetRawText().Replace("'", "''")}'" ,
+			_ => $"'{value.GetRawText().Replace("'", "''")}'",
 		};
+
+	private static string? JoinConditions(IReadOnlyList<string> conditions, string separator) {
+		return conditions.Count switch {
+			0 => null,
+			1 => conditions[0],
+			_ => $"({string.Join(separator, conditions)})"
+		};
+	}
+
+	private static List<string> BuildConditions(IEnumerable<ODataFilterCondition>? conditions) {
+		if (conditions is null) {
+			return [];
+		}
+		return conditions
+			.Select(BuildCondition)
+			.Where(condition => condition is not null)
+			.Cast<string>()
+			.ToList();
+	}
 
 	private static string? BuildCondition(ODataFilterCondition c) {
 		if (string.IsNullOrWhiteSpace(c.Field)) {
@@ -82,9 +104,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			List<string> inParts = c.InValues.Value.EnumerateArray()
 				.Select(v => $"{field} eq {LiteralFor(field, v)}")
 				.ToList();
-			return inParts.Count == 0 ? null
-				: inParts.Count == 1 ? inParts[0]
-				: $"({string.Join(" or ", inParts)})";
+			return JoinConditions(inParts, " or ");
 		}
 		if (!c.Value.HasValue) {
 			return null;
@@ -101,30 +121,16 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	}
 
 	private static string? BuildFilterFromStructured(ODataFilters filters) {
-		var andParts = new List<string>();
-		var orParts = new List<string>();
-		if (filters.All is not null) {
-			foreach (ODataFilterCondition c in filters.All) {
-				string? s = BuildCondition(c);
-				if (s is not null) {
-					andParts.Add(s);
-				}
-			}
-		}
-		if (filters.Any is not null) {
-			foreach (ODataFilterCondition c in filters.Any) {
-				string? s = BuildCondition(c);
-				if (s is not null) {
-					orParts.Add(s);
-				}
-			}
-		}
+		List<string> andParts = BuildConditions(filters.All);
+		List<string> orParts = BuildConditions(filters.Any);
 		var parts = new List<string>();
-		if (andParts.Count > 0) {
-			parts.Add(andParts.Count > 1 ? $"({string.Join(" and ", andParts)})" : andParts[0]);
+		string? allFilter = JoinConditions(andParts, " and ");
+		if (allFilter is not null) {
+			parts.Add(allFilter);
 		}
-		if (orParts.Count > 0) {
-			parts.Add(orParts.Count > 1 ? $"({string.Join(" or ", orParts)})" : orParts[0]);
+		string? anyFilter = JoinConditions(orParts, " or ");
+		if (anyFilter is not null) {
+			parts.Add(anyFilter);
 		}
 		return parts.Count > 0 ? string.Join(" and ", parts) : null;
 	}
@@ -152,7 +158,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		int top = args.Top is > 0 and <= 1000 ? args.Top.Value : 25;
 		parts.Add($"$top={top}");
 
-		return parts.Count > 0 ? $"?{string.Join("&", parts)}" : string.Empty;
+		return $"?{string.Join("&", parts)}";
 	}
 
 	private static ODataReadResponse ParseODataResponse(string json) {
@@ -171,7 +177,10 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			// Single-entity response (no value wrapper)
 			return new ODataReadResponse(true, null, 1, root.Clone(), null);
 		} catch (Exception ex) {
-			string preview = string.IsNullOrWhiteSpace(json) ? "<empty>" : json.Length > 500 ? json[..500] + "…" : json;
+			string preview = string.IsNullOrWhiteSpace(json) ? "<empty>" : json;
+			if (preview.Length > 500) {
+				preview = preview[..500] + "...";
+			}
 			return ODataReadResponse.Failure($"Failed to parse OData response: {ex.Message} | Response: {preview}");
 		}
 	}

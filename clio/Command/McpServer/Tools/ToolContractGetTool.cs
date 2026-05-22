@@ -205,15 +205,20 @@ internal static class ToolContractCatalog {
 	private const string ColumnsFieldName = "columns";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
 	private const string DryRunFieldName = "dry-run";
+	private const string EntityFieldName = "entity";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
 	private const string EntitySchemaNameFieldName = "entity-schema-name";
 	private const string EnvironmentNameFieldName = "environment-name";
 	private const string ErrorFieldName = "error";
+	private const string ExampleAccountSchemaName = "Account";
+	private const string ExampleContactSchemaName = "Contact";
 	private const string ExampleEnvironmentName = "local";
 	private const string ExampleLookupValueId = "00000000-0000-0000-0000-000000000001";
 	private const string ExamplePackageName = "UsrTaskApp";
 	private const string ExampleTaskStatusSchemaName = "UsrTaskStatus";
 	private const string FailureMessageDescription = "Human-readable failure message.";
+	private const string FieldFieldName = "field";
+	private const string FiltersFieldName = "filters";
 	private const string IconBackgroundFieldName = "icon-background";
 	private const string InvalidLocalizationMapCode = "invalid-localization-map";
 	private const string KeyValueFieldName = "key-value";
@@ -237,6 +242,7 @@ internal static class ToolContractCatalog {
 	private const string SelectorIdFieldName = "id";
 	private const string SchemaNameFieldName = "schema-name";
 	private const string ResourcesFieldName = "resources";
+	private const string SelectFieldName = "select";
 	private const string SkipSamplingFieldName = "skip-sampling";
 	private const string StringType = "string";
 	private const string StatusFieldName = "status";
@@ -268,6 +274,7 @@ internal static class ToolContractCatalog {
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
 	private const string MakeRequiredActionTypeName = "make-required";
+	private const string ValueFieldName = "value";
 	private const string ValuesFieldName = "values";
 	private const string VerifyFieldName = "verify";
 	private const string BindingNameDescription = "Binding name.";
@@ -713,7 +720,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
 				Field("section", ObjectType, "Created section metadata."),
-				Field("entity", ObjectType, "Created or targeted entity metadata when available."),
+				Field(EntityFieldName, ObjectType, "Created or targeted entity metadata when available."),
 				Field(PagesFieldName, ArrayType, "Created page summaries using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
@@ -1059,7 +1066,7 @@ internal static class ToolContractCatalog {
 					Field("relations", ArrayType, "Resolved relation paths as cypher-style strings.")),
 				Examples = [
 					Example("Read Contact-to-Account relations for a configured environment", new Dictionary<string, object?> {
-						["source-table"] = "Contact",
+						["source-table"] = ExampleContactSchemaName,
 						["target-table"] = "Account",
 						[EnvironmentNameFieldName] = ExampleEnvironmentName
 					})
@@ -1086,7 +1093,7 @@ internal static class ToolContractCatalog {
 					Field(ColumnsFieldName, ArrayType, "Runtime column projections with `name`, `caption`, `description`, `data-type`, `required`, and `reference-schema-name`.")),
 				Examples = [
 					Example("Read Contact runtime columns for a configured environment", new Dictionary<string, object?> {
-						["table-name"] = "Contact",
+						["table-name"] = ExampleContactSchemaName,
 						[EnvironmentNameFieldName] = ExampleEnvironmentName
 					})
 				],
@@ -1179,12 +1186,12 @@ internal static class ToolContractCatalog {
 			ODataReadTool.ToolName,
 			"Reads Creatio records through OData v4. Use this to query records, resolve lookup primary values, verify records by Id, or inspect selected fields.",
 			new ToolInputSchemaContract(
-				["entity", EnvironmentNameFieldName],
+				[EntityFieldName, EnvironmentNameFieldName],
 				[
-					Field("entity", StringType, "Creatio OData entity set name, usually the referenced lookup schema name such as Contact, Account, or a custom lookup schema."),
+					Field(EntityFieldName, StringType, "Creatio OData entity set name, usually the referenced lookup schema name such as Contact, Account, or a custom lookup schema."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field("filters", ObjectType, "Structured filter. all conditions join with AND; any conditions join with OR. GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Use lookup traversal paths such as Account/Id when filtering records by lookup primary value. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
-					Field("select", ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
+					Field(FiltersFieldName, ObjectType, "Structured filter. all conditions join with AND; any conditions join with OR. GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Use lookup traversal paths such as Account/Id when filtering records by lookup primary value. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
+					Field(SelectFieldName, ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
 					Field("expand", ArrayType, "Navigation properties to expand."),
 					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
 					Field("top", NumberType, "Maximum number of records to return, 1-1000. Default: 25.")
@@ -1201,7 +1208,7 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, "Whether the OData read succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
 				Field("count", NumberType, "Number of records returned."),
-				Field("value", ArrayType, "OData value array or single entity response."),
+				Field(ValueFieldName, ArrayType, "OData value array or single entity response."),
 				Field("next-link", StringType, "OData next-link URL when more records are available.")
 			),
 			CommonErrorContract,
@@ -1210,57 +1217,57 @@ internal static class ToolContractCatalog {
 			[
 				Example("Resolve a lookup row by display value", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
-					["entity"] = ExampleTaskStatusSchemaName,
-					["filters"] = new Dictionary<string, object?> {
+					[EntityFieldName] = ExampleTaskStatusSchemaName,
+					[FiltersFieldName] = new Dictionary<string, object?> {
 						["all"] = new object[] {
-							new Dictionary<string, object?> { ["field"] = "Name", ["op"] = "eq", ["value"] = "In Progress" }
+							new Dictionary<string, object?> { [FieldFieldName] = "Name", ["op"] = "eq", [ValueFieldName] = "In Progress" }
 						}
 					},
-					["select"] = new[] { "Id", "Name" },
+					[SelectFieldName] = new[] { "Id", "Name" },
 					["top"] = 5
 				}),
 				Example("Verify a known lookup row exists by Id", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
-					["entity"] = "Contact",
-					["filters"] = new Dictionary<string, object?> {
+					[EntityFieldName] = ExampleContactSchemaName,
+					[FiltersFieldName] = new Dictionary<string, object?> {
 						["all"] = new object[] {
-							new Dictionary<string, object?> { ["field"] = "Id", ["op"] = "eq", ["value"] = ExampleLookupValueId }
+							new Dictionary<string, object?> { [FieldFieldName] = "Id", ["op"] = "eq", [ValueFieldName] = ExampleLookupValueId }
 						}
 					},
-					["select"] = new[] { "Id" },
+					[SelectFieldName] = new[] { "Id" },
 					["top"] = 1
 				}),
 				Example("Query records with multiple fields and ordering", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
-					["entity"] = "Contact",
-					["select"] = new[] { "Id", "Name", "AccountId" },
+					[EntityFieldName] = ExampleContactSchemaName,
+					[SelectFieldName] = new[] { "Id", "Name", "AccountId" },
 					["order-by"] = "Name asc",
 					["top"] = 10
 				}),
 				Example("Query records where a text field contains a value", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
-					["entity"] = "Account",
-					["filters"] = new Dictionary<string, object?> {
+					[EntityFieldName] = ExampleAccountSchemaName,
+					[FiltersFieldName] = new Dictionary<string, object?> {
 						["all"] = new object[] {
-							new Dictionary<string, object?> { ["field"] = "Name", ["op"] = "contains", ["value"] = "Acme" }
+							new Dictionary<string, object?> { [FieldFieldName] = "Name", ["op"] = "contains", [ValueFieldName] = "Acme" }
 						}
 					},
-					["select"] = new[] { "Id", "Name" },
+					[SelectFieldName] = new[] { "Id", "Name" },
 					["top"] = 10
 				}),
 				Example("Query contacts by account lookup using structured filters", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
-					["entity"] = "Contact",
-					["filters"] = new Dictionary<string, object?> {
+					[EntityFieldName] = ExampleContactSchemaName,
+					[FiltersFieldName] = new Dictionary<string, object?> {
 						["all"] = new object[] {
 							new Dictionary<string, object?> {
-								["field"] = "Account/Id",
+								[FieldFieldName] = "Account/Id",
 								["op"] = "eq",
-								["value"] = ExampleLookupValueId
+								[ValueFieldName] = ExampleLookupValueId
 							}
 						}
 					},
-					["select"] = new[] { "Id", "Name" },
+					[SelectFieldName] = new[] { "Id", "Name" },
 					["top"] = 10
 				})
 			],
@@ -1679,7 +1686,7 @@ internal static class ToolContractCatalog {
 		BusinessRuleExample(summary, EntitySchemaNameFieldName, entitySchemaName, caption, leftPath,
 			comparisonType, actionType, actionItems, constantValue);
 
-	private const string BusinessRuleValueKey = "value";
+	private const string BusinessRuleValueKey = ValueFieldName;
 
 	private static Dictionary<string, object?> BusinessRuleSetValueItem(string path, object value) {
 		return new Dictionary<string, object?> {
@@ -1687,9 +1694,9 @@ internal static class ToolContractCatalog {
 				["type"] = "AttributeValue",
 				["path"] = path
 			},
-			["value"] = new Dictionary<string, object?> {
+			[BusinessRuleValueKey] = new Dictionary<string, object?> {
 				["type"] = "Const",
-				["value"] = value
+				[BusinessRuleValueKey] = value
 			}
 		};
 	}
@@ -3170,7 +3177,7 @@ internal static class ToolContractCatalog {
 	}
 
 	private const string SysSettingCodeFieldName = "code";
-	private const string SysSettingValueFieldName = "value";
+	private const string SysSettingValueFieldName = ValueFieldName;
 	private const string SysSettingValueTypeFieldName = "value-type-name";
 	private const string ExampleSysSettingCode = "MaxFileSize";
 	private const string ExampleSysSettingName = "Maximum file size";

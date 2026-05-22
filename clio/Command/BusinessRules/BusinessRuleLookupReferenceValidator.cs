@@ -41,25 +41,28 @@ internal sealed class BusinessRuleLookupReferenceValidator(
 	private static IEnumerable<BusinessRuleLookupReference> EnumerateLookupReferences(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
-		foreach (BusinessRuleCondition condition in rule.Condition?.Conditions ?? []) {
-			if (condition?.RightExpression is null
-				|| !IsConstExpression(condition.RightExpression)
-				|| condition.RightExpression.Value is null
-				|| string.IsNullOrWhiteSpace(condition.LeftExpression?.Path)) {
-				continue;
-			}
+		foreach (BusinessRuleLookupReference reference in EnumerateConditionLookupReferences(rule, attributeMap)) {
+			yield return reference;
+		}
 
-			string leftPath = condition.LeftExpression.Path;
-			BusinessRuleAttributeDescriptor leftDescriptor = attributeMap[leftPath];
-			if (TryBuildLookupReference(
-				    leftDescriptor,
-				    condition.RightExpression.Value.Value,
-				    "rule.condition.conditions[*].rightExpression.value",
-				    out BusinessRuleLookupReference reference)) {
+		foreach (BusinessRuleLookupReference reference in EnumerateActionLookupReferences(rule, attributeMap)) {
+			yield return reference;
+		}
+	}
+
+	private static IEnumerable<BusinessRuleLookupReference> EnumerateConditionLookupReferences(
+		BusinessRule rule,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		foreach (BusinessRuleCondition condition in rule.Condition?.Conditions ?? []) {
+			if (TryBuildConditionLookupReference(condition, attributeMap, out BusinessRuleLookupReference reference)) {
 				yield return reference;
 			}
 		}
+	}
 
+	private static IEnumerable<BusinessRuleLookupReference> EnumerateActionLookupReferences(
+		BusinessRule rule,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
 		foreach (BusinessRuleAction action in rule.Actions ?? []) {
 			if (action is null
 				|| !string.Equals(action.ActionType, SetValuesActionTypeName, StringComparison.OrdinalIgnoreCase)) {
@@ -67,24 +70,51 @@ internal sealed class BusinessRuleLookupReferenceValidator(
 			}
 
 			foreach (BusinessRuleSetValueItem item in action.SetValueItems) {
-				if (item?.Value is null
-					|| !IsConstExpression(item.Value)
-					|| item.Value.Value is null
-					|| string.IsNullOrWhiteSpace(item.Expression?.Path)) {
-					continue;
-				}
-
-				string targetPath = item.Expression.Path;
-				BusinessRuleAttributeDescriptor targetDescriptor = attributeMap[targetPath];
-				if (TryBuildLookupReference(
-					    targetDescriptor,
-					    item.Value.Value.Value,
-					    "rule.actions[*].items[*].value.value",
-					    out BusinessRuleLookupReference reference)) {
+				if (TryBuildActionLookupReference(item, attributeMap, out BusinessRuleLookupReference reference)) {
 					yield return reference;
 				}
 			}
 		}
+	}
+
+	private static bool TryBuildConditionLookupReference(
+		BusinessRuleCondition condition,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		out BusinessRuleLookupReference reference) {
+		reference = default!;
+		if (condition?.RightExpression is null
+			|| !IsConstExpression(condition.RightExpression)
+			|| condition.RightExpression.Value is null
+			|| string.IsNullOrWhiteSpace(condition.LeftExpression?.Path)) {
+			return false;
+		}
+
+		string leftPath = condition.LeftExpression.Path;
+		return TryBuildLookupReference(
+			attributeMap[leftPath],
+			condition.RightExpression.Value.Value,
+			"rule.condition.conditions[*].rightExpression.value",
+			out reference);
+	}
+
+	private static bool TryBuildActionLookupReference(
+		BusinessRuleSetValueItem item,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		out BusinessRuleLookupReference reference) {
+		reference = default!;
+		if (item?.Value is null
+			|| !IsConstExpression(item.Value)
+			|| item.Value.Value is null
+			|| string.IsNullOrWhiteSpace(item.Expression?.Path)) {
+			return false;
+		}
+
+		string targetPath = item.Expression.Path;
+		return TryBuildLookupReference(
+			attributeMap[targetPath],
+			item.Value.Value.Value,
+			"rule.actions[*].items[*].value.value",
+			out reference);
 	}
 
 	private static bool TryBuildLookupReference(
